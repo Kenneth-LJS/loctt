@@ -80,7 +80,7 @@ export function ViewFormDialog({
       }
     >
       <div className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-[13px] text-text-secondary">
+        <label className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
           Name
           <TextField
             data-testid="view-form-name"

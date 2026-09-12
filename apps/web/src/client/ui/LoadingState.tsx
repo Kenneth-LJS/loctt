@@ -1,7 +1,7 @@
 /**
  * The shared loading placeholder (design-review §A3).
  *
- * ~14 features re-spelled `<div className="p-8 text-[13px]
+ * ~14 features re-spelled `<div className="p-8 text-[0.9286rem]
  * text-text-tertiary">Loading X…</div>` with **no** `role="status"`, so a
  * screen reader was never told the region was loading — the panel just
  * sat silent until content appeared. This bakes the live region in: the
@@ -25,7 +25,7 @@ export function LoadingState({
     <div
       role="status"
       aria-busy="true"
-      className={className ?? "p-8 text-[13px] text-text-tertiary"}
+      className={className ?? "p-8 text-[0.9286rem] text-text-tertiary"}
     >
       {children}
     </div>

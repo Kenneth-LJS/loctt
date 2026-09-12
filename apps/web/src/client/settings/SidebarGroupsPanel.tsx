@@ -117,7 +117,7 @@ function GroupsEditor({ stored }: { readonly stored: UserSettings }) {
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Sidebar groups
       </h1>
-      <p className="mb-6 max-w-prose text-[12px] text-text-secondary">
+      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
         Reorder the sidebar's groups and built-in filters, and hide the
         ones you don't use. Saved against your user.
       </p>
@@ -136,7 +136,7 @@ function GroupsEditor({ stored }: { readonly stored: UserSettings }) {
           >
             <span
               className={[
-                "flex-1 text-[13px]",
+                "flex-1 text-[0.9286rem]",
                 hidden.has(id) ? "text-text-tertiary line-through" : "text-text-primary",
               ].join(" ")}
             >
@@ -147,7 +147,7 @@ function GroupsEditor({ stored }: { readonly stored: UserSettings }) {
               data-testid={`sidebar-group-toggle-${id}`}
               aria-pressed={!hidden.has(id)}
               onClick={() => { toggleHidden(id); }}
-              className="text-[12px] text-text-tertiary hover:text-text-primary"
+              className="text-[0.8571rem] text-text-tertiary hover:text-text-primary"
             >
               {hidden.has(id) ? "Show" : "Hide"}
             </button>
@@ -160,12 +160,12 @@ function GroupsEditor({ stored }: { readonly stored: UserSettings }) {
           type="button"
           data-testid="sidebar-groups-reset"
           onClick={resetAll}
-          className="text-[12px] text-text-tertiary hover:text-text-primary"
+          className="text-[0.8571rem] text-text-tertiary hover:text-text-primary"
         >
           Reset to default
         </button>
         {save.isError ? (
-          <span role="alert" className="text-[12px] text-danger-fg">
+          <span role="alert" className="text-[0.8571rem] text-danger-fg">
             Your changes were not saved. The list shows your last saved layout.
           </span>
         ) : null}

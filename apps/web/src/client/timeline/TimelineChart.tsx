@@ -182,7 +182,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                 // without assuming the chart's origin — which moves
                 // whenever the dated range widens.
                 data-date={c.key}
-                className="shrink-0 border-r border-border-subtle text-center text-[10px] leading-6 text-text-secondary"
+                className="shrink-0 border-r border-border-subtle text-center text-[0.7143rem] leading-6 text-text-secondary"
                 style={{ width: c.width }}
               >
                 {c.label}
@@ -234,7 +234,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                   data-testid={`timeline-band-${band.id}`}
                   aria-expanded={!collapsed.has(band.id)}
                   onClick={() => { toggle(band.id); }}
-                  className="absolute left-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-muted/90 px-2 text-left text-[11px] font-semibold"
+                  className="absolute left-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-muted/90 px-2 text-left text-[0.7857rem] font-semibold"
                   style={{ top: band.y, height: BAND_HEADER_H, width: props.width }}
                 >
                   <span aria-hidden="true">{collapsed.has(band.id) ? ICON.caretRight : ICON.caretDown}</span>
@@ -271,7 +271,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                         data-task-key={row.task.key}
                         title={`${row.task.key} · ${dateProblemNote(row.problem)}`}
                         onClick={() => { props.onOpenTask(row.task.key); }}
-                        className="absolute flex items-center gap-1 overflow-hidden rounded border border-danger-fg/50 bg-danger-fg/10 px-1 text-left text-[11px] leading-none text-danger-fg"
+                        className="absolute flex items-center gap-1 overflow-hidden rounded border border-danger-fg/50 bg-danger-fg/10 px-1 text-left text-[0.7857rem] leading-none text-danger-fg"
                         style={{
                           left: dateToX(props.range, anchorDate(row.problem, stored), props.zoom),
                           width: Math.max(px, 96),
@@ -315,7 +315,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                         props.onBarKeyAdjust?.(row.task.id, edge, dir);
                       }}
                       aria-label={`${row.task.key} ${row.task.title ?? row.task.key}, ${start} to ${due}`}
-                      className="absolute overflow-hidden rounded border border-accent/40 bg-accent/20 px-1 text-left text-[11px] leading-none hover:bg-accent/30"
+                      className="absolute overflow-hidden rounded border border-accent/40 bg-accent/20 px-1 text-left text-[0.7857rem] leading-none hover:bg-accent/30"
                       style={{
                         left: bar.left,
                         width: bar.width,
@@ -335,7 +335,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                         <span
                           data-testid={`timeline-offscreen-dep-${row.task.key}`}
                           title="This task has a dependency on a task that is not shown"
-                          className="absolute right-0 top-0 z-10 px-0.5 text-[9px] leading-none text-warn-fg"
+                          className="absolute right-0 top-0 z-10 px-0.5 text-[0.6429rem] leading-none text-warn-fg"
                         >
                           &#8674;
                         </span>

@@ -138,7 +138,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
           a user who launched from the wrong folder can tell from this
           screen alone.
         */}
-        <p className="mt-2 text-[13px] text-text-secondary">
+        <p className="mt-2 text-[0.9286rem] text-text-secondary">
           {alreadyThere
             ? <>A <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">.loctt</code> folder already
               exists in <strong className="font-medium text-text-primary break-all">{info.cwd}</strong> but
@@ -160,7 +160,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
 
         <form className="mt-8 space-y-6" onSubmit={(e) => { void submit(e); }} noValidate>
           <div>
-            <label htmlFor={nameId} className="block text-[13px] font-medium text-text-primary">
+            <label htmlFor={nameId} className="block text-[0.9286rem] font-medium text-text-primary">
               Project name
             </label>
             <TextField
@@ -179,14 +179,14 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
               className="mt-1"
             />
             {showProblems && nameProblem !== null && (
-              <p id={`${nameId}-err`} className="mt-1 text-[12px] text-danger-fg" role="alert">
+              <p id={`${nameId}-err`} className="mt-1 text-[0.8571rem] text-danger-fg" role="alert">
                 {nameProblem}
               </p>
             )}
           </div>
 
           <div>
-            <label htmlFor={prefixId} className="block text-[13px] font-medium text-text-primary">
+            <label htmlFor={prefixId} className="block text-[0.9286rem] font-medium text-text-primary">
               Key prefix
             </label>
             <TextField
@@ -212,7 +212,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
               }
               className="mt-1 font-mono"
             />
-            <p id={`${prefixId}-help`} className="mt-1 text-[12px] text-text-secondary">
+            <p id={`${prefixId}-help`} className="mt-1 text-[0.8571rem] text-text-secondary">
               {/*
                 ONB-3 / ONB-19: the preview shows the first key that
                 will actually be allocated, and goes away when the
@@ -224,12 +224,12 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
                 : <>No key preview — fix the prefix below.</>}
             </p>
             {showProblems && prefixIssue !== null && (
-              <p id={`${prefixId}-err`} className="mt-1 text-[12px] text-danger-fg" role="alert">
+              <p id={`${prefixId}-err`} className="mt-1 text-[0.8571rem] text-danger-fg" role="alert">
                 {prefixIssue}
               </p>
             )}
             {showProblems && prefixIssue === null && !prefixTouched && (
-              <p className="mt-1 text-[12px] text-text-tertiary">{PREFIX_RULE}</p>
+              <p className="mt-1 text-[0.8571rem] text-text-tertiary">{PREFIX_RULE}</p>
             )}
           </div>
 
@@ -242,7 +242,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
               className="mt-0.5"
             />
             <div>
-              <label htmlFor={docsId} className="block text-[13px] font-medium text-text-primary">
+              <label htmlFor={docsId} className="block text-[0.9286rem] font-medium text-text-primary">
                 Skip the starter docs
               </label>
               {/*
@@ -251,7 +251,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
                 default, matching `loctt init`, whose `docs` defaults to
                 true and whose opt-out is the explicit `--no-docs`.
               */}
-              <p className="text-[12px] text-text-secondary">
+              <p className="text-[0.8571rem] text-text-secondary">
                 LocTT normally writes a few short markdown files into{" "}
                 <code className="font-mono">.loctt/docs/</code> explaining how tasks,
                 statuses and queries work in this tracker. Tick this to start with an
@@ -266,7 +266,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
             now. No password, email or account field appears — LocTT has
             no auth.
           */}
-          <p className="rounded border border-border-default bg-bg-muted px-3 py-2 text-[12px] text-text-secondary">
+          <p className="rounded border border-border-default bg-bg-muted px-3 py-2 text-[0.8571rem] text-text-secondary">
             You'll be set up as{" "}
             <strong className="font-medium text-text-primary">{info.defaultUserName}</strong>.
             You can rename yourself or add people later in Settings → Users.
@@ -307,7 +307,7 @@ function SlowInitNote() {
     return () => { clearTimeout(t); };
   }, []);
   return (
-    <span aria-live="polite" className="text-[12px] text-text-secondary">
+    <span aria-live="polite" className="text-[0.8571rem] text-text-secondary">
       {slow ? "Creating directories and writing config…" : ""}
     </span>
   );

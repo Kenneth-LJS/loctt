@@ -155,7 +155,7 @@ export function CustomFieldEditDialog({
         </DialogActions>
       }
     >
-      <div className="space-y-3 text-[13px]">
+      <div className="space-y-3 text-[0.9286rem]">
         <label className="block">
           <span className="mb-1 block text-text-secondary">Label</span>
           <TextField
@@ -167,7 +167,7 @@ export function CustomFieldEditDialog({
             aria-label="Field label"
           />
           {problems.label !== undefined && (
-            <span data-testid="custom-field-dialog-label-error" className="mt-1 block text-[12px] text-danger-fg">
+            <span data-testid="custom-field-dialog-label-error" className="mt-1 block text-[0.8571rem] text-danger-fg">
               {problems.label}
             </span>
           )}
@@ -185,11 +185,11 @@ export function CustomFieldEditDialog({
                 onChange={e => { setKeyTouched(true); setKey(e.target.value); }}
                 aria-label="Field key"
               />
-              <span className="mt-1 block text-[12px] text-text-tertiary">
+              <span className="mt-1 block text-[0.8571rem] text-text-tertiary">
                 A key is permanent — task files store values under it.
               </span>
               {problems.key !== undefined && (
-                <span data-testid="custom-field-dialog-key-error" className="mt-1 block text-[12px] text-danger-fg">
+                <span data-testid="custom-field-dialog-key-error" className="mt-1 block text-[0.8571rem] text-danger-fg">
                   {problems.key}
                 </span>
               )}
@@ -197,7 +197,7 @@ export function CustomFieldEditDialog({
           ) : (
             <code
               data-testid="custom-field-dialog-key-readonly"
-              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] text-text-secondary"
+              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
             >
               {initial?.key}
             </code>
@@ -237,7 +237,7 @@ export function CustomFieldEditDialog({
           <p
             id="custom-field-dialog-type-lock"
             data-testid="custom-field-dialog-type-lock"
-            className="text-[11px] text-text-tertiary"
+            className="text-[0.7857rem] text-text-tertiary"
           >
             Type and multi are fixed after creation: existing task values
             were stored under this type. To change it, create a new field
@@ -298,7 +298,7 @@ export function CustomFieldEditDialog({
                     type="button"
                     data-testid={`custom-field-dialog-value-remove-${i}`}
                     onClick={() => { setValues(prev => prev.filter((_, idx) => idx !== i)); }}
-                    className="h-7 rounded-md border border-border-default px-2 text-[12px] text-danger-fg"
+                    className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg"
                     aria-label={`Remove value ${i + 1}`}
                   >
                     ✕
@@ -316,7 +316,7 @@ export function CustomFieldEditDialog({
               + Add value
             </Button>
             {(problems as { values?: string }).values !== undefined && (
-              <span data-testid="custom-field-dialog-values-error" className="mt-1 block text-[12px] text-danger-fg">
+              <span data-testid="custom-field-dialog-values-error" className="mt-1 block text-[0.8571rem] text-danger-fg">
                 {(problems as { values?: string }).values}
               </span>
             )}

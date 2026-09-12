@@ -273,7 +273,7 @@ function hasFailed(q: {
 function GroupLabel({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (collapsed) return null;
   return (
-    <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
+    <div className="px-2.5 pb-0.5 pt-1.5 text-[0.7857rem] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
       {children}
     </div>
   );
@@ -308,7 +308,7 @@ function ItemShell({
       // no anchor of their own.
       title={title}
       className={[
-        "flex h-8 items-center rounded-md text-[13px]",
+        "flex h-8 items-center rounded-md text-[0.9286rem]",
         collapsed ? "w-10 justify-center px-0" : "gap-2.5 px-2.5",
         active
           ? "bg-accent-muted font-semibold text-accent"
@@ -350,7 +350,7 @@ function Badge({
       data-pending={pending ? "true" : undefined}
       data-unavailable={unavailable ? "true" : undefined}
       title={unavailable ? "Count unavailable" : undefined}
-      className="ml-auto min-w-[1.75rem] rounded-full bg-bg-muted px-1.5 text-center text-[11px] tabular-nums text-text-tertiary"
+      className="ml-auto min-w-[1.75rem] rounded-full bg-bg-muted px-1.5 text-center text-[0.7857rem] tabular-nums text-text-tertiary"
     >
       {value !== undefined ? value : unavailable ? "—" : "\u00b7\u00b7\u00b7"}
     </span>
@@ -437,14 +437,14 @@ function GroupError({
         role="alert"
         title={headline ?? "Could not load — click to retry"}
         onClick={onRetry}
-        className="mx-auto my-1 cursor-pointer text-[11px] text-danger-fg"
+        className="mx-auto my-1 cursor-pointer text-[0.7857rem] text-danger-fg"
       >
         !
       </div>
     );
   }
   return (
-    <div role="alert" className="px-2 py-1 text-[12px] text-text-tertiary">
+    <div role="alert" className="px-2 py-1 text-[0.8571rem] text-text-tertiary">
       {headline ?? "Could not load."}{" "}
       <button
         type="button"
@@ -472,7 +472,7 @@ function GroupError({
             {showDetail ? "Hide details" : "Show details"}
           </button>
           {showDetail && (
-            <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] text-text-tertiary">
+            <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[0.7857rem] text-text-tertiary">
               {envelope.detail}
             </pre>
           )}
@@ -520,7 +520,7 @@ function hasAnswered(q: { dataUpdatedAt: number }): boolean {
 function GroupEmpty({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
   if (collapsed) return null;
   return (
-    <div className="px-2.5 py-1 text-[12px] italic text-text-tertiary">{children}</div>
+    <div className="px-2.5 py-1 text-[0.8571rem] italic text-text-tertiary">{children}</div>
   );
 }
 
@@ -639,7 +639,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
       {searchable && q !== "" && filtered.length === 0 ? (
         <div
           data-testid="project-search-empty"
-          className="px-2.5 py-1 text-[12px] text-text-tertiary"
+          className="px-2.5 py-1 text-[0.8571rem] text-text-tertiary"
         >
           No projects match “{query.trim()}”
         </div>
@@ -696,7 +696,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
           aria-expanded={expanded}
           onClick={() => { setExpanded(v => !v); }}
           data-testid="project-more"
-          className="mx-2.5 rounded-md px-0 py-1 text-left text-[12px] font-medium text-text-tertiary hover:text-text-primary"
+          className="mx-2.5 rounded-md px-0 py-1 text-left text-[0.8571rem] font-medium text-text-tertiary hover:text-text-primary"
         >
           {expanded ? "Show fewer" : `+${hiddenCount} more`}
         </button>
@@ -862,7 +862,7 @@ function SavedFiltersGroup({
             {!collapsed ? (
               <span className="flex min-w-0 flex-1 items-center gap-1">
                 <span className="truncate text-text-secondary">{v.name}</span>
-                <span className="shrink-0 text-[11px] text-text-tertiary">(broken)</span>
+                <span className="shrink-0 text-[0.7857rem] text-text-tertiary">(broken)</span>
               </span>
             ) : null}
           </ItemShell>
@@ -877,7 +877,7 @@ function SavedFiltersGroup({
           key={v.id}
           role="status"
           data-vanished-view={v.id}
-          className="flex items-start gap-1 px-2.5 py-1 text-[12px] text-text-tertiary"
+          className="flex items-start gap-1 px-2.5 py-1 text-[0.8571rem] text-text-tertiary"
         >
           <span className="flex-1">
             &ldquo;{v.name}&rdquo; was removed from queries.yaml.
@@ -899,7 +899,7 @@ function SavedFiltersGroup({
           data-testid="sidebar-new-filter"
           onClick={() => { setCreating(true); }}
           title="Create a saved view"
-          className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] font-medium text-accent hover:bg-bg-muted"
+          className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left text-[0.9286rem] font-medium text-accent hover:bg-bg-muted"
         >
           <span className="w-4 shrink-0 text-center">+</span>
           New filter…
@@ -1082,7 +1082,7 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
             className="no-underline"
           >
             <ItemShell collapsed={collapsed} title={t.title}>
-              <span className="shrink-0 font-mono text-[10px] text-text-tertiary">{t.key}</span>
+              <span className="shrink-0 font-mono text-[0.7143rem] text-text-tertiary">{t.key}</span>
               <span className="truncate">{t.title}</span>
             </ItemShell>
           </Link>
@@ -1096,7 +1096,7 @@ function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResp
   return (
     <div className="flex shrink-0 flex-col gap-1 border-t border-border-subtle pt-2">
       {!collapsed ? (
-        <div className="px-2.5 text-[11px] text-text-tertiary">
+        <div className="px-2.5 text-[0.7857rem] text-text-tertiary">
           <div className="truncate font-mono" title={info.cwd}>{info.cwd}</div>
           {/* The count is omitted rather than shown as zero when the
               tracker could not be read. `TrackerInfoResponse.taskCount`

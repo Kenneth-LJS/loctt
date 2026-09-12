@@ -297,7 +297,7 @@ function BodyEditSurface({
           // banner is also permanently on screen for a lossy body, so
           // it would make `getByRole("status")` ambiguous the same way.
           aria-live="polite"
-          className="mb-2 rounded border border-border-subtle bg-bg-muted px-3 py-2 text-[12px] text-text-secondary"
+          className="mb-2 rounded border border-border-subtle bg-bg-muted px-3 py-2 text-[0.8571rem] text-text-secondary"
         >
           This task body contains markdown features that can’t be edited
           visually ({lossyNote}). Edit in source mode.
@@ -339,7 +339,7 @@ function BodyEditSurface({
 
 function modeClass(active: boolean, disabled: boolean): string {
   return (
-    "rounded px-2 py-1 text-[12px] "
+    "rounded px-2 py-1 text-[0.8571rem] "
     + (disabled
       ? "cursor-not-allowed text-text-tertiary"
       : active

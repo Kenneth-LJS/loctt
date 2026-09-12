@@ -87,10 +87,10 @@ export function BodyConflictDialog({
         className="flex max-h-full w-full max-w-4xl flex-col gap-3 overflow-hidden rounded border border-border-default bg-bg-surface p-4 shadow-overlay"
       >
         <div>
-          <h2 className="text-[14px] font-medium text-text-primary">
+          <h2 className="text-[1rem] font-medium text-text-primary">
             {taskRef} changed while you were editing
           </h2>
-          <p className="mt-1 text-[13px] text-text-secondary">
+          <p className="mt-1 text-[0.9286rem] text-text-secondary">
             Nothing has been saved. Your text is still in the editor. Choose
             which version to keep.
           </p>
@@ -109,7 +109,7 @@ export function BodyConflictDialog({
           />
         </div>
 
-        <fieldset className="flex flex-col gap-1 text-[13px]">
+        <fieldset className="flex flex-col gap-1 text-[0.9286rem]">
           <legend className="sr-only">Resolution</legend>
           <Choice
             id="mine" checked={choice === "mine"} onSelect={setChoice}
@@ -130,10 +130,10 @@ export function BodyConflictDialog({
 
         {preview !== null && (
           <div>
-            <p className="text-[12px] text-text-tertiary">Result:</p>
+            <p className="text-[0.8571rem] text-text-tertiary">Result:</p>
             <pre
               data-testid="conflict-preview"
-              className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-bg-muted p-2 text-[12px] text-text-primary"
+              className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-bg-muted p-2 text-[0.8571rem] text-text-primary"
             >
               {preview}
             </pre>
@@ -145,7 +145,7 @@ export function BodyConflictDialog({
             type="button"
             data-testid="conflict-dismiss"
             onClick={onDismiss}
-            className="rounded px-3 py-1 text-[13px] text-text-secondary hover:bg-bg-muted"
+            className="rounded px-3 py-1 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
           >
             Cancel — save nothing
           </button>
@@ -154,7 +154,7 @@ export function BodyConflictDialog({
             data-testid="conflict-apply"
             disabled={preview === null}
             onClick={() => { if (preview !== null) onResolve(preview); }}
-            className="rounded bg-accent px-3 py-1 text-[13px] text-accent-contrast disabled:opacity-50"
+            className="rounded bg-accent px-3 py-1 text-[0.9286rem] text-accent-contrast disabled:opacity-50"
           >
             Apply
           </button>
@@ -170,10 +170,10 @@ function Version(
 ): React.JSX.Element {
   return (
     <section className="flex min-h-0 flex-col">
-      <h3 className="text-[12px] font-medium text-text-secondary">{title}</h3>
+      <h3 className="text-[0.8571rem] font-medium text-text-secondary">{title}</h3>
       <pre
         data-testid={testid}
-        className="mt-1 max-h-48 flex-1 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-bg-muted p-2 text-[12px] text-text-primary"
+        className="mt-1 max-h-48 flex-1 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-bg-muted p-2 text-[0.8571rem] text-text-primary"
       >
         {/* A whitespace-only version renders as a blank box, which
             tells the user nothing about what they are choosing —

@@ -70,7 +70,7 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
   if (sprints.isLoading) {
     return (
       <div data-testid="sprint-detail" aria-busy="true" className="p-4">
-        <LoadingState className="text-[13px] text-text-tertiary">Loading the sprint…</LoadingState>
+        <LoadingState className="text-[0.9286rem] text-text-tertiary">Loading the sprint…</LoadingState>
       </div>
     );
   }
@@ -100,21 +100,21 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
           <h1 className="mb-2 text-lg font-semibold text-text-primary">
             No sprint matches this link
           </h1>
-          <p className="mb-1 text-[13px] text-text-secondary">
-            Nothing in <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">sprints.yaml</code>{" "}
+          <p className="mb-1 text-[0.9286rem] text-text-secondary">
+            Nothing in <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">sprints.yaml</code>{" "}
             has the id{" "}
-            <code data-testid="sprint-not-found-key" className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+            <code data-testid="sprint-not-found-key" className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
               {sprintId}
             </code>
             .
           </p>
-          <p className="mb-4 text-[13px] text-text-tertiary">
+          <p className="mb-4 text-[0.9286rem] text-text-tertiary">
             It may have been deleted, or the link may have a typo.
           </p>
           <Link
             to="/sprints"
             data-testid="sprint-not-found-back"
-            className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast no-underline hover:bg-accent-hover"
+            className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast no-underline hover:bg-accent-hover"
           >
             Back to sprints
           </Link>
@@ -140,7 +140,7 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
   return (
     <div data-testid="sprint-detail" data-sprint-id={sprint.id} className="flex h-full flex-col gap-4 overflow-auto p-4">
       <div>
-        <Link to="/sprints" className="text-[12px] text-text-tertiary no-underline hover:underline">
+        <Link to="/sprints" className="text-[0.8571rem] text-text-tertiary no-underline hover:underline">
           ← All sprints
         </Link>
       </div>
@@ -157,7 +157,7 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
           data-testid="sprint-progress"
           data-sprint-progress-done={String(readout.done)}
           data-sprint-progress-total={String(readout.total)}
-          className="flex items-baseline gap-2 text-[12px] text-text-secondary"
+          className="flex items-baseline gap-2 text-[0.8571rem] text-text-secondary"
         >
           <span className="font-medium text-text-primary">Progress</span>
           {readout.kind === "none" ? (
@@ -184,7 +184,7 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
         <div
           role="alert"
           data-testid="sprint-progress-unreadable"
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {progressUnreadable.length} task
           {" "}{progressUnreadable.length === 1 ? "file" : "files"} could not be
@@ -206,8 +206,8 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
 
       <section aria-label="Tasks in this sprint" className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-[13px] font-semibold text-text-primary">Tasks</h2>
-          <span data-testid="sprint-task-count" className="text-[12px] tabular-nums text-text-tertiary">
+          <h2 className="text-[0.9286rem] font-semibold text-text-primary">Tasks</h2>
+          <span data-testid="sprint-task-count" className="text-[0.8571rem] tabular-nums text-text-tertiary">
             {String(total)}
           </span>
         </div>
@@ -226,15 +226,15 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
             context="The tasks in this sprint could not be loaded."
           />
         ) : items.length === 0 ? (
-          <p data-testid="sprint-tasks-empty" className="px-3 py-8 text-center text-[13px] text-text-tertiary">
+          <p data-testid="sprint-tasks-empty" className="px-3 py-8 text-center text-[0.9286rem] text-text-tertiary">
             {hasFilters(search)
               ? "No tasks in this sprint match the current filters."
               : "No tasks are assigned to this sprint yet."}
           </p>
         ) : (
-          <table data-testid="sprint-task-list" aria-busy={tasks.isLoading} className="w-full border-separate border-spacing-0 text-[13px]">
+          <table data-testid="sprint-task-list" aria-busy={tasks.isLoading} className="w-full border-separate border-spacing-0 text-[0.9286rem]">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-text-tertiary">
+              <tr className="text-left text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
                 <th className="border-b border-border-subtle py-1.5 pr-2 font-medium">Key</th>
                 <th className="border-b border-border-subtle py-1.5 pr-2 font-medium">Title</th>
                 <th className="border-b border-border-subtle py-1.5 pr-2 font-medium">Status</th>
@@ -252,7 +252,7 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
             <tbody>
               {items.map(t => (
                 <tr key={t.id} data-testid={`sprint-task-${t.key}`} data-task-key={t.key}>
-                  <td className="border-b border-border-subtle py-1.5 pr-2 font-mono text-[12px]">
+                  <td className="border-b border-border-subtle py-1.5 pr-2 font-mono text-[0.8571rem]">
                     <Link to="/tasks/$key" params={{ key: t.key }} className="text-accent no-underline hover:underline">
                       {t.key}
                     </Link>

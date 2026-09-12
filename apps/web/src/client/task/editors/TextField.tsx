@@ -99,7 +99,7 @@ export function TextField({
           data-testid={`meta-edit-${slug}`}
           aria-label={`${label}: ${value ?? "not set"}. Change`}
           onClick={() => { setEditing(true); }}
-          className="-mx-1 w-full rounded px-1 py-0.5 text-left text-[13px] text-text-primary hover:bg-bg-muted"
+          className="-mx-1 w-full rounded px-1 py-0.5 text-left text-[0.9286rem] text-text-primary hover:bg-bg-muted"
         >
           {value === undefined ? (
             <span className="text-text-tertiary">{placeholder}</span>
@@ -116,7 +116,7 @@ export function TextField({
           <span
             role="alert"
             data-testid={`meta-problem-${slug}`}
-            className="mt-0.5 block text-[11px] text-danger-fg"
+            className="mt-0.5 block text-[0.7857rem] text-danger-fg"
           >
             {problem}
           </span>
@@ -167,14 +167,14 @@ export function TextField({
             requestAnimationFrame(() => { triggerRef.current?.focus(); });
           }
         }}
-        className="w-full rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[13px] text-text-primary"
+        className="w-full rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.9286rem] text-text-primary"
       />
       {shown !== undefined && shown !== null && (
         <span
           id={errorId}
           role="alert"
           data-testid={`meta-problem-${slug}`}
-          className="mt-0.5 block text-[11px] text-danger-fg"
+          className="mt-0.5 block text-[0.7857rem] text-danger-fg"
         >
           {shown}
         </span>

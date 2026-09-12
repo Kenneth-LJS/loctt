@@ -48,7 +48,7 @@ export function FieldFailureNotice({
       data-field={failure.field}
       data-code={failure.code ?? "none"}
       data-data-state={failure.dataState ?? "none"}
-      className="mt-1 rounded border border-danger-fg/30 bg-danger-fg/5 px-1.5 py-1 text-[11px] text-danger-fg"
+      className="mt-1 rounded border border-danger-fg/30 bg-danger-fg/5 px-1.5 py-1 text-[0.7857rem] text-danger-fg"
     >
       {/* Names the field and the task, so a message read out of the
           corner of the eye still identifies what it is about — ERR-3's

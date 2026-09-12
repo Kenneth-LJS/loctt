@@ -52,7 +52,7 @@ function Row({ label, children, testId }: {
   readonly testId?: string;
 }) {
   return (
-    <div className="flex gap-3 border-b border-border-subtle py-1.5 text-[13px] last:border-0">
+    <div className="flex gap-3 border-b border-border-subtle py-1.5 text-[0.9286rem] last:border-0">
       <span className="w-40 shrink-0 text-text-secondary">{label}</span>
       <span className="min-w-0 flex-1 text-text-primary" data-testid={testId}>{children}</span>
     </div>
@@ -74,17 +74,17 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
   if (!status.isGitRepo) {
     return (
       <div data-testid="git-not-a-repo" data-git-blocked="not-a-repo">
-        <p className="mb-2 text-[13px] text-text-secondary">
+        <p className="mb-2 text-[0.9286rem] text-text-secondary">
           Git sync is off. LocTT works fully without it — it stores tasks as
           files either way.
         </p>
-        <p role="alert" className="mb-2 text-[13px] text-danger-fg">
+        <p role="alert" className="mb-2 text-[0.9286rem] text-danger-fg">
           This directory is not a git repository, so git sync cannot be
           enabled here.
         </p>
-        <p className="text-[13px] text-text-secondary">
+        <p className="text-[0.9286rem] text-text-secondary">
           Run{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] select-all">
+          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] select-all">
             git init
           </code>{" "}
           in the tracker&apos;s directory, or move the tracker into a repository
@@ -105,7 +105,7 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
 
   return (
     <div data-testid="git-disabled">
-      <p className="mb-3 text-[13px] text-text-secondary">
+      <p className="mb-3 text-[0.9286rem] text-text-secondary">
         Git sync is off. LocTT works fully without it — it stores tasks as
         files either way.
       </p>
@@ -115,12 +115,12 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
           role="alert"
           data-testid="git-no-remote"
           data-git-warning="no-remote"
-          className="mb-3 text-[13px] text-warn-fg"
+          className="mb-3 text-[0.9286rem] text-warn-fg"
         >
           This repository has no remote configured. Git sync can still be
           enabled, and the panel will show it as local-only: commits land on
           the branch, but there is nowhere to push them. Add one with{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] select-all">
+          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] select-all">
             git remote add origin &lt;url&gt;
           </code>{" "}
           to publish.
@@ -136,11 +136,11 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
       {confirming
         ? (
             <div data-testid="git-enable-confirm" className="rounded-md border border-border-subtle p-3">
-              <p className="mb-2 text-[13px] text-text-primary">Enabling git sync will:</p>
-              <ul className="mb-3 ml-4 list-disc text-[13px] text-text-secondary">
+              <p className="mb-2 text-[0.9286rem] text-text-primary">Enabling git sync will:</p>
+              <ul className="mb-3 ml-4 list-disc text-[0.9286rem] text-text-secondary">
                 <li>
                   create a dedicated{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
                     {status.branch}
                   </code>{" "}
                   branch, published through a temporary worktree so your
@@ -151,10 +151,10 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
                 </li>
                 <li>
                   leave{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">local/</code>,{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">.current-user</code>{" "}
+                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">local/</code>,{" "}
+                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">.current-user</code>{" "}
                   and{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
                     users/&lt;id&gt;/settings.yaml
                   </code>{" "}
                   gitignored — they are never published.
@@ -238,13 +238,13 @@ function EnabledState({ status, checkedAt, onRefresh }: {
   return (
     <div data-testid="git-enabled">
       <section className="mb-5">
-        <h2 className="mb-2 text-[13px] font-semibold text-text-primary">Status</h2>
+        <h2 className="mb-2 text-[0.9286rem] font-semibold text-text-primary">Status</h2>
         <Row label="Branch" testId="git-branch">
-          <code className="font-mono text-[12px]">{status.branch}</code>
+          <code className="font-mono text-[0.8571rem]">{status.branch}</code>
         </Row>
         <Row label="Remote" testId="git-remote">
           {canPush
-            ? <code className="font-mono text-[12px]">{status.remote}</code>
+            ? <code className="font-mono text-[0.8571rem]">{status.remote}</code>
             : (
                 // GIT-27: `remote` always holds a name because it
                 // defaults to "origin", so the name alone would announce
@@ -255,7 +255,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               )}
         </Row>
         <Row label="Last synced commit" testId="git-last-synced">
-          <code className="font-mono text-[12px]">{short(status.lastSyncedCommit)}</code>
+          <code className="font-mono text-[0.8571rem]">{short(status.lastSyncedCommit)}</code>
           {status.lastSyncedCommit === undefined && (
             <span className="ml-2 text-text-tertiary">never synced</span>
           )}
@@ -294,7 +294,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
           GIT-4's last bullet: a stale zero must not be mistaken for a
           fresh one, so the panel says when it last looked.
         */}
-        <div className="mt-2 flex items-center gap-2 text-[12px] text-text-tertiary">
+        <div className="mt-2 flex items-center gap-2 text-[0.8571rem] text-text-tertiary">
           <span data-testid="git-checked-at">
             {checkedAt === undefined
               ? "not checked yet"
@@ -317,7 +317,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
           role="alert"
           data-testid="git-reconcile-blocked"
           data-git-blocked="reconcile-in-progress"
-          className="mb-3 rounded-md border border-danger-fg p-2 text-[13px] text-danger-fg"
+          className="mb-3 rounded-md border border-danger-fg p-2 text-[0.9286rem] text-danger-fg"
         >
           A reconciliation is already in progress for this tracker. Publish and
           sync are blocked until it is finished or abandoned — neither ran, and
@@ -361,7 +361,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
         <p
           data-testid="git-publish-result"
           data-git-publish={publish.data.committed ? "committed" : "nothing-to-publish"}
-          className="mb-3 text-[13px] text-text-secondary"
+          className="mb-3 text-[0.9286rem] text-text-secondary"
         >
           {!publish.data.committed
             ? "Nothing to publish — local state already matches the branch."
@@ -383,7 +383,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
         <p
           data-testid="git-sync-result"
           data-git-sync={sync.data.updated ? "updated" : "no-op"}
-          className="mb-3 text-[13px] text-text-secondary"
+          className="mb-3 text-[0.9286rem] text-text-secondary"
         >
           {sync.data.updated
             ? `Synced: ${String(sync.data.copied ?? 0)} file(s) taken from the branch, `
@@ -410,7 +410,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
             onRetry={() => { publish.mutate(); }}
             context="publishing to the git branch"
           />
-          <p className="mt-1 text-[13px] text-text-secondary">
+          <p className="mt-1 text-[0.9286rem] text-text-secondary">
             Your local task files were not modified by the failed publish.
           </p>
         </div>
@@ -423,14 +423,14 @@ function EnabledState({ status, checkedAt, onRefresh }: {
             onRetry={() => { sync.mutate(); }}
             context="syncing from the git branch"
           />
-          <p className="mt-1 text-[13px] text-text-secondary">
+          <p className="mt-1 text-[0.9286rem] text-text-secondary">
             Your local task files were not modified by the failed sync.
           </p>
         </div>
       )}
 
       <section>
-        <h2 className="mb-2 text-[13px] font-semibold text-text-primary">Disable</h2>
+        <h2 className="mb-2 text-[0.9286rem] font-semibold text-text-primary">Disable</h2>
         {confirmingDisable
           ? (
               <div data-testid="git-disable-confirm" className="rounded-md border border-border-subtle p-3">
@@ -439,9 +439,9 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                   "Disable" next to a branch name reads like a delete
                   unless it explicitly says the branch survives.
                 */}
-                <p className="mb-2 text-[13px] text-text-secondary">
+                <p className="mb-2 text-[0.9286rem] text-text-secondary">
                   Disabling stops publishing and syncing. The{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
                     {status.branch}
                   </code>{" "}
                   branch and its full history are <strong>left intact</strong> —
@@ -490,7 +490,7 @@ export function GitSyncPanel() {
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Sync
       </h1>
-      <p className="mb-4 text-[13px] text-text-secondary">
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Git-backed mode publishes this tracker&apos;s files to a dedicated
         branch so other clones can sync them.
       </p>
@@ -504,7 +504,7 @@ export function GitSyncPanel() {
       )}
 
       {!status.isError && status.isLoading && (
-        <p className="text-[13px] text-text-tertiary">Reading git status…</p>
+        <p className="text-[0.9286rem] text-text-tertiary">Reading git status…</p>
       )}
 
       {/*
@@ -516,12 +516,12 @@ export function GitSyncPanel() {
       */}
       {status.data?.unreadable !== undefined && (
         <div role="alert" data-testid="git-status-unreadable" data-git-status="unreadable">
-          <p className="mb-2 text-[13px] text-danger-fg">
+          <p className="mb-2 text-[0.9286rem] text-danger-fg">
             Git sync settings could not be read, so this panel cannot report
             whether git mode is on.
           </p>
-          <p className="text-[13px] text-text-secondary">
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+          <p className="text-[0.9286rem] text-text-secondary">
+            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
               {status.data.unreadable.path}
             </code>{" "}
             — {status.data.unreadable.reason}. Fix or restore that file and

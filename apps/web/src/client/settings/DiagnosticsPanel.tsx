@@ -53,7 +53,7 @@ function MessageWithCommands({ message }: { readonly message: string }) {
               <code
                 key={i}
                 data-testid="diagnostics-command"
-                className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] select-all"
+                className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] select-all"
               >
                 {part}
               </code>
@@ -98,9 +98,9 @@ export function DiagnosticsPanel() {
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Diagnostics
       </h1>
-      <p className="mb-3 text-[13px] text-text-secondary">
+      <p className="mb-3 text-[0.9286rem] text-text-secondary">
         The same checks{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">loctt doctor</code>{" "}
+        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">loctt doctor</code>{" "}
         runs, against this tracker.
       </p>
 
@@ -128,7 +128,7 @@ export function DiagnosticsPanel() {
             onRetry={() => { void doctor.refetch(); }}
             context="running diagnostics"
           />
-          <p className="mt-2 text-[13px] text-text-secondary">
+          <p className="mt-2 text-[0.9286rem] text-text-secondary">
             No checks completed, so none of them are reported as passing.
             Retry re-runs the whole set.
           </p>
@@ -136,7 +136,7 @@ export function DiagnosticsPanel() {
       )}
 
       {!doctor.isError && doctor.isLoading && (
-        <p data-testid="diagnostics-loading" className="text-[13px] text-text-tertiary">
+        <p data-testid="diagnostics-loading" className="text-[0.9286rem] text-text-tertiary">
           Running checks…
         </p>
       )}
@@ -148,7 +148,7 @@ export function DiagnosticsPanel() {
             aggregate "OK". The summary is in addition to the rows, not
             instead of them.
           */}
-          <p data-testid="diagnostics-summary" className="mb-2 text-[13px] text-text-secondary">
+          <p data-testid="diagnostics-summary" className="mb-2 text-[0.9286rem] text-text-secondary">
             {String(counts.ok)} passed · {String(counts.warn)} warning
             {counts.warn === 1 ? "" : "s"} · {String(counts.error)} failed
           </p>
@@ -164,7 +164,7 @@ export function DiagnosticsPanel() {
                 key={i}
                 data-testid={`diagnostics-check-${check.name.replace(/\s+/g, "-")}`}
                 data-check-status={check.status}
-                className="flex gap-3 border-b border-border-subtle py-2 text-[13px] last:border-0"
+                className="flex gap-3 border-b border-border-subtle py-2 text-[0.9286rem] last:border-0"
               >
                 <span
                   className={`w-12 shrink-0 font-medium ${STATUS_CLASS[check.status]}`}

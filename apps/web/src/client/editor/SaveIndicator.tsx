@@ -23,7 +23,7 @@ export function SaveIndicator(
         role="alert"
         data-testid="save-indicator"
         data-state="failed"
-        className="flex items-center gap-2 text-[12px] text-danger-fg"
+        className="flex items-center gap-2 text-[0.8571rem] text-danger-fg"
       >
         <span>{state.message}</span>
         {/* ERR-12's fourth bullet: freeing space and retrying is the
@@ -65,7 +65,7 @@ export function SaveIndicator(
       aria-label={`Description: ${label}`}
       data-testid="save-indicator"
       data-state={state.kind}
-      className="text-[12px] text-text-tertiary"
+      className="text-[0.8571rem] text-text-tertiary"
     >
       {label}
     </span>

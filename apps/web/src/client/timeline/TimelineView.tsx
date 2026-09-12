@@ -457,7 +457,7 @@ export function TimelineView() {
         <div
           role="alert"
           data-testid="timeline-dependency-config-error"
-          className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[12px] text-text-primary"
+          className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[0.8571rem] text-text-primary"
         >
           <strong>workflow.yaml</strong>: <code>timeline.dependency_relationship</code>
           {" "}names <code data-testid="timeline-dependency-missing-key">{depStatus.key}</code>,
@@ -471,7 +471,7 @@ export function TimelineView() {
         <div
           role="alert"
           data-testid="timeline-calendar-error"
-          className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[12px] text-text-primary"
+          className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[0.8571rem] text-text-primary"
         >
           <strong>calendar.yaml</strong> could not be read, so weekend and holiday
           {" "}shading is switched off and the today-marker is placed in{" "}
@@ -493,7 +493,7 @@ export function TimelineView() {
         <div
           role="alert"
           data-testid="timeline-drag-error"
-          className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <span className="min-w-0 flex-1">
             <strong>{dropError.key}</strong>{" "}
@@ -539,14 +539,14 @@ export function TimelineView() {
         <div
           role="alert"
           data-testid="timeline-unreadable"
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
           {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
           {" "}missing from this timeline and from the counts below. Check the file.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
-              <li key={u.id} className="font-mono text-[11px]">
+              <li key={u.id} className="font-mono text-[0.7857rem]">
                 {u.path}: {u.reason}
               </li>
             ))}
@@ -566,7 +566,7 @@ export function TimelineView() {
         />
       ) : noRows ? (
         <div
-          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-md border border-border-default text-[12px] text-text-secondary"
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-md border border-border-default text-[0.8571rem] text-text-secondary"
           data-testid="timeline-empty"
         >
           <span>No tasks match this view.</span>
@@ -583,7 +583,7 @@ export function TimelineView() {
               the Unscheduled lane below is where the tasks are. */}
           {noBars && (
             <div
-              className="rounded-md border border-border-default px-3 py-2 text-[12px] text-text-secondary"
+              className="rounded-md border border-border-default px-3 py-2 text-[0.8571rem] text-text-secondary"
               data-testid="timeline-no-dated-tasks"
             >
               None of these tasks has both a start date and a due date, so there is
@@ -619,7 +619,7 @@ export function TimelineView() {
                   data-testid="timeline-drag-label"
                   data-start={drag.start}
                   data-due={drag.due}
-                  className="pointer-events-none fixed z-50 rounded border border-border-default bg-bg-canvas px-1.5 py-0.5 font-mono text-[11px] shadow"
+                  className="pointer-events-none fixed z-50 rounded border border-border-default bg-bg-canvas px-1.5 py-0.5 font-mono text-[0.7857rem] shadow"
                   style={{ left: drag.x + 12, top: drag.y + 12 }}
                 >
                   {drag.edge === "start"
@@ -636,7 +636,7 @@ export function TimelineView() {
 
       <UnscheduledLane rows={model.unscheduled} onOpenTask={openTask} />
 
-      <div className="text-[11px] text-text-secondary" data-testid="timeline-total">
+      <div className="text-[0.7857rem] text-text-secondary" data-testid="timeline-total">
         {totalRows(model)} {totalRows(model) === 1 ? "task" : "tasks"}
         {unreadable.length > 0 && (
           <span data-testid="timeline-total-unreadable">
@@ -696,7 +696,7 @@ function Toolbar(props: {
         ))}
       </div>
 
-      <label className="flex items-center gap-1 text-[12px] text-text-secondary">
+      <label className="flex items-center gap-1 text-[0.8571rem] text-text-secondary">
         Group by
         <Select
           size="sm"
@@ -714,7 +714,7 @@ function Toolbar(props: {
       {/* TML-15: the toggle reflects the state even when no
           relationship is configured — "the arrows toggle reflects that
           state" — so it is disabled rather than hidden. */}
-      <label className="flex items-center gap-1 text-[12px] text-text-secondary">
+      <label className="flex items-center gap-1 text-[0.8571rem] text-text-secondary">
         <Checkbox
           data-testid="timeline-arrows"
           checked={props.arrowsOn && props.arrowsAvailable}
@@ -755,7 +755,7 @@ function UnscheduledLane(props: {
       className="rounded-md border border-border-default bg-bg-muted"
       data-testid="timeline-unscheduled"
     >
-      <div className="border-b border-border-default px-3 py-1.5 text-[12px] font-semibold">
+      <div className="border-b border-border-default px-3 py-1.5 text-[0.8571rem] font-semibold">
         Unscheduled{" "}
         <span className="font-normal text-text-secondary" data-testid="timeline-unscheduled-count">
           ({props.rows.length})
@@ -768,7 +768,7 @@ function UnscheduledLane(props: {
               type="button"
               data-testid={`timeline-unscheduled-row-${r.task.key}`}
               onClick={() => { props.onOpenTask(r.task.key); }}
-              className="flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] hover:bg-bg-canvas"
+              className="flex w-full items-center gap-2 px-3 py-1 text-left text-[0.8571rem] hover:bg-bg-canvas"
               style={{ height: ROW_H }}
             >
               <span className="font-mono text-text-secondary">{r.task.key}</span>
@@ -796,8 +796,8 @@ function UnscheduledLane(props: {
                   data-corrupt={r.problem.kind === "corrupt" ? "true" : undefined}
                   className={
                     r.problem.kind === "corrupt"
-                      ? "ml-auto flex shrink-0 items-center gap-1 rounded border border-danger-fg/50 bg-danger-fg/10 px-1 text-[11px] text-danger-fg"
-                      : "ml-auto shrink-0 rounded border border-border-subtle px-1 text-[11px] text-text-secondary"
+                      ? "ml-auto flex shrink-0 items-center gap-1 rounded border border-danger-fg/50 bg-danger-fg/10 px-1 text-[0.7857rem] text-danger-fg"
+                      : "ml-auto shrink-0 rounded border border-border-subtle px-1 text-[0.7857rem] text-text-secondary"
                   }
                 >
                   {r.problem.kind === "corrupt" && <span aria-hidden="true">⚠</span>}

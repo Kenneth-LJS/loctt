@@ -6844,6 +6844,28 @@ day the tag should be added.
 partial test with the real transcription (assert reflow and no
 clipping at 200%) and tag it `@verifies A11Y-39`.
 
+**DONE 2026-09-12 (at Ken's direction, superseding A-A11Y39-HOLD).** The
+type scale moved to relative units and A11Y-39 is now covered:
+- `html { font-size: 87.5% }` anchors the 14px base to the browser root
+  (so text-only zoom, which scales the root, flows through); `body`
+  inherits it rather than re-pinning an absolute size (a `1rem` on
+  `<html>, body` was tried first and cancelled the 87.5% by re-resolving
+  on the root — body must simply inherit).
+- The `--text-*` named scale and all 860 inline `text-[Npx]` sites across
+  104 client files became `text-[…rem]` (rem = px / 14, preserving exact
+  size at 100%). Tailwind's numeric spacing/height utilities (`h-8`,
+  `px-3`) are already rem, so they scale too — A95's feared "123
+  fixed-height utilities" were never px; only a handful of literal
+  `h-[Npx]` remain, all on square icon/avatar badges that are graphics,
+  not text containers.
+- `@verifies A11Y-39` spec asserts a real cell's text grows at 175% root
+  zoom, nothing clips, no horizontal scroll — red-proven by reverting a
+  cell's size to `text-[13px]` (it then does not scale). Visually smoke-
+  checked in the browser at 100% and 175% (list + board): sizes identical
+  at 100%, clean reflow at 175%.
+The fear in A95 (a global visual-regression surface) did not materialise
+because the conversion was a size-preserving px→rem swap, not a redesign.
+
 ### A96 · `.loctt/local/` is excluded from the backup; `state.yaml` travels
 
 **Ticket:** M5.1 · **Date:** 2026-09-02 · **Commit:** (this one)
@@ -11680,7 +11702,12 @@ asserted the old behavior (all 1206 web-client unit tests pass). **To
 revert:** inline the predicate back into each caller and delete
 `workingDays.ts` + its test.
 
-### A-A11Y39-HOLD · A11Y-39 (text-zoom 200%) stays deferred per A95 — the one AA item needing an owner call
+### A-A11Y39-HOLD · A11Y-39 (text-zoom 200%) stays deferred per A95 — the one AA item needing an owner call · [SUPERSEDED 2026-09-12]
+
+**SUPERSEDED:** Ken chose "do the restyle now". A11Y-39 is built and
+covered — see the DONE note on A95 above. The hold below is kept for the
+record.
+
 
 **Decided (agent-level, park-don't-halt).** With A11Y-10/12/17/51 now
 built, A11Y-39 is the sole remaining WCAG-AA case (K74 makes AA a publish

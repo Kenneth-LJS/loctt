@@ -68,7 +68,7 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
         className="max-h-[80vh] w-full max-w-lg overflow-auto rounded-lg border border-border-default bg-bg-surface-raised p-4 shadow-overlay"
       >
         <div className="mb-3 flex items-start justify-between gap-3">
-          <h2 className="text-[15px] font-semibold text-text-primary">Keyboard shortcuts</h2>
+          <h2 className="text-[1.0714rem] font-semibold text-text-primary">Keyboard shortcuts</h2>
           <button
             ref={closeRef}
             type="button"
@@ -83,7 +83,7 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
 
         {groupsOf(GLOBAL_SHORTCUTS).map(({ group, items }) => (
           <section key={group} className="mb-4">
-            <h3 className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-text-tertiary">
+            <h3 className="mb-1.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary">
               {group}
             </h3>
             <ul className="m-0 list-none p-0">
@@ -93,12 +93,12 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
                   data-testid={`shortcut-row-${s.id}`}
                   className="flex items-baseline justify-between gap-4 border-b border-border-subtle py-1.5 last:border-b-0"
                 >
-                  <span className="text-[13px] text-text-primary">{s.action}</span>
+                  <span className="text-[0.9286rem] text-text-primary">{s.action}</span>
                   <span className="shrink-0" data-testid={`shortcut-keys-${s.id}`}>
                     {s.keys.map((k, i) => (
                       <span key={`${k}-${String(i)}`}>
-                        {i > 0 ? <span className="mx-1 text-[11px] text-text-tertiary">then</span> : null}
-                        <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 font-mono text-[11px] text-text-primary">
+                        {i > 0 ? <span className="mx-1 text-[0.7857rem] text-text-tertiary">then</span> : null}
+                        <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 font-mono text-[0.7857rem] text-text-primary">
                           {k}
                         </kbd>
                       </span>
@@ -110,7 +110,7 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
           </section>
         ))}
 
-        <p className="m-0 text-[12px] text-text-secondary">
+        <p className="m-0 text-[0.8571rem] text-text-secondary">
           {/* A11Y-43's third bullet: single-key shortcuts are
               documented as suppressed while typing, which is the
               mode-switch note the case asks for. */}

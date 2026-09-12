@@ -89,12 +89,12 @@ export function ErrorState({ error, onRetry, context }: Props) {
   return (
     <div role="alert" className="mx-auto max-w-lg px-4 py-10 text-center">
       {context !== undefined && (
-        <p className="mb-1 text-[13px] text-text-tertiary">{context}</p>
+        <p className="mb-1 text-[0.9286rem] text-text-tertiary">{context}</p>
       )}
-      <p className="text-[14px] text-text-primary">{headline(error)}</p>
+      <p className="text-[1rem] text-text-primary">{headline(error)}</p>
 
       {envelope?.data_state !== undefined && (
-        <p className="mt-2 text-[13px] text-text-secondary">
+        <p className="mt-2 text-[0.9286rem] text-text-secondary">
           {DATA_STATE_COPY[envelope.data_state]}
         </p>
       )}
@@ -103,7 +103,7 @@ export function ErrorState({ error, onRetry, context }: Props) {
           three different ways, and one collapsed message hides that
           (ERR-13). */}
       {envelope?.failures !== undefined && envelope.failures.length > 0 && (
-        <ul className="mt-3 space-y-1 text-left text-[13px] text-text-secondary">
+        <ul className="mt-3 space-y-1 text-left text-[0.9286rem] text-text-secondary">
           {envelope.failures.map(f => (
             <li key={f.ref}>
               <span className="font-medium text-text-primary">{f.ref}</span>: {f.message}
@@ -117,7 +117,7 @@ export function ErrorState({ error, onRetry, context }: Props) {
           <button
             type="button"
             onClick={onRetry}
-            className="rounded border border-border-subtle px-3 py-1.5 text-[13px] hover:bg-bg-muted"
+            className="rounded border border-border-subtle px-3 py-1.5 text-[0.9286rem] hover:bg-bg-muted"
           >
             Retry
           </button>
@@ -126,7 +126,7 @@ export function ErrorState({ error, onRetry, context }: Props) {
           <button
             type="button"
             onClick={() => { window.location.reload(); }}
-            className="rounded border border-border-subtle px-3 py-1.5 text-[13px] hover:bg-bg-muted"
+            className="rounded border border-border-subtle px-3 py-1.5 text-[0.9286rem] hover:bg-bg-muted"
           >
             Reload
           </button>
@@ -134,7 +134,7 @@ export function ErrorState({ error, onRetry, context }: Props) {
         {recovery?.kind === "command" && recovery.command !== undefined && (
           // Copyable, because the user has to retype it into a terminal
           // (ERR-15).
-          <code className="select-all rounded bg-bg-muted px-2 py-1 text-[12px]">
+          <code className="select-all rounded bg-bg-muted px-2 py-1 text-[0.8571rem]">
             {recovery.command}
           </code>
         )}
@@ -145,13 +145,13 @@ export function ErrorState({ error, onRetry, context }: Props) {
           <button
             type="button"
             onClick={() => { setShowDetail(v => !v); }}
-            className="text-[12px] text-text-tertiary underline"
+            className="text-[0.8571rem] text-text-tertiary underline"
           >
             {showDetail ? "Hide details" : "Show details"}
           </button>
           {showDetail && (
             // The only place raw technical text is permitted (ERR-16).
-            <pre className="mt-2 overflow-x-auto rounded bg-bg-muted p-2 text-[11px] text-text-secondary">
+            <pre className="mt-2 overflow-x-auto rounded bg-bg-muted p-2 text-[0.7857rem] text-text-secondary">
               {envelope.detail}
             </pre>
           )}

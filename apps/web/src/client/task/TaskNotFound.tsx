@@ -30,11 +30,11 @@ export function TaskNotFound({ taskKey }: { readonly taskKey: string }) {
       <div className="max-w-md text-center">
         <h1 className="mb-2 text-lg font-semibold text-text-primary">
           No task with the key{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[15px]">
+          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[1.0714rem]">
             {taskKey}
           </code>
         </h1>
-        <p className="mb-1 text-[13px] text-text-secondary">
+        <p className="mb-1 text-[0.9286rem] text-text-secondary">
           Nothing in this tracker uses that key — not as a current key,
           and not as a retired one.
         </p>
@@ -42,13 +42,13 @@ export function TaskNotFound({ taskKey }: { readonly taskKey: string }) {
             a key that was never allocated from one deleted elsewhere,
             because both answer 404. Naming both possibilities is
             honest; asserting either would not be. */}
-        <p className="mb-4 text-[13px] text-text-tertiary">
+        <p className="mb-4 text-[0.9286rem] text-text-tertiary">
           The task may have been deleted from the CLI or another
           surface, or the link may have a typo.
         </p>
         <Link
           to="/list"
-          className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast no-underline hover:bg-accent-hover"
+          className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast no-underline hover:bg-accent-hover"
         >
           Go to the task list
         </Link>

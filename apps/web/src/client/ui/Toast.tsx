@@ -124,7 +124,7 @@ function ToastItem({
   return (
     <div
       data-testid="toast"
-      className="pointer-events-auto flex items-start gap-3 rounded-md border border-border-default bg-bg-surface-raised px-3 py-2.5 text-[13px] text-text-primary shadow-overlay"
+      className="pointer-events-auto flex items-start gap-3 rounded-md border border-border-default bg-bg-surface-raised px-3 py-2.5 text-[0.9286rem] text-text-primary shadow-overlay"
     >
       {/* `min-w-0` + `truncate` is what makes NEW-22's long title
           truncate *for display only*. The stored title is untouched;

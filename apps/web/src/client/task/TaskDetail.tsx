@@ -126,7 +126,7 @@ export function TaskDetail({
     // way as a load in progress.
     return (
       <div className="grid h-full place-items-center p-8">
-        <p aria-busy="true" className="text-[13px] text-text-tertiary">
+        <p aria-busy="true" className="text-[0.9286rem] text-text-tertiary">
           Loading {taskRef}…
         </p>
       </div>
@@ -320,7 +320,7 @@ export function TaskDetail({
         {/* All tasks › project label. The label is the project's `name`
             — not its slug `key` or its `prefix`, which name the same
             thing to the machine and nothing to the reader (TSK-1). */}
-        <nav aria-label="Breadcrumb" className="mb-2 flex items-center gap-1.5 text-[12px]">
+        <nav aria-label="Breadcrumb" className="mb-2 flex items-center gap-1.5 text-[0.8571rem]">
           <Link
             to="/list"
             className="text-text-tertiary no-underline hover:text-text-primary"
@@ -357,14 +357,14 @@ export function TaskDetail({
                   is live (TSK-2). */}
               <span
                 data-testid="task-key-chip"
-                className="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-[12px] font-medium text-text-secondary"
+                className="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-[0.8571rem] font-medium text-text-secondary"
               >
                 {fm.key}
               </span>
               {archived && (
                 <span
                   data-testid="archived-badge"
-                  className="rounded bg-warn-fg/15 px-1.5 py-0.5 text-[11px] font-medium text-warn-fg"
+                  className="rounded bg-warn-fg/15 px-1.5 py-0.5 text-[0.7857rem] font-medium text-warn-fg"
                 >
                   Archived
                 </span>
@@ -374,14 +374,14 @@ export function TaskDetail({
                 when it wraps to a clamped height (TSK-24). */}
             <h1
               title={fm.title}
-              className="break-words text-[20px] font-semibold leading-tight text-text-primary"
+              className="break-words text-[1.4286rem] font-semibold leading-tight text-text-primary"
             >
               {fm.title}
             </h1>
             {navigatedByRetired && (
-              <p className="mt-1.5 text-[12px] text-text-tertiary">
+              <p className="mt-1.5 text-[0.8571rem] text-text-tertiary">
                 You followed{" "}
-                <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[11px]">
+                <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.7857rem]">
                   {taskRef}
                 </code>
                 , which is a retired key for this task. Its current key
@@ -392,7 +392,7 @@ export function TaskDetail({
 
           <div className="flex shrink-0 items-center gap-2">
             {copied !== null && (
-              <span role="status" className="text-[12px] text-text-tertiary">
+              <span role="status" className="text-[0.8571rem] text-text-tertiary">
                 {copied} copied
               </span>
             )}
@@ -406,7 +406,7 @@ export function TaskDetail({
                   aria-haspopup={t["aria-haspopup"]}
                   aria-expanded={t["aria-expanded"]}
                   id={t.id}
-                  className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[13px] text-text-secondary hover:bg-bg-muted"
+                  className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
                 >
                   More
                 </button>
@@ -483,7 +483,7 @@ export function TaskDetail({
         </div>
 
         {writeError !== null && (
-          <p role="alert" className="mt-3 text-[13px] text-danger-fg">
+          <p role="alert" className="mt-3 text-[0.9286rem] text-danger-fg">
             {writeError}{" "}
             <button
               type="button"
@@ -716,7 +716,7 @@ function Section({
 }) {
   return (
     <section>
-      <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-text-tertiary">
+      <h2 className="mb-2 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary">
         {title}
       </h2>
       {children}

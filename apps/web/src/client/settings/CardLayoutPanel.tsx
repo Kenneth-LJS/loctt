@@ -119,7 +119,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
   return (
     <div className="p-8" data-testid="card-layout-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Card layout</h1>
-      <p className="mb-6 max-w-prose text-[12px] text-text-secondary">
+      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
         Which fields board cards show, and in what order. Saved against your
         user — other people&rsquo;s boards are unaffected. The task title is
         always shown and cannot be hidden, so a card is never blank.
@@ -138,7 +138,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
               const isVisible = i < visible.length;
               return (
                 <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface px-2 py-1">
-                  <span className="flex-1 text-[13px] text-text-primary">
+                  <span className="flex-1 text-[0.9286rem] text-text-primary">
                     {FIELD_LABELS[field]}
                   </span>
                   <button
@@ -147,7 +147,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
                     aria-pressed={isVisible}
                     onClick={() => { toggle(field); }}
                     className={
-                      "rounded px-2 py-0.5 text-[12px] "
+                      "rounded px-2 py-0.5 text-[0.8571rem] "
                       + (isVisible
                         ? "bg-accent-muted text-accent"
                         : "bg-bg-muted text-text-tertiary")
@@ -164,7 +164,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
             type="button"
             data-testid="card-layout-reset"
             onClick={() => { write(DEFAULT_CARD_LAYOUT); }}
-            className="mt-3 text-[12px] text-accent hover:underline"
+            className="mt-3 text-[0.8571rem] text-accent hover:underline"
           >
             Reset to the default layout
           </button>
@@ -174,18 +174,18 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
             visible before leaving the panel — including the outcome of
             hiding everything. */}
         <div className="w-64">
-          <h2 className="mb-2 text-[13px] font-semibold text-text-primary">Preview</h2>
+          <h2 className="mb-2 text-[0.9286rem] font-semibold text-text-primary">Preview</h2>
           <div
             data-testid="card-layout-preview"
             className="rounded-lg border border-border-subtle bg-bg-surface p-3"
           >
-            <div className="mb-1 text-[13px] font-medium text-text-primary">
+            <div className="mb-1 text-[0.9286rem] font-medium text-text-primary">
               Rewrite the export pipeline
             </div>
             {visible.length === 0 ? (
               <p
                 data-testid="card-layout-preview-empty"
-                className="text-[11px] italic text-text-tertiary"
+                className="text-[0.7857rem] italic text-text-tertiary"
               >
                 Title only — every field is hidden. Cards stay clickable.
               </p>
@@ -195,7 +195,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
                   <span
                     key={f}
                     data-preview-field={f}
-                    className="rounded bg-bg-muted px-1.5 py-0.5 text-[11px] text-text-secondary"
+                    className="rounded bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] text-text-secondary"
                   >
                     {PREVIEW_VALUES[f]}
                   </span>
@@ -207,7 +207,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
       </div>
 
       {save.isError ? (
-        <p role="alert" className="mt-4 text-[12px] text-danger-fg">
+        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
           The layout was not saved. The list shows your last saved layout.
         </p>
       ) : null}

@@ -55,12 +55,12 @@ export function DeleteCommentDialog({
     >
       <blockquote
         data-testid="delete-comment-preview"
-        className="mt-3 max-h-24 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-border-subtle pl-3 text-[13px] text-text-secondary"
+        className="mt-3 max-h-24 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-border-subtle pl-3 text-[0.9286rem] text-text-secondary"
       >
         {preview}
       </blockquote>
       {error !== undefined && (
-        <p role="alert" className="mt-3 text-[13px] text-danger-fg">
+        <p role="alert" className="mt-3 text-[0.9286rem] text-danger-fg">
           {error}
         </p>
       )}

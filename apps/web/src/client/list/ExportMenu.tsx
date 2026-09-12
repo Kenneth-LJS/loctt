@@ -138,7 +138,7 @@ export function ExportMenu({
           aria-label="Export"
           className="absolute right-0 z-20 mt-1 min-w-[190px] rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg"
         >
-          <p className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-text-tertiary">
+          <p className="px-3 py-1.5 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
             {/* The filter total, not the page size — the file will hold
                 every match, including rows not yet loaded. */}
             Export {total} {total === 1 ? "task" : "tasks"}
@@ -156,7 +156,7 @@ export function ExportMenu({
               e.preventDefault();
               void run("csv");
             }}
-            className="block px-3 py-1.5 text-[12px] text-text-primary no-underline hover:bg-bg-muted"
+            className="block px-3 py-1.5 text-[0.8571rem] text-text-primary no-underline hover:bg-bg-muted"
           >
             CSV
           </a>
@@ -169,7 +169,7 @@ export function ExportMenu({
               e.preventDefault();
               void run("json");
             }}
-            className="block px-3 py-1.5 text-[12px] text-text-primary no-underline hover:bg-bg-muted"
+            className="block px-3 py-1.5 text-[0.8571rem] text-text-primary no-underline hover:bg-bg-muted"
           >
             JSON
           </a>
@@ -177,7 +177,7 @@ export function ExportMenu({
       )}
 
       {failure !== undefined && (
-        <span role="status" className="ml-2 text-[12px] text-danger-fg">
+        <span role="status" className="ml-2 text-[0.8571rem] text-danger-fg">
           The {failure.format.toUpperCase()} export could not be created:
           {" "}{failure.reason}
           <Button
@@ -196,7 +196,7 @@ export function ExportMenu({
         // rather than an alert: the export worked, and the tasks that
         // could not be read are a fact about the tracker rather than a
         // failure of this action (BLK-44).
-        <span role="status" data-export-skipped="true" className="ml-2 text-[12px] text-warn-fg">
+        <span role="status" data-export-skipped="true" className="ml-2 text-[0.8571rem] text-warn-fg">
           {skipped.length} task{skipped.length === 1 ? "" : "s"} could not be read and
           {" "}{skipped.length === 1 ? "is" : "are"} missing from the file:
           {" "}<span className="font-mono">{skipped.join(", ")}</span>.

@@ -70,7 +70,7 @@ export function TreeRows({
                   return next;
                 });
               }}
-              className="shrink-0 rounded px-1 text-[11px] text-text-tertiary hover:bg-bg-muted"
+              className="shrink-0 rounded px-1 text-[0.7857rem] text-text-tertiary hover:bg-bg-muted"
             >
               {isCollapsed ? "▸" : "▾"}
             </button>
@@ -114,14 +114,14 @@ export function TreeRows({
                display stops at the repeat and marks it. */
             <span
               data-testid="tree-cycle-marker"
-              className="shrink-0 rounded border border-dashed border-danger-fg/60 px-1 py-0.5 text-[11px] text-danger-fg"
+              className="shrink-0 rounded border border-dashed border-danger-fg/60 px-1 py-0.5 text-[0.7857rem] text-danger-fg"
             >
               cycle detected — {node.cycleWith} already appears above
             </span>
           )}
 
           {node.truncated && (
-            <span className="shrink-0 text-[11px] text-text-tertiary">
+            <span className="shrink-0 text-[0.7857rem] text-text-tertiary">
               deeper levels not shown
             </span>
           )}

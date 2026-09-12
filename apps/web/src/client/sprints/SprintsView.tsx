@@ -267,13 +267,13 @@ export function SprintsView() {
           role="alert"
           className="mx-auto max-w-2xl rounded-md border border-danger-fg/30 bg-danger-fg/5 p-4"
         >
-          <h2 className="text-[15px] font-semibold text-text-primary">
+          <h2 className="text-[1.0714rem] font-semibold text-text-primary">
             The sprint configuration could not be read
           </h2>
-          <p className="mt-2 whitespace-pre-wrap font-mono text-[12px] text-danger-fg">
+          <p className="mt-2 whitespace-pre-wrap font-mono text-[0.8571rem] text-danger-fg">
             {sprintsConfigError.envelope?.message ?? sprintsConfigError.message}
           </p>
-          <p className="mt-3 text-[13px] text-text-secondary">
+          <p className="mt-3 text-[0.9286rem] text-text-secondary">
             No sprints could be loaded — the whole file failed to parse, so
             this is not an empty tracker. Fix{" "}
             <code className="font-mono">.loctt/config/sprints.yaml</code> and
@@ -318,7 +318,7 @@ export function SprintsView() {
           to="/settings/$section"
           params={{ section: "sprints" }}
           data-testid="sprints-manage-link"
-          className="text-[12px] text-accent no-underline hover:underline"
+          className="text-[0.8571rem] text-accent no-underline hover:underline"
         >
           Manage sprints in Settings →
         </Link>
@@ -326,7 +326,7 @@ export function SprintsView() {
           // SPR-1: archived sprints appear only behind this affordance.
           // A checkbox so the state is announced; nothing here writes to
           // sprints.yaml (unarchiving is a Settings action).
-          <label className="flex items-center gap-1.5 text-[12px] text-text-secondary">
+          <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
             <input
               type="checkbox"
               data-testid="sprints-show-archived"
@@ -365,7 +365,7 @@ export function SprintsView() {
         <div
           role="alert"
           data-testid="sprints-move-error"
-          className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <span className="min-w-0 flex-1">
             <strong>{moveError.key}</strong> was not moved to{" "}
@@ -405,7 +405,7 @@ export function SprintsView() {
         <div
           role="alert"
           data-testid="sprints-broken-config"
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <p className="font-medium">
             {brokenSprints.length === 1
@@ -433,7 +433,7 @@ export function SprintsView() {
                     {b.id ?? `Sprint entry #${String(b.index + 1)}`}
                   </span>
                   <span className="text-text-tertiary"> (broken)</span>
-                  <span className="mt-0.5 block break-words font-mono text-[11px] text-danger-fg/90">
+                  <span className="mt-0.5 block break-words font-mono text-[0.7857rem] text-danger-fg/90">
                     {b.error}
                   </span>
                 </span>
@@ -447,7 +447,7 @@ export function SprintsView() {
         <div
           role="alert"
           data-testid="sprints-unreadable"
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
           {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
@@ -468,7 +468,7 @@ export function SprintsView() {
       {!loading && realColumns.length === 0 && brokenSprints.length === 0 && (
         <div
           data-testid="sprints-empty"
-          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[13px] text-text-tertiary"
+          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
           No sprints yet.{" "}
           <button
@@ -717,7 +717,7 @@ function Column({
                 ULID, never a slug. */}
             <span
               data-testid={`sprint-name-${column.id}`}
-              className="block truncate text-[13px] font-semibold text-text-primary"
+              className="block truncate text-[0.9286rem] font-semibold text-text-primary"
               title={column.label}
             >
               {column.label}
@@ -728,7 +728,7 @@ function Column({
             {column.sprint !== undefined && (
               <span
                 data-testid={`sprint-window-${column.id}`}
-                className="block truncate font-mono text-[10px] text-text-tertiary"
+                className="block truncate font-mono text-[0.7143rem] text-text-tertiary"
               >
                 {column.sprint.start_date} → {column.sprint.end_date}
               </span>
@@ -740,7 +740,7 @@ function Column({
               // "distinguishable without relying on hue" holds — it is a
               // labelled chip AND the heavier column border.
               <Chip variant="accent" shape="pill">
-                <span className="text-[10px] font-semibold uppercase">Active</span>
+                <span className="text-[0.7143rem] font-semibold uppercase">Active</span>
               </Chip>
             )}
             {/* SPR-1 / SPR-15 / SPR-17: the true total, and an explicit
@@ -808,7 +808,7 @@ function Column({
                 <span
                   data-testid={`sprint-countdown-${column.id}`}
                   className={[
-                    "text-[11px] tabular-nums",
+                    "text-[0.7857rem] tabular-nums",
                     overdue ? "font-medium text-danger-fg" : "text-text-tertiary",
                   ].join(" ")}
                 >
@@ -824,7 +824,7 @@ function Column({
                 to="/sprints/$key"
                 params={{ key: column.id }}
                 data-testid={`sprint-open-${column.id}`}
-                className="ml-auto text-[11px] text-accent no-underline hover:underline"
+                className="ml-auto text-[0.7857rem] text-accent no-underline hover:underline"
               >
                 Open sprint →
               </Link>
@@ -839,7 +839,7 @@ function Column({
       {overrun && expanded && (
         <p
           data-testid={`sprint-window-hint-${column.id}`}
-          className="border-b border-border-subtle px-3 py-2 text-[11px] text-text-secondary"
+          className="border-b border-border-subtle px-3 py-2 text-[0.7857rem] text-text-secondary"
         >
           This sprint is still marked <strong>active</strong>, but its dates
           ({column.sprint?.start_date} → {column.sprint?.end_date}) do not
@@ -852,7 +852,7 @@ function Column({
       {column.kind === "unknown" && expanded && (
         <p
           data-testid={`sprint-unknown-${column.id}`}
-          className="border-b border-border-subtle px-3 py-2 text-[11px] text-text-secondary"
+          className="border-b border-border-subtle px-3 py-2 text-[0.7857rem] text-text-secondary"
         >
           These tasks name a sprint that{" "}
           <code className="font-mono">sprints.yaml</code> does not define:{" "}
@@ -876,7 +876,7 @@ function Column({
             // it is inside the `data-column-id` section.
             <p
               data-testid={`sprint-placeholder-${column.id}`}
-              className="rounded border border-dashed border-border-subtle px-3 py-6 text-center text-[12px] text-text-tertiary"
+              className="rounded border border-dashed border-border-subtle px-3 py-6 text-center text-[0.8571rem] text-text-tertiary"
             >
               {column.kind === "none"
                 ? "No unassigned tasks"
@@ -966,9 +966,9 @@ function SprintMiniProgress({
         />
       </div>
       {readout.kind === "none" ? (
-        <span className="shrink-0 text-[11px] text-text-tertiary">No tasks</span>
+        <span className="shrink-0 text-[0.7857rem] text-text-tertiary">No tasks</span>
       ) : (
-        <span className="shrink-0 text-[11px] tabular-nums text-text-secondary">
+        <span className="shrink-0 text-[0.7857rem] tabular-nums text-text-secondary">
           {readout.done}/{readout.total}
           {readout.percent !== undefined && (
             <span className="ml-1 text-text-tertiary">({readout.percent}%)</span>

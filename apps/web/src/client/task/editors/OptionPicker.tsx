@@ -145,7 +145,7 @@ export function OptionPicker({
         aria-invalid={errorId !== undefined}
         aria-describedby={errorId}
         onClick={() => { setOpen(o => !o); }}
-        className="-mx-1 w-full rounded px-1 py-0.5 text-left text-[13px] text-text-primary hover:bg-bg-muted"
+        className="-mx-1 w-full rounded px-1 py-0.5 text-left text-[0.9286rem] text-text-primary hover:bg-bg-muted"
       >
         {current !== undefined ? (
           <span className="inline-flex items-center gap-1.5">
@@ -188,7 +188,7 @@ export function OptionPicker({
               role="option"
               aria-selected={false}
               onClick={() => { onClear(); close(true); }}
-              className="block w-full px-3 py-1.5 text-left text-[13px] text-text-tertiary hover:bg-bg-muted"
+              className="block w-full px-3 py-1.5 text-left text-[0.9286rem] text-text-tertiary hover:bg-bg-muted"
             >
               {clearLabel ?? `Clear ${label.toLowerCase()}`}
             </button>
@@ -210,7 +210,7 @@ export function OptionPicker({
                 close(true);
               }}
               className={
-                "block w-full px-3 py-1.5 text-left text-[13px] " +
+                "block w-full px-3 py-1.5 text-left text-[0.9286rem] " +
                 (opt.disabled === true
                   ? "cursor-not-allowed text-text-tertiary opacity-60"
                   : "text-text-primary hover:bg-bg-muted")
@@ -229,7 +229,7 @@ export function OptionPicker({
                   <span className="text-text-tertiary">{opt.suffix}</span>
                 )}
                 {opt.hint !== undefined && (
-                  <span className="font-mono text-[11px] text-text-tertiary">
+                  <span className="font-mono text-[0.7857rem] text-text-tertiary">
                     {opt.hint}
                   </span>
                 )}
@@ -237,7 +237,7 @@ export function OptionPicker({
             </button>
           ))}
           {disabledReason !== undefined && options.some(o => o.disabled === true) && (
-            <p className="border-t border-border-subtle px-3 pb-1 pt-1.5 text-[11px] text-text-tertiary">
+            <p className="border-t border-border-subtle px-3 pb-1 pt-1.5 text-[0.7857rem] text-text-tertiary">
               {disabledReason}
             </p>
           )}

@@ -77,28 +77,28 @@ export function DeleteTaskDialog({
         aria-labelledby="delete-task-title"
         className="w-full max-w-md rounded-lg border border-border-subtle bg-bg-surface p-5 shadow-lg"
       >
-        <h2 id="delete-task-title" className="text-[15px] font-semibold text-text-primary">
+        <h2 id="delete-task-title" className="text-[1.0714rem] font-semibold text-text-primary">
           Permanently delete {taskKey}?
         </h2>
 
-        <p className="mt-2 break-words text-[13px] text-text-secondary">
+        <p className="mt-2 break-words text-[0.9286rem] text-text-secondary">
           {title}
         </p>
 
-        <p className="mt-3 text-[13px] text-text-secondary">
+        <p className="mt-3 text-[0.9286rem] text-text-secondary">
           This is permanent and cannot be undone. {taskKey} and all its
           history, comments, and attachments are removed from disk.
         </p>
         {/* Names the reversible alternative at the moment of the
             decision, so archive and delete cannot be confused for one
             another (TSK-22, TSK-23). */}
-        <p className="mt-2 text-[13px] text-text-secondary">
+        <p className="mt-2 text-[0.9286rem] text-text-secondary">
           If you only want it out of the way,
           <strong className="font-medium text-text-primary"> archive </strong>
           instead — archiving is reversible and keeps the files on disk.
         </p>
 
-        <label className="mt-4 block text-[12px] font-medium text-text-secondary">
+        <label className="mt-4 block text-[0.8571rem] font-medium text-text-secondary">
           Type <code className="font-mono text-text-primary">{taskKey}</code> to confirm
           <TextField
             ref={inputRef}
@@ -113,7 +113,7 @@ export function DeleteTaskDialog({
         {/* TSK-50: the failure is stated where the user acted, and the
             dialog stays open so the delete can be retried. */}
         {error !== undefined && (
-          <p role="alert" className="mt-3 text-[13px] text-danger-fg">
+          <p role="alert" className="mt-3 text-[0.9286rem] text-danger-fg">
             {taskKey} was not deleted. {error}
           </p>
         )}

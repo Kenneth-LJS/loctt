@@ -72,13 +72,13 @@ export function MoveTaskDialog({
         </DialogActions>
       }
     >
-      <label className="block text-[12px] font-medium text-text-secondary">
+      <label className="block text-[0.8571rem] font-medium text-text-secondary">
         Destination project
         <select
           value={selected}
           onChange={e => { setSelected(e.target.value); }}
           aria-label="Destination project"
-          className="mt-1 w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 text-[13px] text-text-primary"
+          className="mt-1 w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 text-[0.9286rem] text-text-primary"
         >
           <option value="">Choose a project…</option>
           {choices.map(p => (
@@ -91,7 +91,7 @@ export function MoveTaskDialog({
       </label>
 
       {error !== undefined && (
-        <p role="alert" className="mt-3 text-[13px] text-danger-fg">
+        <p role="alert" className="mt-3 text-[0.9286rem] text-danger-fg">
           {error}
         </p>
       )}

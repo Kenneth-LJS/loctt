@@ -81,10 +81,10 @@ export function customFieldRows({
       label: key,
       node: (
         <div>
-          <span data-testid={`meta-orphan-${key}`} className="break-words text-[13px] text-text-primary">
+          <span data-testid={`meta-orphan-${key}`} className="break-words text-[0.9286rem] text-text-primary">
             {displayScalar(value)}
           </span>
-          <span className="mt-0.5 block text-[11px] text-warn-fg">
+          <span className="mt-0.5 block text-[0.7857rem] text-warn-fg">
             No longer configured — kept in the file, not editable here.
           </span>
         </div>
@@ -136,7 +136,7 @@ function renderControl(
   if (def.type === "boolean") {
     const checked = raw === true;
     return (
-      <label className="inline-flex cursor-pointer items-center gap-1.5 text-[13px] text-text-primary">
+      <label className="inline-flex cursor-pointer items-center gap-1.5 text-[0.9286rem] text-text-primary">
         <Checkbox
           data-testid={`meta-input-${def.key}`}
           aria-label={def.label}
@@ -149,7 +149,7 @@ function renderControl(
             type="button"
             aria-label={`Clear ${def.label}`}
             onClick={clear}
-            className="text-[11px] text-text-tertiary underline"
+            className="text-[0.7857rem] text-text-tertiary underline"
           >
             Clear
           </button>
@@ -225,7 +225,7 @@ function MultiEnum({
               key={key}
               data-testid={`meta-multi-${def.key}`}
               className={
-                "inline-flex items-center gap-1 rounded bg-bg-muted px-1.5 py-0.5 text-[11px] " +
+                "inline-flex items-center gap-1 rounded bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] " +
                 (opt === undefined ? "text-warn-fg" : "text-text-secondary")
               }
             >

@@ -40,7 +40,7 @@ export function ProgressReadout({
       <div
         role="alert"
         data-testid={`${idPrefix}-progress-error`}
-        className="flex items-center gap-2 text-[12px] text-danger-fg"
+        className="flex items-center gap-2 text-[0.8571rem] text-danger-fg"
       >
         <span data-testid={`${idPrefix}-progress-error-text`}>
           Progress for <strong>{milestoneName}</strong> could not be computed.
@@ -96,14 +96,14 @@ export function ProgressReadout({
           // zero: there is no denominator to compute one from.
           <span
             data-testid={`${idPrefix}-readout`}
-            className="shrink-0 text-[12px] text-text-tertiary"
+            className="shrink-0 text-[0.8571rem] text-text-tertiary"
           >
             No tasks
           </span>
         ) : (
           <span
             data-testid={`${idPrefix}-readout`}
-            className="shrink-0 text-[12px] tabular-nums text-text-secondary"
+            className="shrink-0 text-[0.8571rem] tabular-nums text-text-secondary"
           >
             {readout.done} / {readout.total}
             <span className="ml-1 text-text-tertiary">
@@ -119,7 +119,7 @@ export function ProgressReadout({
       {note !== undefined && (
         <p
           data-testid={`${idPrefix}-discarded-note`}
-          className="text-[11px] text-text-tertiary"
+          className="text-[0.7857rem] text-text-tertiary"
         >
           {note}
         </p>

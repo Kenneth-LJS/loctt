@@ -121,7 +121,7 @@ export function RelationshipEditDialog({
         </DialogActions>
       }
     >
-      <div className="space-y-3 text-[13px]">
+      <div className="space-y-3 text-[0.9286rem]">
         <label className="block">
           <span className="mb-1 block text-text-secondary">Label</span>
           <TextField
@@ -133,7 +133,7 @@ export function RelationshipEditDialog({
             aria-label="Label for the new relationship"
           />
           {problems.label !== undefined && (
-            <span data-testid="relationships-entry-label-error" className="mt-1 block text-[12px] text-danger-fg">
+            <span data-testid="relationships-entry-label-error" className="mt-1 block text-[0.8571rem] text-danger-fg">
               {problems.label}
             </span>
           )}
@@ -151,11 +151,11 @@ export function RelationshipEditDialog({
                 onChange={e => { setKeyTouched(true); setKey(e.target.value); }}
                 aria-label="Key for the new relationship"
               />
-              <span className="mt-1 block text-[12px] text-text-tertiary">
+              <span className="mt-1 block text-[0.8571rem] text-text-tertiary">
                 A key is permanent — task links store it, so it cannot be renamed later.
               </span>
               {problems.key !== undefined && (
-                <span data-testid="relationships-entry-key-error" className="mt-1 block text-[12px] text-danger-fg">
+                <span data-testid="relationships-entry-key-error" className="mt-1 block text-[0.8571rem] text-danger-fg">
                   {problems.key}
                 </span>
               )}
@@ -163,7 +163,7 @@ export function RelationshipEditDialog({
           ) : (
             <code
               data-testid="relationships-entry-key-readonly"
-              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] text-text-secondary"
+              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
             >
               {initial?.key}
             </code>
@@ -193,7 +193,7 @@ export function RelationshipEditDialog({
                 aria-label="Inverse key"
               />
               {problems.inverse !== undefined && (
-                <span data-testid="relationships-entry-inverse-error" className="mt-1 block text-[12px] text-danger-fg">
+                <span data-testid="relationships-entry-inverse-error" className="mt-1 block text-[0.8571rem] text-danger-fg">
                   {problems.inverse}
                 </span>
               )}
@@ -209,7 +209,7 @@ export function RelationshipEditDialog({
                 aria-label="Inverse label"
               />
               {problems.inverse_label !== undefined && (
-                <span data-testid="relationships-entry-inverse-label-error" className="mt-1 block text-[12px] text-danger-fg">
+                <span data-testid="relationships-entry-inverse-label-error" className="mt-1 block text-[0.8571rem] text-danger-fg">
                   {problems.inverse_label}
                 </span>
               )}

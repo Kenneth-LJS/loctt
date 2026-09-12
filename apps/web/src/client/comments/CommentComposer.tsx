@@ -252,7 +252,7 @@ export function CommentComposer({
       )}
 
       {error !== undefined && (
-        <p role="alert" data-testid={`${testId}-error`} className="text-[12px] text-danger-fg">
+        <p role="alert" data-testid={`${testId}-error`} className="text-[0.8571rem] text-danger-fg">
           {error}
         </p>
       )}
@@ -286,7 +286,7 @@ export function CommentComposer({
           </Button>
         )}
         {reason !== undefined && (
-          <span id={reasonId} data-testid={`${testId}-reason`} className="text-[12px] text-text-tertiary">
+          <span id={reasonId} data-testid={`${testId}-reason`} className="text-[0.8571rem] text-text-tertiary">
             {reason}
           </span>
         )}
@@ -297,7 +297,7 @@ export function CommentComposer({
 
 function modeClass(active: boolean): string {
   return (
-    "rounded px-2 py-1 text-[12px] "
+    "rounded px-2 py-1 text-[0.8571rem] "
     + (active
       ? "bg-accent-muted text-text-primary"
       : "text-text-secondary hover:bg-bg-muted")

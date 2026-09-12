@@ -60,7 +60,7 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
   const presetText = (draft.preset_values ?? []).join(", ");
 
   return (
-    <div className="grid max-w-lg gap-3 text-[13px]" data-testid="estimation-panel">
+    <div className="grid max-w-lg gap-3 text-[0.9286rem]" data-testid="estimation-panel">
       <label className="flex items-center gap-2">
         <Checkbox
           data-testid="estimation-enabled"
@@ -117,7 +117,7 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
             id="estimation-unit-label-problem"
             role="alert"
             data-testid="estimation-unit-label-problem"
-            className="text-[11px] text-danger-fg"
+            className="text-[0.7857rem] text-danger-fg"
           >
             {problems.unit_label}
           </p>
@@ -155,7 +155,7 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
               id="estimation-preset-values-problem"
               role="alert"
               data-testid="estimation-preset-values-problem"
-              className="text-[11px] text-danger-fg"
+              className="text-[0.7857rem] text-danger-fg"
             >
               {problems.preset_values}
             </p>
@@ -163,19 +163,19 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
         </label>
       )}
 
-      <p data-testid="estimation-aggregate-note" className="text-[12px] text-text-tertiary">
+      <p data-testid="estimation-aggregate-note" className="text-[0.8571rem] text-text-tertiary">
         {draft.unit === "custom_enum"
           ? "In this mode the Estimate control is a select over the preset values, and sprint and milestone aggregates render as counts per category."
           : "In this mode Estimate is a number input suffixed with the unit label, and sprint and milestone aggregates show a sum."}
       </p>
 
       {save.isError && (
-        <p role="alert" data-testid="workflow-save-error" className="text-[12px] text-danger-fg">
+        <p role="alert" data-testid="workflow-save-error" className="text-[0.8571rem] text-danger-fg">
           Not saved to .loctt/config/workflow.yaml: {saveError}
         </p>
       )}
       {save.isSuccess && !save.isPending && (
-        <p data-testid="estimation-saved" className="text-[12px] text-text-tertiary">
+        <p data-testid="estimation-saved" className="text-[0.8571rem] text-text-tertiary">
           Saved.
         </p>
       )}

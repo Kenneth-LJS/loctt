@@ -23,7 +23,7 @@ describe("LoadingState", () => {
   it("defaults to the padded settings treatment but accepts a className", () => {
     const { rerender } = render(<LoadingState>Loading…</LoadingState>);
     expect(screen.getByRole("status").className).toContain("p-8");
-    rerender(<LoadingState className="text-[13px]">Loading…</LoadingState>);
-    expect(screen.getByRole("status").className).toBe("text-[13px]");
+    rerender(<LoadingState className="text-[0.9286rem]">Loading…</LoadingState>);
+    expect(screen.getByRole("status").className).toBe("text-[0.9286rem]");
   });
 });

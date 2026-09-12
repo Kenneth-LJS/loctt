@@ -59,7 +59,7 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
       data-view-archived={archived ? "true" : "false"}
       className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
     >
-      <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">
+      <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
         {view.name}
         {archived && (
           <span data-testid="view-archived-marker" className="ml-2 text-text-tertiary">
@@ -73,7 +73,7 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
       */}
       <code
         data-testid="view-query"
-        className="w-80 shrink-0 truncate rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] text-text-secondary"
+        className="w-80 shrink-0 truncate rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
         title={view.query}
       >
         {view.query}
@@ -100,7 +100,7 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
               data-testid="view-unarchive"
               disabled={unarchive.isPending}
               onClick={() => { unarchive.mutate({ id: view.id }); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[12px] disabled:opacity-50"
+              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
             >
               Unarchive
             </button>
@@ -111,7 +111,7 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
               data-testid="view-archive"
               disabled={del.isPending}
               onClick={() => { del.mutate({ id: view.id, soft: true }); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[12px] disabled:opacity-50"
+              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
             >
               Archive
             </button>
@@ -119,7 +119,7 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
 
       {confirming
         ? (
-            <span className="flex shrink-0 items-center gap-2 text-[12px]">
+            <span className="flex shrink-0 items-center gap-2 text-[0.8571rem]">
               <span className="text-text-secondary">Delete permanently?</span>
               <button
                 type="button"
@@ -146,7 +146,7 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
               type="button"
               data-testid="view-delete"
               onClick={() => { setConfirming(true); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[12px]"
+              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
             >
               Delete
             </button>
@@ -193,10 +193,10 @@ export function SavedViewsPanel() {
             }
           />
           {isConfigInvalid && (
-            <p className="mt-2 text-[13px] text-text-secondary">
+            <p className="mt-2 text-[0.9286rem] text-text-secondary">
               Your saved views have not been deleted — the file could not be
               parsed, so none of them could be loaded. Fix{" "}
-              <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+              <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
                 .loctt/config/queries.yaml
               </code>{" "}
               and reload. Built-in filters are unaffected, since they do not
@@ -238,9 +238,9 @@ export function SavedViewsPanel() {
           + New view
         </Button>
       </div>
-      <p className="mb-4 text-[13px] text-text-secondary">
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
           .loctt/config/queries.yaml
         </code>. Archived views stay runnable by their URL but are hidden
         from the sidebar.
@@ -255,7 +255,7 @@ export function SavedViewsPanel() {
 
       {all.length === 0 && broken.length === 0
         ? (
-            <p data-testid="saved-views-empty" data-views-state="empty" className="text-[13px] text-text-tertiary">
+            <p data-testid="saved-views-empty" data-views-state="empty" className="text-[0.9286rem] text-text-tertiary">
               No saved views yet.
             </p>
           )
@@ -269,7 +269,7 @@ export function SavedViewsPanel() {
 
               {archived.length > 0 && (
                 <>
-                  <h2 className="mb-1 mt-5 text-[13px] font-semibold text-text-primary">
+                  <h2 className="mb-1 mt-5 text-[0.9286rem] font-semibold text-text-primary">
                     Archived
                   </h2>
                   <ul className="m-0 list-none p-0" data-testid="saved-views-archived-list">
@@ -282,13 +282,13 @@ export function SavedViewsPanel() {
 
               {broken.length > 0 && (
                 <>
-                  <h2 className="mb-1 mt-5 text-[13px] font-semibold text-danger-fg">
+                  <h2 className="mb-1 mt-5 text-[0.9286rem] font-semibold text-danger-fg">
                     Broken
                   </h2>
-                  <p className="mb-2 text-[12px] text-text-secondary">
+                  <p className="mb-2 text-[0.8571rem] text-text-secondary">
                     These views are still in the file, but their query no longer
                     parses. Fix them from the list view or by hand in{" "}
-                    <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">
+                    <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
                       .loctt/config/queries.yaml
                     </code>.
                   </p>
@@ -300,14 +300,14 @@ export function SavedViewsPanel() {
                         data-view-broken="true"
                         className="flex flex-col gap-0.5 border-b border-border-subtle py-2 last:border-0"
                       >
-                        <span className="text-[13px] font-medium text-text-primary">
+                        <span className="text-[0.9286rem] font-medium text-text-primary">
                           {b.name}
                           <span data-testid="view-broken-marker" className="ml-2 text-danger-fg">
                             (broken)
                           </span>
                         </span>
-                        <code className="font-mono text-[12px] text-text-secondary">{b.query}</code>
-                        <span className="text-[12px] text-danger-fg">
+                        <code className="font-mono text-[0.8571rem] text-text-secondary">{b.query}</code>
+                        <span className="text-[0.8571rem] text-danger-fg">
                           {b.error}
                           {b.position !== undefined ? ` (at position ${String(b.position)})` : ""}
                         </span>

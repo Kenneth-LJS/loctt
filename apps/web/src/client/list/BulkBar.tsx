@@ -119,7 +119,7 @@ export function BulkBar({
       }}
     >
       {count > MAX_BULK_REFS && (
-        <p role="status" className="w-full text-[12px] text-danger-fg">
+        <p role="status" className="w-full text-[0.8571rem] text-danger-fg">
           {/* Stated at selection time, before anything is sent (BLK-47).
               Letting the server's validator be the first mention leaks
               its own jargon to the user (ERR-16) and wastes a round
@@ -128,7 +128,7 @@ export function BulkBar({
           {" "}{count} are selected. Clear some, or act in batches.
         </p>
       )}
-      <p aria-live="polite" className="text-[13px] font-medium text-text-primary">
+      <p aria-live="polite" className="text-[0.9286rem] font-medium text-text-primary">
         {/* Singular at one, plural above — the count is of selected
             rows, never the page size or the filter total. */}
         {count} {count === 1 ? "task" : "tasks"} selected
@@ -245,7 +245,7 @@ export function BulkResult({
     <span
       role="status"
       className={[
-        "text-[12px]",
+        "text-[0.8571rem]",
         result.failures.length > 0 ? "text-danger-fg" : "text-text-tertiary",
       ].join(" ")}
     >
@@ -348,7 +348,7 @@ function BulkPicker({
         disabled={disabled || (emptyReason !== undefined && options.length === 0)}
         title={options.length === 0 ? emptyReason : undefined}
         onClick={() => { setOpen(o => !o); }}
-        className="rounded-md border border-border-subtle px-2.5 py-1 text-[12px] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+        className="rounded-md border border-border-subtle px-2.5 py-1 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
         {label} {ICON.caretDown}
       </button>
@@ -367,18 +367,18 @@ function BulkPicker({
                 setOpen(false);
                 onPick(null);
               }}
-              className="block w-full border-b border-border-subtle px-3 py-1.5 text-left text-[12px] italic text-text-secondary hover:bg-bg-muted"
+              className="block w-full border-b border-border-subtle px-3 py-1.5 text-left text-[0.8571rem] italic text-text-secondary hover:bg-bg-muted"
             >
               {clearLabel}
             </button>
           )}
           {options.length === 0 && emptyReason !== undefined ? (
-            <div className="px-3 py-2 text-[12px] italic text-text-tertiary">
+            <div className="px-3 py-2 text-[0.8571rem] italic text-text-tertiary">
               {emptyReason}
             </div>
           ) : options.length === 0 ? (
             clearLabel === undefined && (
-              <div className="px-3 py-2 text-[12px] italic text-text-tertiary">
+              <div className="px-3 py-2 text-[0.8571rem] italic text-text-tertiary">
                 No options
               </div>
             )
@@ -392,7 +392,7 @@ function BulkPicker({
                   setOpen(false);
                   onPick(opt.id);
                 }}
-                className="block w-full px-3 py-1.5 text-left text-[12px] text-text-primary hover:bg-bg-muted"
+                className="block w-full px-3 py-1.5 text-left text-[0.8571rem] text-text-primary hover:bg-bg-muted"
               >
                 {opt.label}
                 {opt.hint !== undefined && (

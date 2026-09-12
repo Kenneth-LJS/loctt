@@ -75,7 +75,7 @@ export function RemapDeleteDialog({
 
   return (
     <Modal title={`Delete ${noun} "${itemLabel}"`} onClose={onClose}>
-      <p data-testid="remap-refcount" className="text-[13px] text-text-secondary">
+      <p data-testid="remap-refcount" className="text-[0.9286rem] text-text-secondary">
         {inUse
           ? `${String(count)} task${count === 1 ? "" : "s"} currently ${count === 1 ? "uses" : "use"} `
           : `No tasks use `}
@@ -85,11 +85,11 @@ export function RemapDeleteDialog({
 
       {inUse && (
         <fieldset className="mt-3 border-0 p-0" data-testid="remap-choice">
-          <legend className="mb-1 text-[13px] text-text-secondary">
+          <legend className="mb-1 text-[0.9286rem] text-text-secondary">
             What should happen to {count === 1 ? "that task" : `those ${String(count)} tasks`}?
           </legend>
           {alternatives.map(alt => (
-            <label key={alt.key} className="flex items-center gap-2 py-0.5 text-[13px]">
+            <label key={alt.key} className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
               <Radio
                 name="remap-target"
                 data-testid={`remap-to-${alt.key}`}
@@ -103,7 +103,7 @@ export function RemapDeleteDialog({
               </span>
             </label>
           ))}
-          <label className="mt-1 flex items-start gap-2 py-0.5 text-[13px]">
+          <label className="mt-1 flex items-start gap-2 py-0.5 text-[0.9286rem]">
             <Radio
               name="remap-target"
               data-testid="remap-clear"
@@ -124,7 +124,7 @@ export function RemapDeleteDialog({
       )}
 
       {error !== undefined && (
-        <p role="alert" data-testid="remap-error" className="mt-3 text-[12px] text-danger-fg">
+        <p role="alert" data-testid="remap-error" className="mt-3 text-[0.8571rem] text-danger-fg">
           {error}
         </p>
       )}

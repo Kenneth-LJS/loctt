@@ -89,7 +89,7 @@ export function UserDeleteDialog({
     <Modal title={`Delete user "${user.name}"?`} onClose={onClose}>
       <div className="grid gap-3" data-testid="user-delete-dialog">
         {/* The reference count, split by role where they differ. */}
-        <p data-testid="user-delete-refcount" className="text-[13px] text-text-secondary">
+        <p data-testid="user-delete-refcount" className="text-[0.9286rem] text-text-secondary">
           {usage.isLoading ? (
             "Counting task references…"
           ) : usage.isError ? (
@@ -117,11 +117,11 @@ export function UserDeleteDialog({
 
         {referenced && (
           <fieldset className="border-0 p-0" data-testid="user-delete-resolution">
-            <legend className="mb-1 text-[13px] text-text-secondary">
+            <legend className="mb-1 text-[0.9286rem] text-text-secondary">
               What should happen to those references?
             </legend>
             {others.map(o => (
-              <label key={o.id} className="flex items-center gap-2 py-0.5 text-[13px]">
+              <label key={o.id} className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
                 <input
                   type="radio"
                   name="user-delete-resolution"
@@ -134,7 +134,7 @@ export function UserDeleteDialog({
                 </span>
               </label>
             ))}
-            <label className="flex items-center gap-2 py-0.5 text-[13px]">
+            <label className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
               <input
                 type="radio"
                 name="user-delete-resolution"
@@ -149,7 +149,7 @@ export function UserDeleteDialog({
 
         {/* Permanent, and archive is the reversible alternative — stated
             in the same dialog (PRU-42). */}
-        <p className="text-[12px] text-text-tertiary">
+        <p className="text-[0.8571rem] text-text-tertiary">
           Deleting a user is <strong className="font-medium text-text-secondary">permanent</strong> and
           removes their profile from disk.{" "}
           <button
@@ -163,7 +163,7 @@ export function UserDeleteDialog({
           to hide them reversibly while keeping their task references intact.
         </p>
 
-        <label className="grid gap-1 text-[12px] font-medium text-text-secondary">
+        <label className="grid gap-1 text-[0.8571rem] font-medium text-text-secondary">
           <span>
             Type <code className="font-mono text-text-primary">{DELETE_CONFIRM_WORD}</code> to confirm
           </span>
@@ -173,12 +173,12 @@ export function UserDeleteDialog({
             value={typed}
             onChange={e => { setTyped(e.target.value); }}
             aria-label={`Type ${DELETE_CONFIRM_WORD} to confirm`}
-            className="w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 font-mono text-[13px] text-text-primary"
+            className="w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 font-mono text-[0.9286rem] text-text-primary"
           />
         </label>
 
         {mutation.isError && (
-          <div role="alert" data-testid="user-delete-error" className="text-[12px] text-danger-fg">
+          <div role="alert" data-testid="user-delete-error" className="text-[0.8571rem] text-danger-fg">
             <p>{envelope?.message ?? mutation.error.message}</p>
             <p className="mt-1 text-text-secondary">The user has not been deleted.</p>
           </div>
@@ -189,7 +189,7 @@ export function UserDeleteDialog({
             type="button"
             data-testid="user-delete-cancel"
             onClick={onClose}
-            className="h-8 rounded-md px-3 text-[13px] text-text-secondary hover:bg-bg-muted"
+            className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
           >
             Cancel
           </button>
@@ -198,7 +198,7 @@ export function UserDeleteDialog({
             data-testid="user-delete-confirm"
             disabled={blocked}
             onClick={submit}
-            className="h-8 rounded-md bg-danger-fg px-3 text-[13px] font-medium text-accent-contrast disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-8 rounded-md bg-danger-fg px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:cursor-not-allowed disabled:opacity-50"
           >
             {mutation.isPending ? "Deleting…" : "Delete user"}
           </button>

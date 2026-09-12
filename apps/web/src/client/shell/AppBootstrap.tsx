@@ -319,7 +319,7 @@ function PLACEHOLDER_INFO(schemaStatus: SchemaStatusResponse): TrackerInfoRespon
 
 function CenteredMessage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid h-screen place-items-center bg-bg-canvas text-[13px] text-text-secondary">
+    <div className="grid h-screen place-items-center bg-bg-canvas text-[0.9286rem] text-text-secondary">
       {children}
     </div>
   );

@@ -44,7 +44,7 @@ export function StatusBadge({ def, raw, health }: { def: StatusDef | undefined; 
     <span
       title={orphaned ? `"${raw}" is not defined in workflow.yaml` : undefined}
       className={[
-        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] font-medium",
+        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.8571rem] font-medium",
         orphaned
           ? "border border-dashed border-danger-fg/50 text-danger-fg"
           : cls || "bg-bg-muted text-text-secondary",
@@ -81,7 +81,7 @@ export function PriorityCell({ def, raw, health }: { def: PriorityDef | undefine
   // otherwise.
   if (!def) return <UnknownValue raw={raw} />;
   return (
-    <span className="inline-flex items-center gap-1.5 text-[13px] text-text-secondary">
+    <span className="inline-flex items-center gap-1.5 text-[0.9286rem] text-text-secondary">
       <span className={["h-2 w-2 rounded-full", dotClass].join(" ")} style={dotStyle} />
       {def.label}
       {health !== undefined && <FieldWarning health={health} />}
@@ -100,7 +100,7 @@ function UnknownValue({ raw }: { raw: string }) {
   return (
     <span
       title={`"${raw}" is not defined in workflow.yaml`}
-      className="inline-flex items-center gap-1 rounded-md border border-dashed border-danger-fg/50 px-1.5 py-0.5 text-[12px] font-medium text-danger-fg"
+      className="inline-flex items-center gap-1 rounded-md border border-dashed border-danger-fg/50 px-1.5 py-0.5 text-[0.8571rem] font-medium text-danger-fg"
     >
       <span aria-hidden="true">⚠</span>
       {raw}
@@ -145,7 +145,7 @@ function BrokenValue({ health }: { health: WireHealth }) {
     <span
       title={health.error}
       data-testid={`field-health-${health.field}`}
-      className="inline-flex items-center gap-1 rounded-md border border-dashed border-danger-fg/50 px-1.5 py-0.5 text-[12px] font-medium text-danger-fg"
+      className="inline-flex items-center gap-1 rounded-md border border-dashed border-danger-fg/50 px-1.5 py-0.5 text-[0.8571rem] font-medium text-danger-fg"
     >
       <span aria-hidden="true">⚠</span>
       {/* The raw stored value — the only remaining handle on what the
@@ -165,7 +165,7 @@ export function TypeBadge({ def, raw, health }: { def: TaskTypeDef | undefined; 
   if (!def) return <UnknownValue raw={raw} />;
   return (
     <span
-      className="inline-flex items-center rounded-md border border-border-default px-1.5 py-0.5 text-[12px] text-text-secondary"
+      className="inline-flex items-center rounded-md border border-border-default px-1.5 py-0.5 text-[0.8571rem] text-text-secondary"
       style={def?.color ? { borderColor: def.color, color: def.color } : undefined}
     >
       {def?.label ?? raw}
@@ -186,7 +186,7 @@ export function ProjectChip({ def, raw }: { def: ProjectDef | undefined; raw: st
       // entirely left BRD-23 green (the M3 gate measured it).
       data-testid="project-chip"
       className={[
-        "inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center rounded px-1.5 py-0.5 text-[0.7857rem] font-medium",
         def
           ? "bg-bg-muted text-text-secondary"
           : "border border-dashed border-danger-fg/50 text-danger-fg",
@@ -220,7 +220,7 @@ export function AssigneeCell({ user, raw, health }: { user: UserProfile | undefi
     return (
       <span
         title={`No user matches ${raw}`}
-        className="text-[12px] italic text-text-tertiary"
+        className="text-[0.8571rem] italic text-text-tertiary"
       >
         <code className="font-mono not-italic">{short}</code> (deleted user)
       </span>
@@ -234,8 +234,8 @@ export function AssigneeCell({ user, raw, health }: { user: UserProfile | undefi
     <span className="inline-flex items-center gap-1.5">
       {/* PRU-13: the stored avatar appears in the list assignee cell,
           reverting to initials on removal (PRU-31). */}
-      <UserAvatar user={user} sizeClass="h-5 w-5 text-[10px]" testId={`list-user-avatar-${user.id}`} />
-      <span className={["truncate text-[13px]", user.archived ? "text-text-tertiary" : "text-text-secondary"].join(" ")}>
+      <UserAvatar user={user} sizeClass="h-5 w-5 text-[0.7143rem]" testId={`list-user-avatar-${user.id}`} />
+      <span className={["truncate text-[0.9286rem]", user.archived ? "text-text-tertiary" : "text-text-secondary"].join(" ")}>
         {firstName}
         {user.archived ? " (archived)" : ""}
       </span>
@@ -320,7 +320,7 @@ function LabelPill({
           }
         : {})}
       title={named?.name}
-      className="inline-flex items-center rounded border border-border-subtle px-1.5 py-0.5 text-[11px]"
+      className="inline-flex items-center rounded border border-border-subtle px-1.5 py-0.5 text-[0.7857rem]"
       style={
         color
           // MSL-23: text contrast is computed against the
@@ -472,7 +472,7 @@ function LabelOverflow({
           e.stopPropagation();
           setOpen(o => !o);
         }}
-        className="inline-flex items-center rounded bg-bg-muted px-1.5 py-0.5 text-[11px] text-text-secondary hover:text-text-primary"
+        className="inline-flex items-center rounded bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] text-text-secondary hover:text-text-primary"
       >
         +{hidden.length}
       </button>

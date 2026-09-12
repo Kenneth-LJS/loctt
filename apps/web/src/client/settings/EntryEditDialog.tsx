@@ -124,7 +124,7 @@ export function EntryEditDialog({
         </DialogActions>
       }
     >
-      <div className="space-y-3 text-[13px]">
+      <div className="space-y-3 text-[0.9286rem]">
         <label className="block">
           <span className="mb-1 block text-text-secondary">Label</span>
           <TextField
@@ -136,7 +136,7 @@ export function EntryEditDialog({
             aria-label={`Label for the new ${noun}`}
           />
           {problems.label !== undefined && (
-            <span data-testid={`${collection}-entry-label-error`} className="mt-1 block text-[12px] text-danger-fg">
+            <span data-testid={`${collection}-entry-label-error`} className="mt-1 block text-[0.8571rem] text-danger-fg">
               {problems.label}
             </span>
           )}
@@ -154,12 +154,12 @@ export function EntryEditDialog({
                 onChange={e => { setKeyTouched(true); setKey(e.target.value); }}
                 aria-label={`Key for the new ${noun}`}
               />
-              <span className="mt-1 block text-[12px] text-text-tertiary">
+              <span className="mt-1 block text-[0.8571rem] text-text-tertiary">
                 A key is permanent — task files store it, so it cannot be
                 renamed later.
               </span>
               {problems.key !== undefined && (
-                <span data-testid={`${collection}-entry-key-error`} className="mt-1 block text-[12px] text-danger-fg">
+                <span data-testid={`${collection}-entry-key-error`} className="mt-1 block text-[0.8571rem] text-danger-fg">
                   {problems.key}
                 </span>
               )}
@@ -167,7 +167,7 @@ export function EntryEditDialog({
           ) : (
             <code
               data-testid={`${collection}-entry-key-readonly`}
-              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] text-text-secondary"
+              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
               title="A key is permanent: task files store it, so renaming it in place would orphan them."
             >
               {initial?.key}

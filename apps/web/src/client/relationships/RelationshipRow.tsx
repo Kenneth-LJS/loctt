@@ -119,19 +119,19 @@ export function RelationshipRowView({
       {row.missing ? (
         <span
           data-testid={missingCorrupt ? "relationship-corrupt" : "relationship-broken"}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-danger-fg"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-[0.9286rem] text-danger-fg"
         >
           <span aria-hidden="true">⚠</span>
           <span className="truncate">
             {missingCorrupt ? (
               <>
                 Corrupt task — cannot be read; repair its file{" "}
-                <code className="font-mono text-[12px]">{row.target}</code>
+                <code className="font-mono text-[0.8571rem]">{row.target}</code>
               </>
             ) : (
               <>
                 Broken link — no task with id{" "}
-                <code className="font-mono text-[12px]">{row.target}</code>
+                <code className="font-mono text-[0.8571rem]">{row.target}</code>
               </>
             )}
           </span>
@@ -147,10 +147,10 @@ export function RelationshipRowView({
             title={row.resolvedTitle}
             className="flex min-w-0 flex-1 items-center gap-2 no-underline"
           >
-            <span className="shrink-0 font-mono text-[12px] text-text-secondary">
+            <span className="shrink-0 font-mono text-[0.8571rem] text-text-secondary">
               {row.resolvedKey ?? row.target}
             </span>
-            <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">
+            <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
               {row.resolvedTitle}
             </span>
           </Link>
@@ -161,7 +161,7 @@ export function RelationshipRowView({
             <span
               data-testid="relationship-corrupt"
               title="This linked task has a corrupt field. Open it to see and repair the problem."
-              className="flex shrink-0 items-center gap-1 rounded border border-danger-fg/50 px-1 py-0.5 text-[11px] text-danger-fg"
+              className="flex shrink-0 items-center gap-1 rounded border border-danger-fg/50 px-1 py-0.5 text-[0.7857rem] text-danger-fg"
             >
               <span aria-hidden="true">⚠</span>
               <span>corrupt</span>
@@ -180,7 +180,7 @@ export function RelationshipRowView({
         <span
           data-testid="relationship-duplicate"
           title={`${String(row.duplicates)} identical edges of type "${row.type}" point at this target in the task file.`}
-          className="shrink-0 rounded border border-dashed border-warn-fg/60 px-1 py-0.5 text-[11px] text-warn-fg"
+          className="shrink-0 rounded border border-dashed border-warn-fg/60 px-1 py-0.5 text-[0.7857rem] text-warn-fg"
         >
           ×{row.duplicates} duplicate
         </span>

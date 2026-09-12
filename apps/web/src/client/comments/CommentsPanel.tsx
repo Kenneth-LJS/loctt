@@ -73,7 +73,7 @@ export function CommentsPanel({
 
   if (comments.isPending) {
     return (
-      <p aria-busy="true" className="text-[13px] text-text-tertiary">
+      <p aria-busy="true" className="text-[0.9286rem] text-text-tertiary">
         Loading comments…
       </p>
     );
@@ -102,10 +102,10 @@ export function CommentsPanel({
       : "The comments for this task could not be read.";
     return (
       <div data-testid="comments-error" className="space-y-2">
-        <p role="alert" className="text-[13px] text-danger-fg">
+        <p role="alert" className="text-[0.9286rem] text-danger-fg">
           {message}
         </p>
-        <p data-testid="composer-disabled-reason" className="text-[13px] text-text-tertiary">
+        <p data-testid="composer-disabled-reason" className="text-[0.9286rem] text-text-tertiary">
           You cannot add a comment until this file is readable — posting
           now would overwrite it and lose the comments already there.
         </p>
@@ -127,7 +127,7 @@ export function CommentsPanel({
     <div className="space-y-3">
       {list.length === 0
         ? (
-            <p data-testid="comments-empty" className="text-[13px] text-text-tertiary">
+            <p data-testid="comments-empty" className="text-[0.9286rem] text-text-tertiary">
               No comments yet.
             </p>
           )

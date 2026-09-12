@@ -67,7 +67,7 @@ function AvatarCell({ user }: { readonly user: UserProfile }) {
   return (
     <UserAvatar
       user={user}
-      sizeClass="h-8 w-8 text-[11px]"
+      sizeClass="h-8 w-8 text-[0.7857rem]"
       className="font-medium"
       imageTestId={`user-avatar-${user.id}`}
       initialsTestId={`user-initials-${user.id}`}
@@ -191,12 +191,12 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
         />
       )}
       {problem !== undefined && (
-        <p role="alert" data-testid={`user-avatar-problem-${user.id}`} className="text-[11px] text-danger-fg">
+        <p role="alert" data-testid={`user-avatar-problem-${user.id}`} className="text-[0.7857rem] text-danger-fg">
           {problem}
         </p>
       )}
       {upload.isError && (
-        <div role="alert" data-testid={`user-avatar-error-${user.id}`} className="text-[11px] text-danger-fg">
+        <div role="alert" data-testid={`user-avatar-error-${user.id}`} className="text-[0.7857rem] text-danger-fg">
           {/* PRU-40: prepared but not saved; the previous avatar stands. */}
           <p>
             The image was prepared but not saved: {serverMessage}. Your previous
@@ -209,7 +209,7 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
               // PRU-40: re-post the already-cropped file, no re-pick.
               if (prepared) upload.mutate({ id: user.id, file: prepared });
             }}
-            className="mt-1 h-7 rounded-md border border-border-default px-2 text-[12px] text-text-primary"
+            className="mt-1 h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-text-primary"
           >
             Retry
           </button>
@@ -308,7 +308,7 @@ function EditUserDialog({
       }
     >
       <div className="grid gap-3">
-        <label className="grid gap-1 text-[13px]">
+        <label className="grid gap-1 text-[0.9286rem]">
           <span className="text-text-secondary">Display name</span>
           <TextField
             data-testid={`user-edit-name-${user.id}`}
@@ -316,7 +316,7 @@ function EditUserDialog({
             onChange={e => { setName(e.target.value); }}
           />
         </label>
-        <label className="grid gap-1 text-[13px]">
+        <label className="grid gap-1 text-[0.9286rem]">
           <span className="text-text-secondary">Email</span>
           <TextField
             data-testid={`user-edit-email-${user.id}`}
@@ -325,12 +325,12 @@ function EditUserDialog({
             onChange={e => { setEmail(e.target.value); }}
           />
           {!emailOk && (
-            <p role="alert" data-testid={`user-edit-email-problem-${user.id}`} className="text-[11px] text-danger-fg">
+            <p role="alert" data-testid={`user-edit-email-problem-${user.id}`} className="text-[0.7857rem] text-danger-fg">
               Enter a valid email address, or leave it blank.
             </p>
           )}
         </label>
-        <label className="grid gap-1 text-[13px]">
+        <label className="grid gap-1 text-[0.9286rem]">
           <span className="text-text-secondary">Timezone</span>
           <Select
             data-testid={`user-edit-timezone-${user.id}`}
@@ -350,7 +350,7 @@ function EditUserDialog({
             ))}
           </Select>
           {!tzOk && (
-            <p role="alert" data-testid={`user-edit-timezone-problem-${user.id}`} className="text-[11px] text-danger-fg">
+            <p role="alert" data-testid={`user-edit-timezone-problem-${user.id}`} className="text-[0.7857rem] text-danger-fg">
               Pick a timezone.
             </p>
           )}
@@ -386,47 +386,47 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
   return (
     <div className="grid gap-3">
       {/* PRU-11: name, email, timezone — and no ID field. */}
-      <label className="grid gap-1 text-[13px]">
+      <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Display name</span>
         <input
           data-testid="user-create-name"
           value={name}
           onChange={e => { setName(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
+          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
       </label>
-      <label className="grid gap-1 text-[13px]">
+      <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Email</span>
         <input
           data-testid="user-create-email"
           value={email}
           onChange={e => { setEmail(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[13px]"
+          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
         {!emailOk && (
-          <p role="alert" data-testid="user-create-email-problem" className="text-[11px] text-danger-fg">
+          <p role="alert" data-testid="user-create-email-problem" className="text-[0.7857rem] text-danger-fg">
             Enter a valid email address, or leave it blank.
           </p>
         )}
       </label>
-      <label className="grid gap-1 text-[13px]">
+      <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Timezone</span>
         <input
           data-testid="user-create-timezone"
           value={timezone}
           onChange={e => { setTimezone(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[13px]"
+          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[0.9286rem]"
         />
       </label>
       {create.isError && (
-        <p role="alert" data-testid="user-create-error" className="text-[12px] text-danger-fg">
+        <p role="alert" data-testid="user-create-error" className="text-[0.8571rem] text-danger-fg">
           {create.error instanceof ApiError
             ? create.error.envelope?.message ?? create.error.message
             : create.error.message}
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onDone} className="h-8 rounded-md px-3 text-[13px] text-text-secondary">
+        <button type="button" onClick={onDone} className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary">
           Cancel
         </button>
         <button
@@ -443,7 +443,7 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
               { onSuccess: onDone },
             );
           }}
-          className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast disabled:opacity-50"
+          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
         >
           {create.isPending ? "Creating…" : "Create user"}
         </button>
@@ -482,13 +482,13 @@ export function UsersPanel() {
   return (
     <div className="p-8" data-testid="settings-users">
       <h1 className="mb-1 text-lg font-semibold">Users</h1>
-      <p className="mb-4 text-[13px] text-text-secondary">
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Identities that can be assigned work and attributed activity.
       </p>
 
       <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="text-[11px] uppercase tracking-wide text-text-tertiary">
+          <tr className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
             <th className="py-1 pr-3 font-medium">Avatar</th>
             <th className="py-1 pr-3 font-medium">Name</th>
             <th className="py-1 pr-3 font-medium">Email</th>
@@ -512,7 +512,7 @@ export function UsersPanel() {
                     <AvatarUpload user={u} />
                   </div>
                 </td>
-                <td className="py-2 pr-3 text-[13px]">
+                <td className="py-2 pr-3 text-[0.9286rem]">
                   {u.name}
                   {u.archived === true && (
                     <span data-testid={`user-archived-marker-${u.id}`} className="ml-1 text-text-tertiary">
@@ -520,12 +520,12 @@ export function UsersPanel() {
                     </span>
                   )}
                   {qual !== undefined && (
-                    <span data-testid={`user-qualifier-${u.id}`} className="ml-1 text-[11px] text-text-tertiary">
+                    <span data-testid={`user-qualifier-${u.id}`} className="ml-1 text-[0.7857rem] text-text-tertiary">
                       {qual}
                     </span>
                   )}
                 </td>
-                <td className="py-2 pr-3 text-[13px] text-text-secondary">{u.email ?? ""}</td>
+                <td className="py-2 pr-3 text-[0.9286rem] text-text-secondary">{u.email ?? ""}</td>
                 <td className="py-2 text-right">
                   {/* PRU-47: the row is read-only; identity fields are
                       edited in a per-row Edit dialog. */}
@@ -535,7 +535,7 @@ export function UsersPanel() {
                     onClick={() => {
                       setEditing(u);
                     }}
-                    className="h-8 rounded-md px-2 text-[13px] text-text-secondary hover:bg-bg-muted"
+                    className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
                   >
                     Edit
                   </button>
@@ -551,7 +551,7 @@ export function UsersPanel() {
                     onClick={() => {
                       archive.mutate({ id: u.id, archived: u.archived !== true });
                     }}
-                    className="h-8 rounded-md px-2 text-[13px] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+                    className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
                   >
                     {u.archived === true ? "Unarchive" : "Archive"}
                   </button>
@@ -570,14 +570,14 @@ export function UsersPanel() {
                       del.reset();
                       setDeleting(u);
                     }}
-                    className="ml-1 h-8 rounded-md px-2 text-[13px] text-danger-fg hover:bg-bg-muted disabled:opacity-50"
+                    className="ml-1 h-8 rounded-md px-2 text-[0.9286rem] text-danger-fg hover:bg-bg-muted disabled:opacity-50"
                   >
                     Delete
                   </button>
                   {isSelf && (
                     <p
                       data-testid={`user-archive-blocked-${u.id}`}
-                      className="text-[11px] text-text-tertiary"
+                      className="text-[0.7857rem] text-text-tertiary"
                     >
                       You cannot archive the user you are acting as. Switch
                       users first.
@@ -595,7 +595,7 @@ export function UsersPanel() {
           type="button"
           data-testid="user-create-open"
           onClick={() => { setCreating(true); }}
-          className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast"
+          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast"
         >
           New user
         </button>

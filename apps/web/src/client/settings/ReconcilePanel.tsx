@@ -79,7 +79,7 @@ export function ReconcilePanel() {
   if (reconcile === null) {
     if (applyResult?.reconciled === true) {
       return (
-        <p data-testid="git-reconcile-applied" className="mb-3 text-[13px] text-text-secondary">
+        <p data-testid="git-reconcile-applied" className="mb-3 text-[0.9286rem] text-text-secondary">
           Resolved {applyResult.results.length} task(s); the operation completed.
         </p>
       );
@@ -158,21 +158,21 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
       data-reconcile-mode={sentinel.mode}
       className="mb-5 rounded-md border border-warn-fg/40 bg-bg-surface p-4"
     >
-      <h2 className="mb-1 text-[14px] font-semibold text-text-primary">
+      <h2 className="mb-1 text-[1rem] font-semibold text-text-primary">
         Reconcile conflicts
       </h2>
       {/* GIT-15/GIT-18: the panel says which operation opened it and completes after Apply. */}
-      <p className="mb-3 text-[13px] text-text-secondary" data-testid="git-reconcile-intro">
+      <p className="mb-3 text-[0.9286rem] text-text-secondary" data-testid="git-reconcile-intro">
         A <strong data-testid="git-reconcile-op">{sentinel.mode}</strong> found changes made on
         both sides since the last sync. Resolve each field, then the {sentinel.mode} completes.
         Started {new Date(sentinel.started_at).toLocaleString()} · base{" "}
-        <code className="font-mono text-[12px]">{sentinel.base_commit.slice(0, 8)}</code> → remote{" "}
-        <code className="font-mono text-[12px]">{sentinel.remote_commit.slice(0, 8)}</code>.
+        <code className="font-mono text-[0.8571rem]">{sentinel.base_commit.slice(0, 8)}</code> → remote{" "}
+        <code className="font-mono text-[0.8571rem]">{sentinel.remote_commit.slice(0, 8)}</code>.
       </p>
 
       {/* GIT-5/GIT-17: auto-merged/converged fields are reported, not asked. */}
       {plan.autoMerged.length > 0 && (
-        <p data-testid="git-reconcile-automerged" className="mb-3 text-[12px] text-text-tertiary">
+        <p data-testid="git-reconcile-automerged" className="mb-3 text-[0.8571rem] text-text-tertiary">
           Auto-merged:{" "}
           {plan.autoMerged.map((a, i) => (
             <span key={`${a.taskKey}-${a.kind}`}>
@@ -188,7 +188,7 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
         <div
           role="alert"
           data-testid="git-reconcile-partial"
-          className="mb-3 rounded-md border border-danger-fg p-2 text-[13px] text-danger-fg"
+          className="mb-3 rounded-md border border-danger-fg p-2 text-[0.9286rem] text-danger-fg"
         >
           Applied {applyResult.results.filter(r => r.ok).length} of {applyResult.results.length}{" "}
           task(s). These failed and are still pending — the reconciliation is incomplete and
@@ -209,7 +209,7 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
       {/* Bulk actions + live undecided count (GIT-12, GIT-6). */}
       {plan.conflicts.length > 0 && applyResult?.reconciled !== true && (
         <>
-          <div className="mb-3 flex items-center gap-2 text-[13px]">
+          <div className="mb-3 flex items-center gap-2 text-[0.9286rem]">
             <Button
               type="button"
               variant="secondary"
@@ -269,7 +269,7 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
             </Button>
             {confirmingAbandon
               ? (
-                  <span data-testid="git-reconcile-abandon-confirm" className="flex items-center gap-2 text-[13px]">
+                  <span data-testid="git-reconcile-abandon-confirm" className="flex items-center gap-2 text-[0.9286rem]">
                     Abandon this reconciliation? Local files are left exactly as they are — this is
                     not a revert.
                     <Button
@@ -342,12 +342,12 @@ function TaskGroup({ group, decisions, collapsed, onToggle, onChoose }: {
         type="button"
         data-testid="git-reconcile-task-toggle"
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-text-primary"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.9286rem] font-medium text-text-primary"
       >
         <span aria-hidden="true">{collapsed ? ICON.caretRight : ICON.caretDown}</span>
-        <code className="font-mono text-[12px]">{group.taskKey}</code>
+        <code className="font-mono text-[0.8571rem]">{group.taskKey}</code>
         <span className="truncate text-text-secondary">{group.taskTitle}</span>
-        <span className="ml-auto text-[12px] text-text-tertiary">
+        <span className="ml-auto text-[0.8571rem] text-text-tertiary">
           {group.rows.length} field{group.rows.length === 1 ? "" : "s"}
           {groupUndecided > 0 ? ` · ${String(groupUndecided)} undecided` : ""}
         </span>
@@ -388,7 +388,7 @@ export function ConflictRow({ conflict, decision, onChoose }: {
   const fieldLabelId = useId();
 
   return (
-    <div data-testid="git-reconcile-row" data-field={conflict.field} className="px-3 py-2 text-[13px]">
+    <div data-testid="git-reconcile-row" data-field={conflict.field} className="px-3 py-2 text-[0.9286rem]">
       <div id={fieldLabelId} className="mb-1 font-medium text-text-primary">{conflict.fieldLabel}</div>
       <div className="grid grid-cols-2 gap-2">
         <SideButton
@@ -413,7 +413,7 @@ export function ConflictRow({ conflict, decision, onChoose }: {
 
       {/* GIT-14: keep-remote on a drift value warns it will render with a marker + appear in Diagnostics. */}
       {chosen === "remote" && conflict.remote.drift !== undefined && (
-        <p role="alert" data-testid="git-reconcile-drift-warning" className="mt-1 text-[12px] text-warn-fg">
+        <p role="alert" data-testid="git-reconcile-drift-warning" className="mt-1 text-[0.8571rem] text-warn-fg">
           This value is not in the local workflow.yaml. Keeping it leaves the task with a drift
           marker, and it will appear in Diagnostics until the referenced value is re-added.
         </p>
@@ -454,7 +454,7 @@ export function ConflictRow({ conflict, decision, onChoose }: {
               />
             )}
         {chosen !== undefined && (
-          <span data-testid="git-reconcile-row-decided" className="text-[12px] text-text-tertiary">
+          <span data-testid="git-reconcile-row-decided" className="text-[0.8571rem] text-text-tertiary">
             {chosen === "value" ? "custom value" : `keeping ${chosen}`}
           </span>
         )}
@@ -482,7 +482,7 @@ function SideButton({ testId, label, value, drift, corrupt, selected, onClick }:
         selected ? "border-accent bg-accent/10" : "border-border-subtle"
       }`}
     >
-      <div className="text-[11px] uppercase text-text-tertiary">{label}</div>
+      <div className="text-[0.7857rem] uppercase text-text-tertiary">{label}</div>
       <div className="text-text-primary" data-testid={`${testId}-value`}>
         {/* Phase-7B: a corrupt side shows the stored (corrupt) bytes, not
             the degraded "(none)" — and a ⚠ so it is never mistaken for an

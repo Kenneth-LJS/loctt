@@ -141,7 +141,7 @@ export function LabelsField({
             <span
               key={id}
               data-testid="label-pill"
-              className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
+              className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[0.7857rem]"
               style={pillStyle(def?.color)}
             >
               <span className="truncate">
@@ -166,14 +166,14 @@ export function LabelsField({
           aria-haspopup="listbox"
           aria-expanded={open}
           onClick={() => { setOpen(o => !o); }}
-          className="rounded-full border border-dashed border-border-subtle px-2 py-0.5 text-[11px] text-text-tertiary hover:text-text-primary"
+          className="rounded-full border border-dashed border-border-subtle px-2 py-0.5 text-[0.7857rem] text-text-tertiary hover:text-text-primary"
         >
           + Label
         </button>
       </div>
 
       {createError !== undefined && (
-        <p role="alert" data-testid="meta-label-error" className="mt-1 text-[11px] text-danger-fg">
+        <p role="alert" data-testid="meta-label-error" className="mt-1 text-[0.7857rem] text-danger-fg">
           {createError}
           {onDismissCreateError !== undefined && (
             <button type="button" onClick={onDismissCreateError} className="ml-1 underline">
@@ -205,7 +205,7 @@ export function LabelsField({
               else void create();
             }}
             placeholder="Find or create…"
-            className="mb-1 w-full rounded border border-border-subtle bg-bg-canvas px-1.5 py-1 text-[12px] text-text-primary"
+            className="mb-1 w-full rounded border border-border-subtle bg-bg-canvas px-1.5 py-1 text-[0.8571rem] text-text-primary"
           />
           {candidates.map(l => (
             <button
@@ -214,7 +214,7 @@ export function LabelsField({
               role="option"
               aria-selected={false}
               onClick={() => { attach(l.id); }}
-              className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[12px] text-text-primary hover:bg-bg-muted"
+              className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[0.8571rem] text-text-primary hover:bg-bg-muted"
             >
               <span
                 aria-hidden="true"
@@ -230,13 +230,13 @@ export function LabelsField({
               data-testid="meta-create-label"
               disabled={busy}
               onClick={() => { void create(); }}
-              className="w-full rounded px-2 py-1 text-left text-[12px] text-text-primary hover:bg-bg-muted disabled:opacity-60"
+              className="w-full rounded px-2 py-1 text-left text-[0.8571rem] text-text-primary hover:bg-bg-muted disabled:opacity-60"
             >
               Create label “{trimmed}”
             </button>
           )}
           {candidates.length === 0 && !canCreate && (
-            <p className="px-2 py-1 text-[12px] text-text-tertiary">
+            <p className="px-2 py-1 text-[0.8571rem] text-text-tertiary">
               {trimmed === "" ? "Every label is attached." : "Already attached."}
             </p>
           )}

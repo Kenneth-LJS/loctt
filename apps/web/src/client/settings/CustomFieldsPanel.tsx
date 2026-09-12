@@ -149,7 +149,7 @@ function FieldsEditor({
   return (
     <div>
       {inlineError && (
-        <div role="alert" data-testid="workflow-save-error" className="mb-3 rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[13px]">
+        <div role="alert" data-testid="workflow-save-error" className="mb-3 rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[0.9286rem]">
           <p className="font-medium text-danger-fg">
             The change was not saved to .loctt/config/workflow.yaml.
           </p>
@@ -170,7 +170,7 @@ function FieldsEditor({
       </div>
 
       {fields.length === 0 ? (
-        <p data-testid="custom-fields-empty" className="text-[13px] text-text-secondary">
+        <p data-testid="custom-fields-empty" className="text-[0.9286rem] text-text-secondary">
           This tracker declares no custom fields. Use{" "}
           <strong className="font-medium">+ Add custom field</strong> to create one.
         </p>
@@ -301,23 +301,23 @@ function FieldRow({
       data-field-multi={field.multi ? "true" : "false"}
       className="rounded-md border border-border-subtle bg-bg-surface p-3"
     >
-      <div className="flex flex-wrap items-center gap-2 text-[13px]">
+      <div className="flex flex-wrap items-center gap-2 text-[0.9286rem]">
         <span data-testid={`custom-field-label-${field.key}`} className="font-medium">
           {field.label}
         </span>
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px] text-text-secondary">
+        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary">
           {field.key}
         </code>
         <span
           data-testid={`custom-field-type-${field.key}`}
-          className="rounded bg-bg-muted px-1.5 py-0.5 text-[12px] text-text-secondary"
+          className="rounded bg-bg-muted px-1.5 py-0.5 text-[0.8571rem] text-text-secondary"
         >
           {field.type}{field.multi ? " · multi" : ""}
         </span>
         <span
           data-testid={`custom-field-searchable-${field.key}`}
           data-searchable={field.searchable ? "true" : "false"}
-          className="text-[12px] text-text-tertiary"
+          className="text-[0.8571rem] text-text-tertiary"
         >
           {field.searchable ? "searchable" : "not searchable"}
         </span>
@@ -328,7 +328,7 @@ function FieldRow({
             data-testid={`custom-field-edit-${field.key}`}
             disabled={disabled}
             onClick={onEdit}
-            className="h-7 rounded-md border border-border-default px-2 text-[12px] disabled:opacity-40"
+            className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] disabled:opacity-40"
           >
             Edit
           </button>
@@ -337,7 +337,7 @@ function FieldRow({
             data-testid={`custom-field-delete-${field.key}`}
             disabled={disabled}
             onClick={onDelete}
-            className="h-7 rounded-md border border-border-default px-2 text-[12px] text-danger-fg disabled:opacity-40"
+            className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg disabled:opacity-40"
           >
             Delete
           </button>
@@ -349,10 +349,10 @@ function FieldRow({
           <table
             data-testid={`custom-field-values-${field.key}`}
             data-sort-basis={basis}
-            className="w-full border-collapse text-left text-[12px]"
+            className="w-full border-collapse text-left text-[0.8571rem]"
           >
             <thead>
-              <tr className="text-[11px] uppercase tracking-wide text-text-tertiary">
+              <tr className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
                 <th className="py-1 pr-3 font-medium">Value</th>
                 <th className="py-1 pr-3 font-medium">Key</th>
                 <th className="py-1 pr-3 font-medium">Weight</th>
@@ -383,7 +383,7 @@ function FieldRow({
                           ? "An enum field must keep at least one value."
                           : undefined
                       }
-                      className="h-6 rounded border border-border-default px-1.5 text-[11px] text-danger-fg disabled:opacity-40"
+                      className="h-6 rounded border border-border-default px-1.5 text-[0.7857rem] text-danger-fg disabled:opacity-40"
                     >
                       Delete
                     </button>
@@ -395,7 +395,7 @@ function FieldRow({
           {/* SET-8: the panel says which fallback applies. */}
           <p
             data-testid={`custom-field-sort-note-${field.key}`}
-            className="mt-1 text-[11px] text-text-tertiary"
+            className="mt-1 text-[0.7857rem] text-text-tertiary"
           >
             {basis === "weight"
               ? "Sorting this field uses the weights above; values with no weight sort last."

@@ -302,7 +302,7 @@ export function BoardView() {
         <div
           role="alert"
           data-testid="board-move-error"
-          className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <span className="min-w-0 flex-1">
             <strong>{moveError.key}</strong> was not moved — the change was not
@@ -334,7 +334,7 @@ export function BoardView() {
         <div
           role="alert"
           data-testid="board-chip-error"
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           Column visibility was not saved, so it will reset when you reload.{" "}
           {chipError instanceof ApiError ? chipError.envelope?.message ?? chipError.message : "The server could not be reached."}
@@ -349,14 +349,14 @@ export function BoardView() {
         <div
           role="alert"
           data-testid="board-unreadable"
-          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[12px] text-danger-fg"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
           {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
           {" "}missing from this board. Check the file.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
-              <li key={u.id} className="font-mono text-[11px]">
+              <li key={u.id} className="font-mono text-[0.7857rem]">
                 {u.path}: {u.reason}
               </li>
             ))}
@@ -390,7 +390,7 @@ export function BoardView() {
           type="button"
           data-testid="board-add-task"
           onClick={() => { createTask.open(); }}
-          className="rounded border border-border-subtle px-2 py-1 text-[12px] text-text-secondary hover:bg-bg-muted"
+          className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
         >
           + Add task
         </button>
@@ -403,7 +403,7 @@ export function BoardView() {
       {!loading && total === 0 && (
         <div
           data-testid="board-empty"
-          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[13px] text-text-tertiary"
+          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
           No tasks yet.{" "}
           {/* BRD-40's affordance, now pointed at the create modal
@@ -530,7 +530,7 @@ function ColumnDriftBanner({ columns }: { readonly columns: readonly BoardColumn
     <div
       role="alert"
       data-testid="board-column-drift"
-      className="rounded-md border border-warn-fg/30 bg-warn-fg/5 px-3 py-2 text-[12px] text-warn-fg"
+      className="rounded-md border border-warn-fg/30 bg-warn-fg/5 px-3 py-2 text-[0.8571rem] text-warn-fg"
     >
       {drifted.map(c => (
         <div key={c.id}>
@@ -590,7 +590,7 @@ function ChipsBar({
             onClick={() => { onToggle(column.id); }}
             title={label}
             className={[
-              "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px]",
+              "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.8571rem]",
               off
                 // BRD-3: an off chip stays in the bar, dimmed, so the
                 // column can be turned back on.
@@ -724,14 +724,14 @@ function Column({
           {/* BRD-20: a 60-character or emoji label truncates with the
               full text on hover, rather than wrapping to five lines
               and pushing the count off-screen. */}
-          <div className="truncate text-[13px] font-semibold text-text-primary" title={column.label}>
+          <div className="truncate text-[0.9286rem] font-semibold text-text-primary" title={column.label}>
             {column.label}
           </div>
           {/* BRD-19: two statuses may share a label. Where that
               happens the key is shown as a subtitle so the user can
               tell the two columns apart. */}
           {column.disambiguator !== undefined && (
-            <div className="truncate font-mono text-[10px] text-text-tertiary">
+            <div className="truncate font-mono text-[0.7143rem] text-text-tertiary">
               {column.disambiguator}
             </div>
           )}
@@ -758,7 +758,7 @@ function Column({
             role="img"
             aria-label={`Over WIP limit: ${String(tasks.length)} of ${String(column.wip ?? 0)}`}
             data-testid={`board-wip-warning-${column.id}`}
-            className="ml-auto mr-1 shrink-0 text-[11px] text-danger-fg"
+            className="ml-auto mr-1 shrink-0 text-[0.7857rem] text-danger-fg"
           >
             ⚠
           </span>
@@ -766,7 +766,7 @@ function Column({
         <span
           data-testid={`board-count-${column.id}`}
           className={[
-            "shrink-0 rounded px-1.5 py-0.5 text-[11px] tabular-nums",
+            "shrink-0 rounded px-1.5 py-0.5 text-[0.7857rem] tabular-nums",
             over
               ? "bg-danger-fg/10 font-semibold text-danger-fg"
               : atCap
@@ -782,7 +782,7 @@ function Column({
       </header>
 
       {column.kind === "orphan" && (
-        <p className="border-b border-border-subtle px-3 py-2 text-[11px] text-text-tertiary">
+        <p className="border-b border-border-subtle px-3 py-2 text-[0.7857rem] text-text-tertiary">
           {/* BRD-18: names the orphan keys verbatim, so the user can
               find them in workflow.yaml. */}
           These tasks carry a status <code className="font-mono">workflow.yaml</code>{" "}
@@ -790,7 +790,7 @@ function Column({
         </p>
       )}
       {column.kind === "uncovered" && (
-        <p className="border-b border-border-subtle px-3 py-2 text-[11px] text-text-tertiary">
+        <p className="border-b border-border-subtle px-3 py-2 text-[0.7857rem] text-text-tertiary">
           {/* BRD-24: the uncovered statuses' tasks are shown and
               counted rather than silently omitted. */}
           Statuses not listed in any configured column:{" "}
@@ -813,7 +813,7 @@ function Column({
           // BRD-7 / ONB-11: an explicit placeholder, not a blank strip.
           <p
             data-testid={`board-placeholder-${column.id}`}
-            className="rounded border border-dashed border-border-subtle px-3 py-6 text-center text-[12px] text-text-tertiary"
+            className="rounded border border-dashed border-border-subtle px-3 py-6 text-center text-[0.8571rem] text-text-tertiary"
           >
             No tasks in {column.label}
           </p>

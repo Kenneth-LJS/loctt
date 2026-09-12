@@ -207,7 +207,7 @@ function SectionTabs({
               if (e.key === "ArrowLeft") { e.preventDefault(); move(-1); }
             }}
             className={cn(
-              "cursor-pointer -mb-px border-b-2 px-3 py-1.5 text-[13px] font-medium",
+              "cursor-pointer -mb-px border-b-2 px-3 py-1.5 text-[0.9286rem] font-medium",
               selected
                 ? "border-accent text-text-primary"
                 : "border-transparent text-text-tertiary hover:text-text-secondary",
@@ -302,7 +302,7 @@ function ActivityFeed({
 
   if (activity.isPending) {
     return (
-      <p aria-busy="true" className="text-[13px] text-text-tertiary">
+      <p aria-busy="true" className="text-[0.9286rem] text-text-tertiary">
         Loading activity…
       </p>
     );
@@ -332,10 +332,10 @@ function ActivityFeed({
       : "The activity for this task could not be read.";
     return (
       <div data-testid="activity-error" className="space-y-2">
-        <p role="alert" className="text-[13px] text-danger-fg">
+        <p role="alert" className="text-[0.9286rem] text-danger-fg">
           {message}
         </p>
-        <p className="text-[13px] text-text-tertiary">
+        <p className="text-[0.9286rem] text-text-tertiary">
           Fix the file at the path above, then try again. Comments and
           the rest of this task are unaffected.
         </p>
@@ -343,7 +343,7 @@ function ActivityFeed({
           type="button"
           data-testid="activity-retry"
           onClick={() => { void activity.refetch(); }}
-          className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[13px] text-text-secondary hover:bg-bg-muted"
+          className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
         >
           Try again
         </button>
@@ -378,7 +378,7 @@ function ActivityFeed({
     return unreadable > 0
       ? <IncompleteNotice count={unreadable} />
       : (
-          <p data-testid="activity-empty" className="text-[13px] text-text-tertiary">
+          <p data-testid="activity-empty" className="text-[0.9286rem] text-text-tertiary">
             No activity has been recorded for this task. That is unusual —
             a task created through LocTT normally has at least a “created”
             entry in its history file.
@@ -393,7 +393,7 @@ function ActivityFeed({
         pagination actually counts (CMT-25's first bullet — *entries*,
         not the collapsed rows above them).
       */}
-      <p data-testid="activity-scope" className="text-[12px] text-text-tertiary">
+      <p data-testid="activity-scope" className="text-[0.8571rem] text-text-tertiary">
         {entries.length === total
           ? `${String(total)} ${total === 1 ? "entry" : "entries"}`
           : `${String(entries.length)} of ${String(total)} entries`}
@@ -405,7 +405,7 @@ function ActivityFeed({
         <section key={section.day} data-testid="activity-day" data-day={section.day}>
           <h3
             data-testid="activity-day-heading"
-            className="mb-1 text-[12px] font-semibold text-text-secondary"
+            className="mb-1 text-[0.8571rem] font-semibold text-text-secondary"
           >
             {dayHeading(section.day, today)}
           </h3>
@@ -446,7 +446,7 @@ function ActivityFeed({
         <p
           role="alert"
           data-testid="activity-load-more-error"
-          className="text-[13px] text-danger-fg"
+          className="text-[0.9286rem] text-danger-fg"
         >
           The next page of activity could not be loaded. The
           {" "}
@@ -463,7 +463,7 @@ function ActivityFeed({
           data-testid="activity-load-more"
           disabled={activity.isFetchingNextPage}
           onClick={() => { void activity.fetchNextPage(); }}
-          className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[13px] text-text-secondary hover:bg-bg-muted disabled:opacity-60"
+          className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[0.9286rem] text-text-secondary hover:bg-bg-muted disabled:opacity-60"
         >
           {activity.isFetchingNextPage
             ? "Loading…"
@@ -489,13 +489,13 @@ function IncompleteNotice({ count }: { readonly count: number }): React.JSX.Elem
     <p
       role="status"
       data-testid="activity-incomplete"
-      className="text-[13px] text-warn-fg"
+      className="text-[0.9286rem] text-warn-fg"
     >
       This list is incomplete: {String(count)}
       {" "}
       {count === 1 ? "entry" : "entries"} in this task’s
       {" "}
-      <code className="font-mono text-[12px]">_history.yaml</code>
+      <code className="font-mono text-[0.8571rem]">_history.yaml</code>
       {" "}
       could not be read and {count === 1 ? "is" : "are"} not shown.
     </p>

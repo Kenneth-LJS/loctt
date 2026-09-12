@@ -60,7 +60,7 @@ export function BurndownChart(props: Props) {
   if (loading || series === undefined) {
     return (
       <section data-testid="burndown" aria-label="Burndown" aria-busy="true">
-        <p data-testid="burndown-loading" className="px-3 py-8 text-center text-[13px] text-text-tertiary">
+        <p data-testid="burndown-loading" className="px-3 py-8 text-center text-[0.9286rem] text-text-tertiary">
           Loading the burndown…
         </p>
       </section>
@@ -94,10 +94,10 @@ export function BurndownChart(props: Props) {
   return (
     <section data-testid="burndown" aria-label="Burndown" className="rounded-md border border-border-subtle bg-bg-surface p-3">
       <div className="mb-2 flex items-baseline justify-between gap-3">
-        <h2 className="text-[13px] font-semibold text-text-primary">Burndown</h2>
+        <h2 className="text-[0.9286rem] font-semibold text-text-primary">Burndown</h2>
         {/* SPR-9 / SPR-12 / SPR-29: the unit the config asked for.
             Never a hardcoded "Story points", never `weighted_enum`. */}
-        <span data-testid="burndown-axis-label" className="text-[12px] text-text-secondary">
+        <span data-testid="burndown-axis-label" className="text-[0.8571rem] text-text-secondary">
           {axis.label}
         </span>
       </div>
@@ -109,7 +109,7 @@ export function BurndownChart(props: Props) {
       {axis.reason === "enum-without-weights" && (
         <p
           data-testid="burndown-enum-fallback"
-          className="mb-2 rounded border border-border-subtle bg-bg-muted px-2 py-1.5 text-[12px] text-text-secondary"
+          className="mb-2 rounded border border-border-subtle bg-bg-muted px-2 py-1.5 text-[0.8571rem] text-text-secondary"
         >
           Estimation is set to <code className="font-mono">custom_enum</code>, whose
           values cannot be added up. This chart is counting <strong>tasks</strong>,
@@ -124,7 +124,7 @@ export function BurndownChart(props: Props) {
         // SPR-16: explicit, rather than a chart with no line in it.
         <p
           data-testid="burndown-empty"
-          className="px-3 py-8 text-center text-[13px] text-text-tertiary"
+          className="px-3 py-8 text-center text-[0.9286rem] text-text-tertiary"
         >
           Nothing to burn down — no tasks were in this sprint during its window.
         </p>
@@ -162,10 +162,10 @@ export function BurndownChart(props: Props) {
 
           {/* Y bounds. `yMax` is the floored one, so a zero series
               still labels a readable axis rather than 0..0. */}
-          <text x={PAD_L - 6} y={PAD_T + 4} textAnchor="end" className="fill-text-tertiary text-[10px]">
+          <text x={PAD_L - 6} y={PAD_T + 4} textAnchor="end" className="fill-text-tertiary text-[0.7143rem]">
             {formatNum(geo.yMax)}
           </text>
-          <text x={PAD_L - 6} y={VIEW_H - PAD_B} textAnchor="end" className="fill-text-tertiary text-[10px]">
+          <text x={PAD_L - 6} y={VIEW_H - PAD_B} textAnchor="end" className="fill-text-tertiary text-[0.7143rem]">
             0
           </text>
 
@@ -215,7 +215,7 @@ export function BurndownChart(props: Props) {
                 x={p.x + PAD_L}
                 y={VIEW_H - PAD_B + 12}
                 textAnchor="middle"
-                className="fill-text-tertiary text-[9px]"
+                className="fill-text-tertiary text-[0.6429rem]"
               >
                 {p.date.slice(5)}
               </text>
@@ -224,7 +224,7 @@ export function BurndownChart(props: Props) {
         </svg>
       )}
 
-      <p data-testid="burndown-summary" className="mt-1 text-[11px] text-text-tertiary">
+      <p data-testid="burndown-summary" className="mt-1 text-[0.7857rem] text-text-tertiary">
         {series.start} → {series.end} · {String(series.series.length)} day
         {series.series.length === 1 ? "" : "s"} · starting at{" "}
         <span data-testid="burndown-initial-total">{formatNum(series.initialTotal)}</span>
@@ -238,7 +238,7 @@ export function BurndownChart(props: Props) {
             <li
               key={row.value}
               data-testid={`burndown-enum-count-${row.value}`}
-              className="rounded bg-bg-muted px-1.5 py-0.5 text-[11px] text-text-secondary"
+              className="rounded bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] text-text-secondary"
             >
               {row.value}: <span className="tabular-nums">{String(row.count)}</span>
             </li>

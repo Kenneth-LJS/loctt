@@ -117,17 +117,17 @@ export function RegionErrorFallback({
   return (
     <div role="alert" className="grid h-full place-items-center p-8">
       <div className="max-w-lg">
-        <h2 className="mb-2 text-[15px] font-semibold text-danger-fg">
+        <h2 className="mb-2 text-[1.0714rem] font-semibold text-danger-fg">
           Something went wrong displaying {region}
         </h2>
-        <p className="mb-2 text-[13px] text-text-secondary">
+        <p className="mb-2 text-[0.9286rem] text-text-secondary">
           Something in the app failed to draw — a bug on our side, not a
           problem with your data. Your tasks are files in{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[12px]">.loctt/</code>{" "}
+          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">.loctt/</code>{" "}
           and a rendering fault cannot change them.
         </p>
         {writeInFlight ? (
-          <p className="mb-2 text-[13px] text-warn-fg">
+          <p className="mb-2 text-[0.9286rem] text-warn-fg">
             A change was being saved when this happened, so we can&rsquo;t tell you
             whether that one landed. Reload and check before repeating it.
           </p>
@@ -136,14 +136,14 @@ export function RegionErrorFallback({
           <button
             type="button"
             onClick={onRetry}
-            className="h-8 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-contrast hover:bg-accent-hover"
+            className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast hover:bg-accent-hover"
           >
             Try {region} again
           </button>
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="h-8 rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-secondary hover:bg-bg-muted"
+            className="h-8 rounded-md border border-border-default bg-bg-surface px-3 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
           >
             Reload
           </button>
@@ -153,15 +153,15 @@ export function RegionErrorFallback({
             // half of the recovery.
             <Link
               to="/list"
-              className="flex h-8 items-center rounded-md border border-border-default bg-bg-surface px-3 text-[13px] text-text-secondary no-underline hover:bg-bg-muted"
+              className="flex h-8 items-center rounded-md border border-border-default bg-bg-surface px-3 text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted"
             >
               Back to the task list
             </Link>
           ) : null}
         </div>
-        <details className="text-[12px] text-text-tertiary">
+        <details className="text-[0.8571rem] text-text-tertiary">
           <summary className="cursor-pointer select-none">Show details</summary>
-          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-bg-muted p-2 font-mono text-[11px]">
+          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-bg-muted p-2 font-mono text-[0.7857rem]">
             {details}
           </pre>
           <button

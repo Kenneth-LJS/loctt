@@ -119,12 +119,12 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
   return (
     <div className="p-8" data-testid="calendar-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Calendar</h1>
-      <p className="mb-4 text-[13px] text-text-secondary">
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Working days, holidays and the workspace timezone. Date pickers
         and the timeline read this.
       </p>
 
-      <div className="grid max-w-2xl gap-4 text-[13px]">
+      <div className="grid max-w-2xl gap-4 text-[0.9286rem]">
         <label className="grid gap-1">
           <span className="text-text-secondary">Timezone</span>
           <Select
@@ -140,7 +140,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
             <div
               role="alert"
               data-testid="calendar-timezone-unresolvable"
-              className="text-[11px] text-danger-fg"
+              className="text-[0.7857rem] text-danger-fg"
             >
               <p>
                 <code className="font-mono">{draft.timezone}</code> is the
@@ -175,7 +175,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
           <legend className="mb-1 text-text-secondary">Working days</legend>
           <div className="flex flex-wrap gap-3">
             {DAY_NAMES.map((n, i) => (
-              <label key={n} className="flex items-center gap-1 text-[12px]">
+              <label key={n} className="flex items-center gap-1 text-[0.8571rem]">
                 <Checkbox
                   data-testid={`calendar-working-day-${String(i)}`}
                   checked={draft.working_days.includes(i)}
@@ -196,7 +196,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
             <p
               role="alert"
               data-testid="calendar-no-working-days"
-              className="mt-1 text-[11px] text-danger-fg"
+              className="mt-1 text-[0.7857rem] text-danger-fg"
             >
               No working days are left. Working-day computations —
               &quot;due this week&quot;, &quot;N working days from
@@ -209,7 +209,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
         <div>
           <div className="mb-1 flex items-center gap-2">
             <span className="text-text-secondary">Holidays</span>
-            <span data-testid="calendar-holiday-count" className="text-[12px] text-text-tertiary">
+            <span data-testid="calendar-holiday-count" className="text-[0.8571rem] text-text-tertiary">
               {String(draft.holidays.length)} entr
               {draft.holidays.length === 1 ? "y" : "ies"}
             </span>
@@ -220,7 +220,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
             data-testid="calendar-holidays"
             className="max-h-72 overflow-y-auto rounded-md border border-border-subtle"
           >
-            <table className="w-full border-collapse text-left text-[12px]">
+            <table className="w-full border-collapse text-left text-[0.8571rem]">
               <tbody>
                 {draft.holidays.map((h, i) => {
                   const isInvalid = invalid.includes(i);
@@ -258,7 +258,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
                           <span
                             role="alert"
                             data-testid={`calendar-holiday-problem-${String(i)}`}
-                            className="text-[11px] text-danger-fg"
+                            className="text-[0.7857rem] text-danger-fg"
                           >
                             &quot;{h.date}&quot; is not a date. Expected
                             YYYY-MM-DD.
@@ -267,7 +267,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
                         {!isInvalid && isDuplicate && (
                           <span
                             data-testid={`calendar-holiday-duplicate-${String(i)}`}
-                            className="text-[11px] text-warn-fg"
+                            className="text-[0.7857rem] text-warn-fg"
                           >
                             {h.date} appears more than once.
                           </span>
@@ -310,7 +310,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
         </div>
 
         {/* SET-25: the panel states which fields move with the zone. */}
-        <p data-testid="calendar-timezone-note" className="text-[12px] text-text-tertiary">
+        <p data-testid="calendar-timezone-note" className="text-[0.8571rem] text-text-tertiary">
           Changing the timezone rewrites nothing already stored. Task{" "}
           <code className="font-mono">due_date</code> and{" "}
           <code className="font-mono">start_date</code> are date-only and
@@ -322,7 +322,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
         </p>
 
         {invalid.length > 0 && (
-          <p role="alert" data-testid="calendar-blocked" className="text-[12px] text-danger-fg">
+          <p role="alert" data-testid="calendar-blocked" className="text-[0.8571rem] text-danger-fg">
             {invalid.length === 1 ? "One holiday row is" : `${String(invalid.length)} holiday rows are`}{" "}
             not a valid date. Fix or remove{" "}
             {invalid.length === 1 ? "it" : "them"} — the other{" "}
@@ -332,14 +332,14 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
         )}
 
         {save.isError && (
-          <p role="alert" data-testid="calendar-save-error" className="text-[12px] text-danger-fg">
+          <p role="alert" data-testid="calendar-save-error" className="text-[0.8571rem] text-danger-fg">
             {tooLarge
               ? `The calendar was too large to send: ${String(draft.holidays.length)} holidays exceeded the request size limit. The configuration already on disk is still in effect — trim the list and save again.`
               : `Not saved to .loctt/config/calendar.yaml: ${saveError ?? "unknown error"}`}
           </p>
         )}
         {save.isSuccess && !save.isPending && (
-          <p data-testid="calendar-saved" className="text-[12px] text-text-tertiary">Saved.</p>
+          <p data-testid="calendar-saved" className="text-[0.8571rem] text-text-tertiary">Saved.</p>
         )}
 
         <div>

@@ -77,7 +77,7 @@ export function FilterDropdown({
           onClick={toggleMenu}
           aria-label={`Filter ${label}`}
           className={[
-            "inline-flex h-8 items-center gap-1 rounded-md border px-2.5 text-[13px]",
+            "inline-flex h-8 items-center gap-1 rounded-md border px-2.5 text-[0.9286rem]",
             count > 0
               ? "border-accent bg-accent-muted text-accent"
               : "border-border-default bg-bg-surface text-text-secondary hover:bg-bg-muted",
@@ -86,7 +86,7 @@ export function FilterDropdown({
         >
           {label}
           {count > 0 ? <span className="tabular-nums">· {count}</span> : null}
-          <span className="text-[10px] text-text-tertiary">▾</span>
+          <span className="text-[0.7143rem] text-text-tertiary">▾</span>
         </button>
       )}
     >
@@ -110,7 +110,7 @@ export function FilterDropdown({
         )}
         <div className="max-h-[320px] min-w-[200px] overflow-y-auto">
           {shown.length === 0 ? (
-            <div className="px-3 py-2 text-[12px] italic text-text-tertiary">
+            <div className="px-3 py-2 text-[0.8571rem] italic text-text-tertiary">
               {unavailable
                 ? `${label} options could not be loaded — see the sidebar for why.`
                 : "No options"}
@@ -125,7 +125,7 @@ export function FilterDropdown({
                   role="menuitemcheckbox"
                   aria-checked={isSelected}
                   onClick={() => toggle(opt.value)}
-                  className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
                 >
                   {/* LST-56 (UX-4): the multi-select affordance is a real
                       B1 Checkbox, shown *unchecked* before the first

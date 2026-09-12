@@ -118,7 +118,7 @@ export function ServerUnreachableBanner() {
       // own error state, which broke twenty of them at once.
       role="status"
       data-server-unreachable="true"
-      className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-danger-fg/20 bg-danger-bg px-4 py-2 text-[13px] text-danger-fg"
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-danger-fg/20 bg-danger-bg px-4 py-2 text-[0.9286rem] text-danger-fg"
     >
       <span className="font-semibold">The LocTT server is not responding.</span>
       <span className="opacity-90">

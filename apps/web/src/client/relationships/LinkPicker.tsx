@@ -109,7 +109,7 @@ export function LinkPicker({
       <div className="mb-2 flex items-center gap-2">
         <label
           htmlFor="link-kind"
-          className="text-[12px] font-medium text-text-secondary"
+          className="text-[0.8571rem] font-medium text-text-secondary"
         >
           Kind
         </label>
@@ -118,7 +118,7 @@ export function LinkPicker({
           data-testid="link-kind"
           value={kind}
           onChange={e => { setKind(e.target.value); }}
-          className="rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[13px] text-text-primary"
+          className="rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem] text-text-primary"
         >
           {options.map(o => (
             <option key={o.key} value={o.key}>{o.label}</option>
@@ -145,7 +145,7 @@ export function LinkPicker({
             onCancel();
           }
         }}
-        className="w-full rounded border border-border-subtle bg-bg-surface px-2 py-1.5 text-[13px] text-text-primary"
+        className="w-full rounded border border-border-subtle bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
       />
 
       {trimmed.length > 0 && (
@@ -161,9 +161,9 @@ export function LinkPicker({
                 data-key={hit.key}
                 disabled={pending}
                 onClick={() => { choose(hit); }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] hover:bg-bg-muted"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[0.9286rem] hover:bg-bg-muted"
               >
-                <span className="shrink-0 font-mono text-[12px] text-text-secondary">
+                <span className="shrink-0 font-mono text-[0.8571rem] text-text-secondary">
                   {hit.key}
                 </span>
                 {/* REL-8's fourth bullet: key + title + status, so two
@@ -176,12 +176,12 @@ export function LinkPicker({
                 </span>
                 <StatusBadge def={statusOf(hit.status)} raw={hit.status} />
                 {hit.archived && (
-                  <span className="shrink-0 rounded bg-warn-fg/15 px-1 py-0.5 text-[11px] text-warn-fg">
+                  <span className="shrink-0 rounded bg-warn-fg/15 px-1 py-0.5 text-[0.7857rem] text-warn-fg">
                     Archived
                   </span>
                 )}
                 {hit.viaRetiredKey && (
-                  <span className="shrink-0 text-[11px] text-text-tertiary">
+                  <span className="shrink-0 text-[0.7857rem] text-text-tertiary">
                     former key
                   </span>
                 )}
@@ -191,7 +191,7 @@ export function LinkPicker({
           {results.isSuccess && results.data.length === 0 && (
             <li
               data-testid="link-no-results"
-              className="px-2 py-1.5 text-[13px] text-text-tertiary"
+              className="px-2 py-1.5 text-[0.9286rem] text-text-tertiary"
             >
               {selfMatches
                 ? (
@@ -222,7 +222,7 @@ export function LinkPicker({
         <p
           role="alert"
           data-testid="link-error"
-          className="mt-2 text-[13px] text-danger-fg"
+          className="mt-2 text-[0.9286rem] text-danger-fg"
         >
           {localError ?? error}
         </p>
@@ -232,7 +232,7 @@ export function LinkPicker({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded px-2 py-1 text-[13px] text-text-secondary hover:bg-bg-muted"
+          className="rounded px-2 py-1 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
         >
           Cancel
         </button>
