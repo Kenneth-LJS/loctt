@@ -411,6 +411,62 @@ test.describe("CMT — comments", () => {
     expect(await renderedAuthors(page)).toEqual([ken.name, ken.name, "Ana Lopez"]);
   });
 
+  // @verifies CMT-20
+  test("CMT-20: a long thread scrolls in its own box, the composer stays reachable, a new comment scrolls into view, and a huge comment clamps", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Busy thread" }]));
+
+    // A thread long enough to overflow, plus one enormous comment.
+    for (let i = 1; i <= 30; i += 1) {
+      await tracker.run(["comment", key, `comment number ${String(i)}`]);
+    }
+    await tracker.run(["comment", key, "X".repeat(4000)]);
+
+    await openTask(page, tracker, key);
+    const list = page.getByTestId("comments-list");
+    await expect(list).toBeVisible();
+
+    // Bullet 1: the list is a bounded scroll box (its scrollHeight
+    // exceeds its clientHeight), so a long thread scrolls *inside* it
+    // rather than pushing the composer down the page past every comment.
+    const overflow = await list.evaluate(el => el.scrollHeight > el.clientHeight + 1);
+    expect(overflow, "the comments list should scroll within its own box").toBe(true);
+    // The composer sits just below the bounded box, not below 30 full
+    // comments — the gap between the list's bottom and the composer's top
+    // is small (a bounded box's height plus spacing), which is what
+    // "reachable without scrolling through all 80" means. Without the
+    // scroll box that gap would be the full height of every comment.
+    const gap = await page.evaluate(() => {
+      const listEl = document.querySelector('[data-testid="comments-list"]');
+      const comp = document.querySelector('[data-testid="comment-composer"]');
+      if (!listEl || !comp) return Number.POSITIVE_INFINITY;
+      return comp.getBoundingClientRect().top - listEl.getBoundingClientRect().bottom;
+    });
+    expect(gap, "the composer should sit just below the bounded list").toBeLessThan(200);
+
+    // Bullet 4: the 4000-char comment is clamped with a Show more toggle,
+    // and expanding reveals it.
+    const showMore = page.getByTestId("comment-show-more").first();
+    await expect(showMore).toBeVisible();
+    await expect(showMore).toHaveText("Show more");
+    await showMore.click();
+    await expect(showMore).toHaveText("Show less");
+
+    // Bullet 3: posting a new comment scrolls the list to it, so the user
+    // sees it landed rather than being left mid-thread. The list is
+    // scrolled to (near) its bottom where the new comment sits.
+    await postComment(page, "the freshly posted one");
+    const fresh = list.getByText("the freshly posted one");
+    await expect(fresh).toBeVisible();
+    // The scroll landed at the bottom (the new comment is the last one),
+    // not left at the top mid-thread.
+    const atBottom = await list.evaluate(
+      el => el.scrollTop + el.clientHeight >= el.scrollHeight - 4,
+    );
+    expect(atBottom, "the list should scroll to the newly posted comment").toBe(true);
+  });
+
   // @verifies CMT-3
   test("CMT-3: bodies render markdown, and an edit reopens the source that was typed", async ({
     page, tracker,
