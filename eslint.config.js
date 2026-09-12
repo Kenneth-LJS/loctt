@@ -1,3 +1,4 @@
+import reactHooks from "eslint-plugin-react-hooks";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import tseslint from "typescript-eslint";
 
@@ -62,6 +63,22 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",
       "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
+  {
+    // React hooks discipline for the web client. `rules-of-hooks` is an
+    // error — a conditionally-called hook is a real bug (it cost a
+    // render-loop once). `exhaustive-deps` is a warning: a missing effect
+    // dependency is usually-but-not-always wrong, so it flags without
+    // failing the gate. Scoped to the client's React files; the CLI, MCP
+    // and core have no components.
+    files: ["apps/web/src/client/**/*.tsx", "apps/web/src/client/**/*.ts"],
+    plugins: {
+      "react-hooks": reactHooks,
+    },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
   {

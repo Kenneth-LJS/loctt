@@ -197,7 +197,7 @@ lines are implementation work, not decisions.
 
 ## 8. Tooling / flake — infra, fix opportunistically
 
-- [ ] **Add `eslint-plugin-react-hooks`** (rules-of-hooks as error) — cost a real bug once (render-loop). Dependency add = a scope call.
+- [x] **Add `eslint-plugin-react-hooks`** (rules-of-hooks as error) — DONE (pre-authorized). Installed `eslint-plugin-react-hooks@^7.1.1`, wired in `eslint.config.js` scoped to `apps/web/src/client` React files: `rules-of-hooks` = error (the render-loop class), `exhaustive-deps` = warn. Codebase is clean on rules-of-hooks (0 violations); 14 new exhaustive-deps warnings surfaced (informational). Red-proven the rule catches a conditional hook.
 - [ ] **Coverage gate reads case IDs from prose, not only tags** — require the tag first on its comment line. `tools/coverage/main.ts`.
 - [ ] **Test runs leak temp trackers** — widen sweep to `$TMPDIR/loctt-*` with an age filter, or move fixtures under `tests/workspace/`.
 - [ ] **Removing a worktree leaves its `loctt ui` server running** — teardown on SIGINT/SIGTERM.
