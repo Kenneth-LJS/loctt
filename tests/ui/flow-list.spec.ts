@@ -3408,6 +3408,46 @@ test.describe("LST — columns, staleness, unreachable (M1.2)", () => {
     expect(headers.filter(Boolean)).toEqual(["Title", "Key"]);
   });
 
+  // @verifies SET-9
+  test("SET-9: the estimate column renders values with the unit suffix, and vanishes when estimation is disabled", async ({
+    page,
+    tracker,
+  }) => {
+    // A fresh init enables estimation (points). Seed a task and give it
+    // an estimate, then opt the estimate column in via list_columns.
+    await tracker.seed([{ title: "Estimated" }]);
+    await tracker.run(["set", "T-1", "estimate", "5"]);
+    const users = path.join(tracker.root, ".loctt", "users");
+    const id = String((await readdir(users))[0]);
+    await writeFile(
+      path.join(users, id, "settings.yaml"),
+      "list_columns:\n  - key\n  - title\n  - estimate\n",
+      "utf8",
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    // The column exists and its cell shows the value with the unit
+    // suffix — the default workspace's `unit_label` is "pts" — not a
+    // bare number.
+    await expect(page.locator("thead th").filter({ hasText: "Estimate" })).toHaveCount(1);
+    await expect(page.locator('td[data-col="estimate"]')).toContainText("5 pts");
+
+    // Disable estimation: the column disappears even though list_columns
+    // still names it (SET-9's first bullet — nothing appears anywhere).
+    const wf = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
+    const text = await readFile(wf, "utf8");
+    await writeFile(
+      wf,
+      text.replace(/^estimation:\n(?:[ \t]+.*\n?)*/m, "estimation:\n  enabled: false\n  unit: points\n"),
+      "utf8",
+    );
+    await page.reload();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("thead th").filter({ hasText: "Estimate" })).toHaveCount(0);
+    await expect(page.locator('td[data-col="estimate"]')).toHaveCount(0);
+  });
+
   // @verifies LST-36
   test("LST-36: a stale row never pushes its old value back to disk", async ({
     page,

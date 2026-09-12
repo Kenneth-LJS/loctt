@@ -125,3 +125,41 @@ describe("resolveColumns — project scope (PRU-3)", () => {
     expect((s as unknown as { list_columns: string[] }).list_columns).toEqual(saved);
   });
 });
+
+describe("resolveColumns — estimate column (SET-9)", () => {
+  // @verifies SET-9
+  it("offers a sortable estimate column in the catalog, opt-in like reporter", () => {
+    const est = ALL_COLUMNS.find(c => c.id === "estimate");
+    expect(est).toBeDefined();
+    expect(est?.label).toBe("Estimate");
+    // `estimate` is a real TaskFrontmatter field, so the server sorts it.
+    expect(est?.sortable).toBe(true);
+    // Not a default column (SET-9: opt-in; an eleventh default would be
+    // the LST-20 overflow).
+    expect(DEFAULT_COLUMNS.map(c => c.id)).not.toContain("estimate");
+    expect(resolveColumns(undefined).map(c => c.id)).not.toContain("estimate");
+  });
+
+  // @verifies SET-9
+  it("renders an opted-in estimate column while estimation is enabled", () => {
+    const ids = resolveColumns(settings(["key", "estimate"]), undefined, true)
+      .map(c => c.id);
+    expect(ids).toEqual(["key", "estimate"]);
+  });
+
+  // @verifies SET-9
+  it("drops the estimate column when estimation is disabled, even if list_columns names it", () => {
+    // SET-9's first bullet: with estimation off, no Estimate column
+    // appears at all — including one added to list_columns while it was
+    // on. The rest of the explicit set is untouched.
+    const ids = resolveColumns(settings(["key", "estimate", "status"]), undefined, false)
+      .map(c => c.id);
+    expect(ids).toEqual(["key", "status"]);
+  });
+
+  // @verifies SET-9
+  it("defaults estimationEnabled to true so callers that don't thread it are unaffected", () => {
+    const ids = resolveColumns(settings(["key", "estimate"])).map(c => c.id);
+    expect(ids).toContain("estimate");
+  });
+});

@@ -21,6 +21,7 @@ import { LabelsField } from "./editors/LabelsField.tsx";
 import type { PickerOption } from "./editors/OptionPicker.tsx";
 import { fieldSlug, OptionPicker } from "./editors/OptionPicker.tsx";
 import { TextField } from "./editors/TextField.tsx";
+import { estimationShape } from "./estimation.ts";
 import type { FieldFailure } from "./fieldFailure.ts";
 import { FieldFailureNotice } from "./FieldFailureNotice.tsx";
 
@@ -471,17 +472,18 @@ function estimateControl(
   onSet: (field: string, value: unknown) => void,
   onUnset: (field: string) => void,
 ): React.ReactNode | null {
-  const est = workflow?.estimation;
-  if (est === undefined || !est.enabled) return null;
+  // The shape (disabled / enum / numeric) is decided by the shared
+  // `estimationShape` so this control and the create modal's cannot
+  // disagree about what the same config means (SET-9's "everywhere it
+  // appears").
+  const shape = estimationShape(workflow);
+  if (shape === null) return null;
 
-  if (est.unit === "custom_enum") {
+  if (shape.kind === "enum") {
     // Constrained to `preset_values` — a free-text box here would let
     // a value outside the scale reach the file, which is the whole
     // point of declaring a scale.
-    const options: PickerOption[] = (est.preset_values ?? []).map(v => ({
-      key: String(v),
-      label: String(v),
-    }));
+    const options: PickerOption[] = shape.options.map(v => ({ key: v, label: v }));
     return (
       <OptionPicker
         label="Estimate"
@@ -493,16 +495,12 @@ function estimateControl(
     );
   }
 
-  // Numeric modes. `unit_label` is required for `custom_numeric` and
-  // absent for the built-in units, whose own names read correctly as
-  // the suffix ("5 points").
-  const suffix = est.unit_label ?? est.unit;
   return (
     <TextField
       label="Estimate"
       value={value}
       numeric
-      suffix={suffix}
+      suffix={shape.suffix}
       onCommit={v => { onSet("estimate", Number(v)); }}
       onClear={() => { onUnset("estimate"); }}
     />
