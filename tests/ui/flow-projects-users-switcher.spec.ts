@@ -189,10 +189,20 @@ test.describe("PRU-21 — a 30-project switcher stays usable", () => {
     await search.fill("");
     await expect(page.getByTestId("project-more")).toBeVisible();
 
-    // Expanding shows the rest.
-    await page.getByTestId("project-more").click();
-    await expect(page.getByTestId("project-more")).toHaveCount(0);
+    // Expanding shows the rest. The control is now a two-way toggle
+    // (A11Y-12: it exposes aria-expanded and can collapse again), so it
+    // stays present as "Show fewer" rather than vanishing — a one-way
+    // reveal left a keyboard/AT user no way back and exposed no state.
+    const moreBtn = page.getByTestId("project-more");
+    await expect(moreBtn).toHaveAttribute("aria-expanded", "false");
+    await moreBtn.click();
     await expect(page.getByRole("link", { name: /Project 30/ })).toBeVisible();
+    await expect(moreBtn).toHaveAttribute("aria-expanded", "true");
+    await expect(moreBtn).toHaveText("Show fewer");
+    // …and collapsing hides them again.
+    await moreBtn.click();
+    await expect(page.getByRole("link", { name: /Project 30/ })).toHaveCount(0);
+    await expect(moreBtn).toHaveAttribute("aria-expanded", "false");
   });
 });
 

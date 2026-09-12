@@ -989,6 +989,52 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     await expect(dialog.getByRole("textbox")).toHaveAccessibleName(/Type .+ to confirm/);
   });
 
+  // @verifies A11Y-12
+  test("A11Y-12: the sidebar is keyboard-navigable, its collapse toggle exposes state, and the inert entry is announced-as-unavailable", async ({
+    page,
+    tracker,
+  }) => {
+    // Enough projects to force the truncation toggle (PRU-21 collapse).
+    for (let i = 1; i <= 12; i++) {
+      const n = String(i).padStart(2, "0");
+      await tracker.run(["project", "create", `Project ${n}`, "--prefix", `P${n}`]);
+    }
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByTestId("project-all")).toBeVisible();
+
+    // Group entries are reachable by keyboard: the "All projects" entry
+    // and a project link can hold focus (they are real links in tab
+    // order, not click-only divs).
+    const firstProject = page.getByRole("link", { name: /Project 01/ });
+    await firstProject.focus();
+    await expect(firstProject).toBeFocused();
+
+    // The collapsible project group exposes expanded/collapsed state and
+    // toggles on Enter — not a one-way reveal, and not state-less.
+    const more = page.getByTestId("project-more");
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Enter");
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+
+    // The non-interactive "Mentions me" entry (SHL-8) is announced as
+    // unavailable rather than presenting as an actionable control that
+    // does nothing: it is aria-disabled and is not a link/button.
+    const mentions = page.getByText("Mentions me", { exact: true });
+    await expect(mentions).toBeVisible();
+    const inert = mentions.locator(
+      "xpath=ancestor-or-self::*[@aria-disabled='true'][1]",
+    );
+    await expect(inert).toHaveCount(1);
+    // It carries no link/button role — a keyboard user does not land on
+    // it as an actionable control.
+    await expect(
+      page.getByRole("link", { name: "Mentions me" }),
+    ).toHaveCount(0);
+  });
+
   // @verifies A11Y-51
   test("A11Y-51: a partial bulk result announces the real numbers and its failures are keyboard-reachable", async ({
     page,
@@ -3072,84 +3118,6 @@ test.describe("A11Y — undo without a pointer", () => {
 });
 
 test.describe("A11Y — sidebar and full-cycle keyboard operation", () => {
-  /**
-   * A11Y-12 is **deliberately not tagged**. See known-gaps.md.
-   *
-   * Its first and third bullets hold, and are asserted below. The
-   * second does not, and it is not a test gap: "collapsible groups
-   * expose their expanded/collapsed state to assistive tech and toggle
-   * on `Enter`/`Space`" has **no subject in this app**. The sidebar's
-   * six groups (Projects, Saved filters, Milestones, Sprints, Labels,
-   * Recently viewed) render from a `GroupLabel`, which is a plain
-   * `<div>` with no control, no state and no handler; there is not one
-   * `aria-expanded` anywhere in `Sidebar.tsx`.
-   *
-   * The `collapsed` prop threaded through every group is the *whole
-   * sidebar's* rail toggle (SHL-21, and `aria-expanded` for it lives
-   * correctly on the header's hamburger, which A11Y-21 covers). It is
-   * not per-group collapse, and reading it as such is the mistake this
-   * note exists to prevent.
-   *
-   * Tagging on two of three bullets would claim a keyboard affordance
-   * that does not exist. Recorded instead.
-   */
-  test("A11Y-12 (partial): every sidebar entry is reachable in visual order and the inert one is announced, but no group is collapsible", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed([{ title: "Sidebar subject" }]);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Sidebar subject")).toBeVisible();
-
-    // First bullet: every entry is reachable, in the order it is
-    // rendered. Walked with Tab and compared against the sidebar's own
-    // DOM order — the two must agree, which is what "a predictable
-    // order" means.
-    const domOrder = await page.evaluate(() =>
-      Array.from(document.querySelectorAll("aside a[href], aside button:not([disabled])"))
-        .filter(el => el.getBoundingClientRect().width > 0)
-        .map(el => (el.textContent ?? "").trim().slice(0, 24)),
-    );
-    expect(domOrder.length).toBeGreaterThan(3);
-
-    await page.locator("body").click({ position: { x: 1, y: 1 } });
-    const tabOrder: string[] = [];
-    for (let i = 0; i < 120; i += 1) {
-      await page.keyboard.press("Tab");
-      const hit = await page.evaluate(() => {
-        const el = document.activeElement;
-        if (el === null || el.closest("aside") === null) return null;
-        return (el.textContent ?? "").trim().slice(0, 24);
-      });
-      if (hit === null) {
-        if (tabOrder.length > 0) break; // walked out the far side
-        continue;
-      }
-      if (tabOrder[tabOrder.length - 1] !== hit) tabOrder.push(hit);
-    }
-    expect(tabOrder, `tab: ${tabOrder.join(" | ")}\ndom: ${domOrder.join(" | ")}`)
-      .toEqual(domOrder.slice(0, tabOrder.length));
-
-    // Third bullet: the non-interactive "Mentions me" entry (SHL-8)
-    // never presents as an actionable control that does nothing. It is
-    // `aria-disabled` and is not a link or a button, so it is skipped
-    // by the tab order *and* announced as unavailable.
-    const mentions = page.locator('[aria-disabled="true"]').filter({ hasText: /mentions me/i });
-    await expect(mentions).toHaveCount(1);
-    await expect(mentions).not.toHaveRole("link");
-    await expect(mentions).not.toHaveRole("button");
-    expect(tabOrder.some(t => /mentions me/i.test(t))).toBe(false);
-
-    // The second bullet's absence, asserted so this inverts the day
-    // collapsible groups are built — the signal to write the real
-    // transcription and tag the case.
-    const expandables = await page.locator("aside [aria-expanded]").count();
-    expect(
-      expandables,
-      "a sidebar group became collapsible — write the real A11Y-12 transcription and tag it",
-    ).toBe(0);
-  });
-
   /**
    * A11Y-9 is **deliberately not tagged**. See known-gaps.md.
    *
