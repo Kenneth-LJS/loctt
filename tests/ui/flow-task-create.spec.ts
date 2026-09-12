@@ -1678,16 +1678,24 @@ test.describe("NEW — create task modal", () => {
   });
 
   // @verifies NEW-25
-  test("NEW-25: a picker backed by 200 labels is searchable and complete", async ({
+  // @verifies NEW-25
+  // @verifies K90
+  test("NEW-25/K90: a picker backed by 1100 labels searches the server and never offers a duplicate of one past the window", async ({
     page,
     tracker,
   }) => {
-    // 200 labels: past the server's 100-row default page, which is the
-    // exact window that used to hide the tail of the list and make the
-    // form offer to create a duplicate of an existing label.
+    // 1100 labels: past the server's MAX_PAGE_LIMIT of 1000, which is the
+    // window the picker used to fetch-and-filter. A label in the tail
+    // beyond 1000 was invisible to the old in-memory filter, so typing
+    // its exact name offered to CREATE A DUPLICATE (names are non-unique
+    // and createLabel has no name guard). K90 makes the picker query the
+    // server (`?q=`), so the whole set is searchable and the create-offer
+    // decision is server-authoritative — the truncation cannot hide a
+    // match. This seed sits ABOVE 1000 on purpose: at 200 the old code
+    // passed too (200 < the 1000 it fetched), so only >1000 proves it.
     const labelsPath = path.join(tracker.root, ".loctt", "config", "labels.yaml");
     const lines = ["labels:"];
-    for (let i = 1; i <= 200; i++) {
+    for (let i = 1; i <= 1100; i++) {
       lines.push(`  - id: 01LBL${String(i).padStart(21, "0")}`);
       lines.push(`    name: lbl-${String(i)}`);
     }
@@ -1698,10 +1706,10 @@ test.describe("NEW — create task modal", () => {
     const labels = page.getByTestId("create-labels");
     await labels.getByTestId("meta-add-label").click();
 
-    // A label near the END of the list — inside the tail the default
-    // page dropped. It must be offered as an existing label...
-    await labels.getByTestId("meta-label-input").fill("lbl-190");
-    await expect(labels.getByRole("option", { name: "lbl-190", exact: true })).toBeVisible();
+    // A label past entry 1000 — the tail the old fetch window dropped. It
+    // must be found by the server search and offered as existing...
+    await labels.getByTestId("meta-label-input").fill("lbl-1099");
+    await expect(labels.getByRole("option", { name: "lbl-1099", exact: true })).toBeVisible();
     // ...and must NOT be offered for creation, which would duplicate it.
     await expect(labels.getByTestId("meta-create-label")).toHaveCount(0);
 

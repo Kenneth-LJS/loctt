@@ -11819,6 +11819,45 @@ px→rem migration on the named scale, min-height the fixed controls, then
 write the real `@verifies A11Y-39` transcription (assert reflow + no
 clipping at 200%) replacing A95's untagged partial.
 
+### A-K90-SEARCH · Config-list search implemented backend-first; labels picker queries; OptionPicker search is the remaining sub-step
+
+**Built (agent-level) implementing K90, in stages.** K90 makes config-list
+name search a core capability on all three surfaces and requires the UI
+pickers to query rather than fetch-and-filter.
+
+- **Backend (committed `0f82bde`):** core `filterByName`/`filterProjects`
+  (projects match name+slug+prefix), `?q=` on the five web endpoints
+  (filter before pagination+counts so `total` is the match count), and
+  CLI `--filter`/pagination + MCP `q`/pagination with a CLI truncation
+  footer. Default page 100 / max 1000, matching the web config-list
+  numbers (the one judgment call — the task-list default is 30, but these
+  are the same lists the web pages, so web-parity won). Over-cap is a
+  usage error, not a silent clamp.
+- **Labels picker (the load-bearing correctness fix):** `LabelsField`
+  now queries `searchLabels` (`?q=`, bounded to 50) with a 200ms debounce
+  instead of filtering the 1000-capped `all`. Candidates AND the
+  "offer to create" gate come from the server answer, so a label whose
+  name exists beyond the fetch window is found and the create button no
+  longer offers a duplicate (the NEW-7/NEW-25 hazard — names are
+  non-unique, `createLabel` has no name guard, so the in-memory `exact`
+  check was the only guard and truncation defeated it). `all` is kept
+  only to resolve attached pill names. `searchLabels` is threaded to both
+  the create modal and (via MetaPanel) task detail. `@verifies K90` at
+  1100 labels (above the 1000 cap — 200 passed even buggy), red-proven:
+  reverting to the in-memory filter fails at 1100.
+- **Remaining sub-step:** the milestone/sprint/user/project pickers use
+  `OptionPicker` (a static-options select with no search input). Giving it
+  an opt-in querying mode is the rest of K90's "the dropdown itself
+  searches" clause. Deferred to its own commit because `OptionPicker` has
+  16 usages across 7 files and the change is additive UX with real
+  regression surface — none of those four has the duplicate-write hazard
+  (no inline create), so their truncation is a find-past-1000 discovery
+  gap, not data corruption. Tracked in TEMP-TODO under this item.
+
+**To revert:** the backend commit is independent; for the labels picker,
+restore the in-memory `candidates`/`exact` derivation in `LabelsField` and
+drop the `searchLabels` prop + hook.
+
 ### A-SET9-ESTIMATE-UI · Estimate field in the create modal + as an opt-in list column, config-shaped by one shared helper
 
 **Built (agent-level), completing SET-9's UI half.** SET-9 requires the

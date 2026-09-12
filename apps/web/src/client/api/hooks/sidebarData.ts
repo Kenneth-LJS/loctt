@@ -134,6 +134,32 @@ export function useLabels() {
   });
 }
 
+/**
+ * K90: the bounded result count a querying picker fetches per keystroke.
+ * NEW-25 asks for "a bounded number of results" — a picker list wants to
+ * stay short and scannable, not mirror the whole config. The server caps
+ * `q` matches at this, and the "offer to create" gate reads an exact-name
+ * match from within the returned window (an exact match, if it exists,
+ * is by definition among the substring matches, so this bound never
+ * hides one).
+ */
+const PICKER_SEARCH_LIMIT = 50;
+
+/**
+ * Imperative label search for {@link LabelsField} (K90). Queries the
+ * server `?q=` rather than filtering a pre-fetched list, so a workspace
+ * past the fetch window is searchable and the create-offer decision is
+ * server-authoritative. Returns the matched labels (archived included;
+ * the caller drops those). Not a `useQuery` because the picker owns its
+ * own debounce and calls this from an effect.
+ */
+export async function searchLabels(q: string): Promise<readonly LabelDef[]> {
+  const params = new URLSearchParams({ limit: String(PICKER_SEARCH_LIMIT) });
+  if (q.trim() !== "") params.set("q", q.trim());
+  const page = await apiClient.get<BrokenPage<LabelDef>>(`/api/labels?${params.toString()}`);
+  return page.items;
+}
+
 export function useMilestones() {
   return useQuery({
     queryKey: ["milestones"],

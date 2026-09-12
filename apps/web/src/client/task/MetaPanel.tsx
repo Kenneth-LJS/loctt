@@ -70,6 +70,7 @@ export function MetaPanel({
   onSet,
   onUnset,
   onCreateLabel,
+  searchLabels,
   labelError,
   onDismissLabelError,
   fieldError,
@@ -105,6 +106,8 @@ export function MetaPanel({
   readonly onSet: (field: string, value: unknown) => void;
   readonly onUnset: (field: string) => void;
   readonly onCreateLabel: (name: string) => Promise<string | undefined>;
+  /** K90: server-side label search for the picker (see LabelsField). */
+  readonly searchLabels: (q: string) => Promise<readonly LabelDef[]>;
   readonly labelError?: string | undefined;
   readonly onDismissLabelError?: (() => void) | undefined;
   /**
@@ -266,6 +269,7 @@ export function MetaPanel({
           <LabelsField
             attached={fm.labels ?? []}
             all={labels}
+            searchLabels={searchLabels}
             onChange={ids => {
               // TSK-42 again: the last label removed clears the field
               // rather than storing `[]`.

@@ -37,22 +37,42 @@ export function LabelsField({
   all,
   onChange,
   onCreate,
+  searchLabels,
   createError,
   onDismissCreateError,
 }: {
   /** The task's label ids, in stored order. */
   readonly attached: readonly string[];
-  /** Every label in `labels.yaml`, archived included. */
+  /**
+   * Labels needed to render the *attached* pills by name. This can be a
+   * bounded set (it no longer drives the candidate list — see
+   * `searchLabels`), so a label attached but outside it renders the
+   * "unresolved" fallback rather than being unresolvable.
+   */
   readonly all: readonly LabelDef[];
   readonly onChange: (ids: readonly string[]) => void;
   /** Creates the label, then resolves with its new id. */
   readonly onCreate: (name: string) => Promise<string | undefined>;
+  /**
+   * K90: server-side label search. The picker queries this as the user
+   * types instead of filtering `all` in memory, so a workspace past the
+   * fetch window is fully searchable AND the "offer to create" decision
+   * is made against the server's answer — never a truncated array, which
+   * is what let the create button offer a duplicate of an existing
+   * label (NEW-7, NEW-25). Returns labels whose name contains `q`
+   * (case-insensitive), archived included (this component filters those).
+   */
+  readonly searchLabels: (q: string) => Promise<readonly LabelDef[]>;
   readonly createError?: string | undefined;
   readonly onDismissCreateError?: (() => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  // K90: server search results for the current (debounced) query. `null`
+  // means "not yet loaded for this query" — distinct from an empty array,
+  // which is a real "no matches" and is what gates the create offer.
+  const [results, setResults] = useState<readonly LabelDef[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLButtonElement>(null);
@@ -60,6 +80,28 @@ export function LabelsField({
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
+
+  // K90: debounce the query and fetch matches from the server. A blank
+  // query still fetches (the initial "browse" view shows the first page
+  // of labels). `searchLabels` is called with the trimmed query; the
+  // response replaces `results` unless a newer query superseded it.
+  const trimmedQuery = query.trim();
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    setResults(null);
+    const t = setTimeout(() => {
+      void searchLabels(trimmedQuery).then(rows => {
+        if (!cancelled) setResults(rows);
+      }).catch(() => {
+        // A failed search leaves `results` null → no candidates, and the
+        // create offer stays suppressed (we cannot prove the name is
+        // free), which is the safe direction.
+        if (!cancelled) setResults([]);
+      });
+    }, 200);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [open, trimmedQuery, searchLabels]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -87,18 +129,22 @@ export function LabelsField({
 
   const byId = new Map(all.map(l => [l.id, l]));
   const attachedSet = new Set(attached);
-  const trimmed = query.trim();
-  const candidates = all.filter(
-    l =>
-      !attachedSet.has(l.id) &&
-      l.archived !== true &&
-      (trimmed === "" || l.name.toLowerCase().includes(trimmed.toLowerCase())),
+  const trimmed = trimmedQuery;
+  // Candidates come from the SERVER (K90), not a filtered `all`: archived
+  // and already-attached labels are dropped here. `results === null`
+  // (still loading) shows no candidates yet.
+  const candidates = (results ?? []).filter(
+    l => !attachedSet.has(l.id) && l.archived !== true,
   );
-  // Case-insensitive, because "Bug" and "bug" are the same label to a
-  // user and offering to create the second is offering a duplicate the
-  // server would reject anyway.
-  const exact = all.some(l => l.name.toLowerCase() === trimmed.toLowerCase());
-  const canCreate = trimmed !== "" && !exact;
+  // The create offer is gated on the SERVER's answer, never a truncated
+  // array. Case-insensitive, because "Bug" and "bug" are the same label
+  // to a user. `results === null` means we have not heard back yet, so
+  // we cannot prove the name is free — suppress the offer until we know
+  // (this is what stops the duplicate-create hazard NEW-7/NEW-25 name:
+  // a name whose match fell outside the old 1000-item window).
+  const exact =
+    results !== null && results.some(l => l.name.toLowerCase() === trimmed.toLowerCase());
+  const canCreate = trimmed !== "" && results !== null && !exact;
 
   /**
    * Attaches one label and closes the picker.
@@ -235,7 +281,10 @@ export function LabelsField({
               Create label “{trimmed}”
             </button>
           )}
-          {candidates.length === 0 && !canCreate && (
+          {results === null && (
+            <p className="px-2 py-1 text-[0.8571rem] text-text-tertiary">Searching…</p>
+          )}
+          {results !== null && candidates.length === 0 && !canCreate && (
             <p className="px-2 py-1 text-[0.8571rem] text-text-tertiary">
               {trimmed === "" ? "Every label is attached." : "Already attached."}
             </p>
