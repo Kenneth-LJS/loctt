@@ -156,6 +156,20 @@ broken AND logic still filtered right) until `rm -rf apps/cli/dist &&`
 rebuild — then it failed as it should.* Confirm the break is in
 `apps/cli/dist/index.js` (grep it) before trusting a red-proof.
 
+**The same stale `dist` hides a real regression, not just a vacuous
+red-proof — a behavior-changing core commit owes its UI specs a rebuild
++ re-run before claiming green.** A change to a *green* test's subject
+can leave that test asserting the pre-change contract while it keeps
+passing, because the UI spec boots the stale bundle. *The SET-24
+read-tolerance commit (`6225189`) made the calendar loader degrade a bad
+timezone instead of 400ing, but left `flow-settings-workflow.spec.ts`
+asserting the 400 + `count(0)` — green against stale `dist`, red the
+moment `@loctt/web`/`@loctt/cli` were rebuilt. It was asserting the bug
+(CLAUDE.md's fourth testing rule); rewritten to the shipped behavior.*
+So after any change to code a UI spec exercises, `rm -rf apps/cli/dist`,
+rebuild web+cli, and run the affected specs — a still-green suite over a
+stale bundle is not evidence.
+
 **Probe the built binary before writing anything — roughly a third of
 "defects" aren't.** Case titles and briefs go stale as code moves under
 them. *An audit claimed milestone progress "does not exist anywhere"; it

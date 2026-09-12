@@ -11765,6 +11765,24 @@ actually broken; only a genuinely unknown string degrades. **To revert:**
 restore `timezone: IanaTimezone` in `RawCalendarConfigSchema`, drop the
 `saveCalendarConfig` tz guard and the doctor tz check.
 
+**Follow-up (defect the SET-24 commit left behind).** The read-tolerance
+commit (`6225189`) changed the behavior but did not update the UI test
+that encoded the *old* contract: `flow-settings-workflow.spec.ts`'s
+"an unresolvable timezone names the file and the value" still asserted
+`GET /api/calendar` 400s and `calendar-timezone` renders `count(0)` — the
+exact pre-fix behavior. It stayed green only because the built `dist` the
+UI specs spawn was stale; a rebuild turned it red. That test was asserting
+the bug, so it is now rewritten to assert the shipped behavior — the panel
+loads, the control renders on the "Pick a valid timezone…" placeholder,
+the `calendar-timezone-unresolvable` alert names both `.loctt/config/
+calendar.yaml` and `Mars/Olympus_Mons`, the bad zone is not among the
+options, and save is disabled while it does not resolve. The stale
+known-gaps entry ("SET-24's stored-value display is unreachable") is
+removed with it — the "lenient read path" it named as the fix is what
+A-SET24-TZ shipped. **Lesson:** a behavior-changing core commit owes its
+cross-package UI tests a rebuild before it can claim green — recorded in
+lessons.md.
+
 ### A-K80-CURRENTUSER · `currentUser()` query function
 
 **Built (agent-level), part of K80.** The DSL gains `currentUser()` (bare

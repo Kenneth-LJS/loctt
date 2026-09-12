@@ -1,6 +1,6 @@
 import type { CalendarConfig, CustomFieldDef, ProjectDef } from "@loctt/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { apiClient,ApiError, UnparseableBodyError } from "../api/client.ts";
@@ -33,7 +33,7 @@ import {
   hasUserContent,
   toCreateRequest,
 } from "./formState.ts";
-import { NO_PROJECT_MESSAGE, resolveProjectChoice } from "./projectChoice.ts";
+import { NO_PROJECT_MESSAGE_PARTS, resolveProjectChoice } from "./projectChoice.ts";
 
 /**
  * The single create-task modal (flow-task-create.md, NEW-1..41).
@@ -454,6 +454,7 @@ export function CreateTaskModal({
             projects={projectList}
             value={form.project}
             required={showProjectRequired}
+            onClose={onClose}
             onSelect={id => {
               setForm(f => ({
                 ...f,
@@ -859,12 +860,15 @@ function ProjectField({
   projects,
   value,
   required,
+  onClose,
   onSelect,
 }: {
   readonly choice: ReturnType<typeof resolveProjectChoice>;
   readonly projects: readonly ProjectDef[];
   readonly value: string | undefined;
   readonly required: boolean;
+  /** K75: closing the modal when the deep-link nudge is followed. */
+  readonly onClose: () => void;
   readonly onSelect: (id: string) => void;
 }) {
   // NEW-17: an archived project is never offered.
@@ -906,7 +910,22 @@ function ProjectField({
           data-testid="create-project-required"
           className="mt-1 text-[0.7857rem] text-danger-fg"
         >
-          {NO_PROJECT_MESSAGE}
+          {/* K75's GUI nudge: the "Settings → Projects" phrase is a deep
+              link to the exact section where the default is configured,
+              not prose the user has to go find. Following it closes the
+              create modal (the route change would unmount it anyway; the
+              explicit onClose keeps the app-level open-state honest). */}
+          {NO_PROJECT_MESSAGE_PARTS.before}
+          <Link
+            to="/settings/$section"
+            params={{ section: "projects" }}
+            data-testid="create-project-required-link"
+            onClick={onClose}
+            className="font-medium underline hover:no-underline"
+          >
+            {NO_PROJECT_MESSAGE_PARTS.link}
+          </Link>
+          {NO_PROJECT_MESSAGE_PARTS.after}
         </p>
       )}
     </Field>

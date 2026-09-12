@@ -892,20 +892,38 @@ test.describe("SET — calendar", () => {
 
     await page.goto(`${tracker.baseURL}/settings/calendar`);
 
-    // PARTIAL — see docs/dev/known-gaps.md. `CalendarConfigSchema`'s
-    // `IanaTimezone` brand rejects an unknown zone at *load*, so
-    // `GET /api/calendar` answers 400 and the panel never receives the
-    // stored config. SET-24's first three bullets assume the panel is
-    // handed the value and renders around it; what it can assert today
-    // is that the failure names the file and the offending value
-    // rather than a stack trace or an empty form.
-    const pane = page.getByTestId("settings-pane");
-    await expect(pane).toContainText("calendar.yaml");
-    await expect(pane).toContainText("Mars/Olympus_Mons");
-    await expect(pane).not.toContainText(/ at Object\.| at async /);
-    // Not an empty form that would read as "this tracker has no
-    // calendar configured".
-    await expect(page.getByTestId("calendar-timezone")).toHaveCount(0);
+    // Since `fix(calendar): tolerate an unresolvable timezone on read`
+    // (SET-24), the READ path degrades rather than 400ing: the timezone
+    // is a single scalar the app renders *around*, so the panel loads
+    // with the stored value shown and marked, not an error page. (The
+    // WRITE path stays strict — save is blocked below.) SET-24's first
+    // three bullets are now fully reachable, so this is no longer the
+    // PARTIAL it once was.
+    const panel = page.getByTestId("calendar-panel");
+    await expect(panel).toBeVisible();
+
+    // The control renders (not an empty form reading as "no calendar
+    // configured"), and the stored-but-unresolvable value is surfaced,
+    // naming both the file and the offending value — not a stack trace.
+    await expect(page.getByTestId("calendar-timezone")).toHaveCount(1);
+    const mark = page.getByTestId("calendar-timezone-unresolvable");
+    await expect(mark).toBeVisible();
+    await expect(mark).toContainText(".loctt/config/calendar.yaml");
+    await expect(mark).toContainText("Mars/Olympus_Mons");
+    await expect(panel).not.toContainText(/ at Object\.| at async /);
+
+    // The unresolvable value is not offered as a choice (it is not one
+    // of the picker's options), and it is not selected — the select
+    // sits on the "Pick a valid timezone…" placeholder instead.
+    await expect(page.getByTestId("calendar-timezone")).toHaveValue("");
+    const offered = await page.getByTestId("calendar-timezone")
+      .locator("option").evaluateAll(els => els.map(e => (e as HTMLOptionElement).value));
+    expect(offered).not.toContain("Mars/Olympus_Mons");
+
+    // Saving is blocked while the stored zone does not resolve — the
+    // strict write path cannot round-trip a zone the read path only
+    // tolerated.
+    await expect(page.getByTestId("calendar-save")).toBeDisabled();
   });
 
   // @verifies SET-24
@@ -979,6 +997,23 @@ test.describe("SET — calendar", () => {
     // XS-31: the new working days are what a fresh read returns.
     await page.reload();
     await expect(page.getByTestId("calendar-working-day-6")).toBeChecked();
+  });
+
+  // @verifies K76
+  test("K76: a settings field deep link scrolls to and highlights the field", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Anything" }]);
+    // The deep link a GUI nudge (K75) would emit: straight to the
+    // timezone field, not just the Calendar section.
+    await page.goto(`${tracker.baseURL}/settings/calendar#field-timezone`);
+    const field = page.locator("#field-timezone");
+    await expect(field).toBeVisible();
+    // useScrollToHash stamped the highlight marker, and the control it
+    // wraps is the timezone select.
+    await expect(field).toHaveAttribute("data-hash-target", "true");
+    await expect(field.getByTestId("calendar-timezone")).toBeVisible();
   });
 
   // @verifies SET-41
