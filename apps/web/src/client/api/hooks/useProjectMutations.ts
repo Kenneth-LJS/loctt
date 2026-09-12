@@ -70,8 +70,13 @@ export function useArchiveProject() {
  */
 export interface DeleteProjectVars {
   readonly id: string;
-  /** Required by the server when the project still holds tasks. */
+  /**
+   * When the project still holds tasks, the server requires exactly one
+   * of these: `remapTo` (move the tasks to another project) or
+   * `clearProjectField` (clear their project field). PRU-17.
+   */
   readonly remapTo?: string;
+  readonly clearProjectField?: boolean;
 }
 
 export interface DeleteProjectResult {
@@ -82,9 +87,10 @@ export interface DeleteProjectResult {
 export function useDeleteProject() {
   const qc = useQueryClient();
   return useMutation<DeleteProjectResult, Error, DeleteProjectVars>({
-    mutationFn: ({ id, remapTo }) => {
+    mutationFn: ({ id, remapTo, clearProjectField }) => {
       const params = new URLSearchParams();
       if (remapTo !== undefined) params.set("remap_to", remapTo);
+      if (clearProjectField === true) params.set("clear_project_field", "true");
       const qs = params.toString();
       return apiClient.delete<DeleteProjectResult>(
         `/api/projects/${encodeURIComponent(id)}${qs.length > 0 ? `?${qs}` : ""}`,

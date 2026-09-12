@@ -536,13 +536,23 @@ export interface DeleteProjectOptions {
    */
   readonly hard?: boolean;
   /**
-   * Hard-delete only: required when the project has any tasks.
-   * Re-targets the affected tasks at another project (by id). Note:
-   * this does not rewrite task `key` strings — moving a task across
-   * projects keeps its existing key intact. (CW-13 introduces a
-   * separate `moveTaskToProject` that reallocates keys.)
+   * Hard-delete only: required when the project has any tasks (unless
+   * `clearProjectField` is set). Re-targets the affected tasks at another
+   * project (by id). Note: this does not rewrite task `key` strings —
+   * moving a task across projects keeps its existing key intact. (CW-13
+   * introduces a separate `moveTaskToProject` that reallocates keys.)
    */
   readonly remapTo?: string;
+  /**
+   * Hard-delete only: PRU-17's "clear the project field on these tasks"
+   * choice — the alternative to `remapTo` when the project has tasks.
+   * Each affected task's `project` is cleared (the field is optional), so
+   * the tasks survive with no project rather than being remapped. Exactly
+   * one of `remapTo` / `clearProjectField` is required when tasks exist;
+   * passing both, or neither, is an error (there is no silent default
+   * that orphans tasks).
+   */
+  readonly clearProjectField?: boolean;
 }
 
 /**
@@ -578,26 +588,38 @@ export async function deleteProject(
     const tasks = await loadAllTasks(locttDir);
     const affected = tasks.filter(t => t.frontmatter.project === id);
 
-    let remapTo: string | undefined;
+    // PRU-17: exactly one of remapTo / clearProjectField when tasks exist.
+    // `remapTo === null` (as a resolved value below) means "clear".
+    let remapTo: string | null | undefined;
     if (affected.length > 0) {
-      if (options.remapTo === undefined) {
+      if (options.remapTo !== undefined && options.clearProjectField === true) {
         throw new ProjectError(
-          `project '${id}' has ${affected.length} task(s); pass remapTo to migrate them to another project`,
+          `pass either remapTo or clearProjectField, not both`,
         );
       }
-      const remapTarget = config.projects.find(p => p.id === options.remapTo);
-      if (!remapTarget) {
-        throw new ProjectError(`unknown remap target project: ${options.remapTo}`);
-      }
-      if (options.remapTo === id) {
-        throw new ProjectError(`remap target must differ from the project being deleted`);
-      }
-      if (remapTarget.archived === true) {
+      if (options.remapTo === undefined && options.clearProjectField !== true) {
         throw new ProjectError(
-          `remap target project '${options.remapTo}' is archived; unarchive it first or pick an active project`,
+          `project '${id}' has ${affected.length} task(s); pass remapTo to migrate `
+          + `them to another project, or clearProjectField to clear their project`,
         );
       }
-      remapTo = options.remapTo;
+      if (options.clearProjectField === true) {
+        remapTo = null; // clear the field on each affected task
+      } else {
+        const remapTarget = config.projects.find(p => p.id === options.remapTo);
+        if (!remapTarget) {
+          throw new ProjectError(`unknown remap target project: ${options.remapTo}`);
+        }
+        if (options.remapTo === id) {
+          throw new ProjectError(`remap target must differ from the project being deleted`);
+        }
+        if (remapTarget.archived === true) {
+          throw new ProjectError(
+            `remap target project '${options.remapTo}' is archived; unarchive it first or pick an active project`,
+          );
+        }
+        remapTo = options.remapTo;
+      }
     }
 
     // Journal-then-apply: write a recovery entry describing the
@@ -610,7 +632,10 @@ export async function deleteProject(
       kind: "remap_project",
       started_at: new Date().toISOString(),
       from: id,
-      to: remapTo ?? id, // unused when no tasks; recovery checks task_ids
+      // `to`: the target id, `null` to clear (PRU-17), or the project's
+      // own id as a harmless placeholder when there are no tasks (recovery
+      // keys off task_ids, so the value is unused then).
+      to: remapTo === undefined ? id : remapTo,
       task_ids: affected.map(t => t.frontmatter.id),
     };
     const journal = await loadJournal(locttDir);

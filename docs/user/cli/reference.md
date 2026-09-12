@@ -196,7 +196,7 @@ loctt project edit <slug|name|id> --name <new-name>
 loctt project set-prefix <slug|name|id> <new-prefix> [--yes]
 loctt project archive <slug|name|id>
 loctt project unarchive <slug|name|id>
-loctt project delete <slug|name|id> [--remap-to <other>] [--yes]
+loctt project delete <slug|name|id> [--remap-to <other> | --clear-project-field] [--yes]
 loctt project set-default <slug|name|id|->
 ```
 
@@ -259,9 +259,11 @@ The merge assigns one of them a provisional prefix to keep prefixes unique —
 default lists but its references are preserved.
 
 `delete` is permanent — the project entry is removed and affected tasks are
-rewritten. If the project has tasks, `--remap-to <other-key>` is required to
-move them under another project. Always prompts for confirmation; pass `--yes`
-to skip the prompt in scripts.
+rewritten. If the project has tasks, pass **either** `--remap-to <other-key>`
+(move them under another project) **or** `--clear-project-field` (clear their
+project field, leaving them with no project) — not both, and not neither, so
+tasks are never silently orphaned. Always prompts for confirmation; pass
+`--yes` to skip the prompt in scripts.
 
 `set-default` accepts `-` to clear the workspace default.
 

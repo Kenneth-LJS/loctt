@@ -339,7 +339,47 @@ describe("deleteProject (hard)", () => {
       await createTask({ locttDir, state, options: { project: extra.id, title: "doomed" } });
       await saveState(locttDir, state);
     });
-    await expect(deleteProject(locttDir, extra.id, { hard: true })).rejects.toThrow(/pass remapTo/);
+    // PRU-17: the error names both choices — no silent orphaning default.
+    await expect(deleteProject(locttDir, extra.id, { hard: true }))
+      .rejects.toThrow(/pass remapTo|clearProjectField/);
+  });
+
+  // @verifies PRU-17
+  it("clears the project field on affected tasks when clearProjectField is set", async () => {
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      await createTask({ locttDir, state, options: { project: extra.id, title: "to-be-cleared" } });
+      await saveState(locttDir, state);
+    });
+
+    const result = await deleteProject(locttDir, extra.id, { hard: true, clearProjectField: true });
+    expect(result.remappedTaskCount).toBe(1);
+
+    const tasks = await loadAllTasks(locttDir);
+    const cleared = tasks.find(t => t.frontmatter.title === "to-be-cleared");
+    // The task survives with NO project (the field is optional), not
+    // remapped and not deleted; its key is unchanged.
+    expect(cleared).toBeDefined();
+    expect(cleared?.frontmatter.project).toBeUndefined();
+    expect(cleared?.frontmatter.key.startsWith("X-")).toBe(true);
+    // The project is gone from projects.yaml and its counter retired.
+    const cfg = await loadProjectsConfig(locttDir);
+    expect(cfg.projects.some(p => p.id === extra.id)).toBe(false);
+  });
+
+  // @verifies PRU-17
+  it("rejects passing both remapTo and clearProjectField", async () => {
+    const extra = await createProject(locttDir, { name: "Extra", prefix: "X" });
+    const main = await defaultProjectId();
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      await createTask({ locttDir, state, options: { project: extra.id, title: "t" } });
+      await saveState(locttDir, state);
+    });
+    await expect(
+      deleteProject(locttDir, extra.id, { hard: true, remapTo: main, clearProjectField: true }),
+    ).rejects.toThrow(/not both/);
   });
 
   it("remaps affected tasks when remapTo is supplied", async () => {

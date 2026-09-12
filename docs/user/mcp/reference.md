@@ -578,13 +578,14 @@ If a rename is interrupted partway, the next tool call finishes it before runnin
 
 ### `delete_project`
 
-Permanently removes the project from `projects.yaml`. For projects with tasks, `remap_to` is **required** to migrate them to another project. Cannot delete the only project. The counter is preserved in `retired_keys` so a later create with the same prefix resumes numbering. **Always requires `confirm: true`.** Use `archive_project` for the reversible variant.
+Permanently removes the project from `projects.yaml`. For projects with tasks, pass **exactly one** of `remap_to` (migrate them to another project) or `clear_project_field: true` (clear their project field, leaving them with no project) — not both, and not neither, so tasks are never silently orphaned. Cannot delete the only project. The counter is preserved in `retired_keys` so a later create with the same prefix resumes numbering. **Always requires `confirm: true`.** Use `archive_project` for the reversible variant.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `project` | string | yes | Project id or name to delete |
 | `confirm` | boolean | yes | Must be `true` to proceed |
-| `remap_to` | string | no | Target project (id or name) for tasks in the deleted project |
+| `remap_to` | string | conditional | Target project (id or name) for tasks in the deleted project (mutually exclusive with `clear_project_field`) |
+| `clear_project_field` | boolean | conditional | Clear the project field on affected tasks instead of remapping them (mutually exclusive with `remap_to`) |
 
 Returns JSON `{id, remappedTaskCount}`.
 

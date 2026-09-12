@@ -62,7 +62,14 @@ const RemapProjectSchema = z.object({
   ...BaseEntry,
   kind: z.literal("remap_project"),
   from: z.string().min(1),
-  to: z.string().min(1),
+  /**
+   * The target project id, or `null` to CLEAR the field — PRU-17's
+   * "clear the project field on these tasks" branch of a hard delete.
+   * `project` is optional on a task, so a cleared task has no project
+   * (it is not orphaned into an invalid state). Mirrors the milestone /
+   * sprint remaps, which already allow `null`.
+   */
+  to: z.string().min(1).nullable(),
 });
 
 const RemapLabelSchema = z.object({
@@ -352,7 +359,15 @@ export async function replayTaskRemap(
     switch (entry.kind) {
       case "remap_project":
         if (fm.project !== entry.from) { skipped += 1; continue; }
-        updated = { ...fm, project: entry.to };
+        if (entry.to === null) {
+          // PRU-17: clear the field. Drop the key so the task surfaces
+          // as "no project" (frontmatter.project === undefined), the way
+          // the milestone/sprint clears do, rather than an empty string.
+          const { project: _drop, ...rest } = fm;
+          updated = rest as typeof fm;
+        } else {
+          updated = { ...fm, project: entry.to };
+        }
         break;
       case "remap_label": {
         const labels = fm.labels ?? [];

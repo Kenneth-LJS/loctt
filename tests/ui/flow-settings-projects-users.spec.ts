@@ -416,6 +416,38 @@ test.describe("PRU — the projects panel", () => {
   });
 
   // @verifies PRU-17
+  test("PRU-17: 'clear the project field' is an explicit choice that deletes and clears", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "Keep me around" }]);
+    const taskKey = keys[0] as string;
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+
+    await page.goto(`${tracker.baseURL}/settings/projects`);
+    const yaml = await projectsYaml(tracker.root);
+    const tasksId = /id: (\w+)\n\s+name: Tasks/.exec(yaml)?.[1] ?? "";
+    expect(tasksId).not.toBe("");
+
+    await page.getByTestId(`project-delete-${tasksId}`).click();
+    await expect(page.getByTestId("project-delete-dialog")).toBeVisible();
+
+    // Choosing "clear the project field" enables confirm without a remap
+    // target — the second half of the no-silent-orphan choice.
+    await page.getByTestId("project-delete-choice-clear").check();
+    await expect(page.getByTestId("project-delete-confirm")).toBeEnabled();
+    await page.getByTestId("project-delete-confirm").click();
+
+    // The result says the field was cleared, and the task survives with
+    // no project (its key unchanged).
+    await expect(page.getByTestId("project-delete-result")).toContainText(/cleared the project field/i);
+    const shown = await tracker.run(["show", taskKey]);
+    expect(shown).toContain(taskKey);
+    // The project is gone from projects.yaml.
+    expect(await projectsYaml(tracker.root)).not.toContain("name: Tasks");
+  });
+
+  // @verifies PRU-17
   test("PRU-17: cancelling leaves projects.yaml and the tasks byte-identical", async ({
     page,
     tracker,
