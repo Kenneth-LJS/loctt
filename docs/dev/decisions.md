@@ -11467,6 +11467,48 @@ the UI package's own command — implementer's call, recorded in §8.
 
 **This is Ken's, not an agent's — not revertible by an agent.**
 
+### K90 · Config-list name search is a core capability on all three surfaces; UI pickers query, CLI/MCP paginate
+
+**The situation.** The config pickers (labels, milestones, sprints, users,
+projects) fetch the whole list at `limit=1000` (A43) and filter it in the
+browser. Past 1000 entries the list is silently truncated, and — because
+names are deliberately non-unique and `createLabel` has no name guard —
+the create modal's in-memory "no match, offer to create" check can be
+defeated into writing a **duplicate label**. NEW-25 asks for a picker that
+"filters as you type and shows a bounded number of results."
+
+**Ruling (Ken, 2026-09-12).**
+- **Name search is a core capability exposed on ALL THREE surfaces**, not
+  a web-only affordance. The `q` filter lives in core so CLI, MCP, and the
+  web server search identically (the full parity reading of "a capability
+  in core is not done until CLI and MCP have it"). CLI/MCP gain the
+  search/filter argument; their reference docs and tests are part of the
+  work.
+- **UI: the dropdown itself searches.** Each picker has a search input;
+  typing queries the server (`?q=`) and shows a bounded result set, rather
+  than filtering a pre-fetched array. This is also how a value beyond the
+  first 1000 becomes reachable in the UI — you find it by typing, not by
+  scrolling a truncated list.
+- **CLI/MCP: paginate up to 1000 at a time.** Rather than a by-id resolve
+  endpoint, the CLI/MCP list commands page through results (a page at a
+  time, ≤1000) so everything beyond the first window is reachable by
+  paging. No unbounded single response.
+- **Projects match on name + slug + prefix** (case-insensitive substring);
+  the other entities match on name. Slug and prefix are the stable
+  user-facing handles, so typing `WEB` finds a project by its key prefix
+  or URL slug, not only its display name.
+- **The duplicate-write fix is server-authoritative.** The "does a label
+  named X already exist" decision that gates "offer to create" must come
+  from a core/exact-name check, never from a fetched (and possibly
+  truncated) array.
+
+**Consequence.** Supersedes A43's "raise the picker limit to 1000, defer
+the paged picker" as the interim. Match semantics (case-insensitive
+substring, empty `q` = no filter), debounce, and the bounded UI result
+count are implementer details recorded in §8.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
 ### A-MSL-C1-MOOT · MSL-C1 legacy-replay caveat is moot (nothing published)
 
 **Decision (agent-level, per Ken).** The MSL-C1 legacy caveat (pre-fix

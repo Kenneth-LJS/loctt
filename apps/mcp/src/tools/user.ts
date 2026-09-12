@@ -18,6 +18,7 @@ import {
   countUserReferences,
   createUser,
   deleteUser,
+  filterByName,
   getCurrentUser,
   loadAllUsers,
   loadOptionalConfigs,
@@ -36,6 +37,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { configListInputSchema, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { errorResult, text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -43,15 +45,21 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_users",
-    description: "List registered users. By default, archived users are hidden; pass include_archived=true to include them.",
+    description:
+      "List registered users. By default, archived users are hidden; pass include_archived=true to include them. "
+      + "K90: pass `q` for a case-insensitive name substring search, and `limit`/`offset` to page (default 100, cap 1000).",
     inputSchema: {
       include_archived: z.boolean().optional(),
+      ...configListInputSchema,
     },
     handler: async ({ locttDir }, args) => {
       const includeArchived = args["include_archived"] === true;
       const users = await loadAllUsers(locttDir);
       const current = await getCurrentUser(locttDir);
-      const filtered = users.filter(u => includeArchived || u.archived !== true);
+      // K90 order (matching the web `handleListUsers`): archived filter,
+      // then name filter, then page.
+      const visible = users.filter(u => includeArchived || u.archived !== true);
+      const filtered = pageConfigList(filterByName(visible, getQ(args)), args);
       return text(JSON.stringify({
         current: current?.id ?? null,
         users: filtered,

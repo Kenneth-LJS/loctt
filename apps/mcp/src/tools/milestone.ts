@@ -9,6 +9,7 @@ import {
   createMilestone,
   deleteMilestone,
   editMilestone,
+  filterByName,
   loadMilestonesConfig,
   loadWorkflowConfig,
   milestoneProgressDetailed,
@@ -17,6 +18,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { configListInputSchema, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -37,18 +39,22 @@ export const TOOLS: readonly ToolDef[] = [
     inputSchema: {
       progress: z.boolean().optional()
         .describe("Include done/total per milestone. Scans every task, so opt in only when needed."),
+      ...configListInputSchema,
     },
     handler: async ({ locttDir }, args) => {
       const cfg = await loadMilestonesConfig(locttDir);
+      // K90 order (matching the web `handleListMilestones`): name filter,
+      // then page. Progress is computed over the paged window only.
+      const milestones = pageConfigList(filterByName(cfg.milestones, getQ(args)), args);
       if (args["progress"] !== true) {
-        return text(JSON.stringify(cfg, null, 2));
+        return text(JSON.stringify({ ...cfg, milestones }, null, 2));
       }
       const workflow = await loadWorkflowConfig(locttDir);
       const report = await milestoneProgressDetailed(
-        locttDir, cfg.milestones.map(m => m.id), workflow,
+        locttDir, milestones.map(m => m.id), workflow,
       );
       return text(JSON.stringify({
-        milestones: cfg.milestones.map(m => ({ ...m, progress: report.progress[m.id] })),
+        milestones: milestones.map(m => ({ ...m, progress: report.progress[m.id] })),
         // K28: unreadable tasks cannot be attributed to a milestone, so
         // they are reported at the top level. Present only when non-empty
         // so a caller reading only `milestones` is unaffected.

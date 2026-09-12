@@ -9,12 +9,14 @@ import {
   createLabel,
   deleteLabel,
   editLabel,
+  filterByName,
   loadLabelsConfig,
   resolveLabelIdFromInput,
   unarchiveLabel,
 } from "@loctt/core";
 import { z } from "zod";
 
+import { configListInputSchema, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -22,11 +24,17 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_labels",
-    description: "List labels defined in labels.yaml. Each label has an internal id (ULID), a display name, and optional color.",
-    inputSchema: {},
-    handler: async ({ locttDir }) => {
+    description:
+      "List labels defined in labels.yaml. Each label has an internal id (ULID), a display name, and optional color. "
+      + "K90: pass `q` for a case-insensitive name substring search, and `limit`/`offset` to page (default 100, cap 1000).",
+    inputSchema: { ...configListInputSchema },
+    handler: async ({ locttDir }, args) => {
       const cfg = await loadLabelsConfig(locttDir);
-      return text(JSON.stringify(cfg, null, 2));
+      // K90 order (matching the web `handleListLabels`): name filter,
+      // then page. Labels have no archived-hiding step here (the web
+      // list_labels shows archived too), so it is filter → page.
+      const labels = pageConfigList(filterByName(cfg.labels, getQ(args)), args);
+      return text(JSON.stringify({ ...cfg, labels }, null, 2));
     },
   },
   {

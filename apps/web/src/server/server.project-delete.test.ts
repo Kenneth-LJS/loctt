@@ -72,7 +72,7 @@ describe("DELETE /api/projects/:id", () => {
   }
 
   it("a plain DELETE removes the project rather than archiving it", async () => {
-    const id = await makeProject("Doomed", "DM-");
+    const id = await makeProject("Doomed", "DM");
 
     const res = await fetch(`${base}/api/projects/${id}`, {
       method: "DELETE",
@@ -87,7 +87,7 @@ describe("DELETE /api/projects/:id", () => {
   });
 
   it("?soft=true archives instead, and the project is still listed", async () => {
-    const id = await makeProject("Shelved", "SH-");
+    const id = await makeProject("Shelved", "SH");
 
     const res = await fetch(`${base}/api/projects/${id}?soft=true`, {
       method: "DELETE",

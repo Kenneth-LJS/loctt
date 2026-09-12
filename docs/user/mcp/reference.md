@@ -520,7 +520,15 @@ Returns: `Detached <name> from <KEY>`. Errors via `AttachmentNotFoundError` when
 
 ### `list_projects`
 
-No parameters. Returns JSON `{projects: [...], default: <id|null>}` from `projects.yaml`. `default` is a project **id** (ULID), not a name.
+Returns JSON `{projects: [...], default: <id|null>}` from `projects.yaml`. `default` is a project **id** (ULID), not a name, and is computed over the full config regardless of `q`/paging.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `q` | string | no | Case-insensitive substring search over each project's **name, slug, or prefix**. Blank/omitted = no filter |
+| `limit` | number | no | Max projects returned (default 100, cap 1000) |
+| `offset` | number | no | Projects to skip, for paging past the first `limit` |
+
+The filter applies before paging, so `offset`/`limit` page through the matches. (K90: name search is a core capability shared with the CLI and web surfaces.)
 
 ### `create_project`
 
@@ -633,8 +641,11 @@ Set or clear the workspace default project.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `include_archived` | boolean | no | Include archived users (default false) |
+| `q` | string | no | Case-insensitive substring search on the user name. Blank/omitted = no filter |
+| `limit` | number | no | Max users returned (default 100, cap 1000) |
+| `offset` | number | no | Users to skip, for paging past the first `limit` |
 
-Returns JSON `{current: <id|null>, users: [...]}`.
+Returns JSON `{current: <id|null>, users: [...]}`. Order of operations (matching the web surface): archived filter, then name filter, then page. (K90.)
 
 ### `get_current_user`
 
@@ -751,7 +762,15 @@ Returns JSON `{deleted: <id>, ...result}`. Errors: `delete_user requires confirm
 
 ### `list_labels`
 
-No parameters. Returns the full labels config JSON. Each label is `{id, name, color?}`; `id` is a ULID.
+Returns the labels config JSON. Each label is `{id, name, color?}`; `id` is a ULID. The `labels` array is filtered/paged per the parameters below; other config fields round-trip unchanged.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `q` | string | no | Case-insensitive substring search on the label name. Blank/omitted = no filter |
+| `limit` | number | no | Max labels returned (default 100, cap 1000) |
+| `offset` | number | no | Labels to skip, for paging past the first `limit` |
+
+The filter applies before paging. (K90: name search is a core capability shared with the CLI and web surfaces.)
 
 ### `create_label`
 
@@ -800,11 +819,16 @@ If some task rewrites fail partway during a `remap_to`, the tool reports the spl
 
 ### `list_milestones`
 
-Returns the full milestones config JSON. Each milestone is `{id, name, target_date?}`; `id` is a ULID.
+Returns the milestones config JSON. Each milestone is `{id, name, target_date?}`; `id` is a ULID. The `milestones` array is filtered/paged per the parameters below.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `progress` | boolean | no | Include per-milestone progress counts |
+| `q` | string | no | Case-insensitive substring search on the milestone name. Blank/omitted = no filter |
+| `limit` | number | no | Max milestones returned (default 100, cap 1000) |
+| `offset` | number | no | Milestones to skip, for paging past the first `limit` |
+
+The filter applies before paging; with `progress: true` the scan runs over the paged window only. (K90.)
 
 With `progress: true` the response is `{milestones: [...], unreadable?}`
 — each milestone gains a `progress` `{done, total, discarded, fraction}`
@@ -856,11 +880,16 @@ Returns JSON `{id, ...result}`.
 
 ### `list_sprints`
 
-Returns the full sprints config JSON. Each sprint is `{id, name, start_date, end_date, state, goal?}`; `id` is a ULID.
+Returns the sprints config JSON. Each sprint is `{id, name, start_date, end_date, state, goal?}`; `id` is a ULID. The `sprints` array is filtered/paged per the parameters below.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `progress` | boolean | no | Include per-sprint progress counts |
+| `q` | string | no | Case-insensitive substring search on the sprint name. Blank/omitted = no filter |
+| `limit` | number | no | Max sprints returned (default 100, cap 1000) |
+| `offset` | number | no | Sprints to skip, for paging past the first `limit` |
+
+The filter applies before paging; with `progress: true` the scan runs over the paged window only. (K90.)
 
 With `progress: true` the response is `{sprints: [...], unreadable?}`,
 mirroring `list_milestones`: each sprint gains a `progress` `{done,

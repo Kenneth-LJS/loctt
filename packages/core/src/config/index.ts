@@ -70,6 +70,7 @@ export {
   setConfigValue,
   unsetConfigValue,
 } from "./router.js";
+export { filterByName, filterProjects, isBlankQuery } from "./search.js";
 export {
   getSprintsConfigPath,
   loadSprintsConfig,

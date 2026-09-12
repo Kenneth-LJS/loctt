@@ -190,7 +190,7 @@ loctt schema
 space — each project has its own prefix and counter.
 
 ```
-loctt project list [--all]
+loctt project list [--all] [--ids] [--filter <q>] [--limit <n>] [--offset <n>]
 loctt project create <name> --prefix <prefix> [--slug <slug>] [--default]
 loctt project edit <slug|name|id> --name <new-name>
 loctt project set-prefix <slug|name|id> <new-prefix> [--yes]
@@ -220,6 +220,19 @@ referenced by name or id exactly as before.
 
 `list` hides archived projects unless `--all` is passed. The workspace default
 project is marked with `*`.
+
+`--filter <q>` narrows the list to a case-insensitive substring match on the
+project **name, slug, or prefix** — so `--filter web` finds a project keyed
+`WEB-` or slugged `web` even when its display name is "Website". A blank filter
+is no filter. `--limit <n>` / `--offset <n>` page the (filtered) result:
+`--limit` defaults to 100 and may be at most 1000 (over the cap is an error, not
+a silent truncation); `--offset` skips that many matches so you can page past
+the first window. The filter applies before paging, so you page through the
+matches. When the shown page is not the whole match set, a footer names how
+much was not shown — `Showing 1–100 of 240. Use --limit/--offset to page.` (the
+same footer `loctt log` prints), so a truncated list never reads as complete.
+(Same convention across `label`, `milestone`, `sprint`, and `user` `list`,
+except those match on name only.)
 
 ### Changing a project's prefix
 
@@ -287,7 +300,7 @@ loctt project set-default -
 attributes new tasks and history entries to.
 
 ```
-loctt user list [--all]
+loctt user list [--all] [--filter <q>] [--limit <n>] [--offset <n>]
 loctt user current
 loctt user switch <id-or-name>
 loctt user create <name> [--email <e>] [--timezone <tz>] [--avatar <path>] [--switch]
@@ -301,7 +314,9 @@ loctt user sidebar-groups [--order <ids> | --hidden <ids> | --reset]
 ```
 
 `list` hides archived users unless `--all` is passed. The current user is
-marked with `*`.
+marked with `*`. `--filter <q>` narrows to a case-insensitive substring of the
+user name; `--limit <n>` (default 100, max 1000) / `--offset <n>` page the
+filtered list. See `project list` for the shared filter/paging convention.
 
 `create --switch` makes the new user the current user immediately after
 creating them.
@@ -368,7 +383,7 @@ loctt user delete alex --remap-to bo
 `loctt label <subcommand>` manages labels (free-form tags).
 
 ```
-loctt label list [--all] [--ids]
+loctt label list [--all] [--ids] [--filter <q>] [--limit <n>] [--offset <n>]
 loctt label create <name> [--color <hex>]
 loctt label edit <name|id> [--name <new>] [--color <hex|->]
 loctt label archive <name|id>
@@ -378,7 +393,10 @@ loctt label delete <name|id> [--remap-to <other>] [--yes]
 
 Labels are identified by a generated ULID `id` and a mutable, non-unique
 `name`. There is no user-authored key — refer to a label by name, or by id
-when two share a name. `--ids` prints ids alongside names.
+when two share a name. `--ids` prints ids alongside names. `--filter <q>`
+narrows to a case-insensitive substring of the name; `--limit <n>` (default
+100, max 1000) / `--offset <n>` page the filtered list (see `project list` for
+the shared convention).
 
 `edit --color -` clears an existing color. `edit --name` renames; the
 positional argument selects which label to rename.
@@ -410,7 +428,7 @@ loctt label delete "Blocker" --remap-to "High priority" --yes
 `loctt milestone <subcommand>` manages milestones.
 
 ```
-loctt milestone list [--all] [--ids] [--progress]
+loctt milestone list [--all] [--ids] [--progress] [--filter <q>] [--limit <n>] [--offset <n>]
 loctt milestone create <name> [--target-date <YYYY-MM-DD>]
 loctt milestone edit <name|id> [--name <new>] [--target-date <YYYY-MM-DD|->] [--archived <true|false>]
 loctt milestone archive <name|id>
@@ -421,6 +439,11 @@ loctt milestone delete <name|id> [--remap-to <other>] [--yes]
 Milestones are identified by a generated ULID `id` and a mutable,
 non-unique `name`. There is no user-authored key — refer to a milestone
 by name, or by id when two share a name.
+
+`--filter <q>` narrows to a case-insensitive substring of the name;
+`--limit <n>` (default 100, max 1000) / `--offset <n>` page the filtered
+list (see `project list` for the shared convention). With `--progress`,
+the scan runs over the paged window only.
 
 `edit --target-date -` clears the target date. `--archived` accepts only the
 literal strings `true` or `false`.
@@ -454,7 +477,7 @@ loctt milestone delete "Version 0.9" --remap-to "Version 1.0" --yes
 `loctt sprint <subcommand>` manages sprints.
 
 ```
-loctt sprint list [--all] [--ids] [--progress]
+loctt sprint list [--all] [--ids] [--progress] [--filter <q>] [--limit <n>] [--offset <n>]
 loctt sprint create <name> --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--state <active|completed|future>] [--goal <g>]
 loctt sprint edit <name|id> [--name <new>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]
 loctt sprint archive <name|id>
@@ -465,6 +488,11 @@ loctt sprint delete <name|id> [--remap-to <other>] [--yes]
 Sprints are identified by a generated ULID `id` and a mutable, non-unique
 `name`. There is no user-authored key — refer to a sprint by name, or by id
 when two share a name.
+
+`--filter <q>` narrows to a case-insensitive substring of the name;
+`--limit <n>` (default 100, max 1000) / `--offset <n>` page the filtered
+list (see `project list` for the shared convention). With `--progress`,
+the scan runs over the paged window only.
 
 `create --state` defaults to `future`. `edit --goal -` clears the sprint
 goal. `edit --name` renames; the positional argument selects which sprint.

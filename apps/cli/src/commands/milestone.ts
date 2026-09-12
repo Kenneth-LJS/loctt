@@ -3,6 +3,7 @@ import {
   createMilestone,
   deleteMilestone,
   editMilestone,
+  filterByName,
   loadMilestonesConfig,
   loadWorkflowConfig,
   milestoneProgressDetailed,
@@ -12,6 +13,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -30,7 +32,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--ids", "--name", "--progress", "--remap-to", "--target-date", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--filter", "--ids", "--limit", "--name", "--offset", "--progress", "--remap-to", "--target-date", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -42,7 +44,13 @@ export async function run(args: string[], root: string): Promise<void> {
       const showIds = hasFlag(args, "--ids");
       const showProgress = hasFlag(args, "--progress");
       const cfg = await loadMilestonesConfig(locttDir);
-      const shown = cfg.milestones.filter(m => includeArchived || m.archived !== true);
+      // K90 order (matching the web `handleListMilestones`): archived
+      // filter, then name filter, then page. Progress is computed over
+      // the paged window only, so a page's `--progress` scan is bounded.
+      const visible = cfg.milestones.filter(m => includeArchived || m.archived !== true);
+      const matched = filterByName(visible, getFilterArg(args));
+      const page = pageConfigList(matched, getConfigPagination(args));
+      const shown = page.items;
 
       // Opt-in: progress scans every task, and `milestone list` is
       // otherwise a config read.
@@ -77,6 +85,8 @@ export async function run(args: string[], root: string): Promise<void> {
           : "";
         console.log(`${m.name}${idCol}${due}${prog}${arch}`);
       }
+      const notice = truncationNotice(page);
+      if (notice !== undefined) console.log(notice);
       break;
     }
     case "create": {

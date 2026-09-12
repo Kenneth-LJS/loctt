@@ -12,6 +12,7 @@ import {
   createSprint,
   deleteSprint,
   editSprint,
+  filterByName,
   loadSprintsConfig,
   loadWorkflowConfig,
   readBurndownSeries,
@@ -21,6 +22,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { configListInputSchema, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -41,18 +43,22 @@ export const TOOLS: readonly ToolDef[] = [
     inputSchema: {
       progress: z.boolean().optional()
         .describe("Include done/total per sprint. Scans every task, so opt in only when needed."),
+      ...configListInputSchema,
     },
     handler: async ({ locttDir }, args) => {
       const cfg = await loadSprintsConfig(locttDir);
+      // K90 order (matching the web `handleListSprints`): name filter,
+      // then page. Progress is computed over the paged window only.
+      const sprints = pageConfigList(filterByName(cfg.sprints, getQ(args)), args);
       if (args["progress"] !== true) {
-        return text(JSON.stringify(cfg, null, 2));
+        return text(JSON.stringify({ ...cfg, sprints }, null, 2));
       }
       const workflow = await loadWorkflowConfig(locttDir);
       const report = await sprintProgressDetailed(
-        locttDir, cfg.sprints.map(s => s.id), workflow,
+        locttDir, sprints.map(s => s.id), workflow,
       );
       return text(JSON.stringify({
-        sprints: cfg.sprints.map(s => ({ ...s, progress: report.progress[s.id] })),
+        sprints: sprints.map(s => ({ ...s, progress: report.progress[s.id] })),
         // K28: unreadable tasks cannot be attributed to a sprint, so
         // they are reported at the top level. Present only when non-empty
         // so a caller reading only `sprints` is unaffected.
