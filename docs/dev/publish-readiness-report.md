@@ -8,39 +8,24 @@ errors.** ~38 commits this run session (on top of the earlier ~61).
 ## Honest summary
 
 The run cleared the **entire bounded / ruling-clear / verify-closeable
-tier and every WCAG-AA accessibility item except one**. What remains is
-uniformly **feature-scale** — the visual query builder + JQL functions,
-deep-linking, the git-sync engine, timeline virtualization, comments-scale
-pagination, and the estimate-config feature — plus 5 tooling/flake items.
-Nothing is left half-built: every item below is either fully closed
-(case + test + decision, gates green) or not-started.
+tier and every WCAG-AA accessibility item** (A11Y-39, the last one, is now
+done). What remains is uniformly **feature-scale** — the visual query
+builder + JQL functions, deep-linking, the git-sync engine, timeline
+virtualization, comments-scale pagination, and the estimate-config
+feature — plus 5 tooling/flake items. Nothing is left half-built: every
+item below is either fully closed (case + test + decision, gates green) or
+not-started.
 
-**One WCAG-AA item is parked pending an owner call — see the flag below.**
-Because K74 makes AA a publish blocker, that item is the single thing
-standing between here and a fully-green AA gate.
+## ✅ WCAG-AA gate is fully green
 
-## ⚠ Needs a decision from Ken: A11Y-39 (text-zoom 200%)
-
-A11Y-39 (WCAG 1.4.4 Resize Text) is the **only remaining AA case**. The
-other four A11Y feature-gaps (A11Y-10/12/17/51) were built and verified
-this session. Satisfying A11Y-39 means a **global type-scale restyle**:
-858 `text-[Npx]` sites onto the named `--text-*` scale (whose values move
-px→rem), a rem/percentage root font-size, and turning ~70 text-bearing
-fixed-height utilities into min-heights so growing text is not clipped.
-
-Decision A95 deferred this as a global visual-regression surface owned by
-no ticket, and A-A11Y39-HOLD keeps that deferral rather than overriding a
-recorded decision with an 858-site restyle done autonomously near a
-context boundary — this is work that wants your eye on the visual result.
-It is *ready* (the named B1 scale is the lever; the migration is
-mechanical: 13→body, 12→label, 11/10→meta, 15→heading), not blocked. Note
-A95's finding that the case's bullets are **vacuously** satisfied today
-(no text clips because none grows) — so this is missing *true* text-zoom
-support, not a visible clipping defect.
-
-**The call to make:** do the global restyle before publish (AA-complete),
-or ship with A11Y-39 as a documented known-gap. I did not make it
-unilaterally.
+Every AA case is now met. A11Y-39 (text-zoom to 200%, WCAG 1.4.4) — the
+last one, previously deferred — was built at Ken's direction: the type
+scale moved to rem anchored to the browser root (`html { font-size:
+87.5% }`), all 860 `text-[Npx]` sites across 104 files became
+`text-[…rem]` (size-preserving), and a `@verifies A11Y-39` spec (red-
+proven, browser-smoke-checked list+board at 100% and 175%) covers it. It
+was a size-preserving swap, not a redesign — no visual regression, all
+web-client unit tests pass. **No AA item is now outstanding.**
 
 ## Closed this session (~30, each: case/impl + test + decision, gates green)
 
