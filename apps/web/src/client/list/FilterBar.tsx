@@ -253,6 +253,24 @@ export function FilterBar({
             unavailable={failedFacets.has(key)}
             selected={facetOf(key)}
             onChange={next => setFilter(key, next)}
+            // LST-40/MSL-7: labels are set-valued, so 2+ selected can mean
+            // "has all of these" or "has any". Offer the choice inline
+            // once it matters; other facets are scalar and OR is the only
+            // sensible reading.
+            {...(key === "labels" && facetOf("labels").length >= 2
+              ? { matchToggle: (
+                  <LabelsMatchToggle
+                    value={search.labels_match ?? "any"}
+                    onChange={mode => void navigate({
+                      search: prev => ({
+                        ...prev,
+                        labels_match: mode === "all" ? "all" : undefined,
+                        page: undefined,
+                      }),
+                    })}
+                  />
+                ) }
+              : {})}
           />
         ))}
 
@@ -561,4 +579,37 @@ function chipValues(search: Partial<ListSearch>, key: string): string[] {
   }
   const v: unknown = (search as Record<string, unknown>)[key];
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+/**
+ * LST-40/MSL-7: the All/Any choice for a multi-label filter. "All" means
+ * a task must carry every selected label (AND); "Any" means any of them
+ * (OR, the default). Two radios rather than a checkbox so both states are
+ * named — a bare "match all" checkbox leaves "off" ambiguous.
+ */
+function LabelsMatchToggle({
+  value,
+  onChange,
+}: {
+  readonly value: "all" | "any";
+  readonly onChange: (mode: "all" | "any") => void;
+}) {
+  return (
+    <fieldset className="flex items-center gap-3 text-[0.8571rem] text-text-secondary">
+      <legend className="sr-only">Match</legend>
+      <span className="text-text-tertiary">Match</span>
+      {(["any", "all"] as const).map(mode => (
+        <label key={mode} className="inline-flex items-center gap-1">
+          <input
+            type="radio"
+            name="labels-match"
+            data-testid={`labels-match-${mode}`}
+            checked={value === mode}
+            onChange={() => { onChange(mode); }}
+          />
+          {mode === "any" ? "Any" : "All"}
+        </label>
+      ))}
+    </fieldset>
+  );
 }

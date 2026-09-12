@@ -11839,3 +11839,24 @@ but the client uses the scroll box, which is simpler and lower-risk.
 clamp); flow-comments (20) and flow-activity (16, reuses `useComments`)
 pass unchanged. **To revert:** drop the scroll-box classes + scroll
 effect in `CommentsPanel` and the `ClampedBody` in `CommentItem`.
+
+### A-LABELS-MATCH · Multi-label filter offers All (AND) vs Any (OR)
+
+**Built (agent-level).** Selecting two labels returned tasks with *either*
+(`labels in (a, b)`) — a widening OR that the MSL-7 report flagged as
+"the second label widens results". Labels are set-valued, so "tasks with
+*both* labels" is a real want OR silently swallowed. Added a per-facet
+All/Any toggle: the label dropdown shows it once 2+ labels are selected,
+backed by a `labels_match=all|any` URL param (default `any` = the existing
+OR, so links are unchanged). `buildStructuredQuery` emits
+`(labels = a and labels = b)` for `all` and keeps `labels in (a, b)` for
+`any`; only `labels` honours it (scalar facets like status can't be two
+values at once). Scoped to the filter bar — the DSL already supported both
+forms (`labels = x` means "contains x"). `@verifies MSL-7` spec (All →
+only the both-labelled task; Any → both; param round-trips), red-proven
+against the server AND logic after a clean `apps/cli/dist` rebuild (tsup
+cache lesson recorded). This is the "separately fixable in ~a day" slice
+the query-builder note called out; the visual builder + K80 date functions
+remain. **To revert:** drop `labels_match` from the search schema,
+`useTasks`, `buildStructuredQuery`, and the `matchToggle` in FilterBar /
+FilterDropdown.
