@@ -26,13 +26,13 @@ describe("CLI project set-prefix uniqueness (spawned binary)", () => {
       await runCli(["create", "a task"], { cwd: root });
       const before = await readFile(projectsYaml(root), "utf-8");
 
-      const res = await runCli(["project", "set-prefix", "Backend", "T-", "--yes"], { cwd: root });
+      const res = await runCli(["project", "set-prefix", "Backend", "T", "--yes"], { cwd: root });
       expect(res.exitCode).not.toBe(0);
 
       const out = `${res.stdout}${res.stderr}`;
       // Naming both sides matters: "prefix in use" alone leaves the user
       // hunting for which project holds it.
-      expect(out).toMatch(/T-/);
+      expect(out).toMatch(/\bT\b/);
       expect(out).toMatch(/Tasks/);
 
       // Nothing was written — a partially-applied rename would leave
@@ -47,7 +47,7 @@ describe("CLI project set-prefix uniqueness (spawned binary)", () => {
 
       // Re-asserting the current value is not a collision. Failing here
       // would make idempotent scripts break on a second run.
-      const res = await runCli(["project", "set-prefix", "Backend", "B-", "--yes"], { cwd: root });
+      const res = await runCli(["project", "set-prefix", "Backend", "B", "--yes"], { cwd: root });
       expect(res.exitCode).toBe(0);
     });
   });

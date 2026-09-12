@@ -1190,29 +1190,29 @@ test.describe("BLK — move to project", () => {
     // the key the user knew no longer exists and nothing says what
     // replaced it.
     //
-    // Asserted as one string, not two substrings: `toContainText("BACKEND1")`
+    // Asserted as one string, not two substrings: `toContainText("BACKEND-1")`
     // plus `toContainText("→")` passes with the arrow reversed, which
     // reads as moving *from* a key that does not exist yet *to* one that
     // no longer does. The pairing and its direction are the whole
     // content of this bullet.
-    await expect(status).toContainText(`${String(seeded[1])} → BACKEND1`);
+    await expect(status).toContainText(`${String(seeded[1])} → BACKEND-1`);
 
     const keys = await keysOnDisk(tracker.root);
-    expect(keys).toContain("BACKEND1");
+    expect(keys).toContain("BACKEND-1");
     // The `project` field itself, not only the key prefix — the two are
     // written by different lines and a rekey that left `project` stale
     // would look right in the list and wrong to every query.
-    expect(await fieldFor(tracker.root, "BACKEND1", "project")).toBe(backendId);
+    expect(await fieldFor(tracker.root, "BACKEND-1", "project")).toBe(backendId);
     // The old key is preserved so pasting it still resolves (P-7). The
     // The list renders newest-first, so the first checkbox is the task
     // seeded *last*. Both the prefix and the ordering are the fixture's;
     // hardcoding either asserts against the fixture, not the move.
-    expect(await historyFor(tracker.root, "BACKEND1")).toEqual([seeded[1]]);
+    expect(await historyFor(tracker.root, "BACKEND-1")).toEqual([seeded[1]]);
     // And it actually resolves: key_history exists so the key the user
     // still has in hand keeps working. Reading the YAML proves the entry
     // was written, not that anything honours it.
     const resolved = await tracker.run(["show", String(seeded[1])]);
-    expect(resolved).toContain("BACKEND1");
+    expect(resolved).toContain("BACKEND-1");
   });
 
   // @verifies BLK-31
@@ -1266,12 +1266,12 @@ test.describe("BLK — move to project", () => {
     // prefixes here and look correct with a single source.
     const seeded = await tracker.seed([{ title: "One" }]);
     const inApi = await tracker.run(["create", "Two", "--project", "Api"]);
-    expect(inApi).toContain("API1");
+    expect(inApi).toContain("API-1");
     // A task already in the destination. Moving it must be a no-op
     // success, not a rekey — burning a key number here leaves a
     // permanent gap in the sequence.
     const inOps = await tracker.run(["create", "Three", "--project", "Ops"]);
-    expect(inOps).toContain("OPS1");
+    expect(inOps).toContain("OPS-1");
 
     await page.goto(`${tracker.baseURL}/list`);
     // Rows first: a click before the table renders lands on nothing.
@@ -1291,9 +1291,9 @@ test.describe("BLK — move to project", () => {
     await expect(status).toContainText("3 tasks moved");
 
     // Two rekeyed from the OPS counter with no gap and no reuse; the
-    // third kept OPS1.
+    // third kept OPS-1.
     const keys = await keysOnDisk(tracker.root);
-    expect(keys).toEqual(["OPS1", "OPS2", "OPS3"]);
+    expect(keys).toEqual(["OPS-1", "OPS-2", "OPS-3"]);
     // The counter itself, which the case names explicitly. Keys on disk
     // alone cannot see a number that was allocated and then abandoned —
     // that leaves a permanent gap in the sequence and reads as correct
@@ -1301,14 +1301,14 @@ test.describe("BLK — move to project", () => {
     expect(await opsNextNumber(tracker.root)).toBe(4);
 
     // The already-in-Ops task is reported as unchanged, not as a rekey.
-    expect(await historyFor(tracker.root, "OPS1")).toEqual([]);
-    await expect(status).not.toContainText("OPS1 →");
+    expect(await historyFor(tracker.root, "OPS-1")).toEqual([]);
+    await expect(status).not.toContainText("OPS-1 →");
 
     // Each moved task carries its former key, whichever project it came
-    // from. Newest-first ordering: API1 was created last, so it rekeys
+    // from. Newest-first ordering: API-1 was created last, so it rekeys
     // first.
-    expect(await historyFor(tracker.root, "OPS2")).toEqual(["API1"]);
-    expect(await historyFor(tracker.root, "OPS3")).toEqual([seeded[0]]);
+    expect(await historyFor(tracker.root, "OPS-2")).toEqual(["API-1"]);
+    expect(await historyFor(tracker.root, "OPS-3")).toEqual([seeded[0]]);
   });
 });
 
@@ -1864,7 +1864,7 @@ test.describe("BLK — selection across views", () => {
     await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND"]);
     const seeded = await tracker.seed([{ title: "One" }]);
     const other = await tracker.run(["create", "Two", "--project", "Backend"]);
-    expect(other).toContain("BACKEND1");
+    expect(other).toContain("BACKEND-1");
 
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
@@ -1885,7 +1885,7 @@ test.describe("BLK — selection across views", () => {
     // key happens to contain it.
     const rows = page.locator("tbody tr");
     await expect(rows.filter({ hasText: String(seeded[0]) })).toContainText("One");
-    await expect(rows.filter({ hasText: "BACKEND1" })).toContainText("Two");
+    await expect(rows.filter({ hasText: "BACKEND-1" })).toContainText("Two");
   });
 });
 

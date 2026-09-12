@@ -16,7 +16,7 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
 describe("project slugs across CLI and MCP", () => {
   it("CLI writes a slug on create and accepts it as a project ref", async () => {
     await withTmpLoctt(async ({ root }) => {
-      await runCli(["project", "create", "Web App", "--prefix", "WEB-"], { cwd: root });
+      await runCli(["project", "create", "Web App", "--prefix", "WEB"], { cwd: root });
 
       const yaml = await readFile(
         join(root, ".loctt", "config", "projects.yaml"),
@@ -35,7 +35,7 @@ describe("project slugs across CLI and MCP", () => {
 
   it("CLI refuses an unknown slug rather than widening to all projects", async () => {
     await withTmpLoctt(async ({ root }) => {
-      await runCli(["project", "create", "Web App", "--prefix", "WEB-"], { cwd: root });
+      await runCli(["project", "create", "Web App", "--prefix", "WEB"], { cwd: root });
       const res = await runCli(["list", "--project", "no-such-slug"], { cwd: root });
 
       expect(res.exitCode).not.toBe(0);
@@ -49,7 +49,7 @@ describe("project slugs across CLI and MCP", () => {
       try {
         const ok = await client.callTool("create_project", {
           name: "Web App",
-          prefix: "WEB-",
+          prefix: "WEB",
           slug: "web",
         });
         expect(ok.isError).toBeFalsy();
@@ -57,7 +57,7 @@ describe("project slugs across CLI and MCP", () => {
 
         const dup = await client.callTool("create_project", {
           name: "Other",
-          prefix: "OTH-",
+          prefix: "OTH",
           slug: "web",
         });
         expect(dup.isError).toBeTruthy();
@@ -70,7 +70,7 @@ describe("project slugs across CLI and MCP", () => {
 
   it("MCP accepts a slug as a project ref and rejects an unknown one", async () => {
     await withTmpLoctt(async ({ root }) => {
-      await runCli(["project", "create", "Web App", "--prefix", "WEB-"], { cwd: root });
+      await runCli(["project", "create", "Web App", "--prefix", "WEB"], { cwd: root });
 
       const client = await startMcpClient(root);
       try {

@@ -11527,6 +11527,48 @@ to the strict rule; removed the stale A80 known-gaps entry. New
 `prefix-validate.test.ts` (`@verifies A80`). All 4 workspace unit suites
 green. **To revert:** the change is broad; `git revert` the commit.
 
+**Follow-up correction (two holes A-K88 left; found by the deep-linking
+reviewer).** A-K88 wired the validator into `initLoctt` and
+`setProjectPrefix` but **not `createProject`** — the shared entry point
+`loctt project create` and the web `handleCreateProject` funnel through.
+So `project create X --prefix WEB-` stored the dash and exited 0
+(verified empirically), rendering keys as `WEB--1`. And the fixture sweep
+claimed "~49 test files" and "all suites green" but only ran the *unit*
+suites; the **integration + e2e** suites were never rebuilt+run against
+the K88 dist, so ~11 of them still assert the pre-K88 dashed contract
+(`set-prefix Tasks WEB-` succeeding, stored `prefix: T-`, `cfg` containing
+`WEB-`). They fail the moment the dist is current — the stale-dist trap in
+lessons.md, at integration scope. Likewise the CLI/MCP reference docs
+still showed the dashed form (`default T-`, `e.g. BACKEND-`).
+
+**Fix (this item).** (1) `createProject` now calls `assertValidPrefix`
+before the uniqueness check — one guard, both surfaces (`@verifies K88`
+in `manage.test.ts`, red-proven; four sibling core fixtures using
+`T1`/`WEB2`/`Q-` etc. conformed to bare, per the "code outgrew the test"
+rule). (2) Conformed the stale integration/e2e prefix fixtures +
+assertions to K88 (inputs `WEB-`→`WEB` etc.; rendered keys `WEB-1`
+unchanged since the dash is render-inserted; stored-form assertions
+`prefix: T-`→`prefix: T`). (3) Fixed a THIRD hole the sweep left: it
+*over-stripped* rendered keys in `flow-list.spec.ts` — `BACKEND-1`
+written as `BACKEND1`, `API-1` as `API1`, `OPS-1/2/3` as `OPS1/2/3` — so
+three BLK move/rekey tests asserted dashless keys the render never
+produces (verified: `create` prints `BACKEND-1`). Restored the dash on
+the rendered-key assertions while leaving the `prefix: OPS` stored-form
+regexes bare; also fixed a false comment in `flow-relationships.spec.ts`
+that claimed `WEB` renders as `WEB1`. `sync-preflight.test.ts` had the
+same over-strip (`comment T1` where the key is `T-1`) — fixed. (4)
+Updated the CLI/MCP reference docs and the user getting-started /
+configuration + dev schema-reference / surface-test-case docs to the bare
+stored form. **To revert:** drop the `assertValidPrefix(input.prefix)`
+line in `createProject`; the fixture/doc edits are conformance and stay.
+
+**Root cause of all three holes: the A-K88 sweep verified against the
+UNIT suites only.** The integration, e2e, and Playwright UI suites were
+never rebuilt+run against the K88 dist, so a create-path guard gap, a set
+of stale dashed-stored-form assertions, and a set of over-stripped
+rendered-key assertions all shipped green. This is the stale-dist lesson
+at whole-suite scale — recorded in lessons.md.
+
 **Lesson:** key-render sites were scattered (found 3 beyond the first 2
 only via failing tests) — a single `renderKey(prefix, n)` helper would
 have localized this; noted as a possible follow-up refactor.

@@ -24,14 +24,14 @@ describe("MCP set_project_prefix (stdio)", () => {
       try {
         const res = await client.callTool("set_project_prefix", {
           project: "Tasks",
-          prefix: "WEB-",
+          prefix: "WEB",
           confirm: true,
         });
         expect(res.isError).toBeFalsy();
         const payload = JSON.parse(res.content[0]?.text ?? "{}") as {
           from: string; to: string; renamed: number;
         };
-        expect(payload).toMatchObject({ from: "T-", to: "WEB-", renamed: 2 });
+        expect(payload).toMatchObject({ from: "T", to: "WEB", renamed: 2 });
       } finally {
         await client.close();
       }
@@ -51,7 +51,7 @@ describe("MCP set_project_prefix (stdio)", () => {
       try {
         const res = await client.callTool("set_project_prefix", {
           project: "Tasks",
-          prefix: "WEB-",
+          prefix: "WEB",
         });
         expect(res.isError).toBe(true);
         expect(res.content[0]?.text ?? "").toMatch(/confirm/i);
@@ -67,17 +67,17 @@ describe("MCP set_project_prefix (stdio)", () => {
   it("refuses a prefix another project holds", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "one"], { cwd: root });
-      await runCli(["project", "create", "API", "--prefix", "API-"], { cwd: root });
+      await runCli(["project", "create", "API", "--prefix", "API"], { cwd: root });
 
       const client = await startMcpClient(root);
       try {
         const res = await client.callTool("set_project_prefix", {
           project: "Tasks",
-          prefix: "API-",
+          prefix: "API",
           confirm: true,
         });
         expect(res.isError).toBe(true);
-        expect(res.content[0]?.text ?? "").toContain("API-");
+        expect(res.content[0]?.text ?? "").toContain("API");
       } finally {
         await client.close();
       }
@@ -89,7 +89,7 @@ describe("MCP set_project_prefix (stdio)", () => {
       // also rejects the duplicate, but only after the counter has been
       // rewritten and the crash sentinel dropped.
       const state = await readFile(join(root, ".loctt", "state.yaml"), "utf-8");
-      expect(state).toContain("prefix: T-");
+      expect(state).toContain("prefix: T");
       await expect(
         readFile(join(root, ".loctt", "local", "prefix-rename.yaml"), "utf-8"),
       ).rejects.toThrow();
@@ -103,7 +103,7 @@ describe("MCP set_project_prefix (stdio)", () => {
       const client = await startMcpClient(root);
       try {
         await client.callTool("set_project_prefix", {
-          project: "Tasks", prefix: "WEB-", confirm: true,
+          project: "Tasks", prefix: "WEB", confirm: true,
         });
         // An agent that read T-1 before the rename must not get a
         // not-found on its next call.

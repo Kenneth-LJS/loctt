@@ -945,8 +945,8 @@ test.describe("NEW — create task modal", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Backend", "--prefix", "BE-"]);
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
     const p = path.join(tracker.root, ".loctt", "config", "projects.yaml");
     const text = await readFile(p, "utf8");
     await writeFile(
@@ -983,8 +983,8 @@ test.describe("NEW — create task modal", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Backend", "--prefix", "BE-"]);
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
     const p = path.join(tracker.root, ".loctt", "config", "projects.yaml");
     const text = await readFile(p, "utf8");
     await writeFile(
@@ -1018,8 +1018,8 @@ test.describe("NEW — create task modal", () => {
     // Two projects, no default: submitting without a project produces a
     // placed field error — the "placed field error" ERR-44 needs, and
     // one reachable from the keyboard alone.
-    await tracker.run(["project", "create", "Backend", "--prefix", "BE-"]);
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
     const projectsPath = path.join(tracker.root, ".loctt", "config", "projects.yaml");
     const projectsText = await readFile(projectsPath, "utf8");
     await writeFile(
@@ -1099,8 +1099,8 @@ test.describe("NEW — create task modal", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Backend", "--prefix", "BE-"]);
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
 
     const statePath = path.join(tracker.root, ".loctt", "state.yaml");
     const before = await readFile(statePath, "utf8");
@@ -1156,7 +1156,7 @@ test.describe("NEW — create task modal", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Archived One", "--prefix", "ARC-"]);
+    await tracker.run(["project", "create", "Archived One", "--prefix", "ARC"]);
     await tracker.run(["project", "archive", "Archived One"]);
 
     await page.goto(`${tracker.baseURL}/list`);
@@ -1445,8 +1445,8 @@ test.describe("NEW — create task modal", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Backend", "--prefix", "BE-"]);
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
 
     const projectsYaml = await readFile(
       path.join(tracker.root, ".loctt", "config", "projects.yaml"),
@@ -1489,7 +1489,7 @@ test.describe("NEW — create task modal", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Backend", "--prefix", "BE-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE"]);
     const projectsYaml = await readFile(
       path.join(tracker.root, ".loctt", "config", "projects.yaml"),
       "utf8",
@@ -1534,8 +1534,8 @@ test.describe("NEW — create task modal", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Backend", "--prefix", "BE-"]);
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
     await tracker.run(["milestone", "create", "v1"]);
 
     await page.goto(`${tracker.baseURL}/list`);
@@ -1677,7 +1677,7 @@ test.describe("NEW — create task modal", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Doomed", "--prefix", "DOOM-"]);
+    await tracker.run(["project", "create", "Doomed", "--prefix", "DOOM"]);
     await page.goto(`${tracker.baseURL}/list`);
     await openModal(page);
     await page.getByTestId("create-title").fill("Orphaned project");

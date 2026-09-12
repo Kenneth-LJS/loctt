@@ -20,7 +20,7 @@ Bootstraps a new tracker at the server's working directory. Only call when the u
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `prefix` | string | no | Key prefix for tasks (default `T-`) |
+| `prefix` | string | no | Key prefix for tasks — 1–10 uppercase letters, no dash (default `T`). The `-` separator is added at render, so `T` yields keys like `T-1`. |
 | `project_label` | string | no | Name of the starting project (default `Tasks`) |
 | `no_docs` | boolean | no | If true, skip generating helper docs |
 
@@ -531,7 +531,7 @@ A project is `{id, name, slug?, prefix}`. `id` is a ULID minted at creation and 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | Human-readable display name |
-| `prefix` | string | yes | Task-key prefix, e.g. `BACKEND-` |
+| `prefix` | string | yes | Task-key prefix — 1–10 uppercase letters, no dash, e.g. `BACKEND`. Rejected if it contains a dash, lowercase, digit, or punctuation; the `-` separator is added at render (`BACKEND` → `BACKEND-1`) |
 | `slug` | string | no | URL-safe handle. Generated from the name when omitted. Lowercase letters, digits, hyphen, underscore; must start with a letter. Rejected if malformed or already taken |
 | `make_default` | boolean | no | If true, also set as workspace default |
 
@@ -559,12 +559,12 @@ Prefixes must be unique across projects; one already in use is rejected. This re
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `project` | string | yes | Project id or name |
-| `prefix` | string | yes | New prefix, e.g. `WEB-` |
+| `prefix` | string | yes | New prefix — 1–10 uppercase letters, no dash, e.g. `WEB` (the `-` is added at render: `WEB` → `WEB-3`) |
 | `confirm` | boolean | yes | Must be `true` to proceed |
 
 `confirm: true` is required, as it is for `delete_*`. This is not a delete, but it rewrites every task in the project — the same blast radius the gate exists for, and a call without it means the tool was reached for as if it were a cosmetic field edit.
 
-Returns `{id, from, to, renamed}`. `ProjectError` when the prefix is already in use or the project is unknown; nothing is written in either case.
+Returns `{id, from, to, renamed}`. `ProjectError` when the prefix is malformed (a dash, lowercase, digit, or punctuation — it must be bare uppercase), already in use, or the project is unknown; nothing is written in any of those cases.
 
 If a rename is interrupted partway, the next tool call finishes it before running — silently, since the repair is not what you asked for. Should that recovery fail, the call returns an error instead of task keys that may be stale; `loctt doctor` reports the pending rename.
 

@@ -35,7 +35,7 @@ describe("MCP init (stdio)", () => {
       try {
         const result = await client.callTool("init", {
           project_label: "Bug tracker",
-          prefix: "BUG-",
+          prefix: "BUG",
         });
         expect(result.isError).toBeFalsy();
 
@@ -45,7 +45,7 @@ describe("MCP init (stdio)", () => {
         );
         expect(projects).toContain("Bug tracker");
         expect(projects).not.toContain("Tasks");
-        expect(projects).toContain("BUG-");
+        expect(projects).toContain("BUG");
 
         // The key counter is keyed by project id, not name — so a
         // renamed project keeps allocating from the same counter.

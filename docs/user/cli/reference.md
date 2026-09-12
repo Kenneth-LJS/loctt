@@ -57,7 +57,7 @@ loctt init [--prefix <prefix>] [--project-label <label>]
 
 | Flag | Description |
 |---|---|
-| `--prefix <prefix>` | Key prefix for the initial project (default: `T-`) |
+| `--prefix <prefix>` | Key prefix for the initial project — 1–10 uppercase letters, no dash (default: `T`). The `-` is added at render, so `T` yields keys like `T-1` |
 | `--project-label <label>` | Name of the starting project (default: `Tasks`) |
 | `--timezone <iana-tz>` | Workspace timezone written to `calendar.yaml` (default: this machine's zone) |
 | `--no-docs` | Skip generating helper docs in `.loctt/docs/` |
@@ -65,7 +65,7 @@ loctt init [--prefix <prefix>] [--project-label <label>]
 Example:
 
 ```
-loctt init --prefix BUG- --project-label "Bug tracker"
+loctt init --prefix BUG --project-label "Bug tracker"
 ```
 
 The workspace timezone decides what `today` means in queries such as
@@ -229,8 +229,12 @@ renumbered, and each task's previous key is kept in `key_history` so old
 references keep resolving.
 
 ```
-loctt project set-prefix Tasks WEB-
+loctt project set-prefix Tasks WEB
 ```
+
+The prefix is 1–10 uppercase letters with no dash — the `-` separator is
+added at render, so `WEB` produces keys like `WEB-3`. A prefix containing
+a dash, lowercase, digit, or punctuation is rejected.
 
 Prefixes must be unique across projects, so a prefix already in use is
 rejected — before anything is written, so a refused change leaves the
@@ -270,7 +274,7 @@ tasks are never silently orphaned. Always prompts for confirmation; pass
 Examples:
 
 ```
-loctt project create web --prefix WEB- --label "Website" --default
+loctt project create web --prefix WEB --label "Website" --default
 loctt project list --all
 loctt project archive legacy          # soft, reversible
 loctt project delete legacy --remap-to archive --yes
@@ -1337,9 +1341,9 @@ loctt user current
 ### Set up multiple projects
 
 ```
-loctt init --prefix WEB- --project-label "Website"
-loctt project create api --prefix API- --label "API service"
-loctt project create infra --prefix INF- --label "Infra" --default
+loctt init --prefix WEB --project-label "Website"
+loctt project create api --prefix API --label "API service"
+loctt project create infra --prefix INF --label "Infra" --default
 loctt project list
 loctt create "First API endpoint" --project api
 ```

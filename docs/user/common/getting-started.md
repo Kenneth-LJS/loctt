@@ -20,10 +20,10 @@ In your project directory:
 loctt init
 ```
 
-This creates a `.loctt/` directory with default configuration. Use `--prefix` to customize the key prefix (default: `T-`).
+This creates a `.loctt/` directory with default configuration. Use `--prefix` to customize the key prefix — 1–10 uppercase letters, no dash (default: `T`). The `-` separator is added at render, so `T` produces keys like `T-1`.
 
 ```bash
-loctt init --prefix BUG-
+loctt init --prefix BUG
 ```
 
 ## Git and `.gitignore`

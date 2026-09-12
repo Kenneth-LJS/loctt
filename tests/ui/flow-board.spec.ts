@@ -912,7 +912,7 @@ test.describe("BRD — board view", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND"]);
     await tracker.seed([{ title: "Web one" }]);
     // A task in the SECOND project. Without it the case's premise —
     // two projects' cards on one board — never existed: the fixture
