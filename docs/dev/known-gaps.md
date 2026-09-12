@@ -2242,10 +2242,15 @@ so a live run is not taken down):
 ps -eo pid,etime,command | grep 'cli/dist/index.js ui' | grep -v grep
 ```
 
-**Real fix**: the fixture should register the server for teardown on
-signal as well as on normal exit, so `SIGINT`/`SIGTERM` to the runner
-takes the server with it. A run that is killed mid-suite is exactly when
-the orphan is created, which is also exactly when nobody is watching.
+**FIXED 2026-09-12.** `server-harness.ts` now has a `registerServerChild`
+that both the plain and git fixtures call right after spawning `loctt ui`.
+It keeps a live-children set and, on the runner's own `SIGINT`/`SIGTERM`/
+`exit`, SIGKILLs every still-running child — so a run killed mid-suite
+takes its servers with it, the exact moment the orphan used to be created.
+Per-fixture `finally` teardown still runs on the happy path and calls the
+returned `unregister`. (A server started outside the test harness — a bare
+`loctt ui` whose worktree is then removed — is still the user's to stop;
+this fix covers the test-suite orphans that were the measured problem.)
 
 **Related**: `git worktree remove --force` on a tree whose suite is still
 running will orphan the server every time. Stop the run first.

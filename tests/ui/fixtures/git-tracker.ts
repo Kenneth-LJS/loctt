@@ -30,7 +30,7 @@ import path from "node:path";
 import { test as base } from "@playwright/test";
 import { execa } from "execa";
 
-import { cliEntry, freePort, killAndWait, waitForReady, workspaceRoot } from "./server-harness.ts";
+import { cliEntry, freePort, killAndWait, registerServerChild, waitForReady, workspaceRoot } from "./server-harness.ts";
 
 /**
  * Deterministic identity and non-interactive git for every spawned git
@@ -182,11 +182,13 @@ export const test = base.extend<{
       env,
       reject: false,
     });
+    const unregister = registerServerChild(child);
     try {
       await waitForReady(baseURL, 15_000);
       await use({ root, baseURL });
     } finally {
       await killAndWait(child);
+      unregister();
       await rm(root, { recursive: true, force: true }).catch((err: unknown) => {
         console.error(`non-repo tracker fixture: failed to remove ${root}: ${String(err)}`);
       });
@@ -257,12 +259,14 @@ export const test = base.extend<{
       env,
       reject: false,
     });
+    const unregister = registerServerChild(child);
 
     try {
       await waitForReady(baseURL, 15_000);
       await use({ root, remoteRepo, baseURL, run, seed, git, bareHasRef, bareCommit });
     } finally {
       await killAndWait(child);
+      unregister();
       await Promise.all([
         rm(root, { recursive: true, force: true }).catch((err: unknown) => {
           console.error(`git-tracker fixture: failed to remove ${root}: ${String(err)}`);

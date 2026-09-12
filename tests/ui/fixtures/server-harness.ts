@@ -83,3 +83,58 @@ export async function killAndWait(child: KillableProcess): Promise<void> {
     await Promise.race([child.catch(() => undefined), new Promise((r) => setTimeout(r, 2000))]);
   }
 }
+
+/**
+ * Live `loctt ui` children, so a runner killed mid-suite takes its
+ * servers with it.
+ *
+ * Per-fixture teardown (`killAndWait` in a `finally`) handles the happy
+ * path, but a SIGINT/SIGTERM to the vitest runner — or the worktree being
+ * harvested while a suite is up — skips every `finally` and orphans the
+ * spawned server: it survives with no parent and no directory, holding a
+ * port and a heap for hours (measured: three, the oldest 25h). Registering
+ * each child here and killing them all on the runner's own signal/exit is
+ * the "kill them when nobody is watching" half the per-fixture teardown
+ * cannot cover. See known-gaps "Removing a worktree leaves its loctt ui
+ * server running".
+ */
+const liveServers = new Set<KillableProcess>();
+let signalHandlersInstalled = false;
+
+function installProcessTeardown(): void {
+  if (signalHandlersInstalled) return;
+  signalHandlersInstalled = true;
+  // Synchronous, best-effort SIGKILL of every still-live child. The
+  // process is on its way out (signal or exit), so there is no time for
+  // an async graceful stop — a hard kill is exactly right here, and each
+  // child's own SIGTERM/SIGKILL path already ran if teardown got to it.
+  const killAllSync = (): void => {
+    for (const child of liveServers) {
+      try {
+        if (child.exitCode === null || child.exitCode === undefined) {
+          child.kill("SIGKILL");
+        }
+      } catch {
+        // The child may already be gone; nothing to do.
+      }
+    }
+    liveServers.clear();
+  };
+  process.once("SIGINT", () => { killAllSync(); process.exit(130); });
+  process.once("SIGTERM", () => { killAllSync(); process.exit(143); });
+  // `exit` cannot run async work, but a synchronous SIGKILL is fine and
+  // catches an ordinary process teardown that bypassed the signals.
+  process.once("exit", killAllSync);
+}
+
+/**
+ * Registers a spawned `loctt ui` child for both per-fixture teardown (the
+ * caller still `killAndWait`s it in its own `finally`) and process-level
+ * teardown on the runner's signal/exit. Returns an `unregister` to call
+ * once the child is cleanly stopped, so the set does not leak dead refs.
+ */
+export function registerServerChild(child: KillableProcess): () => void {
+  installProcessTeardown();
+  liveServers.add(child);
+  return () => { liveServers.delete(child); };
+}
