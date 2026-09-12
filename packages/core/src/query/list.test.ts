@@ -629,3 +629,80 @@ describe("buildListContext", () => {
     expect(buildListContext(tasks).resolveKey?.("nope")).toBeUndefined();
   });
 });
+
+describe("SET-8: custom enum fields sort by configured value weights", () => {
+  const weighted: WorkflowConfig = {
+    ...config,
+    custom_fields: [
+      {
+        key: "size",
+        label: "Size",
+        type: "enum",
+        // Deliberately NOT in alphabetical order of key, and the weights
+        // invert the alphabetical order (xs<s<m<l alphabetically is
+        // l,m,s,xs; by weight it is xs,s,m,l) so a passing test cannot be
+        // alphabetical by accident.
+        values: [
+          { key: "xs", label: "XS", value: 1 },
+          { key: "s", label: "S", value: 2 },
+          { key: "m", label: "M", value: 3 },
+          { key: "l", label: "L", value: 5 },
+        ],
+      },
+      // A second enum with NO weights, to prove the fallback.
+      {
+        key: "colour",
+        label: "Colour",
+        type: "enum",
+        values: [
+          { key: "red", label: "Red" },
+          { key: "blue", label: "Blue" },
+        ],
+      },
+    ],
+  };
+
+  const sized: Task[] = [
+    makeTask("W-1", { fields: { size: "l" } }),
+    makeTask("W-2", { fields: { size: "xs" } }),
+    makeTask("W-3", { fields: { size: "m" } }),
+    makeTask("W-4", { fields: { size: "s" } }),
+  ];
+
+  it("orders by weight ascending, not alphabetically by value key", () => {
+    const result = listTasks({
+      tasks: sized,
+      options: { sort: [{ field: "fields.size", direction: "asc" }] },
+      workflowConfig: weighted,
+    });
+    // Weight order xs(1) < s(2) < m(3) < l(5). Alphabetical by key would
+    // be l, m, s, xs — the opposite of the front of this list.
+    expect(result.map(t => t.frontmatter.fields?.["size"]))
+      .toEqual(["xs", "s", "m", "l"]);
+  });
+
+  it("orders by weight descending too", () => {
+    const result = listTasks({
+      tasks: sized,
+      options: { sort: [{ field: "fields.size", direction: "desc" }] },
+      workflowConfig: weighted,
+    });
+    expect(result.map(t => t.frontmatter.fields?.["size"]))
+      .toEqual(["l", "m", "s", "xs"]);
+  });
+
+  it("falls back to alphabetical when the enum has no weights", () => {
+    const coloured: Task[] = [
+      makeTask("C-1", { fields: { colour: "red" } }),
+      makeTask("C-2", { fields: { colour: "blue" } }),
+    ];
+    const result = listTasks({
+      tasks: coloured,
+      options: { sort: [{ field: "fields.colour", direction: "asc" }] },
+      workflowConfig: weighted,
+    });
+    // No weights → alphabetical: blue before red.
+    expect(result.map(t => t.frontmatter.fields?.["colour"]))
+      .toEqual(["blue", "red"]);
+  });
+});
