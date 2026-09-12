@@ -257,6 +257,57 @@ export function ListView() {
     announce(total === 0 ? "No tasks match these filters" : `${String(total)} tasks`);
   }, [total, tasks.isFetching, tasks.isError, tasks.isSuccess, announce]);
 
+  // A11Y-17: focus survives an async re-render of the table. When a
+  // refetch replaces the row nodes (a filter change, a background poll,
+  // a bulk mutation invalidating the feed), React unmounts the row that
+  // held focus and the browser drops focus to `document.body` — the next
+  // Tab then restarts at the top of the page. We remember which task's
+  // row-anchor (its key link, `data-task-key`) had focus, and after the
+  // rows re-render restore focus to the equivalent row when focus was
+  // lost to body. If that task is no longer in the list (it stopped
+  // matching the filter), we do NOT yank focus somewhere arbitrary —
+  // leaving it is the "deliberate location" the case's escape hatch
+  // allows, and stealing it would be worse.
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const focusedTaskKey = useRef<string | null>(null);
+  useEffect(() => {
+    const table = tableRef.current;
+    if (table === null) return;
+
+    // Remember which task-row anchor holds focus. Focus elsewhere in the
+    // table (select-all, a sort header) is not a row to restore, so we
+    // keep the last remembered row rather than clearing it.
+    const onFocusIn = (e: FocusEvent): void => {
+      const anchor = (e.target as HTMLElement).closest<HTMLElement>("[data-task-key]");
+      if (anchor) focusedTaskKey.current = anchor.dataset["taskKey"] ?? null;
+    };
+    table.addEventListener("focusin", onFocusIn);
+
+    // A refetch unmounts the focused row's node and the browser drops
+    // focus to `document.body`, regardless of whether React Query handed
+    // back a new `data` reference — so key the restore on the DOM
+    // changing, not on `items`. When the table's rows mutate and focus
+    // has fallen to body, re-focus the equivalent row's anchor if it is
+    // still present. If the task no longer matches the filter, leave
+    // focus where it is (the case's "deliberate location" escape hatch);
+    // never yank it to an arbitrary row.
+    const observer = new MutationObserver(() => {
+      const key = focusedTaskKey.current;
+      if (key === null) return;
+      if (document.activeElement !== null && document.activeElement !== document.body) return;
+      const anchor = table.querySelector<HTMLElement>(
+        `[data-task-key="${CSS.escape(key)}"]`,
+      );
+      if (anchor) anchor.focus();
+    });
+    observer.observe(table, { childList: true, subtree: true });
+
+    return () => {
+      table.removeEventListener("focusin", onFocusIn);
+      observer.disconnect();
+    };
+  }, []);
+
   // The result-set identity, for BLK-18. Everything the server reads
   // except how far we have paged — loading page 2 must not clear a
   // selection, but changing a filter must.
@@ -674,6 +725,7 @@ export function ListView() {
             it lists, so a screen reader's table navigation announces
             what it entered rather than "table". */}
         <table
+          ref={tableRef}
           aria-label="Tasks"
           aria-busy={tasks.isLoading}
           className="w-full border-separate border-spacing-0 text-[13px]"
@@ -1027,6 +1079,12 @@ function Cell({
             to="/tasks/$key"
             params={{ key: task.key }}
             onClick={e => e.stopPropagation()}
+            // A11Y-17: the per-row focus anchor. When a refetch re-renders
+            // the table (a filter change, a background poll), the
+            // restoration effect re-focuses the same task's link by this
+            // attribute, so focus stays on the equivalent row rather than
+            // being dropped to document.body.
+            data-task-key={task.key}
             className="font-mono text-text-tertiary no-underline hover:text-accent"
           >
             {task.key}
