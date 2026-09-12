@@ -4,6 +4,7 @@ import {
   createSprint,
   deleteSprint,
   editSprint,
+  filterByName,
   loadSprintsConfig,
   loadWorkflowConfig,
   readBurndownSeries,
@@ -15,6 +16,7 @@ import {
 
 import { formatNumber, pad } from "../format/value.js";
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -33,7 +35,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--end", "--force", "--format", "--goal", "--ids", "--name", "--progress", "--remap-to", "--start", "--state", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--end", "--filter", "--force", "--format", "--goal", "--ids", "--limit", "--name", "--offset", "--progress", "--remap-to", "--start", "--state", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -45,7 +47,13 @@ export async function run(args: string[], root: string): Promise<void> {
       const showIds = hasFlag(args, "--ids");
       const showProgress = hasFlag(args, "--progress");
       const cfg = await loadSprintsConfig(locttDir);
-      const shown = cfg.sprints.filter(s => includeArchived || s.archived !== true);
+      // K90 order (matching the web `handleListSprints`): archived
+      // filter, then name filter, then page. Progress is computed over
+      // the paged window only, so a page's `--progress` scan is bounded.
+      const visible = cfg.sprints.filter(s => includeArchived || s.archived !== true);
+      const matched = filterByName(visible, getFilterArg(args));
+      const page = pageConfigList(matched, getConfigPagination(args));
+      const shown = page.items;
 
       // Opt-in: progress scans every task, and `sprint list` is
       // otherwise a config read. Mirrors `milestone list --progress`.
@@ -80,6 +88,8 @@ export async function run(args: string[], root: string): Promise<void> {
           : "";
         console.log(`${s.name}${idCol}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}${prog}${arch}`);
       }
+      const notice = truncationNotice(page);
+      if (notice !== undefined) console.log(notice);
       break;
     }
     case "create": {

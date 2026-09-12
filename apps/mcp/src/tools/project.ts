@@ -17,6 +17,7 @@ import {
   createProject,
   deleteProject,
   editProject,
+  filterProjects,
   loadProjectsConfig,
   resolveProjectIdFromInput,
   setDefaultProject,
@@ -25,6 +26,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { configListInputSchema, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -32,12 +34,18 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_projects",
-    description: "List projects defined in projects.yaml. Each project carries an internal id (ULID), a display name, and an immutable task-key prefix. The workspace default is identified by id.",
-    inputSchema: {},
-    handler: async ({ locttDir }) => {
+    description:
+      "List projects defined in projects.yaml. Each project carries an internal id (ULID), a display name, and an immutable task-key prefix. The workspace default is identified by id. "
+      + "K90: pass `q` for a case-insensitive search over name/slug/prefix, and `limit`/`offset` to page (default 100, cap 1000).",
+    inputSchema: { ...configListInputSchema },
+    handler: async ({ locttDir }, args) => {
       const cfg = await loadProjectsConfig(locttDir);
+      // K90 order (matching the web `handleListProjects`): name/slug/
+      // prefix filter, then page. `default` stays the workspace fact,
+      // computed over the full config, not the paged window.
+      const projects = pageConfigList(filterProjects(cfg.projects, getQ(args)), args);
       return text(JSON.stringify({
-        projects: cfg.projects,
+        projects,
         default: cfg.default ?? null,
       }, null, 2));
     },

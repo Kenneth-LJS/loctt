@@ -3,6 +3,7 @@ import {
   createLabel,
   deleteLabel,
   editLabel,
+  filterByName,
   loadLabelsConfig,
   resolveLabelIdFromInput,
   resolveLocttDir,
@@ -10,6 +11,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -29,7 +31,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--color", "--ids", "--name", "--remap-to", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--color", "--filter", "--ids", "--limit", "--name", "--offset", "--remap-to", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -40,13 +42,19 @@ export async function run(args: string[], root: string): Promise<void> {
       const includeArchived = hasFlag(args, "--all");
       const showIds = hasFlag(args, "--ids");
       const cfg = await loadLabelsConfig(locttDir);
-      for (const l of cfg.labels) {
-        if (!includeArchived && l.archived === true) continue;
+      // K90 order (matching the web `handleListLabels`): archived filter,
+      // then name filter, then page.
+      const visible = cfg.labels.filter(l => includeArchived || l.archived !== true);
+      const matched = filterByName(visible, getFilterArg(args));
+      const page = pageConfigList(matched, getConfigPagination(args));
+      for (const l of page.items) {
         const color = l.color ? `  ${l.color}` : "";
         const arch = l.archived === true ? "  (archived)" : "";
         const idCol = showIds ? `\t${l.id}` : "";
         console.log(`${l.name}${idCol}${color}${arch}`);
       }
+      const notice = truncationNotice(page);
+      if (notice !== undefined) console.log(notice);
       break;
     }
     case "create": {

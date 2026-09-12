@@ -5,6 +5,7 @@ import {
   countUserReferences,
   createUser,
   deleteUser,
+  filterByName,
   getCurrentUser,
   loadAllUsers,
   loadOptionalConfigs,
@@ -25,6 +26,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -46,7 +48,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--avatar", "--email", "--hidden", "--name", "--order", "--remap-to", "--remove-avatar", "--reset", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--avatar", "--email", "--filter", "--hidden", "--limit", "--name", "--offset", "--order", "--remap-to", "--remove-avatar", "--reset", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -57,13 +59,19 @@ export async function run(args: string[], root: string): Promise<void> {
       const includeArchived = hasFlag(args, "--all");
       const users = await loadAllUsers(locttDir);
       const current = await getCurrentUser(locttDir);
-      for (const u of users) {
-        if (!includeArchived && u.archived === true) continue;
+      // K90 order (matching the web `handleListUsers`): archived filter,
+      // then name filter, then page.
+      const visible = users.filter(u => includeArchived || u.archived !== true);
+      const matched = filterByName(visible, getFilterArg(args));
+      const page = pageConfigList(matched, getConfigPagination(args));
+      for (const u of page.items) {
         const star = current?.id === u.id ? " *" : "";
         const arch = u.archived === true ? " (archived)" : "";
         const email = u.email ? `  <${u.email}>` : "";
         console.log(`${u.id}${star}\t${u.name}${arch}${email}\t${u.timezone}`);
       }
+      const notice = truncationNotice(page);
+      if (notice !== undefined) console.log(notice);
       break;
     }
     case "current": {

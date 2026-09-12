@@ -3,6 +3,7 @@ import {
   createProject,
   deleteProject,
   editProject,
+  filterProjects,
   loadAllTasks,
   loadProjectsConfig,
   resolveLocttDir,
@@ -13,6 +14,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -38,7 +40,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--clear-project-field", "--default", "--ids", "--name", "--prefix", "--remap-to", "--slug", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--clear-project-field", "--default", "--filter", "--ids", "--limit", "--name", "--offset", "--prefix", "--remap-to", "--slug", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -49,13 +51,19 @@ export async function run(args: string[], root: string): Promise<void> {
       const includeArchived = hasFlag(args, "--all");
       const showIds = hasFlag(args, "--ids");
       const cfg = await loadProjectsConfig(locttDir);
-      for (const p of cfg.projects) {
-        if (!includeArchived && p.archived === true) continue;
+      // K90 order (matching the web `handleListProjects`): archived
+      // filter, then name/slug/prefix filter, then page.
+      const visible = cfg.projects.filter(p => includeArchived || p.archived !== true);
+      const matched = filterProjects(visible, getFilterArg(args));
+      const page = pageConfigList(matched, getConfigPagination(args));
+      for (const p of page.items) {
         const star = cfg.default === p.id ? " *" : "";
         const arch = p.archived === true ? " (archived)" : "";
         const idCol = showIds ? `\t${p.id}` : "";
         console.log(`${p.name}${star}\t${p.prefix}-${idCol}${arch}`);
       }
+      const notice = truncationNotice(page);
+      if (notice !== undefined) console.log(notice);
       if (cfg.default !== undefined) {
         console.log(``);
         console.log(`* = workspace default${showIds ? "" : "; pass --ids to also print internal ids"}`);

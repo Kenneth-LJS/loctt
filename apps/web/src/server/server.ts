@@ -107,7 +107,9 @@ import {
   exportBackup,
   exportTasksToCSV,
   exportTasksToJSON,
+  filterByName,
   filterForExport,
+  filterProjects,
   findLossyConstructs,
   findProjectBySlug,
   FsAccessError,
@@ -1599,6 +1601,11 @@ export function createWebApp(options: WebAppOptions) {
   const handleListProjects: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
+    // K90: `?q=` name/slug/prefix search for the project picker. Applied
+    // to the choosable list only; `default`/`effective_default`/
+    // `task_counts`/drift below stay computed over the FULL config —
+    // they are workspace facts, not search results.
+    const q = url.searchParams.get("q") ?? undefined;
     const cfg = await loadProjectsConfig(locttDir);
     // No pending-prefix-rename read here, deliberately (PRU-46 /
     // A-PRESCAN-1). The recovery middleware finishes any interrupted
@@ -1647,7 +1654,7 @@ export function createWebApp(options: WebAppOptions) {
       // badge is omitted rather than shown as a wrong number.
     }
     json(res, {
-      ...paginated(cfg.projects, page.offset, page.limit),
+      ...paginated(filterProjects(cfg.projects, q), page.offset, page.limit),
       default: cfg.default ?? null,
       effective_default: effectiveDefault,
       task_counts: taskCounts,
@@ -2005,8 +2012,10 @@ export function createWebApp(options: WebAppOptions) {
   const handleListSprints: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
+    const q = url.searchParams.get("q") ?? undefined;
     const cfg = await loadSprintsConfig(locttDir);
-    const counted = await withCounts(locttDir, url, "sprint", cfg.sprints);
+    // K90: `?q=` name search, before the count/progress scans.
+    const counted = await withCounts(locttDir, url, "sprint", filterByName(cfg.sprints, q));
     const { items, unreadable } = await withProgress(locttDir, url, "sprint", counted);
     json(res, {
       ...paginated(items, page.offset, page.limit),
@@ -2135,8 +2144,10 @@ export function createWebApp(options: WebAppOptions) {
   const handleListMilestones: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
+    const q = url.searchParams.get("q") ?? undefined;
     const cfg = await loadMilestonesConfig(locttDir);
-    const counted = await withCounts(locttDir, url, "milestone", cfg.milestones);
+    // K90: `?q=` name search, before the count/progress scans.
+    const counted = await withCounts(locttDir, url, "milestone", filterByName(cfg.milestones, q));
     const { items, unreadable } = await withProgress(locttDir, url, "milestone", counted);
     json(res, {
       ...paginated(items, page.offset, page.limit),
@@ -2223,8 +2234,11 @@ export function createWebApp(options: WebAppOptions) {
   const handleListLabels: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
+    const q = url.searchParams.get("q") ?? undefined;
     const cfg = await loadLabelsConfig(locttDir);
-    const items = await withCounts(locttDir, url, "label", cfg.labels);
+    // K90: `?q=` name search, applied before the (expensive) usage-count
+    // scan so counts run only over the matched window.
+    const items = await withCounts(locttDir, url, "label", filterByName(cfg.labels, q));
     json(res, {
       ...paginated(items, page.offset, page.limit),
       // Phase-7B: a corrupt label entry degrades; surfaced here.
@@ -2352,9 +2366,15 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const includeArchived = url.searchParams.get("include_archived") === "true";
+    const q = url.searchParams.get("q") ?? undefined;
     const users = await loadAllUsers(locttDir);
     const current = await getCurrentUser(locttDir);
-    const filtered = users.filter(u => includeArchived || u.archived !== true);
+    // K90: `?q=` name search. A user with no `name` is non-matching for a
+    // non-empty query (filterByName skips undefined names).
+    const filtered = filterByName(
+      users.filter(u => includeArchived || u.archived !== true),
+      q,
+    );
     json(res, {
       ...paginated(filtered, page.offset, page.limit),
       current: current?.id ?? null,
