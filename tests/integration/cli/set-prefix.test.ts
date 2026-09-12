@@ -25,7 +25,7 @@ describe("CLI project set-prefix (spawned binary)", () => {
       await runCli(["delete", "T-2", "--yes"], { cwd: root });
 
       const res = await runCli(
-        ["project", "set-prefix", "Tasks", "WEB-", "--yes"],
+        ["project", "set-prefix", "Tasks", "WEB", "--yes"],
         { cwd: root },
       );
       expect(res.exitCode).toBe(0);
@@ -45,14 +45,14 @@ describe("CLI project set-prefix (spawned binary)", () => {
         join(root, ".loctt", "config", "projects.yaml"),
         "utf-8",
       );
-      expect(cfg).toContain("WEB-");
+      expect(cfg).toContain("WEB");
     });
   });
 
   it("keeps old keys resolvable, so written-down references survive", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "one"], { cwd: root });
-      await runCli(["project", "set-prefix", "Tasks", "WEB-", "--yes"], { cwd: root });
+      await runCli(["project", "set-prefix", "Tasks", "WEB", "--yes"], { cwd: root });
 
       const show = await runCli(["show", "T-1"], { cwd: root });
       expect(show.exitCode).toBe(0);
@@ -64,7 +64,7 @@ describe("CLI project set-prefix (spawned binary)", () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "one"], { cwd: root });
       await runCli(["create", "two"], { cwd: root });
-      await runCli(["project", "set-prefix", "Tasks", "WEB-", "--yes"], { cwd: root });
+      await runCli(["project", "set-prefix", "Tasks", "WEB", "--yes"], { cwd: root });
 
       const created = await runCli(["create", "three"], { cwd: root });
       // WEB-3, never WEB-1 — a reset counter would reissue a key over a
@@ -76,14 +76,14 @@ describe("CLI project set-prefix (spawned binary)", () => {
   it("exits non-zero on a prefix another project holds, renaming nothing", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "one"], { cwd: root });
-      await runCli(["project", "create", "API", "--prefix", "API-"], { cwd: root });
+      await runCli(["project", "create", "API", "--prefix", "API"], { cwd: root });
 
       const res = await runCli(
-        ["project", "set-prefix", "Tasks", "API-", "--yes"],
+        ["project", "set-prefix", "Tasks", "API", "--yes"],
         { cwd: root },
       );
       expect(res.exitCode).toBe(1);
-      expect(res.stderr).toContain("API-");
+      expect(res.stderr).toContain("API");
 
       const list = await runCli(["list"], { cwd: root });
       expect(list.stdout).toContain("T-1");
@@ -92,11 +92,11 @@ describe("CLI project set-prefix (spawned binary)", () => {
       // written*, not merely to end with an error. A schema-level check
       // downstream also rejects the duplicate, but only after the state
       // counter has been rewritten and the crash sentinel dropped —
-      // leaving a tracker that claims API- while its tasks carry T-.
+      // leaving a tracker that claims API while its tasks carry T.
       // These two assertions are what separate the two paths.
       const state = await readFile(join(root, ".loctt", "state.yaml"), "utf-8");
-      expect(state).toContain("prefix: T-");
-      expect(state).not.toContain("prefix: API-\n    next_number: 2");
+      expect(state).toContain("prefix: T");
+      expect(state).not.toContain("prefix: API\n    next_number: 2");
       await expect(
         readFile(join(root, ".loctt", "local", "prefix-rename.yaml"), "utf-8"),
       ).rejects.toThrow();
@@ -106,7 +106,7 @@ describe("CLI project set-prefix (spawned binary)", () => {
   it("exits non-zero on an unknown project", async () => {
     await withTmpLoctt(async ({ root }) => {
       const res = await runCli(
-        ["project", "set-prefix", "Nope", "WEB-", "--yes"],
+        ["project", "set-prefix", "Nope", "WEB", "--yes"],
         { cwd: root },
       );
       // RUNTIME (1), not SUCCESS: resolution happens before the prompt,
@@ -120,7 +120,7 @@ describe("CLI project set-prefix (spawned binary)", () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "one"], { cwd: root });
 
-      const res = await runCli(["project", "set-prefix", "Tasks", "WEB-"], { cwd: root });
+      const res = await runCli(["project", "set-prefix", "Tasks", "WEB"], { cwd: root });
       // USAGE (2), not RUNTIME — the script forgot the flag. Spawned is
       // the only way to test this: stdin is genuinely not a TTY here.
       expect(res.exitCode).toBe(2);

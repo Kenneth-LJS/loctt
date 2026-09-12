@@ -22,7 +22,7 @@ describe("failures leave no partial state", () => {
       // CLI never read it, so the worked example created a project named
       // `web` and dropped the label without a word.
       const res = await runCli(
-        ["project", "create", "web", "--prefix", "WEB-", "--label", "Website"],
+        ["project", "create", "web", "--prefix", "WEB", "--label", "Website"],
         { cwd: root },
       );
 

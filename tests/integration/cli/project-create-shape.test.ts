@@ -22,7 +22,7 @@ describe("project create writes a ULID entry and seeds its counter", () => {
 
   it("writes id/name/prefix and no slug fields", async () => {
     await withTmpLoctt(async ({ root }) => {
-      const res = await runCli(["project", "create", "Backend", "--prefix", "BACKEND-"], { cwd: root });
+      const res = await runCli(["project", "create", "Backend", "--prefix", "BACKEND"], { cwd: root });
       expect(res.exitCode).toBe(0);
 
       const projects = await read(root, "config/projects.yaml");
@@ -31,7 +31,7 @@ describe("project create writes a ULID entry and seeds its counter", () => {
       expect(entry).toBeDefined();
 
       expect(String(entry?.["id"])).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
-      expect(entry?.["prefix"]).toBe("BACKEND-");
+      expect(entry?.["prefix"]).toBe("BACKEND");
       // P-1: adding either of these silently fails .strict() validation.
       expect(entry).not.toHaveProperty("key");
       expect(entry).not.toHaveProperty("label");
@@ -40,7 +40,7 @@ describe("project create writes a ULID entry and seeds its counter", () => {
 
   it("seeds keys.<id> so the first task can allocate", async () => {
     await withTmpLoctt(async ({ root }) => {
-      await runCli(["project", "create", "Backend", "--prefix", "BACKEND-"], { cwd: root });
+      await runCli(["project", "create", "Backend", "--prefix", "BACKEND"], { cwd: root });
 
       const projects = await read(root, "config/projects.yaml");
       const id = (projects["projects"] as { name: string; id: string }[])
@@ -49,7 +49,7 @@ describe("project create writes a ULID entry and seeds its counter", () => {
       const state = await read(root, "state.yaml");
       const counter = (state["keys"] as Record<string, { prefix: string; next_number: number }>)[id];
       expect(counter, "no key counter seeded for the new project").toBeDefined();
-      expect(counter?.prefix).toBe("BACKEND-");
+      expect(counter?.prefix).toBe("BACKEND");
       expect(counter?.next_number).toBe(1);
 
       // And the seed is usable: the first task takes number 1.
@@ -60,10 +60,10 @@ describe("project create writes a ULID entry and seeds its counter", () => {
 
   it("refuses a duplicate prefix and writes nothing", async () => {
     await withTmpLoctt(async ({ root }) => {
-      await runCli(["project", "create", "Backend", "--prefix", "BACKEND-"], { cwd: root });
+      await runCli(["project", "create", "Backend", "--prefix", "BACKEND"], { cwd: root });
       const before = await readFile(path.join(root, ".loctt/config/projects.yaml"), "utf-8");
 
-      const dup = await runCli(["project", "create", "Other", "--prefix", "BACKEND-"], { cwd: root });
+      const dup = await runCli(["project", "create", "Other", "--prefix", "BACKEND"], { cwd: root });
       expect(dup.exitCode).not.toBe(0);
       expect(`${dup.stdout}${dup.stderr}`).toMatch(/unique/i);
 

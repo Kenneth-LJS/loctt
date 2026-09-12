@@ -21,8 +21,8 @@ Gaps only. See [README.md](README.md) for conventions.
   `Backend`, `prefix` is `BACKEND-`, and which contains **no** `key` and no
   `label` field — `ProjectDefSchema` is `.strict()` with exactly
   `{id, name, prefix, archived?}`.
-- `state.yaml` gains `keys.<that-id>` with `prefix: BACKEND-`,
-  `next_number: 1`.
+- `state.yaml` gains `keys.<that-id>` with `prefix: BACKEND`,
+  `next_number: 1`. (Stored bare; the `-` is inserted at key render — K88.)
 - A second create reusing the same prefix is refused with
   `prefixes must be unique`, and writes nothing.
 - MCP `list_projects` returns `{projects:[…], default: <id|null>}` where
@@ -155,7 +155,7 @@ tools, **then** it is present, or the documentation no longer claims it.
 never reads, so the worked example silently creates a project named `web`
 and discards the label.
 
-- `loctt project create web --prefix WEB- --label "Website"` either exits
+- `loctt project create web --prefix WEB --label "Website"` either exits
   non-zero naming `--label` as unknown, or creates a project named
   `Website`.
 - It must **not** create a project named `web` with the label discarded.

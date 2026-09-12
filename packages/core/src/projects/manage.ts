@@ -24,6 +24,7 @@ import type { JournalEntry } from "../state/journal.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { getCurrentUser } from "../users/manage.js";
 import { loadUserSettings } from "../users/settings.js";
+import { assertValidPrefix } from "./prefix.js";
 import { allocateSlug, isValidSlug } from "./slug.js";
 
 /**
@@ -327,6 +328,17 @@ export async function createProject(
   input: CreateProjectInput,
 ): Promise<ProjectDef> {
   return withStateLock(locttDir, async () => {
+    // K88: the prefix is validated at every creation path, not only at
+    // `init` and `setProjectPrefix`. A dash is REJECTED, not stripped —
+    // the `-` separator is inserted at key render, so a stored `WEB-`
+    // would render as `WEB--1`. This is the shared entry point both the
+    // CLI (`project create`) and the web (`handleCreateProject`) funnel
+    // through, so validating here covers both surfaces at once. Runs
+    // before the uniqueness check: a malformed prefix is the more
+    // fundamental error, and a config full of valid prefixes can never
+    // collide with an invalid one anyway.
+    assertValidPrefix(input.prefix);
+
     const config = await loadProjectsConfig(locttDir);
 
     if (config.projects.some(p => p.prefix === input.prefix)) {

@@ -83,11 +83,35 @@ describe("createProject", () => {
 
   it("allows duplicate names (disambiguated by id)", async () => {
     await createProject(locttDir, { name: "Web", prefix: "WEB" });
-    await createProject(locttDir, { name: "Web", prefix: "WEB2" });
+    // Distinct, still-valid prefix (K88: bare uppercase, no digit).
+    await createProject(locttDir, { name: "Web", prefix: "WEBB" });
     const cfg = await loadProjectsConfig(locttDir);
     const matches = cfg.projects.filter(p => p.name === "Web");
     expect(matches).toHaveLength(2);
     expect(matches[0]?.id).not.toBe(matches[1]?.id);
+  });
+
+  // @verifies K88
+  it("K88: rejects a malformed prefix at creation — a dash is not stripped", async () => {
+    // K88 (Ken): the prefix is validated at every creation path, and a
+    // dash is REJECTED, not stripped — otherwise `WEB-` stored bare
+    // renders as `WEB--1`. Before this guard `createProject` only
+    // checked uniqueness, so `loctt project create X --prefix WEB-`
+    // stored the dash and exited 0.
+    await expect(
+      createProject(locttDir, { name: "Dashed", prefix: "WEB-" }),
+    ).rejects.toThrow(/no dash|uppercase letters/i);
+    // Lowercase and digits are equally out (the bare-uppercase form).
+    await expect(
+      createProject(locttDir, { name: "Lower", prefix: "web" }),
+    ).rejects.toThrow(ProjectError);
+    await expect(
+      createProject(locttDir, { name: "Digit", prefix: "WEB2" }),
+    ).rejects.toThrow(ProjectError);
+    // Nothing was written for the rejected attempts.
+    const cfg = await loadProjectsConfig(locttDir);
+    expect(cfg.projects.some(p => ["Dashed", "Lower", "Digit"].includes(p.name)))
+      .toBe(false);
   });
 });
 
@@ -427,8 +451,8 @@ describe("resolveProjectByName", () => {
   });
 
   it("returns ambiguous when multiple projects share a name", async () => {
-    await createProject(locttDir, { name: "Twin", prefix: "T1" });
-    await createProject(locttDir, { name: "Twin", prefix: "T2" });
+    await createProject(locttDir, { name: "Twin", prefix: "TA" });
+    await createProject(locttDir, { name: "Twin", prefix: "TB" });
     const cfg = await loadProjectsConfig(locttDir);
     const result = resolveProjectByName(cfg, "Twin");
     expect(result.kind).toBe("ambiguous");
@@ -598,8 +622,8 @@ describe("resolveProjectIdFromInput", () => {
   });
 
   it("throws on ambiguous name", async () => {
-    await createProject(locttDir, { name: "Twin", prefix: "T1" });
-    await createProject(locttDir, { name: "Twin", prefix: "T2" });
+    await createProject(locttDir, { name: "Twin", prefix: "TA" });
+    await createProject(locttDir, { name: "Twin", prefix: "TB" });
     const cfg = await loadProjectsConfig(locttDir);
     expect(() => resolveProjectIdFromInput(cfg, "Twin")).toThrow(/ambiguous/);
   });

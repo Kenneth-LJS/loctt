@@ -170,6 +170,21 @@ So after any change to code a UI spec exercises, `rm -rf apps/cli/dist`,
 rebuild web+cli, and run the affected specs — a still-green suite over a
 stale bundle is not evidence.
 
+**A cross-cutting sweep must run EVERY suite it could touch — unit alone
+is a lie at scale.** `npm run test` runs the workspace unit suites only;
+it does not run integration, e2e, or the Playwright UI specs. So a sweep
+that reports "all suites green" on the strength of `npm run test` has
+verified perhaps half of what it changed. *The A-K88 bare-prefix sweep
+(A-K88) claimed "~49 files swept, all suites green" but only ran unit:
+it (a) never added the `createProject` validator, (b) left ~11
+integration/e2e files asserting the old dashed stored-form, and (c)
+over-stripped rendered keys in `flow-list.spec.ts` / `sync-preflight.test.ts`
+(`BACKEND-1`→`BACKEND1`) — three distinct classes of breakage, all green
+under unit-only, all red the moment integration + UI ran months later.*
+Before claiming a repo-wide change is done, run `npm run test`, `npm run
+test:integration`, `npm run test:e2e`, AND the Playwright UI suite — and
+say which you ran.
+
 **Probe the built binary before writing anything — roughly a third of
 "defects" aren't.** Case titles and briefs go stale as code moves under
 them. *An audit claimed milestone progress "does not exist anywhere"; it

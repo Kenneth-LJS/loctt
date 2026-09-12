@@ -46,7 +46,7 @@ beforeEach(async () => {
   execFileSync("git", ["commit", "-qm", "init"], { cwd: root });
   await runCli(["git", "enable"], { cwd: root });
   await runCli(["create", "a task"], { cwd: root });
-  await runCli(["comment", "T1", "first comment"], { cwd: root });
+  await runCli(["comment", "T-1", "first comment"], { cwd: root });
 });
 
 afterEach(async () => {

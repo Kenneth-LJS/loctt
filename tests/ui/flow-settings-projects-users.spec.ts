@@ -243,7 +243,7 @@ test.describe("PRU — the projects panel", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Web App", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Web App", "--prefix", "WEB"]);
 
     // Arrive with a project filter set in the URL; management is not
     // scoped by it, so both projects are listed.
@@ -267,7 +267,7 @@ test.describe("PRU — the projects panel", () => {
     await page.getByTestId("project-create-open").click();
 
     await page.getByTestId("project-create-name").fill("Docs");
-    await page.getByTestId("project-create-prefix").fill("DOCS-");
+    await page.getByTestId("project-create-prefix").fill("DOCS");
     await page.getByTestId("project-create-submit").click();
 
     // Appears without a page reload. The name is read-by-default text.
@@ -278,7 +278,7 @@ test.describe("PRU — the projects panel", () => {
     // The far end: the file on disk, and the CLI reading it.
     const yaml = await projectsYaml(tracker.root);
     expect(yaml).toContain("name: Docs");
-    expect(yaml).toContain("DOCS-");
+    expect(yaml).toContain("DOCS");
     const listed = await tracker.run(["project", "list"]);
     expect(listed).toContain("Docs");
   });
@@ -288,12 +288,12 @@ test.describe("PRU — the projects panel", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
     await page.goto(`${tracker.baseURL}/settings/projects`);
     await page.getByTestId("project-create-open").click();
 
     await page.getByTestId("project-create-name").fill("Website");
-    await page.getByTestId("project-create-prefix").fill("WEB-");
+    await page.getByTestId("project-create-prefix").fill("WEB");
 
     // Surfaced inline, naming the project that owns it, before submit.
     const problem = page.getByTestId("project-create-prefix-problem");
@@ -302,7 +302,7 @@ test.describe("PRU — the projects panel", () => {
     await expect(page.getByTestId("project-create-submit")).toBeDisabled();
 
     // Changing to a free prefix clears the error and enables submit.
-    await page.getByTestId("project-create-prefix").fill("WEBAPP-");
+    await page.getByTestId("project-create-prefix").fill("WEBAPP");
     await expect(problem).toHaveCount(0);
     await expect(page.getByTestId("project-create-submit")).toBeEnabled();
 
@@ -320,7 +320,7 @@ test.describe("PRU — the projects panel", () => {
     await page.getByTestId("project-create-open").click();
 
     await page.getByTestId("project-create-name").fill("My Project");
-    await page.getByTestId("project-create-prefix").fill("MP-");
+    await page.getByTestId("project-create-prefix").fill("MP");
     await page.getByTestId("project-create-slug").fill("My Project!");
 
     const slugProblem = page.getByTestId("project-create-slug-problem");
@@ -338,7 +338,7 @@ test.describe("PRU — the projects panel", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND"]);
     await page.goto(`${tracker.baseURL}/settings/projects`);
 
     const yamlBefore = await projectsYaml(tracker.root);
@@ -358,7 +358,7 @@ test.describe("PRU — the projects panel", () => {
       .toContain("Backend Services");
     const after = await projectsYaml(tracker.root);
     expect(after).toContain("slug: backend");
-    expect(after).toContain("BACKEND-");
+    expect(after).toContain("BACKEND");
   });
 
   // @verifies PRU-20
@@ -366,7 +366,7 @@ test.describe("PRU — the projects panel", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND-"]);
+    await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND"]);
     await page.goto(`${tracker.baseURL}/settings/projects`);
 
     const yaml = await projectsYaml(tracker.root);
@@ -394,7 +394,7 @@ test.describe("PRU — the projects panel", () => {
     tracker,
   }) => {
     await tracker.seed([{ title: "First" }, { title: "Second" }]);
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
 
     await page.goto(`${tracker.baseURL}/settings/projects`);
     const yaml = await projectsYaml(tracker.root);
@@ -422,7 +422,7 @@ test.describe("PRU — the projects panel", () => {
   }) => {
     const keys = await tracker.seed([{ title: "Keep me around" }]);
     const taskKey = keys[0] as string;
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
 
     await page.goto(`${tracker.baseURL}/settings/projects`);
     const yaml = await projectsYaml(tracker.root);
@@ -453,7 +453,7 @@ test.describe("PRU — the projects panel", () => {
     tracker,
   }) => {
     await tracker.seed([{ title: "First" }]);
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
 
     await page.goto(`${tracker.baseURL}/settings/projects`);
     const before = await projectsYaml(tracker.root);
@@ -484,7 +484,7 @@ test.describe("PRU — the projects panel", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Legacy", "--prefix", "LEG-"]);
+    await tracker.run(["project", "create", "Legacy", "--prefix", "LEG"]);
     await page.goto(`${tracker.baseURL}/settings/projects`);
 
     const yaml = await projectsYaml(tracker.root);
@@ -506,7 +506,7 @@ test.describe("PRU — the projects panel", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
     await page.goto(`${tracker.baseURL}/settings/projects`);
 
     const yaml = await projectsYaml(tracker.root);
@@ -585,7 +585,7 @@ test.describe("PRU — the projects panel", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
     // Three tasks in Web so the blast radius is a real number.
     for (const t of ["One", "Two", "Three"]) {
       await tracker.run(["create", t, "--project", "web"]);
@@ -598,7 +598,7 @@ test.describe("PRU — the projects panel", () => {
 
     // Edit-model (B2): the prefix control lives inside the edit form.
     await page.getByTestId(`project-edit-${webId}`).click();
-    await page.getByTestId(`project-prefix-${webId}`).fill("SITE-");
+    await page.getByTestId(`project-prefix-${webId}`).fill("SITE");
     await page.getByTestId(`project-prefix-save-${webId}`).click();
 
     // The confirm states the blast radius before anything is written.
@@ -606,8 +606,9 @@ test.describe("PRU — the projects panel", () => {
     await expect(confirm).toContainText("3 tasks");
     await page.getByTestId(`project-prefix-confirm-btn-${webId}`).click();
 
-    // The far end: config and task keys on disk carry the new prefix.
-    await expect.poll(async () => projectsYaml(tracker.root)).toContain("SITE-");
+    // The far end: config stores the new prefix bare (K88), and rendered
+    // task keys on disk carry it with the inserted "-".
+    await expect.poll(async () => projectsYaml(tracker.root)).toContain("SITE");
     await expect.poll(async () => tracker.run(["list", "--project", "web"]))
       .toContain("SITE-");
   });
@@ -1203,20 +1204,21 @@ test.describe("XS — cross-surface constraints", () => {
     page,
     tracker,
   }) => {
-    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
 
     // Hand-edit the file to duplicate a prefix, as the case describes.
     const file = path.join(tracker.root, ".loctt", "config", "projects.yaml");
     const yaml = await readFile(file, "utf8");
-    const broken = yaml.replace("WEB-", "T-");
+    const broken = yaml.replace(/prefix: WEB\b/, "prefix: T");
     const { writeFile } = await import("node:fs/promises");
     await writeFile(file, broken, "utf8");
 
     await page.goto(`${tracker.baseURL}/settings/projects`);
 
     const alert = page.getByTestId("settings-pane").getByRole("alert").first();
-    // Names the duplicated value and both entries carrying it.
-    await expect(alert).toContainText("T-");
+    // Names the duplicated value (stored bare, K88) and both entries
+    // carrying it.
+    await expect(alert).toContainText("prefix: T");
     await expect(alert).toContainText("Tasks");
     await expect(alert).toContainText("Web");
     // States the rule, not just the symptom.
@@ -1247,8 +1249,9 @@ test("PRU-46: a completed prefix rename is reported once, with both prefixes", a
   page,
   tracker,
 }) => {
-  await tracker.run(["project", "create", "Web App", "--prefix", "WEB-"]);
-  // A task on WEB-, so `renamed` is a real count rather than 0. A
+  await tracker.run(["project", "create", "Web App", "--prefix", "WEB"]);
+  // A task on WEB (keys render as WEB-1), so `renamed` is a real count
+  // rather than 0. A
   // zero-task fixture cannot tell "counted the tasks" from "printed a
   // constant".
   await tracker.run(["create", "Needs rekeying", "--project", "Web App"]);
@@ -1273,7 +1276,9 @@ test("PRU-46: a completed prefix rename is reported once, with both prefixes", a
     // *return* shape of SetPrefixResult, not the sentinel — a camelCase
     // key here fails the strict parse and the server silently omits
     // `pending_prefix_rename`.
-    `project_id: ${id}\nfrom: WEB-\nto: SITE-\nstarted_at: "2026-09-01T00:00:00.000Z"\n`,
+    // from/to are stored bare (K88): setProjectPrefix records the
+    // project's bare prefixes, and the "-" is inserted only at render.
+    `project_id: ${id}\nfrom: WEB\nto: SITE\nstarted_at: "2026-09-01T00:00:00.000Z"\n`,
     "utf8",
   );
 
@@ -1284,8 +1289,8 @@ test("PRU-46: a completed prefix rename is reported once, with both prefixes", a
   // Bullet 2: from, to, and the count. Asserting the notice alone
   // would pass on one that named neither prefix — which is how the
   // banner this replaced could have shipped empty.
-  await expect(notice).toContainText("WEB-");
-  await expect(notice).toContainText("SITE-");
+  await expect(notice).toContainText("WEB");
+  await expect(notice).toContainText("SITE");
   await expect(notice).toContainText("1 task");
   // ...and that old keys still resolve, which is the half that stops
   // the notice reading as a problem report.
@@ -1297,7 +1302,7 @@ test("PRU-46: a completed prefix rename is reported once, with both prefixes", a
     const after = await readFile(
       path.join(tracker.root, ".loctt", "config", "projects.yaml"), "utf8",
     );
-    expect(after).toContain("SITE-");
+    expect(after).toContain("SITE");
   }).toPass();
 
   // The notice survives a reload rather than being consumed by the
@@ -1309,7 +1314,7 @@ test("PRU-46: a completed prefix rename is reported once, with both prefixes", a
   await page.reload();
   await expect(page.getByTestId("settings-projects")).toBeVisible();
   await expect(notice).toBeVisible();
-  await expect(notice).toContainText("SITE-");
+  await expect(notice).toContainText("SITE");
 });
 
 test.describe("PRU-25 — a hard-deleted user still referenced as reporter", () => {

@@ -16,10 +16,10 @@ describe("CLI schema (spawned binary)", () => {
   it("respects a non-default key prefix", async () => {
     await withTmpLoctt(
       async ({ root }) => {
-        await runCli(["init", "--prefix", "BUG-"], { cwd: root });
+        await runCli(["init", "--prefix", "BUG"], { cwd: root });
         const result = await runCli(["schema"], { cwd: root });
         expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain("Key prefix: BUG-");
+        expect(result.stdout).toContain("Key prefix: BUG");
       },
       { init: false },
     );

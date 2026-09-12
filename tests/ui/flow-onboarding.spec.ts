@@ -181,12 +181,12 @@ test("the form collects name and prefix, previews the first key, and names the d
     await expect(page.getByLabel("Project name")).toBeVisible();
     const prefix = page.getByLabel("Key prefix");
     await expect(prefix).toBeVisible();
-    // The CLI's default is `T-`, and the preview shows the first key.
-    await expect(prefix).toHaveValue("T-");
+    // The CLI's default is `T`, and the preview shows the first key.
+    await expect(prefix).toHaveValue("T");
     await expect(page.getByText("T-1")).toBeVisible();
 
     // The preview is live, not a static string.
-    await prefix.fill("WEB-");
+    await prefix.fill("WEB");
     await expect(page.getByText("WEB-1")).toBeVisible();
 
     // ONB-3: typing a project name does not overwrite a hand-edited
@@ -199,11 +199,11 @@ test("the form collects name and prefix, previews the first key, and names the d
     // passed with the autofill in place. Measured, not reasoned: the
     // mutation was applied and all 15 specs stayed green.
     await page.getByLabel("Project name").fill("Customer Portal");
-    await expect(prefix).toHaveValue("WEB-");
+    await expect(prefix).toHaveValue("WEB");
 
     // Typing further into the name must not creep either.
     await page.getByLabel("Project name").fill("Customer Portal v2");
-    await expect(prefix).toHaveValue("WEB-");
+    await expect(prefix).toHaveValue("WEB");
 
     // ONB-4: the toggle explains what it skips — the docs are named
     // and described, not just referred to.
@@ -232,7 +232,7 @@ test("submitting writes a real tracker the CLI agrees with, and lands on the lis
   const t = await bootUninitialized();
   try {
     await page.goto(`${t.baseURL}/list`);
-    await fillWizard(page, "Website", "WEB-");
+    await fillWizard(page, "Website", "WEB");
 
     const submit = page.getByRole("button", { name: /set up tracker/i });
     await submit.click();
@@ -255,14 +255,15 @@ test("submitting writes a real tracker the CLI agrees with, and lands on the lis
     await expect(stat(path.join(locttDir, ".schema-version"))).resolves.toBeTruthy();
 
     // The prefix the user typed reached disk, in both the files that
-    // carry it — not a default that a layer repaired on the way.
+    // carry it — not a default that a layer repaired on the way. Stored
+    // bare (K88): the "-" is inserted at render, so the files hold `WEB`.
     const workflow = await readFile(path.join(locttDir, "config", "workflow.yaml"), "utf8");
-    expect(workflow).toContain("WEB-");
+    expect(workflow).toContain("WEB");
     const projects = await readFile(path.join(locttDir, "config", "projects.yaml"), "utf8");
-    expect(projects).toContain("WEB-");
+    expect(projects).toContain("WEB");
     expect(projects).toContain("Website");
     const state = await readFile(path.join(locttDir, "state.yaml"), "utf8");
-    expect(state).toContain("WEB-");
+    expect(state).toContain("WEB");
 
     // ONB-7: `loctt info` reports the prefix and next key the preview
     // promised — the CLI and the UI agree about the same tracker.
@@ -291,7 +292,7 @@ test("the submit control enters a busy state and is not double-submittable", asy
     });
 
     await page.goto(`${t.baseURL}/list`);
-    await fillWizard(page, "Website", "WEB-");
+    await fillWizard(page, "Website", "WEB");
     // Located by role+type, not by its label: the label is *part of*
     // the busy state ("Set up tracker" → "Setting up…"), so a
     // name-matched locator stops resolving the moment the assertion
@@ -329,7 +330,7 @@ test("a deep link into an uninitialized tracker shows the wizard, not a task-not
 
     // After init the user lands on `/list`; the deep link is not
     // pretended to be restorable, because T-4 cannot exist yet.
-    await fillWizard(page, "Tasks", "T-");
+    await fillWizard(page, "Tasks", "T");
     await page.getByRole("button", { name: /set up tracker/i }).click();
     await page.waitForURL(/\/list$/, { timeout: 15_000 });
     expect(new URL(page.url()).pathname).toBe("/list");
@@ -365,7 +366,7 @@ test("an empty .loctt/ is treated as uninitialized, with copy that accounts for 
     // wizard offers has to actually work. Before this ticket core
     // refused an existing `.loctt/` outright, so this screen rendered
     // and then failed with "exists but is incomplete".
-    await fillWizard(page, "Website", "WEB-");
+    await fillWizard(page, "Website", "WEB");
     await page.getByRole("button", { name: /set up tracker/i }).click();
     await page.waitForURL(/\/list$/, { timeout: 15_000 });
 
@@ -375,9 +376,9 @@ test("an empty .loctt/ is treated as uninitialized, with copy that accounts for 
     await expect(stat(path.join(locttDir, "state.yaml"))).resolves.toBeTruthy();
     await expect(stat(path.join(locttDir, ".schema-version"))).resolves.toBeTruthy();
     const projects = await readFile(path.join(locttDir, "config", "projects.yaml"), "utf8");
-    expect(projects).toContain("WEB-");
+    expect(projects).toContain("WEB");
     expect(projects).toContain("Website");
-    expect(await readFile(path.join(locttDir, "state.yaml"), "utf8")).toContain("WEB-");
+    expect(await readFile(path.join(locttDir, "state.yaml"), "utf8")).toContain("WEB");
   } finally {
     await t.stop();
   }
@@ -388,13 +389,13 @@ test("a second init against the same tracker moves forward rather than reporting
   const t = await bootUninitialized();
   try {
     await page.goto(`${t.baseURL}/list`);
-    await fillWizard(page, "Website", "WEB-");
+    await fillWizard(page, "Website", "WEB");
 
     // Simulate the losing tab: init the tracker out from under the
     // page, then submit. This is the state the second tab is in when
     // the first one wins — the tracker exists and its own POST will
     // be refused.
-    await t.cli(["init", "--prefix", "WEB-", "--project-label", "Website"]);
+    await t.cli(["init", "--prefix", "WEB", "--project-label", "Website"]);
 
     await page.getByRole("button", { name: /set up tracker/i }).click();
 
@@ -432,9 +433,10 @@ test("invalid prefix and empty name are rejected in-field, with the rule stated"
     // ONB-19: fires on blur, not only on submit.
     await prefix.fill("we b/x");
     await prefix.blur();
-    // The message states the actual rule, not "invalid input".
-    await expect(page.getByText(/cannot contain/i)).toBeVisible();
-    await expect(page.getByText(/trailing - is conventional/i)).toBeVisible();
+    // The message states the actual rule (K88: uppercase letters, the
+    // "-" separator inserted automatically), not "invalid input".
+    await expect(page.getByText(/uppercase letters/i)).toBeVisible();
+    await expect(page.getByText(/added automatically/i)).toBeVisible();
     await expect(page.getByText(/invalid input/i)).toHaveCount(0);
     // The key preview does not promise a key that cannot be allocated.
     await expect(page.getByText("we b/x1")).toHaveCount(0);
@@ -448,7 +450,7 @@ test("invalid prefix and empty name are rejected in-field, with the rule stated"
 
     // ONB-20: an empty name is a named required-field error, and
     // focus moves to the first invalid field.
-    await prefix.fill("T-");
+    await prefix.fill("T");
     await page.getByLabel("Project name").fill("");
     await page.getByRole("button", { name: /set up tracker/i }).click();
     await expect(page.getByText(/enter a project name/i)).toBeVisible();
@@ -503,11 +505,11 @@ test("field errors in the init wizard are associated with their field", async ({
     const prefixText = (
       await Promise.all(prefixIds.map(id => page.locator(`#${id}`).textContent()))
     ).join(" ");
-    expect(prefixText).toMatch(/cannot contain/i);
+    expect(prefixText).toMatch(/uppercase letters/i);
 
     // The name field is the other form control the wizard blocks on,
     // and it takes the same treatment on a blocked submit.
-    await prefix.fill("T-");
+    await prefix.fill("T");
     await name.fill("");
     await page.getByRole("button", { name: /set up tracker/i }).click();
     await expect(name).toHaveAttribute("aria-invalid", "true");
@@ -537,7 +539,7 @@ test("$USER unset still names a real user, and init creates one with a non-empty
     await expect(note).toContainText(/\bas\s+\S+/);
     await expect(page.getByText(/settings\s*→\s*users/i)).toBeVisible();
 
-    await fillWizard(page, "Tasks", "T-");
+    await fillWizard(page, "Tasks", "T");
     await page.getByRole("button", { name: /set up tracker/i }).click();
     await page.waitForURL(/\/list$/, { timeout: 15_000 });
 
@@ -557,7 +559,7 @@ test("a 200-character project name does not widen the form or scroll the page si
   try {
     await page.goto(`${t.baseURL}/list`);
     const long = "L".repeat(200);
-    await fillWizard(page, long, "T-");
+    await fillWizard(page, long, "T");
 
     // The page does not scroll horizontally.
     const overflow = await page.evaluate(() =>
@@ -583,7 +585,7 @@ test("/init on an initialized tracker redirects to the list instead of offering 
   const t = await bootUninitialized();
   try {
     await page.goto(`${t.baseURL}/list`);
-    await fillWizard(page, "Website", "WEB-");
+    await fillWizard(page, "Website", "WEB");
     await page.getByRole("button", { name: /set up tracker/i }).click();
     await page.waitForURL(/\/list$/, { timeout: 15_000 });
 
@@ -619,7 +621,7 @@ test("a slow init keeps the form disabled and explains what is happening", async
     });
 
     await page.goto(`${t.baseURL}/list`);
-    await fillWizard(page, "Website", "WEB-");
+    await fillWizard(page, "Website", "WEB");
     await page.getByRole("button", { name: /set up tracker/i }).click();
 
     // The busy state persists and the form stays visibly disabled.
@@ -671,7 +673,7 @@ test("a failing init shows the error on the wizard, keeps the typed values, and 
     });
 
     await page.goto(`${t.baseURL}/list`);
-    await fillWizard(page, "Website", "WEB-");
+    await fillWizard(page, "Website", "WEB");
     await page.getByRole("button", { name: /set up tracker/i }).click();
 
     // The error appears on the init screen — not as a toast that
@@ -684,7 +686,7 @@ test("a failing init shows the error on the wizard, keeps the typed values, and 
 
     // The form retained what the user typed.
     await expect(page.getByLabel("Project name")).toHaveValue("Website");
-    await expect(page.getByLabel("Key prefix")).toHaveValue("WEB-");
+    await expect(page.getByLabel("Key prefix")).toHaveValue("WEB");
 
     // A retry re-attempts without a full page reload.
     let reloaded = false;
@@ -723,7 +725,7 @@ test("an init that fails partway does not claim success and re-reads /api/info o
     });
 
     await page.goto(`${t.baseURL}/list`);
-    await fillWizard(page, "Website", "WEB-");
+    await fillWizard(page, "Website", "WEB");
     await page.getByRole("button", { name: /set up tracker/i }).click();
 
     // The state of the data is stated, and a concrete next action given.

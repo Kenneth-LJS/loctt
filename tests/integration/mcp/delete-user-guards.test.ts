@@ -157,7 +157,7 @@ describe("MCP delete_user guards (stdio)", () => {
     await withTmpLoctt(async ({ root }) => {
       // PRU-C5: names are not unique, so name-addressing must fail
       // loudly rather than picking one.
-      await runCli(["project", "create", "Backend", "--prefix", "B1"], { cwd: root });
+      await runCli(["project", "create", "Backend", "--prefix", "BA"], { cwd: root });
 
       const client = await startMcpClient(root);
       try {
@@ -168,8 +168,8 @@ describe("MCP delete_user guards (stdio)", () => {
         expect(ok.isError).toBeFalsy();
 
         // Now make the name ambiguous.
-        await runCli(["project", "create", "Shared", "--prefix", "S1"], { cwd: root });
-        await runCli(["project", "create", "Shared", "--prefix", "S2"], { cwd: root });
+        await runCli(["project", "create", "Shared", "--prefix", "SA"], { cwd: root });
+        await runCli(["project", "create", "Shared", "--prefix", "SB"], { cwd: root });
 
         const clash = await client.callTool("edit_project", {
           project: "Shared",

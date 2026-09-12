@@ -58,7 +58,7 @@ describe("MCP init honours timezone", () => {
         // accepts a parameter and ignores it would pass a shape check
         // anyway — which is exactly how timezone was broken.
         const res = await client.callTool("init", {
-          prefix: "Z-",
+          prefix: "Z",
           project_label: "Parity",
           no_docs: true,
           timezone: "America/Argentina/Ushuaia",
@@ -67,7 +67,7 @@ describe("MCP init honours timezone", () => {
 
         const projects = await readFile(path.join(root, ".loctt/config/projects.yaml"), "utf-8");
         expect(projects).toContain("Parity");
-        expect(projects).toContain("Z-");
+        expect(projects).toContain("Z");
 
         const cal = await readFile(path.join(root, ".loctt/config/calendar.yaml"), "utf-8");
         expect(cal).toContain("America/Argentina/Ushuaia");

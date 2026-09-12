@@ -190,7 +190,7 @@ Located at `.loctt/config/workflow.yaml`. Defines all configurable workflow valu
 
 ```yaml
 key:
-  prefix: T-
+  prefix: T   # bare uppercase (1–10 letters), no dash; the "-" is inserted at render → T-1
 
 statuses:
   - key: not_started
@@ -600,15 +600,15 @@ projects:
   - id: 01JBQZ4X8N0000000000000030
     name: Backend
     slug: backend
-    prefix: BACKEND-
+    prefix: BACKEND
   - id: 01JBQZ4X8N0000000000000031
     name: Web
     slug: web
-    prefix: WEB-
+    prefix: WEB
   - id: 01JBQZ4X8N0000000000000032
     name: Legacy
     slug: legacy
-    prefix: LEG-
+    prefix: LEG
     archived: true
 default: 01JBQZ4X8N0000000000000030
 ```
@@ -786,14 +786,14 @@ Located at `.loctt/state.yaml`. Tracks per-project key-allocation counters. Upda
 ```yaml
 keys:
   01KZYW8Q2M4N6P8R0T2V4X6Z8A:
-    prefix: BACKEND-
+    prefix: BACKEND
     next_number: 124
   01KZYW8Q4P6R8T0V2X4Z6B8D0F:
-    prefix: WEB-
+    prefix: WEB
     next_number: 87
 retired_keys:
   01KZYW8Q6R8T0V2X4Z6B8D0F2H:
-    prefix: EXP-
+    prefix: EXP
     next_number: 42
 ```
 

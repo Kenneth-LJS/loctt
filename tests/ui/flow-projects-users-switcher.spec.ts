@@ -20,8 +20,8 @@ import { expect, test } from "./fixtures/tracker.ts";
 async function twoProjects(
   tracker: { run(args: readonly string[]): Promise<string> },
 ): Promise<{ backend: string; web: string }> {
-  await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND-"]);
-  await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+  await tracker.run(["project", "create", "Backend", "--prefix", "BACKEND"]);
+  await tracker.run(["project", "create", "Web", "--prefix", "WEB"]);
   const list = await tracker.run(["project", "list", "--ids"]);
   const backend = /^Backend\t\S+\t(\S+)$/m.exec(list)?.[1];
   const web = /^Web\t\S+\t(\S+)$/m.exec(list)?.[1];
@@ -157,10 +157,14 @@ test.describe("PRU-21 — a 30-project switcher stays usable", () => {
     tracker,
   }) => {
     // 30 projects. Distinct prefixes so type-to-filter has something
-    // to match on both name and key.
+    // to match on both name and key. K88 bars digits in a prefix, so the
+    // two-digit index is encoded as letters (0→A … 9→J): Project 23's
+    // prefix is `PCD`. Keys still render with the inserted "-" (PCD-1).
+    const prefixFor = (n: string): string =>
+      "P" + [...n].map(d => String.fromCharCode(65 + Number(d))).join("");
     for (let i = 1; i <= 30; i++) {
       const n = String(i).padStart(2, "0");
-      await tracker.run(["project", "create", `Project ${n}`, "--prefix", `P${n}`]);
+      await tracker.run(["project", "create", `Project ${n}`, "--prefix", prefixFor(n)]);
     }
 
     await page.goto(`${tracker.baseURL}/list`);
@@ -180,8 +184,8 @@ test.describe("PRU-21 — a 30-project switcher stays usable", () => {
     await search.fill("Project 17");
     await expect(page.getByRole("link", { name: /Project 17/ })).toBeVisible();
     await expect(page.getByRole("link", { name: /Project 18/ })).toHaveCount(0);
-    // …and on the key prefix.
-    await search.fill("P23");
+    // …and on the key prefix (the encoded form: Project 23 → PCD).
+    await search.fill(prefixFor("23"));
     await expect(page.getByRole("link", { name: /Project 23/ })).toBeVisible();
     await expect(page.getByRole("link", { name: /Project 22/ })).toHaveCount(0);
 

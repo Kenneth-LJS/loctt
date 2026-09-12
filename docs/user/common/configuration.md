@@ -6,10 +6,13 @@ All workflow configuration lives in `.loctt/config/workflow.yaml`. LocTT ships w
 
 ```yaml
 key:
-  prefix: T-
+  prefix: T
 ```
 
-Change the prefix to suit your project (e.g., `BUG-`, `FEAT-`, `PROJ-`).
+The prefix is 1–10 uppercase letters with **no dash** — the `-` separator
+is inserted at key render, so a stored prefix of `T` produces keys like
+`T-1`. Change it to suit your project (e.g., `BUG`, `FEAT`, `PROJ`). A
+prefix containing a dash, lowercase, digit, or punctuation is rejected.
 
 ## Statuses
 

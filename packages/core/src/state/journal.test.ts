@@ -286,7 +286,7 @@ describe("journal recovery — crash-point coverage", () => {
 describe("journal recovery — multiple stacked entries", () => {
   it("replays two queued entries in order", async () => {
     const p2Id = await makeP2();
-    const p3Id = await makeProject("Three", "Q-");
+    const p3Id = await makeProject("Three", "Q");
     const ids1 = await seedTasks(TASK_PROJECT_ID, 2);
     const ids2 = await seedTasks(p2Id, 2);
 

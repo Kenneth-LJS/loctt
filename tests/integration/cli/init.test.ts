@@ -21,7 +21,7 @@ describe("CLI init (spawned binary)", () => {
 
   it("respects a custom prefix", async () => {
     await withTmpLoctt(async ({ root }) => {
-      const result = await runCli(["init", "--prefix", "BUG-"], { cwd: root });
+      const result = await runCli(["init", "--prefix", "BUG"], { cwd: root });
       expect(result.exitCode).toBe(0);
 
       const info = await runCli(["info"], { cwd: root });

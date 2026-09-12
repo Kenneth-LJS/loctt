@@ -590,7 +590,7 @@ test("REL-8: the target search matches key, title and a retired key, and never t
   await tracker.run(["project", "create", "Web App", "--prefix", "WEB"]);
   const moved = await tracker.run(["move", movable ?? "", "Web App"]);
   // Read the new key from the CLI rather than assuming its shape: the
-  // prefix is used verbatim, so "WEB" + 1 is `WEB1`, not `WEB-1`.
+  // bare "WEB" prefix renders with the K88 dash, so "WEB" + 1 is `WEB-1`.
   const movedKey = /→\s*(\S+)/.exec(moved)?.[1] ?? "";
   expect(movedKey).not.toBe("");
   expect(movedKey).not.toBe(movable);

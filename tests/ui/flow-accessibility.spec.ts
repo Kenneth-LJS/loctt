@@ -1096,9 +1096,12 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     tracker,
   }) => {
     // Enough projects to force the truncation toggle (PRU-21 collapse).
+    // K88 bars digits in a prefix, so the two-digit index is encoded as
+    // letters (0→A … 9→J): Project 01 → prefix `PAB`.
     for (let i = 1; i <= 12; i++) {
       const n = String(i).padStart(2, "0");
-      await tracker.run(["project", "create", `Project ${n}`, "--prefix", `P${n}`]);
+      const prefix = "P" + [...n].map(d => String.fromCharCode(65 + Number(d))).join("");
+      await tracker.run(["project", "create", `Project ${n}`, "--prefix", prefix]);
     }
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByTestId("project-all")).toBeVisible();
