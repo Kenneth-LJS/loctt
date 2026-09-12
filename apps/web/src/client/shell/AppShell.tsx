@@ -4,6 +4,7 @@ import { type ReactNode, useEffect } from "react";
 
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
+import { useScrollToHash } from "../router/useScrollToHash.ts";
 import { adoptStoredTheme } from "../theme/useTheme.ts";
 import { AnnouncerProvider } from "../ui/Announcer.tsx";
 import { CHROME_ATTR } from "../ui/Modal.tsx";
@@ -64,6 +65,11 @@ export function AppShell({
   useEffect(() => {
     if (storedTheme !== undefined) adoptStoredTheme(storedTheme);
   }, [storedTheme]);
+
+  // K76: honour a deep-link hash (`#comment-<id>`, `#field-<key>`, …) by
+  // scrolling its target into view and highlighting it. Once, at the
+  // shell, so every routed page inherits it through the Outlet.
+  useScrollToHash();
 
   return (
     // The create modal, the toast region and the announcer are
