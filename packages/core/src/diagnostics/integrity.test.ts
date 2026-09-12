@@ -295,6 +295,39 @@ describe("calendar holidays and user profiles degrade and are reported too", () 
     }
   });
 
+  // @verifies SET-24
+  it("reports an unresolvable stored timezone as a malformed, non-blocking finding", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const root = await mkdtemp(join(tmpdir(), "loctt-cal-tz-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      // An unresolvable zone, hand-edited onto disk. The calendar loads
+      // (SET-24: read tolerates it), but doctor must call it out. (Note a
+      // *renamed* zone like America/Godthab still resolves via ICU
+      // aliases, so it is not actually broken; a genuinely unknown string
+      // is.)
+      await writeFile(
+        join(locttDir, "config/calendar.yaml"),
+        "timezone: Mars/Olympus_Mons\nfirst_day_of_week: 1\nworking_days: [1, 2, 3, 4, 5]\nholidays: []\n",
+        "utf-8",
+      );
+
+      const findings = await checkDataIntegrity(locttDir);
+      const tz = findings.find(
+        f => f.path.includes("calendar.yaml") && /timezone/i.test(f.message),
+      );
+      expect(tz).toBeDefined();
+      expect(tz?.severity).toBe("malformed");
+      expect(tz?.message).toMatch(/Mars\/Olympus_Mons/);
+      // A degraded config is not a publish blocker (it renders in UTC).
+      expect(blockingFindings(findings)).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   // @verifies DEG-13
   it("names a corrupt user-profile field, malformed and non-blocking", async () => {
     const { initLoctt } = await import("../init/init.js");
