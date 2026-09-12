@@ -190,7 +190,7 @@ lines are implementation work, not decisions.
 - [ ] **MSL-29 — hand-edited workflow.yaml not seen until refresh** — file-watcher or mtime poll.
 - [ ] **REL-16 — attachment PNG thumbnail** — inline `<img>` with loading/error/oversize states.
 - [ ] **PRU-17 — "clear the project field" option** — `deleteProject` supports only remap; needs a clear path + journal kind.
-- [ ] **SET-24 — stored-value display unreachable** — calendar loader rejects unknown tz before the panel sees it.
+- [x] **SET-24 — stored-value display unreachable** — DONE (A-SET24-TZ). The loader treated an unresolvable `timezone` as object-fatal, so the panel (already built to show + flag it via `timezoneResolves`, with `workspaceDate` UTC-fallback) never received the value. Relaxed the READ path (`RawCalendarConfigSchema.timezone` → non-empty string) so a bad zone degrades through; kept WRITE strict (`saveCalendarConfig` re-validates as IANA + throws; `PUT /api/calendar` still validates the strict schema); added a `doctor` malformed-non-blocking finding (bullet 4). Core+integrity tests, red-proven both halves. (A renamed zone like America/Godthab still resolves via ICU — only a genuinely unknown string degrades.)
 - [ ] **ERR-11 / ERR-12 — typed content survives a failed save** — needs the body editor (milestone-deferred).
 - [ ] **ERR-23 — no multi-step create flow to fail in** — live only if a multi-step create is built.
 - [ ] **K31 item 2 — backup restore upload capped ~50 MB/attachment** — raise/limit with a clear message.

@@ -1,8 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { initLoctt } from "../init/init.js";
+import { resolveLocttDir } from "../paths/index.js";
 import {
   CalendarConfigError,
+  loadCalendarConfig,
   parseCalendarConfig,
+  saveCalendarConfig,
   serializeCalendarConfig,
 } from "./calendar.js";
 import { YamlSyntaxError } from "./yaml-coerce.js";
@@ -34,14 +42,31 @@ working_days: [1, 2, 3, 4, 5]
 `)).toThrow(CalendarConfigError);
   });
 
-  it("rejects an unknown timezone", () => {
+  // SET-24: a stored timezone that no longer resolves is TOLERATED on
+  // read (the calendar loads with the value preserved so the panel can
+  // show and flag it, and date rendering falls back to UTC). This test
+  // previously asserted the opposite (object-fatal throw); that was the
+  // bug SET-24 fixes — the whole consumer side (workspaceDate's UTC
+  // fallback, CalendarPanel's `timezoneResolves` marking) was built for a
+  // degraded value it never received. The WRITE path stays strict — see
+  // "saveCalendarConfig rejects …" below.
+  it("tolerates an unresolvable stored timezone on read (SET-24), preserving the value", () => {
     const yaml = `timezone: Mars/Olympus_Mons
 first_day_of_week: 1
 working_days: [1, 2, 3, 4, 5]
 holidays: []
 `;
+    const cfg = parseCalendarConfig(yaml);
+    expect(cfg.timezone).toBe("Mars/Olympus_Mons");
+  });
+
+  it("still rejects an empty timezone (a value the app cannot degrade around)", () => {
+    const yaml = `timezone: ""
+first_day_of_week: 1
+working_days: [1, 2, 3, 4, 5]
+holidays: []
+`;
     expect(() => parseCalendarConfig(yaml)).toThrow(CalendarConfigError);
-    expect(() => parseCalendarConfig(yaml)).toThrow(/timezone/);
   });
 
   it("accepts UTC explicitly", () => {
@@ -184,5 +209,33 @@ holidays:
     expect(reparsed.holidays).toEqual(cfg.holidays);
     expect(reparsed.broken).toHaveLength(1);
     expect(reparsed.broken?.[0]?.rawText).toContain("01-01-2026");
+  });
+});
+
+describe("saveCalendarConfig timezone guard (SET-24)", () => {
+  let root: string;
+  let locttDir: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-cal-"));
+    await initLoctt(root);
+    locttDir = resolveLocttDir(root);
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("refuses to save an unresolvable timezone, even though read tolerates one", async () => {
+    const cfg = await loadCalendarConfig(locttDir);
+    await expect(
+      saveCalendarConfig(locttDir, { ...cfg, timezone: "Mars/Olympus_Mons" }),
+    ).rejects.toThrow(/timezone/i);
+  });
+
+  it("saves a valid timezone", async () => {
+    const cfg = await loadCalendarConfig(locttDir);
+    await saveCalendarConfig(locttDir, { ...cfg, timezone: "America/New_York" });
+    const after = await loadCalendarConfig(locttDir);
+    expect(after.timezone).toBe("America/New_York");
   });
 });

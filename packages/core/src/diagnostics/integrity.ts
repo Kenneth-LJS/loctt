@@ -24,7 +24,7 @@
  *     the user to resolve, not a reason to refuse their publish.
  */
 
-import type { BrokenEntry } from "@loctt/contracts";
+import { type BrokenEntry,IanaTimezone } from "@loctt/contracts";
 
 import { getCalendarConfigPath, loadCalendarConfig } from "../config/calendar.js";
 import { getLabelsConfigPath, loadLabelsConfig } from "../config/labels.js";
@@ -288,6 +288,27 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
     () => loadCalendarConfig(locttDir).then(c => c.broken),
     "holiday",
   );
+  // SET-24 bullet 4: a stored `timezone` that no longer resolves is now
+  // tolerated on read (the calendar loads, date rendering falls back to
+  // UTC, the panel flags it) — but doctor must still call it out as a
+  // failing check so it is not silently lived with. Reported `malformed`
+  // (preserved, not blocking) like a degraded field.
+  try {
+    const cal = await loadCalendarConfig(locttDir);
+    if (!IanaTimezone.safeParse(cal.timezone).success) {
+      findings.push({
+        severity: "malformed",
+        path: getCalendarConfigPath(locttDir),
+        message:
+          `timezone "${cal.timezone}" is not a resolvable IANA zone — dates are `
+          + `rendered in UTC until it is fixed. Pick a valid zone in Settings → `
+          + `Calendar, or edit calendar.yaml.`,
+      });
+    }
+  } catch {
+    // A calendar that would not parse at all is object-fatal and surfaces
+    // through doctor's own config-load check, not here.
+  }
   // workflow.yaml's `broken` is a keyed record (one BrokenEntry[] per
   // sub-list), so it is flattened across sub-lists here.
   await collectConfigBroken(

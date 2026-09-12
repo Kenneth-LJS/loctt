@@ -52,7 +52,18 @@ const Weekday = z.number().int().min(0).max(6);
  * collection to degrade around.
  */
 const RawCalendarConfigSchema = z.object({
-  timezone: IanaTimezone,
+  // SET-24: a stored `timezone` that no longer resolves (renamed like
+  // `America/Godthab`, or an outright bad string) must NOT blank the whole
+  // calendar surface on read. It is a single scalar the app can degrade
+  // around — every consumer already tolerates an unresolvable zone
+  // (`workspaceDate` falls back to UTC, the panel shows it marked via
+  // `timezoneResolves` and keeps it out of the picker) — so the READ path
+  // accepts any non-empty string and hands the stored value through for
+  // the surfaces to flag. The WRITE path stays strict: `saveCalendarConfig`
+  // re-validates the timezone as IANA below, and `PUT /api/calendar`
+  // validates against the strict `CalendarConfigSchema`, so a bad zone can
+  // be tolerated when hand-edited onto disk but never saved through LocTT.
+  timezone: z.string().min(1, "timezone must not be empty"),
   first_day_of_week: Weekday,
   working_days: z.array(Weekday),
   holidays: z.array(z.unknown()),
@@ -182,10 +193,22 @@ export async function saveCalendarConfig(
   locttDir: string,
   config: CalendarConfig,
 ): Promise<void> {
+  // SET-24: the READ path (parseCalendarConfig) now tolerates an
+  // unresolvable timezone so a hand-edited bad zone degrades rather than
+  // blanking the panel — but a WRITE must not persist one. Re-validate the
+  // timezone strictly here (the read round-trip below no longer does), so
+  // `loctt` and the API refuse to save an invalid zone even though they
+  // will display one already on disk.
+  const tz = IanaTimezone.safeParse(config.timezone);
+  if (!tz.success) {
+    throw new CalendarConfigError(
+      `cannot save calendar.yaml: ${config.timezone} is not a valid IANA timezone`,
+    );
+  }
   const validated = parseCalendarConfig(serializeCalendarConfig(config));
   // Write valid + preserved broken holidays (K28) so a corrupt sibling
-  // survives. The timezone / working-days object-fatal behavior is
-  // unchanged — those still validate through the round-trip above.
+  // survives. Working-days object-fatal behavior is unchanged — those
+  // still validate through the round-trip above.
   await writeYamlAtomically(getCalendarConfigPath(locttDir), buildCalendarPlainObject(validated));
 }
 

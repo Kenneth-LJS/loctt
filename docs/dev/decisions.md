@@ -11707,3 +11707,33 @@ text-zoom support, not a visible clipping defect. **To revert/do:** run the
 px→rem migration on the named scale, min-height the fixed controls, then
 write the real `@verifies A11Y-39` transcription (assert reflow + no
 clipping at 200%) replacing A95's untagged partial.
+
+### A-SET24-TZ · A calendar `timezone` that no longer resolves degrades on read, strict on write
+
+**Decided (agent-level).** SET-24 requires an unresolvable stored
+`timezone` to be shown-and-flagged, not to blank the calendar surface —
+but the loader treated it as object-fatal (`RawCalendarConfigSchema` used
+the strict `IanaTimezone`, throwing `CalendarConfigError`), so the panel
+only ever got a generic error and could not show the value. The entire
+consumer side was already built for a degraded zone — `workspaceDate`
+falls back to UTC when the zone does not resolve, and `CalendarPanel` uses
+`timezoneResolves` to show the stored value marked and keep it out of the
+picker — so the object-fatal loader was the outlier, not the design.
+
+Relaxed the **read** path: `RawCalendarConfigSchema.timezone` is now
+`z.string().min(1)`, so a hand-edited bad zone loads through with the value
+preserved and the surfaces flag it (empty stays fatal — nothing to degrade
+around). The **write** path stays strict: `saveCalendarConfig` re-validates
+the zone as `IanaTimezone` and throws, and `PUT /api/calendar` validates
+against the strict `CalendarConfigSchema` — so a bad zone can be tolerated
+when hand-edited onto disk but never *saved* through LocTT. `doctor` reports
+an unresolvable stored zone as a `malformed` (non-blocking) finding, since
+dates still render in UTC (SET-24 bullet 4).
+
+This reverses the loader comment's earlier "a bad timezone still throws,
+blanking nothing salvageable" for the read path only; the write guard keeps
+the invariant that LocTT never persists an invalid zone. Note a *renamed*
+zone (America/Godthab → Nuuk) still resolves via ICU aliases, so it is not
+actually broken; only a genuinely unknown string degrades. **To revert:**
+restore `timezone: IanaTimezone` in `RawCalendarConfigSchema`, drop the
+`saveCalendarConfig` tz guard and the doctor tz check.
