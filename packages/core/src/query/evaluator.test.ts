@@ -573,3 +573,39 @@ describe("is empty / is not empty (K77)", () => {
     expect(evaluateQuery(query("status is not null and milestone is empty"), task)).toBe(true);
   });
 });
+
+describe("currentUser() (K80)", () => {
+  const mine: TaskFrontmatter = { ...task, assignee: "u_ken" };
+  const theirs: TaskFrontmatter = { ...task, assignee: "u_sam" };
+  const ctx: EvalContext = { currentUserId: "u_ken" };
+
+  it("resolves to the querying user's id — `assignee = currentUser()` means mine", () => {
+    expect(evaluateQuery(query("assignee = currentUser()"), mine, ctx)).toBe(true);
+    expect(evaluateQuery(query("assignee = currentUser()"), theirs, ctx)).toBe(false);
+  });
+
+  it("accepts the bare `currentUser` form without parentheses", () => {
+    expect(evaluateQuery(query("assignee = currentUser"), mine, ctx)).toBe(true);
+  });
+
+  it("is case-insensitive on the function name", () => {
+    expect(evaluateQuery(query("assignee = CURRENTUSER()"), mine, ctx)).toBe(true);
+  });
+
+  it("negates and composes", () => {
+    expect(evaluateQuery(query("assignee != currentUser()"), theirs, ctx)).toBe(true);
+    expect(evaluateQuery(query("assignee != currentUser()"), mine, ctx)).toBe(false);
+  });
+
+  it("matches nothing when no current user is supplied, rather than matching unassigned", () => {
+    // The sentinel guards against `= currentUser()` silently becoming
+    // `= ""` and matching every task with no assignee.
+    const unassigned: TaskFrontmatter = { ...task, assignee: undefined };
+    expect(evaluateQuery(query("assignee = currentUser()"), mine, {})).toBe(false);
+    expect(evaluateQuery(query("assignee = currentUser()"), unassigned, {})).toBe(false);
+  });
+
+  it("rejects `currentUser(` with no closing paren", () => {
+    expect(() => query("assignee = currentUser(")).toThrow();
+  });
+});

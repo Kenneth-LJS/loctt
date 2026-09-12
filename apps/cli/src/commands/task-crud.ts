@@ -9,6 +9,7 @@ import {
   createTask,
   deleteTask,
   duplicateTask,
+  getCurrentUser,
   listTasks,
   loadAllTasks,
   loadAllUsers,
@@ -227,6 +228,10 @@ export async function list(args: string[], root: string): Promise<void> {
     }
   }
 
+  // K80: the configured current user, so `currentUser()` in a query
+  // means "mine". Undefined when none is set — then it matches nothing.
+  const currentUser = await getCurrentUser(locttDir);
+
   const result = listTasks({
     tasks,
     options: {
@@ -237,6 +242,7 @@ export async function list(args: string[], root: string): Promise<void> {
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       includeArchived: hasFlag(args, "--archived"),
       ...(today !== undefined ? { today } : {}),
+      ...(currentUser !== null ? { currentUserId: currentUser.id } : {}),
     },
     ...(queriesConfig !== undefined ? { queriesConfig } : {}),
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),

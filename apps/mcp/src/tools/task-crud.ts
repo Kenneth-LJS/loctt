@@ -24,6 +24,7 @@ import {
   exportTasksToCSV,
   exportTasksToJSON,
   filterForExport,
+  getCurrentUser,
   listTasks,
   loadAllTasks,
   loadAllTasksDetailed,
@@ -153,6 +154,9 @@ export const TOOLS: readonly ToolDef[] = [
     handler: async ({ locttDir }, args) => {
       const tasks = await loadAllTasks(locttDir);
       const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
+      // K80: the configured current user, so `currentUser()` in a query
+      // resolves to the caller's id. Undefined when none is set.
+      const currentUser = await getCurrentUser(locttDir);
       const projectFilter = args["project"] as string | undefined;
       const baseQuery = args["query"] as string | undefined;
       const view = args["view"] as string | undefined;
@@ -181,6 +185,7 @@ export const TOOLS: readonly ToolDef[] = [
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
           ...(includeArchived !== undefined ? { includeArchived } : {}),
           ...(today !== undefined ? { today } : {}),
+          ...(currentUser !== null ? { currentUserId: currentUser.id } : {}),
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
         ...(workflowConfig !== undefined ? { workflowConfig } : {}),

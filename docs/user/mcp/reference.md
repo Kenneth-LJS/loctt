@@ -180,6 +180,8 @@ The one exception is a saved view referencing a since-deleted custom field: it s
 
 `today` in a query (`due_date < today`) resolves in the workspace timezone from `calendar.yaml`, not the server machine's zone.
 
+`currentUser()` in a query (`assignee = currentUser()`) resolves to the tracker's configured current user. When none is set it matches nothing rather than every unassigned task.
+
 ### `export_tasks`
 
 Export tasks as CSV or JSON — the same report the web list view

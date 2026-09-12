@@ -53,6 +53,13 @@ export interface ListOptions {
    * Defaults to the UTC date when absent.
    */
   readonly today?: string;
+  /**
+   * The querying user's id, used to resolve `currentUser()` in a query
+   * (K80) — e.g. `assignee = currentUser()`. Each surface supplies its
+   * own notion of "current user" (the web session, the CLI's configured
+   * user, MCP's caller). When absent, `currentUser()` matches nothing.
+   */
+  readonly currentUserId?: string;
 }
 
 /** Full options bag for listTasks. */
@@ -277,6 +284,7 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
         ...(ctx.resolveKey !== undefined ? { resolveKey: ctx.resolveKey } : {}),
         ...(workflowConfig !== undefined ? { workflow: workflowConfig } : {}),
         ...(options.today !== undefined ? { today: options.today } : {}),
+        ...(options.currentUserId !== undefined ? { currentUserId: options.currentUserId } : {}),
       };
       return evaluateQuery(ast, task.frontmatter, evalCtx);
     });

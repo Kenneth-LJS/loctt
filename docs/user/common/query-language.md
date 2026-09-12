@@ -66,6 +66,7 @@ not a query that matches nothing.
 - Strings: `"quoted"` or bare words (e.g., `in_progress`)
 - Lists: `(value1, value2, value3)`
 - Literals: `true`, `false`, `today`
+- Functions: `currentUser()`
 
 ### `today`
 
@@ -82,6 +83,23 @@ today` compares dates, not instants. A date field that happens to carry
 a time (a stored ISO-8601 timestamp) is still compared by its calendar
 day, so a task due today at any time matches `due_date = today` and
 `due_date <= today`, and is not counted as `due_date > today`.
+
+### `currentUser()`
+
+`currentUser()` resolves to the id of whoever runs the query, so a saved
+view like `assignee = currentUser()` means "assigned to me" for each
+person who opens it — the web signed-in user, the CLI's configured user
+(`loctt whoami` / the current-user file), or the MCP caller. The bare
+form `currentUser` (no parentheses) is accepted too.
+
+```
+assignee = currentUser()
+reporter = currentUser() and status != done
+```
+
+When no current user is set, `currentUser()` matches **nothing** rather
+than every unassigned task — an empty result is safer than silently
+matching the wrong rows.
 
 ## Special Aliases
 

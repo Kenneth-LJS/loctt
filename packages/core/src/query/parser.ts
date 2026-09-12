@@ -52,6 +52,9 @@ export type QueryValue =
   | { type: "boolean"; value: boolean }
   | { type: "date"; value: string }
   | { type: "today" }
+  // K80: `currentUser()` — resolved to the querying user's id at
+  // evaluation time (see EvalContext.currentUserId).
+  | { type: "current_user" }
   | { type: "list"; values: readonly QueryValue[] }
   // K77: the RHS placeholder for `is empty` / `is not empty`, which take
   // no value. Kept in the value union so a comparison node is uniform.
@@ -343,6 +346,15 @@ class Parser {
         return { type: "date", value: tok.value };
       case "TODAY":
         return { type: "today" };
+      case "CURRENT_USER":
+        // Accept and discard an optional `()` — `currentUser` and
+        // `currentUser()` both mean the same value. Only a bare `(` with
+        // no closing `)` is an error, caught by `expect`.
+        if (this.peek()?.type === "LPAREN") {
+          this.advance();
+          this.expect("RPAREN");
+        }
+        return { type: "current_user" };
       case "FIELD":
         // Bare word treated as string value
         return { type: "string", value: tok.value };
