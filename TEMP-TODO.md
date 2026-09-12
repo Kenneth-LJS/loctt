@@ -193,7 +193,7 @@ lines are implementation work, not decisions.
 - [x] **SET-24 — stored-value display unreachable** — DONE (A-SET24-TZ). The loader treated an unresolvable `timezone` as object-fatal, so the panel (already built to show + flag it via `timezoneResolves`, with `workspaceDate` UTC-fallback) never received the value. Relaxed the READ path (`RawCalendarConfigSchema.timezone` → non-empty string) so a bad zone degrades through; kept WRITE strict (`saveCalendarConfig` re-validates as IANA + throws; `PUT /api/calendar` still validates the strict schema); added a `doctor` malformed-non-blocking finding (bullet 4). Core+integrity tests, red-proven both halves. (A renamed zone like America/Godthab still resolves via ICU — only a genuinely unknown string degrades.)
 - [ ] **ERR-11 / ERR-12 — typed content survives a failed save** — needs the body editor (milestone-deferred).
 - [ ] **ERR-23 — no multi-step create flow to fail in** — live only if a multi-step create is built.
-- [ ] **K31 item 2 — backup restore upload capped ~50 MB/attachment** — raise/limit with a clear message.
+- [x] **K31 item 2 — backup restore upload capped ~50 MB/attachment** — DONE. The restore route was using the 50 MB per-attachment default cap on a *whole-tracker* backup, wrongly rejecting ordinary backups. Added `MAX_BACKUP_BYTES` (2 GiB) and passed it to the restore's `parseMultipartFile`; over-cap is a 400 naming the file. Also made the multipart size-limit message human-readable ("4 MB" / "1 GB", not "4194304 bytes") for all callers. `multipart.test.ts` covers the cap + message, red-proven.
 
 ## 8. Tooling / flake — infra, fix opportunistically
 

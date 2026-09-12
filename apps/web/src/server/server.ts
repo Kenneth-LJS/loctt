@@ -3799,6 +3799,20 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   /**
+   * The upload cap for a backup restore (K31 item 2). A backup is the
+   * *whole tracker* — every task, its history and comments, and every
+   * attachment inline — so the 50 MB `DEFAULT_MAX_ATTACHMENT_BYTES` cap
+   * (which is a sane limit for one attachment) wrongly rejected a
+   * perfectly ordinary whole-tracker backup. 2 GiB is generous for any
+   * real tracker while still bounding a pathological upload; a backup that
+   * genuinely exceeds it is split, and the CLI restores the parts
+   * (`loctt restore <part...>`). Over the cap, the parser's "upload exceeds
+   * maximum size" error is surfaced as a 400 naming the file, not a
+   * silent hang.
+   */
+  const MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024;
+
+  /**
    * `POST /api/backup/restore` — restore a JSONL backup (K17 ruling 2,
    * F3 / K30). Web parity for `loctt restore` and MCP `restore`.
    *
@@ -3877,7 +3891,9 @@ export function createWebApp(options: WebAppOptions) {
     try {
       let parsed: ParsedFilePart;
       try {
-        parsed = await parseMultipartFile(req, contentType, tmpParent, "file");
+        // A backup is the whole tracker, so it gets the backup cap, not
+        // the 50 MB per-attachment default (K31 item 2).
+        parsed = await parseMultipartFile(req, contentType, tmpParent, "file", MAX_BACKUP_BYTES);
       } catch (parseErr) {
         // Parsing failed before restoreBackup ran, so nothing was
         // written into the tracker (ERR-24 shape).

@@ -108,7 +108,14 @@ export async function parseMultipartFile(
         out.on("error", rejectWrite);
         out.on("close", () => {
           if (limitHit) {
-            rejectWrite(new Error(`upload exceeds maximum size of ${maxBytes} bytes`));
+            // Human-readable cap (MB, or GB past 1024 MB) — a raw byte
+            // count like "2147483648 bytes" tells the user nothing they
+            // can act on. K31 item 2.
+            const mb = maxBytes / (1024 * 1024);
+            const cap = mb >= 1024
+              ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB`
+              : `${mb.toFixed(mb % 1 === 0 ? 0 : 1)} MB`;
+            rejectWrite(new Error(`upload exceeds the maximum size of ${cap}`));
             return;
           }
           captured = { tempPath, filename: safeName, size };
