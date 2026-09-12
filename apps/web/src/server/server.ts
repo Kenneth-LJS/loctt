@@ -933,20 +933,32 @@ function buildStructuredQuery(url: URL, baseQuery: string | undefined): string |
     clauses.push(`(${baseQuery})`);
   }
 
-  const addClause = (field: string, raw: string): void => {
+  // LST-40 / MSL-7: a multi-valued field can be matched with ANY (the
+  // default — `field in (a, b)`, a widening OR) or ALL (`field = a and
+  // field = b`, an AND). For a set-valued field like `labels`, "give me
+  // tasks with both the `bug` and `urgent` labels" is a real want that OR
+  // silently widened away. The `labels_match=all` param opts into AND;
+  // absent or `any` keeps the OR default, so existing links are
+  // unchanged. Only `labels` is set-valued today, so only it honours the
+  // param — a scalar field (status) cannot be two values at once, and ALL
+  // there would match nothing.
+  const addClause = (field: string, raw: string, matchAll = false): void => {
     const values = raw.split(",").map(v => v.trim()).filter(Boolean);
     const first = values[0];
     if (first === undefined) return;
     if (values.length === 1) {
       clauses.push(`${field} = ${dslAtom(first)}`);
+    } else if (matchAll) {
+      clauses.push(`(${values.map(v => `${field} = ${dslAtom(v)}`).join(" and ")})`);
     } else {
       clauses.push(`${field} in (${values.map(dslAtom).join(", ")})`);
     }
   };
 
+  const labelsMatchAll = url.searchParams.get("labels_match") === "all";
   for (const [param, field] of Object.entries(STRUCTURED_FILTER_FIELDS)) {
     const raw = url.searchParams.get(param);
-    if (raw !== null) addClause(field, raw);
+    if (raw !== null) addClause(field, raw, field === "labels" && labelsMatchAll);
   }
   // Custom-field filters arrive as `field.<key>=v1,v2`.
   for (const [key, raw] of url.searchParams.entries()) {

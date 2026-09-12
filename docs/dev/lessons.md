@@ -145,6 +145,17 @@ exist. *A CMT-C4 red-proof passed against a broken `readHistory` call
 because only `@loctt/mcp` was rebuilt; rebuilding `@loctt/cli` made it fail
 as it should.*
 
+**The CLI bundles `@loctt/web`/`@loctt/core`/`@loctt/mcp` from *source*
+(tsup `noExternal` + an alias to `../web/src/...`), and tsup's incremental
+cache can serve a stale bundle — `rm -rf apps/cli/dist` before a UI
+red-proof of a server-side change.** So a break you make in
+`apps/web/src/server` reaches a UI spec only after the CLI is rebuilt, and
+a plain `npm run build --workspace @loctt/cli` may skip the rebuild if
+tsup thinks nothing changed. *A labels-match red-proof "passed" (the
+broken AND logic still filtered right) until `rm -rf apps/cli/dist &&`
+rebuild — then it failed as it should.* Confirm the break is in
+`apps/cli/dist/index.js` (grep it) before trusting a red-proof.
+
 **Probe the built binary before writing anything — roughly a third of
 "defects" aren't.** Case titles and briefs go stale as code moves under
 them. *An audit claimed milestone progress "does not exist anywhere"; it

@@ -97,6 +97,12 @@ export const listSearchSchema = z.object({
   milestone: csv,
   sprint: csv,
 
+  // LST-40 / MSL-7: how multiple selected labels combine. `all` = a task
+  // must have every selected label (AND); `any`/absent = any of them (OR,
+  // the default). Only meaningful with 2+ labels; the label dropdown
+  // shows the toggle then.
+  labels_match: z.enum(["all", "any"]).optional(),
+
   // Sort: column key + direction. Both optional; falls back to view
   // default or updated_at desc.
   sort: z.string().optional(),

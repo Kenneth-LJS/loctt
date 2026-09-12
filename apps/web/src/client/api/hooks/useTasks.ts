@@ -141,6 +141,8 @@ export interface TasksQueryParams extends TasksFilters {
   readonly page?: number;
   readonly limit?: number;
   readonly archived?: boolean;
+  /** LST-40/MSL-7: match ALL selected labels (AND) vs ANY (OR, default). */
+  readonly labels_match?: "all" | "any";
 }
 
 /** The structured filter keys, shared by serialization + query-key. */
@@ -176,6 +178,7 @@ export function tasksParamsFromSearch(search: Partial<ListSearch>): TasksQueryPa
     ...(search.page !== undefined ? { page: search.page } : {}),
     ...(search.limit !== undefined ? { limit: search.limit } : {}),
     ...(search.archived === true ? { archived: true } : {}),
+    ...(search.labels_match !== undefined ? { labels_match: search.labels_match } : {}),
   };
 }
 
@@ -201,6 +204,9 @@ export function buildQueryString(params: TasksQueryParams & { offset?: number })
   if (params.sort !== undefined) sp.set("sort", params.sort);
   if (params.dir !== undefined) sp.set("dir", params.dir);
   if (params.archived === true) sp.set("archived", "true");
+  // LST-40/MSL-7: only send `labels_match=all` (the AND opt-in); `any` is
+  // the server default, so omit it to keep URLs and export links tidy.
+  if (params.labels_match === "all") sp.set("labels_match", "all");
   // Structured filters: comma-joined lists the server ANDs into the
   // effective query (`type` maps to task_type server-side).
   for (const key of FILTER_KEYS) {

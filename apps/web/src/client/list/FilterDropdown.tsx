@@ -30,12 +30,19 @@ export function FilterDropdown({
   options,
   selected,
   onChange,
+  matchToggle,
   unavailable = false,
 }: {
   readonly label: string;
   readonly options: readonly FilterOption[];
   readonly selected: readonly string[];
   readonly onChange: (next: string[]) => void;
+  /**
+   * Optional control rendered at the top of the open panel — used by the
+   * labels facet for its All/Any match toggle (LST-40/MSL-7). Shown only
+   * when the caller supplies it (e.g. when 2+ values are selected).
+   */
+  readonly matchToggle?: React.ReactNode;
   /**
    * The options could not be loaded, as opposed to there being none.
    *
@@ -106,6 +113,11 @@ export function FilterDropdown({
               value={filter}
               onChange={e => { setFilter(e.target.value); }}
             />
+          </div>
+        )}
+        {matchToggle !== undefined && (
+          <div className="border-b border-border-subtle p-1.5">
+            {matchToggle}
           </div>
         )}
         <div className="max-h-[320px] min-w-[200px] overflow-y-auto">

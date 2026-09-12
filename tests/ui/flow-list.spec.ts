@@ -5018,6 +5018,40 @@ test.describe("MSL — clicking label pills (M1.3)", () => {
     expect(await page.getByRole("button", { name: /Remove Label/i }).count()).toBe(1);
     await expect(page).toHaveURL(/labels=/);
   });
+
+  // @verifies MSL-7
+  test("MSL-7: the All/Any toggle switches multi-label matching between AND and OR", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["label", "create", "bug"]);
+    await tracker.run(["label", "create", "ui"]);
+    await tracker.run(["create", "Both", "--label", "bug", "--label", "ui"]);
+    await tracker.run(["create", "OnlyBug", "--label", "bug"]);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Select both labels. Default is Any (OR) → both tasks match.
+    await page.locator("tbody").getByTitle("bug", { exact: true }).first().click();
+    await page.locator("tbody").getByTitle("ui", { exact: true }).first().click();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Open the Label dropdown; the All/Any toggle appears now that 2 are
+    // selected. Switch to All (AND) → only the task with both labels.
+    await page.getByRole("button", { name: "Filter Label" }).click();
+    await page.getByTestId("labels-match-all").check();
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).toContainText("Both");
+    await expect(page.locator("tbody")).not.toContainText("OnlyBug");
+    // The choice is in the URL, so it survives a reload.
+    await expect(page).toHaveURL(/labels_match=all/);
+
+    // Back to Any (OR) → both again, and the param drops from the URL.
+    await page.getByTestId("labels-match-any").check();
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+    await expect(page).not.toHaveURL(/labels_match/);
+  });
 });
 
 test.describe("XS — config drift while the UI is open (M1.3)", () => {
