@@ -1799,6 +1799,9 @@ export function createWebApp(options: WebAppOptions) {
   const handleDeleteProject: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const id = captures[0] ?? "";
     const remapTo = url.searchParams.get("remap_to") ?? undefined;
+    // PRU-17: the alternative to remap_to when the project has tasks —
+    // clear their project field instead of moving them.
+    const clearProjectField = url.searchParams.get("clear_project_field") === "true";
     // A DELETE that only archived was the whole endpoint until now:
     // `hard` was never passed, so PRU-17's remap flow had no way to
     // run and a "delete" silently left the project in projects.yaml.
@@ -1809,6 +1812,7 @@ export function createWebApp(options: WebAppOptions) {
       const result = await deleteProject(locttDir, id, {
         ...(hard ? { hard: true } : {}),
         ...(remapTo !== undefined ? { remapTo } : {}),
+        ...(clearProjectField ? { clearProjectField: true } : {}),
       });
       json(res, { deleted: id, remappedTaskCount: result.remappedTaskCount });
     } catch (err) {

@@ -38,7 +38,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--default", "--ids", "--name", "--prefix", "--remap-to", "--slug", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--clear-project-field", "--default", "--ids", "--name", "--prefix", "--remap-to", "--slug", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -163,9 +163,12 @@ export async function run(args: string[], root: string): Promise<void> {
     case "delete": {
       const ref = args[2];
       const remapTo = getArg(args, "--remap-to");
+      // PRU-17: the alternative to --remap-to when the project has tasks
+      // — clear their project field instead of moving them.
+      const clearProjectField = hasFlag(args, "--clear-project-field");
       if (!ref) {
         console.error(`Error: missing project ref`);
-        console.error(`Usage: loctt project delete <name|id> [--remap-to <name|id>] [--yes]`);
+        console.error(`Usage: loctt project delete <name|id> [--remap-to <name|id> | --clear-project-field] [--yes]`);
         process.exitCode = EXIT.USAGE;
         break;
       }
@@ -181,9 +184,14 @@ export async function run(args: string[], root: string): Promise<void> {
         const result = await deleteProject(locttDir, id, {
           hard: true,
           ...(remapToId !== undefined ? { remapTo: remapToId } : {}),
+          ...(clearProjectField ? { clearProjectField: true } : {}),
         });
         if (result.remappedTaskCount > 0) {
-          console.log(`Remapped ${result.remappedTaskCount} task(s) to ${remapTo}`);
+          console.log(
+            clearProjectField
+              ? `Cleared the project field on ${result.remappedTaskCount} task(s)`
+              : `Remapped ${result.remappedTaskCount} task(s) to ${remapTo ?? ""}`,
+          );
         }
         console.log(`Deleted project ${ref}`);
       });

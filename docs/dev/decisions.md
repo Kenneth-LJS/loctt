@@ -11786,3 +11786,25 @@ parser case, the evaluator branch + `EvalContext.currentUserId`, and the
 `currentUserId` wiring in `ListOptions` and the three surfaces. Second of
 K80's pieces (after `is empty`/`is null`); date functions + the visual
 builder remain.
+
+### A-PRU17-CLEAR · Deleting a project can clear its tasks' project field, not only remap
+
+**Built (agent-level), closing PRU-17.** A hard `deleteProject` on a
+project with tasks previously *required* `remapTo` — there was no way to
+satisfy the case's "clear the project field on these tasks" choice, so the
+delete dialog only offered remap. Added `clearProjectField` to
+`DeleteProjectOptions`: exactly one of `remapTo` / `clearProjectField` is
+required when tasks exist (both, or neither, is an error — no silent
+orphaning). The `remap_project` journal entry's `to` became nullable
+(`null` = clear), matching the milestone/sprint remaps; `replayTaskRemap`
+drops the `project` key on `null` so a cleared task surfaces as "no
+project" (the field is optional) rather than an empty string. Wired
+through all three surfaces: CLI `--clear-project-field`, MCP
+`clear_project_field`, and the web delete dialog (a remap-vs-clear radio,
+confirm enabled by either a chosen target or the clear choice). Core tests
+(clear path + both-rejection, red-proven by disabling the branch) and a
+web UI spec (clear choice → task survives project-less, its key unchanged)
+cover it; CLI/MCP/web reference docs updated. **To revert:** drop
+`clearProjectField` from `DeleteProjectOptions` and the surfaces, and make
+the `remap_project` journal `to` non-nullable again (no task then relies
+on a cleared project).

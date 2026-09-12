@@ -31,8 +31,14 @@ export function DeleteProjectDialog({
   readonly onClose: () => void;
 }) {
   const [remapTo, setRemapTo] = useState("");
+  // PRU-17: when the project holds tasks the user must choose their fate —
+  // move them to another project, or clear their project field. No default
+  // that silently orphans them.
+  const [disposition, setDisposition] = useState<"remap" | "clear">("remap");
   const needsRemap = taskCount > 0;
-  const blocked = (needsRemap && remapTo === "") || mutation.isPending;
+  const blocked =
+    (needsRemap && disposition === "remap" && remapTo === "")
+    || mutation.isPending;
 
   // PRU-34: a partial remap must report the true split rather than a
   // bare success. The server rejects the config change when the remap
@@ -48,7 +54,9 @@ export function DeleteProjectDialog({
       <Modal title="Project deleted" onClose={onClose}>
         <p data-testid="project-delete-result" className="text-[0.9286rem] text-text-secondary">
           {result.remappedTaskCount > 0
-            ? `Deleted "${project.name}". ${String(result.remappedTaskCount)} task${result.remappedTaskCount === 1 ? "" : "s"} moved to the project you chose; their existing keys are unchanged.`
+            ? disposition === "clear"
+              ? `Deleted "${project.name}". Cleared the project field on ${String(result.remappedTaskCount)} task${result.remappedTaskCount === 1 ? "" : "s"}; their existing keys are unchanged.`
+              : `Deleted "${project.name}". ${String(result.remappedTaskCount)} task${result.remappedTaskCount === 1 ? "" : "s"} moved to the project you chose; their existing keys are unchanged.`
             : `Deleted "${project.name}".`}
         </p>
         <div className="mt-4 flex justify-end">
@@ -74,20 +82,47 @@ export function DeleteProjectDialog({
         </p>
 
         {needsRemap && (
-          <label className="grid gap-1 text-[0.9286rem]">
-            <span className="text-text-secondary">Move those tasks to</span>
-            <select
-              data-testid="project-delete-remap"
-              value={remapTo}
-              onChange={e => { setRemapTo(e.target.value); }}
-              className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
-            >
-              <option value="">Choose a project…</option>
-              {others.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </label>
+          <fieldset className="grid gap-2 text-[0.9286rem]">
+            <legend className="sr-only">What happens to those tasks</legend>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="project-delete-disposition"
+                data-testid="project-delete-choice-remap"
+                checked={disposition === "remap"}
+                onChange={() => { setDisposition("remap"); }}
+              />
+              <span className="text-text-secondary">Move them to another project</span>
+            </label>
+            {disposition === "remap" && (
+              <label className="ml-6 grid gap-1">
+                <span className="sr-only">Move those tasks to</span>
+                <select
+                  data-testid="project-delete-remap"
+                  value={remapTo}
+                  onChange={e => { setRemapTo(e.target.value); }}
+                  className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
+                >
+                  <option value="">Choose a project…</option>
+                  {others.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="project-delete-disposition"
+                data-testid="project-delete-choice-clear"
+                checked={disposition === "clear"}
+                onChange={() => { setDisposition("clear"); }}
+              />
+              <span className="text-text-secondary">
+                Clear their project field (they will have no project)
+              </span>
+            </label>
+          </fieldset>
         )}
 
         <p className="text-[0.8571rem] text-text-tertiary">
@@ -120,7 +155,9 @@ export function DeleteProjectDialog({
             onClick={() => {
               mutation.mutate({
                 id: project.id,
-                ...(remapTo !== "" ? { remapTo } : {}),
+                ...(needsRemap && disposition === "clear"
+                  ? { clearProjectField: true }
+                  : remapTo !== "" ? { remapTo } : {}),
               });
             }}
             className="h-8 rounded-md bg-danger-fg px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"

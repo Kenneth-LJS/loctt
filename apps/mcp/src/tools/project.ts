@@ -114,14 +114,18 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "delete_project",
     description:
-      "Permanently remove a project from projects.yaml. For projects with tasks, " +
-      "`remap_to` is required to migrate them to another project. Cannot delete the only " +
-      "project. The counter is preserved in retired_keys. Use `archive_project` for the " +
-      "reversible (soft) variant. Always requires `confirm: true`.",
+      "Permanently remove a project from projects.yaml. For projects with tasks, pass " +
+      "EITHER `remap_to` (migrate them to another project) OR `clear_project_field: true` " +
+      "(clear their project field, leaving them with no project) — not both, and not neither. " +
+      "Cannot delete the only project. The counter is preserved in retired_keys. Use " +
+      "`archive_project` for the reversible (soft) variant. Always requires `confirm: true`.",
     inputSchema: {
       project: z.string().describe("Project id or name to delete"),
       confirm: z.boolean().optional().describe("Required: must be true to proceed"),
       remap_to: z.string().optional().describe("Target project (id or name) for tasks in the deleted project"),
+      clear_project_field: z.boolean().optional().describe(
+        "Clear the project field on affected tasks instead of remapping them (PRU-17). Mutually exclusive with remap_to.",
+      ),
     },
     handler: async ({ locttDir }, args) => {
       const blocked = requireConfirm(args, "delete_project");
@@ -129,10 +133,12 @@ export const TOOLS: readonly ToolDef[] = [
       const cfg = await loadProjectsConfig(locttDir);
       const id = resolveProjectIdFromInput(cfg, args["project"] as string);
       const remapTo = args["remap_to"] as string | undefined;
+      const clearProjectField = args["clear_project_field"] === true;
       const remapToId = remapTo !== undefined ? resolveProjectIdFromInput(cfg, remapTo) : undefined;
       const result = await deleteProject(locttDir, id, {
         hard: true,
         ...(remapToId !== undefined ? { remapTo: remapToId } : {}),
+        ...(clearProjectField ? { clearProjectField: true } : {}),
       });
       return text(JSON.stringify({
         id,
