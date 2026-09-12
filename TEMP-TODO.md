@@ -199,9 +199,9 @@ lines are implementation work, not decisions.
 
 - [x] **Add `eslint-plugin-react-hooks`** (rules-of-hooks as error) — DONE (pre-authorized). Installed `eslint-plugin-react-hooks@^7.1.1`, wired in `eslint.config.js` scoped to `apps/web/src/client` React files: `rules-of-hooks` = error (the render-loop class), `exhaustive-deps` = warn. Codebase is clean on rules-of-hooks (0 violations); 14 new exhaustive-deps warnings surfaced (informational). Red-proven the rule catches a conditional hook.
 - [ ] **Coverage gate reads case IDs from prose, not only tags** — require the tag first on its comment line. `tools/coverage/main.ts`.
-- [ ] **Test runs leak temp trackers** — widen sweep to `$TMPDIR/loctt-*` with an age filter, or move fixtures under `tests/workspace/`.
+- [x] **Test runs leak temp trackers** — DONE. The global-sweep covered only `tests/workspace/`, but 227 unit-test files create `loctt-*` dirs in `$TMPDIR` (via `mkdtemp(tmpdir())`) that a killed run leaked forever. Widened the sweep (`tests/integration/fixtures/global-sweep.ts`) to also reap `$TMPDIR/loctt-*`, age-filtered to >1 hour old so a concurrent run's fresh dirs are never touched. Exercised via an integration run (globalSetup ran clean).
 - [ ] **Removing a worktree leaves its `loctt ui` server running** — teardown on SIGINT/SIGTERM.
-- [ ] **Verify `maxWorkers: 2` is in the integration/e2e vitest configs** — confirm the over-parallelisation fix carried.
+- [x] **Verify `maxWorkers: 2` is in the integration/e2e vitest configs** — DONE (verify-close). Both `tests/vitest.integration.config.ts` and `tests/vitest.e2e.config.ts` carry `maxWorkers: 2` with the measured rationale (spawning real binaries fans out processes; default one-per-core starved the timeouts). The fix carried. Confirmed.
 
 Open flakes to root-cause (re-run before believing; check `uptime`):
 REL-32 (possible RMW race — sweep every RMW), the ArrowUp double-press
