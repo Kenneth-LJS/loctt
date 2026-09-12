@@ -275,6 +275,36 @@ export async function listComments(locttDir: string, taskId: string): Promise<Co
   return validComments(await readCommentEntries(locttDir, taskId));
 }
 
+/** A page of a comment thread, with the full count so a caller can say
+ * how many remain (CMT-20). */
+export interface CommentsPage {
+  readonly comments: Comment[];
+  readonly total: number;
+}
+
+/**
+ * A page of the comment thread (CMT-20). Comments stay in stored
+ * (chronological) order; `offset`/`limit` window into them and `total` is
+ * the full readable count, so a paginated view can render "showing N of
+ * M" and load the rest. Malformed entries are excluded from both the page
+ * and the total, exactly as `listComments` excludes them — a renderer has
+ * nothing to show for one, and counting it would make the remaining-count
+ * wrong. `offset`/`limit` omitted returns the whole thread (a caller that
+ * does not paginate is unaffected).
+ */
+export async function listCommentsPage(
+  locttDir: string,
+  taskId: string,
+  options: { readonly offset?: number; readonly limit?: number } = {},
+): Promise<CommentsPage> {
+  const all = validComments(await readCommentEntries(locttDir, taskId));
+  const offset = Math.max(0, options.offset ?? 0);
+  const comments = options.limit === undefined
+    ? all.slice(offset)
+    : all.slice(offset, offset + options.limit);
+  return { comments, total: all.length };
+}
+
 /** The thread as stored, malformed entries included. For diagnostics. */
 export async function listCommentEntries(
   locttDir: string,

@@ -14,6 +14,7 @@ import {
   extractMentions,
   formatCommentEditors,
   listComments,
+  listCommentsPage,
   postComment,
 } from "./comments.js";
 import { readHistory } from "./history.js";
@@ -338,5 +339,39 @@ describe("formatCommentEditors", () => {
     // A deleted user is more honest as an id than silently dropped.
     expect(formatCommentEditors({ edited: true, editors: ["u_ghost"] }, () => undefined))
       .toBe("Edited by u_ghost");
+  });
+});
+
+describe("listCommentsPage (CMT-20)", () => {
+  it("returns a window with the full total, in stored order", async () => {
+    for (let i = 1; i <= 5; i += 1) {
+      await postComment({ locttDir, taskId, body: `comment ${String(i)}` });
+    }
+    const page = await listCommentsPage(locttDir, taskId, { offset: 0, limit: 2 });
+    expect(page.total).toBe(5);
+    expect(page.comments).toHaveLength(2);
+    expect(page.comments.map(c => c.body)).toEqual(["comment 1", "comment 2"]);
+
+    const next = await listCommentsPage(locttDir, taskId, { offset: 2, limit: 2 });
+    expect(next.total).toBe(5);
+    expect(next.comments.map(c => c.body)).toEqual(["comment 3", "comment 4"]);
+
+    // offset + limit partition the thread with no gaps or repeats.
+    const last = await listCommentsPage(locttDir, taskId, { offset: 4, limit: 2 });
+    expect(last.comments.map(c => c.body)).toEqual(["comment 5"]);
+  });
+
+  it("returns the whole thread when no limit is given", async () => {
+    for (let i = 1; i <= 3; i += 1) {
+      await postComment({ locttDir, taskId, body: `c${String(i)}` });
+    }
+    const page = await listCommentsPage(locttDir, taskId);
+    expect(page.total).toBe(3);
+    expect(page.comments).toHaveLength(3);
+  });
+
+  it("reports total 0 and an empty page for a task with no comments", async () => {
+    const page = await listCommentsPage(locttDir, taskId, { offset: 0, limit: 10 });
+    expect(page).toEqual({ comments: [], total: 0 });
   });
 });
