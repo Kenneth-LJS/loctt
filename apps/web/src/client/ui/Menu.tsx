@@ -67,12 +67,17 @@ export function Menu({
   // A11Y-9/§A2: a `role="menu"` promises roving arrow-key navigation, not
   // just Tab. On open, move focus to the first item; ArrowDown/Up cycle,
   // Home/End jump, and a printable key type-aheads to the next item whose
-  // text starts with it. Operates on `[role="menuitem"]` in the panel, so
-  // panels that render non-menuitem content (a filter checkbox list) are
-  // unaffected and keep their own model.
+  // text starts with it. Operates on the menu's *item* roles —
+  // `menuitem` and the checkable variants `menuitemcheckbox`/
+  // `menuitemradio` — so a multi-select panel (the filter dropdowns,
+  // A11Y-10) is arrow-navigable too, not only Tab-reachable. Panels that
+  // render no item role at all (free-form content) are still unaffected
+  // and keep their own model.
   const menuItems = (): HTMLElement[] =>
     panelRef.current
-      ? Array.from(panelRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'))
+      ? Array.from(panelRef.current.querySelectorAll<HTMLElement>(
+          '[role="menuitem"]:not([disabled]),[role="menuitemcheckbox"]:not([disabled]),[role="menuitemradio"]:not([disabled])',
+        ))
       : [];
 
   useEffect(() => {
@@ -85,6 +90,18 @@ export function Menu({
   const typeahead = useRef<{ buffer: string; at: number }>({ buffer: "", at: 0 });
 
   const onPanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    // A searchable panel (the filter dropdowns, A11Y-10) renders a text
+    // input above its items. While focus is in that input the arrow keys
+    // and every printable key belong to it — typing "d" must filter, not
+    // roving-focus an item, and the caret must move on ArrowLeft/Right.
+    // So the menu's key model stands down whenever the event originates
+    // in an input/textarea/textbox.
+    const target = e.target as HTMLElement;
+    const inTextEntry =
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.isContentEditable;
+    if (inTextEntry) return;
     const items = menuItems();
     if (items.length === 0) return;
     const current = items.findIndex(el => el === document.activeElement);

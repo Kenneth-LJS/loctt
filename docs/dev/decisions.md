@@ -6781,6 +6781,20 @@ Mutation-proven: replacing the chip's `aria-label` with a bare
 the partial test with the full transcription and tag it
 `@verifies A11Y-10`.
 
+**Completed 2026-09-12.** The premise expired: A-MENU-ARROWNAV later gave
+`Menu` roving arrow-key focus + type-ahead for `role="menuitem"` (A11Y-9 /
+§A2), so the interaction model this deferral feared already exists and is
+tested. The only remaining gap was that the filter options are
+`role="menuitemcheckbox"`, which `menuItems()` did not select — so this
+pass widened that query to include `menuitemcheckbox`/`menuitemradio`
+(and stood the key model down while focus is in the panel's search input,
+so typing there filters rather than roving). The filter dropdowns are now
+arrow-navigable; the search box supplies type-ahead above the threshold.
+A `@verifies A11Y-10` spec drives the whole flow by keyboard (open →
+ArrowDown → Space to select → focus chip → Enter to remove), red-proven;
+the untagged partial test and its A11Y-10 known-gaps entry are removed.
+**To revert:** narrow `menuItems()` back to `[role="menuitem"]`.
+
 ### A95 · A11Y-39 is left uncovered: the type scale is absolute, so text-only zoom is a no-op
 
 **Ticket:** M4.8 follow-up (four unaccounted cases) · **Date:** 2026-09-02 · **Commit:** `6336592`
