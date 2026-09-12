@@ -374,6 +374,7 @@ export type {
 } from "./task/index.js";
 export type { MilestoneProgressOptions, Progress, ProgressReport } from "./task/index.js";
 export type { BodyWriteOptions } from "./task/index.js";
+export type { CommentsPage } from "./task/index.js";
 export {
   buildMentionResolver,
   CommentError,
@@ -382,6 +383,7 @@ export {
   extractMentions,
   formatCommentEditors,
   listComments,
+  listCommentsPage,
   postComment,
 } from "./task/index.js";
 export {

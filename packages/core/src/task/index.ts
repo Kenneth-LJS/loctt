@@ -17,6 +17,7 @@ export type {
   MalformedComment,
   PostCommentOptions,
 } from "./comments.js";
+export type { CommentsPage } from "./comments.js";
 export {
   buildMentionResolver,
   CommentError,
@@ -27,6 +28,7 @@ export {
   isMalformedComment,
   listCommentEntries,
   listComments,
+  listCommentsPage,
   postComment,
   validComments,
 } from "./comments.js";

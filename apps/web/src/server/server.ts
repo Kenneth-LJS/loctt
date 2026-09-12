@@ -129,6 +129,7 @@ import {
   LabelError,
   linkTask,
   listComments,
+  listCommentsPage,
   listTasks,
   loadAllTasks,
   loadAllTasksDetailed,
@@ -4298,12 +4299,35 @@ export function createWebApp(options: WebAppOptions) {
   const commentResolver = async (locttDir: string) =>
     buildMentionResolver(await loadAllUsers(locttDir));
 
-  const handleListComments: RouteHandler = async ({ res, locttDir, captures }) => {
+  const handleListComments: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const ref = requireValidRef(captures, res);
     if (ref === null) return;
     const task = await lookupTask(locttDir, ref);
-    const comments = await listComments(locttDir, task.frontmatter.id);
-    json(res, comments satisfies readonly CommentResponse[]);
+    // CMT-20: paginate when the caller asks (`?offset`/`?limit`), so a
+    // thread of 80 comments loads a page at a time with a stated remaining
+    // count. Without either param, return the bare array unchanged, so
+    // existing (non-paginating) callers are unaffected.
+    const offsetParam = url.searchParams.get("offset");
+    const limitParam = url.searchParams.get("limit");
+    if (offsetParam === null && limitParam === null) {
+      const comments = await listComments(locttDir, task.frontmatter.id);
+      json(res, comments satisfies readonly CommentResponse[]);
+      return;
+    }
+    const offset = Math.max(0, Number(offsetParam ?? 0) || 0);
+    const limit = limitParam !== null && Number.isFinite(Number(limitParam))
+      ? Math.max(0, Number(limitParam))
+      : undefined;
+    const page = await listCommentsPage(locttDir, task.frontmatter.id, {
+      offset,
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    json(res, {
+      comments: page.comments satisfies readonly CommentResponse[],
+      total: page.total,
+      offset,
+      ...(limit !== undefined ? { limit } : {}),
+    });
   };
 
   const handlePostComment: RouteHandler = async ({ req, res, locttDir, captures }) => {
