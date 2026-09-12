@@ -682,14 +682,23 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
         );
       })}
 
-      {!collapsed && hiddenCount > 0 ? (
+      {/* PRU-21 + A11Y-12: the project list's collapse is a real
+          expand/collapse control, so it carries `aria-expanded` (a
+          keyboard/AT user is told whether the extra projects are shown)
+          and toggles *both* ways on Enter/Space — a one-way "+N more"
+          with no way back exposed no state and could not be collapsed
+          again. Shown while collapsed with hidden items, or while
+          expanded (as "Show fewer"); a search that reveals everything
+          drops it, since there is nothing to collapse. */}
+      {!collapsed && (hiddenCount > 0 || expanded) && truncate ? (
         <button
           type="button"
-          onClick={() => { setExpanded(true); }}
+          aria-expanded={expanded}
+          onClick={() => { setExpanded(v => !v); }}
           data-testid="project-more"
           className="mx-2.5 rounded-md px-0 py-1 text-left text-[12px] font-medium text-text-tertiary hover:text-text-primary"
         >
-          +{hiddenCount} more
+          {expanded ? "Show fewer" : `+${hiddenCount} more`}
         </button>
       ) : null}
     </div>

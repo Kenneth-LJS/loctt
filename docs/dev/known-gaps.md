@@ -2670,23 +2670,6 @@ live region, so a successful field save is silent to a screen reader.
 Open a task, Tab to Status, Enter, ArrowDown — focus stays on the
 trigger. Browser Back — focus is on `document.body`.
 
-### A11Y-12 — no sidebar group is collapsible
-
-Bullets one and three hold and are asserted. Bullet two —
-"collapsible groups expose their expanded/collapsed state to assistive
-tech and toggle on `Enter`/`Space`" — has **no subject**: the six
-sidebar groups render from `GroupLabel`, a plain `<div>` with no
-control, no state and no handler. There is not one `aria-expanded` in
-`apps/web/src/client/shell/Sidebar.tsx`.
-
-**The trap:** the `collapsed` prop threaded through every group is the
-*whole sidebar's* rail toggle (SHL-21), whose `aria-expanded` lives
-correctly on the header's hamburger. It is not per-group collapse.
-Reading it as such would tag this case wrongly.
-
-**Reproduce:** `/list`, Tab into the sidebar — every stop is an entry;
-no group header is reachable or toggleable.
-
 ### A11Y-17 — rows cannot hold focus, and the obvious test cannot fail
 
 Two separate problems.
@@ -3020,9 +3003,14 @@ The other eight are recorded feature-gaps, not test-repairs, and tagging
 them would be a tag that cannot fail:
 - **A11Y-2** — `/` focuses a search box that does not exist (no search
   box is built; the binding is registered but disabled).
-- **A11Y-9, A11Y-10, A11Y-12** — full keyboard operation blocked by
+- **A11Y-9, A11Y-10** — full keyboard operation blocked by
   `ui/Menu.tsx` having no arrow-key/type-ahead navigation (A94) and
   table rows being click-only.
+- **A11Y-12** — RESOLVED 2026-09-12: the project switcher's truncation
+  control is now a two-way toggle carrying `aria-expanded`, toggling on
+  Enter/Space (Sidebar.tsx); the inert "Mentions me" entry was already
+  `aria-disabled` and out of tab order. `@verifies A11Y-12` spec; the old
+  untagged "no group is collapsible" gap test removed.
 - **A11Y-17** — the obvious test cannot fail (focus-to-body then Tab
   lands on the first focusable anyway); needs a positive-control design
   that does not yet exist.
