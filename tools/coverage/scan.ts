@@ -23,8 +23,18 @@ import path from "node:path";
 
 import type { CaseIndex, TestCase } from "../case-index/parse.ts";
 
-/** `// @verifies LST-3, LST-4` — one or more comma-separated IDs. */
-const VERIFIES = /@verifies\s+([A-Z][A-Z0-9]*-C?\d+(?:\s*,\s*[A-Z][A-Z0-9]*-C?\d+)*)/g;
+/**
+ * `// @verifies LST-3, LST-4` — one or more comma-separated IDs.
+ *
+ * Anchored to the START of the comment on the line: the tag must be the
+ * first thing after the comment marker (`//`, `*`, `/*`, `/**`) and
+ * optional whitespace. This is deliberate — a case ID that merely appears
+ * in prose ("this differs from LST-3", "unlike @verifies elsewhere") must
+ * NOT be counted as coverage, or the gate reports a case as verified by a
+ * test that only mentions it. A real tag is a line whose comment body
+ * begins with `@verifies`; anything else is prose.
+ */
+const VERIFIES = /^\s*(?:\/\/|\/\*\*?|\*)?\s*@verifies\s+([A-Z][A-Z0-9]*-C?\d+(?:\s*,\s*[A-Z][A-Z0-9]*-C?\d+)*)/;
 
 const TEST_FILE = /\.(test|spec)\.tsx?$/;
 // `.claude` holds agent worktrees — full copies of the repo. Without
@@ -75,12 +85,14 @@ export async function collectTags(repoRoot: string): Promise<Tag[]> {
     const rel = path.relative(repoRoot, file);
     const lines = (await readFile(file, "utf8")).split("\n");
     lines.forEach((line, idx) => {
-      for (const match of line.matchAll(VERIFIES)) {
-        const ids = match[1];
-        if (ids === undefined) continue;
-        for (const caseId of ids.split(",").map((s) => s.trim())) {
-          tags.push({ caseId, file: rel, line: idx + 1 });
-        }
+      // One tag per line: it must lead the comment (see VERIFIES), so a
+      // line carries at most one `@verifies`. A single comma-separated
+      // list after it still expands to multiple case ids.
+      const match = VERIFIES.exec(line);
+      const ids = match?.[1];
+      if (ids === undefined) return;
+      for (const caseId of ids.split(",").map((s) => s.trim())) {
+        tags.push({ caseId, file: rel, line: idx + 1 });
       }
     });
   }
