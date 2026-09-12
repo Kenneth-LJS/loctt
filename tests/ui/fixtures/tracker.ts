@@ -17,7 +17,7 @@ import path from "node:path";
 import { test as base } from "@playwright/test";
 import { execa } from "execa";
 
-import { cliEntry, freePort, killAndWait, waitForReady, workspaceRoot } from "./server-harness.ts";
+import { cliEntry, freePort, killAndWait, registerServerChild, waitForReady, workspaceRoot } from "./server-harness.ts";
 
 export interface SeedTask {
   readonly title: string;
@@ -193,6 +193,9 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
       env: process.env,
       reject: false,
     });
+    // Also tear the server down if the runner itself is killed mid-suite,
+    // not only in the `finally` below (which a SIGINT/SIGTERM skips).
+    const unregister = registerServerChild(child);
 
     try {
       await waitForReady(baseURL, 15_000);
@@ -262,6 +265,7 @@ export const test = base.extend<{ tracker: TrackerFixture }>({
       await use({ root, baseURL, run, runRaw, seed, seedBulk });
     } finally {
       await killAndWait(child);
+      unregister();
       await rm(root, { recursive: true, force: true }).catch((err: unknown) => {
         console.error(`ui fixture: failed to remove ${root}: ${String(err)}`);
       });
