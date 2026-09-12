@@ -454,7 +454,25 @@ export function ListView() {
     setUndoableArchive([]);
     try {
       const result = await run();
-      setBulkResult(describeBulkResult(result, verb, id => keyById.get(id)));
+      const described = describeBulkResult(result, verb, id => keyById.get(id));
+      setBulkResult(described);
+      // A11Y-51: push the outcome through the persistent announcer, not
+      // only into the conditionally-mounted `role="status"` span. A live
+      // region that mounts *with* its text already present is not reliably
+      // spoken, and the case is explicit that the real numbers must be
+      // announced ("37 archived, 3 failed"), never a bare "Done", and not
+      // truncated. Announce the message plus each failure so the count and
+      // the affected tasks are both spoken; the on-screen result keeps the
+      // failures individually focusable (below).
+      const hasFailures = described.failures.length > 0;
+      const failureText = hasFailures
+        ? ` Failures: ${described.failures.join("; ")}.`
+        : "";
+      // A partial failure interrupts (assertive): the user has to know
+      // some tasks did not change before acting further. A clean batch is
+      // polite. `aria-atomic` on the region means the whole string is read
+      // even when it names every failure (A11Y-51 / A11Y-24).
+      announce(`${described.message}.${failureText}`, hasFailures ? "assertive" : "polite");
       if (clearSelection) selection.clear();
       // The ids that actually changed, not a yes/no. An Undo built from
       // the refs *sent* would un-archive a task the batch failed on —

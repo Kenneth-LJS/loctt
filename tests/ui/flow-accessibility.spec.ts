@@ -989,6 +989,47 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     await expect(dialog.getByRole("textbox")).toHaveAccessibleName(/Type .+ to confirm/);
   });
 
+  // @verifies A11Y-51
+  test("A11Y-51: a partial bulk result announces the real numbers and its failures are keyboard-reachable", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seedBulk(4, undefined, n => `Bulk row ${String(n)}`);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Bulk row 1")).toBeVisible();
+
+    // Inject an unresolvable ref into the outgoing archive batch so the
+    // server returns 200 with a populated `failed` — a genuine partial
+    // result (some succeed, one fails), which is what A11Y-51 is about.
+    await page.route(/\/api\/tasks\/bulk\/archive/, async route => {
+      const body = route.request().postDataJSON() as { refs: string[] };
+      await route.continue({
+        postData: JSON.stringify({ ...body, refs: [...body.refs, "T-99999"] }),
+      });
+    });
+
+    await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+    await page.getByRole("button", { name: "Archive", exact: true }).click();
+
+    // First bullet: the announcement states the real numbers, never a
+    // bare "Done", and it goes through the assertive live region (a
+    // partial failure interrupts). `aria-atomic` there means the whole
+    // string is read, so the failure detail is not truncated.
+    const assertive = page.getByTestId("announcer-assertive");
+    await expect(assertive).toContainText("4 tasks archived, 1 failed");
+    await expect(assertive).toContainText("T-99999");
+    await expect(assertive).not.toContainText(/^Done\.?$/);
+
+    // Second bullet: the failed items are reachable by keyboard from the
+    // result — each is a focusable list item naming the task, not an
+    // inert text blob a keyboard user cannot land on.
+    const failures = page.getByTestId("bulk-failure-item");
+    await expect(failures).toHaveCount(1);
+    await failures.first().focus();
+    await expect(failures.first()).toBeFocused();
+    await expect(failures.first()).toContainText("T-99999");
+  });
+
   // @verifies A11Y-33
   test("A11Y-33: Esc on a dirty create modal confirms before discarding", async ({
     page,
@@ -2356,97 +2397,6 @@ test.describe("A11Y — persistent states and motion", () => {
     const longLast = await longRow.locator("td").last().boundingBox();
     const shortLast = await shortRow.locator("td").last().boundingBox();
     expect(Math.abs(longLast!.x - shortLast!.x)).toBeLessThan(2);
-  });
-});
-
-/**
- * A11Y-51 is **deliberately not tagged**. See known-gaps.md.
- *
- * Its first and third bullets hold: `describeBulkResult` produces
- * "37 tasks archived, 3 failed" — the real numbers, never a bare
- * "Done" — and `BulkResult` renders the whole sentence plus every
- * failure inside one `role="status"`, so nothing is truncated to a
- * first sentence.
- *
- * The second bullet does not hold, and it is not a test gap: "the
- * failed items are reachable by keyboard from the result" requires the
- * failures to be focusable. They are `readonly string[]` — already
- * formatted as `"KEY: reason"` by `describeBulkResult` — rendered as
- * `{result.failures.join("; ")}` inside a plain `<span>`. There is no
- * link, no button and no `tabIndex` anywhere in that subtree, and the
- * task key has been flattened into prose by the time the component
- * sees it, so nothing downstream can reconstruct a target to link to.
- *
- * Making them reachable means changing the shape `describeBulkResult`
- * returns and every call site that consumes it — an implementation
- * change with its own message-logic tests, not a transcription. That
- * is recorded rather than done here, and rather than tagged with two
- * of three bullets asserted.
- *
- * What is asserted below is the part that *is* true, so the gap is
- * visible and the working half is regression-guarded. It carries no
- * `@verifies` tag: this test does not satisfy the case.
- */
-test.describe("A11Y — bulk results", () => {
-  test("A11Y-51 (partial): a partial bulk result states the real numbers and names every failure, but the failures are not focusable", async ({
-    page,
-    tracker,
-  }) => {
-    const keys = await tracker.seed([
-      { title: "Bulk one" },
-      { title: "Bulk two" },
-      { title: "Bulk three" },
-    ]);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Bulk one")).toBeVisible();
-
-    // One of the three fails, so the result is genuinely partial. A
-    // route override is the only way to produce a mixed response
-    // deterministically.
-    const doomed = String(keys[2]);
-    await page.route(/\/api\/tasks\/bulk/, async route => {
-      const body = route.request().postDataJSON() as { refs?: string[] };
-      const refs = body.refs ?? [];
-      const failed = refs.slice(-1);
-      const succeeded = refs.slice(0, -1);
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          succeeded,
-          failed: failed.map(id => ({ taskId: id, error: "locked by another process" })),
-        }),
-      });
-    });
-
-    for (const k of keys) {
-      await page.getByRole("checkbox", { name: `Select ${String(k)}` }).check();
-    }
-    await page.getByRole("region", { name: "Bulk actions" })
-      .getByRole("button", { name: "Archive", exact: true })
-      .click();
-
-    const status = page.getByRole("status").filter({ hasText: /archived/ }).first();
-    // First bullet: the real numbers, never a bare "Done".
-    await expect(status).toContainText("2 tasks archived");
-    await expect(status).toContainText("1 failed");
-    await expect(status).not.toHaveText(/^\s*Done\.?\s*$/);
-
-    // Third bullet: the failure detail is inside the same live region
-    // as the summary, so a reader is not handed a truncated first
-    // sentence.
-    await expect(status).toContainText(/locked by another process/);
-
-    // The second bullet, asserted as **false** so this test inverts
-    // the day it is fixed — at which point the case can be
-    // transcribed properly and tagged. A test that merely omitted this
-    // would go stale silently.
-    const focusableInResult = await status.getByRole("link").count()
-      + await status.getByRole("button").filter({ hasText: new RegExp(doomed) }).count();
-    expect(
-      focusableInResult,
-      "failures became focusable — write the real A11Y-51 transcription and tag it",
-    ).toBe(0);
   });
 });
 

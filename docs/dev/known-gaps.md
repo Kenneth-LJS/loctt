@@ -2704,27 +2704,6 @@ Two separate problems.
 This is the tag-that-cannot-fail shape. The prerequisite is row
 focusability plus a restore across refetch.
 
-### A11Y-51 — bulk failures are not reachable by keyboard
-
-Bullets one and three hold: `describeBulkResult`
-(`apps/web/src/client/api/hooks/useBulk.ts`) produces the real numbers
-("2 tasks archived, 1 failed", never a bare "Done"), and `BulkResult`
-(`list/BulkBar.tsx`) renders the whole sentence plus every failure
-inside one `role="status"`, so nothing is truncated.
-
-Bullet two fails: "the failed items are reachable by keyboard from the
-result". `failures` is `readonly string[]`, already flattened to
-`"KEY: reason"` prose by `describeBulkResult`, and rendered as
-`{result.failures.join("; ")}` inside a plain `<span>` — no link, no
-button, no `tabIndex` in that subtree. Nothing downstream can
-reconstruct a target, because the key is prose by the time the
-component sees it.
-
-**Fixing it is an implementation change, not a transcription:** the
-shape `describeBulkResult` returns has to carry the task ref
-alongside the message, and every call site consuming it changes, with
-its own message-logic tests.
-
 ### Contrast: `--text-tertiary` is 3.67:1 on white (A11Y-40, not in this pass)
 
 Found by axe while scoping A11Y-16, and left unfixed because it
@@ -3050,12 +3029,14 @@ them would be a tag that cannot fail:
 - **A11Y-39, A11Y-40** — text-only zoom (absolute type scale, A95) and
   full contrast audit (needs the axe-contrast harness across every
   themed surface; partly built in the token work).
-- **A11Y-51** — bullet 2 (bulk failures reachable by keyboard) needs
-  `describeBulkResult` to return focusable failure items, a shape change
-  to every call site.
+- **A11Y-51** — RESOLVED 2026-09-12: the bulk result now announces through
+  the assertive live region (accurate numbers, `aria-atomic` so untruncated)
+  and `BulkResult` renders each failure as a focusable `<li tabIndex={0}>`
+  (`bulk-failure-item`), keyboard-reachable and naming its task. `@verifies
+  A11Y-51` spec, red-proven; the old untagged not-focusable gap test removed.
 
-So the A11Y remainder is a 2-case batch, not 10 — the rest wait on the
-features named above.
+So the A11Y remainder narrows further — the rest wait on the features named
+above.
 
 ## Where the uncovered feature-gap cases get picked up (phase map, 2026-09-04)
 

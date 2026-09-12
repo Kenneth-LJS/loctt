@@ -250,12 +250,30 @@ export function BulkResult({
       ].join(" ")}
     >
       {result.message}
-      {/* Each failure named individually, not summarised as a
-          count (BLK-38). */}
+      {/* Each failure named individually, not summarised as a count
+          (BLK-38) — and each is keyboard-reachable (A11Y-51): a `<ul>`
+          of `tabIndex={0}` items a user can Tab through to read which
+          tasks failed and why, rather than a single inert text join they
+          could not land on. Each entry already names its task key. */}
       {result.failures.length > 0 && (
-        <span className="ml-1 text-text-tertiary">
-          ({result.failures.join("; ")})
-        </span>
+        <ul
+          data-testid="bulk-failure-list"
+          className="ml-1 inline-flex list-none flex-wrap gap-1 p-0 align-baseline text-text-tertiary"
+        >
+          {result.failures.map((f, i) => (
+            <li
+              // Failure strings are `key: error`; the key disambiguates,
+              // but two tasks could share an error text, so index guards
+              // the React key.
+              key={`${f}-${String(i)}`}
+              tabIndex={0}
+              data-testid="bulk-failure-item"
+              className="rounded bg-bg-muted px-1"
+            >
+              {f}
+            </li>
+          ))}
+        </ul>
       )}
       {action}
     </span>
