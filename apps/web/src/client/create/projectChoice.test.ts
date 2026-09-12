@@ -1,7 +1,7 @@
 import type { ProjectDef } from "@loctt/contracts";
 import { describe, expect, it } from "vitest";
 
-import { NO_PROJECT_MESSAGE, resolveProjectChoice } from "./projectChoice.ts";
+import { NO_PROJECT_MESSAGE, NO_PROJECT_MESSAGE_PARTS, resolveProjectChoice } from "./projectChoice.ts";
 
 /**
  * NEW-14 through NEW-20 — how the project field opens.
@@ -58,6 +58,18 @@ describe("resolveProjectChoice", () => {
     expect(NO_PROJECT_MESSAGE).toContain("Projects");
     // Not a generic form error — the failure PRU-16 and NEW-19 share.
     expect(NO_PROJECT_MESSAGE).not.toMatch(/^this field is required/i);
+  });
+
+  it("K75: the deep-link fragments concatenate to the full message, and the link phrase is the Settings → Projects one", () => {
+    const { before, link, after } = NO_PROJECT_MESSAGE_PARTS;
+    // The three fragments the modal renders (prose + <Link> + prose)
+    // must be exactly the message — otherwise the deep-link nudge and
+    // the plain string drift, and NEW-19's quoted first sentence could
+    // silently stop matching.
+    expect(before + link + after).toBe(NO_PROJECT_MESSAGE);
+    // The clickable fragment is the actionable phrase, not a bare word.
+    expect(link).toContain("Settings");
+    expect(link).toContain("Projects");
   });
 
   it("auto-selects a sole project with no default anywhere (NEW-18)", () => {

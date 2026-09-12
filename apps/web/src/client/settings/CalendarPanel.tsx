@@ -125,7 +125,11 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
       </p>
 
       <div className="grid max-w-2xl gap-4 text-[0.9286rem]">
-        <label className="grid gap-1">
+        {/* K76: `/settings/calendar#field-timezone` scrolls here — the
+            field a GUI nudge (K75) links to. The `field-<key>` id scheme
+            is what `useScrollToHash` targets; other settings fields adopt
+            the same pattern as links to them are added. */}
+        <label id="field-timezone" className="grid gap-1">
           <span className="text-text-secondary">Timezone</span>
           <Select
             data-testid="calendar-timezone"

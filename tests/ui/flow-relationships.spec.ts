@@ -1710,3 +1710,26 @@ test("REL-46: a failed reorder names the action and leaves the row where the fil
   const afterReload = await renderedOrder(page, "blocks");
   expect(afterReload).toEqual([ids.a, ids.b, ids.c]);
 });
+
+// @verifies K76
+test("K76: a deep link to a task's Related / Attachments section scrolls it into view and highlights it", async ({
+  page, tracker,
+}) => {
+  const [key] = await tracker.seed([{ title: "Deep-linkable sections" }]);
+  if (key === undefined) throw new Error("seed produced no task");
+
+  // Each Tier-2 anchor scrolls its section in and gets the highlight
+  // marker useScrollToHash stamps — the same mechanism the comment and
+  // settings-field links use, reused verbatim.
+  for (const anchor of ["relationships", "attachments"]) {
+    await page.goto(`${tracker.baseURL}/tasks/${key}#${anchor}`);
+    const section = page.locator(`#${anchor}`);
+    await expect(section).toBeVisible();
+    await expect(section).toHaveAttribute("data-hash-target", "true");
+    const inView = await section.evaluate(el => {
+      const r = el.getBoundingClientRect();
+      return r.top >= 0 && r.top < window.innerHeight;
+    });
+    expect(inView, `#${anchor} should be scrolled into view`).toBe(true);
+  }
+});

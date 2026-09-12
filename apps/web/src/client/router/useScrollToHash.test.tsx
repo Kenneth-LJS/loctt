@@ -18,12 +18,18 @@ function Probe(): null {
 }
 
 const scrolled: string[] = [];
+// jsdom has no scrollIntoView; the stub records which element it was
+// called on. Held so afterEach can restore it — leaving the stub on the
+// shared prototype would leak into any later test in this worker. This is
+// a save-and-restore of a prototype slot, not a detached call, so the
+// unbound-method rule does not apply.
+// eslint-disable-next-line @typescript-eslint/unbound-method
+const realScrollIntoView = Element.prototype.scrollIntoView;
 
 beforeEach(() => {
   currentHash = "";
   scrolled.length = 0;
   vi.useFakeTimers();
-  // jsdom has no scrollIntoView; record which element it was called on.
   Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
     scrolled.push(this.id);
   };
@@ -33,6 +39,7 @@ afterEach(() => {
   vi.runOnlyPendingTimers();
   vi.useRealTimers();
   document.body.innerHTML = "";
+  Element.prototype.scrollIntoView = realScrollIntoView;
 });
 
 /** Advance a batch of rAF ticks (the hook polls on animation frames). */

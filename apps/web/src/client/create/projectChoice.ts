@@ -118,3 +118,17 @@ export function resolveProjectChoice(
 export const NO_PROJECT_MESSAGE =
   "Pick a project — this workspace has no default. "
   + "Set one in Settings \u2192 Projects so this stops recurring.";
+
+/**
+ * K75's GUI nudge: the same message, but with the "Settings \u2192 Projects"
+ * phrase carved out so the modal can render it as a **deep link** to the
+ * exact section where the default is configured, rather than as prose the
+ * user has to go find. The three fragments concatenate back to
+ * `NO_PROJECT_MESSAGE` verbatim (asserted in projectChoice.test.ts), so
+ * the two cannot drift and NEW-19's first-sentence quote still holds.
+ */
+export const NO_PROJECT_MESSAGE_PARTS = {
+  before: "Pick a project \u2014 this workspace has no default. Set one in ",
+  link: "Settings \u2192 Projects",
+  after: " so this stops recurring.",
+} as const;

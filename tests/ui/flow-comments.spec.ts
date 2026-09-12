@@ -467,6 +467,38 @@ test.describe("CMT — comments", () => {
     expect(atBottom, "the list should scroll to the newly posted comment").toBe(true);
   });
 
+  // @verifies K76
+  test("K76: a deep link to a comment scrolls it into view and highlights it, and Copy link yields that URL", async ({
+    page, context, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Deep-linkable" }]));
+    // A long enough thread that the target is not already on screen.
+    for (let i = 1; i <= 20; i += 1) {
+      await tracker.run(["comment", key, `line ${String(i)}`]);
+    }
+    const stored = await commentsOnDisk(tracker.root, key);
+    const target = stored[3];
+    if (target === undefined) throw new Error("seed produced too few comments");
+
+    // Open the deep link directly (the shape Copy link produces).
+    await page.goto(`${tracker.baseURL}/tasks/${key}?tab=comments#comment-${target.id}`);
+    const el = page.locator(`#comment-${target.id}`);
+    await expect(el).toBeVisible();
+    // useScrollToHash stamped the highlight marker on it.
+    await expect(el).toHaveAttribute("data-hash-target", "true");
+
+    // Copy link on some other comment yields a URL naming THAT comment.
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const other = stored[0];
+    if (other === undefined) throw new Error("no first comment");
+    await page.locator(`#comment-${other.id}`)
+      .getByTestId("comment-copy-link").click();
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toContain(`/tasks/${key}`);
+    expect(copied).toContain(`#comment-${other.id}`);
+    expect(copied).toContain("tab=comments");
+  });
+
   // @verifies CMT-3
   test("CMT-3: bodies render markdown, and an edit reopens the source that was typed", async ({
     page, tracker,

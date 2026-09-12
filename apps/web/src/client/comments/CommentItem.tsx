@@ -45,6 +45,7 @@ export function CommentItem({
   onCancelEdit,
   onSaveEdit,
   onDelete,
+  onCopyLink,
 }: {
   readonly comment: CommentResponse;
   readonly users: UserIndex;
@@ -59,6 +60,8 @@ export function CommentItem({
   readonly onCancelEdit: () => void;
   readonly onSaveEdit: (body: string) => void;
   readonly onDelete: () => void;
+  /** K76: copy a deep link to this comment to the clipboard. */
+  readonly onCopyLink: () => void;
 }): React.JSX.Element {
   const name = users.name(comment.author);
   const title = authorTitle(users, comment.author);
@@ -79,6 +82,9 @@ export function CommentItem({
 
   return (
     <li
+      // K76: the anchor a deep link (`#comment-<id>`) targets, so a link
+      // to one comment scrolls it into view and highlights it.
+      id={`comment-${comment.id}`}
       data-testid="comment"
       data-comment-id={comment.id}
       className="flex gap-3 border-b border-border-subtle py-3 last:border-b-0"
@@ -129,6 +135,15 @@ export function CommentItem({
           )}
 
           <span className="ml-auto flex gap-1">
+            <button
+              type="button"
+              data-testid="comment-copy-link"
+              aria-label="Copy link to this comment"
+              onClick={onCopyLink}
+              className="rounded px-1.5 py-0.5 text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+            >
+              Copy link
+            </button>
             <button
               type="button"
               data-testid="comment-edit"

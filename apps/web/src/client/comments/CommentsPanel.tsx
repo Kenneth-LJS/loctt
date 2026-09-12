@@ -9,6 +9,7 @@ import {
   useEditComment,
   usePostComment,
 } from "../api/hooks/useComments.ts";
+import { useAnnouncer } from "../ui/Announcer.tsx";
 import { Button } from "../ui/Button.tsx";
 import { CommentComposer } from "./CommentComposer.tsx";
 import { CommentItem } from "./CommentItem.tsx";
@@ -45,6 +46,21 @@ export function CommentsPanel({
 }): React.JSX.Element {
   const comments = useComments(taskRef);
   const navigate = useNavigate();
+  const { announce } = useAnnouncer();
+
+  // K76: copy a deep link to a comment. The URL carries `?tab=comments`
+  // so the comment is mounted (the panel is tabbed) and `#comment-<id>`
+  // so `useScrollToHash` scrolls it into view on open. Built from the
+  // live origin so it is shareable within this instance; announced so a
+  // screen-reader user knows the copy happened.
+  const copyCommentLink = (commentId: string): void => {
+    const url = `${window.location.origin}/tasks/${encodeURIComponent(taskRef)}`
+      + `?tab=comments#comment-${commentId}`;
+    void navigator.clipboard?.writeText(url).then(
+      () => { announce("Link to comment copied"); },
+      () => { announce("Could not copy the link"); },
+    );
+  };
 
   // CMT-20: the thread scrolls within its own box (below), so the
   // composer stays reachable without scrolling past 80 comments. When a
@@ -178,6 +194,7 @@ export function CommentsPanel({
                   onMentionActivate={userId => {
                     void navigate({ to: "/list", search: { assignee: [userId] } });
                   }}
+                  onCopyLink={() => { copyCommentLink(comment.id); }}
                   onStartEdit={() => {
                     setEditError(null);
                     setEditingId(comment.id);

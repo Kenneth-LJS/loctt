@@ -978,6 +978,35 @@ test.describe("NEW — create task modal", () => {
       .toMatch(/^WEB-/);
   });
 
+  // @verifies K75
+  test("K75: the no-default nudge is a deep link that opens Settings → Projects and closes the modal", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["project", "create", "Backend", "--prefix", "BE-"]);
+    await tracker.run(["project", "create", "Web", "--prefix", "WEB-"]);
+    const p = path.join(tracker.root, ".loctt", "config", "projects.yaml");
+    const text = await readFile(p, "utf8");
+    await writeFile(
+      p,
+      text.split("\n").filter(l => !l.startsWith("default:")).join("\n"),
+    );
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await openModal(page);
+    await page.getByTestId("create-title").fill("Needs a project");
+    await page.getByTestId("create-submit").click();
+
+    // The "Settings → Projects" phrase is an actual link, not prose:
+    // following it lands on the Projects settings section (K75's deep
+    // link) and dismisses the create modal on the way.
+    const link = page.getByTestId("create-project-required-link");
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(/\/settings\/projects$/);
+    await expect(page.getByTestId("create-task-modal")).toBeHidden();
+  });
+
   // @verifies ERR-44
   test("ERR-44: a placed field error and a toast are both keyboard-reachable, announced, and the field takes focus", async ({
     page,

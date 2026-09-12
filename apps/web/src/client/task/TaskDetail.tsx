@@ -535,7 +535,7 @@ export function TaskDetail({
               />
             </Section>
 
-            <Section title="Related">
+            <Section title="Related" id="relationships">
               {/* M2.5a. Keyed by the task for the same reason the other
                   panels are: the picker's typed query, the collapsed
                   groups and the collapsed tree nodes are component
@@ -559,7 +559,7 @@ export function TaskDetail({
               />
             </Section>
 
-            <Section title="Attachments">
+            <Section title="Attachments" id="attachments">
               {/* M2.5b. Keyed by the task for the same reason the other
                   panels are: the upload queue is component state, and
                   carrying A's queue onto B would show B outcomes for
@@ -581,6 +581,11 @@ export function TaskDetail({
                 as before: the composer buffer, in-progress edit, and the
                 feed's loaded page count are component state that must not
                 carry from task A onto task B. */}
+            {/* K76: `#comments` scrolls the comments/activity panel into
+                view. A link to a specific comment (`#comment-<id>`) also
+                carries `?tab=comments` (see the copy-link affordance) so
+                the comment is actually mounted when the scroll runs. */}
+            <div id="comments">
             <ActivityPanel
               key={task.data.frontmatter.id}
               taskRef={taskRef}
@@ -605,6 +610,7 @@ export function TaskDetail({
               projects={projects.data?.items ?? []}
               calendar={calendar.data}
             />
+            </div>
           </div>
 
           <MetaPanel
@@ -709,13 +715,16 @@ export function TaskDetail({
 
 function Section({
   title,
+  id,
   children,
 }: {
   readonly title: string;
+  /** K76: deep-link anchor (e.g. `relationships`, `attachments`). */
+  readonly id?: string;
   readonly children: React.ReactNode;
 }) {
   return (
-    <section>
+    <section {...(id !== undefined ? { id } : {})}>
       <h2 className="mb-2 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary">
         {title}
       </h2>
