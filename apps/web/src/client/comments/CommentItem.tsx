@@ -1,4 +1,5 @@
 import type { CommentResponse } from "@loctt/contracts";
+import { useState } from "react";
 
 import type { MentionCandidate } from "../editor/MentionMenu.tsx";
 import { relativeTime } from "../list/format.ts";
@@ -166,11 +167,62 @@ export function CommentItem({
                 initialMode="raw"
               />
             )
-          : renderCommentBody(comment.body, {
-              resolveMention,
-              onMentionActivate,
-            })}
+          : (
+              <ClampedBody body={comment.body}>
+                {renderCommentBody(comment.body, {
+                  resolveMention,
+                  onMentionActivate,
+                })}
+              </ClampedBody>
+            )}
       </div>
     </li>
+  );
+}
+
+/**
+ * CMT-20's fourth bullet: a very long single comment is clamped with a
+ * "Show more" toggle rather than pushing the composer off the screen. The
+ * threshold is on the *source* length — a cheap proxy for rendered height
+ * that needs no measurement — and only past it does the clamp (and the
+ * toggle) appear, so ordinary comments are untouched. Collapsed height is
+ * in rem so it scales with text-zoom (A11Y-39).
+ */
+const LONG_COMMENT_CHARS = 1200;
+
+function ClampedBody({
+  body,
+  children,
+}: {
+  readonly body: string;
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = body.length > LONG_COMMENT_CHARS;
+  if (!isLong) return <>{children}</>;
+  return (
+    <div data-testid="comment-clamp">
+      <div
+        // The fade at the bottom hints there is more when collapsed.
+        className={expanded ? "" : "relative max-h-[12rem] overflow-hidden"}
+      >
+        {children}
+        {!expanded && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-bg-surface to-transparent"
+          />
+        )}
+      </div>
+      <button
+        type="button"
+        data-testid="comment-show-more"
+        aria-expanded={expanded}
+        onClick={() => { setExpanded(v => !v); }}
+        className="mt-1 text-[0.8571rem] font-medium text-accent hover:underline"
+      >
+        {expanded ? "Show less" : "Show more"}
+      </button>
+    </div>
   );
 }

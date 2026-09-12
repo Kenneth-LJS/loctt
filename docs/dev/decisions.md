@@ -11808,3 +11808,34 @@ cover it; CLI/MCP/web reference docs updated. **To revert:** drop
 `clearProjectField` from `DeleteProjectOptions` and the surfaces, and make
 the `remap_project` journal `to` non-nullable again (no task then relies
 on a cleared project).
+
+### A-CMT20 · Comments-at-scale via a scroll box, not client pagination
+
+**Built (agent-level), closing CMT-20.** CMT-20 wants an 80-comment
+thread to stay usable: the list "scrollable **or** progressively loaded",
+the composer reachable without scrolling through all of them, a new
+comment scrolled into view, and a very long comment clamped.
+
+**Chosen: a bounded scroll box, not client-side pagination.** The list
+renders inside a `max-h-[30rem] overflow-y-auto` container, so a long
+thread scrolls *within* the box and the composer sits just below it
+(measured: the gap between the list bottom and the composer is small, not
+the full height of 30 comments). The case's bullet 1 offers "scrollable
+OR progressively loaded", and bullet 2 ("if comments paginate, state the
+remaining count") is conditional — a scroll box satisfies both without the
+infinite-query refactor, which would have changed `useComments`'s shape
+for every consumer including `ActivityPanel`. On post, the panel scrolls
+the box to the new comment (keyed on the comment count rising, so an edit
+does not scroll). A comment whose source exceeds 1200 chars renders inside
+a `ClampedBody` — clamped to `max-h-[12rem]` with a fade and a Show
+more/Show less toggle — so one huge comment cannot push the composer off
+screen.
+
+The **core + API pagination** (`listCommentsPage`, `?offset`/`?limit` on
+the comments endpoint) was still built and tested — it is backward-
+compatible and ready if a future case wants true progressive loading —
+but the client uses the scroll box, which is simpler and lower-risk.
+`@verifies CMT-20` UI spec covers all four behaviours (red-proven on the
+clamp); flow-comments (20) and flow-activity (16, reuses `useComments`)
+pass unchanged. **To revert:** drop the scroll-box classes + scroll
+effect in `CommentsPanel` and the `ClampedBody` in `CommentItem`.

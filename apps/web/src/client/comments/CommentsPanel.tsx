@@ -1,6 +1,6 @@
 import type { UserProfile } from "@loctt/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
@@ -45,6 +45,22 @@ export function CommentsPanel({
 }): React.JSX.Element {
   const comments = useComments(taskRef);
   const navigate = useNavigate();
+
+  // CMT-20: the thread scrolls within its own box (below), so the
+  // composer stays reachable without scrolling past 80 comments. When a
+  // new comment lands, scroll it into view so the user sees it went
+  // through rather than being left mid-thread. Keyed on the count: a
+  // *post* grows it (scroll), an edit does not (leave the scroll alone).
+  const listRef = useRef<HTMLUListElement>(null);
+  const prevCount = useRef<number>(0);
+  useEffect(() => {
+    const count = comments.data?.length ?? 0;
+    if (count > prevCount.current && prevCount.current > 0) {
+      const el = listRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+    prevCount.current = count;
+  }, [comments.data]);
 
   const post = usePostComment(taskRef);
   const edit = useEditComment(taskRef);
@@ -132,7 +148,15 @@ export function CommentsPanel({
             </p>
           )
         : (
-            <ul data-testid="comments-list" className="list-none p-0">
+            <ul
+              ref={listRef}
+              data-testid="comments-list"
+              // CMT-20: a bounded, scrollable thread. A long list scrolls
+              // *inside* this box rather than pushing the composer below
+              // it off the screen; the composer that follows stays
+              // reachable. `max-h` in rem so it scales with text-zoom.
+              className="m-0 max-h-[30rem] list-none overflow-y-auto p-0"
+            >
               {list.map(comment => (
                 <CommentItem
                   key={comment.id}
