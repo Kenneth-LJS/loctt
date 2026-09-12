@@ -1006,6 +1006,8 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     await link.focus();
     const key = await link.getAttribute("data-task-key");
     await expect(link).toBeFocused();
+    expect(key).not.toBeNull();
+    const taskKey = key as string;
 
     // Simulate the async content replacement the case names — a refetch
     // that unmounts and re-mounts the focused row's node (the same DOM
@@ -1018,25 +1020,26 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     // React's keyed reconciliation and needs no effect; the interesting,
     // and only non-vacuous, case is the unmount/remount — which is what
     // this exercises and what the effect exists for.)
-    const landed = await page.evaluate((k) => {
+    const landed = await page.evaluate((k): Promise<{ isBody: boolean; key: string | null }> => {
       const tr = document.querySelector(`[data-task-key="${k}"]`)?.closest("tr");
-      if (tr === null || tr === undefined) return "no-row";
-      const parent = tr.parentElement;
-      if (parent === null) return "no-parent";
+      const parent = tr?.parentElement ?? null;
+      if (tr === null || tr === undefined || parent === null) {
+        return Promise.resolve({ isBody: true, key: "SETUP-FAILED" });
+      }
       const next = tr.nextSibling;
       parent.removeChild(tr);
       // focus is now on body — the failure the case guards against.
       parent.insertBefore(tr, next);
-      return new Promise<{ isBody: boolean; key: string | null }>(resolve => {
+      return new Promise(resolve => {
         setTimeout(() => resolve({
           isBody: document.activeElement === document.body,
           key: document.activeElement?.getAttribute?.("data-task-key") ?? null,
         }), 100);
       });
-    }, key);
+    }, taskKey);
 
     // Focus landed back on the equivalent row, not on document.body.
-    expect(landed).toEqual({ isBody: false, key });
+    expect(landed).toEqual({ isBody: false, key: taskKey });
   });
 
   // @verifies A11Y-10
