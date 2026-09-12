@@ -6,7 +6,7 @@ import { Readable } from "node:stream";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { parseMultipartFile } from "./multipart.ts";
+import { parseMultipartFile } from "./multipart.js";
 
 const BOUNDARY = "----loctttest-mp";
 
