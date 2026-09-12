@@ -6,6 +6,7 @@ export type TokenType =
   | "DATE"
   | "BOOLEAN"
   | "TODAY"
+  | "CURRENT_USER"
   | "OP_EQ"
   | "OP_NEQ"
   | "OP_LT"
@@ -50,6 +51,11 @@ const KEYWORD_MAP: Record<string, TokenType> = {
   true: "BOOLEAN",
   false: "BOOLEAN",
   today: "TODAY",
+  // K80: `currentUser()` resolves to the querying user's id, so a saved
+  // view like `assignee = currentUser()` means "mine" for whoever runs
+  // it. Matched case-insensitively (the map is keyed on the lowercased
+  // word); the trailing `()` is optional and consumed by the parser.
+  currentuser: "CURRENT_USER",
 };
 
 const TWO_CHAR_OPS: Record<string, TokenType> = {

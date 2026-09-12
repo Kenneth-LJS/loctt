@@ -3407,6 +3407,11 @@ export function createWebApp(options: WebAppOptions) {
     // to go and fix.
     const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
     const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
+    // K80: resolve the querying user so `currentUser()` in a query means
+    // "mine" for whoever is signed in. Best-effort — a tracker with no
+    // current user leaves it undefined and `currentUser()` matches
+    // nothing (never every unassigned task).
+    const currentUser = await getCurrentUser(locttDir);
 
     const requestedView = url.searchParams.get("view") ?? undefined;
     // VUE-22 / north-star principle 5: a saved view whose query no longer
@@ -3509,6 +3514,7 @@ export function createWebApp(options: WebAppOptions) {
       ...(sort !== undefined ? { sort } : {}),
       ...(includeArchived ? { includeArchived: true } : {}),
       ...(today !== undefined ? { today } : {}),
+      ...(currentUser !== null ? { currentUserId: currentUser.id } : {}),
       limit: Number.MAX_SAFE_INTEGER,
     };
 

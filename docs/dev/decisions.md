@@ -11764,3 +11764,25 @@ zone (America/Godthab → Nuuk) still resolves via ICU aliases, so it is not
 actually broken; only a genuinely unknown string degrades. **To revert:**
 restore `timezone: IanaTimezone` in `RawCalendarConfigSchema`, drop the
 `saveCalendarConfig` tz guard and the doctor tz check.
+
+### A-K80-CURRENTUSER · `currentUser()` query function
+
+**Built (agent-level), part of K80.** The DSL gains `currentUser()` (bare
+`currentUser` accepted too), a value that resolves to the querying user's
+id so a saved view like `assignee = currentUser()` means "mine" for
+whoever runs it. Tokenizer: `currentuser` keyword to a `CURRENT_USER`
+token (case-insensitive). Parser: in value position, consumes an optional
+`()` and emits `{type:"current_user"}` (a `(` with no `)` is an error).
+Evaluator: `EvalContext.currentUserId` resolves it; when absent it
+resolves to a match-nothing sentinel (a NUL-prefixed string), so
+`= currentUser()` never silently becomes `= ""` and matches every
+unassigned task. Threaded through `ListOptions.currentUserId`; all three
+surfaces supply it via core's `getCurrentUser(locttDir)` — web (signed-in
+user), CLI (configured user), MCP (caller). Verified end-to-end on the CLI
+(`assignee = currentUser()` returns only the current user's task).
+Evaluator tests (6, red-proven), query-language + MCP reference docs
+updated. **To revert:** remove the `CURRENT_USER` token/keyword, the
+parser case, the evaluator branch + `EvalContext.currentUserId`, and the
+`currentUserId` wiring in `ListOptions` and the three surfaces. Second of
+K80's pieces (after `is empty`/`is null`); date functions + the visual
+builder remain.
