@@ -989,6 +989,56 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     await expect(dialog.getByRole("textbox")).toHaveAccessibleName(/Type .+ to confirm/);
   });
 
+  // @verifies A11Y-17
+  test("A11Y-17: focus survives async content replacement in the task list", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Focus subject", fields: { status: "in_progress" } },
+      { title: "Neighbour" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Focus a row via its key-link anchor.
+    const link = page.locator("[data-task-key]").first();
+    await link.focus();
+    const key = await link.getAttribute("data-task-key");
+    await expect(link).toBeFocused();
+
+    // Simulate the async content replacement the case names — a refetch
+    // that unmounts and re-mounts the focused row's node (the same DOM
+    // churn a background poll or a board reflow produces). Removing the
+    // <tr> drops focus to document.body; re-inserting it must not leave
+    // focus stranded there, sending the next Tab back to the top of the
+    // page. The restoration effect re-focuses the equivalent row.
+    //
+    // (A refetch that merely *keeps* the row is handled natively by
+    // React's keyed reconciliation and needs no effect; the interesting,
+    // and only non-vacuous, case is the unmount/remount — which is what
+    // this exercises and what the effect exists for.)
+    const landed = await page.evaluate((k) => {
+      const tr = document.querySelector(`[data-task-key="${k}"]`)?.closest("tr");
+      if (tr === null || tr === undefined) return "no-row";
+      const parent = tr.parentElement;
+      if (parent === null) return "no-parent";
+      const next = tr.nextSibling;
+      parent.removeChild(tr);
+      // focus is now on body — the failure the case guards against.
+      parent.insertBefore(tr, next);
+      return new Promise<{ isBody: boolean; key: string | null }>(resolve => {
+        setTimeout(() => resolve({
+          isBody: document.activeElement === document.body,
+          key: document.activeElement?.getAttribute?.("data-task-key") ?? null,
+        }), 100);
+      });
+    }, key);
+
+    // Focus landed back on the equivalent row, not on document.body.
+    expect(landed).toEqual({ isBody: false, key });
+  });
+
   // @verifies A11Y-10
   test("A11Y-10: filtering is fully keyboard-operable — open, arrow-navigate, select, and remove a chip", async ({
     page,
@@ -2846,82 +2896,6 @@ test.describe("A11Y — focus through change", () => {
     // Asserted positively. "Focus is not on the input" would pass with
     // focus on `body`, which A11Y-45 forbids by name.
     await expect(page.getByTestId("meta-edit-estimate")).toBeFocused();
-  });
-
-  /**
-   * A11Y-17 is **deliberately not tagged**. See known-gaps.md.
-   *
-   * The case asks that focus survive an async content replacement:
-   * "focus stays on the equivalent row, or moves to a deliberate,
-   * announced location", and specifically not be "silently dropped to
-   * `document.body`".
-   *
-   * Neither half can be honestly asserted against this app:
-   *
-   * 1. **There is nothing on a row to keep focus on.** A list row is a
-   *    bare `<tr>` with an `onClick` — no `role`, no `tabIndex`, no key
-   *    handler (`ListView.tsx`). The only focusable thing in a row is
-   *    the key cell's `<a>`. So "focus stays on the equivalent row"
-   *    has no subject: rows are not focusable, and the app holds no
-   *    reference to a focused row to restore across a refetch.
-   *
-   * 2. **The absence assertion cannot fail.** The plausible test —
-   *    focus something, refetch, press Tab, assert focus is not on
-   *    body — passes whether or not anything preserves focus, because
-   *    Tab from `document.body` lands on the first focusable element
-   *    rather than staying on body. Verified by mutation: explicitly
-   *    blurring to body immediately before the assertion left the test
-   *    green.
-   *
-   * Writing it anyway would produce precisely the tag-that-cannot-fail
-   * this repo keeps finding. The prerequisite is row focusability
-   * (roving `tabindex` or a focusable row control) plus a restore
-   * across refetch; both are recorded rather than faked.
-   *
-   * What is asserted below is the *cause*, so the gap is visible and
-   * regression-guarded: rows are not focusable. This inverts the day
-   * they become so, which is the signal to write the real
-   * transcription and tag it. It carries no `@verifies` tag.
-   */
-  test("A11Y-17 (partial): list rows are not focusable, so there is no row focus to preserve across a refetch", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed([
-      { title: "Kept alpha", fields: { status: "backlog" } },
-      { title: "Filtered away", fields: { status: "done" } },
-    ]);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Kept alpha")).toBeVisible();
-
-    // The rows exist — a positive control, so "no focusable row" is
-    // not passing because there are no rows.
-    const rows = page.locator("tbody tr");
-    expect(await rows.count()).toBeGreaterThan(1);
-
-    // No row carries a tabindex or an interactive role, so no row can
-    // hold focus across anything.
-    const rowFocusable = await page.evaluate(() =>
-      Array.from(document.querySelectorAll("tbody tr")).filter(
-        tr =>
-          tr.hasAttribute("tabindex")
-          || ["row", "button", "link"].includes(tr.getAttribute("role") ?? ""),
-      ).length,
-    );
-    expect(
-      rowFocusable,
-      "rows became focusable — write the real A11Y-17 transcription and tag it",
-    ).toBe(0);
-
-    // ...and focusing a row programmatically does not take, which is
-    // the same statement from the user's side.
-    const took = await page.evaluate(() => {
-      const tr = document.querySelector("tbody tr");
-      if (tr === null) return false;
-      (tr as HTMLElement).focus();
-      return document.activeElement === tr;
-    });
-    expect(took).toBe(false);
   });
 
   // @verifies A11Y-19

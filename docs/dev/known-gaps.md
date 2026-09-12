@@ -2651,23 +2651,6 @@ live region, so a successful field save is silent to a screen reader.
 Open a task, Tab to Status, Enter, ArrowDown — focus stays on the
 trigger. Browser Back — focus is on `document.body`.
 
-### A11Y-17 — rows cannot hold focus, and the obvious test cannot fail
-
-Two separate problems.
-
-1. **No subject.** "Focus stays on the equivalent row" needs a
-   focusable row; see A11Y-9 (1). The app also holds no reference to a
-   focused row to restore across a refetch.
-2. **The plausible test asserts nothing.** Focus a control, refetch,
-   press Tab, assert focus is not on `document.body` — this passes
-   whether or not anything preserved focus, because Tab from body
-   lands on the first focusable element rather than staying on body.
-   **Verified by mutation:** explicitly blurring to body immediately
-   before the assertion left the test green.
-
-This is the tag-that-cannot-fail shape. The prerequisite is row
-focusability plus a restore across refetch.
-
 ### Contrast: `--text-tertiary` is 3.67:1 on white (A11Y-40, not in this pass)
 
 Found by axe while scoping A11Y-16, and left unfixed because it
@@ -2995,9 +2978,12 @@ them would be a tag that cannot fail:
   Enter/Space (Sidebar.tsx); the inert "Mentions me" entry was already
   `aria-disabled` and out of tab order. `@verifies A11Y-12` spec; the old
   untagged "no group is collapsible" gap test removed.
-- **A11Y-17** — the obvious test cannot fail (focus-to-body then Tab
-  lands on the first focusable anyway); needs a positive-control design
-  that does not yet exist.
+- **A11Y-17** — RESOLVED 2026-09-12: a refetch that *keeps* the focused
+  row preserves focus natively (React keyed reconciliation); for the
+  unmount/remount case a MutationObserver in `ListView` restores focus to
+  the equivalent row's key-link anchor (`data-task-key`) when a re-render
+  dropped it to body. `@verifies A11Y-17` spec, red-proven by a positive
+  control (without the effect, detach/reattach leaves focus on body).
 - **A11Y-39, A11Y-40** — text-only zoom (absolute type scale, A95) and
   full contrast audit (needs the axe-contrast harness across every
   themed surface; partly built in the token work).
