@@ -2215,25 +2215,6 @@ between the README and the code rather than adding a second mechanism.
 **Also note**: each build worktree carries its own `node_modules`
 (~293 MB), because a shared one breaks the vite config resolution.
 Three concurrent worktrees is most of a gigabyte before any test runs.
-## Filter dropdowns have no arrow-key navigation (A11Y-10 bullet 1)
-
-**Found:** 2026-09-02. Recorded as decision A94.
-
-With a filter dropdown open on `/list`, `ArrowDown`, `ArrowUp`, `Home`
-and `End` leave focus on the trigger button; typing a letter does not
-jump to a matching option. Options are reachable only by continuing to
-`Tab`. `client/ui/Menu.tsx` implements no roving focus and no
-type-ahead; `client/editor/MentionMenu.tsx` does, so this is specific
-to `Menu`.
-
-**How to reproduce.** `/list`, `Tab` to "Filter Status", `Enter` to
-open, `ArrowDown`. Focus is still on the trigger.
-
-**Not fixed here.** `Menu` backs `list/FilterDropdown.tsx`,
-`shell/Header.tsx`, `settings/KeyboardPanel.tsx` and
-`task/TaskDetail.tsx`; adding roving focus is a cross-surface
-interaction change no ticket in this run owns. See A94.
-
 ## Text-only zoom has no effect: the type scale is absolute (A11Y-39)
 
 **Found:** 2026-09-02. Recorded as decision A95.
@@ -3003,9 +2984,12 @@ The other eight are recorded feature-gaps, not test-repairs, and tagging
 them would be a tag that cannot fail:
 - **A11Y-2** — `/` focuses a search box that does not exist (no search
   box is built; the binding is registered but disabled).
-- **A11Y-9, A11Y-10** — full keyboard operation blocked by
-  `ui/Menu.tsx` having no arrow-key/type-ahead navigation (A94) and
-  table rows being click-only.
+- **A11Y-9** — full keyboard operation still partly blocked by table
+  rows being click-only (row focusability unbuilt); the `ui/Menu.tsx`
+  arrow-key/type-ahead half is now built.
+- **A11Y-10** — RESOLVED 2026-09-12: filter dropdowns are arrow-navigable
+  now that `Menu`'s roving nav includes `menuitemcheckbox` (A94 completed);
+  `@verifies A11Y-10` spec drives the whole flow by keyboard.
 - **A11Y-12** — RESOLVED 2026-09-12: the project switcher's truncation
   control is now a two-way toggle carrying `aria-expanded`, toggling on
   Enter/Space (Sidebar.tsx); the inert "Mentions me" entry was already

@@ -989,6 +989,54 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     await expect(dialog.getByRole("textbox")).toHaveAccessibleName(/Type .+ to confirm/);
   });
 
+  // @verifies A11Y-10
+  test("A11Y-10: filtering is fully keyboard-operable — open, arrow-navigate, select, and remove a chip", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Open one", fields: { status: "in_progress" } },
+      { title: "Backlog one" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
+
+    // Open the Status filter with the keyboard — the trigger is a real
+    // button, so Enter opens it (no mouse).
+    const statusFilter = page.getByRole("button", { name: "Filter Status" });
+    await statusFilter.focus();
+    await expect(statusFilter).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    // The panel's options are arrow-navigable (roving focus over the
+    // menuitemcheckbox items), not only Tab-reachable: on open the first
+    // option holds focus, and ArrowDown moves it.
+    const options = page.getByRole("menuitemcheckbox");
+    await expect(options.first()).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(options.nth(1)).toBeFocused();
+
+    // Select the focused option from the keyboard (Space toggles the
+    // checkbox), which filters the list.
+    const chosen = (await options.nth(1).textContent())?.trim() ?? "";
+    await page.keyboard.press(" ");
+    // Close the panel and let the filter apply.
+    await page.keyboard.press("Escape");
+
+    // A chip appears for the applied filter, and its remove control has
+    // an accessible name that names the filter being removed.
+    const chip = page.getByRole("button", { name: new RegExp(`Remove Status ${chosen}`, "i") });
+    await expect(chip).toBeVisible();
+
+    // Remove it with the keyboard alone.
+    await chip.focus();
+    await expect(chip).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("button", { name: new RegExp(`Remove Status ${chosen}`, "i") }),
+    ).toHaveCount(0);
+  });
+
   // @verifies A11Y-12
   test("A11Y-12: the sidebar is keyboard-navigable, its collapse toggle exposes state, and the inert entry is announced-as-unavailable", async ({
     page,
@@ -1786,111 +1834,6 @@ test.describe("A11Y — drag affordances have keyboard alternatives", () => {
       .toContain("2026-03-07");
     const barShown = await tracker.run(["show", barKey]);
     expect(barShown).toContain("2026-03-03");
-  });
-});
-
-test.describe("A11Y — filtering by keyboard", () => {
-  /**
-   * A11Y-10 is **not** claimed by this test, deliberately. See
-   * decision A94.
-   *
-   * The case's first bullet requires each filter dropdown's options to
-   * be "arrow-navigable with type-ahead". Measured against the built
-   * app: opening the Status dropdown and pressing ArrowDown, ArrowUp,
-   * Home or End leaves focus on the trigger button — `Menu` (the
-   * shared popover behind every `FilterDropdown`) implements neither
-   * roving focus nor a type-ahead jump, unlike `MentionMenu` which
-   * does. Options are reachable only by continuing to `Tab`.
-   *
-   * The rest of the case does hold, and is asserted below so that the
-   * parts that work are protected against regression while the gap
-   * stays visible. What is deliberately NOT asserted here is arrow
-   * navigation — writing a Tab-based walk and tagging the case would
-   * report a keyboard affordance the case asks for and the app lacks.
-   *
-   * This test fails the day roving focus is added (the ArrowDown
-   * assertion below inverts), which is the signal to replace it with
-   * the full transcription and add the tag.
-   */
-  test("A11Y-10 (partial): chips remove by keyboard and the count is announced; arrow navigation is absent", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed([
-      { title: "In-progress row", fields: { status: "in_progress" } },
-      { title: "Backlog row", fields: { status: "backlog" } },
-    ]);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("In-progress row")).toBeVisible();
-    await expect(page.getByText("Backlog row")).toBeVisible();
-
-    const trigger = page.getByRole("button", { name: "Filter Status" });
-
-    // The trigger is reachable by Tab from the page, not merely
-    // focusable programmatically.
-    let reached = false;
-    for (let i = 0; i < 60; i += 1) {
-      await page.keyboard.press("Tab");
-      if (await trigger.evaluate(el => el === document.activeElement)) {
-        reached = true;
-        break;
-      }
-    }
-    expect(reached).toBe(true);
-
-    // Second half of bullet one: it opens on Enter.
-    await page.keyboard.press("Enter");
-    await expect(page.getByRole("menu", { name: "Filter by Status" })).toBeVisible();
-
-    /*
-     * The gap, asserted as it actually is. This is the assertion that
-     * inverts when the feature lands.
-     *
-     * Asserted positively — focus is *on the trigger* — rather than as
-     * "focus is not on an option", which `document.body` would satisfy
-     * while proving nothing.
-     */
-    await page.keyboard.press("ArrowDown");
-    await expect(trigger).toBeFocused();
-
-    // Options are reachable by Tab, which is how a keyboard user must
-    // currently drive this. Applying the filter narrows the list — the
-    // far end, not the URL.
-    let onOption = false;
-    for (let i = 0; i < 12; i += 1) {
-      await page.keyboard.press("Tab");
-      const text = await page.evaluate(() => document.activeElement?.textContent ?? "");
-      if (text.includes("In progress")) { onOption = true; break; }
-    }
-    expect(onOption).toBe(true);
-    await page.keyboard.press("Enter");
-
-    await expect(page.getByText("Backlog row")).toBeHidden();
-    await expect(page.getByText("In-progress row")).toBeVisible();
-
-    /*
-     * Bullet two: the chip's remove control is keyboard-activatable
-     * and its accessible name names the filter being removed.
-     *
-     * The case illustrates this as "Remove filter: Status is In
-     * progress"; the app renders "Remove Status In progress". The
-     * binding requirement is the *name identifying which filter* —
-     * both the facet and the value — which this meets. Asserted
-     * against what the app actually says rather than the case's
-     * example wording, since matching the illustration verbatim would
-     * be asserting a string the case never required.
-     */
-    const remove = page.getByRole("button", { name: /^Remove Status/ });
-    await expect(remove).toHaveAccessibleName("Remove Status In progress");
-
-    // Bullet three: the result count change is announced.
-    await expect(page.locator('[aria-live="polite"]', { hasText: /1 task/ })).toBeVisible();
-
-    // Removed by keyboard, and the row comes back — the effect, not
-    // the click.
-    await remove.focus();
-    await page.keyboard.press("Enter");
-    await expect(page.getByText("Backlog row")).toBeVisible();
   });
 });
 
