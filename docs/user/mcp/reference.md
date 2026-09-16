@@ -182,6 +182,8 @@ The one exception is a saved view referencing a since-deleted custom field: it s
 
 `currentUser()` in a query (`assignee = currentUser()`) resolves to the tracker's configured current user. When none is set it matches nothing rather than every unassigned task.
 
+`comment_mentions` filters tasks by who is `@`-mentioned in their comments — a task matches when any of its comments mentions the operand (a user id or `currentUser()`). So `comment_mentions = currentUser()` is "mentions me". Only `=`, `!=`, `in`, and `not in` are supported (set membership, not text); other operators are rejected. The operand is not validated against the user list, so a mention of a since-deleted user still matches by id. The comment scan runs only when a query references this field, so ordinary lists are unaffected.
+
 Date functions resolve against the same workspace clock: `startOfDay/Week/Month()` and `endOfDay/Week/Month()` resolve to a calendar date (compared by day, like `today`), and `now()` to a timestamp (for `created_at`/`updated_at`; rejected on calendar-date fields). Each `startOf`/`endOf` takes an optional signed offset — `+`/`-`, a number, and `d`/`w`/`m` — e.g. `due_date >= startOfWeek() and due_date <= endOfWeek()` (due this week) or `updated_at >= startOfDay("-7d")` (touched in the last 7 days). The week's first day comes from `calendar.first_day_of_week` (Monday by default).
 
 ### `export_tasks`

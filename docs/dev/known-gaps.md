@@ -3252,26 +3252,30 @@ is expected to fail, and starts passing loudly when core is fixed.
 
 ## CMT-10 · No way to query on comment mentions — the "Mentions me" filter cannot match
 
-**Found:** v1 run (M2.4a) · **Status:** OPEN (feature, exists nowhere)
+**Found:** v1 run (M2.4a) · **Status:** RESOLVED (A183, CMT-10)
 
 CMT-10 bullet 4 — "the 'Mentions me' saved filter still matches the
-comment for that user after the rename" — has no mechanism behind it.
-The query DSL has no `mentions` field (nothing in
-`packages/core/src/query/` references one), and there is no comment-scan
-endpoint on the web server. The "Mentions me" built-in in
-`builtinFilters.ts` already resolves to `null` for this reason, with a
-comment that it "needs a comment-scan endpoint that lands with the
-comments feature".
+comment for that user after the rename" — now has a mechanism. The query
+DSL gained a `comment_mentions` field (`packages/core/src/query/`:
+evaluator alias + `EvalContext.commentMentions`, injected like `body`;
+`loadCommentMentions` + `resolveCommentMentionsContext` in `list.ts`, gated
+on the query referencing the field so ordinary lists do no comment I/O;
+`comment_mentions` in `QUERYABLE_FIELDS` restricted to `=`/`!=`/`in`/`not
+in`). The "Mentions me" built-in in `builtinFilters.ts` resolves to
+`comment_mentions = currentUser()` (inlined id), and it runs on
+CLI/MCP/web through `listTasks` (P10). See decisions.md A183 for the full
+design and revert path.
 
-**Why not built.** Matching tasks by comment mentions means indexing every
-`_comments.yaml` at query time — a core capability with CLI/MCP
-consequences (a feature existing nowhere; scope change, stopped).
+Tests (`@verifies CMT-10`): evaluator membership + negation
+(`evaluator.test.ts`), the loader's cross-comment merge/dedupe, the
+query gate, and the corrupt-thread degrade path
+(`list-comment-mentions.test.ts`), the operator validation
+(`validate.test.ts`), the built-in resolution (`builtinFilters.test.ts`),
+and the spawned-binary end-to-end (`tests/integration/cli/query-dsl.test.ts`).
 
-The other three bullets are satisfied and tested (the stored `mentions`
-array is unchanged by a rename, the chip reads the current name on the
-next render, and the stored body still holds the old token) — the
-mechanism the fourth would build on, so nothing has to be undone when it
-lands.
+The other three bullets were already satisfied and tested (the stored
+`mentions` array is unchanged by a rename, the chip reads the current name
+on the next render, and the stored body still holds the old token).
 
 ## TSK-12 · Custom fields have no task-type scope
 

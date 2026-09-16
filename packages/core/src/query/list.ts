@@ -1,6 +1,7 @@
 import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
 
 import { QueriesConfigError } from "../config/queries.js";
+import { listComments } from "../task/comments.js";
 import { readField } from "../task/mutable.js";
 import type { EvalContext } from "./evaluator.js";
 import { evaluateQuery } from "./evaluator.js";
@@ -95,6 +96,20 @@ export interface ListContext {
   readonly getBody?: (taskId: string) => string | undefined;
   /** Resolves a task ID to its key. */
   readonly resolveKey?: (id: string) => string | undefined;
+  /**
+   * CMT-10: returns the merged set of user ids mentioned across a task's
+   * comments, or undefined when no mention data was loaded for it. Sibling
+   * of {@link getBody}: it feeds `EvalContext.commentMentions` so
+   * `comment_mentions = currentUser()` can match without the evaluator
+   * reading `_comments.yaml`.
+   *
+   * Unlike `getBody`/`resolveKey`, this cannot be built from the in-memory
+   * task array (comments live in a separate file), so `buildListContext`
+   * does not populate it. A surface loads it with `loadCommentMentions`
+   * (an async, gated step) and merges the result into the context it
+   * passes to `listTasks`.
+   */
+  readonly getCommentMentions?: (taskId: string) => readonly string[] | undefined;
 }
 
 /**
@@ -289,8 +304,10 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     const ast = parseQuery(tokens);
     filtered = tasks.filter(task => {
       const body = ctx.getBody?.(task.frontmatter.id);
+      const commentMentions = ctx.getCommentMentions?.(task.frontmatter.id);
       const evalCtx: EvalContext = {
         ...(body !== undefined ? { body } : {}),
+        ...(commentMentions !== undefined ? { commentMentions } : {}),
         ...(ctx.resolveKey !== undefined ? { resolveKey: ctx.resolveKey } : {}),
         ...(workflowConfig !== undefined ? { workflow: workflowConfig } : {}),
         ...(options.today !== undefined ? { today: options.today } : {}),
@@ -353,6 +370,93 @@ function queryMentionsArchived(queryStr: string): boolean {
     // the error with proper context.
     return false;
   }
+}
+
+/**
+ * CMT-10: whether a query string references the `comment_mentions` field.
+ *
+ * The gate for `loadCommentMentions`: a list that does not filter on
+ * mentions must do zero comment I/O, so a surface calls this first and
+ * only scans comments when it returns true. Tokenizes (like
+ * {@link queryMentionsArchived}) so a `comment_mentions` substring inside
+ * a string literal or another field name is not a false positive.
+ */
+export function queryReferencesCommentMentions(queryStr: string): boolean {
+  try {
+    const tokens = tokenize(queryStr);
+    return tokens.some(t => t.type === "FIELD" && t.value === "comment_mentions");
+  } catch {
+    // Tokenize failure is reported with context by the main parser later.
+    return false;
+  }
+}
+
+/**
+ * CMT-10: reads every task's comments and returns, per task id, the merged
+ * union of user ids mentioned across *all* its comments (deduplicated).
+ *
+ * This is the async, I/O-bearing step that `buildListContext` deliberately
+ * is not: comments live in `_comments.yaml`, separate from the loaded
+ * Task, and the evaluator must stay pure. A surface awaits this and wires
+ * the result into `ListContext.getCommentMentions`.
+ *
+ * Callers gate on {@link queryReferencesCommentMentions} so a list that
+ * does not filter on mentions never calls this — the scan is O(tasks)
+ * file reads and is only worth paying when the query needs it.
+ *
+ * A task whose comments cannot be read (unreadable/unparseable file) is
+ * skipped rather than failing the whole list: a read filter should not be
+ * taken down by one corrupt thread. Such a task simply contributes no
+ * mentions, so it does not match `comment_mentions = X` — the same outcome
+ * as a task with no comments.
+ */
+export async function loadCommentMentions(
+  locttDir: string,
+  tasks: readonly Task[],
+): Promise<Map<string, string[]>> {
+  const byTask = new Map<string, string[]>();
+  for (const task of tasks) {
+    const id = task.frontmatter.id;
+    let comments;
+    try {
+      comments = await listComments(locttDir, id);
+    } catch {
+      // Corrupt/unreadable thread — contribute nothing, keep the list alive.
+      continue;
+    }
+    const merged = new Set<string>();
+    for (const c of comments) {
+      for (const m of c.mentions ?? []) merged.add(m);
+    }
+    if (merged.size > 0) byTask.set(id, [...merged]);
+  }
+  return byTask;
+}
+
+/**
+ * CMT-10: returns `base` extended with a `getCommentMentions` lookup, but
+ * only when one of `queries` references `comment_mentions` — otherwise it
+ * returns `base` unchanged and reads no comment files at all.
+ *
+ * This is the surface glue for the mention scan, factored into core so the
+ * CLI, MCP and web gate and load identically (P10) rather than each
+ * re-deriving the gate. `queries` is the set of query strings a list call
+ * might run — the ad-hoc `--query` and, when a saved view is used, its
+ * resolved query — with `undefined`s tolerated so callers can pass
+ * optionals straight through.
+ */
+export async function resolveCommentMentionsContext(
+  locttDir: string,
+  tasks: readonly Task[],
+  base: ListContext,
+  queries: readonly (string | undefined)[],
+): Promise<ListContext> {
+  const referenced = queries.some(
+    q => q !== undefined && queryReferencesCommentMentions(q),
+  );
+  if (!referenced) return base;
+  const byTask = await loadCommentMentions(locttDir, tasks);
+  return { ...base, getCommentMentions: (id: string) => byTask.get(id) };
 }
 
 function buildPriorityMap(

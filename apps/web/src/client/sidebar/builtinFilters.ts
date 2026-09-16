@@ -26,9 +26,10 @@ import type { ListSearch } from "../router/listSearch.ts";
  * discarded)` so it tracks whatever statuses a workspace has mapped to
  * those categories.
  *
- * "Mentions me" is intentionally left non-interactive with no count
- * until M2.4 — it needs a comment-scan endpoint that lands with the
- * comments feature. It still renders so the group matches the mockup.
+ * "Mentions me" resolves to `comment_mentions = "<currentUserId>"`
+ * (CMT-10 / A183) — a query field the list endpoint scans comments for,
+ * gated so ordinary lists pay no comment I/O. Like the two user filters
+ * above it is null while no user is active, so the row renders inert.
  */
 
 export interface BuiltinFilter {
@@ -118,9 +119,16 @@ export const BUILTIN_FILTERS: readonly BuiltinFilter[] = [
     id: "mentions-me",
     label: "Mentions me",
     icon: "@",
-    // Deferred to M2.4 (needs a comment-scan endpoint). Renders but
-    // does nothing and shows no count until then.
-    resolve: () => null,
+    // CMT-10 / A183: resolves to the `comment_mentions` query field, which
+    // matches a task when any of its comments mention this user. Like
+    // "Assigned to me", the concrete ULID is inlined rather than the DSL's
+    // `currentUser()` token, so the same query text drives both the list
+    // and its count badge regardless of how the request resolves the
+    // current user. Null while no user is active, so the row is inert.
+    resolve: ({ currentUserId }) =>
+      currentUserId === null
+        ? null
+        : { q: `comment_mentions = "${currentUserId}"` },
   },
   {
     id: "due-this-week",

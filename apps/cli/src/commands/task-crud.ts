@@ -25,9 +25,11 @@ import {
   moveTaskToProject,
   readHistory,
   readTaskBody,
+  resolveCommentMentionsContext,
   resolveLocttDir,
   resolveProjectIdForUser,
   resolveProjectIdFromInput,
+  resolveView,
   saveState,
   setField,
   unsetField,
@@ -232,6 +234,20 @@ export async function list(args: string[], root: string): Promise<void> {
   // means "mine". Undefined when none is set — then it matches nothing.
   const currentUser = await getCurrentUser(locttDir);
 
+  // CMT-10: build the list context, loading comment mentions only when the
+  // effective query (the ad-hoc `--query` or a resolved saved view's
+  // query) actually references `comment_mentions`. A list that doesn't
+  // filter on mentions pays zero comment I/O — the load-bearing gate.
+  const viewQuery = view !== undefined && queriesConfig !== undefined
+    ? resolveView(queriesConfig, view)?.query
+    : undefined;
+  const ctx = await resolveCommentMentionsContext(
+    locttDir,
+    tasks,
+    buildListContext(tasks),
+    [baseQuery, viewQuery],
+  );
+
   const result = listTasks({
     tasks,
     options: {
@@ -248,7 +264,7 @@ export async function list(args: string[], root: string): Promise<void> {
     },
     ...(queriesConfig !== undefined ? { queriesConfig } : {}),
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-    ctx: buildListContext(tasks),
+    ctx,
     // A saved view referencing a since-deleted custom field still
     // runs (breaking existing trackers would be worse), but the
     // results are narrower than the view's author intended — so say

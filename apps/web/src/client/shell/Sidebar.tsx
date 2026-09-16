@@ -305,7 +305,7 @@ function ItemShell({
       // surfaces it too (SHL-19, SHL-22); repeating it here would nest
       // two tooltips on the same target. Kept for the non-link rows —
       // the deferred "Mentions me" and the collapsed icons — which have
-      // no anchor of their own.
+      // no anchor of their own (an inert built-in, or the collapsed icons).
       title={title}
       className={[
         "flex h-8 items-center rounded-md text-[0.9286rem]",
@@ -330,10 +330,10 @@ function ItemShell({
  * which covers the overwhelming majority; a wider number grows the
  * pill rather than being clipped.
  *
- * `pending` and "no badge at all" are different: "Mentions me" has no
- * count to wait for (VUE-2) and gets no slot, while a slow query
- * (SHL-23) shows a pending affordance in a slot that is already the
- * right size.
+ * `pending` and "no badge at all" are different: an inert built-in (a
+ * user filter with no current user) has no count to wait for (VUE-2) and
+ * gets no slot, while a slow query (SHL-23) shows a pending affordance in
+ * a slot that is already the right size.
  */
 function Badge({
   value,
@@ -778,8 +778,9 @@ function SavedFiltersGroup({
         const count = counts[f.id]?.count;
         const countPending = counts[f.id]?.isLoading === true;
         const countUnavailable = counts[f.id]?.unavailable === true;
-        // Non-resolvable built-ins (no current user, or deferred
-        // "Mentions me") render as inert text, not a link.
+        // Non-resolvable built-ins (a user filter with no current user, or
+        // "High priority" on a scale that cannot express it) render as
+        // inert text, not a link.
         if (search === null) {
           return (
             // SHL-8: says why it is inert and when it arrives, rather
@@ -1139,7 +1140,10 @@ function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResp
  * and telling it so is a false promise.
  */
 function inertReason(id: string, label: string): string {
-  if (id === "mentions-me") return `${label} — available once comments land (M2)`;
+  // CMT-10: "Mentions me" is no longer deferred — it resolves to
+  // `comment_mentions = currentUser()`. It is only inert when there is no
+  // current user, which the generic "not available yet" reason (shared
+  // with "Assigned to me") already covers.
   if (id === "high-priority") {
     return `${label} — this workspace's priorities don't distinguish a high one`;
   }

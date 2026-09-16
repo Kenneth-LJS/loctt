@@ -34,8 +34,10 @@ import {
   loadState,
   lookupTask,
   readHistory,
+  resolveCommentMentionsContext,
   resolveProjectIdForUser,
   resolveProjectIdFromInput,
+  resolveView,
   saveState,
   setField,
   unsetField,
@@ -173,6 +175,13 @@ export const TOOLS: readonly ToolDef[] = [
       // has no stderr to read, so surface it in the response — a bare
       // short list would otherwise read as a definitive answer.
       const warnings: string[] = [];
+      // CMT-10: load comment mentions only when the query references them.
+      const listViewQuery = view !== undefined && queriesConfig !== undefined
+        ? resolveView(queriesConfig, view)?.query
+        : undefined;
+      const listCtx = await resolveCommentMentionsContext(
+        locttDir, tasks, buildListContext(tasks), [baseQuery, listViewQuery],
+      );
       const result = listTasks({
         tasks,
         options: {
@@ -191,7 +200,7 @@ export const TOOLS: readonly ToolDef[] = [
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
         ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-        ctx: buildListContext(tasks),
+        ctx: listCtx,
         onWarning: err => warnings.push(err.message),
       });
       // `result` is now the full match set, so it is also the honest
@@ -264,6 +273,13 @@ export const TOOLS: readonly ToolDef[] = [
           });
 
       const warnings: string[] = [];
+      // CMT-10: gate the comment-mention scan on the query, as list_tasks does.
+      const exportViewQuery = view !== undefined && queriesConfig !== undefined
+        ? resolveView(queriesConfig, view)?.query
+        : undefined;
+      const exportCtx = await resolveCommentMentionsContext(
+        locttDir, tasks, buildListContext(tasks), [baseQuery, exportViewQuery],
+      );
       const result = listTasks({
         tasks,
         options: {
@@ -278,7 +294,7 @@ export const TOOLS: readonly ToolDef[] = [
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
         ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-        ctx: buildListContext(tasks),
+        ctx: exportCtx,
         onWarning: err => warnings.push(err.message),
       });
       const filtered = filterForExport(result, includeArchived);

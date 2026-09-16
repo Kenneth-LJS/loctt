@@ -176,9 +176,11 @@ import {
   ReorderError,
   reorderRelationship,
   requireSupportedSchema,
+  resolveCommentMentionsContext,
   resolveLocttDir,
   resolveProjectIdForUser,
   resolveUserRef,
+  resolveView,
   restoreBackup,
   type RestoreMode,
   RestoreRefusedError,
@@ -3616,6 +3618,17 @@ export function createWebApp(options: WebAppOptions) {
     */
     const queryWarnings: { field: string; message: string; position: number; suggestions: string[] }[] = [];
 
+    // CMT-10: the "Mentions me" built-in resolves to
+    // `comment_mentions = currentUser()`. Load comment mentions only when
+    // the effective query (or a resolved saved view's query) references
+    // the field, so ordinary lists do no comment I/O.
+    const listViewQuery = view !== undefined && queriesConfig !== undefined
+      ? resolveView(queriesConfig, view)?.query
+      : undefined;
+    const listCtx = await resolveCommentMentionsContext(
+      locttDir, tasks, buildListContext(tasks), [effectiveQuery, listViewQuery],
+    );
+
     let result;
     try {
       result = listTasks({
@@ -3631,7 +3644,7 @@ export function createWebApp(options: WebAppOptions) {
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
         ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-        ctx: buildListContext(tasks),
+        ctx: listCtx,
       });
     } catch (err) {
       // A mistyped query is the user's, not the server's. Without this
@@ -3784,12 +3797,19 @@ export function createWebApp(options: WebAppOptions) {
       ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
       limit: Number.MAX_SAFE_INTEGER,
     };
+    // CMT-10: gate the comment-mention scan on the query, as the list does.
+    const exportViewQuery = view !== undefined && queriesConfig !== undefined
+      ? resolveView(queriesConfig, view)?.query
+      : undefined;
+    const exportCtx = await resolveCommentMentionsContext(
+      locttDir, tasks, buildListContext(tasks), [effectiveQuery, exportViewQuery],
+    );
     const result = listTasks({
       tasks,
       options: params,
       ...(queriesConfig !== undefined ? { queriesConfig } : {}),
       ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-      ctx: buildListContext(tasks),
+      ctx: exportCtx,
     });
     const filtered = filterForExport(result, includeArchived);
     const opts = {

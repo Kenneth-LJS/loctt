@@ -56,8 +56,17 @@ export const QUERYABLE_FIELDS: readonly string[] = [
   "completed_date", "milestone", "sprint", "archived", "archived_at",
   "relationships", "key_history", "board_rank",
   // Evaluator aliases, not frontmatter keys.
-  "text", "parent",
+  "text", "parent", "comment_mentions",
 ];
+
+/**
+ * CMT-10: the operators `comment_mentions` supports. It is flat set
+ * membership over a task's comment mentions, so only equality and list
+ * membership (and their negations) are meaningful — ordering, substring,
+ * and presence tests are category errors, rejected with a message that
+ * names these.
+ */
+const COMMENT_MENTIONS_OPS: readonly string[] = ["=", "!=", "in", "not in"];
 
 /**
  * Nested attributes readable off a workflow-config enum def via
@@ -289,6 +298,22 @@ function validateComparison(
     throw new QueryValidationError(
       `"text" is a substring search — use "text ~ <term>". `
       + `The operator "${node.op}" is not supported on text.`,
+      pos,
+      [],
+    );
+  }
+
+  // CMT-10: `comment_mentions` is flat set membership — only `=`/`in`
+  // (and `!=`/`not in`) make sense. Reject ordering, `~`, and the
+  // presence tests, naming the supported operators, before they reach the
+  // evaluator and silently match nothing. The operand is deliberately NOT
+  // enum-checked: a mention may reference a since-deleted user ULID that
+  // no config or task still lists.
+  if (field === "comment_mentions" && !COMMENT_MENTIONS_OPS.includes(node.op)) {
+    throw new QueryValidationError(
+      `"comment_mentions" supports only =, !=, in and not in `
+      + `(e.g. comment_mentions = currentUser()). `
+      + `The operator "${node.op}" is not supported on it.`,
       pos,
       [],
     );
