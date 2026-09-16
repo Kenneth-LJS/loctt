@@ -11975,6 +11975,50 @@ A-SET24-TZ shipped. **Lesson:** a behavior-changing core commit owes its
 cross-package UI tests a rebuild before it can claim green — recorded in
 lessons.md.
 
+### A-K80-DATES · date functions (`now()`, `startOf/endOf Day/Week/Month`) — completes K80
+
+**Built (agent-level), the last piece of K80.** The DSL gains the seven
+date functions with an optional signed offset. New `query/dates.ts` owns
+the shared name set, offset grammar, and pure string-based date math
+(no `new Date("YYYY-MM-DD")` round-trips, so no DST drift). Parser: a
+`{ type: "date_fn"; fn; offset? }` value node — a `FIELD (` in value
+position whose word names a date function; bad offsets and a stray/no-sign
+argument raise `ParseError` at the arg position. Evaluator: `resolvePrimitive`
+resolves `now` to `ctx.now` (a full ISO instant) and the boundary functions
+to a bare `YYYY-MM-DD` against `ctx.today`/`ctx.weekStartsOn`; both
+`operandIsDate` sites extended so boundary functions compare by calendar
+day like `today`, `now` stays a lexical instant. Validate: date functions
+only on date-ish fields (`dateFieldKind` helper exported from evaluator;
+shared, no drift), `now()` rejected on calendar-date fields with a message
+steering to `today`/`startOfDay()`. Threading: `EvalContext.now`/
+`weekStartsOn` + `ListOptions.now`/`weekStartsOn`, derived once in
+`loadOptionalConfigs` from the calendar load that already yields `today`
+(so all surfaces get them from one place), spread into every list call in
+CLI/MCP/web beside `today`.
+
+**Ken's two calls (2026-09-16):** build `now()` in v1 (it works against the
+timestamp fields created_at/updated_at/status_updated_at/archived_at;
+rejected on calendar dates), and default the week start to **Monday** when
+no calendar is threaded. Implementer calls (recorded): `()` required on
+date functions (bare `startOfWeek` stays a string value); offset units
+`d`/`w`/`m` only (no `y`); offset sign required; the offset shifts the
+*reference day* before the boundary is taken, so `endOfWeek("+1w")` is end
+of next week and `endOfMonth("+1m")` is the last day of next month
+(offset-after-boundary would clamp July to the 30th — caught by a test).
+
+**Tests (@verifies K80), all red-proven:** `dates.test.ts` (math + offset),
+`parser.test.ts` (parse + errors), `evaluator.test.ts` (day/instant
+semantics, weekStartsOn, offsets, in-list), `validate.test.ts` (field-type
+rules), `list.test.ts` (end-to-end filter with an injected clock),
+`query-dsl.test.ts` integration (spawned CLI due-this-week filter),
+`docs-examples.test.ts` (every doc example parses). Docs: query-language.md
+Date functions section + MCP reference.
+
+**To revert:** delete `query/dates.ts` + its test, the `date_fn` node and
+`parseDateFn`, the evaluator `case "date_fn"` + `now`/`weekStartsOn` ctx +
+`dateFieldKind`/`TIMESTAMP_FIELDS`, the validator's `validateDateFunctions`,
+and the `now`/`weekStartsOn` threading through config/list/surfaces.
+
 ### A-K80-CURRENTUSER · `currentUser()` query function
 
 **Built (agent-level), part of K80.** The DSL gains `currentUser()` (bare

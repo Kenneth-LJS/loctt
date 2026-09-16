@@ -153,7 +153,7 @@ export const TOOLS: readonly ToolDef[] = [
     },
     handler: async ({ locttDir }, args) => {
       const tasks = await loadAllTasks(locttDir);
-      const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
+      const { workflowConfig, queriesConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
       // K80: the configured current user, so `currentUser()` in a query
       // resolves to the caller's id. Undefined when none is set.
       const currentUser = await getCurrentUser(locttDir);
@@ -185,6 +185,8 @@ export const TOOLS: readonly ToolDef[] = [
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
           ...(includeArchived !== undefined ? { includeArchived } : {}),
           ...(today !== undefined ? { today } : {}),
+          ...(now !== undefined ? { now } : {}),
+          ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
           ...(currentUser !== null ? { currentUserId: currentUser.id } : {}),
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
@@ -250,7 +252,7 @@ export const TOOLS: readonly ToolDef[] = [
       // silently omitted (BLK-44) — the same guarantee the web export
       // and the CLI export give.
       const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
-      const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
+      const { workflowConfig, queriesConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
       const baseQuery = args["query"] as string | undefined;
       const view = args["view"] as string | undefined;
 
@@ -270,6 +272,8 @@ export const TOOLS: readonly ToolDef[] = [
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
           includeArchived,
           ...(today !== undefined ? { today } : {}),
+          ...(now !== undefined ? { now } : {}),
+          ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
           limit: Number.MAX_SAFE_INTEGER,
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),

@@ -182,6 +182,8 @@ The one exception is a saved view referencing a since-deleted custom field: it s
 
 `currentUser()` in a query (`assignee = currentUser()`) resolves to the tracker's configured current user. When none is set it matches nothing rather than every unassigned task.
 
+Date functions resolve against the same workspace clock: `startOfDay/Week/Month()` and `endOfDay/Week/Month()` resolve to a calendar date (compared by day, like `today`), and `now()` to a timestamp (for `created_at`/`updated_at`; rejected on calendar-date fields). Each `startOf`/`endOf` takes an optional signed offset — `+`/`-`, a number, and `d`/`w`/`m` — e.g. `due_date >= startOfWeek() and due_date <= endOfWeek()` (due this week) or `updated_at >= startOfDay("-7d")` (touched in the last 7 days). The week's first day comes from `calendar.first_day_of_week` (Monday by default).
+
 ### `export_tasks`
 
 Export tasks as CSV or JSON — the same report the web list view

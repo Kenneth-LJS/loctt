@@ -609,3 +609,65 @@ describe("currentUser() (K80)", () => {
     expect(() => query("assignee = currentUser(")).toThrow();
   });
 });
+
+// @verifies K80
+describe("evaluateQuery — date functions (K80)", () => {
+  // A fixed, stubbed clock: Monday 2026-06-15, week starts Monday.
+  const ctx: EvalContext = {
+    today: "2026-06-15",
+    now: "2026-06-15T09:00:00Z",
+    weekStartsOn: 1,
+  };
+  const withDue = (due: string): TaskFrontmatter =>
+    ({ id: "a", key: "T-1", title: "t", due_date: due } as TaskFrontmatter);
+
+  it("startOfWeek/endOfWeek bracket the current week", () => {
+    const dueThu = withDue("2026-06-18");
+    expect(evaluateQuery(query("due_date >= startOfWeek()"), dueThu, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= endOfWeek()"), dueThu, ctx)).toBe(true);
+    // A task due next week is outside this week's bracket.
+    const dueNextWeek = withDue("2026-06-23");
+    expect(evaluateQuery(query("due_date <= endOfWeek()"), dueNextWeek, ctx)).toBe(false);
+  });
+
+  it("the week bracket moves with weekStartsOn", () => {
+    // Sunday 2026-06-14 is in the current week only when the week starts
+    // Sunday; with a Monday start it belongs to the previous week.
+    const dueSun = withDue("2026-06-14");
+    expect(evaluateQuery(query("due_date >= startOfWeek()"), dueSun, ctx)).toBe(false);
+    expect(evaluateQuery(query("due_date >= startOfWeek()"), dueSun, { ...ctx, weekStartsOn: 0 })).toBe(true);
+  });
+
+  it("startOfMonth/endOfMonth bracket the month, timestamped values included", () => {
+    const dueEndOfMonth = withDue("2026-06-30T23:00:00Z");
+    expect(evaluateQuery(query("due_date >= startOfMonth()"), dueEndOfMonth, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= endOfMonth()"), dueEndOfMonth, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= endOfMonth()"), withDue("2026-07-01"), ctx)).toBe(false);
+  });
+
+  it("applies an offset — due by end of next week", () => {
+    const dueNextWeek = withDue("2026-06-23"); // Tue of next week
+    expect(evaluateQuery(query('due_date <= endOfWeek("+1w")'), dueNextWeek, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= endOfWeek()"), dueNextWeek, ctx)).toBe(false);
+  });
+
+  it("startOfDay with a negative offset — the last 7 days on a timestamp field", () => {
+    const updated = { id: "a", key: "T-1", title: "t", updated_at: "2026-06-10T12:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query('updated_at >= startOfDay("-7d")'), updated, ctx)).toBe(true);
+    const old = { ...updated, updated_at: "2026-06-01T12:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query('updated_at >= startOfDay("-7d")'), old, ctx)).toBe(false);
+  });
+
+  it("now() compares as an instant against a timestamp field", () => {
+    const updatedEarlier = { id: "a", key: "T-1", title: "t", updated_at: "2026-06-15T08:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query("updated_at < now()"), updatedEarlier, ctx)).toBe(true);
+    const updatedLater = { ...updatedEarlier, updated_at: "2026-06-15T10:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query("updated_at < now()"), updatedLater, ctx)).toBe(false);
+  });
+
+  it("a boundary function works inside an `in` list, by calendar day", () => {
+    // due exactly on startOfMonth, stored as a timestamp.
+    const dueFirst = withDue("2026-06-01T09:00:00Z");
+    expect(evaluateQuery(query("due_date in (startOfMonth())"), dueFirst, ctx)).toBe(true);
+  });
+});

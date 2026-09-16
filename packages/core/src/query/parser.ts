@@ -1,4 +1,6 @@
 import { LocttError } from "../errors.js";
+import type { DateFn, DateOffset } from "./dates.js";
+import { dateFnFromWord, isBoundaryFn, offsetError, parseOffset } from "./dates.js";
 import type { Token, TokenType } from "./tokenizer.js";
 
 export type ComparisonOp =
@@ -55,6 +57,10 @@ export type QueryValue =
   // K80: `currentUser()` — resolved to the querying user's id at
   // evaluation time (see EvalContext.currentUserId).
   | { type: "current_user" }
+  // K80: a date function — `now()`, `startOf/endOf Day/Week/Month`, with
+  // an optional signed offset (`endOfWeek("+1w")`). Resolved against the
+  // evaluator's clock (`ctx.today`/`ctx.now`) and `ctx.weekStartsOn`.
+  | { type: "date_fn"; fn: DateFn; offset?: DateOffset }
   | { type: "list"; values: readonly QueryValue[] }
   // K77: the RHS placeholder for `is empty` / `is not empty`, which take
   // no value. Kept in the value union so a comparison node is uniform.
@@ -355,12 +361,51 @@ class Parser {
           this.expect("RPAREN");
         }
         return { type: "current_user" };
-      case "FIELD":
+      case "FIELD": {
+        // K80: a date function in value position — `startOfWeek("+1w")`
+        // arrives as FIELD LPAREN STRING? RPAREN. Only when the word names
+        // a date function AND a `(` follows: a bare `startOfWeek` (or any
+        // other word) stays a plain string value, unchanged.
+        const fn = dateFnFromWord(tok.value);
+        if (fn !== null && this.peek()?.type === "LPAREN") {
+          return this.parseDateFn(fn, tok.position);
+        }
         // Bare word treated as string value
         return { type: "string", value: tok.value };
+      }
       default:
         throw new ParseError(`expected value but got "${tok.value}"`, tok.position);
     }
+  }
+
+  /**
+   * Parses a date function's `( "offset"? )` after its name token was
+   * consumed. `now()` takes no offset; the boundary functions take an
+   * optional signed offset string (`"+1w"`). Bad offsets and a stray
+   * argument raise `ParseError` at the argument's position.
+   */
+  private parseDateFn(fn: DateFn, fnPosition: number): QueryValue {
+    this.expect("LPAREN");
+    if (this.peek()?.type === "RPAREN") {
+      this.advance();
+      return { type: "date_fn", fn };
+    }
+    // A non-empty argument list: only a single quoted offset is allowed,
+    // and only on a boundary function.
+    const arg = this.advance();
+    if (arg.type !== "STRING") {
+      throw new ParseError(
+        `${fn}() takes a quoted offset like "+1w", not "${arg.value}"`,
+        arg.position,
+      );
+    }
+    if (!isBoundaryFn(fn)) {
+      throw new ParseError(`now() takes no offset`, fnPosition);
+    }
+    const problem = offsetError(arg.value);
+    if (problem !== null) throw new ParseError(problem, arg.position);
+    this.expect("RPAREN");
+    return { type: "date_fn", fn, offset: parseOffset(arg.value) };
   }
 
   private parseList(): QueryValue {

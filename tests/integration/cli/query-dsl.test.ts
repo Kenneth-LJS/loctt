@@ -49,6 +49,12 @@ describe("documented DSL constructs (spawned binary)", () => {
     'text ~ "alpha"',
     "text ~ 'alpha'",
     "due_date < today",
+    // K80 date functions — each must run through the spawned binary.
+    "due_date >= startOfWeek() and due_date <= endOfWeek()",
+    "due_date >= startOfMonth() and due_date <= endOfMonth()",
+    'due_date <= endOfWeek("+1w")',
+    "updated_at < now()",
+    'created_at >= startOfDay("-7d")',
     "parent = T-1",
     "fields.points > 3",
     "not (status = done)",
@@ -91,6 +97,26 @@ describe("documented DSL constructs (spawned binary)", () => {
       expect(sq.stdout).toBe(dq.stdout);
       // Guard against both being empty, which would match trivially.
       expect(dq.stdout).toContain("alpha");
+    });
+  });
+
+  // @verifies K80
+  it("startOfWeek()/endOfWeek() filter by the workspace week end-to-end", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      // A task due today is in this week; one due 60 days out is not.
+      const today = new Date();
+      const iso = (d: Date): string => d.toISOString().slice(0, 10);
+      const far = new Date(today.getTime() + 60 * 86_400_000);
+      await runCli(["create", "due-now", "--due", iso(today)], { cwd: root });
+      await runCli(["create", "due-far", "--due", iso(far)], { cwd: root });
+
+      const result = await runCli(
+        ["list", "--query", "due_date >= startOfWeek() and due_date <= endOfWeek()"],
+        { cwd: root },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("due-now");
+      expect(result.stdout).not.toContain("due-far");
     });
   });
 });

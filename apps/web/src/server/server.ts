@@ -3443,7 +3443,7 @@ export function createWebApp(options: WebAppOptions) {
     // way; what the plain call cannot do is tell the user which file
     // to go and fix.
     const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
-    const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
+    const { workflowConfig, queriesConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
     // K80: resolve the querying user so `currentUser()` in a query means
     // "mine" for whoever is signed in. Best-effort — a tracker with no
     // current user leaves it undefined and `currentUser()` matches
@@ -3551,6 +3551,8 @@ export function createWebApp(options: WebAppOptions) {
       ...(sort !== undefined ? { sort } : {}),
       ...(includeArchived ? { includeArchived: true } : {}),
       ...(today !== undefined ? { today } : {}),
+      ...(now !== undefined ? { now } : {}),
+      ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
       ...(currentUser !== null ? { currentUserId: currentUser.id } : {}),
       limit: Number.MAX_SAFE_INTEGER,
     };
@@ -3672,7 +3674,7 @@ export function createWebApp(options: WebAppOptions) {
     // `q` anyway, so the rows stay honest; the `unreadable` set names
     // what the search could not see.
     const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
-    const { workflowConfig, today } = await loadOptionalConfigs(locttDir);
+    const { workflowConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
     const includeArchived = url.searchParams.get("archived") === "true";
 
     const result = listTasks({
@@ -3681,6 +3683,8 @@ export function createWebApp(options: WebAppOptions) {
         query: `text ~ ${JSON.stringify(q)}`,
         ...(includeArchived ? { includeArchived: true } : {}),
         ...(today !== undefined ? { today } : {}),
+        ...(now !== undefined ? { now } : {}),
+        ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
         limit: Number.MAX_SAFE_INTEGER,
       },
       ...(workflowConfig !== undefined ? { workflowConfig } : {}),
@@ -3718,7 +3722,7 @@ export function createWebApp(options: WebAppOptions) {
     // vanished from the CSV and nothing anywhere said so — a
     // spreadsheet short by one row that reconciles against nothing.
     const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
-    const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
+    const { workflowConfig, queriesConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
     const baseQuery = url.searchParams.get("query") ?? undefined;
     const view = url.searchParams.get("view") ?? undefined;
     const projectFilter = url.searchParams.get("project") ?? undefined;
@@ -3734,6 +3738,8 @@ export function createWebApp(options: WebAppOptions) {
       ...(view !== undefined ? { view } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       ...(today !== undefined ? { today } : {}),
+      ...(now !== undefined ? { now } : {}),
+      ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
       limit: Number.MAX_SAFE_INTEGER,
     };
     const result = listTasks({

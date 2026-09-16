@@ -167,7 +167,7 @@ export async function list(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_LIST_FLAGS);
   const locttDir = resolveLocttDir(root);
   const tasks = await loadAllTasks(locttDir);
-  const { workflowConfig, queriesConfig, today } = await loadOptionalConfigs(locttDir);
+  const { workflowConfig, queriesConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
 
   // ERR-10 / LST-51 (A-PRESCAN-2, P10 parity with the web list's banner):
   // a hand-broken `workflow.yaml` entry degrades tolerantly rather than
@@ -242,6 +242,8 @@ export async function list(args: string[], root: string): Promise<void> {
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       includeArchived: hasFlag(args, "--archived"),
       ...(today !== undefined ? { today } : {}),
+      ...(now !== undefined ? { now } : {}),
+      ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
       ...(currentUser !== null ? { currentUserId: currentUser.id } : {}),
     },
     ...(queriesConfig !== undefined ? { queriesConfig } : {}),

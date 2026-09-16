@@ -710,3 +710,40 @@ describe("SET-8: custom enum fields sort by configured value weights", () => {
       .toEqual(["blue", "red"]);
   });
 });
+
+// @verifies K80
+describe("listTasks — date functions (K80)", () => {
+  // Fixed clock: this week is Mon 2026-06-15 … Sun 2026-06-21 (Monday start).
+  const clock = { today: "2026-06-15", now: "2026-06-15T09:00:00Z", weekStartsOn: 1 };
+  const dated: Task[] = [
+    makeTask("D-1", { due_date: "2026-06-17" }),               // this week
+    makeTask("D-2", { due_date: "2026-06-21" }),               // Sunday, still this week
+    makeTask("D-3", { due_date: "2026-06-22" }),               // next week
+    makeTask("D-4", { due_date: "2026-06-10" }),               // last week
+  ];
+
+  it("filters 'due this week' against the injected clock and week start", () => {
+    const result = listTasks({
+      tasks: dated,
+      options: {
+        query: "due_date >= startOfWeek() and due_date <= endOfWeek()",
+        ...clock,
+      },
+    });
+    expect(result.map(t => t.frontmatter.key).sort()).toEqual(["D-1", "D-2"]);
+  });
+
+  it("a Sunday week start pulls the prior Sunday into the week", () => {
+    const sundayStart = { ...clock, weekStartsOn: 0 };
+    const result = listTasks({
+      tasks: [...dated, makeTask("D-5", { due_date: "2026-06-14" })], // Sunday
+      options: {
+        query: "due_date >= startOfWeek() and due_date <= endOfWeek()",
+        ...sundayStart,
+      },
+    });
+    // With a Sunday start the week is 14th–20th: D-5 (14) and D-1 (17) are in,
+    // D-2 (Sun 21) is now next week's start.
+    expect(result.map(t => t.frontmatter.key).sort()).toEqual(["D-1", "D-5"]);
+  });
+});

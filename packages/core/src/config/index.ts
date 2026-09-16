@@ -111,6 +111,15 @@ export interface OptionalConfigs {
    * they can't drift apart on what "today" means.
    */
   today?: string;
+  /**
+   * K80: full ISO-8601 timestamp for the `now()` query function, and the
+   * workspace's first-day-of-week (0=Sun..6=Sat) for `startOfWeek`/
+   * `endOfWeek`. Derived here beside `today` from the same calendar load
+   * so the surfaces can't drift. `weekStartsOn` is omitted when the
+   * calendar cannot be read (the evaluator then defaults to Monday).
+   */
+  now?: string;
+  weekStartsOn?: number;
 }
 
 /**
@@ -145,16 +154,24 @@ export async function loadOptionalConfigs(locttDir: string): Promise<OptionalCon
     if (!isMissingFile(err)) throw err;
   }
   // loadCalendarConfig defaults to UTC when the file is absent, so
-  // this always resolves; the catch covers a malformed file.
+  // this always resolves; the catch covers a malformed file. K80: the
+  // same load yields the week-start for startOfWeek/endOfWeek.
   let today: string;
+  let weekStartsOn: number | undefined;
   try {
-    today = todayInZone((await loadCalendarConfig(locttDir)).timezone);
+    const calendar = await loadCalendarConfig(locttDir);
+    today = todayInZone(calendar.timezone);
+    weekStartsOn = calendar.first_day_of_week;
   } catch {
     today = todayInZone();
   }
+  // The instant for now(); one value per list call, like `today`.
+  const now = new Date().toISOString();
   return {
     ...(workflowConfig !== undefined ? { workflowConfig } : {}),
     ...(queriesConfig !== undefined ? { queriesConfig } : {}),
     today,
+    now,
+    ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
   };
 }
