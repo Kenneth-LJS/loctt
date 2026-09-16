@@ -78,4 +78,38 @@ describe("CLI git publish reports a failed push (spawned binary)", () => {
       expect(res.stdout).toMatch(/Published local state/);
     });
   });
+
+  // @verifies GIT-36
+  it("names a missing/corrupt worktree and its repair path, leaving local files untouched (P10)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      execSync("git init -q .", { cwd: root });
+      execSync("git config user.email t@example.com", { cwd: root });
+      execSync("git config user.name Test", { cwd: root });
+      expect((await runCli(["git", "enable"], { cwd: root })).exitCode).toBe(0);
+      await runCli(["create", "a task"], { cwd: root });
+      // First publish creates the loctt branch.
+      expect((await runCli(["git", "publish"], { cwd: root })).exitCode).toBe(0);
+
+      // Wedge the publish worktree: registered + locked, directory removed —
+      // the case prune cannot clear, so `worktree add` fatals.
+      const wt = `${root}/.loctt/local/.worktree-publish`;
+      execSync(`git worktree add -q "${wt}" loctt`, { cwd: root });
+      execSync(`git worktree lock "${wt}"`, { cwd: root });
+      execSync(`rm -rf "${wt}"`, { cwd: root });
+
+      const res = await runCli(["git", "publish"], { cwd: root });
+      const out = `${res.stdout}${res.stderr}`;
+
+      // A failure, visible in the exit code.
+      expect(res.exitCode).not.toBe(0);
+      // Not an opaque git fatal: names the worktree and that it is missing.
+      expect(out).toContain(".worktree-publish");
+      expect(out.toLowerCase()).toContain("missing");
+      // Offers the concrete repair path (disable/re-enable, or re-establish).
+      expect(out).toMatch(/disable/i);
+      expect(out).toMatch(/prune|unlock|re-establish/i);
+      // States local task files were not touched.
+      expect(out).toMatch(/not touched|not modified|left exactly as/i);
+    });
+  });
 });

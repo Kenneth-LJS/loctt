@@ -100,10 +100,22 @@ A69 declines that fell in this batch rather than trusting them:
 - **GIT-25** — adopt-existing-branch prompt. `enableGit` silently adopts
   a LocTT-written branch (or throws on a foreign one); it neither shows
   the branch head nor asks adopt-or-stop, and the panel has no UI for it.
-- **GIT-34, GIT-35, GIT-36** — malformed-remote-file, newer-schema-version,
-  and missing-worktree surfaces. Each needs task-and-field-granularity
-  reporting or a schema-version/worktree guard that the file-count sync
-  model does not carry.
+- **GIT-34** — BUILT (uncommitted, decisions.md A194). A malformed remote
+  task is reported per-file by task id + path in the sync result
+  (`SyncOutcome.malformed`) across web/CLI/MCP; the rest of the sync applies;
+  the bad file is kept as-is and shows as a broken-file row in the list
+  (pre-existing `loadAllTasksDetailed`). Unit + integration tested and
+  red-proven. Remaining: a Playwright e2e spec was not authored (small-fix,
+  unit-covered — author at the cluster e2e gate).
+- **GIT-35** — BUILT (commit d2af9ed, decisions.md A192/K94). Newer-remote-
+  schema refusal across surfaces.
+- **GIT-36** — BUILT (uncommitted, decisions.md A194). A missing/corrupt
+  publish/sync worktree (registered but directory gone) is refused with a
+  named `GitWorktreeMissingError` (worktree path + "missing" + repair path),
+  not git's opaque fatal; local task files untouched; mapped to a 409
+  `git_worktree_missing` with a panel repair banner, and named on CLI/MCP.
+  Unit + integration tested and red-proven. Remaining: a Playwright e2e spec
+  was not authored (small-fix, unit-covered — author at the cluster e2e gate).
 
 Each is a real product requirement whose engine does not exist; full
 reasoning in decisions.md A69. **To close:** build the missing engine (a

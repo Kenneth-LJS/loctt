@@ -9,7 +9,7 @@ import { loadProjectsConfig } from "../config/projects.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
 import type { IntegrityFinding } from "../diagnostics/integrity.js";
 import { blockingFindings, checkDataIntegrity } from "../diagnostics/integrity.js";
-import { getLocalDir } from "../paths/index.js";
+import { getLocalDir, getTaskFilePath } from "../paths/index.js";
 import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
 import { appendKeyHistory } from "../state/keys.js";
@@ -17,7 +17,7 @@ import { clearReconcileState, readReconcileState, saveReconcileState } from "../
 import { loadState, saveState } from "../state/state.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
 import { parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
-import { writeTask } from "../task/io.js";
+import { readTask, writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { previewRekey, rekeyCollisions } from "./reconcile.js";
 import { computeReconcilePlan } from "./reconcile-plan.js";
@@ -302,6 +302,122 @@ export class GitRemoteSchemaNewerError extends GitSyncError {
     this.remoteVersion = opts.remoteVersion;
     this.localVersion = opts.localVersion;
     this.branch = opts.branch;
+  }
+}
+
+/**
+ * Raised when the temporary publish/sync worktree cannot be established
+ * because git still holds a registration for it that neither `rm` nor
+ * `worktree prune` cleared (GIT-36).
+ *
+ * The ordinary case — a hand-deleted worktree *directory* — heals itself:
+ * publish/sync `rm` the path, `worktree prune` drops the stale
+ * registration, and `worktree add` re-creates it. This error is for the
+ * case prune cannot clear: a worktree git records as *locked* (or
+ * otherwise registered) whose directory is gone. `git worktree add` then
+ * dies with `fatal: '<path>' is a missing but locked worktree` — an
+ * opaque message naming an internal path the user has never chosen to see.
+ *
+ * We refuse with the worktree named and the fact that it is missing, plus
+ * a concrete repair path, rather than surfacing git's raw fatal. Nothing
+ * about the user's `.loctt/` task files is touched: publish stages into
+ * this worktree and never writes back to `.loctt/`, and sync's `worktree
+ * add` runs in the read-only planning phase, *before* the first
+ * `applyPlan` write — so a failure here cannot have moved a local task
+ * file. The message says so.
+ *
+ * Two repair paths, each stating what it does to local task files:
+ *  - **Re-establish the worktree** — clear git's stale registration
+ *    (`git worktree prune`, or `git worktree remove --force <path>` /
+ *    `git worktree unlock <path>` if it is locked), then retry. Touches
+ *    only git's own bookkeeping under `.git/worktrees/`; your `.loctt/`
+ *    task files are not read or written by this.
+ *  - **Disable then re-enable git sync** — `loctt git disable` followed by
+ *    `loctt git enable`. This rebuilds the git-backed setup from scratch.
+ *    It leaves your `.loctt/` task files exactly as they are on disk; it
+ *    only rewrites LocTT's own git state (`state.yaml`'s git block).
+ */
+export class GitWorktreeMissingError extends GitSyncError {
+  /** The worktree path git could not (re-)establish. */
+  readonly worktreeDir: string;
+  /** Which operation hit it — for the surface to phrase "Publish"/"Sync". */
+  readonly operation: "publish" | "sync";
+  /** The raw git fatal, kept for a "show details" affordance. */
+  readonly detail: string;
+  constructor(opts: {
+    worktreeDir: string;
+    operation: "publish" | "sync";
+    detail: string;
+  }) {
+    const op = opts.operation === "publish" ? "Publish" : "Sync";
+    super(
+      `${op} could not start: LocTT's temporary git worktree at `
+      + `'${opts.worktreeDir}' is missing, but git still has it registered `
+      + `(most likely it was deleted by hand while git had it locked), so it `
+      + `cannot be re-created. This is not an ordinary git failure — the `
+      + `worktree named above is the specific thing that is wrong.\n\n`
+      + `Your local task files were not touched: the ${opts.operation} never `
+      + `reached the point of writing to .loctt/, so nothing was applied.\n\n`
+      + `Repair with either:\n`
+      + `  - Re-establish the worktree: run 'git worktree prune' (or, if git `
+      + `reports it locked, 'git worktree remove --force ${opts.worktreeDir}' `
+      + `or 'git worktree unlock ${opts.worktreeDir}'), then ${opts.operation} `
+      + `again. This clears git's stale bookkeeping only — your .loctt/ task `
+      + `files are left exactly as they are.\n`
+      + `  - Disable and re-enable git sync: 'loctt git disable' then `
+      + `'loctt git enable'. This rebuilds LocTT's git setup from scratch and `
+      + `also leaves your .loctt/ task files exactly as they are on disk.`,
+    );
+    this.name = "GitWorktreeMissingError";
+    this.worktreeDir = opts.worktreeDir;
+    this.operation = opts.operation;
+    this.detail = opts.detail;
+  }
+}
+
+/**
+ * Whether a `git worktree add` failure is the "registered but the
+ * directory is gone" family GIT-36 names, as opposed to any other git
+ * fault (a bad ref, a full disk). git phrases this several ways depending
+ * on whether the stale worktree is locked, prunable, or the path is now a
+ * non-worktree — match the stable fragments rather than a whole line.
+ *
+ * Deliberately narrow: only a failure that clearly names a missing /
+ * already-registered / non-working-tree worktree is re-thrown as the
+ * named error. Anything else falls through to the generic git failure,
+ * because mislabelling an unrelated git error "worktree missing" would
+ * point the user's repair at the wrong thing.
+ */
+function isWorktreeRegistrationFailure(stderr: string): boolean {
+  const s = stderr.toLowerCase();
+  return (
+    /missing but (locked|already registered)/.test(s)
+    || /already registered worktree/.test(s)
+    || /is not a working tree/.test(s)
+    || (/worktree/.test(s) && /already exists/.test(s))
+  );
+}
+
+/**
+ * Runs `git worktree add <dir> <branch>`, translating the "registered but
+ * the directory is gone" family of failures into a named
+ * {@link GitWorktreeMissingError} (GIT-36). Any other git failure is
+ * re-thrown unchanged, so the generic git-error path still applies.
+ */
+function addWorktreeOrNameMissing(
+  root: string,
+  worktreeDir: string,
+  branch: string,
+  operation: "publish" | "sync",
+): void {
+  try {
+    git(["worktree", "add", worktreeDir, branch], root);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    if (isWorktreeRegistrationFailure(detail)) {
+      throw new GitWorktreeMissingError({ worktreeDir, operation, detail });
+    }
+    throw err;
   }
 }
 
@@ -700,6 +816,60 @@ async function applyPlan(
 }
 
 /**
+ * The task ids the plan just wrote whose `task.md` does not parse (GIT-34).
+ *
+ * A sync copies a branch task file verbatim — it does not re-validate it
+ * before writing, and it must not, because a malformed remote task is not
+ * grounds to abort the whole sync (GIT-34: "one bad file does not abort
+ * the whole sync"). But it is also not something to write silently and say
+ * nothing about. This reads back each task the plan wrote and names the
+ * ones that will not parse, so the sync report can point the user at the
+ * file — the same tolerant read `loadAllTasksDetailed` uses for the list,
+ * so a task named here is exactly the broken-file row the list will show.
+ *
+ * Scans only the tasks this plan touched (copies + merges), not the whole
+ * tracker: a pre-existing local corruption is `doctor`'s job to surface,
+ * not this sync's to claim it just applied.
+ */
+async function malformedAppliedTasks(
+  localDir: string,
+  taskIds: Iterable<string>,
+): Promise<MalformedSyncedTask[]> {
+  const out: MalformedSyncedTask[] = [];
+  const seen = new Set<string>();
+  for (const id of taskIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    try {
+      await readTask(localDir, id);
+    } catch (err) {
+      out.push({
+        id,
+        path: getTaskFilePath(localDir, id),
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The task ids a sync plan touched (a copy or a merge of anything under
+ * `tasks/<id>/`), for the malformed-task readback (GIT-34). Deletions are
+ * excluded — a deleted task is gone, not applied.
+ */
+function taskIdsTouchedBy(plan: SyncPlan, mergedPaths: readonly string[]): string[] {
+  const ids = new Set<string>();
+  const collect = (path: string): void => {
+    const m = /^tasks\/([^/]+)\//.exec(path);
+    if (m?.[1] !== undefined) ids.add(m[1]);
+  };
+  for (const { path } of plan.copies) collect(path);
+  for (const path of mergedPaths) collect(path);
+  return [...ids];
+}
+
+/**
  * Removes directories left empty by deletions, walking upward from each
  * deleted path. Stops at the first non-empty parent, and never removes
  * a structural directory.
@@ -1013,6 +1183,31 @@ export interface SyncOutcome {
    * leaving one behind has told the user it succeeded when it half did.
    */
   readonly unresolvedKeys?: readonly string[];
+  /**
+   * Tasks the sync applied from the branch whose `task.md` does not parse
+   * (GIT-34). The branch published a file with malformed frontmatter; the
+   * sync copies it (one bad file does not abort the rest — the other
+   * counts above still report what applied), but the file is not silently
+   * absorbed: each one is named here by task id and path so the surface
+   * can tell the user which file to inspect. The list view still renders
+   * these as broken-file rows (loadAllTasksDetailed keeps them), rather
+   * than taking the page down. Present only when non-empty.
+   */
+  readonly malformed?: readonly MalformedSyncedTask[];
+}
+
+/**
+ * A task the sync copied from the branch whose `task.md` will not parse
+ * (GIT-34). Named by id + path + the parse reason so the surface can point
+ * the user at the exact file.
+ */
+export interface MalformedSyncedTask {
+  /** The task id (its directory name — the handle that always survives). */
+  readonly id: string;
+  /** The `task.md` path under `.loctt/tasks/<id>/`, so the user can open it. */
+  readonly path: string;
+  /** The parse error, verbatim — it names the YAML line/field. */
+  readonly reason: string;
 }
 
 /**
@@ -1172,7 +1367,11 @@ export async function commitToLocttBranch(
   gitSafe(["worktree", "prune"], root);
 
   try {
-    git(["worktree", "add", worktreeDir, branch], root);
+    // GIT-36: name a stale-but-missing worktree instead of surfacing git's
+    // opaque "missing but locked worktree" fatal. Publish stages into this
+    // worktree and never writes back to .loctt/, so a failure here leaves
+    // local task files untouched — the named error says so.
+    addWorktreeOrNameMissing(root, worktreeDir, branch, "publish");
 
     // Publish is intentionally a one-way mirror: local is canonical for the
     // branch. Local-owned files are withheld so they never reach the branch
@@ -1732,7 +1931,11 @@ export async function pullFromLocttBranch(
   gitSafe(["worktree", "prune"], root);
 
   try {
-    git(["worktree", "add", worktreeDir, branch], root);
+    // GIT-36: name a stale-but-missing worktree instead of surfacing git's
+    // opaque fatal. This `add` is in the read-only planning phase, before
+    // the first applyPlan write, so a failure here cannot have moved a
+    // local task file — the named error says so.
+    addWorktreeOrNameMissing(root, worktreeDir, branch, "sync");
 
     // 3-way, not a blind mirror. `last_synced_commit` is the base: without
     // it we cannot tell "the branch deleted this" from "I created this
@@ -1895,6 +2098,15 @@ export async function pullFromLocttBranch(
     // absence is the only signal that the workspace is whole.
     await clearReconcileState(locttDir);
 
+    // GIT-34: name any task the sync just applied whose task.md will not
+    // parse. Read back after the writes above (a merge can rewrite a file
+    // the plan copied), scoped to the tasks this plan touched so the sync
+    // does not claim a pre-existing local corruption as its own.
+    const malformed = await malformedAppliedTasks(
+      locttDir,
+      taskIdsTouchedBy(activePlan, resolution.merged.map(m => m.path)),
+    );
+
     return {
       branch,
       updated:
@@ -1918,6 +2130,9 @@ export async function pullFromLocttBranch(
       ...(normalised.unresolvedKeys.length > 0
         ? { unresolvedKeys: normalised.unresolvedKeys }
         : {}),
+      // GIT-34: the malformed task(s) this sync applied, by id + path, so
+      // the surface names the file to inspect. Present only when non-empty.
+      ...(malformed.length > 0 ? { malformed } : {}),
     };
   } finally {
     try {

@@ -1229,6 +1229,47 @@ migrate-forward direction, not this refusal. A branch whose
 `.schema-version` is present but unreadable (not a positive integer) is
 also refused, because its version cannot be proven safe to read.
 
+### A malformed task on the branch
+
+If the `loctt` branch carries a task whose `task.md` does not parse (for
+example, hand-edited frontmatter with a YAML syntax error), `sync` does
+**not** abort — the rest of the sync is applied and the counts are
+reported as usual. The malformed file is **not** silently absorbed either:
+`sync` names each unparseable task by id and path so you know exactly which
+file to inspect, and exits non-zero. For example:
+
+```
+Synced loctt branch into local workspace (2 updated)
+Warning: 1 synced task(s) could not be parsed (the rest of the sync was applied). Inspect:
+  01ABC…  .loctt/tasks/01ABC…/task.md  — <YAML parse error>
+```
+
+The bad file is kept exactly as it came from the branch, not rewritten. It
+appears in `loctt list` as a broken-file entry (the rest of the list still
+renders), and `loctt doctor` reports it too. Fix it by editing the named
+`task.md`.
+
+### Missing or corrupt publish worktree
+
+`publish` and `sync` stage into a temporary git worktree under
+`.loctt/local/`. If that worktree's directory is deleted by hand while git
+still has it registered (in particular, locked), git cannot re-create it
+and neither can LocTT. Rather than surface git's opaque
+`missing but locked worktree` error, `publish`/`sync` **refuse and write
+nothing** — your local task files are not modified — exit non-zero, and
+name the specific worktree that is missing.
+
+Repair with **either**:
+
+- **Re-establish the worktree**: run `git worktree prune` (or, if git
+  reports it locked, `git worktree remove --force <path>` or
+  `git worktree unlock <path>` for the named worktree), then run the
+  command again. This clears git's stale bookkeeping only — your `.loctt/`
+  task files are left exactly as they are.
+- **Disable and re-enable git sync**: run `loctt git disable` then
+  `loctt git enable`. This rebuilds LocTT's git setup from scratch and also
+  leaves your `.loctt/` task files exactly as they are on disk.
+
 ## Config
 
 ```

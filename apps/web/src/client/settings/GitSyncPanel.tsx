@@ -157,6 +157,89 @@ function SchemaRemoteNewerRefusal({
 }
 
 /**
+ * The `git_worktree_missing` refusal payload (GIT-36), read off the error
+ * envelope. Present only when LocTT's temporary publish/sync worktree is
+ * registered by git but its directory is gone; `undefined` otherwise, so
+ * the caller falls back to the generic `ErrorState`.
+ */
+export function worktreeMissing(error: unknown):
+  | NonNullable<ErrorResponse["worktree_missing"]>
+  | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  if (error.code !== "git_worktree_missing") return undefined;
+  return error.envelope?.worktree_missing;
+}
+
+/**
+ * The missing/corrupt-worktree refusal (GIT-36). NOT a retryable error —
+ * the same broken worktree would fail again — so this offers no Retry
+ * control. It names the exact worktree that is missing, affirms local task
+ * files were not modified, and gives two concrete repair paths, each
+ * stating what it does to local task files: re-establish the worktree in
+ * git (bookkeeping only), or disable + re-enable git sync (rebuilds
+ * LocTT's git setup, leaves task files as they are).
+ */
+function WorktreeMissingRefusal({
+  info,
+  testId,
+}: {
+  readonly info: NonNullable<ErrorResponse["worktree_missing"]>;
+  readonly testId: string;
+}) {
+  const op = info.operation === "publish" ? "Publish" : "Sync";
+  return (
+    <div
+      role="alert"
+      data-testid={testId}
+      data-git-refusal="worktree-missing"
+      data-worktree={info.worktree}
+      data-operation={info.operation}
+      className="mb-3 rounded-md border border-danger-fg p-3 text-[0.9286rem] text-danger-fg"
+    >
+      <p className="font-semibold">
+        {op} could not start: the git worktree is missing.
+      </p>
+      <p className="mt-1 text-text-secondary">
+        LocTT&rsquo;s temporary git worktree at{" "}
+        <code className="font-mono text-[0.8571rem]">{info.worktree}</code>{" "}
+        is registered by git but its directory is gone (most likely deleted
+        by hand while git had it locked), so it cannot be re-created. This is
+        not an opaque git error — the worktree named above is the specific
+        thing that is wrong.
+      </p>
+      <p className="mt-2 text-text-secondary">
+        <strong>Your local task files were not modified.</strong> The {info.operation}{" "}
+        never reached the point of writing to{" "}
+        <code className="font-mono text-[0.8571rem]">.loctt/</code>, so nothing
+        was applied.
+      </p>
+      <p className="mt-2 text-text-secondary">Repair with either:</p>
+      <ul className="mt-1 ml-4 list-disc text-text-secondary">
+        <li data-testid={`${testId}-reestablish`}>
+          <strong>Re-establish the worktree.</strong> Run{" "}
+          <code className="font-mono text-[0.8571rem]">git worktree prune</code>{" "}
+          (or, if git reports it locked,{" "}
+          <code className="font-mono text-[0.8571rem]">git worktree remove --force {info.worktree}</code>{" "}
+          or <code className="font-mono text-[0.8571rem]">git worktree unlock {info.worktree}</code>),
+          then {info.operation} again. This clears git&rsquo;s stale
+          bookkeeping only — your{" "}
+          <code className="font-mono text-[0.8571rem]">.loctt/</code> task files
+          are left exactly as they are.
+        </li>
+        <li data-testid={`${testId}-reenable`}>
+          <strong>Disable and re-enable git sync.</strong> Run{" "}
+          <code className="font-mono text-[0.8571rem]">loctt git disable</code>{" "}
+          then <code className="font-mono text-[0.8571rem]">loctt git enable</code>.
+          This rebuilds LocTT&rsquo;s git setup from scratch and also leaves your{" "}
+          <code className="font-mono text-[0.8571rem]">.loctt/</code> task files
+          exactly as they are on disk.
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+/**
  * The sentence a failed push shows (GIT-29). Every branch states the
  * local commit is safe — the push failed, not the commit — and names the
  * remote; the non-fast-forward branch recommends Sync, the auth branch
@@ -472,6 +555,10 @@ function EnabledState({ status, checkedAt, onRefresh }: {
   const syncRewrite = historyRewritten(sync.error);
   const publishSchemaNewer = schemaRemoteNewer(publish.error);
   const syncSchemaNewer = schemaRemoteNewer(sync.error);
+  // GIT-36: a missing/corrupt worktree is a refusal with a repair path,
+  // not a retryable error — render the dedicated banner, not ErrorState.
+  const publishWorktreeMissing = worktreeMissing(publish.error);
+  const syncWorktreeMissing = worktreeMissing(sync.error);
 
   // A reconcile is "blocked" when the sentinel is present, or an op erred
   // with a reconcile code. Branch on the error CODE, not a message
@@ -737,6 +824,43 @@ function EnabledState({ status, checkedAt, onRefresh }: {
           </p>
 
           {/*
+            GIT-34: the branch published a task whose task.md will not parse.
+            The rest of the sync was applied (the counts above say what), and
+            this file was NOT silently absorbed — name each bad task by id
+            and give the exact path to inspect. The list still renders it as
+            a broken-file row, so the next action is to open that file.
+          */}
+          {sync.data.malformed !== undefined && sync.data.malformed.length > 0 && (
+            <div
+              role="alert"
+              data-testid="git-sync-malformed"
+              data-malformed-count={sync.data.malformed.length}
+              className="mb-1 rounded-md border border-warn-fg p-2 text-[0.8571rem] text-warn-fg"
+            >
+              <p className="font-semibold">
+                {sync.data.malformed.length === 1
+                  ? "1 synced task could not be parsed."
+                  : `${String(sync.data.malformed.length)} synced tasks could not be parsed.`}
+              </p>
+              <p className="mt-1 text-text-secondary">
+                The rest of the sync was applied (see the counts above). These
+                files came from the branch with malformed content — they were
+                kept, not silently discarded, and appear as broken-file rows in
+                the list. Open each one to fix it:
+              </p>
+              <ul className="mt-1 ml-4 list-disc" data-testid="git-sync-malformed-list">
+                {sync.data.malformed.map(m => (
+                  <li key={m.id} data-task-id={m.id}>
+                    <code className="font-mono text-[0.8571rem]">{m.path}</code>
+                    {" — "}
+                    <span className="text-text-secondary">{m.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/*
             GIT-23 bullet 2: the summary above states counts and never
             enumerates every affected task inline — a 500-task sync must
             not print 500 keys. The full per-bucket breakdown is offered
@@ -803,6 +927,12 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               // a retryable error — upgrade LocTT, no Retry control.
               <SchemaRemoteNewerRefusal info={publishSchemaNewer} testId="git-publish-schema-newer" />
             )
+          : publishWorktreeMissing !== undefined
+          ? (
+              // GIT-36: a missing/corrupt worktree names the worktree and a
+              // repair path — no Retry, local files untouched.
+              <WorktreeMissingRefusal info={publishWorktreeMissing} testId="git-publish-worktree-missing" />
+            )
           : (
               <div className="mb-3" data-testid="git-publish-error">
                 <ErrorState
@@ -825,6 +955,12 @@ function EnabledState({ status, checkedAt, onRefresh }: {
           : syncSchemaNewer !== undefined
           ? (
               <SchemaRemoteNewerRefusal info={syncSchemaNewer} testId="git-sync-schema-newer" />
+            )
+          : syncWorktreeMissing !== undefined
+          ? (
+              // GIT-36: a missing/corrupt worktree names the worktree and a
+              // repair path — no Retry, local files untouched.
+              <WorktreeMissingRefusal info={syncWorktreeMissing} testId="git-sync-worktree-missing" />
             )
           : (
               <div className="mb-3" data-testid="git-sync-error">

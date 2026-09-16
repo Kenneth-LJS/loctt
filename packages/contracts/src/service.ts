@@ -638,6 +638,19 @@ export interface ErrorResponse {
    * site; kept `unknown` here to avoid service.ts importing reconcile.ts.
    */
   readonly rekey?: unknown;
+  /**
+   * Present on `git_worktree_missing` (GIT-36): LocTT's temporary
+   * publish/sync worktree is registered by git but its directory is gone
+   * and could not be re-created. Carries the worktree path and which
+   * operation hit it so the panel names the exact worktree and offers the
+   * repair path without a second fetch. The refusal is `recovery: none`
+   * (the repair is a deliberate git/CLI step, not a retry) and
+   * `data_state: not_saved` — the operation never reached a local write.
+   */
+  readonly worktree_missing?: {
+    readonly worktree: string;
+    readonly operation: "publish" | "sync";
+  };
 }
 
 /**
@@ -662,6 +675,7 @@ export type ErrorCode =
   | "history_rewritten"
   | "schema_remote_newer"
   | "rekey_needed"
+  | "git_worktree_missing"
   | "io_failed"
   | "partial_failure"
   | "unknown";

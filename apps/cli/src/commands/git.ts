@@ -8,6 +8,7 @@ import {
   GitHistoryRewrittenError,
   GitReconcileNeededError,
   GitRemoteSchemaNewerError,
+  GitWorktreeMissingError,
   loadReconcileSession,
   preflight,
   publish,
@@ -159,6 +160,14 @@ export async function run(args: string[], root: string): Promise<void> {
           process.exitCode = EXIT.RUNTIME;
           break;
         }
+        // GIT-36: the temporary worktree is missing/corrupt. Name the
+        // worktree and the repair path (the message carries both); local
+        // files were not touched. Not retryable — a runtime error.
+        if (err instanceof GitWorktreeMissingError) {
+          console.error(err.message);
+          process.exitCode = EXIT.RUNTIME;
+          break;
+        }
         throw err;
       }
       if (result.committed) {
@@ -229,6 +238,13 @@ export async function run(args: string[], root: string): Promise<void> {
           process.exitCode = EXIT.RUNTIME;
           break;
         }
+        // GIT-36: the temporary worktree is missing/corrupt. Name the
+        // worktree and the repair path; local files were not touched.
+        if (err instanceof GitWorktreeMissingError) {
+          console.error(err.message);
+          process.exitCode = EXIT.RUNTIME;
+          break;
+        }
         throw err;
       }
       if (result.fetched === true) {
@@ -264,6 +280,21 @@ export async function run(args: string[], root: string): Promise<void> {
           `Warning: ${String(result.unresolvedKeys.length)} key collision(s) remain unresolved: `
           + `${result.unresolvedKeys.join(", ")}. Run 'loctt doctor'.`,
         );
+        process.exitCode = EXIT.RUNTIME;
+      }
+      // GIT-34: the branch published a task whose task.md will not parse.
+      // The rest of the sync applied (the "Synced …" line below reports the
+      // counts); name each bad task by id + path so the user knows which
+      // file to inspect. It was kept, not silently absorbed — the list
+      // shows it as a broken-file row.
+      if (result.malformed !== undefined && result.malformed.length > 0) {
+        console.error(
+          `Warning: ${String(result.malformed.length)} synced task(s) could not be parsed `
+          + "(the rest of the sync was applied). Inspect:",
+        );
+        for (const m of result.malformed) {
+          console.error(`  ${m.id}: ${m.path} — ${m.reason}`);
+        }
         process.exitCode = EXIT.RUNTIME;
       }
       if (result.updated) {

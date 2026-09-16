@@ -130,7 +130,7 @@ export { computeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
 export { blockingFindings, checkDataIntegrity, runDoctor, runDoctorStream } from "./diagnostics/index.js";
 export type { LocttErrorOptions } from "./errors.js";
 export { errorEnvelope, LocttError } from "./errors.js";
-export type { AppliedRekey, EnableGitResult, FetchResult, FsProbe, FsProbeResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, PreflightReport, PushResult, SyncFsAdvisory, SyncFsClass, SyncOutcome, SyncProgress } from "./git/index.js";
+export type { AppliedRekey, EnableGitResult, FetchResult, FsProbe, FsProbeResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, MalformedSyncedTask, PreflightReport, PushResult, SyncFsAdvisory, SyncFsClass, SyncOutcome, SyncProgress } from "./git/index.js";
 export type {
   ApplyReconcileOutcome,
   ApplyReconcileResult,
@@ -170,6 +170,7 @@ export {
   GitRemoteSchemaNewerError,
   GitSyncError,
   GitSyncFirstError,
+  GitWorktreeMissingError,
   loadReconcileSession,
   preflight,
   PreflightError,

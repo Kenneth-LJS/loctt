@@ -92,6 +92,17 @@ export interface AppliedRekey {
   readonly newKey: string;
 }
 
+/**
+ * A task the sync applied from the branch whose `task.md` will not parse
+ * (GIT-34). Named by id + path + reason so the panel can point the user at
+ * the file to inspect; the list still renders it as a broken-file row.
+ */
+export interface MalformedSyncedTask {
+  readonly id: string;
+  readonly path: string;
+  readonly reason: string;
+}
+
 export interface SyncResult {
   readonly updated: boolean;
   readonly branch?: string;
@@ -104,6 +115,11 @@ export interface SyncResult {
   readonly rekeys?: readonly AppliedRekey[];
   readonly reprefixed?: number;
   readonly unresolvedKeys?: readonly string[];
+  /**
+   * Tasks applied whose `task.md` does not parse (GIT-34). Present only
+   * when non-empty. The sync applied the rest; these name the file to fix.
+   */
+  readonly malformed?: readonly MalformedSyncedTask[];
   readonly fetched?: boolean;
   readonly fetchError?: string;
   /** Classified fetch failure (GIT-30) — present iff `fetchError` is. */

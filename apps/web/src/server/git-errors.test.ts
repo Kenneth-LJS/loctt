@@ -315,4 +315,115 @@ describe("web git error classification", () => {
     expect(after).toMatch(new RegExp(`^key: ${mine?.newKey}$`, "m"));
     expect(after).toMatch(new RegExp(`key_history:[\\s\\S]*${local.frontmatter.key}`, "m"));
   });
+
+  // @verifies GIT-36
+  it("reports a missing/corrupt worktree as 409 git_worktree_missing, naming the worktree", { timeout: 30_000 }, async () => {
+    const { root, base } = await harness();
+
+    // Wedge git into "registered + locked, directory gone" for the publish
+    // worktree — the case prune cannot clear, so `worktree add` fatals.
+    const wt = join(root, ".loctt/local/.worktree-publish");
+    git(root, "worktree", "add", "-q", wt, "loctt");
+    git(root, "worktree", "lock", wt);
+    await rm(wt, { recursive: true, force: true });
+
+    const res = await fetch(`${base}/api/git/publish`, {
+      method: "POST",
+      headers: { "X-Loctt-Client": "test" },
+    });
+
+    // A client-actionable refusal, not a server fault — 409, like the other
+    // GIT refusals, NOT the generic retryable 500.
+    expect(res.status).toBe(409);
+    const body = await res.json() as {
+      code: string;
+      message: string;
+      data_state?: string;
+      recovery?: { kind: string };
+      worktree_missing?: { worktree: string; operation: string };
+    };
+    expect(body.code).toBe("git_worktree_missing");
+    expect(body.code).not.toBe("git_failed");
+    expect(body.data_state).toBe("not_saved");
+    // Not retryable — the same broken worktree fails again.
+    expect(body.recovery?.kind).toBe("none");
+    // The payload names the exact worktree + operation for the panel.
+    expect(body.worktree_missing?.operation).toBe("publish");
+    expect(body.worktree_missing?.worktree).toContain(".worktree-publish");
+    // The message names the worktree and that it is missing, not an opaque
+    // git line.
+    expect(body.message).toContain(".worktree-publish");
+    expect(body.message.toLowerCase()).toContain("missing");
+  });
+
+  // @verifies GIT-34
+  it("a malformed remote task is reported by id and does not abort the sync", { timeout: 30_000 }, async () => {
+    const { root, base } = await harness();
+    const locttDir = join(root, ".loctt");
+    const cfg = await loadProjectsConfig(locttDir);
+    const projectId = cfg.projects[0]?.id as string;
+
+    // Seed one malformed and one good task onto the branch.
+    const worktree = join(root, "..", `wt-bad-${Date.now()}`);
+    git(root, "worktree", "add", "-q", worktree, "loctt");
+    const badId = "01WEBBADBADBADBADBAD00001";
+    const goodId = "01WEBGOODGOODGOODGOOD0001";
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(worktree, "tasks", badId), { recursive: true });
+    await mkdir(join(worktree, "tasks", goodId), { recursive: true });
+    await writeFile(
+      join(worktree, "tasks", badId, "task.md"),
+      `---\nid: ${badId}\nkey: T-701\ntitle: "unterminated\n`
+      + `status: todo\nproject: ${projectId}\ncreated_at: 2020-01-01T00:00:00.000Z\n`
+      + "updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n",
+      "utf8",
+    );
+    await writeFile(
+      join(worktree, "tasks", goodId, "task.md"),
+      `---\nid: ${goodId}\nkey: T-702\ntitle: Good\n`
+      + `status: todo\nproject: ${projectId}\ncreated_at: 2020-01-01T00:00:00.000Z\n`
+      + "updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n",
+      "utf8",
+    );
+    git(worktree, "add", "-A");
+    git(worktree, "commit", "-m", "seed incl. malformed");
+    git(root, "worktree", "remove", "--force", worktree);
+
+    const res = await fetch(`${base}/api/git/sync`, {
+      method: "POST",
+      headers: { "X-Loctt-Client": "test" },
+    });
+    expect(res.status).toBe(200);
+
+    // The sync result (whether JSON or the terminal NDJSON line) carries the
+    // malformed report and the honest counts.
+    let result: {
+      updated: boolean;
+      copied?: number;
+      malformed?: Array<{ id: string; path: string; reason: string }>;
+    };
+    if (res.headers.get("content-type")?.includes("application/x-ndjson")) {
+      const text = await res.text();
+      const lines = text.split("\n").filter(l => l.trim()).map(l => JSON.parse(l) as Record<string, unknown>);
+      const resultLine = lines.find(l => "result" in l) as { result: typeof result } | undefined;
+      result = resultLine!.result;
+    } else {
+      result = await res.json() as typeof result;
+    }
+
+    // The sync applied (not aborted): the good task landed.
+    expect(result.updated).toBe(true);
+    expect(result.copied ?? 0).toBeGreaterThanOrEqual(2);
+    // The malformed task is named by id + path; the good one is not.
+    const ids = (result.malformed ?? []).map(m => m.id);
+    expect(ids).toContain(badId);
+    expect(ids).not.toContain(goodId);
+    const entry = (result.malformed ?? []).find(m => m.id === badId);
+    expect(entry?.path).toContain(badId);
+    expect((entry?.reason.length ?? 0)).toBeGreaterThan(0);
+
+    // The bad file was kept AS-IS on disk, not written clean.
+    const onDisk = await readFile(join(locttDir, "tasks", badId, "task.md"), "utf8");
+    expect(onDisk).toContain('title: "unterminated');
+  });
 });

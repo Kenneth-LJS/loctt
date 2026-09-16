@@ -17,6 +17,7 @@ import {
   GitReconcileNeededError,
   GitRemoteSchemaNewerError,
   GitSyncFirstError,
+  GitWorktreeMissingError,
   loadReconcileSession,
   publish,
   sync,
@@ -117,6 +118,10 @@ export const TOOLS: readonly ToolDef[] = [
         // explain, naming both schema versions. The message tells the agent
         // to upgrade LocTT; LocTT will not apply a newer schema via sync.
         if (err instanceof GitRemoteSchemaNewerError) return text(err.message);
+        // GIT-36: the temporary worktree is missing/corrupt — surface the
+        // named error (worktree + repair path) rather than a framework
+        // fault. Local files were not touched; the message says so.
+        if (err instanceof GitWorktreeMissingError) return text(err.message);
         throw err;
       }
       const lines: string[] = [];
@@ -171,6 +176,9 @@ export const TOOLS: readonly ToolDef[] = [
         // GIT-35 (K94): the branch was written by a newer LocTT — refuse and
         // explain, naming both schema versions. Recovery is to upgrade LocTT.
         if (err instanceof GitRemoteSchemaNewerError) return text(err.message);
+        // GIT-36: the temporary worktree is missing/corrupt — surface the
+        // named error (worktree + repair path). Local files untouched.
+        if (err instanceof GitWorktreeMissingError) return text(err.message);
         throw err;
       }
       const lines: string[] = [];
@@ -219,6 +227,19 @@ export const TOOLS: readonly ToolDef[] = [
           `Warning: ${String(result.unresolvedKeys.length)} key collision(s) remain `
           + `unresolved: ${result.unresolvedKeys.join(", ")}. Run 'loctt doctor'.`,
         );
+      }
+      // GIT-34: the branch published a task whose task.md will not parse.
+      // The rest of the sync applied (the counts above report it); name each
+      // bad task by id + path so the agent (and user) knows which file to
+      // inspect. Kept, not silently absorbed — it reads as a broken task.
+      if (result.malformed !== undefined && result.malformed.length > 0) {
+        lines.push(
+          `Warning: ${String(result.malformed.length)} synced task(s) could not be parsed `
+          + "(the rest of the sync was applied). Inspect:",
+        );
+        for (const m of result.malformed) {
+          lines.push(`  ${m.id}: ${m.path} — ${m.reason}`);
+        }
       }
       return text(lines.join("\n"));
     },

@@ -92,4 +92,54 @@ describe("MCP sync_from_git (stdio)", () => {
       }
     });
   });
+
+  // @verifies GIT-34
+  it("names a malformed remote task by id and applies the rest (P10 parity)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      execaSync("git", ["init"], { cwd: root });
+      execaSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+      execaSync("git", ["config", "user.name", "test"], { cwd: root });
+      execaSync("git", ["commit", "--allow-empty", "-m", "init"], { cwd: root });
+
+      const locttDir = join(root, ".loctt");
+      expect((await runCli(["git", "enable"], { cwd: root })).exitCode).toBe(0);
+      expect((await runCli(["create", "base"], { cwd: root })).exitCode).toBe(0);
+      expect((await runCli(["git", "publish"], { cwd: root })).exitCode).toBe(0);
+
+      const tasksDir = join(locttDir, "tasks");
+      const { readdir } = await import("node:fs/promises");
+      const ids = await readdir(tasksDir);
+      const projectId = /project:\s*(\S+)/.exec(
+        await readFile(join(tasksDir, ids[0] as string, "task.md"), "utf8"),
+      )?.[1] ?? "";
+
+      // Seed a malformed task on the branch (unterminated quote).
+      const wt = join(root, ".wt-mcp-bad");
+      execaSync("git", ["worktree", "add", "-q", wt, "loctt"], { cwd: root });
+      const badId = "01MCPBADTASK000000000000A";
+      await mkdir(join(wt, "tasks", badId), { recursive: true });
+      await writeFile(
+        join(wt, "tasks", badId, "task.md"),
+        `---\nid: ${badId}\nkey: T-800\ntitle: "unterminated\nstatus: todo\n`
+        + `project: ${projectId}\ncreated_at: 2020-01-01T00:00:00.000Z\n`
+        + "updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n",
+      );
+      execaSync("git", ["add", "-A"], { cwd: wt });
+      execaSync("git", ["commit", "-m", "malformed branch task"], { cwd: wt });
+      execaSync("git", ["worktree", "remove", "--force", wt], { cwd: root });
+
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("sync_from_git", {});
+        expect(result.isError).toBeFalsy();
+        const out = result.content[0]?.text ?? "";
+        // The sync applied (not aborted) AND named the bad task by id.
+        expect(out).toMatch(/Synced/);
+        expect(out).toMatch(/could not be parsed/);
+        expect(out).toContain(badId);
+      } finally {
+        await client.close();
+      }
+    });
+  });
 });

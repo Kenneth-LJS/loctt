@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiError } from "../api/client.ts";
 import type { GitRemoteFailure } from "../api/hooks/useGit.ts";
-import { historyRewritten, publishFailureLine, schemaRemoteNewer } from "./GitSyncPanel.tsx";
+import { historyRewritten, publishFailureLine, schemaRemoteNewer, worktreeMissing } from "./GitSyncPanel.tsx";
 
 /**
  * @verifies GIT-29
@@ -151,5 +151,40 @@ describe("schemaRemoteNewer detector (GIT-35)", () => {
     expect(schemaRemoteNewer(undefined)).toBeUndefined();
     // The code but no payload — no crash, no payload.
     expect(schemaRemoteNewer(apiError("schema_remote_newer"))).toBeUndefined();
+  });
+});
+
+/**
+ * @verifies GIT-36
+ *
+ * The panel routes a `git_worktree_missing` refusal to its dedicated
+ * banner (WorktreeMissingRefusal), which names the worktree and the repair
+ * path and offers no Retry. `worktreeMissing` is the detector that picks
+ * exactly that code + payload and rejects everything else, so an ordinary
+ * git failure still falls through to the generic ErrorState with Retry.
+ */
+describe("worktreeMissing detector (GIT-36)", () => {
+  it("returns the typed payload for a git_worktree_missing envelope", () => {
+    const info = worktreeMissing(apiError("git_worktree_missing", {
+      worktree_missing: { worktree: "/tmp/t/.loctt/local/.worktree-publish", operation: "publish" },
+    }));
+    expect(info).toBeDefined();
+    expect(info?.operation).toBe("publish");
+    expect(info?.worktree).toContain(".worktree-publish");
+  });
+
+  it("returns undefined for any other code (so it uses the right banner / ErrorState)", () => {
+    // A generic git failure must NOT be dressed up as the worktree banner —
+    // it is retryable and belongs in ErrorState.
+    expect(worktreeMissing(apiError("git_failed"))).toBeUndefined();
+    expect(worktreeMissing(apiError("conflict"))).toBeUndefined();
+    expect(worktreeMissing(apiError("history_rewritten"))).toBeUndefined();
+  });
+
+  it("returns undefined for a non-ApiError or an envelope-less error", () => {
+    expect(worktreeMissing(new Error("plain"))).toBeUndefined();
+    expect(worktreeMissing(undefined)).toBeUndefined();
+    // The code but no payload — no crash, no payload.
+    expect(worktreeMissing(apiError("git_worktree_missing"))).toBeUndefined();
   });
 });
