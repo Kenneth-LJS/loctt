@@ -123,6 +123,7 @@ import {
   GitHistoryRewrittenError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
+  GitRemoteSchemaNewerError,
   GitSyncFirstError,
   initLoctt,
   InitRepairNeededError,
@@ -457,6 +458,9 @@ function error(
     // GIT-21 (K93): the force-push refusal payload the panel names the
     // rewritten branch + missing commit from, without a second fetch.
     ...(extra.history_rewritten !== undefined ? { history_rewritten: extra.history_rewritten } : {}),
+    // GIT-35 (K94): the newer-remote-schema refusal payload the panel names
+    // both versions from, without a second fetch.
+    ...(extra.schema_remote_newer !== undefined ? { schema_remote_newer: extra.schema_remote_newer } : {}),
   };
   json(res, envelope, status);
 }
@@ -548,6 +552,29 @@ function gitErrorResponse(err: unknown): {
           remote_head: err.remoteHead,
           branch: err.branch,
           remote: err.remote ?? null,
+        },
+      },
+    };
+  }
+  if (err instanceof GitRemoteSchemaNewerError) {
+    // GIT-35 (K94): the branch was written by a newer LocTT than this build
+    // understands. A client-actionable refusal, not a server fault — 409,
+    // matching the GIT-21 sibling's envelope shape. Nothing was written and
+    // no schema version was changed, so `not_saved`; recovery is `none`
+    // because the fix is to upgrade LocTT (not migrate, not retry). Both
+    // versions are carried so the panel can name them without re-fetching.
+    // A malformed remote version arrives as NaN → serialized as null.
+    return {
+      status: 409,
+      message: err.message,
+      extra: {
+        code: "schema_remote_newer",
+        data_state: "not_saved",
+        recovery: { kind: "none" },
+        schema_remote_newer: {
+          remote_version: Number.isNaN(err.remoteVersion) ? null : err.remoteVersion,
+          local_version: err.localVersion,
+          branch: err.branch,
         },
       },
     };

@@ -10,6 +10,7 @@ import { loadWorkflowConfig } from "../config/workflow.js";
 import type { IntegrityFinding } from "../diagnostics/integrity.js";
 import { blockingFindings, checkDataIntegrity } from "../diagnostics/integrity.js";
 import { getLocalDir } from "../paths/index.js";
+import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
 import { appendKeyHistory } from "../state/keys.js";
 import { clearReconcileState, readReconcileState, saveReconcileState } from "../state/reconcile.js";
@@ -226,6 +227,112 @@ export class GitHistoryRewrittenError extends GitSyncError {
     this.branch = opts.branch;
     this.remote = opts.remote;
   }
+}
+
+/**
+ * Raised when the branch was written by a NEWER LocTT than this one
+ * (GIT-35, K94). Before applying a sync, LocTT reads the branch's
+ * `.schema-version`; if it is strictly greater than the local
+ * `CURRENT_SCHEMA_VERSION`, the branch carries a schema this build cannot
+ * read, so applying it could silently corrupt or drop data. invariants.md
+ * holds that schema travels via `loctt migrate`, never via sync — so the
+ * only safe answer is to refuse and write NOTHING, exactly like the other
+ * divergence errors.
+ *
+ * The remedy is to UPGRADE LocTT, not to migrate: the data is already at a
+ * higher schema than this build understands, so there is nothing forward to
+ * migrate *to* here. The message names both versions and says nothing was
+ * written.
+ *
+ * `.schema-version` stays `LOCAL_OWNED`/`NEVER_MIRROR`: this guard only
+ * READS the remote's value to refuse, and never writes it anywhere.
+ */
+export class GitRemoteSchemaNewerError extends GitSyncError {
+  /** The `.schema-version` value read from the branch. */
+  readonly remoteVersion: number;
+  /** This build's `CURRENT_SCHEMA_VERSION`. */
+  readonly localVersion: number;
+  /** The branch whose schema is newer. */
+  readonly branch: string;
+  constructor(opts: {
+    remoteVersion: number;
+    localVersion: number;
+    branch: string;
+  }) {
+    super(
+      `sync aborted: the ${opts.branch} branch was written by a newer version of `
+      + `LocTT (schema v${opts.remoteVersion}), but this installation only understands `
+      + `up to schema v${opts.localVersion}. Applying it could corrupt or drop data, so `
+      + `nothing was written — your local files are untouched.\n\n`
+      + `Upgrade LocTT to a version that supports schema v${opts.remoteVersion} or newer, `
+      + `then sync again. (This is not a migration: the branch is already ahead of what `
+      + `this build can read, so there is nothing for 'loctt migrate' to do here — the fix `
+      + `is a newer LocTT.)`,
+    );
+    this.name = "GitRemoteSchemaNewerError";
+    this.remoteVersion = opts.remoteVersion;
+    this.localVersion = opts.localVersion;
+    this.branch = opts.branch;
+  }
+}
+
+/**
+ * Refuses a sync/publish whose branch `.schema-version` is strictly newer
+ * than this build's `CURRENT_SCHEMA_VERSION` (GIT-35, K94). Call *before*
+ * `planSync` on any path that would apply the branch's content, on the
+ * same true remote head the rewrite guard uses.
+ *
+ * Reads the branch's `.schema-version` blob directly from the tree (no
+ * checkout needed) — the file publish mirrors to the branch root. Three
+ * postures, chosen per corruption-handling-guide.md so the guard degrades
+ * rather than crashing the whole sync:
+ *  - **absent** — a legacy/older remote that predates `.schema-version`.
+ *    An absent version is the normal migrate-forward direction, NOT newer;
+ *    do not refuse, proceed as today.
+ *  - **malformed** (non-numeric / non-positive-integer) — a version that
+ *    cannot be proven ≤ local. We CANNOT prove the branch is safe to read,
+ *    and silently syncing unknown-version data is the exact hazard this
+ *    guard exists to prevent, so we refuse with a clear message rather than
+ *    proceed. Reported as `remoteVersion: NaN` so the message still names
+ *    "a newer LocTT" (the honest posture: unknown ⇒ treat as ahead).
+ *  - **equal or older** — proceed unchanged.
+ *
+ * A blob that cannot be read at all (git error) reads as absent and
+ * proceeds — the surrounding code already handles a broken git invocation,
+ * and refusing on an inconclusive read would break ordinary syncs.
+ */
+function assertRemoteSchemaNotNewer(
+  root: string,
+  remoteHead: string,
+  branch: string,
+): void {
+  const raw = readTreeFile(root, remoteHead, ".schema-version");
+  // Absent (older/legacy remote, or unreadable): not newer — proceed.
+  if (raw === undefined) return;
+  const trimmed = raw.trim();
+  // An empty file is a present-but-unwritten `.schema-version`: treat it as
+  // absent rather than malformed — there is no version claim to refuse on,
+  // and a legacy publish that touched but did not populate it must not brick
+  // every future sync.
+  if (trimmed === "") return;
+  const parsed = Number(trimmed);
+  // Malformed: cannot be proven ≤ local, so refuse (safe posture, K94).
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new GitRemoteSchemaNewerError({
+      remoteVersion: Number.NaN,
+      localVersion: CURRENT_SCHEMA_VERSION,
+      branch,
+    });
+  }
+  // Strictly greater than what this build understands: refuse (K94).
+  if (parsed > CURRENT_SCHEMA_VERSION) {
+    throw new GitRemoteSchemaNewerError({
+      remoteVersion: parsed,
+      localVersion: CURRENT_SCHEMA_VERSION,
+      branch,
+    });
+  }
+  // Equal or older: proceed unchanged.
 }
 
 /**
@@ -1238,6 +1345,15 @@ async function detectPublishReconcile(
   );
   assertNotHistoryRewrite(root, base, trueRemoteHead, branch, syncState.git.remote);
 
+  // GIT-35 (K94): the publish-side equivalent of the sync guard. If the
+  // branch has moved on and was written by a NEWER LocTT, publishing would
+  // route through the divergence handling / blind mirror against content
+  // this build cannot read — refuse before `planSync`, write nothing, and
+  // tell the user to upgrade LocTT. Reads the remote `.schema-version`
+  // only; never writes it. `trueRemoteHead` is the branch content that
+  // carries the schema file.
+  assertRemoteSchemaNotNewer(root, trueRemoteHead, branch);
+
   if (remoteHead === base) return undefined; // branch has not moved: fast-forward publish
 
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-publish-check");
@@ -1495,6 +1611,16 @@ export async function pullFromLocttBranch(
       syncState.git.remote,
     );
   }
+
+  // GIT-35 (K94): refuse a branch written by a NEWER LocTT before applying
+  // it. invariants.md holds that schema travels via `loctt migrate`, never
+  // via sync — so if the branch's `.schema-version` is strictly greater
+  // than what this build understands, applying it could corrupt or drop
+  // data. Read the remote value (never write it — `.schema-version` stays
+  // LOCAL_OWNED/NEVER_MIRROR) and refuse, writing nothing. Runs on the
+  // true branch head, and BEFORE the no-op short-circuit below so a
+  // newer-schema branch is refused even on a first sync (no base yet).
+  assertRemoteSchemaNotNewer(root, remoteHead, branch);
 
   if (syncState.git.last_synced_commit === remoteHead) {
     return { updated: false, branch };

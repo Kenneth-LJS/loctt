@@ -15,6 +15,7 @@ import {
   getGitStatus,
   GitHistoryRewrittenError,
   GitReconcileNeededError,
+  GitRemoteSchemaNewerError,
   GitSyncFirstError,
   loadReconcileSession,
   publish,
@@ -100,6 +101,10 @@ export const TOOLS: readonly ToolDef[] = [
         // agent (and user) to recover in git; LocTT offers no automated
         // rebase, so surface it rather than throwing a framework fault.
         if (err instanceof GitHistoryRewrittenError) return text(err.message);
+        // GIT-35 (K94): the branch was written by a newer LocTT — refuse and
+        // explain, naming both schema versions. The message tells the agent
+        // to upgrade LocTT; LocTT will not apply a newer schema via sync.
+        if (err instanceof GitRemoteSchemaNewerError) return text(err.message);
         throw err;
       }
       const lines: string[] = [];
@@ -149,6 +154,9 @@ export const TOOLS: readonly ToolDef[] = [
         // GIT-21 (K93): force-push / history rewrite — refuse and explain,
         // naming the missing commit + remote. Recovery is the user's in git.
         if (err instanceof GitHistoryRewrittenError) return text(err.message);
+        // GIT-35 (K94): the branch was written by a newer LocTT — refuse and
+        // explain, naming both schema versions. Recovery is to upgrade LocTT.
+        if (err instanceof GitRemoteSchemaNewerError) return text(err.message);
         throw err;
       }
       const lines: string[] = [];

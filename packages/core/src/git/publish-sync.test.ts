@@ -570,6 +570,19 @@ describe("publish-sync", () => {
     });
 
     it("never takes .schema-version from the branch", async () => {
+      // WAS ASSERTING THE BUG (GIT-35 / K94). The old version put schema
+      // "999" on the branch and asserted the sync SUCCEEDED while keeping
+      // the local `.schema-version` (relying on NEVER_MIRROR). Under K94 a
+      // branch written by a NEWER LocTT must be REFUSED before applying —
+      // silently syncing unknown-newer-schema data is exactly the hazard
+      // the guard exists to prevent (see schema-remote-newer.test.ts for
+      // that refusal). So the newer-schema scenario now belongs to the
+      // guard, and this test keeps only its still-valid intent: when the
+      // branch schema is NOT newer, a sync that applies branch work still
+      // never overwrites the local (LOCAL_OWNED/NEVER_MIRROR)
+      // `.schema-version`. The branch schema is written EQUAL to local so
+      // the guard does not fire and the mirror question is the one under
+      // test.
       const svPath = join(locttDir, ".schema-version");
       const original = await readFile(svPath, "utf-8").catch(() => undefined);
       if (original === undefined) return; // no schema file in this layout
@@ -579,15 +592,24 @@ describe("publish-sync", () => {
       await saveState(locttDir, state);
       await publish(locttDir, root);
 
-      // A clone on a newer LocTT publishes a higher schema version.
+      // A clone at the SAME schema publishes real work AND its own
+      // `.schema-version` — same version NUMBER (so the K94 guard stays
+      // silent and the sync proceeds) but different BYTES (extra
+      // whitespace). If NEVER_MIRROR were broken the mirror would copy
+      // these bytes over local's; the exact-bytes assertion below catches
+      // exactly that.
+      const branchVariant = ` ${original.trim()} \n`;
+      expect(branchVariant).not.toBe(original); // the bytes genuinely differ
       await commitOnBranch(async wt => {
-        await writeFile(join(wt, ".schema-version"), "999\n");
-      }, "bump schema on branch");
+        await writeFile(join(wt, "config", "queries.yaml"), "queries: []\n");
+        await writeFile(join(wt, ".schema-version"), branchVariant);
+      }, "edit + republish schema on branch");
 
-      await sync(locttDir, root);
+      const result = await sync(locttDir, root);
+      expect(result.updated).toBe(true);
 
-      // Mirroring this would brick the tracker: every command is gated by
-      // the schema guard, including `git disable`.
+      // The branch's `.schema-version` was NOT mirrored over local's own
+      // (NEVER_MIRROR/LOCAL_OWNED): sync leaves it byte-for-byte as it was.
       expect(await readFile(svPath, "utf-8")).toBe(original);
     });
 

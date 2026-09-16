@@ -95,6 +95,68 @@ function HistoryRewrittenRefusal({
 }
 
 /**
+ * The `schema_remote_newer` refusal payload (GIT-35, K94), read off the
+ * error envelope. Present only when the branch was written by a newer
+ * LocTT than this build understands; `undefined` for every other error.
+ */
+export function schemaRemoteNewer(error: unknown):
+  | NonNullable<ErrorResponse["schema_remote_newer"]>
+  | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  if (error.code !== "schema_remote_newer") return undefined;
+  return error.envelope?.schema_remote_newer;
+}
+
+/**
+ * The newer-remote-schema refusal (GIT-35, K94). NOT a conflict and NOT
+ * retryable in LocTT: the branch was written by a newer LocTT, so applying
+ * it could corrupt data. The panel names both schema versions, affirms
+ * nothing was written, and says the fix is to UPGRADE LocTT — not migrate,
+ * not retry. Offers no action controls. A malformed remote version arrives
+ * as `remote_version: null` (unknown ⇒ treated as ahead), phrased as "a
+ * newer version".
+ */
+function SchemaRemoteNewerRefusal({
+  info,
+  testId,
+}: {
+  readonly info: NonNullable<ErrorResponse["schema_remote_newer"]>;
+  readonly testId: string;
+}) {
+  const remote = info.remote_version !== null
+    ? `schema v${info.remote_version}`
+    : "a newer schema";
+  return (
+    <div
+      role="alert"
+      data-testid={testId}
+      data-git-refusal="schema-remote-newer"
+      data-remote-version={info.remote_version ?? "unknown"}
+      data-local-version={info.local_version}
+      className="mb-3 rounded-md border border-danger-fg p-3 text-[0.9286rem] text-danger-fg"
+    >
+      <p className="font-semibold">
+        The {info.branch} branch was written by a newer version of LocTT.
+      </p>
+      <p className="mt-1 text-text-secondary">
+        The branch is at{" "}
+        <code className="font-mono text-[0.8571rem]">{remote}</code>, but this
+        installation only understands up to{" "}
+        <code className="font-mono text-[0.8571rem]">schema v{info.local_version}</code>.
+        Applying it could corrupt or drop data.
+      </p>
+      <p className="mt-2 text-text-secondary">
+        <strong>Nothing was written.</strong> Your local task files are
+        untouched. Schema never travels through sync — the fix is to{" "}
+        <strong>upgrade LocTT</strong> to a version that supports the branch's
+        schema, then sync again. This is not a migration: the branch is
+        already ahead of what this build can read.
+      </p>
+    </div>
+  );
+}
+
+/**
  * The sentence a failed push shows (GIT-29). Every branch states the
  * local commit is safe — the push failed, not the commit — and names the
  * remote; the non-fast-forward branch recommends Sync, the auth branch
@@ -384,6 +446,8 @@ function EnabledState({ status, checkedAt, onRefresh }: {
   // off whichever operation refused.
   const publishRewrite = historyRewritten(publish.error);
   const syncRewrite = historyRewritten(sync.error);
+  const publishSchemaNewer = schemaRemoteNewer(publish.error);
+  const syncSchemaNewer = schemaRemoteNewer(sync.error);
 
   // A reconcile is "blocked" when the sentinel is present, or an op erred
   // with a reconcile code. Branch on the error CODE, not a message
@@ -704,6 +768,12 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               // generic ErrorState with its Retry control.
               <HistoryRewrittenRefusal info={publishRewrite} testId="git-publish-history-rewritten" />
             )
+          : publishSchemaNewer !== undefined
+          ? (
+              // GIT-35 (K94): a newer-remote-schema branch is a refusal, not
+              // a retryable error — upgrade LocTT, no Retry control.
+              <SchemaRemoteNewerRefusal info={publishSchemaNewer} testId="git-publish-schema-newer" />
+            )
           : (
               <div className="mb-3" data-testid="git-publish-error">
                 <ErrorState
@@ -722,6 +792,10 @@ function EnabledState({ status, checkedAt, onRefresh }: {
         syncRewrite !== undefined
           ? (
               <HistoryRewrittenRefusal info={syncRewrite} testId="git-sync-history-rewritten" />
+            )
+          : syncSchemaNewer !== undefined
+          ? (
+              <SchemaRemoteNewerRefusal info={syncSchemaNewer} testId="git-sync-schema-newer" />
             )
           : (
               <div className="mb-3" data-testid="git-sync-error">
