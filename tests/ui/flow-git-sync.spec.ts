@@ -653,3 +653,66 @@ test("GIT-23: a many-task sync summarises with counts + expand, and the list ref
 
   expect(errors).toEqual([]);
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// GIT-25 · Enabling git sync when a `loctt` branch already exists from a
+// previous setup. Enable must state the branch was found, show its head,
+// and ask adopt-or-stop rather than silently adopting. Adopting sets
+// last_synced_commit to the branch head and reports whether local agrees.
+//
+// Precondition: a real LocTT-written `loctt` branch left behind from an
+// earlier enable+publish, with git mode then turned off — the "previous
+// setup" the case describes.
+// ─────────────────────────────────────────────────────────────────────
+
+test("GIT-25: an existing loctt branch is surfaced with its head and adopted only on confirm, reporting agreement", async ({
+  page,
+  gitTracker,
+}) => {
+  // @verifies GIT-25
+  const errors = guardPageErrors(page);
+
+  // A previous setup: enable, publish (creates the loctt branch), then
+  // turn git mode off — the branch stays behind.
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.run(["git", "publish"]);
+  const branchHead = await gitTracker.bareCommit("loctt");
+  expect(branchHead).toMatch(/^[0-9a-f]{40}$/);
+  await gitTracker.run(["git", "disable"]);
+
+  await gotoSync(page, gitTracker.baseURL);
+  await expect(page.getByTestId("git-disabled")).toBeVisible();
+
+  // Enable, then confirm the disclosure — this is where enable runs and
+  // discovers the existing branch.
+  await page.getByTestId("git-enable").click();
+  await page.getByTestId("git-enable-confirm-button").click();
+
+  // It does NOT silently adopt: the adopt-or-stop decision appears, names
+  // the branch, and shows its head before adopting.
+  const adopt = page.getByTestId("git-adopt-branch");
+  await expect(adopt).toBeVisible();
+  await expect(adopt).toContainText("loctt");
+  await expect(adopt).toContainText("previous setup");
+  await expect(page.getByTestId("git-adopt-head")).toContainText(branchHead!.slice(0, 12));
+
+  // Nothing was written yet — the panel is still not enabled.
+  await expect(page.getByTestId("git-enabled")).toBeHidden();
+
+  // Adopt: the panel flips to enabled and last_synced_commit is set to the
+  // branch head (the legitimate adopt write). Local was published from this
+  // same state and unchanged since, so it agrees — no sync needed.
+  await page.getByTestId("git-adopt-confirm-button").click();
+  await expect(page.getByTestId("git-enabled")).toBeVisible();
+  expect(await lastSyncedCommit(gitTracker.root)).toBe(branchHead);
+
+  // Bullet 3: adopting reports whether local agrees with the branch, so the
+  // user is not left guessing whether a sync is needed. Local was published
+  // from this same state, so it agrees.
+  const report = page.getByTestId("git-adopt-report");
+  await expect(report).toBeVisible();
+  await expect(report).toHaveAttribute("data-in-agreement", "true");
+  await expect(report).toContainText("no sync needed");
+
+  expect(errors).toEqual([]);
+});

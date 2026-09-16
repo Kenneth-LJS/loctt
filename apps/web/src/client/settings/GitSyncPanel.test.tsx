@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiError } from "../api/client.ts";
 import type { GitRemoteFailure } from "../api/hooks/useGit.ts";
-import { historyRewritten, publishFailureLine, schemaRemoteNewer, worktreeMissing } from "./GitSyncPanel.tsx";
+import { branchAdoptNeeded, historyRewritten, publishFailureLine, schemaRemoteNewer, worktreeMissing } from "./GitSyncPanel.tsx";
 
 /**
  * @verifies GIT-29
@@ -186,5 +186,45 @@ describe("worktreeMissing detector (GIT-36)", () => {
     expect(worktreeMissing(undefined)).toBeUndefined();
     // The code but no payload — no crash, no payload.
     expect(worktreeMissing(apiError("git_worktree_missing"))).toBeUndefined();
+  });
+});
+
+/**
+ * @verifies GIT-25
+ *
+ * Enabling git sync when a `loctt` branch already exists from a previous
+ * setup must not silently adopt it. The server refuses with a
+ * `branch_adopt_needed` envelope carrying the branch + head, and the panel
+ * routes that to its adopt-or-stop decision (not the generic retryable
+ * ErrorState, whose only action would repeat the same refusal).
+ * `branchAdoptNeeded` is the detector the render branches on: it recognises
+ * exactly that code + payload and rejects everything else. Tested directly
+ * so the branch is deterministic; the end-to-end adopt flow is in
+ * flow-git-sync.spec.ts and the core behaviour in git-mode.test.ts.
+ */
+describe("branchAdoptNeeded detector (GIT-25)", () => {
+  it("returns the typed payload for a branch_adopt_needed envelope", () => {
+    const info = branchAdoptNeeded(apiError("branch_adopt_needed", {
+      branch_adopt_needed: { branch: "loctt", branch_head: "abcdef1234567890" },
+    }));
+    expect(info).toBeDefined();
+    expect(info?.branch).toBe("loctt");
+    // The head must be carried so the panel can show it before adopting.
+    expect(info?.branch_head).toBe("abcdef1234567890");
+  });
+
+  it("returns undefined for any other code (so it uses ErrorState)", () => {
+    // A generic git failure must NOT be dressed up as the adopt decision —
+    // it is a real error and belongs in ErrorState.
+    expect(branchAdoptNeeded(apiError("git_failed"))).toBeUndefined();
+    expect(branchAdoptNeeded(apiError("conflict"))).toBeUndefined();
+    expect(branchAdoptNeeded(apiError("history_rewritten"))).toBeUndefined();
+  });
+
+  it("returns undefined for a non-ApiError or an envelope-less error", () => {
+    expect(branchAdoptNeeded(new Error("plain"))).toBeUndefined();
+    expect(branchAdoptNeeded(undefined)).toBeUndefined();
+    // The code but no payload — no crash, no payload.
+    expect(branchAdoptNeeded(apiError("branch_adopt_needed"))).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@ import {
   disableGit,
   enableGit,
   getGitStatus,
+  GitBranchAdoptNeededError,
   GitHistoryRewrittenError,
   GitReconcileNeededError,
   GitRemoteSchemaNewerError,
@@ -29,8 +30,9 @@ import { EXIT } from "../runtime/errors.js";
  * when both sides diverged; this surface doesn't expose a separate
  * reconcile command (see docs/user/common/git-sync.md).
  */
-// `--dry-run` runs pre-flight and stops (V4).
-const ACCEPTED_FLAGS: readonly string[] = ["--dry-run"];
+// `--dry-run` runs pre-flight and stops (V4). `--adopt` confirms adopting
+// a pre-existing LocTT-written branch on enable (GIT-25).
+const ACCEPTED_FLAGS: readonly string[] = ["--dry-run", "--adopt"];
 
 export async function run(args: string[], root: string): Promise<void> {
   // Accepts no flags. Without this an unknown one was dropped and the
@@ -41,8 +43,39 @@ export async function run(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   switch (sub) {
     case "enable": {
-      const result = await enableGit(locttDir, root);
+      // GIT-25: `--adopt` confirms adopting a pre-existing LocTT-written
+      // branch. Without it, enable throws GitBranchAdoptNeededError so the
+      // non-interactive CLI reports the found branch + head and exits
+      // non-zero rather than silently adopting — mirroring GIT-C7's
+      // foreign-content refusal shape, but recoverable by re-running
+      // with --adopt.
+      const adopt = args.includes("--adopt");
+      let result;
+      try {
+        result = await enableGit(locttDir, root, undefined, { adopt });
+      } catch (err) {
+        if (err instanceof GitBranchAdoptNeededError) {
+          console.error(err.message);
+          process.exitCode = EXIT.RUNTIME;
+          break;
+        }
+        throw err;
+      }
       console.log("Git-backed mode enabled");
+      // GIT-25: report the adopt outcome — the branch head became the sync
+      // baseline, and whether local already agrees so the user knows if a
+      // sync is needed.
+      if (result.adopted !== undefined) {
+        console.log(
+          `Adopted existing branch ${result.adopted.branch} `
+          + `(head ${result.adopted.branchHead.slice(0, 8)}) as the sync baseline.`,
+        );
+        if (result.adopted.inAgreement === true) {
+          console.log("Local state agrees with the branch — no sync needed.");
+        } else if (result.adopted.inAgreement === false) {
+          console.log("Local state differs from the branch — run 'loctt git sync' to reconcile.");
+        }
+      }
       // GIT-22: warn — do not block. The enable already succeeded; the
       // advisory names the filesystem class on stderr (a diagnostic, not
       // the command's output) so a scripted enable still sees success.

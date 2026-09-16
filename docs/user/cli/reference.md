@@ -1104,13 +1104,24 @@ loctt ui [--port <n>] [--no-open]
 Optional git-backed mode. See [git-sync.md](../common/git-sync.md).
 
 ```
-loctt git enable
+loctt git enable [--adopt]
 loctt git disable
 loctt git status
 loctt git publish
 loctt git sync
 loctt git reconcile <status|apply|abandon>
 ```
+
+**Enabling on a pre-existing branch (GIT-25).** If the configured branch
+(`loctt` by default) already exists from a previous setup and was written by
+LocTT, `loctt git enable` does **not** silently adopt it. It reports the
+branch and its head commit and exits non-zero, so you decide rather than
+have the baseline chosen for you. Re-run with `--adopt` to adopt it: this
+sets `last_synced_commit` to the branch head and reports whether your local
+state already agrees with the branch (so you know whether a `sync` is
+needed). A branch holding content LocTT did not write is a different case —
+enable refuses it outright, naming the files in the way and pointing at
+`loctt config set git.branch <name>`; `--adopt` does not override that.
 
 When `publish` or `sync` finds the same task fields changed on both sides
 since the last sync, it does not pick a winner: it opens a reconciliation

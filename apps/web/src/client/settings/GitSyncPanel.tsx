@@ -1,5 +1,5 @@
 import type { ErrorResponse } from "@loctt/contracts";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
@@ -168,6 +168,22 @@ export function worktreeMissing(error: unknown):
   if (!(error instanceof ApiError)) return undefined;
   if (error.code !== "git_worktree_missing") return undefined;
   return error.envelope?.worktree_missing;
+}
+
+/**
+ * The `branch_adopt_needed` payload (GIT-25), read off the error envelope.
+ * Present only when enable found a pre-existing LocTT-written branch and
+ * adoption was not confirmed; `undefined` for every other error, so the
+ * caller falls back to the generic `ErrorState`. Carries the branch and
+ * its head so the panel states what was found and shows the head before
+ * offering adopt-or-stop, without a second fetch.
+ */
+export function branchAdoptNeeded(error: unknown):
+  | NonNullable<ErrorResponse["branch_adopt_needed"]>
+  | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  if (error.code !== "branch_adopt_needed") return undefined;
+  return error.envelope?.branch_adopt_needed;
 }
 
 /**
@@ -357,9 +373,34 @@ function Row({ label, children, testId }: {
  * `git init`; no remote (GIT-27) still allows a local-only enable, so
  * it warns rather than blocks and says the panel will label it.
  */
-function DisabledState({ status }: { readonly status: GitStatus }) {
+function DisabledState({ status, onAdopted }: {
+  readonly status: GitStatus;
+  /**
+   * GIT-25: called once with the adopt outcome when enable adopted a
+   * pre-existing branch, so the parent can report agreement after this
+   * component unmounts (the panel flips to enabled on the status refetch).
+   */
+  readonly onAdopted: (report: { branch: string; inAgreement: boolean | null }) => void;
+}) {
   const enable = useGitEnable();
   const [confirming, setConfirming] = useState(false);
+  // GIT-25: present when enable refused because a pre-existing LocTT-written
+  // branch was found and adoption was not confirmed. Drives the
+  // adopt-or-stop control below instead of the generic error state.
+  const adoptInfo = branchAdoptNeeded(enable.error);
+  // GIT-25: when enable succeeds with an adopt outcome, hand it up so the
+  // agreement report survives this component unmounting. Guarded to fire
+  // once per outcome.
+  const reported = useRef(false);
+  useEffect(() => {
+    if (enable.isSuccess && enable.data.adopted !== undefined && !reported.current) {
+      reported.current = true;
+      onAdopted({
+        branch: enable.data.adopted.branch,
+        inAgreement: enable.data.adopted.inAgreement,
+      });
+    }
+  }, [enable.isSuccess, enable.data, onAdopted]);
 
   if (!status.isGitRepo) {
     return (
@@ -474,28 +515,84 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
                   gitignored — they are never published.
                 </li>
               </ul>
-              {enable.isError && (
-                <div className="mb-2">
-                  <ErrorState error={enable.error} context="enabling git sync" />
-                </div>
-              )}
-              <Button
-                type="button"
-                variant="primary"
-                testId="git-enable-confirm-button"
-                disabled={enable.isPending}
-                onClick={() => { enable.mutate(); }}
-              >
-                {enable.isPending ? "Enabling…" : "Enable git sync"}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                className="ml-2"
-                onClick={() => { setConfirming(false); }}
-              >
-                Cancel
-              </Button>
+              {/*
+                GIT-25: a pre-existing LocTT-written branch is not an
+                ordinary enable error — it is a decision. Render the
+                found-branch + head and an adopt-or-stop control instead
+                of the generic ErrorState, which would only show a message
+                and a Retry that repeats the same refusal.
+              */}
+              {adoptInfo !== undefined
+                ? (
+                    <div
+                      role="alert"
+                      data-testid="git-adopt-branch"
+                      data-git-decision="adopt-branch"
+                      className="mb-2 rounded-md border border-warn-fg/40 bg-warn-fg/5 p-3"
+                    >
+                      <p className="mb-2 text-[0.9286rem] text-text-primary">
+                        An existing{" "}
+                        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+                          {adoptInfo.branch}
+                        </code>{" "}
+                        branch was found from a previous setup, at{" "}
+                        <code
+                          data-testid="git-adopt-head"
+                          className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] select-all"
+                        >
+                          {adoptInfo.branch_head.slice(0, 12)}
+                        </code>
+                        . LocTT can adopt it as the sync baseline, or you can stop
+                        and choose a different branch first. Adopting sets the
+                        last-synced commit to this head and does not overwrite the
+                        branch.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        testId="git-adopt-confirm-button"
+                        disabled={enable.isPending}
+                        onClick={() => { enable.mutate({ adopt: true }); }}
+                      >
+                        {enable.isPending ? "Adopting…" : "Adopt existing branch"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="ml-2"
+                        testId="git-adopt-stop-button"
+                        onClick={() => { enable.reset(); setConfirming(false); }}
+                      >
+                        Stop
+                      </Button>
+                    </div>
+                  )
+                : (
+                    <>
+                      {enable.isError && (
+                        <div className="mb-2">
+                          <ErrorState error={enable.error} context="enabling git sync" />
+                        </div>
+                      )}
+                      <Button
+                        type="button"
+                        variant="primary"
+                        testId="git-enable-confirm-button"
+                        disabled={enable.isPending}
+                        onClick={() => { enable.mutate(); }}
+                      >
+                        {enable.isPending ? "Enabling…" : "Enable git sync"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="ml-2"
+                        onClick={() => { setConfirming(false); }}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  )}
             </div>
           )
         : (
@@ -1031,6 +1128,13 @@ function EnabledState({ status, checkedAt, onRefresh }: {
 
 export function GitSyncPanel() {
   const status = useGitStatus();
+  // GIT-25: the agreement report from a just-completed adopt. Lifted here
+  // so it survives the panel flipping from disabled to enabled once status
+  // refetches — the user must see whether a sync is needed after adopting,
+  // and that outlives the DisabledState that triggered it.
+  const [adoptReport, setAdoptReport] = useState<
+    { readonly branch: string; readonly inAgreement: boolean | null } | undefined
+  >(undefined);
 
   return (
     <div className="p-8" data-testid="git-panel">
@@ -1077,6 +1181,31 @@ export function GitSyncPanel() {
         </div>
       )}
 
+      {/*
+        GIT-25: after adopting an existing branch, report whether local
+        agrees with it so the user knows if a sync is needed. Rendered
+        above the enabled/disabled body so it persists across the flip.
+      */}
+      {adoptReport !== undefined && (
+        <div
+          role="status"
+          data-testid="git-adopt-report"
+          data-in-agreement={adoptReport.inAgreement === null ? "unknown" : String(adoptReport.inAgreement)}
+          className="mb-3 rounded-md border border-border-subtle bg-bg-muted p-3 text-[0.9286rem] text-text-secondary"
+        >
+          Adopted the existing{" "}
+          <code className="rounded bg-bg-canvas px-1 py-0.5 font-mono text-[0.8571rem]">
+            {adoptReport.branch}
+          </code>{" "}
+          branch as the sync baseline.{" "}
+          {adoptReport.inAgreement === true
+            ? "Local state agrees with it — no sync needed."
+            : adoptReport.inAgreement === false
+              ? "Local state differs from it — run Sync to reconcile."
+              : "Whether local state agrees could not be determined."}
+        </div>
+      )}
+
       {status.data !== undefined && status.data.unreadable === undefined && (
         status.data.enabled
           ? (
@@ -1086,7 +1215,12 @@ export function GitSyncPanel() {
                 onRefresh={() => { void status.refetch(); }}
               />
             )
-          : <DisabledState status={status.data} />
+          : (
+              <DisabledState
+                status={status.data}
+                onAdopted={(report) => { setAdoptReport(report); }}
+              />
+            )
       )}
     </div>
   );

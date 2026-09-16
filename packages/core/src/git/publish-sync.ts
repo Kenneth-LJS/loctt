@@ -376,6 +376,52 @@ export class GitWorktreeMissingError extends GitSyncError {
 }
 
 /**
+ * Raised when `enableGit` finds a `loctt` branch that already exists and
+ * *was written by LocTT* (its top-level entries are LocTT-shaped — not
+ * the foreign-content case, which stays a hard refusal), and the caller
+ * did not pass an explicit adopt confirmation (GIT-25).
+ *
+ * A pre-existing LocTT branch is safe to adopt, but adopting it is still
+ * a decision the user should make knowingly rather than have happen
+ * silently: enable used to adopt it without a word, so the user could
+ * not tell whether their new local state or the old branch's state was
+ * about to become the baseline. So enable *states* the branch was found,
+ * *shows its head commit*, and *asks* adopt-or-stop — mirroring the
+ * foreign-content refusal's up-front shape (GIT-C7), except this one is
+ * recoverable by re-running with adopt confirmed.
+ *
+ * Non-interactive surfaces (CLI/MCP) cannot prompt, so this is the
+ * "stop and report" half: enable without the adopt flag/param throws
+ * this, names the branch + head, and writes NOTHING. Enable *with* the
+ * adopt confirmation takes the other path — it adopts, setting
+ * `last_synced_commit` to the branch head (the one legitimate adopt
+ * write) and reporting whether local already agrees with the branch.
+ */
+export class GitBranchAdoptNeededError extends GitSyncError {
+  /** The existing LocTT-written branch that would be adopted. */
+  readonly branch: string;
+  /** Its head commit, so the surface can show it before adopting. */
+  readonly branchHead: string;
+  constructor(opts: { branch: string; branchHead: string }) {
+    super(
+      `branch '${opts.branch}' already exists from a previous setup and was `
+      + `written by LocTT (head ${opts.branchHead.slice(0, 8)}). Enabling git `
+      + `sync can adopt it, but adopting is a choice — LocTT will not do it `
+      + `silently, because it decides whether that branch's state or your `
+      + `current local state becomes the sync baseline.\n\n`
+      + `Nothing was written. Re-run enable with adopt confirmed to adopt the `
+      + `existing branch (this sets last_synced_commit to ${opts.branchHead.slice(0, 8)} `
+      + `and reports whether your local state already agrees with it), or `
+      + `choose a different branch with 'loctt config set git.branch <name>' `
+      + `before enabling.`,
+    );
+    this.name = "GitBranchAdoptNeededError";
+    this.branch = opts.branch;
+    this.branchHead = opts.branchHead;
+  }
+}
+
+/**
  * Whether a `git worktree add` failure is the "registered but the
  * directory is gone" family GIT-36 names, as opposed to any other git
  * fault (a bad ref, a full disk). git phrases this several ways depending

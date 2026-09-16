@@ -13,6 +13,7 @@ import {
   disableGit,
   enableGit,
   getGitStatus,
+  GitBranchAdoptNeededError,
   GitHistoryRewrittenError,
   GitReconcileNeededError,
   GitRemoteSchemaNewerError,
@@ -22,6 +23,7 @@ import {
   publish,
   sync,
 } from "@loctt/core";
+import { z } from "zod";
 
 import { errorResult, text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -29,17 +31,46 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "enable_git",
-    description: "Enables git-backed mode for this tracker: records the configuration that publish and sync use. The branch itself is created on the first publish, not here. Refuses if the configured branch already exists and holds content LocTT did not write. Only call when the user has explicitly asked to share tasks across machines or set up sync — this is one-time infrastructure setup, not a routine task operation.",
-    inputSchema: {},
-    handler: async ({ locttDir, root }) => {
-      const result = await enableGit(locttDir, root);
+    description: "Enables git-backed mode for this tracker: records the configuration that publish and sync use. The branch itself is created on the first publish, not here. Refuses if the configured branch already exists and holds content LocTT did not write. If the branch already exists AND was written by LocTT (from a previous setup), refuses too — reporting the branch head and asking the caller to decide — unless `adopt: true` is passed, which adopts it (sets last_synced_commit to the branch head and reports whether local state agrees with it). Only call when the user has explicitly asked to share tasks across machines or set up sync — this is one-time infrastructure setup, not a routine task operation.",
+    inputSchema: {
+      // GIT-25: MCP is non-interactive, so the adopt-or-stop choice is a
+      // param. Default (absent/false) means "stop and report" if a
+      // pre-existing LocTT branch is found; true means adopt it.
+      adopt: z.boolean().optional().describe("If true, adopt a pre-existing LocTT-written branch: set last_synced_commit to its head and report whether local state agrees. Without it, enable refuses and reports the found branch + head so the user can decide (GIT-25)."),
+    },
+    handler: async ({ locttDir, root }, args) => {
+      const adopt = args["adopt"] === true;
+      let result;
+      try {
+        result = await enableGit(locttDir, root, undefined, { adopt });
+      } catch (err) {
+        // GIT-25: a pre-existing LocTT-written branch, and adopt was not
+        // confirmed. Report the branch + head and the adopt-or-stop choice
+        // rather than silently adopting — the message carries both.
+        if (err instanceof GitBranchAdoptNeededError) return text(err.message);
+        throw err;
+      }
+      const lines = ["Git-backed mode enabled"];
+      // GIT-25: report the adopt outcome so the agent can tell the user
+      // whether a sync is needed.
+      if (result.adopted !== undefined) {
+        lines.push(
+          `Adopted existing branch ${result.adopted.branch} `
+          + `(head ${result.adopted.branchHead.slice(0, 8)}) as the sync baseline.`,
+        );
+        if (result.adopted.inAgreement === true) {
+          lines.push("Local state agrees with the branch — no sync needed.");
+        } else if (result.adopted.inAgreement === false) {
+          lines.push("Local state differs from the branch — run sync_from_git to reconcile.");
+        }
+      }
       // GIT-22: warn — do not block. Enable succeeded; if the tracker is
       // on a filesystem where advisory locks are unreliable, name the
       // class so the agent can tell the user before they rely on sync.
       if (result.fstypeAdvisory !== undefined) {
-        return text(`Git-backed mode enabled\n\nWarning: ${result.fstypeAdvisory.message}`);
+        lines.push("", `Warning: ${result.fstypeAdvisory.message}`);
       }
-      return text("Git-backed mode enabled");
+      return text(lines.join("\n"));
     },
   },
   {

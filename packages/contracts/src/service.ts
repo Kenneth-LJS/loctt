@@ -659,6 +659,19 @@ export interface ErrorResponse {
     readonly worktree: string;
     readonly operation: "publish" | "sync";
   };
+  /**
+   * Present on `branch_adopt_needed` (GIT-25): enable found a `loctt`
+   * branch that already exists and was written by LocTT (a previous
+   * setup), and the request did not confirm adopting it. Carries the
+   * branch and its head commit so the panel can state the branch was
+   * found and show the head before offering adopt-or-stop, without a
+   * second fetch. `data_state: not_saved` — nothing was written; the
+   * user re-enables with adopt confirmed to proceed.
+   */
+  readonly branch_adopt_needed?: {
+    readonly branch: string;
+    readonly branch_head: string;
+  };
 }
 
 /**
@@ -684,6 +697,7 @@ export type ErrorCode =
   | "schema_remote_newer"
   | "rekey_needed"
   | "git_worktree_missing"
+  | "branch_adopt_needed"
   | "io_failed"
   | "partial_failure"
   | "unknown";

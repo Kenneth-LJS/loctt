@@ -283,8 +283,29 @@ export function useGitSync(onProgress?: (p: SyncProgress) => void) {
   });
 }
 
+/**
+ * The enable outcome (GIT-25). `adopted` is present only when enable
+ * adopted a pre-existing LocTT-written branch: it names the branch, the
+ * head that became `last_synced_commit`, and whether local already agrees
+ * with it (null = could not determine), so the panel can tell the user
+ * whether a sync is needed.
+ */
+export interface GitEnableResult {
+  readonly enabled: boolean;
+  readonly adopted?: {
+    readonly branch: string;
+    readonly branchHead: string;
+    readonly inAgreement: boolean | null;
+  };
+}
+
+/**
+ * Enable, optionally confirming adoption of a pre-existing LocTT-written
+ * branch (GIT-25). Without `adopt`, the server refuses such a branch with
+ * a `branch_adopt_needed` envelope the panel reads to offer adopt-or-stop.
+ */
 export function useGitEnable() {
-  return useGitMutation<{ enabled: boolean }>("/api/git/enable");
+  return useGitMutation<GitEnableResult, { adopt?: boolean } | void>("/api/git/enable");
 }
 
 export function useGitDisable() {
