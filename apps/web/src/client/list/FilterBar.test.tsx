@@ -46,13 +46,26 @@ function routeFetch(path: string): unknown {
 }
 
 function stubFetch() {
-  vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const path = url.replace(/^https?:\/\/[^/]+/, "");
-    // The builder's live-q preview runs through the same validate surface
-    // as the text editor; a bare {} would read as invalid. The builder is
-    // fed from constrained pickers, so a valid verdict is the norm here.
-    const body = path.startsWith("/api/query/validate") ? { valid: true } : routeFetch(path);
+    let body: unknown;
+    if (path.startsWith("/api/query/validate")) {
+      // The builder's live-q preview runs through the same validate surface
+      // as the text editor; a bare {} would read as invalid. The builder is
+      // fed from constrained pickers, so a valid verdict is the norm — but
+      // a query carrying the __INVALID__ marker returns an invalid verdict
+      // so the F5 disable-Apply path can be exercised.
+      const q = (() => {
+        try { return (JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { query?: string }).query ?? ""; }
+        catch { return ""; }
+      })();
+      body = q.includes("__INVALID__")
+        ? { valid: false, kind: "syntax", message: "nope", position: 0 }
+        : { valid: true };
+    } else {
+      body = routeFetch(path);
+    }
     return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
   });
 }
@@ -274,6 +287,7 @@ describe("FilterBar", () => {
  */
 describe("FilterBar — Advanced surface (K83 step 3)", () => {
   // @verifies K83
+  // @verifies QBLD-1
   it("refuses the visual builder for a NOT query, landing in the text box with the reason", async () => {
     await mountFilterBar(`?q=${encodeURIComponent("not status = done")}`);
     fireEvent.click(screen.getByTestId("advanced-query-toggle"));
@@ -293,6 +307,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
   });
 
   // @verifies K83
+  // @verifies QBLD-1
   it("refuses the visual builder for a has_link query too", async () => {
     await mountFilterBar(`?q=${encodeURIComponent('has_link("blocks")')}`);
     fireEvent.click(screen.getByTestId("advanced-query-toggle"));
@@ -303,6 +318,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
   });
 
   // @verifies K83
+  // @verifies QBLD-1
   it("opens the visual builder for a renderable OR query, showing two leaves", async () => {
     await mountFilterBar(`?q=${encodeURIComponent("priority = high or priority = critical")}`);
     fireEvent.click(screen.getByTestId("advanced-query-toggle"));
@@ -321,8 +337,39 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
       .toBe("priority = high or priority = critical");
   });
 
+  // @verifies K83
+  // @verifies QBLD-2
+  it("switches visual→text→visual preserving the query, and disables Switch-to-visual once the text is unrepresentable", async () => {
+    await mountFilterBar(`?q=${encodeURIComponent("priority = high or priority = critical")}`);
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await screen.findByTestId("query-builder");
+
+    // Visual → text carries the query into the text box verbatim.
+    fireEvent.click(screen.getByTestId("switch-to-text"));
+    const input = await screen.findByTestId("dsl-input");
+    expect((input as HTMLTextAreaElement).value).toBe("priority = high or priority = critical");
+
+    // Text still representable → "Switch to visual" enabled → back to builder,
+    // re-parsed to the same two-leaf OR (no approximation).
+    const toVisual = screen.getByTestId("switch-to-visual");
+    expect(toVisual.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(toVisual);
+    await screen.findByTestId("query-builder");
+    expect(screen.getByTestId("query-builder-preview").textContent)
+      .toBe("priority = high or priority = critical");
+
+    // Edit the text into an UNrepresentable query (a NOT) → the control
+    // disables with a reason rather than opening a misrepresenting builder.
+    fireEvent.click(screen.getByTestId("switch-to-text"));
+    fireEvent.change(await screen.findByTestId("dsl-input"), { target: { value: "not status = done" } });
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("switch-to-visual").hasAttribute("disabled")).toBe(true));
+    expect(screen.getByTestId("switch-to-visual-reason")).toBeTruthy();
+  });
+
   // @verifies LST-40
   // @verifies K83
+  // @verifies QBLD-3
   it("applying from the builder sets q and leaves the active chip params untouched", async () => {
     const router = await mountFilterBar(
       `?status=done&q=${encodeURIComponent("title ~ foo")}`,
@@ -345,6 +392,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
 
   // @verifies LST-41
   // @verifies K83
+  // @verifies QBLD-3
   it("emptying the builder and applying clears q but keeps the chips", async () => {
     const router = await mountFilterBar(
       `?status=done&q=${encodeURIComponent("priority = high")}`,
@@ -385,6 +433,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
   });
 
   // @verifies K83
+  // @verifies QBLD-4
   it("opening the builder on a renderable q and applying unchanged leaves q semantically the same", async () => {
     const original = "status = done and priority = high";
     const router = await mountFilterBar(`?q=${encodeURIComponent(original)}`);
@@ -394,6 +443,48 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
     // No edits — the open/save round-trip must not mutate the query (K83-i).
     fireEvent.click(screen.getByTestId("qb-apply"));
     await vi.waitFor(() => expect(search(router).q).toBe(original));
+  });
+
+  // @verifies K83
+  // @verifies LST-42
+  // @verifies QBLD-4
+  it("open→apply with NO edits leaves a grammar-colliding value byte-identical (F2/F1)", async () => {
+    // The value `"true"` collides with the DSL grammar: a bare `true`
+    // reparses as a BOOLEAN. If dslAtom under-quoted (F1), opening the
+    // builder and applying with no edits would silently rewrite
+    // `status = "true"` to `status = true` — the K83-(i) no-mutation
+    // failure. With the fix the quoted form survives byte-for-byte.
+    const original = 'status = "true"';
+    const router = await mountFilterBar(`?q=${encodeURIComponent(original)}`);
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await screen.findByTestId("query-builder");
+
+    fireEvent.click(screen.getByTestId("qb-apply"));
+    await vi.waitFor(() => expect(search(router).q).toBe(original));
+  });
+
+  // @verifies K83
+  // @verifies QBLD-5
+  it("disables Apply while the live query is invalid, and applies nothing (F5)", async () => {
+    const router = await mountFilterBar();
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    // Reach the empty builder, then build a query the (stubbed) validator
+    // rejects: a free-text title value carrying the __INVALID__ marker.
+    fireEvent.click(screen.getByTestId("switch-to-visual"));
+    await screen.findByTestId("query-builder");
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+    fireEvent.change(screen.getByTestId("qb-field"), { target: { value: "title" } });
+    fireEvent.change(screen.getByTestId("qb-op"), { target: { value: "~" } });
+    fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "__INVALID__" } });
+
+    // Once validation settles invalid, Apply is disabled...
+    const apply = await screen.findByTestId("qb-apply");
+    await vi.waitFor(() => expect(apply.hasAttribute("disabled")).toBe(true));
+
+    // ...and clicking it writes nothing to the URL.
+    fireEvent.click(apply);
+    await new Promise(r => setTimeout(r, 0));
+    expect(search(router).q).toBeUndefined();
   });
 });
 

@@ -12494,8 +12494,7 @@ extended). Not committed — left in the working tree.
 ### A185 · Visual query builder — the renderable leaf subset (K83 step 1, core)
 
 **Ticket:** K83 (query-builder, step 1: core serializer + AST→tree +
-renderability predicate) · **Date:** 2026-09-16 · **Commit:**
-(uncommitted working tree)
+renderability predicate) · **Date:** 2026-09-16 · **Commit:** dacae7c
 
 **The situation.** K83 (Ken's) fixes the builder's *shape* — a tree of
 AND/OR groups over leaf comparisons, nesting allowed, NO `not` (v2), and
@@ -12531,15 +12530,28 @@ stay text-only rather than being silently flattened to a date. Excluding
 **Also decided (small refactor).** `dslAtom` — the canonical
 quote/escape rule — **moved into core** as
 `packages/core/src/query/serialize.ts`, so the web's `buildDsl.ts` and
-the new serializer share ONE atom formatter and quoting round-trips
-identically on both paths. `buildDsl.ts` now imports it and re-exports it
-(its test and any importer keep the `./buildDsl` entry point). New subpath
-exports added to `@loctt/core` for `query/builderTree.js` and
-`query/serialize.js` so the web bundle imports them WITHOUT the barrel
-(the barrel pulls `node:path`/`sharp` into the browser — the A37 /
-dslToSearch constraint). NOTE: `apps/web/src/server/server.ts:873` has its
-own private `dslAtom` copy (server side, not browser-bundle-constrained) —
-left untouched; a later parity pass could fold it in too.
+the new serializer share ONE atom formatter on both paths. `buildDsl.ts`
+now imports it and re-exports it (its test and any importer keep the
+`./buildDsl` entry point). New subpath exports added to `@loctt/core` for
+`query/builderTree.js` and `query/serialize.js` so the web bundle imports
+them WITHOUT the barrel (the barrel pulls `node:path`/`sharp` into the
+browser — the A37 / dslToSearch constraint). NOTE:
+`apps/web/src/server/server.ts:873` has its own private `dslAtom` copy
+(server side, not browser-bundle-constrained) — left untouched; a later
+parity pass could fold it in too.
+
+> **CORRECTION (2026-09-16, see A187).** This entry's original wording —
+> "quoting round-trips identically on both paths" — was WRONG, and the bug
+> lived exactly here. The `dslAtom` moved into core carried a pre-existing
+> latitude: it emitted any value matching `/^[A-Za-z0-9_.-]+$/` BARE,
+> including strings whose text collides with the DSL grammar
+> (`"true"`→BOOLEAN, `"123"`→NUMBER, `"2024-01-15"`→DATE, `"today"`→sentinel,
+> `"and"`/`"is"`→operator/keyword→invalid DSL). Such a value did NOT
+> round-trip — it silently re-typed or broke on reparse (P-11 corruption),
+> which the K83 builder's open→Apply-with-no-edits path made user-visible,
+> and which `buildDsl.ts` shared latently when saving a view with a
+> keyword/number-shaped key. A187 records the fix (quote anything that does
+> not re-tokenize to a single plain FIELD/STRING equal to itself).
 
 **Tests + red-proofs.** `builderTree.test.ts` (@verifies K83): round-trip
 table (flat AND/OR, mixed nesting `a and (b or c)`, `in`, `is empty`, `~`,
@@ -12570,8 +12582,8 @@ files, 59 new tests green, 387 core-query tests green, 20 web-list tests
 ### A186 · Visual query builder — Advanced-surface wiring (K83 step 3, web)
 
 **Ticket:** K83 (query-builder, step 3: wire `<QueryBuilder>` into
-FilterBar's Advanced surface) · **Date:** 2026-09-16 · **Commit:**
-(uncommitted working tree)
+FilterBar's Advanced surface) · **Date:** 2026-09-16 · **Commit:** 670a82b
+(step-3 UI); F3/F4/F5 fixes in the K83 follow-up working tree (see A187)
 
 **The situation.** K83 (i) requires refuse-on-unrenderable; (ii) requires
 the builder to coexist with the chip bar, editing only `q`; (iii) defers
@@ -12670,3 +12682,107 @@ unrenderable + chip coexistence, as specced. Gates: typecheck 0, lint 0
 (pre-existing warnings only), 23 FilterBar unit tests + 175 web-list unit
 tests green, 4 new + full `flow-list.spec.ts` UI green (see report). Not
 committed — left in the working tree.
+
+### A187 · Query builder correctness follow-up — dslAtom under-quoting, op narrowing, disable-on-invalid (K83 follow-up)
+
+**Ticket:** K83 follow-up (PM review of the committed builder: dacae7c
+core, 670a82b UI) · **Date:** 2026-09-16 · **Commit:** (uncommitted
+working tree — to be committed as a K83 follow-up)
+
+**The situation.** A PM review of the committed K83 builder found a
+critical, load-bearing correctness bug (F1) plus four follow-ups
+(F2–F5). All are fix-forward on committed code.
+
+**F1 (critical, P-11 "never silently corrupt" / K83-(i) no-mutation) —
+`dslAtom` under-quoted grammar-colliding strings.**
+
+*Decided.* In `packages/core/src/query/serialize.ts`, a value is emitted
+BARE only when it both matches `/^[A-Za-z0-9_.-]+$/` AND re-tokenizes to a
+single plain FIELD/STRING token equal to itself; otherwise it is quoted.
+The check reuses the tokenizer (`isBareSafe` calls `tokenize(value)`)
+rather than replicating a keyword/number/date predicate, so it can never
+drift from the grammar it must agree with.
+
+*Why.* The identifier regex alone let a STRING value whose text collides
+with the grammar pass through bare and re-parse as a DIFFERENT type
+(`"true"`→BOOLEAN, `"123"`→NUMBER, `"2024-01-15"`→DATE,
+`"today"`→sentinel, `"currentUser"`→CURRENT_USER) or break the query
+(`"and"`/`"or"`/`"not"`/`"in"`/`"is"`→operator/keyword→invalid DSL,
+throws). Opening the builder on such a query and clicking Apply with NO
+edits silently mutated or broke it — the exact K83-(i) failure. The
+latitude was PRE-EXISTING and shared by `buildDsl.ts` (saving a view with
+a keyword/number-shaped status/label key), so the fix belongs in CORE and
+closes both surfaces (which-layer rule). Benign extra quotes (e.g.
+quoting a bare `123`) are acceptable; silent corruption is not.
+
+**F3 (high) — the `text` alias field offered ops the validator rejects.**
+`validate.ts` accepts only `~` on the `text` substring alias, but the
+builder derived ops from the `text` KIND (=,!=,~,presence) with `=` as
+default. *Decided:* a per-field override map (`OPS_BY_FIELD` in
+`QueryBuilder.tsx`) narrows the `text` FIELD to `["~"]` only — while the
+`text` KIND used by title/id/key keeps the full string set.
+
+**F4 (high) — `comment_mentions` offered presence ops the validator
+rejects.** CMT-10 restricts it to =,!=,in,not in, but the builder gave it
+the `user` kind (which includes presence). The header CLAIMED this
+narrowing but `LeafRow` derived ops purely from kind. *Decided:* the same
+`OPS_BY_FIELD` override narrows `comment_mentions` to
+`["=","!=","in","not in"]`. After F3/F4 the "cannot offer a query the
+validator rejects, by construction" claim in the QueryBuilder header is
+TRUE; the header was reworded to state the two per-field narrowings
+explicitly rather than implying the kind default already covered them.
+
+**F5 (low) — Apply was enabled on an invalid live query.**
+`AdvancedQuerySurface.tsx`'s `qb-apply` now carries `disabled={invalid}`
+(and its onClick guards), where `invalid` is the settled verdict from the
+shared `useValidateQuery`. An empty builder (liveQ = "") is not "invalid"
+— it clears `q` (LST-41) — so Apply stays enabled for it.
+
+**F2 (high) — the round-trip test guarded nothing.** The existing
+"applying unchanged leaves q the same" test used only grammar-safe values,
+so it stayed green with F1 present. Added a dedicated UI round-trip case
+(jsdom + Playwright) on a grammar-colliding value (`status = "true"`),
+open→Apply-with-no-edits, asserting the URL `q` byte-identical.
+
+**Tests + red-proofs (each shown to fail).**
+- F1: `builderTree.test.ts` — a "grammar-colliding string values stay
+  STRINGs" table (`"true"`,`"false"`,`"today"`,`"currentUser"`,`"123"`,
+  `"2024-01-15"`,`"and"`,`"or"`,`"not"`,`"in"`,`"is"`, and a list
+  `foo in ("true","123")`) asserting parse∘serialize∘parse ≡ parse AND the
+  value stays `{type:"string"}`. Red-proof: revert `isBareSafe` to the bare
+  regex → 12 rows red.
+- F2: `FilterBar.test.tsx` + `flow-list.spec.ts` open→apply on
+  `status = "true"`. Red-proof: revert dslAtom (rebuild core) → mutates to
+  `status = true`, red.
+- F3/F4: `QueryBuilder.test.tsx` op-picker assertions (`text`→`["~"]`,
+  `comment_mentions`→`["=","!=","in","not in"]`). Red-proof: revert
+  `opsFor` to `OPS_BY_KIND[kind]` → both red.
+- F5: `FilterBar.test.tsx` — an `__INVALID__` live query disables Apply and
+  applies nothing. Red-proof: drop `disabled`/guard → red.
+All restored to green.
+
+**Docs + cases (STEP 4).** Added dedicated builder cases QBLD-1..QBLD-5 to
+`docs/dev/ui-test-cases/flow-list.md` (refuse-to-open per unrenderable
+shape; visual↔text switch preserving the query; chips+builder compose +
+empty-clears-q; open→apply no-mutation incl. the grammar-collision class,
+complementing LST-42; operator narrowing + disable-on-invalid) and tagged
+the tests `@verifies` them. Regenerated `case-index.json` (1047 cases;
+`cases:check` green). Added a user-facing "Visual query builder" section
+to the CLI/query docs stating the A185 renderable subset, that complex
+queries (NOT/has_link/link_count/date-functions/unparseable) fall back to
+text, and that the builder is a UI-only affordance (CLI/MCP have no
+builder — a legitimate surface-specific control, not parity drift).
+
+**To revert.** Restore `dslAtom` to the bare-regex form and delete
+`isBareSafe` + the `tokenize` import in `serialize.ts`; delete
+`OPS_BY_FIELD`/`opsFor` in `QueryBuilder.tsx` and restore the three
+`OPS_BY_KIND[...]` call sites; drop `disabled`/guard on `qb-apply`; remove
+the QBLD cases + their tags and regenerate the index. No on-disk format
+change, so no migration.
+
+**Built (agent-level).** F1 (core, fixes both surfaces) + F2/F3/F4/F5 +
+the QBLD cases and user docs. Gates: typecheck 0, lint 0 (pre-existing
+warnings only); core builderTree/buildDsl/dslToSearch tests green;
+QueryBuilder/FilterBar/AdvancedQueryEditor units green; full
+`flow-list.spec.ts` incl. the SHL a11y bits (see report). Not committed —
+left in the working tree for the coordinator to commit.

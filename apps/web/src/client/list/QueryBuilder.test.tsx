@@ -177,6 +177,39 @@ describe("QueryBuilder", () => {
     expect(optionValues(nth("qb-op", 0))).toContain("<");
   });
 
+  // @verifies QBLD-5
+  it("narrows the `text` alias field to ONLY ~ (F3 — the validator rejects everything else)", () => {
+    renderBuilder();
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+
+    // The `text` alias (title + body substring) accepts only `~` in the
+    // validator — so the builder offers only `~`, never =/!=/is empty,
+    // which it would otherwise inherit from the `text` KIND.
+    fireEvent.change(nth("qb-field", 0), { target: { value: "text" } });
+    expect(optionValues(nth("qb-op", 0))).toEqual(["~"]);
+
+    // The sibling `title` field (same KIND, no per-field override) keeps
+    // the full string set — proof the narrowing is field-specific, not a
+    // regression of the whole `text` kind.
+    fireEvent.change(nth("qb-field", 0), { target: { value: "title" } });
+    expect(optionValues(nth("qb-op", 0))).toContain("=");
+    expect(optionValues(nth("qb-op", 0))).toContain("is empty");
+  });
+
+  // @verifies QBLD-5
+  it("narrows `comment_mentions` to =/!=/in/not in — no presence or ordering (F4 / CMT-10)", () => {
+    renderBuilder();
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+
+    fireEvent.change(nth("qb-field", 0), { target: { value: "comment_mentions" } });
+    const ops = optionValues(nth("qb-op", 0));
+    expect(ops).toEqual(["=", "!=", "in", "not in"]);
+    // Explicitly: the presence ops its `user` kind would offer are gone.
+    expect(ops).not.toContain("is empty");
+    expect(ops).not.toContain("is not empty");
+    expect(ops).not.toContain("<");
+  });
+
   it("builds an `in (…)` list from constrained checkboxes", () => {
     const b = renderBuilder();
     fireEvent.click(screen.getByTestId("qb-add-condition"));

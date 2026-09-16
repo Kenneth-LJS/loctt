@@ -5886,6 +5886,7 @@ test.describe("LST — toolbar / list UX polish (B4)", () => {
  */
 test.describe("K83 — visual query builder in the Advanced surface (step 3)", () => {
   // @verifies K83
+  // @verifies QBLD-1
   test("K83: a NOT query refuses the visual builder and edits as text", async ({
     page,
     tracker,
@@ -5907,6 +5908,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
   });
 
   // @verifies K83
+  // @verifies QBLD-1
   test("K83: a renderable query opens the visual builder", async ({ page, tracker }) => {
     await tracker.seed([{ title: "Alpha", fields: { priority: "high" } }]);
     await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("priority = high")}`);
@@ -5921,6 +5923,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
 
   // @verifies K83
   // @verifies LST-40
+  // @verifies QBLD-3
   test("K83/LST-40: a builder apply sets q and leaves an active chip in place", async ({
     page,
     tracker,
@@ -5949,6 +5952,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
 
   // @verifies K83
   // @verifies LST-41
+  // @verifies QBLD-3
   test("K83/LST-41: emptying the builder clears q but keeps the chip", async ({
     page,
     tracker,
@@ -5968,5 +5972,29 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
     // LST-41: q is gone from the URL, the status chip remains.
     await expect(page).not.toHaveURL(/[?&]q=/);
     await expect(page).toHaveURL(/status=in_progress/);
+  });
+
+  // @verifies K83
+  // @verifies QBLD-4
+  test("K83/QBLD-4: open→apply with no edits does not mutate a grammar-colliding value", async ({
+    page,
+    tracker,
+  }) => {
+    // `"true"` as a STRING value collides with the DSL grammar — a bare
+    // `true` reparses as a BOOLEAN. Opening the builder and applying with
+    // no edits must leave `q` byte-identical (the F1 dslAtom fix); before
+    // it, this silently rewrote `status = "true"` → `status = true`.
+    await tracker.seed([{ title: "Alpha", fields: { status: "in_progress" } }]);
+    const original = 'status = "true"';
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(original)}`);
+
+    await page.getByTestId("advanced-query-toggle").click();
+    await expect(page.getByTestId("query-builder")).toBeVisible();
+    await page.getByTestId("qb-apply").click();
+
+    // The URL's decoded q is unchanged — quotes preserved, no re-typing.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("q"))
+      .toBe(original);
   });
 });

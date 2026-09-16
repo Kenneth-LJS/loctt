@@ -3346,3 +3346,28 @@ M4.3 set) and the remaining project/user management surface (the M4.1
 set). Neither was in v1's 23-ticket scope, so neither is a defect in that
 run.
 
+
+## The server's private `dslAtom` copy shares the (now-fixed) under-quoting class
+
+`apps/web/src/server/server.ts` has its own `dslAtom`
+(`/^[A-Za-z_][A-Za-z0-9_.-]*$/` → bare, else quoted), separate from
+core's `packages/core/src/query/serialize.ts`. The F1 fix (A187) hardened
+core's copy so a grammar-colliding STRING (`"true"`, `"123"`,
+`"2024-01-15"`, `"and"`, …) is quoted instead of emitted bare and
+re-typed/broken on reparse. The server copy was NOT changed — it is out of
+K83's scope (it builds DSL from URL *facet* params, whose values are ULIDs
+and config-controlled enum keys, not free text) and its leading-letter
+regex already quotes most digit-leading collisions.
+
+**Latent, low-risk, 2026-09-16.** A facet whose value happened to be a
+bare keyword/number/date-shaped string would still under-quote here. No
+current facet feeds such a value, so it is not a live defect — but it is
+the same class core just fixed, on a copy that A185 already flagged as
+"a later parity pass could fold it in too."
+
+**What would close it:** replace the server's private `dslAtom` with an
+import of core's `dslAtom` (the browser-bundle constraint that kept them
+separate does not apply server-side), giving one tokenizer-checked
+quoter across all three producers (core builder, `buildDsl.ts`, server
+search/facet DSL). Out of scope for the K83 follow-up; recorded so it
+isn't re-discovered as new.

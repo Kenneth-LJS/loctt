@@ -537,6 +537,70 @@ Clear the text and press Enter.
 - The matched rows are those whose searchable text contains the literal
   `say "hi"`.
 
+### QBLD-1 · M1 · major · P10
+**The visual query builder refuses to open on a query it cannot
+represent, and edits it as text instead.** Open the Advanced surface on a
+`q` that is a NOT, a `has_link(...)`, a `link_count(...)` comparison, a
+date-function value, or a query that does not parse.
+
+- Each of those shapes lands in the TEXT editor, not the visual builder —
+  the builder never silently misrepresents the query (P10).
+- A one-line note states which construct forced the text fallback.
+- The "Switch to visual" control is present but disabled, with the reason
+  in its title, whenever the current text is not representable.
+
+### QBLD-2 · M1 · major · P10
+**Switching between visual and text preserves the query.** With a
+representable query open in the visual builder, switch to text and back.
+
+- The text editor shows the query the builder currently describes.
+- Switching back to visual re-parses the exact text — no approximation,
+  no dropped predicate.
+- A query that becomes unrepresentable after a text edit disables the
+  "Switch to visual" control rather than opening a builder that would
+  misrepresent it.
+
+### QBLD-3 · M1 · major · P2 P10
+**The builder edits only the query; chips coexist with it.** With a facet
+chip active (e.g. `status=done`), open the builder, edit, and apply.
+
+- Applying writes only the `q` param; the facet chip params are left
+  untouched, so `q` and the chips compose as intersection in the URL
+  (as LST-40 requires).
+- Emptying the builder and applying removes `q` from the URL but keeps
+  the chips (as LST-41 requires).
+- The builder is a UI-only affordance: the CLI and MCP have no builder
+  and are unaffected — this is a legitimate surface-specific control, not
+  parity drift.
+
+### QBLD-4 · M1 · major · P10
+**Opening the builder on a representable query and applying it unchanged
+does not mutate the query — including values whose text collides with the
+DSL grammar.** Open the builder on a saved query whose value is a
+grammar-shaped bare token — a keyword (`status = "true"`, `label =
+"today"`), a number (`code = "123"`), or a date (`tag = "2024-01-15"`) —
+and click Apply with no edits.
+
+- The applied `q` is byte-identical to the original.
+- The value stays a STRING of that exact text — it is NOT silently
+  re-typed to a boolean/number/date/keyword, and a keyword-shaped value
+  (`title ~ "and"`) does not break the query — never silently corrupting
+  what the user wrote. This extends LST-42's round-trip fidelity to the
+  keyword/number/date-collision class specifically.
+
+### QBLD-5 · M1 · minor · P10
+**The builder cannot offer an operator the validator would reject.** For
+each field, the operator picker lists only operators the query validator
+accepts on that field.
+
+- The `text` substring alias offers only `~` (never `=`, `!=`, or a
+  presence test), while ordinary text fields (title/id/key) keep the full
+  string operator set.
+- `comment_mentions` offers only `=`, `!=`, `in`, `not in` — no ordering,
+  substring, or presence operators.
+- An invalid in-progress query (e.g. a free-text value the validator
+  rejects) disables Apply, so an invalid query cannot be applied.
+
 ### LST-43 · M1 · minor · P9
 **A query matching every task still paginates.** Run a query true for
 all 5,000 tasks.

@@ -27,19 +27,26 @@ import { useMemo } from "react";
  * builder can NEVER offer a value `validateQuery` would reject: its
  * pickers are populated from the identical config the validator reads.
  *
- * ## Op-by-field-kind: FILTERED (agent decision, see A186 note below)
+ * ## Op-by-field-kind, then per-field: FILTERED (agent decision A186/A187)
  *
  * The op picker is constrained to the renderable ops that make SENSE for
  * the field's kind — enum fields do not offer `~` (substring over an
- * enum key is a category error the DSL rejects), text fields do not
- * offer `<`/`>` ordering, and only date/number fields offer ordering.
- * The alternative (offer every renderable op on every field) was
- * rejected: it would let the builder emit `status ~ foo`, which the DSL
- * layer then rejects — reintroducing the exact "builder offered a query
- * the validator refuses" gap the config-sourced pickers close. Filtering
- * keeps the two surfaces in agreement by construction. `comment_mentions`
- * is the one field core narrows further (=/!=/in/not in only, CMT-10),
- * mirrored here.
+ * enum key is a category error the DSL rejects), and only date/number
+ * fields offer `<`/`>` ordering. The alternative (offer every renderable
+ * op on every field) was rejected: it would let the builder emit
+ * `status ~ foo`, which the validator then rejects — reintroducing the
+ * exact "builder offered a query the validator refuses" gap the
+ * config-sourced pickers close.
+ *
+ * TWO fields the validator constrains more tightly than their kind are
+ * narrowed per-field (`OPS_BY_FIELD`), so the "cannot offer a query the
+ * validator rejects, by construction" property actually holds (F3/F4 —
+ * before that fix the kind default leaked ops the validator refused):
+ *  - the `text` alias FIELD offers ONLY `~` (validate.ts: the substring
+ *    alias rejects every other operator, presence included) — while the
+ *    `text` KIND used by title/id/key keeps the full string set;
+ *  - `comment_mentions` offers ONLY =, !=, in, not in (CMT-10) — its
+ *    kind is `user`, which would otherwise add the presence ops.
  */
 
 // ── Field catalog ────────────────────────────────────────────────────
@@ -198,16 +205,44 @@ export function buildBuilderConfig(input: {
 const OPS_BY_KIND: Record<FieldKind, readonly ComparisonOp[]> = {
   enum: ["=", "!=", "in", "not in", "is empty", "is not empty"],
   entity: ["=", "!=", "in", "not in", "is empty", "is not empty"],
-  // CMT-10: comment_mentions is flat set membership — no ordering,
-  // substring, or presence tests. `user` covers assignee/reporter too,
-  // which are scalar entity refs; equality/membership/presence fit them,
-  // and we deliberately do NOT offer `~` on a ULID.
+  // `user` covers assignee/reporter, which are scalar entity refs;
+  // equality/membership/presence fit them, and we deliberately do NOT
+  // offer `~` on a ULID. `comment_mentions` shares this kind but is
+  // narrowed further by OPS_BY_FIELD below (CMT-10).
   user: ["=", "!=", "in", "not in", "is empty", "is not empty"],
+  // The `text` KIND (title/id/key + string custom fields) accepts the
+  // full string operator set. The `text` alias FIELD is narrower — see
+  // OPS_BY_FIELD (F3): the validator accepts only `~` on it.
   text: ["=", "!=", "~", "is empty", "is not empty"],
   date: ["=", "!=", "<", "<=", ">", ">=", "is empty", "is not empty"],
   number: ["=", "!=", "<", "<=", ">", ">=", "is empty", "is not empty"],
   boolean: ["=", "!="],
 };
+
+/**
+ * Field-specific operator sets that OVERRIDE the kind default, for the two
+ * fields the validator constrains more tightly than their kind — so the
+ * builder cannot offer an operator `validateQuery` would reject (the
+ * "cannot offer a query the validator rejects, by construction" property).
+ *
+ * - `text` (F3): a substring-search alias over title+body. The validator
+ *   (validate.ts, "text alias only accepts ~") rejects EVERY non-`~`
+ *   operator, presence tests included — so the builder offers only `~`.
+ *   This is the alias FIELD, not the `text` KIND (title/id/key still get
+ *   the full set).
+ * - `comment_mentions` (F4 / CMT-10): flat set membership — the validator
+ *   accepts only =, !=, in, not in (no ordering, substring, or presence).
+ *   Its kind is `user`, which would otherwise offer the presence ops.
+ */
+const OPS_BY_FIELD: Readonly<Record<string, readonly ComparisonOp[]>> = {
+  text: ["~"],
+  comment_mentions: ["=", "!=", "in", "not in"],
+};
+
+/** The operators the builder offers for a field — its override, else its kind's. */
+function opsFor(field: string, kind: FieldKind): readonly ComparisonOp[] {
+  return OPS_BY_FIELD[field] ?? OPS_BY_KIND[kind];
+}
 
 /** Human labels for the operators, for the op picker's options. */
 const OP_LABELS: Record<ComparisonOp, string> = {
@@ -387,7 +422,7 @@ function GroupNode({
 
   const addCondition = (): void => {
     if (firstField === undefined) return;
-    const op: ComparisonOp = OPS_BY_KIND[firstField.kind][0] ?? "=";
+    const op: ComparisonOp = opsFor(firstField.field, firstField.kind)[0] ?? "=";
     const leaf: BuilderTree = {
       kind: "leaf",
       field: firstField.field,
@@ -534,7 +569,7 @@ function LeafRow({
   // back to text, so the row still renders and edits rather than crashing.
   const fieldDef = fieldByName.get(node.field);
   const kind: FieldKind = fieldDef?.kind ?? "text";
-  const ops = OPS_BY_KIND[kind];
+  const ops = opsFor(node.field, kind);
 
   const setLeaf = (next: Partial<Extract<BuilderTree, { kind: "leaf" }>>): void => {
     edit(path, n => (n.kind === "leaf" ? { ...n, ...next } : n));
@@ -543,9 +578,9 @@ function LeafRow({
   const onFieldChange = (nextField: string): void => {
     const nextDef = fieldByName.get(nextField);
     const nextKind: FieldKind = nextDef?.kind ?? "text";
-    const nextOps = OPS_BY_KIND[nextKind];
-    // Keep the current op if the new kind still offers it; otherwise
-    // fall back to the kind's first op, and reset the value to match.
+    const nextOps = opsFor(nextField, nextKind);
+    // Keep the current op if the new field still offers it; otherwise
+    // fall back to the field's first op, and reset the value to match.
     const op: ComparisonOp = nextOps.includes(node.op) ? node.op : (nextOps[0] ?? "=");
     setLeaf({
       field: nextField,

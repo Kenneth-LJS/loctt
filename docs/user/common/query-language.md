@@ -221,6 +221,41 @@ scope so evaluation stays per-task:
 | "everything transitively blocked by T-1" | needs a graph walk |
 | "epics with at least one blocked child" | needs a cross-task rollup |
 
+## Visual query builder (web UI)
+
+The web app's list view has an **Advanced** toggle that opens a visual
+query builder: a tree of AND/OR groups over field-operator-value rows,
+with pickers populated from your workflow and project data, so a built
+query can never name a status, label, or user the tracker doesn't have.
+It edits only the query — your facet chips (Status, Label, …) stay
+applied and compose with it as an intersection — and it shares the same
+validator and the same query text as the raw editor, so the two never
+disagree about what a query means.
+
+**What it can hold.** AND/OR groups (nested), and leaf comparisons using
+`=`, `!=`, `in`, `not in`, `<`, `<=`, `>`, `>=`, `~`, `is empty`, and
+`is not empty`, over plain fields and `fields.<key>` custom fields, with
+scalar / list / `today` / `currentUser()` values.
+
+**What falls back to text.** Queries the builder cannot represent open in
+the raw text editor instead, with a one-line note saying why — it never
+opens a visual view that would misrepresent your query. In this version
+that means:
+
+- `not` / negation (deferred to a later version),
+- `has_link(...)` and `link_count(...)` relationship tests,
+- date functions like `startOfWeek()` / `endOfMonth("+1w")`,
+- anything that doesn't parse.
+
+You can switch between visual and text at any time; switching preserves
+the exact query, and "Switch to visual" is disabled (with the reason)
+whenever the current text isn't something the builder can show.
+
+The builder is a **web-UI convenience only** — the CLI and MCP have no
+builder and are unaffected. Both speak the same query language directly,
+so anything the builder produces you can also write by hand as `--query`
+/ the `query` parameter.
+
 ## Saved Views
 
 Define reusable queries in `.loctt/config/queries.yaml`:
