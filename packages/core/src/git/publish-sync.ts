@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import type { ReconcilePlan, ReconcileState, SyncState, Task } from "@loctt/contracts";
+import type { ReconcilePlan, ReconcileState, RekeyPlan, SyncState, Task } from "@loctt/contracts";
 
 import { loadProjectsConfig } from "../config/projects.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
@@ -19,7 +19,7 @@ import { loadSyncState, saveSyncState } from "../state/sync.js";
 import { parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
 import { writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
-import { rekeyCollisions } from "./reconcile.js";
+import { previewRekey, rekeyCollisions } from "./reconcile.js";
 import { computeReconcilePlan } from "./reconcile-plan.js";
 import type { ResolveResult } from "./resolve-conflicts.js";
 import { applyResolution, resolveConflicts } from "./resolve-conflicts.js";
@@ -130,6 +130,35 @@ export class GitReconcileNeededError extends GitSyncError {
       + `Settings → Sync, then the ${plan.mode} completes.`,
     );
     this.name = "GitReconcileNeededError";
+    this.plan = plan;
+  }
+}
+
+/**
+ * Raised when a divergent sync/publish has merged, but two offline-created
+ * tasks now share a key and one must be renumbered (GIT-8/GIT-9, K92).
+ *
+ * Unlike the auto-merge cases, a rekey reissues a user-facing key, so K92
+ * requires the web UI to show a preview (keeper vs loser, both `created_at`,
+ * both ULIDs, the tiebreak, the planned new key) and WAIT for a confirm.
+ * This carries that {@link RekeyPlan}. It is thrown from within the completing
+ * sync, AFTER the copy/merge/reprefix writes (which are resumable via the
+ * sync sentinel, GIT-C3) but BEFORE the loser's key is reissued — so the
+ * colliding key is still on disk untouched until the user confirms.
+ *
+ * CLI and MCP never see this: they auto-apply (K92 — scriptable) by passing
+ * a confirmed rekey resolution, and report the applied old→new instead.
+ */
+export class GitRekeyNeededError extends GitSyncError {
+  readonly plan: RekeyPlan;
+  constructor(plan: RekeyPlan) {
+    const n = plan.losers.length;
+    super(
+      `rekey needed: ${n} task(s) share a key with another after the merge `
+      + `and must be renumbered. Nothing has been renumbered yet — review the `
+      + `rekey in Settings → Sync and confirm, then the operation completes.`,
+    );
+    this.name = "GitRekeyNeededError";
     this.plan = plan;
   }
 }
@@ -484,6 +513,13 @@ async function listTaskFiles(dir: string): Promise<string[]> {
   return out;
 }
 
+/** One task the merge renumbered, for the honest old→new report (GIT-9). */
+export interface AppliedRekey {
+  readonly taskId: string;
+  readonly oldKey: string;
+  readonly newKey: string;
+}
+
 /**
  * Restores the two invariants a merge can break: one prefix per
  * project, one key per task.
@@ -493,10 +529,26 @@ async function listTaskFiles(dir: string): Promise<string[]> {
  * round hands out keys from a prefix that is about to change. Both
  * passes are derived from what is on disk, so two clones running this
  * on the same merged tree reach the same answer.
+ *
+ * The key-collision REKEY (two tasks in one project sharing a key) waits
+ * for an explicit confirm (GIT-8/K92): a rekey reissues a user-facing
+ * key, so unlike the auto-merge cases it is not applied silently. When
+ * `rekeyConfirmed` is false and a collision is found, the reprefix writes
+ * (already applied and resumable) are persisted, a `rekey_pending`
+ * sentinel is written, and {@link GitRekeyNeededError} is thrown carrying
+ * the preview — the loser's key is left untouched on disk until confirm.
+ * CLI/MCP pass `rekeyConfirmed: true` (scriptable auto-apply) and read the
+ * applied old→new from the returned `rekeys`.
  */
 async function normaliseAfterMerge(
   locttDir: string,
-): Promise<{ rekeyed: number; reprefixed: number; unresolvedKeys: readonly string[] }> {
+  rekeyConfirmed: boolean,
+): Promise<{
+  rekeyed: number;
+  reprefixed: number;
+  unresolvedKeys: readonly string[];
+  rekeys: readonly AppliedRekey[];
+}> {
   // projects.yaml already carries unique prefixes — the resolver assigns
   // provisional ones before writing, because the schema rejects a
   // duplicate on read and an invalid file cannot be loaded to fix.
@@ -542,7 +594,31 @@ async function normaliseAfterMerge(
   // Any key collisions left (two tasks in the *same* project sharing a
   // key) are the rekey pass's job.
   const after = await loadAllTasks(locttDir);
+
+  // GIT-8/K92: the rekey renumbers a key, so it waits for a confirm. When
+  // it is NOT confirmed and there is at least one collision, persist the
+  // reprefix work done so far (resumable), mark the sentinel, and throw the
+  // preview. previewRekey applies nothing, so the colliding key stays on
+  // disk untouched until the confirmed re-run.
+  if (!rekeyConfirmed) {
+    const plan = previewRekey(after, state);
+    if (plan.losers.length > 0) {
+      // Persist the reprefix counters + the reprefixed task writes so the
+      // confirmed re-run does not redo them, then record that a rekey is
+      // pending. The plan itself is not stored — the confirmed pass
+      // recomputes it from disk, so it cannot drift (GIT-26).
+      await saveState(locttDir, state);
+      await rebuildKeyIndex(locttDir);
+      const sentinel = await readReconcileState(locttDir);
+      if (sentinel !== undefined) {
+        await saveReconcileState(locttDir, { ...sentinel, rekey_pending: true });
+      }
+      throw new GitRekeyNeededError(plan);
+    }
+  }
+
   const outcome = rekeyCollisions(after, state);
+  const rekeys: AppliedRekey[] = [];
   for (const r of outcome.rekeyed) {
     const t = after.find(x => x.frontmatter.id === r.taskId);
     if (!t) continue;
@@ -551,6 +627,7 @@ async function normaliseAfterMerge(
       frontmatter: { ...t.frontmatter, key: r.newKey, key_history: [...r.keyHistory] },
     });
     rekeyed += 1;
+    rekeys.push({ taskId: r.taskId, oldKey: r.oldKey, newKey: r.newKey });
   }
 
   // A skipped collision leaves two tasks sharing a key — the exact state
@@ -570,7 +647,7 @@ async function normaliseAfterMerge(
   await saveState(locttDir, state);
   await rebuildKeyIndex(locttDir);
 
-  return { rekeyed, reprefixed, unresolvedKeys: outcome.skipped.map(s => s.key) };
+  return { rekeyed, reprefixed, unresolvedKeys: outcome.skipped.map(s => s.key), rekeys };
 }
 
 /**
@@ -915,6 +992,12 @@ export interface SyncOutcome {
   readonly merged?: number;
   /** Tasks renumbered because the merge left them sharing a key. */
   readonly rekeyed?: number;
+  /**
+   * The per-task detail behind `rekeyed` — old key → new key for each task
+   * renumbered (GIT-9). Lets CLI/MCP report exactly which task took which
+   * new key rather than a bare count. Present only when non-empty.
+   */
+  readonly rekeys?: readonly AppliedRekey[];
   /**
    * Projects given a provisional prefix because the merge left two
    * claiming the same one. The user is expected to replace these with
@@ -1545,7 +1628,16 @@ export async function pullFromLocttBranch(
    * the sync keeps local for them and does not re-halt. The sentinel
    * check is skipped, because completing is precisely what clears it.
    */
-  reconcileResolution?: { readonly resolvedTaskIds: readonly string[] },
+  reconcileResolution?: {
+    readonly resolvedTaskIds: readonly string[];
+    /**
+     * GIT-8/K92: the user confirmed the rekey preview (or the caller is a
+     * scriptable CLI/MCP that auto-applies). When true, a key collision is
+     * renumbered without throwing {@link GitRekeyNeededError}. Absent/false
+     * means the rekey waits for a confirm.
+     */
+    readonly rekeyConfirmed?: boolean;
+  },
   /**
    * GIT-23: reports incremental write progress. Fires only in the write
    * phase (`applyPlan`), after all the read-only planning that can still
@@ -1759,9 +1851,28 @@ export async function pullFromLocttBranch(
     // case GIT-C2 names: two clones each creating a task offline. The
     // task exists on only one side, so it is copied rather than merged —
     // and a copied task can collide on a key just as a merged one can.
-    const normalised = resolution.merged.length > 0 || activePlan.copies.length > 0
-      ? await normaliseAfterMerge(locttDir)
-      : { rekeyed: 0, reprefixed: 0, unresolvedKeys: [] as readonly string[] };
+    // GIT-8/K92: the key-collision rekey inside normalise waits for a
+    // confirm unless this pull is a scriptable/confirmed completion. A
+    // fresh divergent sync (no reconcileResolution) is not confirmed, so a
+    // collision throws GitRekeyNeededError with the preview and leaves the
+    // colliding key on disk. The reconcile-completion caller passes
+    // rekeyConfirmed after the user confirmed the preview (or CLI/MCP pass
+    // it to auto-apply).
+    // Also normalise on a confirmed rekey even when THIS run's plan shows
+    // no copies/merges: the unconfirmed run that produced the preview
+    // already copied the colliding task to disk (leaving the sync sentinel),
+    // so on the confirmed re-run the branch task reads as identical/keep and
+    // the copy count is zero — but the pending collision is still on disk
+    // and must be applied.
+    const rekeyConfirmed = reconcileResolution?.rekeyConfirmed ?? false;
+    const normalised = resolution.merged.length > 0 || activePlan.copies.length > 0 || rekeyConfirmed
+      ? await normaliseAfterMerge(locttDir, rekeyConfirmed)
+      : {
+          rekeyed: 0,
+          reprefixed: 0,
+          unresolvedKeys: [] as readonly string[],
+          rekeys: [] as readonly AppliedRekey[],
+        };
 
     // The key index maps key -> task id and is local, so it is never
     // synced. Any sync that added or rewrote a task file leaves it
@@ -1789,12 +1900,17 @@ export async function pullFromLocttBranch(
       updated:
         activePlan.copies.length > 0 ||
         activePlan.deletes.length > 0 ||
-        resolution.merged.length > 0,
+        resolution.merged.length > 0 ||
+        // A confirmed rekey re-run may have empty copies/merges (the copy
+        // landed on the earlier unconfirmed pass) yet still change the
+        // workspace by renumbering a key.
+        normalised.rekeys.length > 0,
       copied: activePlan.copies.length,
       deleted: activePlan.deletes.length,
       kept: activePlan.keeps.length,
       merged: resolution.merged.length,
       ...(normalised.rekeyed > 0 ? { rekeyed: normalised.rekeyed } : {}),
+      ...(normalised.rekeys.length > 0 ? { rekeys: normalised.rekeys } : {}),
       ...(normalised.reprefixed > 0 ? { reprefixed: normalised.reprefixed } : {}),
       // Surfaced, not just warned about: a caller that reports "synced"
       // while two tasks share a key is telling the user the merge
@@ -1830,6 +1946,14 @@ export async function sync(
    * and cannot stream) is unaffected.
    */
   onProgress?: SyncProgress,
+  /**
+   * GIT-8/K92: when `rekeyConfirmed` is true, a key collision is renumbered
+   * without pausing for a confirm. CLI and MCP pass this — they auto-apply
+   * and report the old→new (K92: staying scriptable). The web leaves it
+   * off, so a rekey throws {@link GitRekeyNeededError} and the panel shows
+   * the preview before confirming.
+   */
+  options?: { readonly rekeyConfirmed?: boolean },
 ): Promise<SyncOutcome & { fetched?: boolean; fetchError?: string; fetchFailure?: GitRemoteFailure }> {
   const syncState = await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
@@ -1859,7 +1983,18 @@ export async function sync(
     }
   }
 
-  const result = await pullFromLocttBranch(locttDir, root, syncState, undefined, onProgress);
+  // A rekey confirm carries no field resolutions on a plain sync (there is
+  // no reconcile phase), only the confirm flag. The reconcileResolution
+  // arg also skips the interrupted-sentinel check — which is correct here:
+  // when CLI/MCP auto-apply, the rekey-pending sentinel that a prior web
+  // preview may have left is exactly what this confirm is completing.
+  const result = await pullFromLocttBranch(
+    locttDir,
+    root,
+    syncState,
+    options?.rekeyConfirmed ? { resolvedTaskIds: [], rekeyConfirmed: true } : undefined,
+    onProgress,
+  );
   return {
     ...result,
     ...(fetched !== undefined ? { fetched } : {}),

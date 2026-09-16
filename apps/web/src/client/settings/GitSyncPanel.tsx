@@ -457,7 +457,12 @@ function EnabledState({ status, checkedAt, onRefresh }: {
   // dedicated banner (the same fragility for any future wording).
   const reconcileBlocked = reconcileInProgress || [publish.error, sync.error].some(
     e => e instanceof ApiError
-      && (e.code === "reconcile_needed" || e.code === "reconcile_in_progress"),
+      && (e.code === "reconcile_needed"
+        || e.code === "reconcile_in_progress"
+        // GIT-8/K92: a sync that stopped for a rekey confirm is the same
+        // "resolve this before proceeding" state — the panel shows the
+        // rekey preview, and publish/sync must not present as succeeded.
+        || e.code === "rekey_needed"),
   );
 
   const localDrift = status.localChanges;

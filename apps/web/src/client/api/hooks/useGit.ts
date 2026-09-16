@@ -73,6 +73,13 @@ export interface PublishResult {
   readonly pushFailure?: GitRemoteFailure;
 }
 
+/** One task renumbered to resolve a key collision (GIT-9). */
+export interface AppliedRekey {
+  readonly taskId: string;
+  readonly oldKey: string;
+  readonly newKey: string;
+}
+
 export interface SyncResult {
   readonly updated: boolean;
   readonly branch?: string;
@@ -81,6 +88,8 @@ export interface SyncResult {
   readonly kept?: number;
   readonly merged?: number;
   readonly rekeyed?: number;
+  /** Per-task old→new for each renumber (GIT-9). Present only when non-empty. */
+  readonly rekeys?: readonly AppliedRekey[];
   readonly reprefixed?: number;
   readonly unresolvedKeys?: readonly string[];
   readonly fetched?: boolean;
@@ -300,6 +309,31 @@ export interface ReconcileSentinel {
   readonly started_at: string;
   readonly decisions?: readonly ReconcileDecision[];
   readonly applied?: readonly string[];
+  readonly rekey_pending?: boolean;
+}
+/**
+ * One task the merge will renumber, paired against the keeper of its key
+ * (GIT-8/GIT-9). Mirrors core's `RekeyLoser`. `newKey` absent = the loser's
+ * project has no counter and it appears in `skipped` instead.
+ */
+export interface RekeyLoser {
+  readonly key: string;
+  readonly loserId: string;
+  readonly loserCreatedAt: string | null;
+  readonly keeperId: string;
+  readonly keeperCreatedAt: string | null;
+  readonly tiebreak: "created_at" | "ulid";
+  readonly newKey?: string;
+}
+export interface RekeySkip {
+  readonly taskId: string;
+  readonly key: string;
+  readonly reason: string;
+}
+/** The rekey preview the panel confirms (GIT-8). Mirrors core's `RekeyPlan`. */
+export interface RekeyPlan {
+  readonly losers: readonly RekeyLoser[];
+  readonly skipped: readonly RekeySkip[];
 }
 export interface ReconcileDecision {
   readonly taskId: string;
@@ -308,7 +342,12 @@ export interface ReconcileDecision {
   readonly value?: unknown;
 }
 export interface ReconcileSessionResponse {
-  readonly reconcile: { readonly state: ReconcileSentinel; readonly plan: ReconcilePlan } | null;
+  readonly reconcile: {
+    readonly state: ReconcileSentinel;
+    readonly plan: ReconcilePlan;
+    /** Present once field conflicts resolved and a rekey is pending (GIT-8). */
+    readonly rekeyPlan?: RekeyPlan;
+  } | null;
 }
 export interface ApplyReconcileResponse {
   readonly reconciled: boolean;
@@ -319,6 +358,12 @@ export interface ApplyReconcileResponse {
     readonly resolved: readonly { readonly field: string; readonly value: string }[];
   }[];
   readonly appliedTaskIds: readonly string[];
+  /** Present when the completing sync now needs a rekey confirm (GIT-8). */
+  readonly rekeyPlan?: RekeyPlan;
+}
+export interface ConfirmRekeyResponse {
+  readonly reconciled: boolean;
+  readonly syncOutcome: SyncResult;
 }
 
 /**
@@ -367,5 +412,24 @@ export function useAbandonReconcile() {
   return useMutation<{ abandoned: boolean }, Error, void>({
     mutationFn: () => apiClient.post("/api/git/reconcile/abandon", {}),
     onSettled: () => { void qc.invalidateQueries({ queryKey: ["git"] }); },
+  });
+}
+
+/**
+ * Confirms a pending rekey and completes the originating sync (GIT-8, K92).
+ * The preview was shown from the reconcile session; this applies it. On
+ * success the task list, saved-view badges, and git status all change, so
+ * invalidate the same keys `useApplyReconcile` does.
+ */
+export function useConfirmRekey() {
+  const qc = useQueryClient();
+  return useMutation<ConfirmRekeyResponse, Error, void>({
+    mutationFn: () => apiClient.post("/api/git/reconcile/confirm-rekey", {}),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["git"] });
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
+      void qc.invalidateQueries({ queryKey: ["tasks-feed"] });
+      void qc.invalidateQueries({ queryKey: ["builtin-count"] });
+    },
   });
 }

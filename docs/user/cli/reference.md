@@ -1154,6 +1154,27 @@ hundreds of tasks shows its progress rather than running silent; the
 `Synced …` summary on stdout still reports the true counts (files taken,
 merged, removed). A small sync prints no progress line.
 
+When a merge leaves two tasks in the same project sharing a key (two
+clones each created a task offline that landed on the same key), one is
+renumbered — the earlier `created_at` keeps the key, the ULID `id` breaks
+a tie, and the renumbered task's old key is kept in `key_history` so it
+still resolves. The CLI applies this automatically (it stays scriptable)
+and names each renumber, old key → new key:
+
+```
+Renumbered 1 task(s) to resolve key collisions:
+  T-2 → T-3
+```
+
+(The web UI instead shows a preview and waits for a confirm before
+renumbering.) A collision that cannot be renumbered — a task whose project
+has no key counter yet — is reported as an unresolved key and the command
+exits non-zero, rather than silently leaving two tasks sharing a key:
+
+```
+Warning: 1 key collision(s) remain unresolved: T-2. Run 'loctt doctor'.
+```
+
 When the local commit lands but the push cannot, `publish` exits non-zero
 and names the cause distinctly — the local commit is safe in every case:
 

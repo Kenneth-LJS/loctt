@@ -1,6 +1,7 @@
 import {
   abandonReconcile,
   applyReconcileDecisions,
+  confirmRekey,
   disableGit,
   enableGit,
   getGitStatus,
@@ -194,7 +195,9 @@ export async function run(args: string[], root: string): Promise<void> {
     case "sync": {
       let result;
       try {
-        result = await sync(locttDir, root, makeSyncProgressReporter());
+        // GIT-8/K92: CLI auto-applies a rekey (it must stay scriptable — no
+        // interactive confirm) and reports the old→new below.
+        result = await sync(locttDir, root, makeSyncProgressReporter(), { rekeyConfirmed: true });
       } catch (err) {
         if (err instanceof GitReconcileNeededError) {
           reportReconcileNeeded(err);
@@ -230,6 +233,18 @@ export async function run(args: string[], root: string): Promise<void> {
           + `(${result.fetchFailure.detail}). Local state is untouched; synced against the `
           + "local copy of the branch only. Retry once the remote is reachable.",
         );
+      }
+      // GIT-8/GIT-9: name each task that was renumbered to resolve a key
+      // collision, old key → new key. The rekey is key-safe (old key kept
+      // in key_history) and auto-applied on the CLI (K92); reporting it is
+      // how the user learns which task moved.
+      if (result.rekeys !== undefined && result.rekeys.length > 0) {
+        console.log(
+          `Renumbered ${String(result.rekeys.length)} task(s) to resolve key collisions:`,
+        );
+        for (const r of result.rekeys) {
+          console.log(`  ${r.oldKey} → ${r.newKey}`);
+        }
       }
       // A duplicate key makes `loctt show <key>` ambiguous, so this is
       // not a detail to leave in a warning stream the user may not read.
@@ -368,6 +383,31 @@ async function runReconcile(args: string[], locttDir: string, root: string): Pro
     const outcome = await applyReconcileDecisions(locttDir, root, decisions);
     for (const r of outcome.results) {
       console.log(r.ok ? `  ${r.taskKey}: applied` : `  ${r.taskKey}: FAILED — ${r.error ?? "unknown"}`);
+    }
+    // GIT-8/K92: the field conflicts resolved, but completing the sync
+    // found a key collision that needs a rekey. The CLI auto-applies it
+    // (scriptable) and reports old→new, rather than pausing for a confirm.
+    if (!outcome.reconciled && outcome.rekeyPlan !== undefined) {
+      const confirmed = await confirmRekey(locttDir, root);
+      const syncOut = confirmed.syncOutcome as {
+        rekeys?: readonly { oldKey: string; newKey: string }[];
+        unresolvedKeys?: readonly string[];
+      };
+      if (syncOut.rekeys !== undefined && syncOut.rekeys.length > 0) {
+        console.log(
+          `Renumbered ${String(syncOut.rekeys.length)} task(s) to resolve key collisions:`,
+        );
+        for (const r of syncOut.rekeys) console.log(`  ${r.oldKey} → ${r.newKey}`);
+      }
+      if (syncOut.unresolvedKeys !== undefined && syncOut.unresolvedKeys.length > 0) {
+        console.error(
+          `Warning: ${String(syncOut.unresolvedKeys.length)} key collision(s) remain unresolved: `
+          + `${syncOut.unresolvedKeys.join(", ")}. Run 'loctt doctor'.`,
+        );
+        process.exitCode = EXIT.RUNTIME;
+      }
+      console.log("Reconciliation complete; the operation finished.");
+      return;
     }
     if (outcome.reconciled) {
       console.log("Reconciliation complete; the operation finished.");

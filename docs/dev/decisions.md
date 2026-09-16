@@ -12948,3 +12948,86 @@ remote's value to refuse, never writes it. Not agent-revertible.
 **Not touched (K94 / task scope):** no-`--force` push guard, GIT-21's guard, reconcile/rekey/`last_synced_commit` writes, GIT-8. `.schema-version` stays `LOCAL_OWNED`/`NEVER_MIRROR` — only READ, never written. GIT-8 not built.
 
 **To revert.** Delete `GitRemoteSchemaNewerError` + `assertRemoteSchemaNotNewer` and their two call-sites + the two exports; remove the `gitErrorResponse` branch, the `error()` allowlist line, the contracts `ErrorCode`/`ErrorResponse` additions; remove the panel detector/banner + the two render-chain arms; drop the CLI/MCP catches (publish + sync); revert the two doc subsections; delete `schema-remote-newer.test.ts` + the panel detector tests; restore `publish-sync.test.ts`'s schema test to its `"999"`-succeeds form. No on-disk format change, so no migration. Reverting re-opens the invariants.md violation (a newer-schema branch applied into a build that cannot read it) — revert only if the enforcement is being replaced, not removed.
+
+### A193 · GIT-8/9/33 rekey preview + confirm — per K92 (UI confirms, CLI/MCP auto-apply+report)
+
+**Ticket:** GIT-8 + GIT-9 + GIT-33 (K92 is the binding ruling) · **Date:** 2026-09-16 · **Commit:** uncommitted (working tree).
+
+**Situation.** Key-collision rekey (two offline clones create tasks that land
+on the same key) ran SILENTLY inside the sync write — `normaliseAfterMerge`
+→ `rekeyCollisions` (`publish-sync.ts`), after `applyPlan` wrote files. The
+user never saw or confirmed which task kept the key. K92: the web UI shows a
+rekey **preview** (keeper vs loser, both `created_at`, both ULIDs, tiebreak
+reason, planned new key) and WAITS for a confirm; CLI/MCP auto-apply and
+report old→new per task, staying scriptable. This ticket adds VISIBILITY +
+a UI confirm gate — NOT new key logic. The tiebreak (earlier `created_at`
+keeps the key, ULID breaks ties) and `key_history` preservation (P-7) are
+unchanged.
+
+**Anti-drift split (the load-bearing core change).** A PURE `previewRekey(
+tasks, state): RekeyPlan` (`git/reconcile.ts`) computes keeper/loser + both
+timestamps + both ULIDs + tiebreak + planned new key and applies NOTHING (no
+state mutation). `rekeyCollisions` (the applying form) is now DERIVED from
+`previewRekey` — it walks `plan.losers`, advances the real per-project
+counter in the same order the preview simulated, and appends `key_history`.
+The two therefore cannot disagree on keeper, loser, or new key for the same
+input (like builderTree's round-trip discipline). `RekeyPlan`/`RekeyLoser`/
+`RekeySkip`/`RekeyTiebreak` are contracts types (`contracts/reconcile.ts`),
+shared by all three surfaces. Also made group iteration deterministic (sort
+keys) so two machines preview the losers in the same order.
+
+**Flow-sequencing call (implementer decision, per the brief's "justify your
+sequencing").** A divergent sync can need BOTH field-conflict reconcile AND
+rekey. Sequence: **field conflicts first, then rekey** — because rekey is a
+consequence of *completing* the merge (`normaliseAfterMerge` runs after the
+merge), and the tiebreak needs the merged task set. So the rekey confirm is
+modelled as a SECOND PHASE of the same reconcile session, not a disconnected
+modal:
+- The reconcile sentinel (`ReconcileState`) gains an optional `rekey` phase
+  carrying the pending `RekeyPlan`. When a sync/publish would rekey and no
+  confirm is on record, core writes/updates the sentinel with the rekey plan
+  and throws `GitRekeyNeededError(plan)` **before the rekey key-reissue is
+  written** — task copies/merges/reprefixes are already applied and resumable
+  via the existing sync sentinel (GIT-C3), but the loser's KEY is untouched
+  until confirm (GIT-8: "no auto-apply of a rekey"). The confirm-gate test
+  asserts the loser's key on disk is still the colliding key pre-confirm.
+- The web reconcile panel, after all field rows resolve (or immediately when
+  there are no field conflicts), shows the rekey preview as its next step and
+  a Confirm button; confirm re-invokes the completion with the rekey applied.
+- CLI/MCP pass an implicit `{ confirmed: true }` on their normal sync/publish
+  path (K92: auto-apply), so they never hit `GitRekeyNeededError`; they REPORT
+  the applied old→new per task from the new `SyncOutcome.rekeys` detail.
+
+**Why this sequencing over a pre-applyPlan gate.** Computing the preview from
+the in-memory merged set before any write would satisfy "nothing written"
+even more strictly, but the accurate collision set depends on the reprefix
+pass (two projects both minting `T-`) which rewrites keys before the rekey
+pass. Simulating reprefix in memory to keep preview==apply exact is high-risk
+in key-allocation territory (invariants.md load-bearing). Gating at the
+existing `normaliseAfterMerge` point — after reprefix writes, before the
+rekey write — keeps `previewRekey` and `rekeyCollisions` reading the SAME
+on-disk task set, so they cannot drift. GIT-8's "before anything is written"
+is scoped to the rekey (its bullets are all about the summary content, the
+confirm requirement, and the post-confirm key state; it has no
+byte-identical-task.md assertion like GIT-6). The reprefix (provisional
+prefixes) is a different operation, not K92's rekey confirm.
+
+**GIT-33 (partial rekey failure).** Reuses the existing `RekeyOutcome.skipped`
+→ `SyncOutcome.unresolvedKeys` reporting under the confirmed path: a confirmed
+rekey that cannot allocate for some losers applies the ones it can, reports
+the rest as unresolved, and does not report the rekey as complete.
+
+**Not touched.** The tiebreak rule; `key_history` preservation (P-7); the
+"never silently drop a collision" contract (`skipped` still surfaced); the
+no-`--force` guard; NEVER_MIRROR/LOCAL_OWNED; GIT-21/GIT-35 guards;
+`last_synced_commit` writes.
+
+**To revert.** Delete `previewRekey` and restore `rekeyCollisions` to its
+self-contained form; remove `RekeyPlan`/`RekeyLoser`/`RekeySkip`/
+`RekeyTiebreak` from contracts + their exports; remove `GitRekeyNeededError`
++ the `rekey` phase on `ReconcileState` + the gate in `normaliseAfterMerge` +
+the `rekeyResolution` param threading; drop `SyncOutcome.rekeys`; revert the
+panel rekey-phase UI + the CLI/MCP old→new reporting; revert the docs;
+delete the new tests. On-disk: the `rekey` sentinel field is additive and
+optional, cleared on completion — no migration. Reverting restores the
+silent-rekey behaviour (the pre-K92 state).

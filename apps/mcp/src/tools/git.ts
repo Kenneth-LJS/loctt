@@ -148,7 +148,9 @@ export const TOOLS: readonly ToolDef[] = [
     handler: async ({ locttDir, root }) => {
       let result;
       try {
-        result = await sync(locttDir, root);
+        // GIT-8/K92: MCP auto-applies a rekey (it is request/response and
+        // cannot pause for a confirm) and reports the old→new below.
+        result = await sync(locttDir, root, undefined, { rekeyConfirmed: true });
       } catch (err) {
         if (err instanceof GitReconcileNeededError) return reconcileNeededResult(err);
         // GIT-21 (K93): force-push / history rewrite — refuse and explain,
@@ -187,6 +189,24 @@ export const TOOLS: readonly ToolDef[] = [
         );
       } else {
         lines.push("Already up to date");
+      }
+      // GIT-8/GIT-9: name each task renumbered to resolve a key collision,
+      // old key → new key. Key-safe (old key kept in key_history) and
+      // auto-applied on MCP (K92); an agent needs to know which key moved.
+      if (result.rekeys !== undefined && result.rekeys.length > 0) {
+        lines.push(
+          `Renumbered ${String(result.rekeys.length)} task(s) to resolve key collisions:`,
+        );
+        for (const r of result.rekeys) lines.push(`  ${r.oldKey} → ${r.newKey}`);
+      }
+      // GIT-33: a collision the rekey could not resolve is surfaced, not
+      // swallowed — two tasks still share a key and `show <key>` is
+      // ambiguous until the user acts.
+      if (result.unresolvedKeys !== undefined && result.unresolvedKeys.length > 0) {
+        lines.push(
+          `Warning: ${String(result.unresolvedKeys.length)} key collision(s) remain `
+          + `unresolved: ${result.unresolvedKeys.join(", ")}. Run 'loctt doctor'.`,
+        );
       }
       return text(lines.join("\n"));
     },

@@ -66,6 +66,10 @@ export type {
   ConflictValue,
   ReconcileDecision,
   ReconcilePlan,
+  RekeyLoser,
+  RekeyPlan,
+  RekeySkip,
+  RekeyTiebreak,
   TaskConflictField,
 } from "./reconcile.js";
 export {
@@ -76,6 +80,10 @@ export {
   ConflictValueSchema,
   ReconcileDecisionSchema,
   ReconcilePlanSchema,
+  RekeyLoserSchema,
+  RekeyPlanSchema,
+  RekeySkipSchema,
+  RekeyTiebreakSchema,
   TaskConflictFieldSchema,
 } from "./reconcile.js";
 export type {
