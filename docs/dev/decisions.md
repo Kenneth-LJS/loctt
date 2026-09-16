@@ -12825,3 +12825,52 @@ left in the working tree for the coordinator to commit.
 **Files.** core `git/publish-sync.ts` (classifier + `PushResult.failure`/`FetchResult.failure` + `publish`/`sync` return `pushFailure`/`fetchFailure`), `git/index.ts` + top-level `index.ts` (exports); `apps/web` client `useGit.ts` (wire type), `GitSyncPanel.tsx` (`publishFailureLine`/`fetchFailureClause` + Retry/Sync-first affordances); `apps/cli/commands/git.ts`; `apps/mcp/tools/git.ts`; docs (CLI + MCP reference); cases tagged in `ui-test-cases/flow-git-sync.md` (GIT-29/30) via tests.
 
 **To revert.** Drop `pushFailure`/`fetchFailure` from the `publish`/`sync` return shapes and `PushResult`/`FetchResult`, delete `classifyRemoteFailure` + `GitRemoteFailure`, restore the two push/fetch functions to `error: auth ?? extractGitFailure(...)`, revert the four surface diffs (panel helpers + affordances, CLI/MCP branches, client type), and un-tag the GIT-29/30 tests. No on-disk format change, so no migration. The behavior returns to the pre-existing "warning string in a 200 body," which the cases consider incomplete.
+
+### K92 · GIT-8/9/33 rekey — UI confirms via preview; CLI/MCP auto-apply and report
+
+**Ken's ruling (2026-09-16).** Key-collision rekey (two offline clones that
+land on the same key) runs on *every* divergent sync, not only inside the
+reconcile panel, so a blanket confirm gate would break non-interactive
+CLI/MCP. Chosen shape:
+
+- **Web UI:** the reconcile panel shows a **rekey preview** (keeper vs loser,
+  both `created_at`, both ULIDs, the tiebreak reason, the planned new key)
+  and **waits for the user to confirm** before applying.
+- **CLI + MCP:** **auto-apply and report** exactly which tasks were rekeyed
+  (old key → new key), because the rekey is already key-safe (old key kept in
+  `key_history`, P-7) and deterministic (earlier `created_at` keeps the key,
+  ULID breaks ties). Keeping CLI/MCP scriptable is the point; a forced
+  interactive pause there is the wrong default.
+
+This is a product-shape ruling, not agent-revertible. GIT-33 (confirmed
+partial rekey failure) reuses the existing `skipped`/`unresolvedKeys`
+reporting under this shape.
+
+### K93 · GIT-21 force-push / history-rewrite — detect and REFUSE, no automated recovery
+
+**Ken's ruling (2026-09-16).** A remote force-push that no longer contains
+`last_synced_commit` is today treated as ordinary divergence, so `planSync`
+sees "no base" and can take incoming over local edits whose base is gone
+(a live data-loss hazard, A188 H-e). Chosen posture:
+
+- **Detect:** before `planSync`, when `last_synced_commit` is set, check
+  `git merge-base --is-ancestor <last_synced> <remoteHead>`. If it is not an
+  ancestor, the remote history was rewritten.
+- **Refuse:** throw a distinct error and write **nothing**. Do NOT present it
+  as an ordinary conflict, and do NOT offer an automated rebase or
+  base-reset — anything that mutates `last_synced_commit` on the user's
+  behalf can discard local work. The recovery is the user's, done explicitly
+  in git; LocTT only refuses safely and explains.
+
+Consistent with the existing no-`--force`-push guard (LocTT never originates
+a rewrite) and degrade-don't-destroy (P-11). Not agent-revertible.
+
+### K94 · GIT-35 newer-remote-schema — read remote `.schema-version`, refuse if newer, write nothing
+
+**Ken's ruling (2026-09-16).** invariants.md already holds that schema
+travels via `loctt migrate`, never via sync. Enforce it: before applying a
+sync, read the branch's `.schema-version` from the checked-out worktree; if
+it is **greater** than the local `CURRENT_SCHEMA_VERSION`, throw a distinct
+error and write nothing. The message says "upgrade LocTT," not "migrate."
+`.schema-version` stays `LOCAL_OWNED`/`NEVER_MIRROR` — this only *reads* the
+remote's value to refuse, never writes it. Not agent-revertible.
