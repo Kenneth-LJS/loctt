@@ -1,4 +1,6 @@
-export type { GitStatusResult } from "./git-mode.js";
+export type { FsProbe, FsProbeResult, SyncFsAdvisory, SyncFsClass } from "./fstype.js";
+export { classifySyncFs, defaultFsProbe, detectSyncFsAdvisory } from "./fstype.js";
+export type { EnableGitResult, GitStatusResult } from "./git-mode.js";
 export { disableGit, enableGit, getGitStatus } from "./git-mode.js";
 export type { AppliedRekey, FetchResult, GitRemoteFailure, GitRemoteFailureKind, PreflightReport, PushResult, SyncOutcome, SyncProgress } from "./publish-sync.js";
 export { classifyRemoteFailure } from "./publish-sync.js";

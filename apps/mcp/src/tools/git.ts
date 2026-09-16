@@ -31,7 +31,13 @@ export const TOOLS: readonly ToolDef[] = [
     description: "Enables git-backed mode for this tracker: records the configuration that publish and sync use. The branch itself is created on the first publish, not here. Refuses if the configured branch already exists and holds content LocTT did not write. Only call when the user has explicitly asked to share tasks across machines or set up sync — this is one-time infrastructure setup, not a routine task operation.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
-      await enableGit(locttDir, root);
+      const result = await enableGit(locttDir, root);
+      // GIT-22: warn — do not block. Enable succeeded; if the tracker is
+      // on a filesystem where advisory locks are unreliable, name the
+      // class so the agent can tell the user before they rely on sync.
+      if (result.fstypeAdvisory !== undefined) {
+        return text(`Git-backed mode enabled\n\nWarning: ${result.fstypeAdvisory.message}`);
+      }
       return text("Git-backed mode enabled");
     },
   },
@@ -46,7 +52,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "get_git_status",
-    description: "Returns structured JSON describing git-backed mode state (enabled, branch, remote, remote_configured, auto_push, auto_fetch, in_git_repo, last_synced_commit) plus drift in both directions: local_changes (files not yet published) and remote_changes (whether the branch moved since the last sync). Both drift fields are null when they could not be determined, which is not the same as zero.",
+    description: "Returns structured JSON describing git-backed mode state (enabled, branch, remote, remote_configured, auto_push, auto_fetch, in_git_repo, last_synced_commit) plus drift in both directions: local_changes (files not yet published) and remote_changes (whether the branch moved since the last sync). Both drift fields are null when they could not be determined, which is not the same as zero. Also carries fstype_advisory: non-null (with fs_class and message) when the tracker sits on a filesystem where POSIX advisory locks are unreliable (iCloud Drive, Dropbox, OneDrive, NFS, SMB), null otherwise — informational, never blocking.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
       const status = await getGitStatus(locttDir, root);
@@ -78,6 +84,12 @@ export const TOOLS: readonly ToolDef[] = [
         local_changes: status.localChanges ?? null,
         remote_changes: status.remoteChanges ?? null,
         branch_commit: status.branchCommit ?? null,
+        // GIT-22: advisory-lock hazard by filesystem class, or null when
+        // the tracker is on a normal local disk (or the class could not
+        // be determined). Never blocks — informational only.
+        fstype_advisory: status.fstypeAdvisory
+          ? { fs_class: status.fstypeAdvisory.fsClass, message: status.fstypeAdvisory.message }
+          : null,
       };
       return text(JSON.stringify(result, null, 2));
     },

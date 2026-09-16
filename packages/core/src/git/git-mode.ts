@@ -12,6 +12,7 @@ import {
 import { getLocalDir,getSyncStatePath } from "../paths/index.js";
 import { loadSyncState,saveSyncState } from "../state/sync.js";
 import { fileExists } from "../utils/fs.js";
+import { detectSyncFsAdvisory, type FsProbe, type SyncFsAdvisory } from "./fstype.js";
 import { branchExists, branchHasForeignContent, branchHeadCommit, countLocalChanges, remoteExists } from "./publish-sync.js";
 
 export interface GitStatusResult {
@@ -62,6 +63,16 @@ export interface GitStatusResult {
     readonly path: string;
     readonly reason: string;
   };
+  /**
+   * GIT-22: set when the tracker sits on a filesystem where POSIX
+   * advisory locks are unreliable (iCloud Drive, Dropbox, OneDrive, NFS,
+   * SMB). Surfaced *proactively* — before the user relies on git sync —
+   * so the class is named at enable time rather than only after a lock
+   * failure. Absent when the probe cannot determine the class: an
+   * unknown filesystem produces no warning rather than a false one. The
+   * warning never blocks — enable still proceeds.
+   */
+  readonly fstypeAdvisory?: SyncFsAdvisory;
 }
 
 function isGitRepo(root: string): boolean {
@@ -70,10 +81,32 @@ function isGitRepo(root: string): boolean {
 }
 
 /**
+ * The result of enabling Git-backed mode. Enable never fails on the
+ * filesystem-class check (GIT-22) — it warns and proceeds — so the
+ * advisory rides back on success for the surface to report.
+ */
+export interface EnableGitResult {
+  /**
+   * GIT-22: present when the tracker is on iCloud/Dropbox/OneDrive/NFS/SMB.
+   * Enable still succeeded; the caller surfaces this as an advisory.
+   */
+  readonly fstypeAdvisory?: SyncFsAdvisory;
+}
+
+/**
  * Enables Git-backed mode by creating sync.yaml in .loctt/local/.
  * Throws if not inside a Git repository.
+ *
+ * `probe` is the filesystem probe used for the GIT-22 advisory; the
+ * default reads the real mount, and tests inject a fake so only the
+ * external OS call is mocked. The advisory is computed *after* the
+ * enable succeeds and never blocks it.
  */
-export async function enableGit(locttDir: string, root: string): Promise<void> {
+export async function enableGit(
+  locttDir: string,
+  root: string,
+  probe?: FsProbe,
+): Promise<EnableGitResult> {
   if (!isGitRepo(root)) {
     throw new Error("not inside a Git repository — cannot enable Git-backed mode");
   }
@@ -126,6 +159,13 @@ export async function enableGit(locttDir: string, root: string): Promise<void> {
   };
 
   await saveSyncState(locttDir, state);
+
+  // GIT-22: warn — do not block. The advisory is best-effort and never
+  // throws (detectSyncFsAdvisory swallows a misbehaving probe), so an
+  // enable on a hazardous filesystem still succeeds and simply carries
+  // the warning back.
+  const fstypeAdvisory = detectSyncFsAdvisory(root, probe);
+  return fstypeAdvisory !== undefined ? { fstypeAdvisory } : {};
 }
 
 /**
@@ -159,9 +199,22 @@ export async function disableGit(locttDir: string): Promise<void> {
 
 /**
  * Gets the current Git-backed mode status.
+ *
+ * `probe` is the filesystem probe for the GIT-22 advisory (tests inject
+ * a fake); the default reads the real mount. The advisory is computed
+ * whenever the directory is a git repo so the disabled panel can warn
+ * *before* enabling, mirroring the no-remote advisory (GIT-27).
  */
-export async function getGitStatus(locttDir: string, root: string): Promise<GitStatusResult> {
+export async function getGitStatus(
+  locttDir: string,
+  root: string,
+  probe?: FsProbe,
+): Promise<GitStatusResult> {
   const gitRepo = isGitRepo(root);
+  // Best-effort and never-throwing (see detectSyncFsAdvisory). Only
+  // meaningful inside a repo — outside one, git sync cannot be enabled
+  // at all, so there is nothing to warn about.
+  const fstypeAdvisory = gitRepo ? detectSyncFsAdvisory(root, probe) : undefined;
 
   // Publish refuses to adopt a branch holding content LocTT did not
   // write — mirroring would delete it. Checking only there meant the
@@ -199,6 +252,9 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
       // computable. Both drift fields stay absent rather than 0 — the
       // caller must be able to tell "nothing pending" from "cannot say".
       remoteConfigured: false,
+      // GIT-22: the panel warns *before* enabling, so this is present on
+      // the disabled path too when the tracker is on a hazardous fs.
+      ...(fstypeAdvisory !== undefined ? { fstypeAdvisory } : {}),
     };
   }
 
@@ -242,6 +298,7 @@ export async function getGitStatus(locttDir: string, root: string): Promise<GitS
       ...(localChanges !== undefined ? { localChanges } : {}),
       ...(remoteChanges !== undefined ? { remoteChanges } : {}),
       ...(branchCommit !== undefined ? { branchCommit } : {}),
+      ...(fstypeAdvisory !== undefined ? { fstypeAdvisory } : {}),
     };
   } catch (err) {
     // sync.yaml exists — `fileExists` above already ruled out absence —

@@ -39,6 +39,18 @@ export interface GitStatus {
   readonly remoteChanges?: boolean;
   readonly branchCommit?: string;
   readonly unreadable?: { readonly path: string; readonly reason: string };
+  /**
+   * GIT-22: present when the tracker is on a filesystem where POSIX
+   * advisory locks are unreliable (iCloud Drive, Dropbox, OneDrive, NFS,
+   * SMB). Mirrors core's `SyncFsAdvisory`; drives the enable-time
+   * `data-git-warning="fstype"` advisory. Absent means either a local
+   * disk or a class the probe could not determine — no false warning.
+   */
+  readonly fstypeAdvisory?: {
+    readonly fsClass: string;
+    readonly label: string;
+    readonly message: string;
+  };
 }
 
 /**

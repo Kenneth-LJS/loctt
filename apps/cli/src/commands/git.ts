@@ -39,8 +39,14 @@ export async function run(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   switch (sub) {
     case "enable": {
-      await enableGit(locttDir, root);
+      const result = await enableGit(locttDir, root);
       console.log("Git-backed mode enabled");
+      // GIT-22: warn — do not block. The enable already succeeded; the
+      // advisory names the filesystem class on stderr (a diagnostic, not
+      // the command's output) so a scripted enable still sees success.
+      if (result.fstypeAdvisory !== undefined) {
+        console.error(`Warning: ${result.fstypeAdvisory.message}`);
+      }
       break;
     }
     case "disable": {
@@ -95,6 +101,11 @@ export async function run(args: string[], root: string): Promise<void> {
         console.log(
           `Remote changes: ${status.remoteChanges ? "yes — run 'loctt git sync'" : "none"}`,
         );
+      }
+      // GIT-22: the filesystem-class advisory, printed to stderr so it
+      // does not pollute the machine-readable status lines above.
+      if (status.fstypeAdvisory !== undefined) {
+        console.error(`Warning: ${status.fstypeAdvisory.message}`);
       }
       break;
     }

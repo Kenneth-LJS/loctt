@@ -335,6 +335,30 @@ function DisabledState({ status }: { readonly status: GitStatus }) {
       )}
 
       {/*
+        GIT-22: the tracker sits on a filesystem where POSIX advisory
+        locks are unreliable. Surfaced *before* enabling (not only after a
+        lock failure), naming the class, and — like the no-remote warning
+        above — it warns rather than blocks: enable still proceeds. Absent
+        `fstypeAdvisory` means a local disk or an undeterminable class, so
+        no false alarm.
+      */}
+      {status.fstypeAdvisory !== undefined && (
+        <p
+          role="alert"
+          data-testid="git-fstype-warning"
+          data-git-warning="fstype"
+          data-fs-class={status.fstypeAdvisory.fsClass}
+          className="mb-3 text-[0.9286rem] text-warn-fg"
+        >
+          This tracker is on{" "}
+          <strong>{status.fstypeAdvisory.label}</strong>, where POSIX advisory
+          locks are not reliable. Git sync can still be enabled, but a
+          key-allocation rekey during sync may fail to serialize. For reliable
+          locking, move the tracker to a local disk.
+        </p>
+      )}
+
+      {/*
         GIT-1: Enable states what it will do *before* running, and the
         gitignore guarantee is part of that statement — a user needs to
         know their theme and current-user file are not about to be
