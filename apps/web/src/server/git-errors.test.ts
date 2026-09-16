@@ -3,7 +3,15 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { enableGit, initLoctt, publish } from "@loctt/core";
+import {
+  createTask,
+  enableGit,
+  initLoctt,
+  loadProjectsConfig,
+  loadState,
+  publish,
+  saveState,
+} from "@loctt/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createWebApp } from "./server.js";
@@ -216,5 +224,95 @@ describe("web git error classification", () => {
     // 100% rather than stalling short.
     const last = progressLines.at(-1) as { progress: { applied: number; total: number } };
     expect(last.progress.applied).toBe(last.progress.total);
+  });
+
+  // @verifies GIT-8
+  // @verifies GIT-9
+  it("refuses a rekey until confirm, then applies it via confirm-rekey", { timeout: 30_000 }, async () => {
+    const { root, base } = await harness();
+    const locttDir = join(root, ".loctt");
+    const cfg = await loadProjectsConfig(locttDir);
+    const projectId = cfg.projects[0]?.id as string;
+
+    // A base task, published so the branch has a counter.
+    const s1 = await loadState(locttDir);
+    await createTask({ locttDir, state: s1, options: { project: projectId, title: "Base" } });
+    await saveState(locttDir, s1);
+    await publish(locttDir, root);
+
+    // A local offline task, pinned to a LATER created_at so it is the loser.
+    const s2 = await loadState(locttDir);
+    const local = await createTask({ locttDir, state: s2, options: { project: projectId, title: "Local" } });
+    await saveState(locttDir, s2);
+    const localPath = join(locttDir, "tasks", local.frontmatter.id, "task.md");
+    const localRaw = await readFile(localPath, "utf8");
+    await writeFile(localPath, localRaw.replace(/^created_at: .*$/m, "created_at: 2099-01-01T00:00:00.000Z"), "utf8");
+
+    // The branch adds a colliding task in the same project, earlier — so it
+    // keeps the key and the local task is the one renumbered.
+    const worktree = join(root, "..", `wt-rekey-${Date.now()}`);
+    git(root, "worktree", "add", "-q", worktree, "loctt");
+    const otherId = "01WEBBRANCHREKEY0000000AA";
+    const bdir = join(worktree, "tasks", otherId);
+    await import("node:fs/promises").then(m => m.mkdir(bdir, { recursive: true }));
+    await writeFile(
+      join(bdir, "task.md"),
+      `---\nid: ${otherId}\nkey: ${local.frontmatter.key}\ntitle: Branch\n`
+      + `status: todo\nproject: ${projectId}\ncreated_at: 2020-01-01T00:00:00.000Z\n`
+      + "updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n",
+      "utf8",
+    );
+    git(worktree, "add", "-A");
+    git(worktree, "commit", "-m", "colliding branch task");
+    git(root, "worktree", "remove", "--force", worktree);
+
+    // Sync: the copy fires progress (NDJSON begins), then the rekey gate
+    // refuses. The refusal rides as a terminal error line carrying the
+    // rekey_needed envelope (the two-phase transport, GIT-23).
+    const syncRes = await fetch(`${base}/api/git/sync`, {
+      method: "POST", headers: { "X-Loctt-Client": "test" },
+    });
+    let code: string | undefined;
+    if (syncRes.headers.get("content-type")?.includes("application/x-ndjson")) {
+      const text = await syncRes.text();
+      const lines = text.split("\n").filter(l => l.trim()).map(l => JSON.parse(l) as Record<string, unknown>);
+      const errLine = lines.find(l => "error" in l) as { error: { code?: string } } | undefined;
+      code = errLine?.error.code;
+    } else {
+      code = (await syncRes.json() as { code?: string }).code;
+    }
+    expect(code).toBe("rekey_needed");
+
+    // The colliding key is still on disk — nothing renumbered pre-confirm.
+    expect(await readFile(localPath, "utf8")).toMatch(new RegExp(`^key: ${local.frontmatter.key}$`, "m"));
+
+    // The reconcile session now offers the rekey preview (GIT-8/GIT-9).
+    const sess = await (await fetch(`${base}/api/git/reconcile`, { headers: { "X-Loctt-Client": "test" } })).json() as {
+      reconcile: { rekeyPlan?: { losers: Array<{ loserId: string; keeperId: string; tiebreak: string; newKey?: string }> } } | null;
+    };
+    const losers = sess.reconcile?.rekeyPlan?.losers ?? [];
+    expect(losers).toHaveLength(1);
+    expect(losers[0]?.loserId).toBe(local.frontmatter.id);
+    expect(losers[0]?.keeperId).toBe(otherId);
+    expect(losers[0]?.newKey).toBeDefined();
+
+    // Confirm: the rekey applies and the sync completes, reporting old→new.
+    const confirmRes = await fetch(`${base}/api/git/reconcile/confirm-rekey`, {
+      method: "POST", headers: { "X-Loctt-Client": "test" },
+    });
+    expect(confirmRes.status).toBe(200);
+    const confirmed = await confirmRes.json() as {
+      reconciled: boolean;
+      syncOutcome: { rekeys?: Array<{ taskId: string; oldKey: string; newKey: string }> };
+    };
+    expect(confirmed.reconciled).toBe(true);
+    const mine = (confirmed.syncOutcome.rekeys ?? []).find(r => r.taskId === local.frontmatter.id);
+    expect(mine?.oldKey).toBe(local.frontmatter.key);
+    expect(mine?.newKey).not.toBe(local.frontmatter.key);
+
+    // Disk now holds the new key, with the old one in key_history (P-7).
+    const after = await readFile(localPath, "utf8");
+    expect(after).toMatch(new RegExp(`^key: ${mine?.newKey}$`, "m"));
+    expect(after).toMatch(new RegExp(`key_history:[\\s\\S]*${local.frontmatter.key}`, "m"));
   });
 });

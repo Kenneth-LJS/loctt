@@ -72,6 +72,16 @@ export const ReconcileStateSchema = z.object({
    * those (GIT-37).
    */
   applied: z.array(z.string().min(1)).optional(),
+  /**
+   * Set once the merge/copy phase has applied and a key-collision rekey is
+   * pending the user's confirm (GIT-8/K92). The rekey renumbers a task, so
+   * unlike the auto-merge cases it waits for an explicit confirm; the web
+   * UI shows the preview and the loser's key is not reissued until then.
+   * The plan itself is NOT stored — it is recomputed from disk (the copies
+   * are already applied) so a reload cannot drift from it (GIT-26). Absent
+   * on a reconciliation that has no rekey step.
+   */
+  rekey_pending: z.boolean().optional(),
 }).strict();
 export type ReconcileState = z.infer<typeof ReconcileStateSchema>;
 

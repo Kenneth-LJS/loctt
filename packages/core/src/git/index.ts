@@ -1,6 +1,6 @@
 export type { GitStatusResult } from "./git-mode.js";
 export { disableGit, enableGit, getGitStatus } from "./git-mode.js";
-export type { FetchResult, GitRemoteFailure, GitRemoteFailureKind, PreflightReport, PushResult, SyncOutcome, SyncProgress } from "./publish-sync.js";
+export type { AppliedRekey, FetchResult, GitRemoteFailure, GitRemoteFailureKind, PreflightReport, PushResult, SyncOutcome, SyncProgress } from "./publish-sync.js";
 export { classifyRemoteFailure } from "./publish-sync.js";
 export { preflight, PreflightError } from "./publish-sync.js";
 export {
@@ -10,6 +10,7 @@ export {
   GitHistoryRewrittenError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
+  GitRekeyNeededError,
   GitRemoteSchemaNewerError,
   GitSyncError,
   GitSyncFirstError,
@@ -18,8 +19,8 @@ export {
   pushLocttBranch,
   sync,
 } from "./publish-sync.js";
-export type { RekeyOutcome, RekeyResult, RekeySkip } from "./reconcile.js";
-export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./reconcile.js";
+export type { RekeyLoser, RekeyOutcome, RekeyPlan, RekeyResult, RekeySkip } from "./reconcile.js";
+export { mergeKeyHistory, mergeRelationships, previewRekey, rekeyCollisions } from "./reconcile.js";
 export type { ApplyReconcileResult, TaskApplyResult } from "./reconcile-apply.js";
 export { applyReconcile } from "./reconcile-apply.js";
 export type { ConflictComputation } from "./reconcile-plan.js";
@@ -28,10 +29,11 @@ export {
   computeTaskConflicts,
   statusExistsLocally,
 } from "./reconcile-plan.js";
-export type { ApplyReconcileOutcome } from "./reconcile-session.js";
+export type { ApplyReconcileOutcome, ConfirmRekeyOutcome } from "./reconcile-session.js";
 export {
   abandonReconcile,
   applyReconcileDecisions,
+  confirmRekey,
   getReconcileState,
   loadReconcileSession,
   saveReconcileDecisions,

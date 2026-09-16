@@ -2,12 +2,15 @@ import { useId, useMemo, useState } from "react";
 
 import {
   type ApplyReconcileResponse,
+  type ConfirmRekeyResponse,
   type ReconcileConflict,
   type ReconcileDecision,
   type ReconcilePlan,
   type ReconcileSentinel,
+  type RekeyPlan,
   useAbandonReconcile,
   useApplyReconcile,
+  useConfirmRekey,
   useReconcileSession,
   useSaveReconcileDecisions,
 } from "../api/hooks/useGit.ts";
@@ -71,12 +74,32 @@ export function ReconcilePanel() {
   // the result here lets the "resolved · the sync completed" confirmation
   // survive the panel closing.
   const apply = useApplyReconcile();
+  const confirmRekey = useConfirmRekey();
   const [applyResult, setApplyResult] = useState<ApplyReconcileResponse | undefined>(undefined);
+  const [rekeyResult, setRekeyResult] = useState<ConfirmRekeyResponse | undefined>(undefined);
 
   if (session.isLoading) return null;
 
   // Reconciliation finished: the session is gone but we just applied it.
   if (reconcile === null) {
+    // A confirmed rekey completed the sync — report which tasks were
+    // renumbered (GIT-9), surviving the panel closing like the field
+    // reconciliation confirmation below.
+    if (rekeyResult?.reconciled === true) {
+      const rekeys = rekeyResult.syncOutcome.rekeys ?? [];
+      return (
+        <div data-testid="git-rekey-applied" className="mb-3 text-[0.9286rem] text-text-secondary">
+          <p>Renumbered {rekeys.length} task(s) to resolve key collisions; the sync completed.</p>
+          {rekeys.length > 0 && (
+            <ul className="mt-1 list-disc pl-5">
+              {rekeys.map(r => (
+                <li key={r.taskId}>{r.oldKey} → {r.newKey}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      );
+    }
     if (applyResult?.reconciled === true) {
       return (
         <p data-testid="git-reconcile-applied" className="mb-3 text-[0.9286rem] text-text-secondary">
@@ -85,6 +108,21 @@ export function ReconcilePanel() {
       );
     }
     return null;
+  }
+
+  // GIT-8/K92: the field conflicts are settled and a rekey is pending. Show
+  // the preview and wait for a confirm before anything is renumbered —
+  // whether this reconciliation had field conflicts (the rekey is the
+  // second phase of the same panel) or none (the panel opens straight into
+  // the rekey preview).
+  if (reconcile.rekeyPlan !== undefined && reconcile.rekeyPlan.losers.length > 0) {
+    return (
+      <RekeyPreview
+        plan={reconcile.rekeyPlan}
+        confirm={confirmRekey}
+        onConfirmed={setRekeyResult}
+      />
+    );
   }
 
   return (
@@ -96,6 +134,82 @@ export function ReconcilePanel() {
       applyResult={applyResult}
       setApplyResult={setApplyResult}
     />
+  );
+}
+
+/**
+ * The rekey confirm gate (GIT-8, GIT-9, K92). Shows, per collision: which
+ * key collided, which task keeps it and which is renumbered, both
+ * `created_at` values and both ULIDs, the tiebreak rule that decided the
+ * keeper, and the planned new key — then waits for an explicit confirm.
+ * Nothing is renumbered until the user clicks Confirm rekey.
+ */
+function RekeyPreview({ plan, confirm, onConfirmed }: {
+  readonly plan: RekeyPlan;
+  readonly confirm: ReturnType<typeof useConfirmRekey>;
+  readonly onConfirmed: (r: ConfirmRekeyResponse) => void;
+}) {
+  const onConfirm = (): void => {
+    confirm.mutate(undefined, { onSuccess: r => { onConfirmed(r); } });
+  };
+  const fmt = (v: string | null): string => (v === null ? "unknown" : v);
+  return (
+    <section data-testid="git-rekey-preview" aria-label="Rekey preview" className="mb-3">
+      <h3 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">
+        Confirm key renumbering
+      </h3>
+      <p className="mb-2 text-[0.8571rem] text-text-secondary">
+        The merge left {plan.losers.length === 1 ? "a task" : `${plan.losers.length} tasks`} sharing a
+        key with another. The earlier-created task keeps the key; the later one is renumbered.
+        Nothing is renumbered until you confirm.
+      </p>
+      <ul className="flex flex-col gap-2">
+        {plan.losers.map(l => (
+          <li
+            key={l.loserId}
+            data-testid="git-rekey-row"
+            className="rounded border border-border-default p-2 text-[0.8571rem]"
+          >
+            <div className="font-medium text-text-primary">
+              <span data-testid="git-rekey-collided-key">{l.key}</span> collided —
+              {" "}renumbering to <span data-testid="git-rekey-new-key">{l.newKey ?? "(unavailable)"}</span>
+            </div>
+            <div className="mt-1 text-text-secondary">
+              Keeps the key: <code>{l.keeperId}</code> (created {fmt(l.keeperCreatedAt)})
+            </div>
+            <div className="text-text-secondary">
+              Renumbered: <code>{l.loserId}</code> (created {fmt(l.loserCreatedAt)})
+            </div>
+            <div className="mt-1 text-text-tertiary">
+              {l.tiebreak === "created_at"
+                ? "Decided by created_at — the earlier task keeps the key."
+                : "The created_at values tied; the lower ULID kept the key."}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {plan.skipped.length > 0 && (
+        <p data-testid="git-rekey-skipped" role="alert" className="mt-2 text-[0.8571rem] text-warn-fg">
+          {plan.skipped.length} collision(s) cannot be renumbered automatically and will remain until
+          resolved; see Diagnostics.
+        </p>
+      )}
+      {confirm.isError && (
+        <p role="alert" className="mt-2 text-[0.8571rem] text-danger-fg">
+          {confirm.error.message}
+        </p>
+      )}
+      <div className="mt-3">
+        <Button
+          type="button"
+          data-testid="git-rekey-confirm"
+          onClick={onConfirm}
+          disabled={confirm.isPending}
+        >
+          {confirm.isPending ? "Renumbering…" : "Confirm rekey"}
+        </Button>
+      </div>
+    </section>
   );
 }
 

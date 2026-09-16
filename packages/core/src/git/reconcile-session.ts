@@ -7,6 +7,7 @@ import type {
   ReconcileDecision,
   ReconcilePlan,
   ReconcileState,
+  RekeyPlan,
 } from "@loctt/contracts";
 
 import { loadWorkflowConfig } from "../config/workflow.js";
@@ -16,6 +17,10 @@ import {
   readReconcileState,
   saveReconcileState,
 } from "../state/reconcile.js";
+import { loadState } from "../state/state.js";
+import { loadAllTasks } from "../task/load-all.js";
+import { GitRekeyNeededError } from "./publish-sync.js";
+import { previewRekey } from "./reconcile.js";
 import type { ApplyReconcileResult } from "./reconcile-apply.js";
 import { applyReconcile } from "./reconcile-apply.js";
 import { computeReconcilePlan } from "./reconcile-plan.js";
@@ -61,9 +66,22 @@ export async function getReconcileState(
 export async function loadReconcileSession(
   locttDir: string,
   root: string,
-): Promise<{ state: ReconcileState; plan: ReconcilePlan } | undefined> {
+): Promise<{ state: ReconcileState; plan: ReconcilePlan; rekeyPlan?: RekeyPlan } | undefined> {
   const state = await readReconcileState(locttDir);
   if (state === undefined) return undefined;
+
+  // GIT-8/K92: the reconciliation has advanced past its field conflicts and
+  // is waiting on a rekey confirm. The field conflicts are resolved (their
+  // values are on disk), so the panel should now show the rekey preview,
+  // not recompute the — already-settled — conflict plan. The preview is
+  // derived from disk (the merge/copy writes are applied), so a reload
+  // recomputes the same losers (GIT-26): the plan is never stored.
+  if (state.rekey_pending === true) {
+    const st = await loadState(locttDir);
+    const tasks = await loadAllTasks(locttDir);
+    const rekeyPlan = previewRekey(tasks, st);
+    return { state, plan: emptyPlan(state), rekeyPlan };
+  }
 
   // A unique path per call: the reconcile GET is polled (staleTime 0)
   // while an Apply runs, and a shared worktree path made two concurrent
@@ -143,6 +161,22 @@ export interface ApplyReconcileOutcome extends ApplyReconcileResult {
   readonly syncOutcome?: unknown;
   /** The completing publish's outcome (GIT-15), present when mode was `publish`. */
   readonly publishOutcome?: unknown;
+  /**
+   * GIT-8/K92: set when the field conflicts resolved but the completing sync
+   * then found a key collision that must be renumbered. The rekey waits for
+   * an explicit confirm, so the operation is NOT yet complete: `reconciled`
+   * is false, nothing has been renumbered, and the panel shows this preview
+   * and calls `confirmRekey`.
+   */
+  readonly rekeyPlan?: RekeyPlan;
+}
+
+/** The outcome of confirming a pending rekey (GIT-8/GIT-9/GIT-33). */
+export interface ConfirmRekeyOutcome {
+  /** True once the rekey applied and the originating sync completed. */
+  readonly reconciled: boolean;
+  /** The completing sync's outcome, carrying `rekeys` (old→new per task). */
+  readonly syncOutcome: unknown;
 }
 
 /**
@@ -182,10 +216,23 @@ export async function applyReconcileDecisions(
     // For a publish, the reconciled local state is committed and pushed.
     const { pullFromLocttBranch, publish } = await import("./publish-sync.js");
     if (state.mode === "sync") {
-      const outcome = await pullFromLocttBranch(locttDir, root, undefined, {
-        resolvedTaskIds: result.appliedTaskIds,
-      });
-      return { ...result, reconciled: true, syncOutcome: outcome };
+      // The completing sync runs the merge/copy and then normalises keys.
+      // If that leaves a key collision, the rekey waits for a confirm
+      // (GIT-8/K92): normalise marks the sentinel `rekey_pending` and throws
+      // GitRekeyNeededError with the preview. Catch it and report the rekey
+      // phase rather than a failure — the field conflicts DID resolve, and
+      // the sentinel is intact for the confirm to complete.
+      try {
+        const outcome = await pullFromLocttBranch(locttDir, root, undefined, {
+          resolvedTaskIds: result.appliedTaskIds,
+        });
+        return { ...result, reconciled: true, syncOutcome: outcome };
+      } catch (err) {
+        if (err instanceof GitRekeyNeededError) {
+          return { ...result, reconciled: false, rekeyPlan: err.plan };
+        }
+        throw err;
+      }
     }
     // publish: the sentinel was written by the divergence check; clear it
     // so publish's own commit path is unblocked, then push the resolved
@@ -203,6 +250,33 @@ export async function applyReconcileDecisions(
     applied: [...result.appliedTaskIds],
   });
   return { ...result, reconciled: false };
+}
+
+/**
+ * Confirms a pending rekey (GIT-8/K92) and completes the originating sync.
+ *
+ * Re-runs the completion sync with `rekeyConfirmed`, so the key collision
+ * is renumbered this time — the loser takes its project's next key, its old
+ * key goes to `key_history` (P-7), and `last_synced_commit` advances. The
+ * `resolvedTaskIds` from the sentinel are carried so any field conflicts
+ * resolved in the earlier phase stay resolved. On success the sentinel is
+ * cleared as the sync's last write. A partial rekey failure (GIT-33) is
+ * surfaced via `syncOutcome.unresolvedKeys` and does not report complete.
+ */
+export async function confirmRekey(
+  locttDir: string,
+  root: string,
+): Promise<ConfirmRekeyOutcome> {
+  const state = await readReconcileState(locttDir);
+  if (state === undefined || state.rekey_pending !== true) {
+    throw new Error("no rekey is awaiting confirmation");
+  }
+  const { pullFromLocttBranch } = await import("./publish-sync.js");
+  const outcome = await pullFromLocttBranch(locttDir, root, undefined, {
+    resolvedTaskIds: state.applied ?? [],
+    rekeyConfirmed: true,
+  });
+  return { reconciled: true, syncOutcome: outcome };
 }
 
 /**

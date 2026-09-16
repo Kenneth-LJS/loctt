@@ -131,6 +131,38 @@ The rekey pass, in detail:
 Every step is derived from what is on disk, so two clones running the same
 sync reach the same result rather than diverging.
 
+### Confirming a rekey
+
+Because a rekey renumbers a task — changing a user-facing key — it is
+surfaced differently on each surface:
+
+- **In the web UI**, the reconcile panel shows a **rekey preview** before
+  anything is renumbered: for each collision, which key collided, which
+  task keeps it and which is renumbered, both tasks' `created_at` and
+  ULIDs, the tiebreak rule that decided the keeper, and the planned new
+  key. Nothing is written until you click **Confirm rekey**. If a sync also
+  needs per-field reconciliation, you resolve those fields first and the
+  rekey preview is the final step of the same panel.
+- **On the CLI and MCP**, the rekey is applied automatically (they stay
+  scriptable — there is no interactive pause) and the result reports each
+  renumber, old key → new key:
+
+  ```
+  Renumbered 1 task(s) to resolve key collisions:
+    T-2 → T-3
+  ```
+
+If a collision cannot be renumbered — a task whose project has no key
+counter yet, because its `projects.yaml` has not merged — it is reported as
+an **unresolved key**, never silently dropped:
+
+```
+Warning: 1 key collision(s) remain unresolved: T-2. Run 'loctt doctor'.
+```
+
+Run `loctt doctor` for the detail, and the collision also shows in
+Diagnostics.
+
 ## Local Sync State
 
 Machine-local sync metadata is stored in `.loctt/local/` (never published):

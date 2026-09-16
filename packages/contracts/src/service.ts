@@ -629,6 +629,15 @@ export interface ErrorResponse {
     readonly local_version: number;
     readonly branch: string;
   };
+  /**
+   * Present on `rekey_needed` (GIT-8, K92): a divergent sync merged, but two
+   * tasks now share a key and one must be renumbered. Carries the
+   * {@link RekeyPlan} preview (keeper vs loser, both timestamps, both ULIDs,
+   * the tiebreak, the planned new key) so the panel shows it and waits for a
+   * confirm before the rekey is applied. Typed as `RekeyPlan` at the call
+   * site; kept `unknown` here to avoid service.ts importing reconcile.ts.
+   */
+  readonly rekey?: unknown;
 }
 
 /**
@@ -652,6 +661,7 @@ export type ErrorCode =
   | "sync_needed"
   | "history_rewritten"
   | "schema_remote_newer"
+  | "rekey_needed"
   | "io_failed"
   | "partial_failure"
   | "unknown";

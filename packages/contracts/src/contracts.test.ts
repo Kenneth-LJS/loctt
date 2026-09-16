@@ -11,6 +11,7 @@ import type {
 } from "./index.js";
 import {
   projectTaskFrontmatter,
+  RekeyPlanSchema,
   TaskFrontmatterPublicSchema,
   TaskFrontmatterSchema,
 } from "./index.js";
@@ -47,6 +48,37 @@ describe("contracts type shapes", () => {
     expectTypeOf<ReconcileState>().toHaveProperty("base_commit");
     expectTypeOf<ReconcileState>().toHaveProperty("remote_commit");
     expectTypeOf<ReconcileState>().toHaveProperty("started_at");
+  });
+
+  it("RekeyPlan validates a loser with keeper, timestamps, tiebreak and new key (GIT-8)", () => {
+    // @verifies GIT-8
+    const plan = RekeyPlanSchema.parse({
+      losers: [{
+        key: "T-1",
+        loserId: "01BBB",
+        loserCreatedAt: "2026-01-02T00:00:00.000Z",
+        keeperId: "01AAA",
+        keeperCreatedAt: "2026-01-01T00:00:00.000Z",
+        tiebreak: "created_at",
+        newKey: "T-5",
+      }],
+      skipped: [],
+    });
+    expect(plan.losers[0]?.tiebreak).toBe("created_at");
+    expect(plan.losers[0]?.newKey).toBe("T-5");
+    // A degraded/absent created_at is null, not omitted.
+    expect(RekeyPlanSchema.parse({
+      losers: [{
+        key: "T-1", loserId: "b", loserCreatedAt: null,
+        keeperId: "a", keeperCreatedAt: null, tiebreak: "ulid",
+      }],
+      skipped: [],
+    }).losers[0]?.loserCreatedAt).toBeNull();
+    // An unknown tiebreak is rejected — the UI copy branches on it (GIT-9).
+    expect(() => RekeyPlanSchema.parse({
+      losers: [{ key: "T-1", loserId: "b", loserCreatedAt: null, keeperId: "a", keeperCreatedAt: null, tiebreak: "coinflip" }],
+      skipped: [],
+    })).toThrow();
   });
 
   it("StatusCategory is a union of four string literals", () => {

@@ -2945,20 +2945,20 @@ resolution panel (GIT-5/6/7/10/11/12/13/14/15/17/18/26/31/32/37/38). Two
 of the batch's cases are declined here because they are genuine separate
 features with no existing core support — not reconciliation-detail work:
 
-- **GIT-8 · rekey summary before applying.** When reconciliation leaves
-  two tasks sharing a key with different ULIDs, the case wants a summary
-  shown *before* any write: which key collided, which task keeps it (the
-  earlier `created_at`, with both timestamps shown and the rule stated),
-  which is renumbered and to what, then an explicit confirm — no
-  auto-apply. `rekeyCollisions` (`git/reconcile.ts`) picks the keeper and
-  allocates the new key, but it runs *inside* `normaliseAfterMerge`
-  during the sync write with no summary and no confirm step, and the
-  panel has no rekey-summary UI or its `/api/git/reconcile/rekey-preview`
-  channel. Building GIT-8 (and GIT-9's ULID tiebreak display, GIT-33's
-  partial-rekey report) needs: a preview that returns the planned
-  renumbers without applying, a confirm gate, and the panel surface. To
-  reproduce the gap: sync two clones that each created a task offline
-  under the same key — the rekey happens silently, no summary is shown.
+- **GIT-8 · rekey summary before applying.** RESOLVED 2026-09-16 (K92,
+  A193). A PURE `previewRekey(tasks, state): RekeyPlan` (`git/reconcile.ts`,
+  contracts type) computes keeper/loser + both timestamps + both ULIDs +
+  tiebreak + planned new key without applying; `rekeyCollisions` is now
+  derived from it (anti-drift, round-trip-tested). The web reconcile panel
+  shows this preview as a second phase of the reconcile session and waits
+  for a confirm before renumbering (`GitRekeyNeededError` +
+  `rekey_pending` sentinel + `confirmRekey` +
+  `/api/git/reconcile/confirm-rekey`); nothing is renumbered until confirm.
+  CLI/MCP auto-apply (`sync(..., { rekeyConfirmed: true })`) and report
+  old→new per task (`SyncOutcome.rekeys`); GIT-9's tiebreak display and
+  GIT-33's partial-failure report (`unresolvedKeys`) land with it.
+  `@verifies GIT-8/9/33` across contracts/core/web-server/CLI+MCP
+  integration/Playwright e2e, each red-proven. See decisions.md A193.
 
 - **GIT-21 · force-pushed branch no longer contains the last synced
   commit.** RESOLVED 2026-09-16 (K93, A191). `assertNotHistoryRewrite`
@@ -2971,8 +2971,8 @@ features with no existing core support — not reconciliation-detail work:
   docs; `@verifies GIT-21` at unit + e2e, red-proven. See decisions.md
   A191.
 
-GIT-8 remains scoped as its own ticket (K92). The reconciliation feature
-does not depend on it.
+Both GIT-8 and GIT-21 are now resolved (A193, A191). The reconciliation
+feature did not depend on either.
 
 ## Re-audit 2026-09-05: some "blocked" cases were mis-filed built-but-untested
 

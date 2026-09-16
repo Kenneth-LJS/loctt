@@ -23,7 +23,7 @@
  * `.loctt/local/sync.yaml`'s `last_synced_commit` has advanced.
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -175,6 +175,69 @@ export async function forcePushRewriteRemote(remoteRepo: string): Promise<string
     const head = (await execa("git", ["rev-parse", "HEAD"], { cwd: other, env })).stdout.trim();
     await execa("git", ["push", "--force", remoteRepo, "loctt:loctt"], { cwd: other, env });
     return head;
+  } finally {
+    await rm(other, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Creates a colliding task from a clone that shares the SAME project id +
+ * key counter as the local tracker (GIT-8/GIT-9/K92 — the same-project key
+ * collision, distinct from the two-independent-`init`s reprefix case). It
+ * clones the bare remote, materialises the published `.loctt/` (the loctt
+ * branch tree is that directory's contents) plus the NEVER_MIRROR
+ * `.schema-version` copied from `sourceRoot`, creates one task offline
+ * pinned to an EARLIER `created_at` (so it keeps the key and the local
+ * task is the one renumbered), and publishes. Returns the branch head.
+ */
+export async function createCollidingFromOtherClone(
+  remoteRepo: string,
+  sourceRoot: string,
+  title: string,
+): Promise<string> {
+  const other = await mkdtemp(path.join(workspaceRoot, "loctt-collide-"));
+  const env = { ...process.env, ...GIT_ENV };
+  try {
+    await execa("git", ["clone", "-q", remoteRepo, other], { env });
+    await execa("git", ["config", "user.email", "test@example.com"], { cwd: other, env });
+    await execa("git", ["config", "user.name", "Test"], { cwd: other, env });
+    await mkdir(path.join(other, ".loctt"), { recursive: true });
+    await execa(
+      "bash",
+      ["-c", `git archive origin/loctt | tar -x -C ${JSON.stringify(path.join(other, ".loctt"))}`],
+      { cwd: other, env },
+    );
+    await execa("cp", [
+      path.join(sourceRoot, ".loctt", ".schema-version"),
+      path.join(other, ".loctt", ".schema-version"),
+    ]);
+    // Record last_synced_commit at the branch head the clone was taken from,
+    // so the clone's publish fast-forwards the bare `loctt` ref rather than
+    // being rejected as a divergent (non-ff) push. auto_push on, so the
+    // colliding task reaches the bare where the local tracker's sync sees it.
+    const branchHead = (await execa("git", ["--git-dir", remoteRepo, "rev-parse", "loctt"], { env })).stdout.trim();
+    await mkdir(path.join(other, ".loctt", "local"), { recursive: true });
+    await writeFile(
+      path.join(other, ".loctt", "local", "sync.yaml"),
+      "git:\n  enabled: true\n  branch: loctt\n  remote: origin\n"
+      + `  auto_fetch: true\n  auto_push: true\n  last_synced_commit: ${branchHead}\n`,
+    );
+    const cli = (args: readonly string[]) =>
+      execa(process.execPath, [cliEntry, ...args], { cwd: other, env });
+    const created = await cli(["create", title]);
+    // Pin this clone's task EARLIER so it keeps the key on collision.
+    const key = /Created (\S+):/.exec((created as { stdout: string }).stdout)?.[1] ?? "";
+    const tasksDir = path.join(other, ".loctt", "tasks");
+    for (const id of await (await import("node:fs/promises")).readdir(tasksDir)) {
+      const p = path.join(tasksDir, id, "task.md");
+      const raw = await readFile(p, "utf8");
+      if (new RegExp(`^key:\\s*${key}\\b`, "m").test(raw)) {
+        await writeFile(p, raw.replace(/^created_at: .*$/m, "created_at: 2000-01-01T00:00:00.000Z"));
+      }
+    }
+    await cli(["git", "publish"]);
+    const head = await execa("git", ["--git-dir", remoteRepo, "rev-parse", "loctt"], { env });
+    return head.stdout.trim();
   } finally {
     await rm(other, { recursive: true, force: true }).catch(() => {});
   }

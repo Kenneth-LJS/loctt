@@ -137,6 +137,78 @@ export const ReconcilePlanSchema = z.object({
 }).strict();
 export type ReconcilePlan = z.infer<typeof ReconcilePlanSchema>;
 
+/**
+ * The rekey PREVIEW model (GIT-8, GIT-9).
+ *
+ * When a divergent sync leaves two offline-created tasks sharing one key,
+ * one is renumbered. Today that runs silently inside the sync write; K92
+ * requires the web UI to show this preview and WAIT for a confirm before
+ * anything is written, while CLI/MCP auto-apply and report the same
+ * outcome. The plan is computed PURELY — it applies nothing — so the
+ * preview the UI shows and the rekey CLI/MCP apply are derived from one
+ * source and cannot drift (the anti-drift invariant, like `builderTree`'s
+ * round-trip discipline).
+ *
+ * One `RekeyLoser` per task that will be renumbered, each paired against
+ * the keeper of its key. A collision of N tasks yields the keeper plus
+ * N-1 losers.
+ */
+
+/**
+ * Why the keeper kept the key — the deterministic tiebreak, stated so the
+ * user sees the rule rather than an unexplained winner (GIT-8, GIT-9).
+ *
+ * - `created_at` — the keeper's `created_at` is strictly earlier.
+ * - `ulid` — the two `created_at` values tied (or both are absent/degraded),
+ *   so the lexicographically-lower ULID `id` decided (GIT-9).
+ */
+export const RekeyTiebreakSchema = z.enum(["created_at", "ulid"]);
+export type RekeyTiebreak = z.infer<typeof RekeyTiebreakSchema>;
+
+/** One task that will be renumbered, paired against the keeper of its key. */
+export const RekeyLoserSchema = z.object({
+  /** The colliding key both tasks currently hold (e.g. `WEB-14`). */
+  key: z.string().min(1),
+  /** The loser's ULID — the stable identity the rekey is applied by. */
+  loserId: z.string().min(1),
+  /** The loser's `created_at`, or `null` when absent/degraded (K26). */
+  loserCreatedAt: z.string().nullable(),
+  /** The keeper's ULID — the task that keeps `key`. */
+  keeperId: z.string().min(1),
+  /** The keeper's `created_at`, or `null` when absent/degraded. */
+  keeperCreatedAt: z.string().nullable(),
+  /** Which rule decided the keeper (GIT-8 states it; GIT-9 is the `ulid` case). */
+  tiebreak: RekeyTiebreakSchema,
+  /**
+   * The key the loser will be renumbered to (e.g. `WEB-31`), taken from
+   * the loser's own project counter. Present only when the plan can
+   * allocate one — a loser whose project has no key counter cannot be
+   * renumbered and appears in `skipped` instead.
+   */
+  newKey: z.string().min(1).optional(),
+}).strict();
+export type RekeyLoser = z.infer<typeof RekeyLoserSchema>;
+
+/** A collision the plan could not resolve, and why (mirrors `RekeySkip`). */
+export const RekeySkipSchema = z.object({
+  taskId: z.string().min(1),
+  key: z.string().min(1),
+  reason: z.string().min(1),
+}).strict();
+export type RekeySkip = z.infer<typeof RekeySkipSchema>;
+
+/**
+ * The full preview a rekey surfaces: every task that will be renumbered
+ * (with the keeper it lost to and the tiebreak that decided it), and any
+ * collision that cannot be resolved. `losers` empty means no rekey is
+ * needed and no confirm gate should appear.
+ */
+export const RekeyPlanSchema = z.object({
+  losers: z.array(RekeyLoserSchema),
+  skipped: z.array(RekeySkipSchema),
+}).strict();
+export type RekeyPlan = z.infer<typeof RekeyPlanSchema>;
+
 /** A user's choice for one conflicting field. */
 export const ConflictChoiceSchema = z.enum(["local", "remote", "value"]);
 export type ConflictChoice = z.infer<typeof ConflictChoiceSchema>;

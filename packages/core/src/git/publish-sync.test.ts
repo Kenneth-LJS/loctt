@@ -13,7 +13,7 @@ import { loadSyncState, saveSyncState } from "../state/sync.js";
 import { createTask } from "../task/create.js";
 import { setField } from "../task/update.js";
 import { enableGit } from "./git-mode.js";
-import { GitReconcileNeededError, GitSyncFirstError, publish, sync } from "./publish-sync.js";
+import { GitReconcileNeededError, GitRekeyNeededError, GitSyncFirstError, publish, sync } from "./publish-sync.js";
 import { abandonReconcile } from "./reconcile-session.js";
 
 describe("publish-sync", () => {
@@ -357,6 +357,141 @@ describe("publish-sync", () => {
 
       // Named, not swallowed. The user has to be able to act on it.
       expect(result.unresolvedKeys ?? []).toContain(task.frontmatter.key);
+    });
+
+    /**
+     * Builds the two-clones-collide fixture: a published base, a
+     * locally-created offline task, and a branch task claiming the SAME
+     * key in the SAME project with an EARLIER created_at (so the branch
+     * task keeps the key and the local task is the loser). Returns the
+     * local (losing) task and its colliding key.
+     */
+    async function twoClonesCollide(): Promise<{ localId: string; key: string }> {
+      const s1 = await loadState(locttDir);
+      await createTask({ locttDir, state: s1, options: { project: taskProjectId, title: "Base" } });
+      await saveState(locttDir, s1);
+      await publish(locttDir, root);
+
+      const s2 = await loadState(locttDir);
+      const local = await createTask({
+        locttDir, state: s2, options: { project: taskProjectId, title: "Local offline" },
+      });
+      await saveState(locttDir, s2);
+      // Pin the local task's created_at to LATER than the branch task's, so
+      // the branch task keeps the key and the local task is renumbered.
+      const localDir = join(locttDir, "tasks", local.frontmatter.id);
+      const localRaw = await readFile(join(localDir, "task.md"), "utf-8");
+      await writeFile(
+        join(localDir, "task.md"),
+        localRaw.replace(/^created_at: .*$/m, "created_at: 2099-01-01T00:00:00.000Z"),
+      );
+
+      await commitOnBranch(async wt => {
+        const otherId = "01M0BRANCHTASK0000000000A";
+        await mkdir(join(wt, "tasks", otherId), { recursive: true });
+        await writeFile(
+          join(wt, "tasks", otherId, "task.md"),
+          `---\nid: ${otherId}\nkey: ${local.frontmatter.key}\ntitle: Branch offline\n`
+          + `status: todo\nproject: ${taskProjectId}\ncreated_at: 2020-01-01T00:00:00.000Z\n`
+          + `updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n`,
+        );
+      }, "add a colliding task from another clone");
+
+      return { localId: local.frontmatter.id, key: local.frontmatter.key };
+    }
+
+    it("does not renumber a colliding task until the rekey is confirmed", async () => {
+      // @verifies GIT-8
+      const { localId, key } = await twoClonesCollide();
+      const localTaskPath = join(locttDir, "tasks", localId, "task.md");
+
+      // An unconfirmed sync must NOT renumber: it throws the preview and
+      // leaves the colliding key on disk untouched (K92 — no auto-apply of
+      // a rekey in the UI path).
+      let caught: unknown;
+      try {
+        await sync(locttDir, root);
+      } catch (err) { caught = err; }
+      expect(caught).toBeInstanceOf(GitRekeyNeededError);
+
+      const plan = (caught as GitRekeyNeededError).plan;
+      expect(plan.losers).toHaveLength(1);
+      expect(plan.losers[0]?.loserId).toBe(localId);
+      expect(plan.losers[0]?.key).toBe(key);
+      expect(plan.losers[0]?.tiebreak).toBe("created_at");
+      // Both timestamps and both ULIDs are in the preview (GIT-8/GIT-9).
+      expect(plan.losers[0]?.keeperId).toBe("01M0BRANCHTASK0000000000A");
+      expect(plan.losers[0]?.newKey).toBeDefined();
+
+      // Disk unchanged: the loser still holds the colliding key pre-confirm.
+      const raw = await readFile(localTaskPath, "utf-8");
+      expect(raw).toMatch(new RegExp(`^key: ${key}$`, "m"));
+      await abandonReconcile(locttDir);
+    });
+
+    it("applies the rekey once confirmed and reports old→new (GIT-9)", async () => {
+      // @verifies GIT-9
+      const { localId, key } = await twoClonesCollide();
+      // First, unconfirmed → throws (sets the rekey-pending sentinel).
+      await expect(sync(locttDir, root)).rejects.toBeInstanceOf(GitRekeyNeededError);
+
+      // Confirm → the loser is renumbered, old key kept in key_history (P-7).
+      const result = await sync(locttDir, root, undefined, { rekeyConfirmed: true });
+      expect(result.rekeys).toBeDefined();
+      const mine = (result.rekeys ?? []).find(r => r.taskId === localId);
+      expect(mine?.oldKey).toBe(key);
+      expect(mine?.newKey).not.toBe(key);
+
+      const raw = await readFile(join(locttDir, "tasks", localId, "task.md"), "utf-8");
+      expect(raw).toMatch(new RegExp(`^key: ${mine?.newKey}$`, "m"));
+      // Old key preserved so it still resolves (P-7).
+      expect(raw).toMatch(new RegExp(`key_history:[\\s\\S]*${key}`, "m"));
+    });
+
+    it("a confirmed rekey renumbers what it can and reports what it cannot (GIT-33)", async () => {
+      // @verifies GIT-33
+      // Two collisions on confirm: one resolvable (local task, its project
+      // has a counter) and one not (a branch task in a project with no
+      // counter). The confirmed rekey applies the first and reports the
+      // second as unresolved — it does not claim a clean rekey.
+      const { localId, key } = await twoClonesCollide();
+      // Add a second, UNRESOLVABLE collision on a different key.
+      const s3 = await loadState(locttDir);
+      const second = await createTask({
+        locttDir, state: s3, options: { project: taskProjectId, title: "Second local" },
+      });
+      await saveState(locttDir, s3);
+      const secondDir = join(locttDir, "tasks", second.frontmatter.id);
+      const secondRaw = await readFile(join(secondDir, "task.md"), "utf-8");
+      // The local `second` is EARLIER, so it keeps its key; the branch task
+      // in a no-counter project is LATER, so it is the loser — and being in
+      // a project with no counter, it cannot be renumbered (the GIT-33
+      // partial-failure path).
+      await writeFile(
+        join(secondDir, "task.md"),
+        secondRaw.replace(/^created_at: .*$/m, "created_at: 2020-06-01T00:00:00.000Z"),
+      );
+      await commitOnBranch(async wt => {
+        const otherId = "01M0BRANCHTASK0000000000B";
+        await mkdir(join(wt, "tasks", otherId), { recursive: true });
+        await writeFile(
+          join(wt, "tasks", otherId, "task.md"),
+          `---\nid: ${otherId}\nkey: ${second.frontmatter.key}\ntitle: Branch second\n`
+          + `status: todo\nproject: 01M0NOSUCHPROJECT00000000\ncreated_at: 2099-06-01T00:00:00.000Z\n`
+          + `updated_at: 2099-06-01T00:00:00.000Z\n---\nbody\n`,
+        );
+      }, "add a second colliding task with no counter");
+
+      await expect(sync(locttDir, root)).rejects.toBeInstanceOf(GitRekeyNeededError);
+      const result = await sync(locttDir, root, undefined, { rekeyConfirmed: true });
+
+      // The resolvable one was renumbered…
+      expect((result.rekeys ?? []).some(r => r.taskId === localId)).toBe(true);
+      // …and the unresolvable one is reported, not swallowed.
+      expect(result.unresolvedKeys ?? []).toContain(second.frontmatter.key);
+      // Old key of the renumbered task still recorded (P-7).
+      const raw = await readFile(join(locttDir, "tasks", localId, "task.md"), "utf-8");
+      expect(raw).toMatch(new RegExp(`key_history:[\\s\\S]*${key}`, "m"));
     });
 
     it("recovers from a worktree left registered by a hard kill", async () => {

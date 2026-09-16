@@ -76,6 +76,7 @@ import {
   computeSchemaStatus,
   computeWorkflowKeyCounts,
   ConfigRouterError,
+  confirmRekey,
   countTasksByReferences,
   countUserReferences,
   createLabel,
@@ -123,6 +124,7 @@ import {
   GitHistoryRewrittenError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
+  GitRekeyNeededError,
   GitRemoteSchemaNewerError,
   GitSyncFirstError,
   initLoctt,
@@ -461,6 +463,10 @@ function error(
     // GIT-35 (K94): the newer-remote-schema refusal payload the panel names
     // both versions from, without a second fetch.
     ...(extra.schema_remote_newer !== undefined ? { schema_remote_newer: extra.schema_remote_newer } : {}),
+    // GIT-8 (K92): the rekey preview the panel shows before confirming. The
+    // session GET also recomputes it, but carrying it here avoids a race
+    // between the 409 and the refetch.
+    ...(extra.rekey !== undefined ? { rekey: extra.rekey } : {}),
   };
   json(res, envelope, status);
 }
@@ -576,6 +582,26 @@ function gitErrorResponse(err: unknown): {
           local_version: err.localVersion,
           branch: err.branch,
         },
+      },
+    };
+  }
+  if (err instanceof GitRekeyNeededError) {
+    // GIT-8 (K92): the merge left two tasks sharing a key and one must be
+    // renumbered. The rekey reissues a user-facing key, so the UI shows a
+    // preview and waits for a confirm — a 409 client-actionable refusal,
+    // not a fault. Nothing has been renumbered (the colliding key is still
+    // on disk), so `not_saved`; recovery is `none` (the confirm is a
+    // distinct, deliberate action, not a retry). The plan is carried so the
+    // panel renders the preview without a second fetch; a reload recomputes
+    // the same losers from disk (the sentinel is `rekey_pending`).
+    return {
+      status: 409,
+      message: err.message,
+      extra: {
+        code: "rekey_needed",
+        data_state: "not_saved",
+        recovery: { kind: "none" },
+        rekey: err.plan,
       },
     };
   }
@@ -3181,7 +3207,15 @@ export function createWebApp(options: WebAppOptions) {
   const handleGitReconcileGet: RouteHandler = async ({ res, locttDir }) => {
     const session = await loadReconcileSession(locttDir, root);
     if (session === undefined) { json(res, { reconcile: null }); return; }
-    json(res, { reconcile: { state: session.state, plan: session.plan } });
+    json(res, {
+      reconcile: {
+        state: session.state,
+        plan: session.plan,
+        // GIT-8 (K92): present once the field conflicts resolved and a rekey
+        // is pending confirm — the panel shows this preview.
+        ...(session.rekeyPlan !== undefined ? { rekeyPlan: session.rekeyPlan } : {}),
+      },
+    });
   };
 
   /** Persists the decisions-so-far without applying (GIT-26). */
@@ -3211,6 +3245,21 @@ export function createWebApp(options: WebAppOptions) {
   const handleGitReconcileAbandon: RouteHandler = async ({ res, locttDir }) => {
     await abandonReconcile(locttDir);
     json(res, { abandoned: true });
+  };
+
+  /**
+   * Confirms a pending rekey and completes the originating sync (GIT-8,
+   * K92). The preview was shown by the reconcile session; this applies it.
+   * A partial rekey failure (GIT-33) rides in `syncOutcome.unresolvedKeys`.
+   */
+  const handleGitReconcileConfirmRekey: RouteHandler = async ({ res, locttDir }) => {
+    try {
+      const outcome = await confirmRekey(locttDir, root);
+      json(res, outcome);
+    } catch (err) {
+      const { status, message, extra } = gitErrorResponse(err);
+      error(res, message, status, extra);
+    }
   };
 
   const handleGetUserSettings: RouteHandler = async ({ res, locttDir }) => {
@@ -5302,6 +5351,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "POST", pattern: "/api/git/reconcile/decisions", handler: handleGitReconcileDecisions },
     { method: "POST", pattern: "/api/git/reconcile/apply", handler: handleGitReconcileApply },
     { method: "POST", pattern: "/api/git/reconcile/abandon", handler: handleGitReconcileAbandon },
+    { method: "POST", pattern: "/api/git/reconcile/confirm-rekey", handler: handleGitReconcileConfirmRekey },
     { method: "GET", pattern: "/api/user-settings", handler: handleGetUserSettings },
     { method: "PUT", pattern: "/api/user-settings", handler: handlePutUserSettings },
   ];

@@ -130,12 +130,14 @@ export { computeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
 export { blockingFindings, checkDataIntegrity, runDoctor, runDoctorStream } from "./diagnostics/index.js";
 export type { LocttErrorOptions } from "./errors.js";
 export { errorEnvelope, LocttError } from "./errors.js";
-export type { FetchResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, PreflightReport, PushResult, SyncOutcome, SyncProgress } from "./git/index.js";
+export type { AppliedRekey, FetchResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, PreflightReport, PushResult, SyncOutcome, SyncProgress } from "./git/index.js";
 export type {
   ApplyReconcileOutcome,
   ApplyReconcileResult,
   ConflictComputation,
+  RekeyLoser,
   RekeyOutcome,
+  RekeyPlan,
   RekeyResult,
   RekeySkip,
   TaskApplyResult,
@@ -147,6 +149,7 @@ export {
   commitToLocttBranch,
   computeReconcilePlan,
   computeTaskConflicts,
+  confirmRekey,
   disableGit,
   enableGit,
   fetchLocttBranch,
@@ -160,12 +163,14 @@ export {
   GitHistoryRewrittenError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
+  GitRekeyNeededError,
   GitRemoteSchemaNewerError,
   GitSyncError,
   GitSyncFirstError,
   loadReconcileSession,
   preflight,
   PreflightError,
+  previewRekey,
   publish,
   pullFromLocttBranch,
   pushLocttBranch,
@@ -174,7 +179,7 @@ export {
   sync,
 } from "./git/index.js";
 export { classifyRemoteFailure } from "./git/index.js";
-export { mergeKeyHistory,mergeRelationships, rekeyCollisions } from "./git/index.js";
+export { mergeKeyHistory, mergeRelationships, rekeyCollisions } from "./git/index.js";
 export {
   assignProvisionalPrefixes,
   assignProvisionalSlugs,
