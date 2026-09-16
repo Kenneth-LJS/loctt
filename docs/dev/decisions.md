@@ -4444,6 +4444,15 @@ noted in `known-gaps.md`.
 **To revert.** Drop the `?limit=` from the five query functions.
 `sidebarData.test.tsx` goes red on all five.
 
+**Superseded by K90 (2026-09-16, A-K90-SEARCH).** The "paged/incremental
+picker … its own ticket" this deferred is now built: config-list `?q=`
+search in core + all five web endpoints + CLI/MCP, and the pickers query
+the server as you type instead of fetch-and-filter. The `limit=1000`
+fetch remains only as the source for *displaying an already-attached
+value's name*, not for the candidate list — so the "wrong past 1000"
+hazard is closed (the label picker's duplicate-create gate is now
+server-authoritative). See A-K90-SEARCH.
+
 
 ### A44 · NEW-20's "ask" state is unreachable; a ghost default is a config error
 
@@ -11845,18 +11854,40 @@ pickers to query rather than fetch-and-filter.
   the create modal and (via MetaPanel) task detail. `@verifies K90` at
   1100 labels (above the 1000 cap — 200 passed even buggy), red-proven:
   reverting to the in-memory filter fails at 1100.
-- **Remaining sub-step:** the milestone/sprint/user/project pickers use
-  `OptionPicker` (a static-options select with no search input). Giving it
-  an opt-in querying mode is the rest of K90's "the dropdown itself
-  searches" clause. Deferred to its own commit because `OptionPicker` has
-  16 usages across 7 files and the change is additive UX with real
-  regression surface — none of those four has the duplicate-write hazard
-  (no inline create), so their truncation is a find-past-1000 discovery
-  gap, not data corruption. Tracked in TEMP-TODO under this item.
+- **OptionPicker search (done, Ken said build it 2026-09-16):**
+  `OptionPicker` gained an opt-in `search?: OptionSearch` prop — when
+  supplied, the dropdown renders a debounced (200ms) search input and its
+  candidate options come from `onQuery(q)` instead of the static
+  `options` prop; `options` then only needs the current value's option so
+  a selected value outside the results stays displayable (P3/XS-27). The
+  16 existing static usages pass no `search` and are byte-unchanged. The
+  milestone/sprint/assignee/reporter pickers (MetaPanel + create modal)
+  and the create-modal project picker wire it via `searchMilestones`/
+  `searchSprints`/`searchUsers`/`searchProjects` in sidebarData.ts.
+  `@verifies K90` at 1100 milestones (past the cap), red-proven: forcing
+  `listOptions` back to the static prop fails to reach ms-1099.
+- **Behavior change the query-on-open picker forced (tests updated).**
+  Two cases — TSK-46 and PRU-41 — tested a *stale* assignee picker: a
+  user loaded as selectable, archived out-of-band, then picked from the
+  stale list to prove the SERVER refuses the write and the panel reverts.
+  A querying picker re-fetches when opened, so the since-archived user now
+  renders present-but-disabled and the doomed write is never sent — the
+  refusal is prevented at the control instead. The server-side
+  archived-reference guard is unchanged and still covered by core
+  (`config/archived-guard.test.ts`, `…-fails-closed.test.ts`) + the MCP
+  guard tests, so no refusal coverage was lost. Per Ken (2026-09-16) and
+  CLAUDE.md's "a fix that edits a green test": both UI tests were rewritten
+  to assert the client-side prevention (archived option shown, named,
+  marked, disabled; nothing written). This required `searchUsers` to pass
+  `include_archived=true` (matching `useUsers`) so an archived reference
+  stays visible-but-disabled in the picker, and `OptionPicker` to keep the
+  current value's option in the search list rather than excluding it (so
+  an archived current ref does not vanish — TSK-10/TSK-33).
 
 **To revert:** the backend commit is independent; for the labels picker,
 restore the in-memory `candidates`/`exact` derivation in `LabelsField` and
-drop the `searchLabels` prop + hook.
+drop the `searchLabels` prop + hook; for the OptionPicker search, drop the
+`search` prop and its state/effect and the four `search={{…}}` call sites.
 
 ### A-SET9-ESTIMATE-UI · Estimate field in the create modal + as an opt-in list column, config-shaped by one shared helper
 

@@ -1718,6 +1718,36 @@ test.describe("NEW — create task modal", () => {
     await expect(labels.getByTestId("meta-create-label")).toBeVisible();
   });
 
+  // @verifies K90
+  test("K90: the milestone picker searches the server, reaching a milestone past the fetch window", async ({
+    page,
+    tracker,
+  }) => {
+    // 1100 milestones: past MAX_PAGE_LIMIT. The picker fetches only the
+    // first page for its initial list, so a milestone in the tail is only
+    // reachable because the dropdown queries the server as you type (K90's
+    // "the dropdown itself searches"). Before that, the tail was invisible.
+    const msPath = path.join(tracker.root, ".loctt", "config", "milestones.yaml");
+    const lines = ["milestones:"];
+    for (let i = 1; i <= 1100; i++) {
+      lines.push(`  - id: 01MS0${String(i).padStart(20, "0")}`);
+      lines.push(`    name: ms-${String(i)}`);
+    }
+    await writeFile(msPath, `${lines.join("\n")}\n`);
+
+    await page.goto(`${tracker.baseURL}/list`);
+    await openModal(page);
+    const picker = page.getByTestId("create-milestone");
+    // Open the dropdown, then search for a milestone past entry 1000.
+    await picker.getByTestId("meta-edit-milestone").click();
+    await picker.getByTestId("meta-search-milestone").fill("ms-1099");
+    // The server search finds it and offers it as an option.
+    await expect(picker.getByRole("option", { name: "ms-1099", exact: true })).toBeVisible();
+    // A string matching nothing shows the empty state, not a stale list.
+    await picker.getByTestId("meta-search-milestone").fill("zzz-no-such-milestone");
+    await expect(picker.getByText("No matches.")).toBeVisible();
+  });
+
   // @verifies NEW-30
   test("NEW-30: a status deleted under an open modal never reaches disk", async ({
     page,

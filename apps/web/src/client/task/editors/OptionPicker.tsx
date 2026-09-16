@@ -48,6 +48,22 @@ export interface PickerOption {
  * top of the document to get back, which is what P8 means by a
  * frequent path staying keyboard-reachable.
  */
+/**
+ * K90: opt-in server-side search for a picker whose option list is a
+ * config list too large to fetch whole (milestones, sprints, users,
+ * projects). When supplied, the dropdown grows a text input and the
+ * *candidate* options come from `onQuery(q)` rather than the static
+ * `options` prop — so a workspace past the 1000-row fetch window is
+ * fully reachable by typing. `options` still carries the CURRENT value's
+ * option (and any the caller always wants shown) so a selected value
+ * outside the current results stays displayable, per P3/XS-27.
+ */
+export interface OptionSearch {
+  /** Returns the options matching `q` (already mapped to PickerOption). */
+  readonly onQuery: (q: string) => Promise<readonly PickerOption[]>;
+  readonly placeholder?: string;
+}
+
 export function OptionPicker({
   label,
   value,
@@ -58,11 +74,18 @@ export function OptionPicker({
   emptyText = "—",
   disabledReason,
   errorId,
+  search,
 }: {
   /** The field's own label, for the trigger's accessible name. */
   readonly label: string;
   /** The stored key, or undefined when unset. */
   readonly value: string | undefined;
+  /**
+   * The options to show. In static mode this is the whole list. In
+   * search mode (see `search`) it need only carry the current value's
+   * option so it stays displayable; the candidate list comes from the
+   * query.
+   */
   readonly options: readonly PickerOption[];
   readonly onSelect: (key: string) => void;
   /** Omit to make the field non-clearable. */
@@ -74,6 +97,8 @@ export function OptionPicker({
    * Archived entities are the only current use.
    */
   readonly disabledReason?: string;
+  /** K90: opt-in server-side search. Omit for the static list behavior. */
+  readonly search?: OptionSearch | undefined;
   /**
    * A11Y-23: the id of the error text for this field, when the form
    * has rejected it.
@@ -88,12 +113,39 @@ export function OptionPicker({
   readonly errorId?: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  // K90: server results for the current (debounced) query, or null while
+  // a query is in flight / before the first fetch. Only used in search
+  // mode.
+  const [results, setResults] = useState<readonly PickerOption[] | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
+
+  // K90: debounce the query and fetch candidates when in search mode and
+  // open. A blank query fetches the first page (the browse view).
+  const trimmedQuery = query.trim();
+  useEffect(() => {
+    if (search === undefined || !open) return undefined;
+    let cancelled = false;
+    setResults(null);
+    const t = setTimeout(() => {
+      void search.onQuery(trimmedQuery)
+        .then(rows => { if (!cancelled) setResults(rows); })
+        .catch(() => { if (!cancelled) setResults([]); });
+    }, 200);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search, open, trimmedQuery]);
+
+  // Focus the search box when the list opens in search mode.
+  useEffect(() => {
+    if (open && search !== undefined) searchInputRef.current?.focus();
+  }, [open, search]);
 
   const close = (returnFocus: boolean): void => {
     setOpen(false);
+    setQuery("");
     // TSK-41's third bullet. Only on a deliberate close — on an
     // outside click the user has already moved focus somewhere they
     // chose, and yanking it back would be worse than leaving it.
@@ -131,6 +183,20 @@ export function OptionPicker({
   // would violate P3; rendering nothing would lose the fact that the
   // file holds a value.
   const unrecognized = value !== undefined && current === undefined;
+
+  // The candidate list the dropdown renders. Static mode: the `options`
+  // prop. Search mode: the server `results` (null until the first fetch
+  // returns), with the current value's option merged in when the query
+  // did not return it — so a selected value (including an archived one,
+  // which must stay present-but-disabled: TSK-10/TSK-33) never vanishes
+  // from the list, and it keeps its `aria-selected` marker.
+  const listOptions: readonly PickerOption[] = (() => {
+    if (search === undefined) return options;
+    const rows = results ?? [];
+    if (current === undefined || rows.some(o => o.key === current.key)) return rows;
+    return [current, ...rows];
+  })();
+  const searchLoading = search !== undefined && results === null;
 
   return (
     <div className="relative">
@@ -182,6 +248,18 @@ export function OptionPicker({
           data-testid={`meta-options-${fieldSlug(label)}`}
           className="absolute right-0 z-20 mt-1 max-h-64 min-w-[200px] overflow-auto rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg"
         >
+          {search !== undefined && (
+            <input
+              ref={searchInputRef}
+              type="text"
+              aria-label={`Search ${label.toLowerCase()}`}
+              data-testid={`meta-search-${fieldSlug(label)}`}
+              value={query}
+              onChange={e => { setQuery(e.target.value); }}
+              placeholder={search.placeholder ?? "Search…"}
+              className="mb-1 w-[calc(100%-0.5rem)] mx-1 rounded border border-border-subtle bg-bg-canvas px-1.5 py-1 text-[0.8571rem] text-text-primary"
+            />
+          )}
           {onClear !== undefined && value !== undefined && (
             <button
               type="button"
@@ -193,7 +271,13 @@ export function OptionPicker({
               {clearLabel ?? `Clear ${label.toLowerCase()}`}
             </button>
           )}
-          {options.map(opt => (
+          {searchLoading && (
+            <p className="px-3 py-1.5 text-[0.8571rem] text-text-tertiary">Searching…</p>
+          )}
+          {search !== undefined && !searchLoading && listOptions.length === 0 && (
+            <p className="px-3 py-1.5 text-[0.8571rem] text-text-tertiary">No matches.</p>
+          )}
+          {listOptions.map(opt => (
             <button
               key={opt.key}
               type="button"
@@ -236,7 +320,7 @@ export function OptionPicker({
               </span>
             </button>
           ))}
-          {disabledReason !== undefined && options.some(o => o.disabled === true) && (
+          {disabledReason !== undefined && listOptions.some(o => o.disabled === true) && (
             <p className="border-t border-border-subtle px-3 pb-1 pt-1.5 text-[0.7857rem] text-text-tertiary">
               {disabledReason}
             </p>

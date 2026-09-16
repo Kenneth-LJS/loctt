@@ -1242,29 +1242,6 @@ verification. Out of scope here; it needs its own look.
 **Do not read a green full run as evidence these are fixed.** One in
 four runs was clean with all three still fragile.
 
-## Config pickers break past 1000 entries
-
-**Found:** M3.4 (2026-08-30). **Not fixed** — bounded, and the fix is a
-paged picker, which is its own ticket.
-
-See `decisions.md` A43: the picker hooks now request
-`limit=1000`, the server's `MAX_PAGE_LIMIT`. A workspace with more than
-a thousand labels, milestones, sprints, users or projects is back to
-the original defect — the list is silently truncated, and the create
-modal's label field will offer to create a duplicate of an existing
-label that fell outside the window.
-
-**Why it matters.** It fails silently and it *writes* — a duplicate
-label in `labels.yaml`, not just a missing row.
-
-**To reproduce:** seed 1100 labels, open the create modal, search for
-`lbl-1050`, and watch it offer "Create «lbl-1050»".
-
-**To fix:** server-side search on the list endpoints (`?q=`), and an
-incremental picker that queries rather than filtering a
-fully-fetched array. NEW-25 already asks for "filters as you type and
-shows a bounded number of results", which is that design.
-
 
 ## The query language cannot ask whether a field is unset
 

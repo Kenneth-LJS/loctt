@@ -154,9 +154,45 @@ const PICKER_SEARCH_LIMIT = 50;
  * own debounce and calls this from an effect.
  */
 export async function searchLabels(q: string): Promise<readonly LabelDef[]> {
-  const params = new URLSearchParams({ limit: String(PICKER_SEARCH_LIMIT) });
+  const page = await apiClient.get<BrokenPage<LabelDef>>(searchUrl("/api/labels", q));
+  return page.items;
+}
+
+/** Builds a `?q=&limit=` picker-search URL, omitting `q` when blank. */
+function searchUrl(path: string, q: string, extra?: Record<string, string>): string {
+  const params = new URLSearchParams({ limit: String(PICKER_SEARCH_LIMIT), ...extra });
   if (q.trim() !== "") params.set("q", q.trim());
-  const page = await apiClient.get<BrokenPage<LabelDef>>(`/api/labels?${params.toString()}`);
+  return `${path}?${params.toString()}`;
+}
+
+/** K90: server-side milestone search for the picker (see OptionPicker). */
+export async function searchMilestones(q: string): Promise<readonly MilestoneDef[]> {
+  const page = await apiClient.get<BrokenPage<MilestoneDef>>(searchUrl("/api/milestones", q));
+  return page.items;
+}
+
+/** K90: server-side sprint search for the picker. */
+export async function searchSprints(q: string): Promise<readonly SprintDef[]> {
+  const page = await apiClient.get<BrokenPage<SprintDef>>(searchUrl("/api/sprints", q));
+  return page.items;
+}
+
+/**
+ * K90: server-side user search for the picker. Requests archived users
+ * too (like `useUsers`) so an archived assignee/reporter stays visible in
+ * the list — present-but-disabled — and the "cannot select archived"
+ * refusal is exercisable (TSK-46, PRU-41); the option mapper marks them.
+ */
+export async function searchUsers(q: string): Promise<readonly UserProfile[]> {
+  const page = await apiClient.get<UsersPage>(
+    searchUrl("/api/users", q, { include_archived: "true" }),
+  );
+  return page.items;
+}
+
+/** K90: server-side project search for the picker (matches name/slug/prefix). */
+export async function searchProjects(q: string): Promise<readonly ProjectDef[]> {
+  const page = await apiClient.get<ProjectsPage>(searchUrl("/api/projects", q));
   return page.items;
 }
 
