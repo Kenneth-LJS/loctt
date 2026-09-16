@@ -127,6 +127,7 @@ import {
   GitRekeyNeededError,
   GitRemoteSchemaNewerError,
   GitSyncFirstError,
+  GitWorktreeMissingError,
   initLoctt,
   InitRepairNeededError,
   isEmptyTracker,
@@ -467,6 +468,9 @@ function error(
     // session GET also recomputes it, but carrying it here avoids a race
     // between the 409 and the refetch.
     ...(extra.rekey !== undefined ? { rekey: extra.rekey } : {}),
+    // GIT-36: the missing/corrupt-worktree refusal payload the panel names
+    // the worktree + repair path from, without a second fetch.
+    ...(extra.worktree_missing !== undefined ? { worktree_missing: extra.worktree_missing } : {}),
   };
   json(res, envelope, status);
 }
@@ -602,6 +606,29 @@ function gitErrorResponse(err: unknown): {
         data_state: "not_saved",
         recovery: { kind: "none" },
         rekey: err.plan,
+      },
+    };
+  }
+  if (err instanceof GitWorktreeMissingError) {
+    // GIT-36: LocTT's temporary worktree is registered but its directory is
+    // gone. A client-actionable refusal, not a server fault — 409, matching
+    // the other GIT refusals' envelope shape. Nothing reached a local write,
+    // so `not_saved`; recovery is `none` because the fix is a deliberate
+    // git/CLI repair, not a retry. The worktree path + operation are carried
+    // so the panel names the exact worktree and repair path without a second
+    // fetch.
+    return {
+      status: 409,
+      message: err.message,
+      extra: {
+        code: "git_worktree_missing",
+        data_state: "not_saved",
+        recovery: { kind: "none" },
+        detail: err.detail,
+        worktree_missing: {
+          worktree: err.worktreeDir,
+          operation: err.operation,
+        },
       },
     };
   }

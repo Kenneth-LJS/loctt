@@ -13031,3 +13031,109 @@ panel rekey-phase UI + the CLI/MCP old→new reporting; revert the docs;
 delete the new tests. On-disk: the `rekey` sentinel field is additive and
 optional, cleared on completion — no migration. Reverting restores the
 silent-rekey behaviour (the pre-K92 state).
+
+### A194 · GIT-34/GIT-36 named errors — malformed remote task report + missing-worktree refusal (SAFE, over already-safe behaviour)
+
+**Ticket:** GIT-34, GIT-36 · **Date:** 2026-09-16 · **Commit:** uncommitted (working tree).
+
+**Situation (A188: this is SAFE named-error/reporting work — no data movement, no destructive git).**
+- **GIT-34.** A branch task with malformed frontmatter: the tolerant list
+  loader (`loadAllTasksDetailed`) already keeps such a task as a broken-file
+  row (ERR-9), so the *list-view* sub-part already existed. What was missing:
+  a per-file SYNC REPORT. `applyPlan` copies a branch task verbatim without
+  re-validating (correctly — a malformed remote task must NOT abort the whole
+  sync), so a bad file landed on disk with nothing in the sync result naming
+  it. GIT-34 wants it named by task id, and the rest reported as applied.
+- **GIT-36.** Publish/sync stage into a temporary worktree
+  (`.loctt/local/.worktree-publish` / `.worktree-sync`). A hand-deleted
+  *directory* already self-heals (`rm` + `worktree prune` + `worktree add`).
+  The genuine failure is a *locked* worktree whose directory is gone: prune
+  will not clear it, and `worktree add` dies with git's opaque
+  `fatal: '<path>' is a missing but locked worktree`. GIT-36 wants that NAMED
+  (worktree path + "missing") with a repair path, and local files asserted
+  untouched — not new worktree logic.
+
+**What was built.**
+- **Core (`git/publish-sync.ts`):**
+  - `GitWorktreeMissingError extends GitSyncError` (carries `worktreeDir`,
+    `operation`, `detail`). `isWorktreeRegistrationFailure(stderr)` matches
+    only the "registered but the directory is gone" family (missing-but-
+    locked / already-registered / not-a-working-tree / worktree-already-
+    exists); `addWorktreeOrNameMissing()` wraps the two `worktree add` calls
+    and rethrows any *other* git failure unchanged (narrow gate: an unrelated
+    fatal must stay generic, not be mislabelled GIT-36). Message names the
+    worktree + missing + two repair paths, each stating it leaves `.loctt/`
+    task files as they are. Untouched-files guarantee holds structurally:
+    publish never writes back to `.loctt/`; sync's `add` is in the read-only
+    planning phase, before the first `applyPlan` write.
+  - `SyncOutcome.malformed?: MalformedSyncedTask[]` ({id, path, reason}).
+    After `applyPlan`/`applyResolution`, `malformedAppliedTasks()` reads back
+    (via `readTask`, the same tolerant read the list uses) the task ids the
+    plan *touched* (`taskIdsTouchedBy` = copies + merges; deletes excluded —
+    a deleted task is not "applied"), naming the ones that will not parse.
+    Scoped to touched tasks so a sync does not claim a pre-existing local
+    corruption as its own. Present only when non-empty.
+- **Contracts (`service.ts`):** `ErrorCode` gains `git_worktree_missing`;
+  `ErrorResponse.worktree_missing?: {worktree, operation}`.
+- **Web server (`server.ts`):** `gitErrorResponse` maps
+  `GitWorktreeMissingError` → 409, `code: git_worktree_missing`,
+  `data_state: not_saved`, `recovery: none`, `detail`, `worktree_missing`
+  payload; `error()` allowlist passes `worktree_missing` through. (The
+  `malformed` report needs no server change — it rides the sync result body /
+  terminal NDJSON line.)
+- **Web client (`GitSyncPanel.tsx` + `useGit.ts`):** `worktreeMissing()`
+  detector + `WorktreeMissingRefusal` banner (no Retry; names worktree +
+  repair paths + local-files-untouched) rendered for both publish and sync;
+  `SyncResult.malformed` + a `git-sync-malformed` block in the sync-success
+  render naming each bad file's path + reason ("the rest of the sync was
+  applied", "open each one to fix it").
+- **CLI (`commands/git.ts`) + MCP (`tools/git.ts`) — P10 parity:** both
+  catch `GitWorktreeMissingError` and print its message (names worktree +
+  repair path); both report `result.malformed` after a sync (id + path +
+  reason, "the rest of the sync was applied").
+- **Docs:** CLI reference (two new subsections under git sync errors) + MCP
+  reference (two new paragraphs under the git tools).
+
+**Which sub-parts already existed vs built.** GIT-34's list-view broken-file
+render already existed (`loadAllTasksDetailed`) — covered by a test, not
+rebuilt. Everything else (the sync report; the worktree naming + repair path;
+CLI/MCP/web wiring) was built.
+
+**Tests (each red-proven).** core `git-worktree-missing.test.ts` (3,
+`@verifies GIT-36`): publish + sync each refuse with the named error naming
+the worktree + missing, local task file byte-identical after; an unrelated
+git failure (`.git` removed) is NOT a `GitWorktreeMissingError`. core
+`git-malformed-remote.test.ts` (2, `@verifies GIT-34`): sync reports the bad
+task by id + path, applies the good task, keeps the bad file as-is, does not
+abort; `loadAllTasksDetailed` shows it as a broken-file row while the rest
+render. web `git-errors.test.ts` (+2): 409 `git_worktree_missing` with the
+`worktree_missing` payload; malformed sync result carries `malformed`.
+web `GitSyncPanel.test.tsx` (+1, worktreeMissing detector). integration:
+CLI `git-publish-failure.test.ts` (+1, GIT-36 named error + repair path +
+untouched), MCP `sync-from-git.test.ts` (+1, GIT-34 named report). Red-proofs:
+GIT-36 by forcing `isWorktreeRegistrationFailure`→false (both refusals go
+red); GIT-34 by early-returning `malformedAppliedTasks`→[] (report test red,
+list-render test stays green — that behaviour is pre-existing); web mapping by
+`false && instanceof`; panel detector by disabling its code check. All
+restored; no RED-PROOF residue.
+
+**Green tests edited (asserted the bug).** None — all additions are new
+tests; no existing green test asserted the old behaviour here.
+
+**Not touched.** no-`--force` push guard; NEVER_MIRROR/LOCAL_OWNED;
+reconcile/rekey; GIT-21/GIT-35/GIT-8/GIT-22 guards; `last_synced_commit`
+writes; the worktree churn logic itself (rm + prune + add) — GIT-36 only adds
+naming around the existing `add`.
+
+**To revert.** Remove `GitWorktreeMissingError` +
+`isWorktreeRegistrationFailure` + `addWorktreeOrNameMissing` (restore the two
+raw `git(["worktree","add",…])` calls); remove `SyncOutcome.malformed` +
+`MalformedSyncedTask` + `malformedAppliedTasks` + `taskIdsTouchedBy` + the
+readback call; drop `git_worktree_missing` from `ErrorCode` +
+`worktree_missing` from `ErrorResponse` + the `gitErrorResponse` arm + the
+`error()` allowlist line; revert the panel banner/detector + `SyncResult`
+field + the malformed render block; revert the CLI/MCP catch arms + malformed
+reporting; revert the docs; delete the new tests. On-disk: no schema/sentinel
+change — purely additive reporting, nothing to migrate. Reverting restores
+git's opaque worktree fatal and a silent malformed-task copy (the prior
+behaviour).
