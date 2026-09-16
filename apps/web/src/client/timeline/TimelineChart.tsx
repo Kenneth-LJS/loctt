@@ -1,15 +1,55 @@
-import type { TimelineZoom } from "@loctt/contracts";
-import { forwardRef, useMemo, useState } from "react";
+import type { CalendarConfig, TimelineZoom } from "@loctt/contracts";
+import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ICON } from "../ui/icons.ts";
 import type { DependencyEdge } from "./arrows.ts";
 import { arrowPath } from "./arrows.ts";
-import type { DateRange, HeaderCell } from "./geometry.ts";
-import { barGeometry, dateToX,DAY_WIDTH } from "./geometry.ts";
+import type { DateRange, PixelWindow } from "./geometry.ts";
+import { barGeometry, dateToX,DAY_WIDTH, daysBetween, eachDay, eachDayInWindow, headerCells, headerCellsInWindow, nonWorkingReason } from "./geometry.ts";
 import type { Layout } from "./layout.ts";
 import { BAND_HEADER_H, buildLayout,ROW_H } from "./layout.ts";
 import type { DateProblem, RowModel } from "./rows.ts";
 import { dateProblemNote } from "./rows.ts";
+
+/**
+ * Rows/columns of overscan rendered beyond the visible window (TML-21,
+ * TML-26).
+ *
+ * Windowing renders only what the viewport shows plus this margin, so a
+ * scroll of a few rows/columns does not expose an un-mounted gap before
+ * the scroll handler re-runs. Generous on purpose: it is the whole
+ * budget that keeps a 3,000-row or 47,000-column view cheap, and it
+ * still has to comfortably cover the largest satisfiable non-scale case
+ * (TML-30's 60 rows) at initial scroll without a scroll step. 800px of
+ * vertical overscan is ~28 rows each side on top of a ~600px viewport —
+ * 60 rows mount at rest — while 3,000 rows (84,000px) never all do.
+ */
+const OVERSCAN_PX = 800;
+
+/**
+ * The column count above which the header/grid/shading windows
+ * horizontally (TML-21), and the row count above which the rows window
+ * vertically (TML-26).
+ *
+ * Windowing changes what is in the DOM — off-screen cells and rows stop
+ * being mounted — so it is applied only when the view is large enough to
+ * *need* it. Below these bounds every cell and row renders, which is
+ * cheap, matches the pre-windowing behaviour, and keeps an ordinary
+ * chart's whole grid addressable (a test, or a user's find-in-page,
+ * still sees an off-screen weekend or a row scrolled just out of view).
+ * A 129-year day span (~47,000 columns) is two orders of magnitude over
+ * the column bound and windows; a 3,000-row tracker is an order over the
+ * row bound and windows. The satisfiable scale cases — 60 overlapping
+ * rows (TML-30), 40 assignee bands (TML-27), an ordinary shaded span
+ * (TML-13) — all sit under the bounds and render in full.
+ *
+ * These are not tuning knobs for performance so much as the line between
+ * "small enough that materializing everything is free" and "large enough
+ * that it is the bug the cases name". Chosen with headroom on both sides
+ * of every case so a small change to a fixture cannot flip an axis.
+ */
+const COLUMN_WINDOW_THRESHOLD = 5000;
+const ROW_WINDOW_THRESHOLD = 400;
 
 /**
  * The scrolling chart: header, bands, bars, shading, today marker and
@@ -54,8 +94,19 @@ export interface TimelineChartProps {
   readonly range: DateRange;
   readonly zoom: TimelineZoom;
   readonly width: number;
-  readonly cells: readonly HeaderCell[];
-  readonly shaded: readonly { readonly date: string; readonly reason: string }[];
+  /**
+   * The workspace calendar, for weekend/holiday shading.
+   *
+   * The chart derives the shaded columns itself from the visible
+   * window rather than receiving a pre-built array, because that array
+   * is one node per non-working day and at a 129-year span it is tens
+   * of thousands of nodes the parent must never materialize (TML-21).
+   * `undefined` while the calendar loads or when it failed to parse
+   * (TML-46) — `nonWorkingReason` then shades nothing.
+   */
+  readonly calendar: CalendarConfig | undefined;
+  /** Whether to shade non-working days at all (off at month zoom). */
+  readonly shadingOn: boolean;
   readonly today: string;
   readonly edges: readonly DependencyEdge[];
   readonly onOpenTask: (key: string) => void;
@@ -159,21 +210,159 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
     const px = DAY_WIDTH[props.zoom];
     const todayX = dateToX(props.range, props.today, props.zoom);
 
+    /**
+     * The scroll container, tracked so the header/grid (horizontal) and
+     * the rows (vertical) can be windowed to what is on screen.
+     *
+     * A local ref, re-published to the forwarded `ref` via
+     * `useImperativeHandle`: the parent uses that ref only to
+     * `scrollTo` (TML-16's initial centring), and windowing needs the
+     * same element to read `scrollLeft`/`scrollTop`/client size and to
+     * attach a scroll listener. Sharing one node keeps both.
+     */
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    useImperativeHandle(ref, () => scrollRef.current as HTMLDivElement, []);
+
+    /**
+     * The visible viewport in the chart's own pixel coordinates.
+     *
+     * Updated on scroll and on resize. `null` until the element is
+     * measured; a null window renders a small seed slice from the
+     * origin so the very first paint (before any scroll/resize event)
+     * still shows the top-left of the chart rather than nothing —
+     * TML-16 then scrolls it, which fires the handler and fills in the
+     * real window.
+     */
+    const [viewport, setViewport] = useState<{
+      readonly top: number;
+      readonly height: number;
+      readonly left: number;
+      readonly width: number;
+    } | null>(null);
+
+    const measure = useCallback((): void => {
+      const el = scrollRef.current;
+      if (el === null) return;
+      setViewport(prev => {
+        const next = {
+          top: el.scrollTop,
+          height: el.clientHeight,
+          left: el.scrollLeft,
+          width: el.clientWidth,
+        };
+        if (
+          prev !== null
+          && prev.top === next.top
+          && prev.height === next.height
+          && prev.left === next.left
+          && prev.width === next.width
+        ) return prev;
+        return next;
+      });
+    }, []);
+
+    // Measure once on mount and whenever the element resizes; the scroll
+    // listener below keeps it current as the user scrolls.
+    useLayoutEffect(() => {
+      const el = scrollRef.current;
+      if (el === null) return;
+      measure();
+      if (typeof ResizeObserver === "undefined") return;
+      const ro = new ResizeObserver(() => { measure(); });
+      ro.observe(el);
+      return () => { ro.disconnect(); };
+    }, [measure]);
+
+    // Total columns and rows decide whether each axis windows at all —
+    // small views render in full (see the threshold constants).
+    const totalColumns = daysBetween(props.range.start, props.range.end) + 1;
+    const totalRows = layout.centreById.size;
+    const windowColumns = totalColumns > COLUMN_WINDOW_THRESHOLD;
+    const windowRows = totalRows > ROW_WINDOW_THRESHOLD;
+
+    /**
+     * The vertical row window: only bands/rows whose y intersects the
+     * viewport (padded by overscan) are mounted (TML-26).
+     *
+     * `buildLayout` still placed *every* row, so `layout.centreById` and
+     * `layout.taskById` are complete and the arrows anchor correctly to
+     * rows that are not mounted (the load-bearing constraint). This only
+     * decides what the DOM carries. Below the row threshold the window
+     * spans the whole height, so every row renders.
+     */
+    const vTop = !windowRows ? Number.NEGATIVE_INFINITY : viewport === null ? 0 : viewport.top - OVERSCAN_PX;
+    const vBottom = !windowRows
+      ? Number.POSITIVE_INFINITY
+      : viewport === null ? OVERSCAN_PX : viewport.top + viewport.height + OVERSCAN_PX;
+
+    /**
+     * The horizontal pixel window for the header, grid lines and
+     * shading (TML-21). Same overscan idea, applied to x. Below the
+     * column threshold it spans the whole width, so every cell renders.
+     */
+    const hWindow: PixelWindow = useMemo(
+      () => ({
+        left: !windowColumns ? Number.NEGATIVE_INFINITY : viewport === null ? 0 : viewport.left - OVERSCAN_PX,
+        right: !windowColumns
+          ? Number.POSITIVE_INFINITY
+          : viewport === null ? OVERSCAN_PX : viewport.left + viewport.width + OVERSCAN_PX,
+      }),
+      [windowColumns, viewport],
+    );
+
+    // Header cells for the visible window (or all of them, below the
+    // column threshold). Every cell's left/width is the same it would
+    // have in the full-range build, so a bar still lines up with its
+    // column. The full build is used verbatim when not windowing so the
+    // output is byte-identical to the pre-windowing behaviour.
+    const cells = useMemo(
+      () =>
+        windowColumns
+          ? headerCellsInWindow(props.range, props.zoom, props.calendar, hWindow)
+          : headerCells(props.range, props.zoom, props.calendar),
+      [windowColumns, props.range, props.zoom, props.calendar, hWindow],
+    );
+
+    // Weekend/holiday shading (TML-13), windowed for a giant span
+    // (TML-21) and rendered in full for an ordinary one.
+    const shaded = useMemo(() => {
+      if (!props.shadingOn) return [];
+      const days = windowColumns
+        ? eachDayInWindow(props.range, props.zoom, hWindow)
+        : eachDay(props.range);
+      return days
+        .map(d => ({ date: d, reason: nonWorkingReason(d, props.calendar) }))
+        .filter((s): s is { date: string; reason: string } => s.reason !== undefined);
+    }, [windowColumns, props.shadingOn, props.range, props.zoom, props.calendar, hWindow]);
+
+    /**
+     * TML-32: the source bar the pointer is over, whose outgoing arrows
+     * are highlighted so a single dependency can be traced out of a fan
+     * of 50. Cleared on leave. Kept as the task id, matched against each
+     * edge's `from` when the arrow is drawn.
+     */
+    const [hoveredSource, setHoveredSource] = useState<string | null>(null);
+
     return (
       <div
-        ref={ref}
+        ref={scrollRef}
+        onScroll={measure}
         data-testid="timeline-scroll"
         className="min-h-0 flex-1 overflow-auto rounded-md border border-border-default"
       >
         <div style={{ width: props.width, position: "relative" }}>
           {/* Header. Sticky so the dates stay visible while the bands
-              scroll under them. */}
+              scroll under them. Cells are absolutely positioned at their
+              own `left` (not flex-packed) because only the windowed
+              subset is rendered — a flex row would collapse the gap left
+              by the columns off-screen and misalign every visible cell
+              (TML-21). */}
           <div
             data-testid="timeline-header"
-            className="sticky top-0 z-20 flex h-6 border-b border-border-default bg-bg-canvas"
-            style={{ width: props.width }}
+            className="sticky top-0 z-20 h-6 border-b border-border-default bg-bg-canvas"
+            style={{ width: props.width, position: "sticky" }}
           >
-            {props.cells.map(c => (
+            {cells.map(c => (
               <div
                 key={c.key}
                 data-testid="timeline-header-cell"
@@ -182,8 +371,8 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                 // without assuming the chart's origin — which moves
                 // whenever the dated range widens.
                 data-date={c.key}
-                className="shrink-0 border-r border-border-subtle text-center text-[0.7143rem] leading-6 text-text-secondary"
-                style={{ width: c.width }}
+                className="absolute top-0 border-r border-border-subtle text-center text-[0.7143rem] leading-6 text-text-secondary"
+                style={{ left: c.left, width: c.width }}
               >
                 {c.label}
               </div>
@@ -194,8 +383,9 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
             {/* TML-13: weekend/holiday shading, decorative only — bars
                 render across it and no duration is adjusted. Behind
                 everything, and `pointer-events: none` so it never
-                intercepts a click meant for a bar. */}
-            {props.shaded.map(s => (
+                intercepts a click meant for a bar. Windowed to the
+                visible columns (TML-21). */}
+            {shaded.map(s => (
               <div
                 key={s.date}
                 data-testid="timeline-nonworking"
@@ -226,16 +416,41 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
               style={{ left: todayX, height: layout.height, pointerEvents: "none" }}
             />
 
-            {/* Bands and bars. */}
-            {layout.bands.map(band => (
-              <div key={band.id}>
+            {/* Bands and bars.
+
+                Each band is an absolutely-positioned wrapper spanning
+                its whole vertical extent (header + rows), so its header
+                can be `position: sticky` and stay in view while the band
+                scrolls under it (TML-27). Only bands whose extent
+                intersects the vertical window are mounted, and within a
+                mounted band only the rows in the window — the
+                virtualization TML-26 asks for. `layout` still placed
+                every row, so `centreById`/`taskById` stay complete and
+                the arrows below anchor to un-mounted rows correctly. */}
+            {layout.bands.map(band => {
+              const bandBottom =
+                band.rows.length === 0
+                  ? band.y + BAND_HEADER_H
+                  : (band.rows[band.rows.length - 1] as { y: number }).y + ROW_H;
+              // Skip a band entirely off the window — but never one whose
+              // header is above the window while its body still fills it,
+              // so the sticky header can be pinned at the viewport top.
+              if (bandBottom < vTop || band.y > vBottom) return null;
+              return (
+              <div
+                key={band.id}
+                className="absolute left-0"
+                style={{ top: band.y, height: bandBottom - band.y, width: props.width }}
+              >
                 <button
                   type="button"
                   data-testid={`timeline-band-${band.id}`}
                   aria-expanded={!collapsed.has(band.id)}
                   onClick={() => { toggle(band.id); }}
-                  className="absolute left-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-muted/90 px-2 text-left text-[0.7857rem] font-semibold"
-                  style={{ top: band.y, height: BAND_HEADER_H, width: props.width }}
+                  // Sticky under the date header (h-6 = 24px) so it stays
+                  // visible while its own rows scroll past (TML-27).
+                  className="sticky left-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-muted/90 px-2 text-left text-[0.7857rem] font-semibold"
+                  style={{ position: "sticky", top: 24, height: BAND_HEADER_H, width: props.width }}
                 >
                   <span aria-hidden="true">{collapsed.has(band.id) ? ICON.caretRight : ICON.caretDown}</span>
                   <span>{band.label}</span>
@@ -248,6 +463,13 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                 </button>
 
                 {band.rows.map(({ row, y }) => {
+                  // Vertical windowing: skip rows outside the viewport +
+                  // overscan. Their centre is still in `layout.centreById`
+                  // (arrows), and their count is still in the band header.
+                  if (y + ROW_H < vTop || y > vBottom) return null;
+                  // Positioned relative to the band wrapper, whose own top
+                  // is `band.y`, so the absolute y is preserved.
+                  const rowTop = y - band.y;
                   const stored = {
                     start: row.task.start_date as string,
                     due: row.task.due_date as string,
@@ -275,7 +497,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                         style={{
                           left: dateToX(props.range, anchorDate(row.problem, stored), props.zoom),
                           width: Math.max(px, 96),
-                          top: y + 3,
+                          top: rowTop + 3,
                           height: ROW_H - 6,
                         }}
                       >
@@ -298,6 +520,13 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                       title={`${row.task.key} · ${row.task.title ?? row.task.key} · ${start} → ${due}`}
                       onClick={() => { props.onOpenTask(row.task.key); }}
                       onPointerDown={e => { props.onBarPointerDown?.(e, row.task.id, "body"); }}
+                      /* TML-32: hovering a source bar highlights its
+                         outgoing arrows so one dependency can be traced
+                         out of a fan of 50. The id is held in state and
+                         matched against each edge's `from` when the
+                         arrows are drawn; leaving clears it. */
+                      onPointerEnter={() => { setHoveredSource(row.task.id); }}
+                      onPointerLeave={() => { setHoveredSource(prev => (prev === row.task.id ? null : prev)); }}
                       /* TML-40: documented keys, announced via the
                          bar's `aria-label` which carries the live
                          dates. Left/Right shift the whole bar;
@@ -319,7 +548,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                       style={{
                         left: bar.left,
                         width: bar.width,
-                        top: y + 3,
+                        top: rowTop + 3,
                         height: ROW_H - 6,
                       }}
                     >
@@ -378,7 +607,8 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                   );
                 })}
               </div>
-            ))}
+              );
+            })}
 
             {/* TML-14: arrows, drawn last so they sit above the bars.
                 Non-interactive: the bar underneath must stay clickable
@@ -408,8 +638,14 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                   const fromY = layout.centreById.get(edge.from);
                   const toY = layout.centreById.get(edge.to);
                   if (fromY === undefined || toY === undefined) return null;
-                  const fromTask = findTask(layout, edge.from);
-                  const toTask = findTask(layout, edge.to);
+                  // The endpoint tasks come from the COMPLETE `taskById`
+                  // map, not from the rendered rows — an arrow's endpoint
+                  // may be a row scrolled off the vertical window, and its
+                  // bar geometry (hence anchor x) still has to be exact.
+                  // Reading it from the DOM or from only the mounted rows
+                  // is the windowing trap this map exists to close.
+                  const fromTask = layout.taskById.get(edge.from);
+                  const toTask = layout.taskById.get(edge.to);
                   if (fromTask === undefined || toTask === undefined) return null;
                   const fromBar = barGeometry(
                     props.range,
@@ -423,17 +659,25 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                     toTask.due_date as string,
                     props.zoom,
                   );
+                  // TML-32: an arrow leaving the hovered source bar is
+                  // highlighted so it can be traced through the fan.
+                  const highlighted = hoveredSource !== null && edge.from === hoveredSource;
                   return (
                     <path
                       key={`${edge.from}->${edge.to}`}
                       data-testid="timeline-arrow"
+                      data-highlighted={highlighted ? "true" : undefined}
                       d={arrowPath(
                         { x: fromBar.left + fromBar.width, y: fromY },
                         { x: toBar.left, y: toY },
                       )}
                       fill="none"
-                      className="stroke-text-secondary"
-                      strokeWidth={1}
+                      className={
+                        highlighted
+                          ? "stroke-accent"
+                          : "stroke-text-secondary"
+                      }
+                      strokeWidth={highlighted ? 2 : 1}
                       markerEnd="url(#tl-arrowhead)"
                     />
                   );
@@ -468,14 +712,4 @@ function anchorDate(
   if (problem.kind === "open_start") return problem.start;
   if (problem.kind === "open_due") return problem.due;
   return stored.start ?? stored.due;
-}
-
-/** The task behind a laid-out row, by id. */
-function findTask(layout: Layout, id: string) {
-  for (const band of layout.bands) {
-    for (const { row } of band.rows) {
-      if (row.task.id === id) return row.task;
-    }
-  }
-  return undefined;
 }

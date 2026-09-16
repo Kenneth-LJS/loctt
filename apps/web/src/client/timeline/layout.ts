@@ -40,8 +40,28 @@ export interface Layout {
   readonly bands: readonly PlacedBand[];
   /** Total body height, so the scroll container sizes correctly. */
   readonly height: number;
-  /** Row centre-line y by task id — what the arrows anchor to. */
+  /**
+   * Row centre-line y by task id — what the arrows anchor to.
+   *
+   * **Complete under vertical windowing.** This is computed for *every*
+   * laid-out row, not only the rows the chart mounts. Arrows are drawn
+   * from these centres before paint (see the module doc); an arrow
+   * whose endpoint is a row scrolled off the window must still anchor
+   * at the right y, so this map answers for rows that are never
+   * rendered. Windowing lives in `TimelineChart`'s render, never here.
+   */
   readonly centreById: ReadonlyMap<string, number>;
+  /**
+   * Every laid-out row's task, by id — the arrows' endpoint lookup.
+   *
+   * Complete for the same reason `centreById` is: an arrow's horizontal
+   * anchor comes from its endpoint bar's geometry, which needs the
+   * endpoint task's dates even when that endpoint row is not mounted.
+   * `TimelineChart` used to find the task by scanning the rendered
+   * bands, which silently fails the moment those bands are windowed —
+   * this map is the windowing-proof replacement.
+   */
+  readonly taskById: ReadonlyMap<string, TimelineRow["task"]>;
 }
 
 /**
@@ -58,6 +78,7 @@ export function buildLayout(
 ): Layout {
   const bands: PlacedBand[] = [];
   const centreById = new Map<string, number>();
+  const taskById = new Map<string, TimelineRow["task"]>();
   let y = 0;
 
   for (const band of model.bands) {
@@ -68,6 +89,7 @@ export function buildLayout(
       for (const row of band.rows) {
         rows.push({ row, y });
         centreById.set(row.task.id, y + ROW_H / 2);
+        taskById.set(row.task.id, row.task);
         y += ROW_H;
       }
     }
@@ -84,5 +106,5 @@ export function buildLayout(
     });
   }
 
-  return { bands, height: y, centreById };
+  return { bands, height: y, centreById, taskById };
 }
