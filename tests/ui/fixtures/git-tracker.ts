@@ -153,6 +153,20 @@ export async function linkFromOtherClone(
 }
 
 /**
+ * Deletes a task (by key) from a throwaway clone that first fast-forwards
+ * onto the branch, then publishes — the "remote side deleted it" half of a
+ * delete-vs-edit divergence (GIT-16). Returns the branch head afterwards.
+ */
+export async function deleteFromOtherClone(
+  remoteRepo: string,
+  keys: readonly string[],
+): Promise<string> {
+  return inOtherClone(remoteRepo, async (cli) => {
+    for (const key of keys) await cli(["delete", key, "--yes"]);
+  });
+}
+
+/**
  * Simulates a force-push / history rewrite on the bare remote (GIT-21):
  * builds a brand-new orphan `loctt` history in a throwaway clone and
  * `push --force`es it onto the bare remote's `loctt` ref, so the commit

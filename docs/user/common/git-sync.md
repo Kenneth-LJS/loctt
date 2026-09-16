@@ -99,6 +99,26 @@ Workflow config is deliberately not merged: statuses and priorities are
 referenced by every task, so combining two divergent vocabularies could
 leave tasks pointing at a status the merged config does not define.
 
+### Delete versus edit
+
+When one side **deleted** a task and the other **edited** it since the last
+sync, LocTT does not let either side win silently — a blind sync would
+otherwise either propagate the deletion over your edit, or resurrect the
+edited task over the deletion. Instead it is surfaced as a reconciliation
+decision naming the task and stating which side deleted it and which edited
+it, with two choices:
+
+- **Keep the deletion** — the task is removed.
+- **Keep the task** — the edited version stands.
+
+In the web UI this appears as a keep-deletion / keep-task row in the
+reconcile panel. On the CLI it is listed by `loctt git reconcile status`
+under "delete-vs-edit" and decided in the `apply` JSON via the reserved
+field `__delete_vs_edit__` (see the CLI reference); the outcome is reported
+by key. Keeping a task whose key would then collide with another is routed
+through the normal rekey confirmation — it is never resurrected with a
+colliding key silently.
+
 ### Duplicate keys and prefixes
 
 Two trackers that were `loctt init`ed separately both mint `T-` keys, so

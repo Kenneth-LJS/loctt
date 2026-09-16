@@ -1132,6 +1132,18 @@ but the CLI mirrors it:
 A parent (relationship) resolution maintains the inverse edge: choosing a
 new parent removes the losing parent's child edge.
 
+**Delete-vs-edit (GIT-16).** When a task was deleted on one side and edited
+on the other, it is surfaced as a whole-task decision rather than a
+per-field one: `status` lists it under "delete-vs-edit", naming which side
+deleted and which edited. To decide it in the `apply` JSON, use the reserved
+field `__delete_vs_edit__` with `choice` set to the side you want to win —
+the *deleting* side keeps the deletion, the *editing* side keeps the task
+(e.g. `{ "taskId": "...", "field": "__delete_vs_edit__", "choice": "local" }`
+where the local side edited it keeps the task). `apply` reports the outcome
+by key ("kept T-1" / "deleted T-1"). Keeping a task whose key then collides
+routes through the normal rekey summary — it is not resurrected with a
+colliding key silently.
+
 `status` prints whether git mode is enabled, the configured branch and remote,
 auto-push / auto-fetch settings, whether the working directory is a git repo,
 and the last synced commit (if any).

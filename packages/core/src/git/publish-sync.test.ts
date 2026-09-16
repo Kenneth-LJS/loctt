@@ -4,6 +4,7 @@ import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { DELETE_VS_EDIT_FIELD } from "@loctt/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { initLoctt } from "../init/init.js";
@@ -14,7 +15,7 @@ import { createTask } from "../task/create.js";
 import { setField } from "../task/update.js";
 import { enableGit } from "./git-mode.js";
 import { GitReconcileNeededError, GitRekeyNeededError, GitSyncFirstError, publish, sync } from "./publish-sync.js";
-import { abandonReconcile } from "./reconcile-session.js";
+import { abandonReconcile, applyReconcileDecisions } from "./reconcile-session.js";
 
 describe("publish-sync", () => {
   let root: string;
@@ -1046,6 +1047,186 @@ describe("publish-sync", () => {
       const paths = (caught as GitSyncFirstError).incomingPaths.join("\n");
       expect(paths).toContain(remoteId);
       expect(paths).not.toContain(doomed.frontmatter.id);
+    });
+  });
+
+  // GIT-16: a task deleted on one side and edited on the other is surfaced
+  // as an explicit keep-deletion / keep-task row — never resolved by one
+  // side winning silently. These are end-to-end: real git base/local/remote,
+  // the sync detects it, and applying a decision materialises the outcome.
+  describe("delete-vs-edit reconciliation (GIT-16)", () => {
+    async function commitOnBranch(
+      mutate: (worktreeDir: string) => Promise<void>,
+      message: string,
+    ): Promise<void> {
+      const wt = join(root, `.branch-edit-${Math.random().toString(36).slice(2)}`);
+      execSync(`git worktree add ${wt} loctt`, { cwd: root, stdio: "pipe" });
+      try {
+        await mutate(wt);
+        execSync(`git add -A && git commit -m '${message}'`, { cwd: wt, stdio: "pipe" });
+      } finally {
+        execSync(`git worktree remove ${wt} --force`, { cwd: root, stdio: "pipe" });
+      }
+    }
+
+    /** Publish a base task, so the branch has a known last-synced base. */
+    async function publishBaseTask(title: string): Promise<{ id: string; key: string; path: string }> {
+      const state = await loadState(locttDir);
+      const task = await createTask({ locttDir, state, options: { project: taskProjectId, title } });
+      await saveState(locttDir, state);
+      await publish(locttDir, root);
+      return {
+        id: task.frontmatter.id,
+        key: task.frontmatter.key,
+        path: join(locttDir, "tasks", task.frontmatter.id, "task.md"),
+      };
+    }
+
+    it("surfaces a row when remote deleted a task local edited — not silent (GIT-16)", async () => {
+      // @verifies GIT-16
+      const base = await publishBaseTask("Contested");
+      // Local edits the task (a title change is enough).
+      await setField({ locttDir, taskId: base.id, field: "title", value: "Edited locally" });
+      // Remote deletes it on the branch.
+      await commitOnBranch(async (wt) => {
+        await rm(join(wt, "tasks", base.id), { recursive: true, force: true });
+      }, "delete on branch");
+
+      let caught: unknown;
+      try {
+        await sync(locttDir, root);
+      } catch (err) { caught = err; }
+      expect(caught).toBeInstanceOf(GitReconcileNeededError);
+      const plan = (caught as GitReconcileNeededError).plan;
+      // The delete-vs-edit is surfaced, naming which side did which.
+      expect(plan.deleteVsEdit).toHaveLength(1);
+      expect(plan.deleteVsEdit[0]).toMatchObject({
+        taskKey: base.key, deletedSide: "remote", editedSide: "local",
+      });
+      // Not silently resolved: the task file is still on disk pre-decision.
+      const raw = await readFile(base.path, "utf-8");
+      expect(raw).toMatch(/title: Edited locally/);
+      await abandonReconcile(locttDir);
+    });
+
+    it("surfaces a row when local deleted a task remote edited — not silent (GIT-16)", async () => {
+      // @verifies GIT-16
+      const base = await publishBaseTask("Contested other way");
+      // Remote edits it on the branch.
+      await commitOnBranch(async (wt) => {
+        const raw = await readFile(join(wt, "tasks", base.id, "task.md"), "utf-8");
+        await writeFile(
+          join(wt, "tasks", base.id, "task.md"),
+          raw.replace(/^title: .*$/m, "title: Edited on branch"),
+        );
+      }, "edit on branch");
+      // Local deletes it.
+      await rm(join(locttDir, "tasks", base.id), { recursive: true, force: true });
+
+      let caught: unknown;
+      try {
+        await sync(locttDir, root);
+      } catch (err) { caught = err; }
+      expect(caught).toBeInstanceOf(GitReconcileNeededError);
+      const plan = (caught as GitReconcileNeededError).plan;
+      expect(plan.deleteVsEdit).toHaveLength(1);
+      expect(plan.deleteVsEdit[0]).toMatchObject({
+        taskKey: base.key, deletedSide: "local", editedSide: "remote",
+      });
+      await abandonReconcile(locttDir);
+    });
+
+    it("keep-deletion removes the task; the deletion is reported by key (GIT-16)", async () => {
+      // @verifies GIT-16
+      const base = await publishBaseTask("To be deleted");
+      await setField({ locttDir, taskId: base.id, field: "title", value: "Edited locally" });
+      await commitOnBranch(async (wt) => {
+        await rm(join(wt, "tasks", base.id), { recursive: true, force: true });
+      }, "delete on branch");
+      await expect(sync(locttDir, root)).rejects.toBeInstanceOf(GitReconcileNeededError);
+
+      // Keep the deletion: choose the DELETING side (remote).
+      const outcome = await applyReconcileDecisions(locttDir, root, [
+        { taskId: base.id, field: DELETE_VS_EDIT_FIELD, choice: "remote" },
+      ]);
+      expect(outcome.reconciled).toBe(true);
+      const row = outcome.results.find(r => r.taskId === base.id);
+      expect(row?.ok).toBe(true);
+      expect(row?.resolved[0]?.value).toContain(`deleted ${base.key}`);
+      // The task dir is gone.
+      const exists = await readFile(base.path, "utf-8").then(() => true).catch(() => false);
+      expect(exists).toBe(false);
+    });
+
+    it("keep-task keeps the edited task on disk; reported by key (GIT-16)", async () => {
+      // @verifies GIT-16
+      const base = await publishBaseTask("To be kept");
+      await setField({ locttDir, taskId: base.id, field: "title", value: "Edited locally" });
+      await commitOnBranch(async (wt) => {
+        await rm(join(wt, "tasks", base.id), { recursive: true, force: true });
+      }, "delete on branch");
+      await expect(sync(locttDir, root)).rejects.toBeInstanceOf(GitReconcileNeededError);
+
+      // Keep the task: choose the EDITING side (local).
+      const outcome = await applyReconcileDecisions(locttDir, root, [
+        { taskId: base.id, field: DELETE_VS_EDIT_FIELD, choice: "local" },
+      ]);
+      expect(outcome.reconciled).toBe(true);
+      const row = outcome.results.find(r => r.taskId === base.id);
+      expect(row?.resolved[0]?.value).toContain(`kept ${base.key}`);
+      // The edited file is still there (not re-deleted by the completing sync).
+      const raw = await readFile(base.path, "utf-8");
+      expect(raw).toMatch(/title: Edited locally/);
+    });
+
+    it("keep-task that would collide routes through the K92 rekey gate, not a silent reissue (GIT-16)", async () => {
+      // @verifies GIT-16
+      // Local deleted a task; remote edited it AND remote also created a
+      // second task that collides on the deleted task's key. Keeping the
+      // task brings the remote-edited copy back, and the completing sync's
+      // key normalisation finds the collision — which must go through the
+      // rekey CONFIRM gate (GitRekeyNeededError), never silently reissue.
+      const base = await publishBaseTask("Will collide");
+      const collidingKey = base.key;
+      // Remote edits the base task and adds a colliding task with an EARLIER
+      // created_at (so the new one keeps the key and the restored one loses).
+      await commitOnBranch(async (wt) => {
+        const raw = await readFile(join(wt, "tasks", base.id, "task.md"), "utf-8");
+        await writeFile(
+          join(wt, "tasks", base.id, "task.md"),
+          raw
+            .replace(/^title: .*$/m, "title: Edited on branch")
+            // Make the restored task the LATER one (loser).
+            .replace(/^created_at: .*$/m, "created_at: 2099-01-01T00:00:00.000Z"),
+        );
+        const otherId = "01M0DVECOLLIDER0000000000";
+        await mkdir(join(wt, "tasks", otherId), { recursive: true });
+        await writeFile(
+          join(wt, "tasks", otherId, "task.md"),
+          `---\nid: ${otherId}\nkey: ${collidingKey}\ntitle: New claimant\n`
+          + `status: todo\nproject: ${taskProjectId}\ncreated_at: 2020-01-01T00:00:00.000Z\n`
+          + `updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n`,
+        );
+      }, "edit + add colliding task on branch");
+      // Local deletes the base task.
+      await rm(join(locttDir, "tasks", base.id), { recursive: true, force: true });
+      await expect(sync(locttDir, root)).rejects.toBeInstanceOf(GitReconcileNeededError);
+
+      // Keep the task (edited side = remote). The completing sync copies it
+      // in and hits the collision → the rekey CONFIRM gate, not a silent reissue.
+      const outcome = await applyReconcileDecisions(locttDir, root, [
+        { taskId: base.id, field: DELETE_VS_EDIT_FIELD, choice: "remote" },
+      ]);
+      // NOT reconciled yet: it is waiting on the rekey confirm (K92).
+      expect(outcome.reconciled).toBe(false);
+      expect(outcome.rekeyPlan).toBeDefined();
+      expect(outcome.rekeyPlan?.losers.length).toBeGreaterThan(0);
+      // The restored task still carries the colliding key on disk — nothing
+      // was silently renumbered before the confirm.
+      const restored = join(locttDir, "tasks", base.id, "task.md");
+      const raw = await readFile(restored, "utf-8");
+      expect(raw).toMatch(new RegExp(`^key: ${collidingKey}$`, "m"));
+      await abandonReconcile(locttDir);
     });
   });
 });

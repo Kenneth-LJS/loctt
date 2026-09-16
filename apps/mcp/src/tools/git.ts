@@ -270,6 +270,14 @@ export const TOOLS: readonly ToolDef[] = [
           remote_drift: c.remote.drift?.reason ?? null,
           local_drift: c.local.drift?.reason ?? null,
         })),
+        // GIT-16: tasks deleted one side and edited the other — a whole-task
+        // keep-deletion / keep-task decision, reported by key.
+        delete_vs_edit: plan.deleteVsEdit.map(d => ({
+          task_key: d.taskKey,
+          task_title: d.taskTitle,
+          deleted_side: d.deletedSide,
+          edited_side: d.editedSide,
+        })),
         auto_merged: plan.autoMerged,
       }, null, 2));
     },
@@ -282,15 +290,24 @@ export const TOOLS: readonly ToolDef[] = [
  * web UI; nothing was written.
  */
 function reconcileNeededResult(err: GitReconcileNeededError) {
+  const dve = err.plan.deleteVsEdit;
   const lines = [
     `Reconciliation needed before ${err.plan.mode} can complete — `
-    + `${String(err.plan.conflicts.length)} field conflict(s) changed on both sides. `
+    + `${String(err.plan.conflicts.length)} field conflict(s)`
+    + `${dve.length > 0 ? ` + ${String(dve.length)} delete-vs-edit` : ""} changed on both sides. `
     + "Nothing was written.",
     "",
   ];
   for (const c of err.plan.conflicts) {
     const drift = c.remote.drift ? " (remote value not in local config)" : "";
     lines.push(`  ${c.taskKey} · ${c.fieldLabel}: local="${c.local.display}" remote="${c.remote.display}"${drift}`);
+  }
+  // GIT-16: a task deleted one side and edited the other — name which is which.
+  for (const d of dve) {
+    lines.push(
+      `  ${d.taskKey}: deleted on ${d.deletedSide}, edited on ${d.editedSide} `
+      + "— keep-deletion or keep-task",
+    );
   }
   lines.push("", "Resolve these in the web UI (Settings → Sync); the operation completes after Apply.");
   return text(lines.join("\n"));

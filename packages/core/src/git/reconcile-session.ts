@@ -113,6 +113,11 @@ export async function loadReconcileSession(
       localDir: locttDir,
       incomingDir: worktreeDir,
       conflicts: syncPlan.conflicts,
+      // GIT-16: the delete-vs-edit rows live in the file-level deletes/copies,
+      // so the recomputed session plan needs them too — otherwise the panel
+      // (and Apply) would never see the delete-vs-edit rows.
+      deletes: syncPlan.deletes,
+      copies: syncPlan.copies,
       config,
       mode: state.mode,
       baseCommit: state.base_commit,
@@ -134,6 +139,7 @@ function emptyPlan(state: ReconcileState): ReconcilePlan {
     base_commit: state.base_commit,
     remote_commit: state.remote_commit,
     conflicts: [],
+    deleteVsEdit: [],
     autoMerged: [],
   };
 }
@@ -206,6 +212,7 @@ export async function applyReconcileDecisions(
     decisions,
     config,
     state.applied ?? [],
+    plan.deleteVsEdit,
   );
 
   if (result.complete) {
@@ -225,6 +232,13 @@ export async function applyReconcileDecisions(
       try {
         const outcome = await pullFromLocttBranch(locttDir, root, undefined, {
           resolvedTaskIds: result.appliedTaskIds,
+          // GIT-16: every delete-vs-edit task the user decided (both the
+          // filtered ones and the keep-task-copy that must still be copied in)
+          // is suppressed from re-detection on the completion pass.
+          deleteVsEditResolvedTaskIds: [
+            ...result.appliedTaskIds,
+            ...result.copyThroughTaskIds,
+          ],
         });
         return { ...result, reconciled: true, syncOutcome: outcome };
       } catch (err) {

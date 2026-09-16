@@ -152,6 +152,7 @@ export {
   computeTaskConflicts,
   confirmRekey,
   defaultFsProbe,
+  DELETE_VS_EDIT_FIELD,
   detectSyncFsAdvisory,
   disableGit,
   enableGit,

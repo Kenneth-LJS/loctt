@@ -88,8 +88,16 @@ A69 declines that fell in this batch rather than trusting them:
 - **GIT-9, GIT-19, GIT-33** — rekey summary + confirm. `RekeyOutcome` is
   flattened to `rekeyed: number` before it leaves `sync`; there is no
   summary surface, no confirm step, no per-key old/new reporting.
-- **GIT-16** — delete-vs-edit reconciliation row. No reconciliation data
-  model (`ReconcileState` is a 4-field crash sentinel; A69).
+- **GIT-16** — BUILT (A196, uncommitted working tree). A task deleted on
+  one side and edited on the other is surfaced as a `deleteVsEdit`
+  reconcile row (new contracts type, distinct from per-field conflicts),
+  detected in `computeReconcilePlan` from the file-level `deletes`/`copies`
+  + base. keep-deletion removes the task; keep-task keeps it and routes a
+  colliding key through the existing K92 rekey gate (not a silent reissue).
+  All three surfaces (web panel row, CLI `reconcile status`/`apply`, MCP
+  `get_reconcile_status` `delete_vs_edit` array); docs updated. `@verifies
+  GIT-16` at core (5 publish-sync integration tests, red-proven), web unit
+  (3 panel tests, red-proven), and Playwright (2 e2e, green in isolation).
 - **GIT-22** — BUILT (commit 958a466). Proactive fstype advisory at
   enable across all surfaces (`git/fstype.ts`); unit + panel tested and
   red-proven. Remaining: a Playwright e2e spec was not authored (the

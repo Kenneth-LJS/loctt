@@ -3,8 +3,10 @@ import { useId, useMemo, useState } from "react";
 import {
   type ApplyReconcileResponse,
   type ConfirmRekeyResponse,
+  DELETE_VS_EDIT_FIELD,
   type ReconcileConflict,
   type ReconcileDecision,
+  type ReconcileDeleteVsEdit,
   type ReconcilePlan,
   type ReconcileSentinel,
   type RekeyPlan,
@@ -44,6 +46,11 @@ type DecisionMap = Map<string, { choice: Choice; value?: unknown }>;
 
 function keyOf(c: { taskId: string; field: string }): string {
   return `${c.taskId}\0${c.field}`;
+}
+
+/** The DecisionMap key for a delete-vs-edit row (GIT-16). */
+function dveKeyOf(d: { taskId: string }): string {
+  return `${d.taskId}\0${DELETE_VS_EDIT_FIELD}`;
 }
 
 function toDecisions(map: DecisionMap): ReconcileDecision[] {
@@ -228,7 +235,9 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 
   const groups = useMemo(() => groupByTask(plan.conflicts), [plan.conflicts]);
-  const undecided = plan.conflicts.filter(c => !decisions.has(keyOf(c))).length;
+  const dve = plan.deleteVsEdit;
+  const undecided = plan.conflicts.filter(c => !decisions.has(keyOf(c))).length
+    + dve.filter(d => !decisions.has(dveKeyOf(d))).length;
 
   const setChoice = (c: ReconcileConflict, choice: Choice, value?: unknown) => {
     setDecisions(prev => {
@@ -247,6 +256,9 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
       // GIT-12: a bulk action fills every row but leaves each individually
       // re-overridable afterwards — it does not lock anything.
       for (const c of plan.conflicts) next.set(keyOf(c), { choice });
+      // GIT-16: a delete-vs-edit row's choice is a side too — keep-all-local
+      // keeps local's outcome (its edit or its deletion), and vice versa.
+      for (const d of dve) next.set(dveKeyOf(d), { choice });
       persist(next);
       return next;
     });
@@ -321,7 +333,7 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
           survives this editor unmounting when the session goes null. */}
 
       {/* Bulk actions + live undecided count (GIT-12, GIT-6). */}
-      {plan.conflicts.length > 0 && applyResult?.reconciled !== true && (
+      {(plan.conflicts.length > 0 || dve.length > 0) && applyResult?.reconciled !== true && (
         <>
           <div className="mb-3 flex items-center gap-2 text-[0.9286rem]">
             <Button
@@ -364,6 +376,28 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
               />
             ))}
           </div>
+
+          {/* GIT-16: delete-vs-edit rows — a whole-task keep-deletion /
+              keep-task choice, distinct from the per-field rows above. */}
+          {dve.length > 0 && (
+            <div className="mt-3 space-y-2" data-testid="git-reconcile-dve-section">
+              {dve.map(d => (
+                <DeleteVsEditRow
+                  key={d.taskId}
+                  row={d}
+                  choice={decisions.get(dveKeyOf(d))?.choice}
+                  onChoose={(choice) => {
+                    setDecisions(prev => {
+                      const next = new Map(prev);
+                      next.set(dveKeyOf(d), { choice });
+                      persist(next);
+                      return next;
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
           {apply.isError && (
             <div className="mt-3" data-testid="git-reconcile-apply-error">
@@ -573,6 +607,74 @@ export function ConflictRow({ conflict, decision, onChoose }: {
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A delete-vs-edit row (GIT-16). States plainly which side deleted the task
+ * and which edited it, and offers keep-the-deletion / keep-the-task. The
+ * chosen side is recorded as the winning side: keep-deletion selects the
+ * deleting side, keep-task selects the editing side. Keeping the task does
+ * not resurrect a colliding key silently — the completing sync routes a
+ * collision through the rekey confirm (GIT-16 bullet 4 / K92).
+ */
+export function DeleteVsEditRow({ row, choice, onChoose }: {
+  readonly row: ReconcileDeleteVsEdit;
+  readonly choice: Choice | undefined;
+  readonly onChoose: (choice: "local" | "remote") => void;
+}) {
+  const keepDeletionSide = row.deletedSide; // choosing the deleting side keeps the deletion
+  const keepTaskSide = row.editedSide; // choosing the editing side keeps the task
+  const decided = choice === "local" || choice === "remote";
+  const keepingTask = choice === keepTaskSide;
+  return (
+    <div
+      data-testid="git-reconcile-dve-row"
+      data-task-key={row.taskKey}
+      className="rounded border border-warn-fg/40 p-3 text-[0.9286rem]"
+    >
+      <div className="mb-1 font-medium text-text-primary">
+        <code className="font-mono text-[0.8571rem]">{row.taskKey}</code>{" "}
+        <span className="text-text-secondary">{row.taskTitle}</span>
+      </div>
+      <p data-testid="git-reconcile-dve-desc" className="mb-2 text-[0.8571rem] text-text-secondary">
+        This task was <strong>deleted on the {row.deletedSide} side</strong> and{" "}
+        <strong>edited on the {row.editedSide} side</strong>. Keep the deletion, or keep the task.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          data-testid="git-reconcile-dve-keep-deletion"
+          data-selected={String(choice === keepDeletionSide)}
+          onClick={() => { onChoose(keepDeletionSide); }}
+          className={`rounded border px-2 py-1 text-left ${
+            choice === keepDeletionSide ? "border-accent bg-accent/10" : "border-border-subtle"
+          }`}
+        >
+          <div className="text-[0.7857rem] uppercase text-text-tertiary">Keep the deletion</div>
+          <div className="text-text-primary">Remove {row.taskKey}</div>
+        </button>
+        <button
+          type="button"
+          data-testid="git-reconcile-dve-keep-task"
+          data-selected={String(choice === keepTaskSide)}
+          onClick={() => { onChoose(keepTaskSide); }}
+          className={`rounded border px-2 py-1 text-left ${
+            choice === keepTaskSide ? "border-accent bg-accent/10" : "border-border-subtle"
+          }`}
+        >
+          <div className="text-[0.7857rem] uppercase text-text-tertiary">Keep the task</div>
+          <div className="text-text-primary">Keep {row.taskKey}</div>
+        </button>
+      </div>
+      {decided && (
+        <span data-testid="git-reconcile-dve-decided" className="mt-1 block text-[0.8571rem] text-text-tertiary">
+          {keepingTask
+            ? "keeping the task — if its key now collides, you will confirm a renumber next"
+            : "keeping the deletion"}
+        </span>
+      )}
     </div>
   );
 }

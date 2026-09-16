@@ -1,8 +1,13 @@
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
+
 import type {
+  DeleteVsEditConflict,
   ReconcileDecision,
   TaskConflictField,
   WorkflowConfig,
 } from "@loctt/contracts";
+import { DELETE_VS_EDIT_FIELD } from "@loctt/contracts";
 
 import { readTask, writeTask } from "../task/io.js";
 import { linkTask, unlinkTask } from "../task/relationships.js";
@@ -47,8 +52,24 @@ export interface TaskApplyResult {
 
 export interface ApplyReconcileResult {
   readonly results: readonly TaskApplyResult[];
-  /** Task ids that were fully written — the caller journals these (GIT-32). */
+  /**
+   * Task ids whose reconciliation is settled ON DISK — the caller journals
+   * these (GIT-32) and passes them as `resolvedTaskIds` so the completing
+   * sync does NOT re-copy/-delete/-merge them (a kept task is not re-deleted,
+   * a resolved conflict is not last-write-wins-merged). Note this EXCLUDES a
+   * keep-task decision on a task the LOCAL side deleted (GIT-16): that task
+   * must be COPIED in from the branch by the completing sync, so it stays in
+   * the plan rather than being filtered out — see `copyThroughTaskIds`.
+   */
   readonly appliedTaskIds: readonly string[];
+  /**
+   * GIT-16: delete-vs-edit keep-task decisions where the LOCAL side deleted
+   * the task, so the remote-edited copy must be brought in by the completing
+   * sync's normal `copy`. These are complete (the decision landed) but must
+   * NOT be filtered from the completion plan, or the copy would be skipped
+   * and the task lost. Reported so the result names them by key.
+   */
+  readonly copyThroughTaskIds: readonly string[];
   /** True when every task landed. The caller clears the sentinel only then. */
   readonly complete: boolean;
 }
@@ -186,6 +207,13 @@ export async function applyReconcile(
   decisions: readonly ReconcileDecision[],
   config: WorkflowConfig | undefined,
   alreadyApplied: readonly string[] = [],
+  /**
+   * GIT-16: the delete-vs-edit rows from the plan, resolved by a decision
+   * whose `field` is {@link DELETE_VS_EDIT_FIELD} and whose `choice` is the
+   * side to keep (keep the deleting side = keep-deletion; keep the editing
+   * side = keep-task). Empty when the plan has no delete-vs-edit case.
+   */
+  deleteVsEdit: readonly DeleteVsEditConflict[] = [],
 ): Promise<ApplyReconcileResult> {
   const conflictByKey = new Map<string, TaskConflictField>();
   for (const c of conflicts) conflictByKey.set(`${c.taskId}\0${c.field}`, c);
@@ -222,6 +250,66 @@ export async function applyReconcile(
     }
   }
 
+  // GIT-16: delete-vs-edit rows. Each has ONE decision (`DELETE_VS_EDIT_FIELD`)
+  // whose `choice` is the side to keep. The four outcomes:
+  //   - keep-deletion, task present locally (remote deleted, local edited):
+  //     remove the local `tasks/<id>/` dir — the deletion stands.
+  //   - keep-task,     task present locally (remote deleted, local edited):
+  //     leave the local file — it must not be re-deleted by the completing
+  //     sync, so mark it resolved (filtered from the plan).
+  //   - keep-deletion, task absent locally (local deleted, remote edited):
+  //     nothing on disk; the completing sync must SKIP the copy, so mark it
+  //     resolved (filtered).
+  //   - keep-task,     task absent locally (local deleted, remote edited):
+  //     the remote-edited file must be COPIED in by the completing sync —
+  //     leave it in the plan (report via `copyThroughTaskIds`), so the copy
+  //     runs and the collision then routes through the K92 rekey gate.
+  const dveDecisionByTask = new Map<string, ReconcileDecision>();
+  for (const d of decisions) {
+    if (d.field === DELETE_VS_EDIT_FIELD) dveDecisionByTask.set(d.taskId, d);
+  }
+  const copyThroughTaskIds: string[] = [];
+  for (const row of deleteVsEdit) {
+    if (applied.has(row.taskId)) continue; // GIT-32: already settled
+    const decision = dveDecisionByTask.get(row.taskId);
+    if (decision === undefined) continue; // undecided — leaves the reconcile incomplete
+    const keptSide = decision.choice; // "local" | "remote"
+    const keepTask = keptSide === row.editedSide;
+    try {
+      if (row.editedSide === "local") {
+        // Local has the edited file; remote deleted it.
+        if (!keepTask) {
+          // keep-deletion: remove the local task dir.
+          await rm(join(locttDir, "tasks", row.taskId), { recursive: true, force: true });
+        }
+        // keep-task: leave the file in place; either way it is settled on disk.
+        appliedTaskIds.push(row.taskId);
+      } else {
+        // Remote has the edited file; local deleted it.
+        if (keepTask) {
+          // keep-task: the completing sync copies it in; do NOT filter it.
+          copyThroughTaskIds.push(row.taskId);
+        } else {
+          // keep-deletion: stay deleted; the completing sync must skip the copy.
+          appliedTaskIds.push(row.taskId);
+        }
+      }
+      results.push({
+        taskId: row.taskId, taskKey: row.taskKey, ok: true,
+        resolved: [{
+          field: "deletion",
+          value: keepTask ? `kept ${row.taskKey}` : `deleted ${row.taskKey}`,
+        }],
+      });
+    } catch (err) {
+      results.push({
+        taskId: row.taskId, taskKey: row.taskKey, ok: false,
+        error: (err as Error).message,
+        resolved: [],
+      });
+    }
+  }
+
   // G2 (Phase Z): completeness is measured against the PLAN's conflicts,
   // not against what was attempted. `results.every(r => r.ok)` was
   // vacuously true for an empty or under-covering decision set — an
@@ -249,10 +337,21 @@ export async function applyReconcile(
       coveredFields.add(`${decision.taskId}\0${decision.field}`);
     }
   }
+  // GIT-16: a delete-vs-edit row is covered when its task was applied on a
+  // prior pass, or it got a decision whose write succeeded this pass. An
+  // undecided delete-vs-edit keeps the reconcile INCOMPLETE — never a silent
+  // side-wins (the same G2 property as field conflicts).
+  const dveOkTaskIds = new Set(
+    results.filter(r => r.ok).map(r => r.taskId),
+  );
+  const everyDeleteVsEditCovered = deleteVsEdit.every(
+    row => appliedSet.has(row.taskId)
+      || (dveDecisionByTask.has(row.taskId) && dveOkTaskIds.has(row.taskId)),
+  );
   const allAttemptsOk = results.every(r => r.ok);
   const everyConflictCovered = conflicts.every(
     c => coveredFields.has(`${c.taskId}\0${c.field}`),
   );
-  const complete = allAttemptsOk && everyConflictCovered;
-  return { results, appliedTaskIds, complete };
+  const complete = allAttemptsOk && everyConflictCovered && everyDeleteVsEditCovered;
+  return { results, appliedTaskIds, copyThroughTaskIds, complete };
 }
