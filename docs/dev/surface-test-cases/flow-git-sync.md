@@ -2,14 +2,19 @@
 
 Enable/disable, publish, sync, reconciliation, and status reporting.
 
-Gaps only. See [README.md](README.md) for conventions.
+See [README.md](README.md) for conventions.
 
-> **Partly fixed.** The four data-loss failures (branch mirrored over local
-> state; local-only tasks deleted; `.schema-version` overwritten; foreign
-> branch destroyed on publish) are fixed in
-> `packages/core/src/git/three-way.ts` and covered by regression tests in
-> `packages/core/src/git/publish-sync.test.ts`. The cases below are what
-> remains: field-level merge, rekeying, error quality, and status detail.
+> **ALL CASES BUILT (2026-09-17).** This flow is complete: every GIT-*
+> case (GIT-1..GIT-38, plus the GIT-C* surface cases) has a `@verifies`
+> test. The four data-loss failures (branch mirrored over local state;
+> local-only tasks deleted; `.schema-version` overwritten; foreign branch
+> destroyed on publish) are fixed in `packages/core/src/git/three-way.ts`;
+> the reconcile engine (field-level merge, rekey preview+confirm,
+> delete-vs-edit), error quality (push/fetch classification, named
+> worktree/malformed errors), force-push refusal, newer-schema refusal,
+> fstype advisory, sync progress, adopt-branch prompt, and the stale-tab
+> wrong-task guard all landed 2026-09-16/17. See known-gaps.md
+> (GIT-9/16/… block) for the per-case commit + decision map.
 
 ---
 

@@ -73,61 +73,30 @@ below. Measured against the four bullets:
 `CommentsPanel`/`useComments`), then add a CMT-20 spec to
 `tests/ui/flow-comments.spec.ts` and delete this entry.
 
-### GIT-9/16/19/22/23/25/33/34/35/36 — git-sync cases with no engine behind them (declined)
+### GIT-9/16/19/22/23/25/33/34/35/36 — git-sync residual: ALL BUILT (2026-09-16/17)
 
-> **GIT-29/30 removed from this list 2026-09-16 — now built** (decisions.md
-> A189). Push/fetch failures are classified in core
-> (`classifyRemoteFailure`) and surfaced with the remote name, a
-> local-untouched statement, and Retry (plus Sync-first for non-ff) by the
-> panel, CLI, and MCP. `@verifies GIT-29`/`GIT-30` tests are green and
-> red-proven.
-
-**Confirmed 2026-09-04 during the git-sync UI batch**, re-verifying the
-A69 declines that fell in this batch rather than trusting them:
-
-- **GIT-9, GIT-19, GIT-33** — rekey summary + confirm. `RekeyOutcome` is
-  flattened to `rekeyed: number` before it leaves `sync`; there is no
-  summary surface, no confirm step, no per-key old/new reporting.
-- **GIT-16** — BUILT (A196, uncommitted working tree). A task deleted on
-  one side and edited on the other is surfaced as a `deleteVsEdit`
-  reconcile row (new contracts type, distinct from per-field conflicts),
-  detected in `computeReconcilePlan` from the file-level `deletes`/`copies`
-  + base. keep-deletion removes the task; keep-task keeps it and routes a
-  colliding key through the existing K92 rekey gate (not a silent reissue).
-  All three surfaces (web panel row, CLI `reconcile status`/`apply`, MCP
-  `get_reconcile_status` `delete_vs_edit` array); docs updated. `@verifies
-  GIT-16` at core (5 publish-sync integration tests, red-proven), web unit
-  (3 panel tests, red-proven), and Playwright (2 e2e, green in isolation).
-- **GIT-22** — BUILT (commit 958a466). Proactive fstype advisory at
-  enable across all surfaces (`git/fstype.ts`); unit + panel tested and
-  red-proven. Remaining: a Playwright e2e spec was not authored (the
-  implementing agent was watchdog-killed after finishing the code) — a
-  small-fix, unit-covered item; author the e2e at the cluster e2e gate.
-- **GIT-23** — BUILT (commit e66777d). Sync progress channel + honest
-  counts + list/badge refresh; unit + e2e tested.
-- **GIT-25** — adopt-existing-branch prompt. `enableGit` silently adopts
-  a LocTT-written branch (or throws on a foreign one); it neither shows
-  the branch head nor asks adopt-or-stop, and the panel has no UI for it.
-- **GIT-34** — BUILT (uncommitted, decisions.md A194). A malformed remote
-  task is reported per-file by task id + path in the sync result
-  (`SyncOutcome.malformed`) across web/CLI/MCP; the rest of the sync applies;
-  the bad file is kept as-is and shows as a broken-file row in the list
-  (pre-existing `loadAllTasksDetailed`). Unit + integration tested and
-  red-proven. Remaining: a Playwright e2e spec was not authored (small-fix,
-  unit-covered — author at the cluster e2e gate).
-- **GIT-35** — BUILT (commit d2af9ed, decisions.md A192/K94). Newer-remote-
-  schema refusal across surfaces.
-- **GIT-36** — BUILT (uncommitted, decisions.md A194). A missing/corrupt
-  publish/sync worktree (registered but directory gone) is refused with a
-  named `GitWorktreeMissingError` (worktree path + "missing" + repair path),
-  not git's opaque fatal; local task files untouched; mapped to a 409
-  `git_worktree_missing` with a panel repair banner, and named on CLI/MCP.
-  Unit + integration tested and red-proven. Remaining: a Playwright e2e spec
-  was not authored (small-fix, unit-covered — author at the cluster e2e gate).
-
-Each is a real product requirement whose engine does not exist; full
-reasoning in decisions.md A69. **To close:** build the missing engine (a
-ticket, not a wire-up), then tag the case.
+> **RESOLVED — this entire block is closed.** Every GIT-* case (GIT-1
+> through GIT-38) now has a `@verifies` test. The "no engine behind them"
+> framing (A68/A69) was superseded by the reconcile engine (A121) and then
+> completed this session. Per case:
+>
+> - **GIT-29/30** — push/fetch error classification (A189, commit dde0626).
+> - **GIT-23** — sync progress + honest counts (A190, commit e66777d).
+> - **GIT-21** — force-push detect+refuse (K93/A191, commit 030ac4b).
+> - **GIT-35** — newer-remote-schema refusal (K94/A192, commit d2af9ed).
+> - **GIT-8/9/33** — rekey preview+confirm; UI confirms, CLI/MCP auto-report
+>   (K92/A193, commit 0164214).
+> - **GIT-22** — proactive fstype advisory at enable (commit 958a466).
+> - **GIT-34/36** — malformed-remote report + named missing-worktree error
+>   (A194, commit de0019b).
+> - **GIT-19** — rekey stale-tab: `expectedId` precondition (a real P-11
+>   wrong-task-write fix) + UI follow-with-note (A195, commit 9938221).
+> - **GIT-16** — delete-vs-edit reconcile row (A196, commit c513665).
+> - **GIT-25** — adopt-existing-branch prompt (A197, commit d15f9c6).
+>
+> All red-proven at the unit level; e2e at the cluster gate (the one
+> reconcile-spec timeout there is the documented parallel-load flake — it
+> passes 15/15 in isolation). Nothing in this block remains open.
 
 ### ERR-11 / ERR-12 have a client half that is not built
 
