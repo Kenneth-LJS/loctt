@@ -1,3 +1,5 @@
+export type { BuilderTree } from "./builderTree.js";
+export { builderTreeToQuery, queryToBuilderTree } from "./builderTree.js";
 export type { EvalContext } from "./evaluator.js";
 export { evaluateQuery } from "./evaluator.js";
 export type { ListContext, ListOptions, ListTasksOptions, ListTasksResult } from "./list.js";

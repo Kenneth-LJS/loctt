@@ -1,4 +1,14 @@
+// Imported by subpath, not the barrel — the barrel pulls node:path/sharp
+// into the browser bundle (see dslToSearch.ts). `dslAtom` moved into core
+// (K83) so this file and the visual query builder's serializer share ONE
+// atom formatter.
+import { dslAtom } from "@loctt/core/query/serialize.js";
+
 import type { ListSearch } from "../router/listSearch.ts";
+
+// Re-exported so existing importers (and buildDsl.test.ts) keep their
+// `./buildDsl` entry point after the atom formatter moved into core.
+export { dslAtom };
 
 /**
  * Builds a LocTT query-DSL string from the active list filters, for
@@ -24,12 +34,6 @@ const FACET_TO_FIELD: Readonly<Record<string, string>> = {
   milestone: "milestone",
   sprint: "sprint",
 };
-
-/** Bare identifiers pass through; everything else is quoted + escaped. */
-export function dslAtom(value: string): string {
-  if (/^[A-Za-z0-9_.-]+$/.test(value)) return value;
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
 
 function clause(field: string, values: readonly string[]): string | null {
   const v = values.map(s => s.trim()).filter(Boolean);
