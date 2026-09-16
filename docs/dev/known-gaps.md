@@ -90,12 +90,13 @@ A69 declines that fell in this batch rather than trusting them:
   summary surface, no confirm step, no per-key old/new reporting.
 - **GIT-16** — delete-vs-edit reconciliation row. No reconciliation data
   model (`ReconcileState` is a 4-field crash sentinel; A69).
-- **GIT-22** — advisory-lock warning by filesystem class. No fstype
-  detection exists anywhere in `packages`/`apps` (grep with positive
-  control, decisions.md A69).
-- **GIT-23** — 500-task sync with progress + honest counts. `SyncOutcome`
-  is one file-count bucket, and there is no progress channel (no SSE /
-  generator / callback in the sync path).
+- **GIT-22** — BUILT (commit 958a466). Proactive fstype advisory at
+  enable across all surfaces (`git/fstype.ts`); unit + panel tested and
+  red-proven. Remaining: a Playwright e2e spec was not authored (the
+  implementing agent was watchdog-killed after finishing the code) — a
+  small-fix, unit-covered item; author the e2e at the cluster e2e gate.
+- **GIT-23** — BUILT (commit e66777d). Sync progress channel + honest
+  counts + list/badge refresh; unit + e2e tested.
 - **GIT-25** — adopt-existing-branch prompt. `enableGit` silently adopts
   a LocTT-written branch (or throws on a foreign one); it neither shows
   the branch head nor asks adopt-or-stop, and the panel has no UI for it.
