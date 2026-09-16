@@ -1,6 +1,7 @@
+import type { ErrorResponse } from "@loctt/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiClient } from "../client.ts";
+import { apiClient,ApiError } from "../client.ts";
 
 /**
  * Settings → Tracker → Sync, over the five `/api/git/*` routes.
@@ -113,9 +114,17 @@ function useGitMutation<TResult, TVars = void>(
     mutationFn: (vars: TVars) => apiClient.post<TResult>(path, vars ?? {}),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["git"] });
-      // A sync rewrites task files, so the list must not keep serving
-      // the pre-sync population (GIT-3, GIT-23).
+      // A sync (or an applied reconciliation) rewrites task files, so the
+      // list must not keep serving the pre-sync population (GIT-3,
+      // GIT-23). The main list and board read `["tasks-feed"]`, not
+      // `["tasks"]`, and the sidebar saved-view badges read
+      // `["builtin-count"]` — invalidating only `["tasks"]` left both
+      // stale after a sync (GIT-23 bullets 3-4). All four are invalidated
+      // so the new population, its honest total, and the badge counts all
+      // recompute.
       void qc.invalidateQueries({ queryKey: ["tasks"] });
+      void qc.invalidateQueries({ queryKey: ["tasks-feed"] });
+      void qc.invalidateQueries({ queryKey: ["builtin-count"] });
     },
   });
 }
@@ -124,8 +133,117 @@ export function useGitPublish() {
   return useGitMutation<PublishResult>("/api/git/publish");
 }
 
-export function useGitSync() {
-  return useGitMutation<SyncResult>("/api/git/sync");
+/** A sync's incremental write progress (GIT-23). */
+export interface SyncProgress {
+  readonly applied: number;
+  readonly total: number;
+}
+
+/**
+ * Streams `POST /api/git/sync` (GIT-23).
+ *
+ * The route replies one of two ways, and this handles both so the caller
+ * gets the same `SyncResult`/`ApiError` it always did:
+ *
+ *  - **NDJSON** (a sync that writes files): `{ progress }` lines, each
+ *    forwarded to `onProgress` so the panel shows determinate progress
+ *    rather than an indefinite spinner, then a terminal `{ result }` or
+ *    `{ error }` line. A `{ error }` line is a mid-write failure — after
+ *    a 200 header — so it is reconstructed into the identical `ApiError`
+ *    (envelope + status) the plain error path would have thrown.
+ *  - **JSON** (a no-op sync, or a planning-phase failure): the ordinary
+ *    body via `apiClient`. A non-2xx here (a 409 conflict, a 500) is
+ *    thrown by `apiClient.post` exactly as before, so the `/api/git/sync`
+ *    error contract is unchanged.
+ */
+async function streamSync(onProgress: (p: SyncProgress) => void): Promise<SyncResult> {
+  const endpoint = "/api/git/sync";
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "X-Loctt-Client": "web", "Content-Type": "application/json" },
+    body: "{}",
+  });
+
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/x-ndjson") || !res.body) {
+    // Non-stream reply: a no-op sync's JSON body, or a planning-phase
+    // error. Reuse the transport's own parsing + ApiError throwing.
+    return apiClient.post<SyncResult>(endpoint, {});
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: SyncResult | undefined;
+  let streamError: { status: number; message: string } & Partial<ErrorResponse> | undefined;
+
+  const handleLine = (line: string): void => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) return;
+    const parsed = JSON.parse(trimmed) as
+      | { progress: SyncProgress }
+      | { result: SyncResult }
+      | { error: { status: number; message: string } & Partial<ErrorResponse> };
+    if ("progress" in parsed) { onProgress(parsed.progress); return; }
+    if ("result" in parsed) { result = parsed.result; return; }
+    streamError = parsed.error;
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newline = buffer.indexOf("\n");
+    while (newline !== -1) {
+      handleLine(buffer.slice(0, newline));
+      buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf("\n");
+    }
+  }
+  handleLine(buffer);
+
+  if (streamError !== undefined) {
+    const { status, message, ...rest } = streamError;
+    const envelope: ErrorResponse = { code: rest.code ?? "unknown", message, ...rest };
+    throw new ApiError(message, { status, body: streamError, endpoint, envelope });
+  }
+  if (result === undefined) {
+    // The stream ended without a terminal line — a truncated response
+    // (killed server). Do not report a phantom success.
+    throw new ApiError(`${endpoint}: the sync did not complete`, {
+      status: 0,
+      body: undefined,
+      endpoint,
+      envelope: {
+        code: "unknown",
+        message: "the sync did not complete, so LocTT cannot tell whether it finished",
+        data_state: "unknown",
+        recovery: { kind: "reload" },
+      },
+    });
+  }
+  return result;
+}
+
+/**
+ * Sync, with an optional progress sink (GIT-23). Passing `onProgress`
+ * lets the panel render "N of M files" during a large sync; omitting it
+ * keeps the plain mutation for callers that do not show progress.
+ *
+ * Invalidation matches every other git write plus the two keys the list
+ * population actually reads (see `useGitMutation`).
+ */
+export function useGitSync(onProgress?: (p: SyncProgress) => void) {
+  const qc = useQueryClient();
+  return useMutation<SyncResult, Error, void>({
+    mutationFn: () => streamSync(onProgress ?? (() => {})),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["git"] });
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
+      void qc.invalidateQueries({ queryKey: ["tasks-feed"] });
+      void qc.invalidateQueries({ queryKey: ["builtin-count"] });
+    },
+  });
 }
 
 export function useGitEnable() {
@@ -233,7 +351,12 @@ export function useApplyReconcile() {
     mutationFn: decisions => apiClient.post("/api/git/reconcile/apply", { decisions }),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["git"] });
+      // Applying a reconciliation writes task files (GIT-7), so the list
+      // (`["tasks-feed"]`) and saved-view badges (`["builtin-count"]`)
+      // must recompute, not just `["tasks"]`.
       void qc.invalidateQueries({ queryKey: ["tasks"] });
+      void qc.invalidateQueries({ queryKey: ["tasks-feed"] });
+      void qc.invalidateQueries({ queryKey: ["builtin-count"] });
     },
   });
 }

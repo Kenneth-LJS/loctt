@@ -1213,7 +1213,7 @@ Output is prose: which of `Published local state to <branch> branch` / `No chang
 
 Pulls the `loctt` branch state into the local workspace. If a remote is configured and `auto_fetch` is set, fetches first. No parameters.
 
-Output is prose: fetch result, then either `Synced loctt branch into local workspace` or `Already up to date`. When the fetch fails, the remote is named and the failure is classified (e.g. could not be reached), with git's specific cause — local state is untouched and the sync continues against the local copy of the branch.
+Output is prose: fetch result, then either `Synced loctt branch into local workspace` (naming the true counts of files updated and removed) or `Already up to date`. A large sync that brings in hundreds of tasks reports the final honest counts, not a progress stream — MCP is request/response, so the summary *is* the progress report (the web UI shows an incremental progress bar for the same operation; that surface difference is expected). When the fetch fails, the remote is named and the failure is classified (e.g. could not be reached), with git's specific cause — local state is untouched and the sync continues against the local copy of the branch.
 
 When both sides changed the same task fields since the last sync, `publish_to_git` / `sync_from_git` do not pick a winner: they open a reconciliation and return the conflicts (task, field, both values, and a drift note when a value references config missing locally), stating nothing was written. Resolution is web-UI-primary — tell the user to resolve it in Settings → Sync; the operation completes after they Apply.
 

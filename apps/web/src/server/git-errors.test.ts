@@ -157,4 +157,64 @@ describe("web git error classification", () => {
     // The conflict classification must not swallow every git failure.
     expect(body.code).not.toBe("conflict");
   });
+
+  // @verifies GIT-23
+  it("streams NDJSON progress then a terminal result for a multi-file sync", { timeout: 30_000 }, async () => {
+    const { root, base } = await harness();
+
+    // Seed several tasks onto the branch so the sync's write phase has a
+    // batch of files to apply — the source of the progress ticks.
+    const worktree = join(root, "..", `wt-seed-${Date.now()}`);
+    git(root, "worktree", "add", "-q", worktree, "loctt");
+    const N = 5;
+    for (let i = 0; i < N; i += 1) {
+      const id = `01WEBSEED${String(i).padStart(18, "0")}`;
+      const dir = join(worktree, "tasks", id);
+      await import("node:fs/promises").then(m => m.mkdir(dir, { recursive: true }));
+      await writeFile(
+        join(dir, "task.md"),
+        `---\nid: ${id}\nkey: T-${String(200 + i)}\ntitle: Web seed ${String(i)}\n`
+        + "status: todo\ncreated_at: 2020-01-01T00:00:00.000Z\n"
+        + "updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n",
+        "utf8",
+      );
+    }
+    git(worktree, "add", "-A");
+    git(worktree, "commit", "-m", "seed tasks");
+    git(root, "worktree", "remove", "--force", worktree);
+
+    const res = await fetch(`${base}/api/git/sync`, {
+      method: "POST",
+      headers: { "X-Loctt-Client": "test" },
+    });
+
+    expect(res.status).toBe(200);
+    // The transport is NDJSON, not a single JSON body (GIT-23 bullet 1).
+    expect(res.headers.get("content-type")).toContain("application/x-ndjson");
+
+    const text = await res.text();
+    const lines = text.split("\n").filter(l => l.trim().length > 0)
+      .map(l => JSON.parse(l) as Record<string, unknown>);
+
+    const progressLines = lines.filter(l => "progress" in l);
+    const resultLines = lines.filter(l => "result" in l);
+    const errorLines = lines.filter(l => "error" in l);
+
+    // Progress was reported, not an indefinite spinner.
+    expect(progressLines.length).toBeGreaterThan(0);
+    // Exactly one terminal result line, no error line.
+    expect(resultLines.length).toBe(1);
+    expect(errorLines.length).toBe(0);
+
+    // The terminal result carries the honest counts (GIT-23 bullet 2):
+    // it names how many files, and never enumerates 500 keys inline.
+    const result = (resultLines[0] as { result: { updated: boolean; copied?: number } }).result;
+    expect(result.updated).toBe(true);
+    expect(result.copied ?? 0).toBeGreaterThanOrEqual(N);
+
+    // The last progress tick reaches the total, so a client bar lands at
+    // 100% rather than stalling short.
+    const last = progressLines.at(-1) as { progress: { applied: number; total: number } };
+    expect(last.progress.applied).toBe(last.progress.total);
+  });
 });

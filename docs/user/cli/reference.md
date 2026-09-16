@@ -1148,6 +1148,12 @@ is set up.
 `publish` commits any local changes to the `loctt` branch (and pushes if
 auto-push is on). `sync` pulls the latest `loctt` branch into the workspace.
 
+For a large sync (50 or more files applied), `sync` prints an updating
+`Applying N/M files…` progress line to stderr, so a pull that brings in
+hundreds of tasks shows its progress rather than running silent; the
+`Synced …` summary on stdout still reports the true counts (files taken,
+merged, removed). A small sync prints no progress line.
+
 When the local commit lands but the push cannot, `publish` exits non-zero
 and names the cause distinctly — the local commit is safe in every case:
 
