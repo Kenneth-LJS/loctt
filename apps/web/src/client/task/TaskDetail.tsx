@@ -6,6 +6,9 @@ import { ActivityPanel } from "../activity/ActivityPanel.tsx";
 import { ApiError } from "../api/client.ts";
 import {
   searchLabels,
+  searchMilestones,
+  searchSprints,
+  searchUsers,
   useLabels,
   useMilestones,
   useProjects,
@@ -628,6 +631,9 @@ export function TaskDetail({
             onUnset={onUnset}
             onCreateLabel={onCreateLabel}
             searchLabels={searchLabels}
+            searchMilestones={searchMilestones}
+            searchSprints={searchSprints}
+            searchUsers={searchUsers}
             {...(labelError !== null ? { labelError } : {})}
             onDismissLabelError={() => { setLabelError(null); }}
             {...(fieldError !== null ? { fieldError } : {})}

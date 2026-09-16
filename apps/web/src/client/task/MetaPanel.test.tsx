@@ -65,6 +65,9 @@ function renderPanel(overrides: {
       onUnset={onUnset}
       onCreateLabel={vi.fn(() => Promise.resolve(undefined))}
       searchLabels={vi.fn(() => Promise.resolve([]))}
+      searchMilestones={vi.fn(() => Promise.resolve([]))}
+      searchSprints={vi.fn(() => Promise.resolve([]))}
+      searchUsers={vi.fn(() => Promise.resolve([]))}
     />,
   );
   return { onUnset };
@@ -161,6 +164,9 @@ describe("DEG-29 — a corrupt CUSTOM field clears by its bare key, not the dott
         onUnset={onUnset}
         onCreateLabel={vi.fn(() => Promise.resolve(undefined))}
         searchLabels={vi.fn(() => Promise.resolve([]))}
+        searchMilestones={vi.fn(() => Promise.resolve([]))}
+        searchSprints={vi.fn(() => Promise.resolve([]))}
+        searchUsers={vi.fn(() => Promise.resolve([]))}
       />,
     );
 

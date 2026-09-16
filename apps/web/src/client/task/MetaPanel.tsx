@@ -71,6 +71,9 @@ export function MetaPanel({
   onUnset,
   onCreateLabel,
   searchLabels,
+  searchMilestones,
+  searchSprints,
+  searchUsers,
   labelError,
   onDismissLabelError,
   fieldError,
@@ -108,6 +111,10 @@ export function MetaPanel({
   readonly onCreateLabel: (name: string) => Promise<string | undefined>;
   /** K90: server-side label search for the picker (see LabelsField). */
   readonly searchLabels: (q: string) => Promise<readonly LabelDef[]>;
+  /** K90: server-side searches for the milestone/sprint/user pickers. */
+  readonly searchMilestones: (q: string) => Promise<readonly MilestoneDef[]>;
+  readonly searchSprints: (q: string) => Promise<readonly SprintDef[]>;
+  readonly searchUsers: (q: string) => Promise<readonly UserProfile[]>;
   readonly labelError?: string | undefined;
   readonly onDismissLabelError?: (() => void) | undefined;
   /**
@@ -250,6 +257,10 @@ export function MetaPanel({
             options={userOptions(users, fm.assignee)}
             onSelect={v => { onSet("assignee", v); }}
             onClear={() => { onUnset("assignee"); }}
+            search={{
+              onQuery: q => searchUsers(q).then(rows => userOptions(rows, fm.assignee)),
+              placeholder: "Search users…",
+            }}
             disabledReason="Archived users cannot be assigned new work."
           />
         </Row>
@@ -262,6 +273,10 @@ export function MetaPanel({
             onSelect={v => { onSet("reporter", v); }}
             onClear={() => { onUnset("reporter"); }}
             disabledReason="Archived users cannot be set as reporter."
+            search={{
+              onQuery: q => searchUsers(q).then(rows => userOptions(rows, fm.reporter)),
+              placeholder: "Search users…",
+            }}
           />
         </Row>
 
@@ -290,6 +305,10 @@ export function MetaPanel({
             onSelect={v => { onSet("milestone", v); }}
             onClear={() => { onUnset("milestone"); }}
             disabledReason="Archived milestones cannot be newly assigned."
+            search={{
+              onQuery: q => searchMilestones(q).then(rows => namedOptions(rows, fm.milestone)),
+              placeholder: "Search milestones…",
+            }}
           />
         </Row>
 
@@ -301,6 +320,10 @@ export function MetaPanel({
             onSelect={v => { onSet("sprint", v); }}
             onClear={() => { onUnset("sprint"); }}
             disabledReason="Archived sprints cannot be newly assigned."
+            search={{
+              onQuery: q => searchSprints(q).then(rows => namedOptions(rows, fm.sprint)),
+              placeholder: "Search sprints…",
+            }}
           />
         </Row>
 

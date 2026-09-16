@@ -6,6 +6,10 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { apiClient,ApiError, UnparseableBodyError } from "../api/client.ts";
 import {
   searchLabels,
+  searchMilestones,
+  searchProjects,
+  searchSprints,
+  searchUsers,
   useLabels,
   useMilestones,
   useProjects,
@@ -20,6 +24,7 @@ import { RichBuffer } from "../editor/markdown.ts";
 import { RichEditor } from "../editor/RichEditor.tsx";
 import { nonWorkingNote } from "../task/editors/DateField.tsx";
 import { LabelsField } from "../task/editors/LabelsField.tsx";
+import type { OptionSearch, PickerOption } from "../task/editors/OptionPicker.tsx";
 import { OptionPicker } from "../task/editors/OptionPicker.tsx";
 import { estimationShape } from "../task/estimation.ts";
 import { Button } from "../ui/Button.tsx";
@@ -536,6 +541,11 @@ export function CreateTaskModal({
                 value={form.sprint}
                 onSelect={k => { setForm(f => ({ ...f, sprint: k })); }}
                 onClear={() => { setForm(f => ({ ...f, sprint: undefined })); }}
+                search={{
+                  onQuery: q => searchSprints(q).then(rows =>
+                    rows.filter(e => e.archived !== true).map(e => ({ key: e.id, label: e.name }))),
+                  placeholder: "Search sprints…",
+                }}
               />
               <RefField
                 label="Milestone"
@@ -544,6 +554,11 @@ export function CreateTaskModal({
                 value={form.milestone}
                 onSelect={k => { setForm(f => ({ ...f, milestone: k })); }}
                 onClear={() => { setForm(f => ({ ...f, milestone: undefined })); }}
+                search={{
+                  onQuery: q => searchMilestones(q).then(rows =>
+                    rows.filter(e => e.archived !== true).map(e => ({ key: e.id, label: e.name }))),
+                  placeholder: "Search milestones…",
+                }}
               />
               <UserField
                 label="Assignee"
@@ -552,6 +567,10 @@ export function CreateTaskModal({
                 value={form.assignee}
                 onSelect={k => { setForm(f => ({ ...f, assignee: k })); }}
                 onClear={() => { setForm(f => ({ ...f, assignee: undefined })); }}
+                search={{
+                  onQuery: q => searchUsers(q).then(userSearchOptions),
+                  placeholder: "Search users…",
+                }}
               />
               <UserField
                 label="Reporter"
@@ -560,6 +579,10 @@ export function CreateTaskModal({
                 value={form.reporter}
                 onSelect={k => { setForm(f => ({ ...f, reporter: k })); }}
                 onClear={() => { setForm(f => ({ ...f, reporter: undefined })); }}
+                search={{
+                  onQuery: q => searchUsers(q).then(userSearchOptions),
+                  placeholder: "Search users…",
+                }}
               />
             </div>
           )}
@@ -914,6 +937,12 @@ function ProjectField({
           // A11Y-23: the picker's trigger carries the invalid mark and
           // points at the message below it.
           errorId={required ? "create-project-required" : undefined}
+          search={{
+            onQuery: q => searchProjects(q).then(rows =>
+              rows.filter(p => p.archived !== true)
+                .map(p => ({ key: p.id, label: `${p.name} (${p.prefix})` }))),
+            placeholder: "Search projects…",
+          }}
         />
       </div>
       {required && (
@@ -1061,6 +1090,7 @@ function RefField({
   value,
   onSelect,
   onClear,
+  search,
 }: {
   readonly label: string;
   readonly testid: string;
@@ -1068,6 +1098,8 @@ function RefField({
   readonly value: string | undefined;
   readonly onSelect: (key: string) => void;
   readonly onClear: () => void;
+  /** K90: server-side search for this picker. */
+  readonly search?: OptionSearch | undefined;
 }) {
   return (
     <Field label={label}>
@@ -1081,6 +1113,7 @@ function RefField({
           onSelect={onSelect}
           onClear={onClear}
           clearLabel="None"
+          {...(search !== undefined ? { search } : {})}
         />
       </div>
     </Field>
@@ -1101,6 +1134,7 @@ function UserField({
   value,
   onSelect,
   onClear,
+  search,
 }: {
   readonly label: string;
   readonly testid: string;
@@ -1114,6 +1148,8 @@ function UserField({
   readonly value: string | undefined;
   readonly onSelect: (key: string) => void;
   readonly onClear: () => void;
+  /** K90: server-side user search for this picker. */
+  readonly search?: OptionSearch | undefined;
 }) {
   const live = users.filter(u => u.archived !== true);
   const displayName = (u: { id: string; name?: string | undefined }) => u.name ?? u.id;
@@ -1138,10 +1174,25 @@ function UserField({
           onSelect={onSelect}
           onClear={onClear}
           clearLabel="None"
+          {...(search !== undefined ? { search } : {})}
         />
       </div>
     </Field>
   );
+}
+
+/** Maps user rows to picker options with a collision-disambiguating hint. */
+function userSearchOptions(
+  users: readonly { id: string; name?: string | undefined; archived?: boolean | undefined }[],
+): readonly PickerOption[] {
+  const live = users.filter(u => u.archived !== true);
+  const name = (u: { id: string; name?: string | undefined }) => u.name ?? u.id;
+  const counts = new Map<string, number>();
+  for (const u of live) counts.set(name(u), (counts.get(name(u)) ?? 0) + 1);
+  return live.map(u => ({
+    key: u.id,
+    label: (counts.get(name(u)) ?? 0) > 1 ? `${name(u)} (${u.id.slice(-6)})` : name(u),
+  }));
 }
 
 /**

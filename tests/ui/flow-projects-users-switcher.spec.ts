@@ -262,7 +262,7 @@ test.describe("PRU-22 — a 120-character label does not break layout", () => {
 
 test.describe("PRU-41 — assigning an archived user through a stale picker", () => {
   // @verifies PRU-41
-  test("PRU-41: the archived-reference guard rejects, names the user, offers both actions, and reverts", async ({
+  test("PRU-41: a user archived out-of-band shows disabled in the re-queried picker, so no write is sent (K90)", async ({
     page,
     tracker,
   }) => {
@@ -287,32 +287,31 @@ test.describe("PRU-41 — assigning an archived user through a stale picker", ()
     // Close the picker again without changing anything.
     await page.keyboard.press("Escape");
 
-    // Archive Grace from the "CLI". The open page does not refetch
-    // within staleTime, so the picker it already cached is now stale.
+    // Archive Grace from the "CLI".
     await tracker.run(["user", "archive", "Grace Hopper"]);
 
-    // Re-open the (stale) picker and select the now-archived user.
+    // K90: the picker queries the server each time it opens, so re-opening
+    // it after the archive shows Grace as archived-disabled — the stale
+    // enabled option this case used to rely on no longer exists. The write
+    // is prevented at the control rather than sent-and-refused; the
+    // server-side archived-reference guard still holds (core
+    // `config/archived-guard.test.ts` + `…-fails-closed.test.ts`, and the
+    // MCP guard tests). What this UI case now asserts is the client-side
+    // prevention.
     await page.getByTestId("meta-edit-assignee").click();
-    await list.getByRole("option", { name: /Grace Hopper/ }).click();
+    const graceArchived = list.getByRole("option", { name: /Grace Hopper/ });
+    // Present, named, marked archived, and unselectable.
+    await expect(graceArchived).toBeVisible();
+    await expect(graceArchived).toContainText(/archived/i);
+    await expect(graceArchived).toBeDisabled();
+    // The panel explains why archived entities cannot be newly assigned.
+    await expect(list).toContainText(/archived/i);
 
-    // The save is rejected by the archived-reference guard, at the
-    // field. The message names the user, says archived, and offers
-    // BOTH next actions.
-    const err = page.getByTestId("meta-field-error-message");
-    await expect(err).toBeVisible();
-    await expect(err).toContainText("Grace Hopper");
-    await expect(err).toContainText(/archived/i);
-    await expect(err).toContainText(/unarchive/i);
-    await expect(err).toContainText(/choose a different assignee/i);
-    // P-4: the message never leaks the ULID.
-    expect(await err.innerText()).not.toMatch(/[0-9A-HJKMNP-TV-Z]{26}/);
-
-    // The field reverts to Ada rather than displaying the rejected
-    // Grace as if it had saved.
+    // Nothing was written and the field still shows Ada — no optimistic
+    // flash of Grace.
+    await page.keyboard.press("Escape");
     await expect(page.getByTestId("meta-edit-assignee")).toContainText("Ada Byron");
     await expect(page.getByTestId("meta-edit-assignee")).not.toContainText("Grace Hopper");
-
-    // The far end confirms nothing was written: the file still names Ada.
     const assigneeId = await fmByTitle(tracker.root, "Stale picker task", "assignee");
     const adaId = await userIdByName(tracker, "Ada Byron");
     expect(adaId).toBeDefined();

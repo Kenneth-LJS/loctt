@@ -478,7 +478,7 @@ test.describe("TSK-29 — an orphaned status value", () => {
 test.describe("TSK-46 / TSK-47 / ERR-43 — a rejected write", () => {
   // @verifies TSK-46
   // @verifies ERR-43
-  test("TSK-46: an archived assignee is refused by name, and the panel reverts", async ({
+  test("TSK-46: a since-archived assignee is shown disabled in the querying picker, so no write is sent (K90)", async ({
     page,
     tracker,
   }) => {
@@ -513,41 +513,30 @@ test.describe("TSK-46 / TSK-47 / ERR-43 — a rejected write", () => {
 
     await tracker.run(["user", "archive", userId]);
 
-    // **The task GET is blocked from here on.** Without this the
-    // rollback is untestable: `onSettled` invalidates the task query,
-    // whose refetch repaints the true value from the server — so
-    // deleting `onError`'s rollback entirely leaves the screen
-    // looking identical a moment later, and the assertion below
-    // passes on the refetch rather than on the rollback it names.
-    // Verified: with the GET open, removing the rollback kept this
-    // test green.
-    await page.route(`**/api/tasks/${key}`, route => route.abort());
-
+    // K90: the assignee picker queries the server when opened, so even a
+    // page loaded before the archive shows Robin as archived-disabled the
+    // moment the list is opened — the "stale picker" that used to send a
+    // doomed write no longer exists on this path. The write is therefore
+    // prevented at the control rather than sent-and-refused; the
+    // server-side archived-reference guard still holds and is covered by
+    // core (`config/archived-guard.test.ts`, `…-fails-closed.test.ts`)
+    // and the MCP guard tests. What this UI case now asserts is the
+    // client-side prevention: the archived user is present, named,
+    // marked, and unselectable, and nothing is written.
     await trigger(page, "assignee").click();
-    await options(page, "assignee").getByRole("option", { name: "Robin Vale" }).click();
+    const robin = options(page, "assignee").getByRole("option", { name: /Robin Vale/ });
+    // Present and named — not silently dropped — and marked archived...
+    await expect(robin).toBeVisible();
+    await expect(robin).toContainText("archived");
+    // ...but not choosable: the option is disabled, so no write is sent.
+    await expect(robin).toBeDisabled();
+    // The panel explains why archived entities are not offered.
+    await expect(options(page, "assignee")).toContainText(/archived/i);
 
-    // First bullet: the optimistic value does not stay on screen.
-    await expect(trigger(page, "assignee")).toContainText("Sam Okafor", {
-      timeout: 15_000,
-    });
+    // The assignee is unchanged on screen and on disk — no optimistic
+    // flash of Robin, and the status set beside it is untouched.
+    await expect(trigger(page, "assignee")).toContainText("Sam Okafor");
     await expect(trigger(page, "assignee")).not.toContainText("Robin Vale");
-
-    // Second bullet: the message names the user *by name* (ERR-43 —
-    // core's own sentence carries the ULID), says they are archived,
-    // and says archived entities cannot be newly referenced.
-    const n = notice(page);
-    await expect(n).toBeVisible();
-    await expect(n).toContainText("Robin Vale");
-    await expect(n).not.toContainText(userId);
-    await expect(n).toContainText("archived");
-    await expect(n).toContainText(/unarchive/i);
-    // At the assignee control, not in a toast.
-    await expect(n).toHaveAttribute("data-field", "assignee");
-    await expect(n).toHaveAttribute("data-code", "archived_reference");
-    await expect(n).toContainText("was not saved");
-
-    // Third bullet: nothing on disk moved — not the assignee, and not
-    // the status that was set beside it.
     const fm = await frontmatterOf(tracker.root, key);
     expect(fm).toMatch(new RegExp(`^assignee:\\s*${otherId}\\s*$`, "m"));
     expect(fm).not.toContain(userId);
