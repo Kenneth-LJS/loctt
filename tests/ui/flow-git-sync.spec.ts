@@ -532,3 +532,70 @@ test("GIT-30: sync against an unreachable remote names it, keeps local untouched
 
   expect(errors).toEqual([]);
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// GIT-23 · A sync brings in many new tasks.
+//
+// The transient progress bar (bullet 1) and the per-file tick mechanics
+// are proven deterministically at the server level
+// (apps/web/src/server/git-errors.test.ts) and the hook level
+// (useGit.test.tsx) — a Playwright assertion on the bar mid-sync is
+// inherently racy (the sync completes in well under a frame for a small
+// fixture) and would be a flake, not coverage. This spec covers the
+// durable, observable halves of the case: the result summarises with
+// counts and offers the full breakdown on expand rather than enumerating
+// every key inline (bullet 2), and the list reflects the new population
+// with an honest total (bullet 3).
+// ─────────────────────────────────────────────────────────────────────
+
+test("GIT-23: a many-task sync summarises with counts + expand, and the list reflects the new population", async ({
+  page,
+  gitTracker,
+}) => {
+  // @verifies GIT-23
+  const errors = guardPageErrors(page);
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.run(["git", "publish"]);
+
+  // Another machine publishes a batch of new tasks to the branch. Eight
+  // is plenty to prove "counts, not enumerated keys" while keeping the
+  // e2e fast; the write loop is identical at 500.
+  const titles = Array.from({ length: 8 }, (_, i) => `bulk task ${String(i)}`);
+  await publishFromOtherClone(gitTracker.remoteRepo, titles);
+
+  await gotoSync(page, gitTracker.baseURL);
+  await expect(page.getByTestId("git-enabled")).toBeVisible();
+
+  await page.getByTestId("git-sync").click();
+  const result = page.getByTestId("git-sync-result");
+  await expect(result).toBeVisible();
+  await expect(result).toHaveAttribute("data-git-sync", "updated");
+
+  // Bullet 2: the summary states counts and does NOT enumerate every key
+  // inline. The task keys are not printed in the collapsed summary.
+  await expect(result).toContainText("file(s) taken from the branch");
+  for (const t of titles) {
+    await expect(result).not.toContainText(t);
+  }
+
+  // Bullet 2: the full breakdown is offered on expand — collapsed by
+  // default, revealed on click, still counts (not 500 keys).
+  const details = page.getByTestId("git-sync-details");
+  await expect(details).toBeVisible();
+  const breakdown = page.getByTestId("git-sync-breakdown");
+  await expect(breakdown).toBeHidden();
+  await details.getByText("Show full breakdown").click();
+  await expect(breakdown).toBeVisible();
+  await expect(breakdown).toContainText("taken from the branch");
+
+  // Bullet 3: navigate to the list through the app's own router (no
+  // reload) — all eight pulled tasks are there because the sync
+  // invalidated the list feed query.
+  await page.getByTestId("project-all").click();
+  await expect(page).toHaveURL(/\/list/);
+  for (const t of titles) {
+    await expect(page.getByRole("row").filter({ hasText: t })).toBeVisible();
+  }
+
+  expect(errors).toEqual([]);
+});

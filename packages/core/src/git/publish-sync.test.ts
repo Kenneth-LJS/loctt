@@ -116,6 +116,59 @@ describe("publish-sync", () => {
       expect(localTasks).not.toContain(task.frontmatter.id);
     });
 
+    // @verifies GIT-23
+    it("reports incremental write progress for a multi-task sync", async () => {
+      // Fixture: several tasks created on the branch (not locally), so
+      // the sync's plan is a batch of copies whose progress we can watch.
+      // 500 is the case's number but slow to fixture in a unit test; a
+      // handful is enough to prove the callback fires per file and reaches
+      // the total — the loop is the same at any size.
+      // A publish first, to create the `loctt` branch to seed onto.
+      const seedState = await loadState(locttDir);
+      await createTask({ locttDir, state: seedState, options: { project: taskProjectId, title: "Base" } });
+      await saveState(locttDir, seedState);
+      await publish(locttDir, root);
+
+      const worktreeDir = join(root, ".seed-worktree");
+      execSync(`git worktree add ${worktreeDir} loctt`, { cwd: root, stdio: "pipe" });
+      const N = 6;
+      try {
+        for (let i = 0; i < N; i += 1) {
+          const id = `01SEED${String(i).padStart(20, "0")}`;
+          await mkdir(join(worktreeDir, "tasks", id), { recursive: true });
+          await writeFile(
+            join(worktreeDir, "tasks", id, "task.md"),
+            `---\nid: ${id}\nkey: T-${String(100 + i)}\ntitle: Seeded ${String(i)}\n`
+            + `status: todo\nproject: ${taskProjectId}\ncreated_at: 2020-01-01T00:00:00.000Z\n`
+            + `updated_at: 2020-01-01T00:00:00.000Z\n---\nbody\n`,
+          );
+        }
+        execSync("git add -A && git commit -m 'seed tasks on branch'", { cwd: worktreeDir, stdio: "pipe" });
+      } finally {
+        execSync(`git worktree remove ${worktreeDir} --force`, { cwd: root, stdio: "pipe" });
+      }
+
+      const ticks: Array<{ applied: number; total: number }> = [];
+      const result = await sync(locttDir, root, (applied, total) => {
+        ticks.push({ applied, total });
+      });
+
+      expect(result.updated).toBe(true);
+      // Progress fired at all — not an indefinite spinner (GIT-23 b1).
+      expect(ticks.length).toBeGreaterThan(0);
+      // Every tick names the same, honest total (the plan's write count),
+      // and that total covers the seeded tasks.
+      const total = ticks[0]?.total ?? 0;
+      expect(total).toBeGreaterThanOrEqual(N);
+      expect(ticks.every(t => t.total === total)).toBe(true);
+      // `applied` is monotonic non-decreasing and reaches the total, so a
+      // caller rendering applied/total lands on 100%.
+      for (let i = 1; i < ticks.length; i += 1) {
+        expect(ticks[i]!.applied).toBeGreaterThanOrEqual(ticks[i - 1]!.applied);
+      }
+      expect(ticks.at(-1)?.applied).toBe(total);
+    });
+
     it("preserves the local/ directory during sync", async () => {
       const state = await loadState(locttDir);
       await createTask({ locttDir, state, options: { project: taskProjectId, title: "Sync test" } });

@@ -130,7 +130,7 @@ export { computeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
 export { blockingFindings, checkDataIntegrity, runDoctor, runDoctorStream } from "./diagnostics/index.js";
 export type { LocttErrorOptions } from "./errors.js";
 export { errorEnvelope, LocttError } from "./errors.js";
-export type { FetchResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, PreflightReport, PushResult } from "./git/index.js";
+export type { FetchResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, PreflightReport, PushResult, SyncOutcome, SyncProgress } from "./git/index.js";
 export type {
   ApplyReconcileOutcome,
   ApplyReconcileResult,

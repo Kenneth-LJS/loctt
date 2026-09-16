@@ -1,6 +1,6 @@
 export type { GitStatusResult } from "./git-mode.js";
 export { disableGit, enableGit, getGitStatus } from "./git-mode.js";
-export type { FetchResult, GitRemoteFailure, GitRemoteFailureKind, PreflightReport, PushResult, SyncOutcome } from "./publish-sync.js";
+export type { FetchResult, GitRemoteFailure, GitRemoteFailureKind, PreflightReport, PushResult, SyncOutcome, SyncProgress } from "./publish-sync.js";
 export { classifyRemoteFailure } from "./publish-sync.js";
 export { preflight, PreflightError } from "./publish-sync.js";
 export {

@@ -4,6 +4,7 @@ import { ApiError } from "../api/client.ts";
 import {
   type GitRemoteFailure,
   type GitStatus,
+  type SyncProgress,
   useGitDisable,
   useGitEnable,
   useGitPublish,
@@ -79,9 +80,13 @@ export function fetchFailureClause(failure: GitRemoteFailure): string {
  * success body as `pushFailure`/`fetchFailure`, and this panel names the
  * remote, states the local state was untouched, and offers Retry (plus
  * Sync-first for a non-fast-forward push) without entering a permanent
- * error state. The residual conflict-resolution cases still unbuilt are
- * GIT-8/16/19/21/22/23/25/33/34/35/36; the rest of the GIT-* range is
- * built and tested.
+ * error state. GIT-23 (a 500-task sync reports progress + honest counts)
+ * is now built here too: the sync mutation streams `{applied,total}`
+ * ticks that drive a determinate progress bar during a large sync, and
+ * the result summarises with counts plus an expand-for-full-breakdown
+ * affordance rather than enumerating every key inline. The residual
+ * conflict-resolution cases still unbuilt are GIT-8/16/19/21/25/33/34/35/36;
+ * the rest of the GIT-* range is built and tested.
  *
  * This panel also carries GIT-18's first duty: detect that a
  * reconciliation is in progress and refuse to start another operation
@@ -261,7 +266,12 @@ function EnabledState({ status, checkedAt, onRefresh }: {
   readonly onRefresh: () => void;
 }) {
   const publish = useGitPublish();
-  const sync = useGitSync();
+  // GIT-23: the panel shows determinate progress during a large sync
+  // instead of an indefinite "Syncing…". The engine streams
+  // `{applied,total}` ticks; the latest one lives here and is cleared
+  // when a new sync starts.
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | undefined>(undefined);
+  const sync = useGitSync(setSyncProgress);
   const disable = useGitDisable();
   const [confirmingDisable, setConfirmingDisable] = useState(false);
 
@@ -402,11 +412,45 @@ function EnabledState({ status, checkedAt, onRefresh }: {
           variant="secondary"
           testId="git-sync"
           disabled={busy || reconcileInProgress}
-          onClick={() => { sync.mutate(); }}
+          onClick={() => { setSyncProgress(undefined); sync.mutate(); }}
         >
           {sync.isPending ? "Syncing…" : "Sync"}
         </Button>
       </section>
+
+      {/*
+        GIT-23 bullet 1: a large sync reports progress rather than sitting
+        on an indefinite spinner. The engine streams `{applied,total}`
+        ticks once it starts writing files; a small sync (or the read-only
+        planning phase) emits none, so this only appears when there is
+        real progress to show — an indefinite spinner is exactly what it
+        replaces. `role=progressbar` with the aria value attributes makes
+        it a real, announced progress control, not a decorative bar.
+      */}
+      {sync.isPending && syncProgress !== undefined && syncProgress.total > 0 && (
+        <div className="mb-3" data-testid="git-sync-progress">
+          <div
+            role="progressbar"
+            aria-label="Applying synced files"
+            aria-valuemin={0}
+            aria-valuemax={syncProgress.total}
+            aria-valuenow={syncProgress.applied}
+            data-git-sync-applied={String(syncProgress.applied)}
+            data-git-sync-total={String(syncProgress.total)}
+            className="h-2 w-full overflow-hidden rounded bg-bg-muted"
+          >
+            <div
+              className="h-full bg-accent"
+              style={{
+                width: `${String(Math.round((syncProgress.applied / syncProgress.total) * 100))}%`,
+              }}
+            />
+          </div>
+          <p className="mt-1 text-[0.8571rem] text-text-secondary">
+            Applying {syncProgress.applied} of {syncProgress.total} files…
+          </p>
+        </div>
+      )}
 
       {/*
         GIT-2/GIT-24: "nothing to publish" is a distinct outcome from a
@@ -501,6 +545,41 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               </span>
             )}
           </p>
+
+          {/*
+            GIT-23 bullet 2: the summary above states counts and never
+            enumerates every affected task inline — a 500-task sync must
+            not print 500 keys. The full per-bucket breakdown is offered
+            on expand instead. Core reports file counts, not per-task keys
+            (see the GIT-3 note above), so the expandable detail is the
+            honest thing the data supports: the count by category, and a
+            pointer to the list view — which now reflects the new
+            population (the sync invalidated its query). Collapsed by
+            default via native `<details>`, keyboard-operable for free.
+          */}
+          {sync.data.updated && (
+            <details className="mb-1" data-testid="git-sync-details">
+              <summary className="cursor-pointer text-[0.8571rem] text-accent">
+                Show full breakdown
+              </summary>
+              <ul className="mt-1 ml-4 list-disc text-[0.8571rem] text-text-secondary" data-testid="git-sync-breakdown">
+                <li>{sync.data.copied ?? 0} taken from the branch (created or updated)</li>
+                <li>{sync.data.merged ?? 0} merged field-by-field</li>
+                <li>{sync.data.deleted ?? 0} removed locally</li>
+                <li>{sync.data.kept ?? 0} left unchanged</li>
+                {(sync.data.rekeyed ?? 0) > 0 && (
+                  <li>{sync.data.rekeyed} renumbered to resolve a key collision</li>
+                )}
+                {(sync.data.reprefixed ?? 0) > 0 && (
+                  <li>{sync.data.reprefixed} given a provisional project prefix</li>
+                )}
+              </ul>
+              <p className="mt-1 ml-4 text-[0.8571rem] text-text-tertiary">
+                The synced tasks appear in the list, which now shows the
+                updated total.
+              </p>
+            </details>
+          )}
           {/* GIT-30: not a permanent error state — offer Retry inline so
               the user does not have to reload after the network returns. */}
           {sync.data.fetchError !== undefined && (

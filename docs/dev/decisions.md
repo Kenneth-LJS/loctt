@@ -12874,3 +12874,34 @@ it is **greater** than the local `CURRENT_SCHEMA_VERSION`, throw a distinct
 error and write nothing. The message says "upgrade LocTT," not "migrate."
 `.schema-version` stays `LOCAL_OWNED`/`NEVER_MIRROR` — this only *reads* the
 remote's value to refuse, never writes it. Not agent-revertible.
+
+### A190 · GIT-23 500-task sync progress + honest counts — thread `onProgress` through the engine; stream NDJSON on the write path only
+
+**Ticket:** GIT-23 (A188's safe/implementer-decidable split) · **Date:** 2026-09-16 · **Commit:** uncommitted (working tree).
+
+**Situation.** GIT-23: a sync that brings in 500 tasks must (1) report progress rather than sit on an indefinite spinner, (2) report the true count and summarise with counts + expand-for-full-list rather than enumerate 500 keys inline, (3) leave the list reflecting the new population with an honest total, (4) recompute the sidebar saved-view badges.
+
+**Ground truth (verified before building).**
+- `SyncOutcome` already carries true counts (`copied/deleted/kept/merged/rekeyed/reprefixed/unresolvedKeys`) — bullet 2's "honest counts" was already present; leaned on it, did not reinvent.
+- There was **no** progress channel in the sync path (no callback/generator/SSE) — bullet 1 genuinely unbuilt.
+- **The `["tasks"]`-only invalidation in `useGit.ts` did NOT cover bullets 3-4.** The main ListView/Board/Timeline read `["tasks-feed"]` (a separate key, not a prefix of `["tasks"]`), and the sidebar saved-view badges read `["builtin-count"]`. A sync invalidated neither, so the list kept the pre-sync population and the badges kept the pre-sync counts. The old comment on `useGitMutation` claimed `["tasks"]` handled GIT-3/GIT-23; it was wrong about which key the list reads. This is exactly the drift the brief warned to verify.
+
+**What to decide.** How to surface progress on the web without destabilising the tested sync transport.
+
+**Options.**
+- (a) **Convert `/api/git/sync` to always-200 NDJSON streaming** (the doctor SET-29 shape, applied wholesale). Cost: the route's error contract is 409-on-conflict / 500-on-git-failure with a JSON envelope, asserted green by `git-errors.test.ts`; an always-200 stream inverts those tests and forces the client to reconstruct HTTP status + envelope + reconcile-detection from a terminal line for *every* failure path (GIT-18/29/30/31/32). High blast radius on heavily-tested, correct behaviour — against A188's "SAFE, do not destabilise" framing and A189's "enrich, don't restructure" precedent.
+- (b) **Two-phase route: JSON for planning-phase failures, NDJSON once writing begins** (chosen). All status-bearing failures (`GitConflictError` → 409, `GitReconcileNeededError` → 409, broken-repo → 500) raise in the read-only planning phase, *before* `applyPlan` fires its first progress tick. So the route writes no NDJSON header until the first tick; if `sync` throws before then, the ordinary `error(res, …)` path fires with its exact status/envelope (contract unchanged, `git-errors.test.ts` stays green). Streaming begins only once the sync has committed to writing files, where the only remaining failure is a mid-write I/O error — emitted as a terminal `{ error }` line the client turns back into the identical `ApiError`.
+
+**Decided.** (b). It satisfies bullet 1 (determinate progress bar) while preserving the tested error semantics byte-for-byte. Progress is intrinsic to the one write operation, so a fully-separate read-only channel was not possible; (b) is the least-invasive way to observe it live.
+
+**What was built.**
+- **Engine (core `git/publish-sync.ts`):** `SyncProgress = (applied, total) => void` threaded restore.ts-style through `sync` → `pullFromLocttBranch` → `applyPlan`. `applyPlan` reports before each delete/copy and a final 100% tick; `total` = deletes + copies (the whole write, one honest denominator). Exported from `git/index.ts` + top-level `index.ts`.
+- **CLI (`apps/cli/commands/git.ts`):** `makeSyncProgressReporter()` prints an updating `Applying N/M files (P%)…` line to **stderr** (progress is not the command's output), threshold-gated (silent under 50 files) and throttled to whole-percent steps (a 500-file sync emits ~100 lines, not 500), always emitting the final 100% + newline.
+- **Web server (`apps/web/src/server/server.ts`):** `handleGitSync` streams as in option (b).
+- **Web client (`apps/web/src/client/api/hooks/useGit.ts`):** `useGitSync(onProgress?)` consumes the NDJSON stream (progress → callback, terminal result → resolve, terminal error → reconstructed `ApiError`), falling back to `apiClient.post` for a plain-JSON reply (no-op sync / planning-phase error). **Invalidation fix:** `useGitSync`, `useGitMutation`, and `useApplyReconcile` now invalidate `["tasks-feed"]` and `["builtin-count"]` in addition to `["tasks"]`/`["git"]` — closing bullets 3-4.
+- **Web panel (`GitSyncPanel.tsx`):** a determinate `role="progressbar"` during a large sync (bullet 1), and a collapsed `<details>` "Show full breakdown" summarising per-bucket counts + a pointer to the list (bullet 2) — never 500 keys inline.
+- **MCP:** unchanged — it is request/response and already returns honest counts (`copied`/`deleted`). Progress there = the final count summary, an accepted surface-appropriate difference (P10 does not require a stream where the transport has none).
+
+**Tests (each red-proven).** core `publish-sync.test.ts` (incremental progress reaches total); web `useGit.test.tsx` (invalidates tasks-feed + builtin-count — red-proven precisely on the useGitSync block; forwards streamed progress; reconstructs ApiError from terminal error line); web server `git-errors.test.ts` (streams NDJSON progress + terminal result; the two pre-existing 409/500 JSON-contract tests stay green, proving option (b) preserved them); CLI `git-progress.test.ts` (threshold silence, ~%-throttle, final 100%); e2e `flow-git-sync.spec.ts` GIT-23 (counts summary + expand affordance, no keys inline, list reflects new population). All tagged `@verifies GIT-23`.
+
+**To revert.** Remove the `onProgress`/`SyncProgress` param from `sync`/`pullFromLocttBranch`/`applyPlan` and its two exports; restore `handleGitSync` to the plain `json(res, await sync(...))` + catch; restore `useGitSync` to `useGitMutation<SyncResult>("/api/git/sync")` and drop the `["tasks-feed"]`/`["builtin-count"]` invalidations from the three hooks; delete the progress bar + `<details>` from `GitSyncPanel.tsx`; revert `makeSyncProgressReporter` and its call; un-tag the GIT-23 tests. No on-disk format change, so no migration. The invalidation-fix reversion would re-introduce the stale-list/stale-badge bug (bullets 3-4), so revert that half only if the list/badge query keys are also changed to a `["tasks"]` prefix.

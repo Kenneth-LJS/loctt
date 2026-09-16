@@ -327,20 +327,49 @@ async function normaliseAfterMerge(
   return { rekeyed, reprefixed, unresolvedKeys: outcome.skipped.map(s => s.key) };
 }
 
+/**
+ * Incremental progress for a sync's write phase (GIT-23). `applied` is
+ * the count of paths written so far, `total` the number the plan will
+ * write, so a caller can render determinate progress ("N of M") rather
+ * than an indefinite spinner. Reported *before* each path is written —
+ * the same "called while the work is still happening" contract as
+ * `restoreBackup`'s `onProgress`.
+ *
+ * Only the copy/delete write loop reports; the read-only planning and
+ * in-memory merge that precede it do not, because that is where a sync
+ * can still abort (a conflict, an unreachable remote) and no files have
+ * moved yet. Progress therefore begins only once the sync has committed
+ * to writing.
+ */
+export type SyncProgress = (applied: number, total: number) => void;
+
 async function applyPlan(
   plan: SyncPlan,
   incomingDir: string,
   localDir: string,
+  onProgress?: SyncProgress,
 ): Promise<void> {
+  // GIT-23: a 500-task sync must report progress. `total` counts every
+  // path this loop will touch (deletes then copies) so the fraction is
+  // honest against the whole write, not just one bucket.
+  const total = plan.deletes.length + plan.copies.length;
+  let applied = 0;
   for (const { path } of plan.deletes) {
+    onProgress?.(applied, total);
     await rm(join(localDir, path), { recursive: true, force: true });
+    applied += 1;
   }
   for (const { path } of plan.copies) {
+    onProgress?.(applied, total);
     const dest = join(localDir, path);
     await mkdir(dirname(dest), { recursive: true });
     await rm(dest, { recursive: true, force: true });
     await cp(join(incomingDir, path), dest, { recursive: true, force: true });
+    applied += 1;
   }
+  // The final tick: every path is written. Without it a caller that
+  // renders "applied/total" would stall one short of 100%.
+  onProgress?.(applied, total);
   // Deleting files can strand their directories. A task whose files are all
   // gone must leave no directory behind, or it still shows up in listings
   // (and reads as a corrupt task rather than an absent one).
@@ -1246,6 +1275,12 @@ export async function pullFromLocttBranch(
    * check is skipped, because completing is precisely what clears it.
    */
   reconcileResolution?: { readonly resolvedTaskIds: readonly string[] },
+  /**
+   * GIT-23: reports incremental write progress. Fires only in the write
+   * phase (`applyPlan`), after all the read-only planning that can still
+   * abort — so a caller never shows progress for a sync that then throws.
+   */
+  onProgress?: SyncProgress,
 ): Promise<SyncOutcome> {
   const syncState = preloadedState ?? await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
@@ -1391,7 +1426,7 @@ export async function pullFromLocttBranch(
       started_at: new Date().toISOString(),
     });
 
-    await applyPlan(plan, worktreeDir, locttDir);
+    await applyPlan(plan, worktreeDir, locttDir, onProgress);
     // After applyPlan: the merged content must win over whatever the
     // plan copied for that path.
     await applyResolution(resolution, locttDir);
@@ -1472,6 +1507,12 @@ export async function pullFromLocttBranch(
 export async function sync(
   locttDir: string,
   root: string,
+  /**
+   * GIT-23: incremental write progress, forwarded to `pullFromLocttBranch`.
+   * Optional so every existing caller (and MCP, which is request/response
+   * and cannot stream) is unaffected.
+   */
+  onProgress?: SyncProgress,
 ): Promise<SyncOutcome & { fetched?: boolean; fetchError?: string; fetchFailure?: GitRemoteFailure }> {
   const syncState = await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
@@ -1501,7 +1542,7 @@ export async function sync(
     }
   }
 
-  const result = await pullFromLocttBranch(locttDir, root, syncState);
+  const result = await pullFromLocttBranch(locttDir, root, syncState, undefined, onProgress);
   return {
     ...result,
     ...(fetched !== undefined ? { fetched } : {}),

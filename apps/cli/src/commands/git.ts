@@ -10,6 +10,7 @@ import {
   publish,
   resolveLocttDir,
   sync,
+  type SyncProgress,
 } from "@loctt/core";
 
 import { rejectUnknownFlags } from "../runtime/args.js";
@@ -177,7 +178,7 @@ export async function run(args: string[], root: string): Promise<void> {
     case "sync": {
       let result;
       try {
-        result = await sync(locttDir, root);
+        result = await sync(locttDir, root, makeSyncProgressReporter());
       } catch (err) {
         if (err instanceof GitReconcileNeededError) {
           reportReconcileNeeded(err);
@@ -227,6 +228,38 @@ export async function run(args: string[], root: string): Promise<void> {
       process.exitCode = EXIT.USAGE;
       break;
   }
+}
+
+/**
+ * A progress reporter for `loctt git sync` (GIT-23). A large sync must
+ * report progress rather than sitting silent; this writes an updating
+ * "Applying N/M files…" line to **stderr** (progress is not the
+ * command's output, and stdout stays the machine-readable result the
+ * `Synced …` line below carries).
+ *
+ * Two guards keep it honest and quiet:
+ *  - it does nothing for a small sync (`total` under a threshold), so an
+ *    ordinary two-file pull is not decorated with a progress line;
+ *  - it throttles to whole-percent changes, so a 500-file sync emits ~100
+ *    updates rather than 500 — and it always emits the final 100% tick so
+ *    the line does not stall one short of done.
+ */
+export function makeSyncProgressReporter(): SyncProgress {
+  const MIN_TOTAL = 50;
+  let lastPct = -1;
+  return (applied: number, total: number) => {
+    if (total < MIN_TOTAL) return;
+    const pct = total === 0 ? 100 : Math.floor((applied / total) * 100);
+    if (applied < total && pct === lastPct) return;
+    lastPct = pct;
+    // \r keeps the line in place on a TTY; a redirected stream still gets
+    // each state on its own carriage-return-prefixed chunk, which `tail`
+    // and logs render acceptably.
+    const done = applied >= total;
+    process.stderr.write(
+      `\rApplying ${String(applied)}/${String(total)} files (${String(pct)}%)…${done ? "\n" : ""}`,
+    );
+  };
 }
 
 /**

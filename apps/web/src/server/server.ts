@@ -3022,16 +3022,73 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleGitSync: RouteHandler = async ({ res, locttDir }) => {
+    // GIT-23: a 500-task sync must report progress, not sit on an
+    // indefinite spinner. The transport is NDJSON over a chunked 200 —
+    // one `{ progress: { applied, total } }` line per tick, then a
+    // terminal `{ result }` (or `{ error }`) line.
+    //
+    // The response mode is decided by *when* the sync fails, not up
+    // front. All the status-bearing failures (a merge conflict → 409, a
+    // reconcile-needed → 409, a broken repo → 500) raise in the
+    // read-only planning phase, which runs *before* the first progress
+    // tick. So if `sync` throws before any progress, no NDJSON header has
+    // been written and the ordinary JSON error path still fires with its
+    // correct status — preserving the `/api/git/sync` error contract
+    // (git-errors.test.ts) exactly. Streaming only begins once the sync
+    // has committed to writing files, where the only remaining failure is
+    // a mid-write I/O error, reported as a terminal error line.
+    let streaming = false;
+    const startStream = (): void => {
+      if (streaming) return;
+      streaming = true;
+      res.writeHead(200, {
+        "Content-Type": "application/x-ndjson",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Content-Type-Options": "nosniff",
+      });
+    };
+    // A client that navigates away aborts the request; stop writing to a
+    // closed socket. The sync itself still runs to completion on disk —
+    // an interrupted write leaves the sentinel, which the next sync heals
+    // (GIT-C3) — but there is no reader for further lines.
+    let aborted = false;
+    const onClose = (): void => { aborted = true; };
+    res.on("close", onClose);
+
     try {
-      const result = await sync(locttDir, root);
-      json(res, result);
+      const result = await sync(locttDir, root, (applied, total) => {
+        startStream();
+        if (aborted || res.writableEnded) return;
+        res.write(JSON.stringify({ progress: { applied, total } }) + "\n");
+      });
+      if (streaming) {
+        if (!aborted && !res.writableEnded) {
+          res.write(JSON.stringify({ result }) + "\n");
+        }
+      } else {
+        // No progress fired (a no-op sync, or one under the write path):
+        // reply with the plain JSON body, identical to before.
+        json(res, result);
+      }
     } catch (err) {
       // Sync both fetches and publishes, so an interrupted run genuinely
       // cannot say which side landed — ERR-4 asks for `unknown` by name
       // rather than a guess in either direction. A conflict is the one
       // case that *can* say: it aborts before applying anything.
       const { status, message, extra } = gitErrorResponse(err);
-      error(res, message, status, extra);
+      if (streaming) {
+        // Headers (200) are already out — a mid-write failure. Emit a
+        // terminal error line carrying the same envelope the JSON path
+        // would, so the client reconstructs the identical ApiError.
+        if (!aborted && !res.writableEnded) {
+          res.write(JSON.stringify({ error: { status, message, ...extra } }) + "\n");
+        }
+      } else {
+        error(res, message, status, extra);
+      }
+    } finally {
+      res.off("close", onClose);
+      if (streaming && !res.writableEnded) res.end();
     }
   };
 
