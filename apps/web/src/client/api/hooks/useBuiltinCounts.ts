@@ -16,10 +16,11 @@ interface TasksPage {
  * means the server still computes the full match count but ships no
  * task rows — exactly what a count badge needs.
  *
- * Built-ins that don't resolve (no current user yet, or "Mentions me"
- * which is deferred) get `count: undefined` and render without a
- * badge. The query key embeds the resolved `q` so a user switch (which
- * changes "Assigned to me") refetches automatically.
+ * Built-ins that don't resolve (a user filter with no current user yet,
+ * or "High priority" on a scale that cannot express it) get
+ * `count: undefined` and render without a badge. The query key embeds the
+ * resolved `q` so a user switch (which changes "Assigned to me" and
+ * "Mentions me") refetches automatically.
  *
  * Returns a map keyed by built-in id → `{ count, isLoading,
  * unavailable }`.

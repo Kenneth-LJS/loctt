@@ -671,3 +671,54 @@ describe("evaluateQuery — date functions (K80)", () => {
     expect(evaluateQuery(query("due_date in (startOfMonth())"), dueFirst, ctx)).toBe(true);
   });
 });
+
+/**
+ * @verifies CMT-10
+ *
+ * `comment_mentions` tests membership in the task's merged comment-mention
+ * union, injected via `EvalContext.commentMentions` exactly as `body` is —
+ * the evaluator never reads `_comments.yaml`.
+ */
+describe("comment_mentions (CMT-10)", () => {
+  const base: TaskFrontmatter = { id: "a", key: "T-1", title: "t" } as TaskFrontmatter;
+  const withMentions = (ids: string[], currentUserId?: string): EvalContext => ({
+    commentMentions: ids,
+    ...(currentUserId !== undefined ? { currentUserId } : {}),
+  });
+
+  it("matches comment_mentions = currentUser() when the user is in the set", () => {
+    const ctx = withMentions(["userX", "userZ"], "userX");
+    expect(evaluateQuery(query("comment_mentions = currentUser()"), base, ctx)).toBe(true);
+  });
+
+  it("does not match when the current user is not in the set", () => {
+    const ctx = withMentions(["userX", "userZ"], "userY");
+    expect(evaluateQuery(query("comment_mentions = currentUser()"), base, ctx)).toBe(false);
+  });
+
+  it("matches an explicit user id with =", () => {
+    const ctx = withMentions(["userX"]);
+    expect(evaluateQuery(query("comment_mentions = userX"), base, ctx)).toBe(true);
+    expect(evaluateQuery(query("comment_mentions = userQ"), base, ctx)).toBe(false);
+  });
+
+  it("supports `in (...)` membership", () => {
+    const ctx = withMentions(["userX"]);
+    expect(evaluateQuery(query("comment_mentions in (userA, userX)"), base, ctx)).toBe(true);
+    expect(evaluateQuery(query("comment_mentions in (userA, userB)"), base, ctx)).toBe(false);
+  });
+
+  it("negates with != and not in", () => {
+    const ctx = withMentions(["userX"]);
+    expect(evaluateQuery(query("comment_mentions != userQ"), base, ctx)).toBe(true);
+    expect(evaluateQuery(query("comment_mentions != userX"), base, ctx)).toBe(false);
+    expect(evaluateQuery(query("comment_mentions not in (userA, userB)"), base, ctx)).toBe(true);
+    expect(evaluateQuery(query("comment_mentions not in (userA, userX)"), base, ctx)).toBe(false);
+  });
+
+  it("matches nothing (and everything for negations) when no mention context is injected", () => {
+    // Absent commentMentions mirrors an absent body: `=`/`in` never hold.
+    expect(evaluateQuery(query("comment_mentions = userX"), base, { currentUserId: "userX" })).toBe(false);
+    expect(evaluateQuery(query("comment_mentions != userX"), base, {})).toBe(true);
+  });
+});

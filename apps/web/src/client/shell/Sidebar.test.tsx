@@ -213,7 +213,11 @@ function stubFetch() {
 // fresh one.
 let priorQc: QueryClient | undefined;
 
-async function renderSidebarAt(pathname: string, search: Record<string, unknown> = {}) {
+async function renderSidebarAt(
+  pathname: string,
+  search: Record<string, unknown> = {},
+  currentUserId: string | null = "u_ken",
+) {
   if (priorQc) {
     await priorQc.cancelQueries();
     priorQc.clear();
@@ -230,7 +234,7 @@ async function renderSidebarAt(pathname: string, search: Record<string, unknown>
     path: "/list",
     validateSearch: (s: Record<string, unknown>) => s,
     component: () => (
-      <Sidebar collapsed={false} info={info()} currentUserId="u_ken" today="2026-06-08" />
+      <Sidebar collapsed={false} info={info()} currentUserId={currentUserId} today="2026-06-08" />
     ),
   });
   const router = createRouter({
@@ -316,7 +320,7 @@ describe("Sidebar", () => {
     expect(empty.textContent).toMatch(/as you open them/i);
   });
 
-  it("renders all six built-in filters including deferred 'Mentions me'", async () => {
+  it("renders all six built-in filters including 'Mentions me'", async () => {
     await renderSidebarAt("/list");
     for (const label of [
       "Assigned to me", "Reported by me", "Mentions me",
@@ -326,7 +330,7 @@ describe("Sidebar", () => {
     }
   });
 
-  it("shows live count badges on resolvable built-ins but not on 'Mentions me'", async () => {
+  it("shows live count badges on resolvable built-ins, including 'Mentions me'", async () => {
     await renderSidebarAt("/list");
     // Stubbed /api/tasks returns total: 3 for every count query.
     //
@@ -336,10 +340,11 @@ describe("Sidebar", () => {
     // states.
     const highPriority = await screen.findByRole("link", { name: /High priority/ });
     expect(within(highPriority).getByText("3")).toBeTruthy();
-    // "Mentions me" is deferred: inert text, no link, no badge.
-    const mentions = await screen.findByText("Mentions me");
-    expect(mentions.closest("a")).toBeNull();
-    expect(within(mentions.closest("div") as HTMLElement).queryByText("3")).toBeNull();
+    // CMT-10: "Mentions me" now resolves to `comment_mentions =
+    // currentUser()`, so with a current user it is a live link with a
+    // count like the other user filters.
+    const mentions = await screen.findByRole("link", { name: /Mentions me/ });
+    expect(within(mentions).getByText("3")).toBeTruthy();
   });
 
   it("highlights the active List view", async () => {
@@ -568,19 +573,24 @@ describe("Sidebar built-in filters", () => {
 
   /**
    * @verifies VUE-2
+   * @verifies CMT-10
    *
-   * No badge at all on "Mentions me" — not a `0`, which would be a
-   * claim about data nobody has counted.
+   * No fabricated `0` badge on an unresolvable "Mentions me". VUE-2's
+   * original reason was that comments had not landed; CMT-10 gave the
+   * built-in a real query, so the remaining unresolvable case is "no
+   * current user" — the same inert-without-a-user behaviour as "Assigned
+   * to me". The row is inert text with no link and no count, and its
+   * reason is the generic one, no longer a false "comments land" promise.
    */
-  it("gives 'Mentions me' no badge and no link", async () => {
-    await renderSidebarAt("/list");
+  it("gives 'Mentions me' no badge and no link when there is no current user", async () => {
+    await renderSidebarAt("/list", {}, null);
 
     const mentions = await screen.findByText("Mentions me");
     expect(mentions.closest("a")).toBeNull();
     const row = mentions.closest("[aria-disabled]") as HTMLElement;
     expect(row).not.toBeNull();
     expect(row.textContent).not.toMatch(/\d/);
-    expect(row.getAttribute("title")).toMatch(/comments/i);
+    expect(row.getAttribute("title")).not.toMatch(/comments/i);
   });
 
   /**

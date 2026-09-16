@@ -108,8 +108,20 @@ describe("built-in filter resolution", () => {
     expect(byId("high-priority").resolve({ ...ctx, priorities: undefined })).toBeNull();
   });
 
-  it("'Mentions me' is deferred (never resolves) until comments land", () => {
-    expect(byId("mentions-me").resolve(ctx)).toBeNull();
+  // CMT-10 / A183: this test previously asserted "Mentions me" was
+  // deferred and always resolved to null. That expectation encoded the
+  // pre-CMT-10 behaviour; the built-in now resolves to the
+  // `comment_mentions` query field, so the test is updated to the real
+  // contract rather than left asserting the old one.
+  it("'Mentions me' resolves to comment_mentions with the current user id", () => {
+    const search = byId("mentions-me").resolve(ctx);
+    expect(search?.q).toBe('comment_mentions = "u_ken"');
+  });
+
+  it("'Mentions me' is unresolvable without a current user", () => {
+    expect(
+      byId("mentions-me").resolve({ currentUserId: null, today: ctx.today }),
+    ).toBeNull();
   });
 
   // Every assertion above uses `toContain` on a substring the code was

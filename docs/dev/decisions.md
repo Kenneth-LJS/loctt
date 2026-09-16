@@ -11743,6 +11743,81 @@ no CLI/MCP file consults `task_types` for value display.
 whole feature:** `git revert` the commit; the change is additive and
 backward-compatible (absent `task_types` = prior global behaviour).
 
+### A183 · Query tasks by comment mentions: `comment_mentions` field, injected like `body` (CMT-10)
+
+- **Situation:** CMT-10 (docs/dev/ui-test-cases/flow-comments-activity.md:134)
+  bullet 4 — "the 'Mentions me' saved filter still matches the comment for
+  that user after the rename." Bullets 1–3 are built/tested; only the query
+  mechanism was open (known-gaps.md CMT-10). The "Mentions me" built-in
+  resolves to null (builtinFilters.ts).
+- **What had to be decided:** the grammar for "tasks whose comments mention
+  user X," and how per-task comment mentions reach the query evaluator
+  without breaking its purity.
+- **Options considered:** (1) a `mentions(...)` function like `has_link` —
+  rejected: no arity/pairing need, it is flat membership so `labels` is the
+  right precedent; (2) the evaluator reads `_comments.yaml` itself —
+  rejected: breaks the documented evaluator purity (it has no I/O and
+  `_comments.yaml` is not part of the loaded Task); (3) **chosen:** a new
+  field `comment_mentions` injected like `body`.
+- **Decided (PM, agent-level — decide-and-record; nothing Ken-level):**
+  - **Grammar:** `comment_mentions = currentUser()` / `comment_mentions in
+    (...)` (+ `!=` / `not in`), operand a user id or `currentUser()`; added
+    to `QUERYABLE_FIELDS` as an alias.
+  - **Evaluator stays pure:** new `EvalContext.commentMentions?: readonly
+    string[]` (a task's merged mention union across all its comments); a
+    comparison-branch alias tests membership (resolving `currentUser()` via
+    `resolvePrimitive`). Absent context ⇒ matches nothing (same as absent
+    `body`).
+  - **Mechanism:** an async `loadCommentMentions(locttDir, tasks)` helper
+    each surface awaits and threads in via a new `ListContext.getCommentMentions`
+    (sibling of `getBody`); `buildListContext` stays synchronous. The scan is
+    **gated on the query actually referencing `comment_mentions`**
+    (tokenize-check, like `queryMentionsArchived`), so lists that don't
+    filter on mentions pay zero comment I/O. No index — revisit only if a
+    real tracker shows a problem.
+  - **Validation:** `=`/`in`/`!=`/`not in` only; reject ordering ops, `~`,
+    and `is empty` with a message naming the supported operators (the
+    text-is-`~`-only precedent). Operand is NOT enum-checked — a mention may
+    reference a since-deleted user ULID.
+  - **Parity (P10):** runs on CLI/MCP/web through `listTasks`; the web
+    "Mentions me" built-in is wired to `comment_mentions = currentUser()`;
+    CLI + MCP query-reference docs updated.
+- **Why:** P10 parity (one core capability, three surfaces); the `body`
+  injection precedent for feeding the evaluator off-frontmatter data while
+  keeping it pure; the `labels` membership precedent for flat set matching;
+  local-first single-machine makes a gated per-list scan acceptable
+  pre-publish.
+- **To revert:** remove `commentMentions` from `EvalContext` + its
+  comparison-branch alias; remove `comment_mentions` from `QUERYABLE_FIELDS`
+  + its operator validation; remove `getCommentMentions` from `ListContext`
+  and the `loadCommentMentions` helper + its per-surface calls; restore
+  `builtinFilters.ts` mentions-me to `resolve: () => null`; revert the two
+  reference docs. No on-disk format change, so no migration.
+- **Built (agent-level, CMT-10 closed).** All as specced above:
+  `EvalContext.commentMentions` + the `comment_mentions` evaluator alias
+  (`evaluator.ts`); `loadCommentMentions` + `queryReferencesCommentMentions`
+  + `resolveCommentMentionsContext` and `ListContext.getCommentMentions`
+  (`list.ts`); `comment_mentions` in `QUERYABLE_FIELDS` with the
+  `=`/`!=`/`in`/`not in`-only reject and no operand enum-check
+  (`validate.ts`). Wired on all three surfaces through the gated
+  `resolveCommentMentionsContext` (CLI `task-crud.ts`, MCP `task-crud.ts`
+  ×2 for list + export, web `server.ts` ×2 for list + export). The web
+  "Mentions me" built-in resolves to `comment_mentions = "<currentUserId>"`
+  (inlined id, matching the sibling user filters). One nuance decided
+  beyond A183: the *gate* checks both the ad-hoc query and, when a saved
+  view is used, its resolved query, so `--view mine` referencing the field
+  loads mentions too — A183 said "mirror `queryMentionsArchived`" (ad-hoc
+  only), and including the view query is the strictly-more-correct reading.
+  `@verifies CMT-10` at every layer, each red-proven — including the
+  never-crash degrade path (a task whose `_comments.yaml` is corrupt is
+  skipped, ordered first so a regression that aborts the scan loses the
+  good task's mention; red-proven by hoisting the try/catch outside the
+  loop). CMT-10 marked resolved in the case index, backed by these tests. Follow-on: four stale green tests that
+  encoded the deferred "Mentions me" (`Sidebar.test.tsx` ×2,
+  `builtinToDsl.test.ts`, `builtinFilters.test.ts`) were updated to the
+  new contract, and the deferred-Mentions-me comments in `Sidebar.tsx` /
+  `useBuiltinCounts.ts` / `inertReason` corrected.
+
 ### A-K88 · A80/K88 built — prefix stored bare, dash inserted at render
 
 **Built (agent-level) implementing K88.** Prefix is stored bare uppercase

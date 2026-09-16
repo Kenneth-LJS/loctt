@@ -277,7 +277,7 @@ export { tokenize, TokenizeError } from "./query/index.js";
 export { QUERYABLE_FIELDS, QueryValidationError, validateQuery } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
-export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, resolveView } from "./query/index.js";
+export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, loadCommentMentions, queryReferencesCommentMentions, resolveCommentMentionsContext, resolveView } from "./query/index.js";
 export type { BoardMoveOptions, BoardMoveResult } from "./rank/index.js";
 export type {
   ReorderBoardRankOptions,

@@ -68,10 +68,11 @@ describe("editing a built-in pre-populates its DSL", () => {
 
   // @verifies VUE-12
   it("returns null rather than inventing a query for an unresolvable built-in", () => {
-    // `mentions-me` is deliberately inert until the comment-scan
-    // endpoint lands; pre-populating it would show a filter the
-    // sidebar never ran.
-    expect(builtinToDsl("mentions-me", ctx)).toBeNull();
+    // A user-dependent built-in with no current user is unresolvable.
+    // (`mentions-me` was the example here while it was deferred; CMT-10
+    // wired it to `comment_mentions = currentUser()`, so it now resolves
+    // like the other user filters and null only without a user.)
+    expect(builtinToDsl("mentions-me", { ...ctx, currentUserId: null })).toBeNull();
     // ...and for a workspace whose priority scale cannot express "high".
     expect(builtinToDsl("high-priority", { ...ctx, priorities: [] })).toBeNull();
     expect(builtinToDsl("no-such-builtin", ctx)).toBeNull();

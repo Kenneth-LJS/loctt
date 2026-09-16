@@ -4,7 +4,7 @@
     "total": 1042,
     "ui": 942,
     "surface": 100,
-    "resolved": 3
+    "resolved": 4
   },
   "cases": [
     {
@@ -3160,7 +3160,7 @@
       "surfaces": [
         "UI"
       ],
-      "resolved": false
+      "resolved": true
     },
     {
       "id": "CMT-11",

@@ -225,3 +225,74 @@ describe("saved views are addressable (QRY-C6)", () => {
     });
   });
 });
+
+/**
+ * @verifies CMT-10
+ *
+ * The far-end guard: a comment posted through the real CLI path, then
+ * `list --query "comment_mentions = <id>"` returns the task; a task with
+ * no such mention does not. This exercises the whole chain — comment
+ * write → mention extraction → gated loader → evaluator → CLI list — with
+ * the spawned binary, which is the only place the built dist and the
+ * per-surface wiring are proven together.
+ */
+describe("comment_mentions end-to-end (spawned binary)", () => {
+  it("lists a task whose comment mentions a user, and excludes one that doesn't", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      // A real user, switched to current, so the comment can be authored
+      // and its @user:<id> mention resolves.
+      await runCli(["user", "create", "Mona", "--switch"], { cwd: root });
+      const current = await runCli(["user", "current"], { cwd: root });
+      const userId = current.stdout.trim().split(/\s+/)[0];
+      expect(userId).toBeTruthy();
+
+      await runCli(["create", "mentioned task"], { cwd: root });
+      await runCli(["create", "quiet task"], { cwd: root });
+
+      // Post a comment mentioning the user on the first task only.
+      const posted = await runCli(
+        ["comment", "T-1", `please look @user:${userId}`],
+        { cwd: root },
+      );
+      expect(posted.exitCode).toBe(0);
+      expect(`${posted.stdout}`).toMatch(/Mentioned:/);
+
+      const matched = await runCli(
+        ["list", "--query", `comment_mentions = "${userId}"`],
+        { cwd: root },
+      );
+      expect(matched.exitCode).toBe(0);
+      expect(matched.stdout).toContain("mentioned task");
+      expect(matched.stdout).not.toContain("quiet task");
+
+      // currentUser() resolves to the configured current user — same row.
+      const mine = await runCli(
+        ["list", "--query", "comment_mentions = currentUser()"],
+        { cwd: root },
+      );
+      expect(mine.exitCode).toBe(0);
+      expect(mine.stdout).toContain("mentioned task");
+      expect(mine.stdout).not.toContain("quiet task");
+
+      // A different id matches nothing.
+      const other = await runCli(
+        ["list", "--query", 'comment_mentions = "01HXNOSUCHUSERXXXXXXXXXXXXX"'],
+        { cwd: root },
+      );
+      expect(other.exitCode).toBe(0);
+      expect(other.stdout).not.toContain("mentioned task");
+    });
+  });
+
+  it("rejects an ordering operator on comment_mentions with the operator message", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "a task"], { cwd: root });
+      const res = await runCli(
+        ["list", "--query", "comment_mentions < x"],
+        { cwd: root },
+      );
+      expect(res.exitCode).not.toBe(0);
+      expect(`${res.stdout}${res.stderr}`).toMatch(/only =, !=, in and not in/);
+    });
+  });
+});

@@ -131,7 +131,7 @@ composer.
   every time.
 - An unresolvable `@token` renders as plain text, not as a broken chip.
 
-### CMT-10 · M2 · blocker · P1 P3
+### CMT-10 · M2 · blocker · P1 P3 — **resolved**
 **Mentions survive a rename of the mentioned user.** Post a comment
 mentioning "Ana Lopez", then rename her to "Ana Ruiz" in Settings →
 Users.

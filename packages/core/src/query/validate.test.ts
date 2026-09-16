@@ -350,3 +350,36 @@ describe("validateQuery — date functions (K80)", () => {
     expect(expectInvalid("title in (startOfWeek())").message).toMatch(/not a date field/);
   });
 });
+
+/**
+ * @verifies CMT-10
+ *
+ * `comment_mentions` is flat set membership — only =, !=, in, not in are
+ * meaningful. Ordering, `~`, and the presence tests are rejected with a
+ * message that names the supported operators (the text-is-~-only precedent).
+ */
+describe("comment_mentions operators (CMT-10)", () => {
+  it.each([
+    ["<", "comment_mentions < u_bob"],
+    ["<=", "comment_mentions <= u_bob"],
+    [">", "comment_mentions > u_bob"],
+    [">=", "comment_mentions >= u_bob"],
+    ["~", "comment_mentions ~ u_bob"],
+    ["is empty", "comment_mentions is empty"],
+    ["is not empty", "comment_mentions is not empty"],
+  ])("rejects comment_mentions with %s", (_op, query) => {
+    const err = expectInvalid(query);
+    expect(err.message).toContain('"comment_mentions" supports only =, !=, in and not in');
+  });
+
+  it("accepts = currentUser() and in (...) — and does NOT enum-check the operand", () => {
+    expect(() => validateQuery(q("comment_mentions = currentUser()"), { workflow })).not.toThrow();
+    expect(() => validateQuery(q("comment_mentions in (u_x, u_y)"), { workflow })).not.toThrow();
+    expect(() => validateQuery(q("comment_mentions != u_x"), { workflow })).not.toThrow();
+    expect(() => validateQuery(q("comment_mentions not in (u_x, u_y)"), { workflow })).not.toThrow();
+    // A since-deleted user ULID must still validate — mentions are not
+    // enum-checked. (Quoted because a bare token starting with a digit
+    // tokenizes as a number; the built-in inlines the id quoted too.)
+    expect(() => validateQuery(q('comment_mentions = "01HXDELETEDUSERULIDXXXXXXX"'), { workflow })).not.toThrow();
+  });
+});

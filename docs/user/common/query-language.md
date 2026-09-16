@@ -142,6 +142,7 @@ respects how the workspace defines a week.
 |---|---|
 | `text` | Substring search across the title, built-in text fields, the task **body**, and custom fields declared `searchable: true`. A custom field with `searchable: false` is excluded — it stays directly queryable by `fields.<key>`. Does not include attachment contents or filenames. Only the `~` operator is supported: write `text ~ term`. Any other operator (`=`, `!=`, `<`, `in`, …) is rejected, because a substring alias has no exact-match or ordering meaning. |
 | `parent` | Filter by parent task — accepts task keys (e.g., `parent = T-5`) |
+| `comment_mentions` | Match tasks by who is `@`-mentioned in their comments. A task matches when **any** of its comments mentions the given user. The operand is a user id or `currentUser()`, so `comment_mentions = currentUser()` is "mentions me". Only `=`, `!=`, `in`, and `not in` are supported (it is set membership, not text) — ordering operators, `~`, and `is empty`/`is not empty` are rejected. The operand is not checked against the user list, so a mention of a since-deleted user still matches by id. |
 
 ## Relationship Filtering
 
