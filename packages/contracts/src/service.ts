@@ -37,6 +37,14 @@ export interface UpdateTaskRequest {
   // service handler validates against the field's config; the
   // contract intentionally stays open.
   readonly value: unknown;
+  /**
+   * GIT-19 precondition. The stable ULID the client believes it is
+   * editing. Optional: when present, the web service refuses (409
+   * `conflict`, nothing written) if the ref resolves to a different
+   * task — the wrong-task write a rekey can otherwise cause. Omitted by
+   * the CLI/MCP and any resolve-by-ref caller, which keep last-write-wins.
+   */
+  readonly expectedId?: string;
 }
 
 /** Request to link/unlink tasks. */

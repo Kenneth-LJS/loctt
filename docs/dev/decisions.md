@@ -13137,3 +13137,72 @@ reporting; revert the docs; delete the new tests. On-disk: no schema/sentinel
 change — purely additive reporting, nothing to migrate. Reverting restores
 git's opaque worktree fatal and a silent malformed-task copy (the prior
 behaviour).
+
+### A195 · GIT-19 rekey affects a tab open elsewhere — server `expectedId` precondition (the wrong-task guard) + UI follow-with-note
+
+**Ticket:** GIT-19 (P1 blocker) · **Date:** 2026-09-16 · **Commit:** uncommitted (working tree).
+
+**THE CRUX (bullet 3 was NOT already safe — world B).** The web client mutates
+by the URL *key*, not by id: `useSetField(taskRef)` posts `POST
+/api/tasks/:ref/{set,unset}` with `:ref` the key the tab holds, and
+`handleSetField` resolves it to a task id at write time via `lookupTask` →
+`lookupByKey`. That resolution follows the KEY, not the task. After a collision
+rekey (A193): the loser is renumbered and records its old key in `key_history`;
+the WINNER keeps the old key; `rebuildKeyIndex` then points the old key at the
+WINNER (live keys shadow historical — `state/key-index.ts` writes history first,
+live second, by design). So a tab still on the loser's old-key URL that submits
+an edit resolved its stale key to the *other* task and **silently wrote the
+wrong file** — the P-11 data-integrity failure GIT-19 bullet 3 forbids. Proved
+red at the binary: with the guard removed, an edit to `WEB-14` (expectedId the
+loser) landed on `01WINNER` — `WINNER TITLE AFTER STALE EDIT: STALE EDIT`.
+
+**Decision — guard at the SERVER, not by making the client send id everywhere.**
+An optional `expectedId` precondition on the field-write path (mirrors the body
+write's `expectedToken`, K2): the client sends the stable ULID it fetched
+(`task.data.frontmatter.id`), and the handler refuses (409 `conflict`,
+`data_state: not_saved`, `recovery: reload`, nothing written) when the resolved
+task's id ≠ `expectedId`. Optional on the wire so CLI/MCP/any resolve-by-ref
+caller keep last-write-wins. Rejected the "client sends id as the ref"
+alternative: it would break the retired-key resolution the READ path
+deliberately relies on (`useTask`, TSK-2) and is a far larger blast radius for
+the same safety. The precondition keeps reads resolving by key (retired keys
+included) while making the wrong-task WRITE impossible.
+
+**Bullets 1/2/4 — follow-with-note (already mostly present).** The header chip
+renders `fm.key` (the current key), never the URL ref, so a tab never presents a
+stale key as authoritative once a poll refetches — that half existed. Added: a
+`TaskDetail` effect that FOLLOWS the rekey when the fetched task's key differs
+from the URL ref and the ref is in `key_history` — navigates (`replace`) to the
+current key and carries the retired key in a new `?rekeyedFrom=` search param so
+the existing "you followed a retired key" note keeps explaining the rename after
+the URL moves (note copy branches to "renumbered while you had it open"). Bullet
+4 (reload on the old URL resolves via `key_history`) was already true; locked
+with a test. The two-clone collision (old key taken by the winner) and the plain
+`move` rekey (old key still resolves to the same task) are the two shapes, both
+tested.
+
+**CLI/MCP: legitimately web-only.** GIT-19 is a browser-tab concern ("a task open
+in another tab"); the CLI and MCP have no long-lived open view whose key can go
+stale under it — like the query-builder cases, there is no CLI/MCP surface to
+build. Stated explicitly rather than left as a silent omission. (The
+`expectedId` field is web-client-only; core `setField` is unchanged and still
+takes a resolved id, so CLI/MCP are unaffected.)
+
+**Files.** `packages/contracts/src/service.ts` (`UpdateTaskRequest.expectedId?`);
+`apps/web/src/server/server.ts` (`checkExpectedId` helper + wired into
+`handleSetField`/`handleUnsetField`); `apps/web/src/client/api/hooks/useSetField.ts`
+(`expectedId` param, sent on set/unset); `apps/web/src/client/task/TaskDetail.tsx`
+(passes `fm.id` as expectedId; follow effect; `rekeyedFrom` prop + note copy);
+`apps/web/src/client/router/taskDetailSearch.ts` + `router/index.tsx`
+(`rekeyedFrom` search param). Tests:
+`apps/web/src/server/server.git19-rekey-precondition.test.ts` (the load-bearing
+wrong-task refusal + bullet 4), `packages/core/src/task/lookup.test.ts` (the
+collision resolution shape), `tests/ui/flow-git-rekey.spec.ts` +
+`tests/ui/flow-task-meta.spec.ts` (browser follow + hazard). All `@verifies GIT-19`.
+
+**To revert.** Drop `expectedId` from the contract; delete `checkExpectedId` and
+its two call sites (writes revert to resolve-by-ref last-write-wins — reopening
+the wrong-task hazard); drop the `expectedId` arg from `useSetField` and the
+`TaskDetail` call; delete the follow effect, the `rekeyedFrom` param/prop and the
+note branch; delete the four test blocks. On-disk: no schema/sentinel change —
+purely additive request field + client behaviour.

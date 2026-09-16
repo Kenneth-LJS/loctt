@@ -1979,3 +1979,53 @@ test.describe("XS-10 — optimistic edits reconcile against the server", () => {
     expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
   });
 });
+
+/**
+ * GIT-19 (flow-git-sync.md) — the follow-with-note half.
+ *
+ * The sharp data-integrity bullet (an edit never lands on the OTHER task
+ * that took the old key) is locked at unit/server level
+ * (`server.git19-rekey-precondition.test.ts`) and through the git browser
+ * flow (`flow-git-rekey.spec.ts`). This spec covers the resolvable case
+ * the case pairs it with: a rekey where the old key still resolves to the
+ * SAME task via `key_history` (here produced by `loctt move`, which rekeys
+ * without another task claiming the old key). The tab on the old URL must
+ * FOLLOW — update to the current key with a note — and never keep showing
+ * the old key as authoritative (bullets 1, 2, 4).
+ */
+test.describe("GIT-19 — a tab on a rekeyed task follows the rename", () => {
+  test("the old-key URL follows to the current key with an explanatory note, and reload still resolves", async ({
+    page, tracker,
+  }) => {
+    // @verifies GIT-19
+    const [oldKey] = await tracker.seed([{ title: "Portable task" }]);
+    expect(oldKey).toBeDefined();
+    const old = oldKey as string;
+
+    await tracker.run(["project", "create", "Elsewhere", "--prefix", "ELS"]);
+    const moved = await tracker.run(["move", old, "Elsewhere"]);
+    const newKey = /→\s*(\S+)/.exec(moved)?.[1];
+    expect(newKey).toBeDefined();
+    expect(newKey).not.toBe(old);
+    const fresh = newKey as string;
+
+    // Open the tab on the OLD key, as a tab left sitting on it would be.
+    await page.goto(`${tracker.baseURL}/tasks/${old}`);
+
+    // FOLLOW: the URL updates to the current key (never left on the stale
+    // one), and the chip shows the current key as authoritative.
+    await expect(page).toHaveURL(new RegExp(`/tasks/${fresh}(?:[?#]|$)`));
+    await expect(page.getByTestId("task-key-chip")).toHaveText(fresh);
+
+    // The note explains the change and names the old key.
+    const note = page.getByText(/renumbered while you had it open|retired key for this task/i);
+    await expect(note).toBeVisible();
+    await expect(note).toContainText(old);
+    await expect(note).toContainText(fresh);
+
+    // Bullet 4: a fresh load of the OLD URL still lands on the same task.
+    await page.goto(`${tracker.baseURL}/tasks/${old}`);
+    await expect(page.getByTestId("task-key-chip")).toHaveText(fresh);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Portable task");
+  });
+});

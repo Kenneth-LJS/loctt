@@ -140,12 +140,19 @@ const taskDetailRoute = createRoute({
   validateSearch: taskDetailSearchSchema,
   component: function TaskDetailRoute() {
     const { key } = taskDetailRoute.useParams();
-    const { tab } = taskDetailRoute.useSearch();
+    const { tab, rekeyedFrom } = taskDetailRoute.useSearch();
     // Keyed on the ref so navigating between tasks remounts rather
     // than reusing the previous task's component state — a stale
     // "Copied" toast or a half-open dialog carrying over to a
     // different task is state the URL does not describe.
-    return <TaskDetail key={key} taskRef={key} {...(tab !== undefined ? { activityTab: tab } : {})} />;
+    return (
+      <TaskDetail
+        key={key}
+        taskRef={key}
+        {...(tab !== undefined ? { activityTab: tab } : {})}
+        {...(rekeyedFrom !== undefined ? { rekeyedFrom } : {})}
+      />
+    );
   },
 });
 
