@@ -20,9 +20,6 @@ import {
   computeRange,
   dateToX,
   DAY_WIDTH,
-  eachDay,
-  headerCells,
-  nonWorkingReason,
   rangeWidth,
 } from "./geometry.ts";
 import {
@@ -389,7 +386,6 @@ export function TimelineView() {
   }
 
   const width = rangeWidth(range, zoom);
-  const cells = headerCells(range, zoom, calendar.data);
 
   /**
    * TML-46: `calendar.yaml` did not load — `working_days: [9]` fails
@@ -406,15 +402,11 @@ export function TimelineView() {
    */
   const calendarError = calendar.isError ? calendar.error : null;
 
-  // Shading is per *day* column at every zoom, but at month zoom a
-  // 4px band per weekend is visual noise on a chart nobody reads
-  // day-by-day. TML-13's first bullet asks for day and week only.
-  const shaded =
-    zoom === "month"
-      ? []
-      : eachDay(range)
-          .map(d => ({ date: d, reason: nonWorkingReason(d, calendar.data) }))
-          .filter((s): s is { date: string; reason: string } => s.reason !== undefined);
+  // Shading is per *day* column at day and week zoom only — at month
+  // zoom a 4px band per weekend is visual noise on a chart nobody reads
+  // day-by-day (TML-13's first bullet). The chart itself derives the
+  // shaded columns from the visible window (TML-21), so it takes the
+  // calendar and a `shadingOn` flag rather than a pre-built array.
 
   // TML-47: task files that exist and could not be parsed. The rows
   // that *did* load are already in `items`; this is what makes the
@@ -597,8 +589,8 @@ export function TimelineView() {
             range={range}
             zoom={zoom}
             width={width}
-            cells={cells}
-            shaded={shaded}
+            calendar={calendar.data}
+            shadingOn={zoom !== "month"}
             today={today}
             edges={arrowsOn ? edges : []}
             offscreenFrom={arrowsOn ? graph.offscreenFrom : undefined}

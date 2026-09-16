@@ -205,6 +205,27 @@ export function eachDay(range: DateRange): readonly string[] {
 }
 
 /**
+ * The days of `range` whose columns intersect a pixel window (TML-21).
+ *
+ * The weekend/holiday shading is one absolutely-positioned node per
+ * non-working day; at a 129-year day-zoom span that is tens of
+ * thousands of nodes. This yields only the days inside the window
+ * (plus overscan the caller bakes into `window`), so the shading is
+ * windowed the same way the header and grid lines are. Each day's
+ * `YYYY-MM-DD` is derived from its own index, so the far end of the
+ * range shades the correct calendar days with no accumulated drift.
+ */
+export function eachDayInWindow(range: DateRange, zoom: TimelineZoom, window: PixelWindow): readonly string[] {
+  const w = dayWindow(range, zoom, window);
+  if (w === undefined) return [];
+  const base = parseDay(range.start);
+  if (base === undefined) return [];
+  const out: string[] = [];
+  for (let i = w.first; i <= w.last; i += 1) out.push(formatDay(base + i * DAY_MS));
+  return out;
+}
+
+/**
  * Why `date` is not a working day, formatted for a shaded timeline
  * column's tooltip. The classification lives in
  * `dates/workingDays.classifyNonWorkingDay` — the one predicate both
@@ -224,6 +245,45 @@ export function nonWorkingReason(
   const kind = classifyNonWorkingDay(date, calendar);
   if (kind === undefined) return undefined;
   return "holiday" in kind ? kind.holiday : "";
+}
+
+/**
+ * A pixel window `[left, right)` into the chart body, e.g. the visible
+ * horizontal viewport padded by overscan. Used to window the header and
+ * grid so a 129-year day-zoom span (~47,000 columns) never materializes
+ * all its cells at once (TML-21).
+ */
+export interface PixelWindow {
+  readonly left: number;
+  readonly right: number;
+}
+
+/**
+ * The inclusive day-index range `[first, last]` of the columns that a
+ * pixel window covers, clamped to the range's own bounds.
+ *
+ * This is the whole of TML-21's cheap side: converting a scroll window
+ * to a handful of day indices is O(1) arithmetic, so the header/grid
+ * builders below can start at `first` and stop at `last` instead of
+ * walking every day from 1970 to 2099. Returns `undefined` when the
+ * window falls entirely outside the range (nothing to draw).
+ */
+export function dayWindow(
+  range: DateRange,
+  zoom: TimelineZoom,
+  window: PixelWindow,
+): { readonly first: number; readonly last: number } | undefined {
+  const start = parseDay(range.start);
+  const end = parseDay(range.end);
+  if (start === undefined || end === undefined || end < start) return undefined;
+  const total = Math.round((end - start) / DAY_MS); // last valid index
+  const px = DAY_WIDTH[zoom];
+  // floor the left edge into its column, ceil the right so a partly
+  // visible trailing column is still drawn.
+  const first = Math.max(0, Math.floor(window.left / px));
+  const last = Math.min(total, Math.ceil(window.right / px) - 1);
+  if (last < first) return undefined;
+  return { first, last };
 }
 
 /** A labelled header cell spanning one or more day columns. */
@@ -247,55 +307,132 @@ const MONTH_NAMES = [
  * Week cells begin on the calendar's `first_day_of_week`, so a
  * workspace that starts its week on Monday does not get a header
  * offset by one from its own configuration.
+ *
+ * This is the full-range builder — every cell for the whole range. It
+ * is what the unit tests assert against and is correct for ordinary
+ * spans, but at a 129-year day-zoom span it emits ~47,000 cells, which
+ * is TML-21's problem. `headerCellsInWindow` is the windowed form the
+ * chart renders with; this one is retained because it is the reference
+ * both the tests and the windowed builder are checked against.
  */
 export function headerCells(
   range: DateRange,
   zoom: TimelineZoom,
   calendar: CalendarConfig | undefined,
 ): readonly HeaderCell[] {
-  const days = eachDay(range);
-  if (days.length === 0) return [];
+  const last = daysBetween(range.start, range.end);
+  if (last < 0) return [];
+  return headerCellsForIndices(range, zoom, calendar, 0, last);
+}
+
+/**
+ * Header cells intersecting a pixel window (TML-21).
+ *
+ * Same output shape and same `left`/`width` values as `headerCells`
+ * would give for the cells it emits — a windowed cell is byte-identical
+ * to its full-range twin, so a caller cannot tell whether it is
+ * windowing except by counting nodes. The window is converted to day
+ * indices once (`dayWindow`, O(1)) and only the cells overlapping those
+ * indices are built. For week/month zoom the emitted cells are widened
+ * to their true calendar boundaries so a partially-visible week or
+ * month still carries its correct label and span.
+ */
+export function headerCellsInWindow(
+  range: DateRange,
+  zoom: TimelineZoom,
+  calendar: CalendarConfig | undefined,
+  window: PixelWindow,
+): readonly HeaderCell[] {
+  const w = dayWindow(range, zoom, window);
+  if (w === undefined) return [];
+  return headerCellsForIndices(range, zoom, calendar, w.first, w.last);
+}
+
+/**
+ * The shared body of both header builders: emit the cells covering the
+ * inclusive day-index range `[firstIdx, lastIdx]`.
+ *
+ * Every cell's `left`/`width` is derived purely from its day index and
+ * the zoom's column width, never from an accumulated offset, so a
+ * windowed cell at index 40,000 lands at exactly `40000 * px` with no
+ * drift from floating-point stepping (TML-21's fourth bullet). For
+ * week/month the boundary that owns `firstIdx` may begin before the
+ * window; the cell is still emitted from its own start so its label and
+ * span are correct, and the walk stops as soon as a cell starts past
+ * `lastIdx`.
+ */
+function headerCellsForIndices(
+  range: DateRange,
+  zoom: TimelineZoom,
+  calendar: CalendarConfig | undefined,
+  firstIdx: number,
+  lastIdx: number,
+): readonly HeaderCell[] {
+  const base = parseDay(range.start);
+  if (base === undefined || lastIdx < firstIdx) return [];
   const px = DAY_WIDTH[zoom];
+  const dayAt = (i: number): string => formatDay(base + i * DAY_MS);
+  // The last day index in the whole range — cells never extend past it,
+  // even when a week/month straddles the range's trailing edge.
+  const rangeLast = daysBetween(range.start, range.end);
 
   if (zoom === "day") {
-    return days.map((d, i) => ({
-      key: d,
-      // Day-of-month alone: at 36px a full date does not fit, and the
-      // month is already legible from the row above it in practice.
-      label: String(Number(d.slice(8, 10))),
-      left: i * px,
-      width: px,
-    }));
+    const cells: HeaderCell[] = [];
+    for (let i = firstIdx; i <= lastIdx; i += 1) {
+      const d = dayAt(i);
+      cells.push({
+        key: d,
+        // Day-of-month alone: at 36px a full date does not fit, and the
+        // month is already legible from the row above it in practice.
+        label: String(Number(d.slice(8, 10))),
+        left: i * px,
+        width: px,
+      });
+    }
+    return cells;
   }
 
   if (zoom === "week") {
     const firstDow = calendar?.first_day_of_week ?? 0;
     const cells: HeaderCell[] = [];
-    let i = 0;
-    while (i < days.length) {
-      const day = days[i] as string;
+    // Back up to the start of the week that owns firstIdx (clamped to 0
+    // so a partial leading week still begins at the chart's own start).
+    const firstDay = dayAt(firstIdx);
+    const firstMs = parseDay(firstDay);
+    const firstOffset = firstMs === undefined ? 0 : (new Date(firstMs).getUTCDay() - firstDow + 7) % 7;
+    let i = Math.max(0, firstIdx - firstOffset);
+    while (i <= lastIdx) {
+      const day = dayAt(i);
       const ms = parseDay(day);
       const dow = ms === undefined ? 0 : new Date(ms).getUTCDay();
-      // The first cell may be a partial week — the range's start is
-      // rarely a week boundary. Clamp it rather than drawing a cell
-      // that begins before the chart does.
       const offset = (dow - firstDow + 7) % 7;
-      const span = Math.min(7 - offset, days.length - i);
+      // The very first cell of the whole range may be a partial week
+      // (`offset` days into a week) — clamp it rather than drawing a
+      // cell that begins before 0. The trailing cell is clamped to the
+      // range's own last day so a week straddling the end does not draw
+      // past it. `i` was backed up to a week boundary above, so for
+      // every cell but a mid-week range start `offset` is 0.
+      const span = Math.min(7 - offset, rangeLast - i + 1);
       cells.push({ key: day, label: day.slice(5), left: i * px, width: span * px });
       i += span;
     }
     return cells;
   }
 
-  // Month: one cell per calendar month, spanning only the days
-  // actually inside the range.
+  // Month: one cell per calendar month. Back up to the first of the
+  // month that owns firstIdx so a partially-visible month carries its
+  // real label and width.
   const cells: HeaderCell[] = [];
-  let i = 0;
-  while (i < days.length) {
-    const day = days[i] as string;
+  const firstMonthDay = Number(dayAt(firstIdx).slice(8, 10));
+  let i = firstIdx - (firstMonthDay - 1);
+  if (i < 0) i = 0;
+  while (i <= lastIdx) {
+    const day = dayAt(i);
     const month = day.slice(0, 7);
     let span = 0;
-    while (i + span < days.length && (days[i + span] as string).slice(0, 7) === month) span += 1;
+    // Stop at the month boundary or the range's last day, whichever
+    // comes first, so the trailing month is not drawn past the range.
+    while (i + span <= rangeLast && dayAt(i + span).slice(0, 7) === month) span += 1;
     const monthIdx = Number(month.slice(5, 7)) - 1;
     cells.push({
       key: month,

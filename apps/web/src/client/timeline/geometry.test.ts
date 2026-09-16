@@ -8,9 +8,12 @@ import {
   dateToX,
   DAY_WIDTH,
   daysBetween,
+  dayWindow,
   eachDay,
+  eachDayInWindow,
   formatDay,
   headerCells,
+  headerCellsInWindow,
   nonWorkingReason,
   parseDay,
   rangeWidth,
@@ -293,5 +296,110 @@ describe("headerCells", () => {
       x += c.width;
     }
     expect(x).toBe(rangeWidth({ start: "2026-03-04", end: "2026-03-20" }, "week"));
+  });
+});
+
+/**
+ * TML-21: a 129-year day-zoom span must not materialize ~47,000 columns.
+ *
+ * The windowing math is the load-bearing part and is pure, so it is
+ * asserted here rather than only through the browser. Two properties:
+ * a windowed cell is byte-identical to its full-range twin (so a bar
+ * still lines up with its column), and only a bounded handful of cells
+ * are emitted for a window over a giant span.
+ */
+describe("horizontal windowing (TML-21)", () => {
+  const epoch = { start: "1970-01-01", end: "2099-12-31" };
+
+  it("dayWindow maps a pixel window to a small day-index range, clamped to the range", () => {
+    const px = DAY_WIDTH.day;
+    // A 500px-wide window starting at column 1000.
+    const w = dayWindow(epoch, "day", { left: 1000 * px, right: 1000 * px + 500 });
+    expect(w).not.toBeUndefined();
+    expect((w as { first: number }).first).toBe(1000);
+    // 500px window at 36px/day ~ 14 columns, plus the ceil — a handful.
+    expect((w as { last: number }).last - (w as { first: number }).first).toBeLessThan(20);
+    // A window entirely before the range clamps to index 0, not negative.
+    const left = dayWindow(epoch, "day", { left: -5000, right: -100 });
+    expect(left).toBeUndefined();
+  });
+
+  // @verifies TML-21
+  it("emits a bounded number of day-zoom header cells for a 129-year span, not ~47,000", () => {
+    const full = headerCells(epoch, "day", calendar);
+    // The full build IS the ~47,000-column array the case forbids the
+    // chart from rendering — this proves the reference is that large.
+    expect(full.length).toBeGreaterThan(47_000);
+
+    const px = DAY_WIDTH.day;
+    // A viewport ~1200px wide plus 800px overscan each side ~ 2800px.
+    const win = { left: 20_000 * px, right: 20_000 * px + 2800 };
+    const cells = headerCellsInWindow(epoch, "day", calendar, win);
+    // Two orders of magnitude fewer — a screenful, not the whole span.
+    expect(cells.length).toBeLessThan(200);
+    expect(cells.length).toBeGreaterThan(0);
+  });
+
+  // @verifies TML-21
+  it("a windowed day cell is byte-identical to its full-range twin (no drift at the far end)", () => {
+    const px = DAY_WIDTH.day;
+    // A window near the year 2099 — the far end, where accumulated
+    // stepping would drift a naive builder.
+    const idx = daysBetween(epoch.start, "2099-06-15");
+    const win = { left: idx * px, right: idx * px + 5 * px };
+    const cells = headerCellsInWindow(epoch, "day", calendar, win);
+    const jun15 = cells.find(c => c.key === "2099-06-15");
+    expect(jun15).toBeDefined();
+    // Its left is exactly index * width — the same a bar at that date
+    // gets from dateToX, so the two align.
+    expect(jun15?.left).toBe(dateToX(epoch, "2099-06-15", "day"));
+    expect(jun15?.width).toBe(px);
+  });
+
+  // @verifies TML-21
+  it("windowed week/month cells match the full build for the cells they overlap", () => {
+    const range = { start: "2026-01-01", end: "2026-12-31" };
+    for (const zoom of ["week", "month"] as const) {
+      const px = DAY_WIDTH[zoom];
+      const full = headerCells(range, zoom, calendar);
+      // A mid-year window.
+      const idx = daysBetween(range.start, "2026-06-10");
+      const win = { left: idx * px, right: idx * px + 40 * px };
+      const cells = headerCellsInWindow(range, zoom, calendar, win);
+      expect(cells.length).toBeGreaterThan(0);
+      expect(cells.length).toBeLessThan(full.length);
+      for (const c of cells) {
+        const twin = full.find(f => f.key === c.key);
+        expect(twin, `cell ${c.key} at ${zoom}`).toBeDefined();
+        expect(c.left).toBe(twin?.left);
+        expect(c.width).toBe(twin?.width);
+        expect(c.label).toBe(twin?.label);
+      }
+    }
+  });
+
+  // @verifies TML-21
+  it("the bar geometry is O(1) and correct across the whole 129-year span regardless of windowing", () => {
+    // The case's third bullet: the bar is a real span (>1,000,000px),
+    // computed from the full date math, not clipped to a window.
+    const bar = barGeometry(epoch, "1970-01-01", "2099-12-31", "day");
+    expect(bar.width).toBeGreaterThan(1_000_000);
+    expect(bar.left).toBe(0);
+  });
+
+  // @verifies TML-21
+  it("windowed shading emits only the visible non-working days, not one per day of the span", () => {
+    const px = DAY_WIDTH.day;
+    const win = { left: 10_000 * px, right: 10_000 * px + 30 * px };
+    const days = eachDayInWindow(epoch, "day", win);
+    // ~31 days in the window, a fraction of the ~47,000 full range.
+    expect(days.length).toBeLessThan(40);
+    expect(days.length).toBeGreaterThan(0);
+    // Every returned day maps back to its own column with no drift.
+    for (const d of days) {
+      expect(daysBetween(epoch.start, d)).toBeGreaterThanOrEqual(9999);
+    }
+    // And the full eachDay would be the ~47,000-entry array.
+    expect(eachDay(epoch).length).toBeGreaterThan(47_000);
   });
 });

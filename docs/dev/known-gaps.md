@@ -1070,7 +1070,18 @@ this is a pure refactor whose regression surface is TSK-8/TSK-28 in
 
 ## The timeline has no virtualization: TML-21, TML-26, TML-32 unmet (TML-27, TML-30 covered for their satisfiable bullets)
 
-**Found:** M3.3b (2026-08-30). **Not fixed.**
+**Found:** M3.3b (2026-08-30). **FIXED 2026-09-16 (uncommitted working
+tree) — see decisions.md A184.** TML-21 (horizontal header/grid
+windowing), TML-26 (vertical row windowing), TML-27's sticky-band-header
+bit and TML-32 (arrow hover-highlight) are built, tagged and
+mutation-verified. Windowing is compute-all / render-window on both axes,
+with `buildLayout` keeping `centreById` *and* a new complete `taskById`
+map so arrows anchor to off-window rows (the load-bearing constraint).
+Windowing is gated per-axis by a size threshold (`COLUMN_WINDOW_THRESHOLD
+= 5000`, `ROW_WINDOW_THRESHOLD = 400`) so ordinary charts still render in
+full and the existing TML-13/27/30/46 assertions on off-screen DOM stay
+green. The rest of this entry is retained as the historical record of the
+gap. **Not committed.**
 
 **Update 2026-09-04:** TML-27 and TML-30 are now **tagged and
 mutation-verified** for the bullets that hold. TML-27's case says

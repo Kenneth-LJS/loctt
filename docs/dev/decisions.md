@@ -12379,3 +12379,93 @@ the query-builder note called out; the visual builder + K80 date functions
 remain. **To revert:** drop `labels_match` from the search schema,
 `useTasks`, `buildStructuredQuery`, and the `matchToggle` in FilterBar /
 FilterDropdown.
+
+### A184 · Timeline virtualization: compute-all / render-window, gated by a per-axis size threshold (TML-21, TML-26, TML-27, TML-32)
+
+**Tickets:** TML-21, TML-26, TML-27 (sticky bit), TML-32 · **Date:** 2026-09-16 · **Commit:** (uncommitted working tree)
+
+**The situation.** known-gaps.md's "The timeline has no virtualization"
+entry: `headerCells`/`eachDay` materialized ~47,000 nodes for a
+1970→2099 day span (TML-21), `buildLayout`+`TimelineChart` rendered every
+one of e.g. 3,000 rows (TML-26), the band header was `absolute` and
+scrolled away (TML-27's sticky bit), and no arrow hover-highlight existed
+(TML-32). The load-bearing constraint the entry names: arrows anchor from
+`layout.centreById` *before paint*, so a windowed layout must keep
+supplying centres — and endpoint geometry — for rows it does not mount.
+
+**What had to be decided.** (1) How to separate "compute all positions"
+from "render only the window" on both axes without the arrows losing
+off-window endpoints. (2) Whether to window *always* or only past a size
+threshold. (3) Overscan size. (4) The sticky-header DOM restructure.
+
+**Decided (agent level — decide-and-record).**
+- **Compute-all vs render-window.** The date→x math (`dateToX`,
+  `barGeometry`, `rangeWidth`) is already O(1) and stays whole-range, so
+  a bar spanning off-screen still positions from the full math. New
+  windowed builders `headerCellsInWindow` / `eachDayInWindow` take a
+  pixel `PixelWindow` → day-index range (`dayWindow`, O(1)) and emit only
+  the overlapping cells, byte-identical to the full builder's twins.
+  `buildLayout` still places *every* row (unchanged); `TimelineChart`
+  mounts only rows whose y intersects the viewport+overscan.
+- **The trap fix.** `buildLayout` now also returns a **complete**
+  `taskById` map (every laid-out row's task), alongside the already-
+  complete `centreById`. The arrow renderer looks endpoints up in
+  `taskById`, never in the rendered rows. The old `findTask` (scanned
+  `layout.bands[].rows`) is deleted — under windowing it would have
+  silently failed for off-window endpoints. Guarded by an @verifies test
+  that goes red if the anchor lookup is restricted to mounted rows.
+- **Threshold, not always-on (the one real judgement call).** Windowing
+  changes what is in the DOM, and the pre-existing suite (TML-13
+  shading, TML-27 bands, TML-46) plus TML-30 assert off-screen/whole-set
+  elements *are* present. So each axis windows **only above a size
+  bound**: `COLUMN_WINDOW_THRESHOLD = 5000`, `ROW_WINDOW_THRESHOLD = 400`.
+  Below the bound the full range/height renders (cheap, matches prior
+  behaviour, keeps every existing test green). TML-21 (47k cols) and
+  TML-26 (3k rows) are well over their bounds; TML-30 (60), TML-27 (~50),
+  TML-13 (~220 cols) well under. Chosen with headroom so a fixture tweak
+  cannot flip an axis.
+- **Overscan** `OVERSCAN_PX = 800` each side — free to decide per the
+  task brief; ~28 rows of margin, enough that a small scroll never
+  exposes a gap.
+- **Sticky band header.** Each band is now an absolutely-positioned
+  wrapper spanning its full extent (header + rows), its header
+  `position: sticky; top: 24px` (below the sticky date header), rows
+  absolutely positioned relative to the wrapper. TML-27/30 unchanged and
+  green.
+- **Hover-highlight (TML-32).** `onPointerEnter`/`Leave` on a bar set a
+  `hoveredSource` id; each arrow whose `from` matches gets
+  `data-highlighted` + accent stroke. No change to how arrows are stored.
+
+**Why.** The threshold is the crux: it satisfies TML-21/26 (the whole
+point) while treating the existing tests' reliance on off-screen DOM as
+legitimate for ordinary-sized charts rather than a bug to break. The
+alternative — window always and rewrite TML-13/27/46/30 to scroll targets
+into view — was more invasive and riskier for no user-visible gain at
+those sizes.
+
+**Tests + red-proofs.** geometry.test.ts (windowing math, bounded counts,
+byte-identical cells, far-end no-drift); layout.test.ts (centreById +
+taskById complete for 3,000 rows — the trap at the math level);
+TimelineChart.test.tsx jsdom (windowed row count, off-window arrow
+anchoring — red-proved by restricting the anchor to mounted rows, hover
+highlight, sticky); flow-timeline.spec.ts TML-21 (bounded header nodes +
+>1,000,000px bar), TML-26 (windowed rows + scroll changes which mount),
+TML-32 (50-arrow hover). Each new test shown to fail by reverting its
+mechanism (thresholds raised to disable windowing; highlight forced
+false; anchor restricted to window).
+
+**To revert.** In TimelineChart, replace `headerCellsInWindow`/
+`eachDayInWindow` with the full `headerCells`/`eachDay` builders and drop
+the window gating (the chart derives shading/cells internally now —
+TimelineView no longer passes `cells`/`shaded`); delete `headerCellsInWindow`,
+`eachDayInWindow`, `dayWindow`, `PixelWindow` from geometry.ts; drop
+`taskById` from `Layout`/`buildLayout` and reinstate `findTask`; remove
+the scroll/viewport tracking, the two threshold constants, `OVERSCAN_PX`,
+and the row/cell window gates in TimelineChart.tsx; revert the band header
+to `absolute`/`top: band.y`; remove the `onPointerEnter/Leave` + the
+`data-highlighted` branch. No on-disk format change, so no migration.
+
+**Built (agent-level).** All as specced. Gates: typecheck 0, lint 0
+errors (69 pre-existing warnings untouched), 112 timeline unit tests,
+full flow-timeline.spec.ts 56/56 (was 54: +TML-26, +TML-32; TML-21
+extended). Not committed — left in the working tree.

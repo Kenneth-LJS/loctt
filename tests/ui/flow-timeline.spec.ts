@@ -1155,6 +1155,29 @@ test.describe("TML — timeline edge cases (section B)", () => {
       .evaluate(n => parseFloat((n as HTMLElement).style.width));
     expect(width).toBeGreaterThan(1_000_000);
 
+    // The header and grid VIRTUALIZE: the ~47,000 day columns are not
+    // all in the DOM at once. Only a windowed screenful (plus overscan)
+    // is rendered — a bounded count two orders of magnitude below the
+    // span. This is the second bullet the pre-windowing build could not
+    // satisfy; without windowing this count would be ~47,000.
+    const headerCellCount = await page.getByTestId("timeline-header-cell").count();
+    expect(headerCellCount).toBeGreaterThan(0);
+    expect(headerCellCount).toBeLessThan(500);
+
+    // Scrolling to the far end shows the correct dates there — the
+    // window follows the scroll and the far cells carry 2099 dates, not
+    // dates drifted by accumulated floating-point stepping.
+    await page.getByTestId("timeline-scroll").evaluate(el => {
+      el.scrollLeft = el.scrollWidth;
+    });
+    await expect
+      .poll(async () =>
+        page.locator('[data-testid="timeline-header-cell"][data-date^="2099-12"]').count())
+      .toBeGreaterThan(0);
+    // And the count stays bounded after scrolling — it did not accrete
+    // every column passed over.
+    expect(await page.getByTestId("timeline-header-cell").count()).toBeLessThan(500);
+
     // Dates at the far end are correct, not drifted by accumulated
     // floating-point stepping.
     await expect(page.getByTestId(`timeline-bar-${k}`))
@@ -2186,6 +2209,100 @@ test.describe("TML — remaining section B cases (M3.3b)", () => {
     // The header did not scroll away with the rows (sticky): its
     // viewport-relative top is unchanged after a 400px scroll.
     expect(headerTopAfter).toBeCloseTo(headerTopBefore, 0);
+
+    expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  });
+
+  // @verifies TML-26
+  test("TML-26: 3,000 dated tasks virtualize vertically — mounted rows are a window, and scrolling changes which", async ({ page, tracker }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    // 3,000 tasks spanning three years, ungrouped so they are one long
+    // lane of rows — the scale case's shape.
+    const N = 3000;
+    const specs = Array.from({ length: N }, (_v, i) => {
+      const year = 2026 + (i % 3);
+      const month = String((i % 12) + 1).padStart(2, "0");
+      const day = String((i % 28) + 1).padStart(2, "0");
+      const start = `${String(year)}-${month}-${day}`;
+      return { start, due: start, title: `Row ${String(i)}` };
+    });
+    const keys = await seedDatedTasks(tracker.root, specs);
+
+    await page.goto(`${tracker.baseURL}/timeline?zoom=month&grouping=none`);
+
+    // Responsive and complete: the total is the TRUE count. 3,000 tasks
+    // page in over several feed requests, so this is given room to
+    // settle — the point of the case is that it DOES settle, and stays
+    // interactive while it does.
+    await expect(page.getByTestId("timeline-total")).toHaveText(`${String(N)} tasks`, { timeout: 30_000 });
+
+    // Only a window of rows is mounted — far fewer than 3,000. If rows
+    // did not virtualize this would be 3,000 and the assertion fails.
+    const mountedAtTop = await page.locator('[data-testid^="timeline-bar-"]').count();
+    expect(mountedAtTop).toBeGreaterThan(0);
+    expect(mountedAtTop).toBeLessThan(N);
+    expect(mountedAtTop).toBeLessThan(400);
+
+    // The set of mounted rows CHANGES as you scroll: a row near the top
+    // is mounted at rest, and after scrolling far down it is gone while
+    // a row far down is now mounted. This is the windowing moving, not
+    // just fewer nodes.
+    const firstKey = keys[0] as string;
+    const lastKey = keys[N - 1] as string;
+    await expect(page.getByTestId(`timeline-bar-${firstKey}`)).toHaveCount(1);
+    await expect(page.getByTestId(`timeline-bar-${lastKey}`)).toHaveCount(0);
+
+    // Scroll to the very bottom of the row extent.
+    await page.getByTestId("timeline-scroll").evaluate(el => {
+      el.scrollTop = el.scrollHeight;
+    });
+    // The last row is now mounted; the first has been unmounted.
+    await expect(page.getByTestId(`timeline-bar-${lastKey}`)).toHaveCount(1);
+    await expect(page.getByTestId(`timeline-bar-${firstKey}`)).toHaveCount(0);
+    // Still a window, not the whole list, after scrolling.
+    expect(await page.locator('[data-testid^="timeline-bar-"]').count()).toBeLessThan(400);
+
+    expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  });
+
+  // @verifies TML-32
+  test("TML-32: a task with 50 outgoing arrows highlights them on hover of the source", async ({ page, tracker }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", e => pageErrors.push(e.message));
+
+    // One source blocking 50 targets. All 51 tasks are dated and share
+    // an overlapping span so every bar and every arrow renders.
+    const N = 51;
+    const specs = Array.from({ length: N }, (_v, i) => ({
+      start: "2026-03-02",
+      due: "2026-03-20",
+      title: i === 0 ? "Source" : `Target ${String(i)}`,
+    }));
+    const keys = await seedDatedTasks(tracker.root, specs);
+    const source = keys[0] as string;
+    // Link the source to all 50 targets via `blocks`.
+    for (let i = 1; i < N; i += 1) {
+      await tracker.run(["link", source, "blocks", keys[i] as string]);
+    }
+    await setTimelineConfig(tracker.root, "timeline:\n  dependency_relationship: blocks\n  show_arrows: true");
+
+    await page.goto(`${tracker.baseURL}/timeline?zoom=week&grouping=none`);
+    await expect(page.getByTestId(`timeline-bar-${source}`)).toBeVisible();
+
+    // All 50 arrows are drawn, and none is highlighted at rest.
+    await expect(page.getByTestId("timeline-arrow")).toHaveCount(50);
+    await expect(page.locator('[data-testid="timeline-arrow"][data-highlighted="true"]')).toHaveCount(0);
+
+    // Hovering the source bar highlights its 50 outgoing arrows so a
+    // single dependency can be traced out of the fan.
+    await page.getByTestId(`timeline-bar-${source}`).hover();
+    await expect(page.locator('[data-testid="timeline-arrow"][data-highlighted="true"]')).toHaveCount(50);
+
+    // Moving the pointer off the bar clears the highlight.
+    await page.getByTestId("timeline-toolbar").hover();
+    await expect(page.locator('[data-testid="timeline-arrow"][data-highlighted="true"]')).toHaveCount(0);
 
     expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
   });
