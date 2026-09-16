@@ -6,6 +6,7 @@ import {
   getGitStatus,
   GitHistoryRewrittenError,
   GitReconcileNeededError,
+  GitRemoteSchemaNewerError,
   loadReconcileSession,
   preflight,
   publish,
@@ -139,6 +140,13 @@ export async function run(args: string[], root: string): Promise<void> {
           process.exitCode = EXIT.RUNTIME;
           break;
         }
+        // GIT-35 (K94): the branch was written by a newer LocTT. Refuse,
+        // name both schema versions, and point at upgrading LocTT.
+        if (err instanceof GitRemoteSchemaNewerError) {
+          console.error(err.message);
+          process.exitCode = EXIT.RUNTIME;
+          break;
+        }
         throw err;
       }
       if (result.committed) {
@@ -197,6 +205,13 @@ export async function run(args: string[], root: string): Promise<void> {
         // missing commit + remote, and point at git — no LocTT recovery.
         if (err instanceof GitHistoryRewrittenError) {
           reportHistoryRewritten(err);
+          process.exitCode = EXIT.RUNTIME;
+          break;
+        }
+        // GIT-35 (K94): the branch was written by a newer LocTT. Refuse,
+        // name both schema versions, and point at upgrading LocTT.
+        if (err instanceof GitRemoteSchemaNewerError) {
+          console.error(err.message);
           process.exitCode = EXIT.RUNTIME;
           break;
         }

@@ -1187,6 +1187,27 @@ yours to do in git — LocTT will not do it for you:
   explicitly in git (for example `git branch -f loctt <commit>` to a
   commit you have inspected), then run `loctt git sync` again.
 
+### Branch written by a newer LocTT
+
+If the `loctt` branch was written by a newer version of LocTT than the one
+you are running (its `.schema-version` is higher than your installation
+understands), `sync` (and `publish`) **refuse and write nothing** — this is
+reported distinctly from a conflict or a rewrite. The command exits
+non-zero and names both schema versions: the branch's and yours.
+
+Schema changes travel through `loctt migrate`, never through sync, so LocTT
+will not apply a branch it cannot read — doing so could corrupt or drop
+data. The fix is to **upgrade LocTT** to a version that supports the
+branch's schema, then run `loctt git sync` again. This is not a migration:
+the branch is already ahead of what your build can read, so `loctt migrate`
+has nothing to do here.
+
+A branch with **no** `.schema-version`, or one at the same or an older
+version, syncs normally — an older schema is the ordinary
+migrate-forward direction, not this refusal. A branch whose
+`.schema-version` is present but unreadable (not a positive integer) is
+also refused, because its version cannot be proven safe to read.
+
 ## Config
 
 ```

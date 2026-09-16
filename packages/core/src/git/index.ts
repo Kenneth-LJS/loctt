@@ -10,6 +10,7 @@ export {
   GitHistoryRewrittenError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
+  GitRemoteSchemaNewerError,
   GitSyncError,
   GitSyncFirstError,
   publish,

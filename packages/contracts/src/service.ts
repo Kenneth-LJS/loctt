@@ -615,6 +615,20 @@ export interface ErrorResponse {
     readonly branch: string;
     readonly remote: string | null;
   };
+  /**
+   * Present on `schema_remote_newer` (GIT-35, K94): the branch was written
+   * by a newer LocTT than this build understands. Carries the branch's
+   * `.schema-version` and this build's `CURRENT_SCHEMA_VERSION` so the
+   * panel can name both without a second fetch. The refusal is
+   * `recovery: none`; the fix is to upgrade LocTT (not migrate). A
+   * malformed remote version surfaces as `remote_version: null` — unknown,
+   * treated as ahead.
+   */
+  readonly schema_remote_newer?: {
+    readonly remote_version: number | null;
+    readonly local_version: number;
+    readonly branch: string;
+  };
 }
 
 /**
@@ -637,6 +651,7 @@ export type ErrorCode =
   | "reconcile_in_progress"
   | "sync_needed"
   | "history_rewritten"
+  | "schema_remote_newer"
   | "io_failed"
   | "partial_failure"
   | "unknown";

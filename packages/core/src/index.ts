@@ -160,6 +160,7 @@ export {
   GitHistoryRewrittenError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
+  GitRemoteSchemaNewerError,
   GitSyncError,
   GitSyncFirstError,
   loadReconcileSession,

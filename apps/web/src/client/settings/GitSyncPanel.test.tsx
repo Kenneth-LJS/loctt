@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiError } from "../api/client.ts";
 import type { GitRemoteFailure } from "../api/hooks/useGit.ts";
-import { historyRewritten, publishFailureLine } from "./GitSyncPanel.tsx";
+import { historyRewritten, publishFailureLine, schemaRemoteNewer } from "./GitSyncPanel.tsx";
 
 /**
  * @verifies GIT-29
@@ -104,5 +104,52 @@ describe("historyRewritten detector (GIT-21)", () => {
     expect(historyRewritten(undefined)).toBeUndefined();
     // A history_rewritten code but no payload — still no crash, no payload.
     expect(historyRewritten(apiError("history_rewritten"))).toBeUndefined();
+  });
+});
+
+/**
+ * @verifies GIT-35
+ *
+ * The panel routes a `schema_remote_newer` refusal (K94) to its dedicated
+ * banner, NOT the generic retryable ErrorState. `schemaRemoteNewer` is the
+ * detector the render branches on: it recognises the code and hands back
+ * the typed payload (both versions + branch), rejecting everything else so
+ * those fall through to ErrorState. A malformed remote version arrives as
+ * `remote_version: null` (unknown ⇒ ahead) and must still be surfaced.
+ * Tested directly so the branch is deterministic (a real newer-schema
+ * branch cannot be arranged in a jsdom unit; the end-to-end refusal is in
+ * core schema-remote-newer.test.ts).
+ */
+describe("schemaRemoteNewer detector (GIT-35)", () => {
+  it("returns the typed payload for a schema_remote_newer envelope", () => {
+    const info = schemaRemoteNewer(apiError("schema_remote_newer", {
+      schema_remote_newer: { remote_version: 2, local_version: 1, branch: "loctt" },
+    }));
+    expect(info).toBeDefined();
+    expect(info?.remote_version).toBe(2);
+    expect(info?.local_version).toBe(1);
+    expect(info?.branch).toBe("loctt");
+  });
+
+  it("carries a null remote_version for a malformed remote schema", () => {
+    const info = schemaRemoteNewer(apiError("schema_remote_newer", {
+      schema_remote_newer: { remote_version: null, local_version: 1, branch: "loctt" },
+    }));
+    expect(info).toBeDefined();
+    expect(info?.remote_version).toBeNull();
+    expect(info?.local_version).toBe(1);
+  });
+
+  it("returns undefined for any other code (so it uses the right banner / ErrorState)", () => {
+    expect(schemaRemoteNewer(apiError("conflict"))).toBeUndefined();
+    expect(schemaRemoteNewer(apiError("history_rewritten"))).toBeUndefined();
+    expect(schemaRemoteNewer(apiError("reconcile_needed"))).toBeUndefined();
+  });
+
+  it("returns undefined for a non-ApiError or an envelope-less error", () => {
+    expect(schemaRemoteNewer(new Error("plain"))).toBeUndefined();
+    expect(schemaRemoteNewer(undefined)).toBeUndefined();
+    // The code but no payload — no crash, no payload.
+    expect(schemaRemoteNewer(apiError("schema_remote_newer"))).toBeUndefined();
   });
 });
