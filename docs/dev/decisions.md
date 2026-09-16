@@ -13206,3 +13206,72 @@ the wrong-task hazard); drop the `expectedId` arg from `useSetField` and the
 `TaskDetail` call; delete the follow effect, the `rekeyedFrom` param/prop and the
 note branch; delete the four test blocks. On-disk: no schema/sentinel change —
 purely additive request field + client behaviour.
+
+### A196 · GIT-16 delete-vs-edit reconciliation row — new plan kind over the existing framework
+
+**Ticket:** GIT-16 (SAFE remainder of A188's git-sync split) · **Date:** 2026-09-16 · **Commit:** uncommitted (working tree).
+
+**Situation.** A task deleted on one side and edited on the other was NOT
+surfaced: `planSync` classifies it as a whole-*file* `delete` (base+local
+present, remote absent) or `copy` (base+remote present, local absent), and
+`computeReconcilePlan` only ever looked at `plan.conflicts` (both-sides-present
+field divergence). So a remote deletion silently propagated over a local edit
+(the file was removed) and a local deletion silently lost the remote edit (the
+file was copied in) — a "one side wins silently" data-loss the GIT-16 case
+forbids.
+
+**Model call.** A delete-vs-edit is per-TASK with a keep-deletion / keep-task
+choice — not per-field with local/remote *values*, so it does not fit
+`TaskConflictField`. Added a distinct `DeleteVsEditConflict` row + a
+`deleteVsEdit` array on `ReconcilePlan` (contracts). Each row names `taskId`,
+`taskKey`, `taskTitle`, and `deletedSide`/`editedSide` (`"local"|"remote"`) so
+the surface can say plainly which side did which. The decision reuses
+`ReconcileDecision` with a reserved sentinel field `__delete_vs_edit__` and
+`choice: "local"|"remote"` = keep-that-side's outcome (keep the deleting side =
+keep-deletion; keep the editing side = keep-task); no new decision schema.
+
+**Detection (from the base, not a new diff).** `computeReconcilePlan` now takes
+the file-level `deletes`/`copies` from the same `planSync` output it already
+consumes for `conflicts`, and reads each path's base + local + remote content
+with the existing `readTreeFile`/`readTaskFileAt` helpers:
+- a `delete` path (local present, remote absent) whose base exists AND whose
+  local content differs from base ⇒ remote-deleted / local-edited;
+- a `copy` path (remote present, local absent) whose base exists AND whose
+  remote content differs from base ⇒ local-deleted / remote-edited.
+A pure delete (local == base, or the deleting side never touched it) stays a
+silent propagation — correct, and unchanged. No base ⇒ no delete-vs-edit
+classification (a create/delete without a base is not an edit-vs-delete).
+
+**Gating.** The sync (`pullFromLocttBranch`) and publish (`detectPublishReconcile`)
+triggers now open reconciliation when `deleteVsEdit.length > 0` as well as
+`conflicts.length > 0`; the CLI/MCP conflict-count reporting includes the
+delete-vs-edit rows.
+
+**Apply + the K92 rekey gate (bullet 4).** `applyReconcile` grows a
+delete-vs-edit branch: keep-deletion removes the task's `tasks/<id>/` dir (the
+deletion stands); keep-task leaves the edited file exactly where it is (the
+completing sync copies the remote-edited one for the local-deleted case, or
+retains the local-edited one for the remote-deleted case). Because a kept task
+flows into the same completing sync (`pullFromLocttBranch` → `normaliseAfterMerge`
+→ `previewRekey`), a keep-task whose key now collides routes through the EXISTING
+K92 rekey confirm gate automatically — no bypass, no silent reissue. The
+`applyReconcile` completeness accounting counts each delete-vs-edit row as one
+"conflict" so an undecided row keeps the reconcile incomplete (never a silent
+local-win, the G2/Phase-Z property).
+
+**Result reports by key.** The applied outcome names each delete-vs-edit task by
+key with its chosen outcome (kept / deleted), on all three surfaces.
+
+**Not touched.** No-`--force`, `NEVER_MIRROR`/`LOCAL_OWNED`, the rekey ENGINE
+(consumed, not changed), `last_synced_commit`, GIT-21/35/8/22/34/36/19 guards.
+
+**To revert.** Remove `DeleteVsEditConflict`/`deleteVsEdit` from
+`contracts/reconcile.ts` + index; drop the delete-vs-edit scan block in
+`computeReconcilePlan` and the `deletes`/`copies` params (revert its callers to
+pass only `conflicts`); revert the two trigger gates to `conflicts.length > 0`;
+remove the `applyReconcile` delete-vs-edit branch + its completeness accounting;
+remove the `ReconcilePanel` delete-vs-edit rows; drop the CLI/MCP reporting
+lines; delete the new tests + the Playwright spec; revert the doc subsections.
+No on-disk format change (the sentinel is unchanged; the decision reuses the
+existing schema with a reserved field name), so no migration. Reverting reopens
+the silent delete-vs-edit data loss.

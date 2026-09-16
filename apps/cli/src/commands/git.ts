@@ -2,6 +2,7 @@ import {
   abandonReconcile,
   applyReconcileDecisions,
   confirmRekey,
+  DELETE_VS_EDIT_FIELD,
   disableGit,
   enableGit,
   getGitStatus,
@@ -357,13 +358,25 @@ export function makeSyncProgressReporter(): SyncProgress {
  */
 function reportReconcileNeeded(err: GitReconcileNeededError): void {
   const plan = err.plan;
+  const taskCount = new Set([
+    ...plan.conflicts.map(c => c.taskKey),
+    ...plan.deleteVsEdit.map(d => d.taskKey),
+  ]).size;
   console.error(
-    `Reconciliation needed: ${String(plan.conflicts.length)} field conflict(s) `
-    + `across ${String(new Set(plan.conflicts.map(c => c.taskKey)).size)} task(s).`,
+    `Reconciliation needed: ${String(plan.conflicts.length)} field conflict(s)`
+    + `${plan.deleteVsEdit.length > 0 ? ` + ${String(plan.deleteVsEdit.length)} delete-vs-edit` : ""} `
+    + `across ${String(taskCount)} task(s).`,
   );
   for (const c of plan.conflicts) {
     const drift = c.remote.drift ? " (remote value not in local config)" : "";
     console.error(`  ${c.taskKey} · ${c.fieldLabel}: local="${c.local.display}" remote="${c.remote.display}"${drift}`);
+  }
+  // GIT-16: a task deleted one side and edited the other — name which is which.
+  for (const d of plan.deleteVsEdit) {
+    console.error(
+      `  ${d.taskKey}: deleted on ${d.deletedSide}, edited on ${d.editedSide} `
+      + "— choose keep-deletion or keep-task",
+    );
   }
   console.error(
     "\nResolve in the web UI (Settings → Sync), or run "
@@ -405,6 +418,16 @@ async function runReconcile(args: string[], locttDir: string, root: string): Pro
     for (const c of plan.conflicts) {
       console.log(`    ${c.taskKey} · ${c.fieldLabel}: local="${c.local.display}" remote="${c.remote.display}"`);
     }
+    // GIT-16: delete-vs-edit rows — whole-task keep-deletion / keep-task.
+    if (plan.deleteVsEdit.length > 0) {
+      console.log(`  ${String(plan.deleteVsEdit.length)} delete-vs-edit:`);
+      for (const d of plan.deleteVsEdit) {
+        console.log(
+          `    ${d.taskKey}: deleted on ${d.deletedSide}, edited on ${d.editedSide} `
+          + `(decide with field "${DELETE_VS_EDIT_FIELD}", choice "${d.deletedSide}"=keep-deletion / "${d.editedSide}"=keep-task)`,
+        );
+      }
+    }
     return;
   }
   if (action === "abandon") {
@@ -424,7 +447,13 @@ async function runReconcile(args: string[], locttDir: string, root: string): Pro
     const decisions = JSON.parse(await readFile(args[idx + 1] as string, "utf-8")) as never;
     const outcome = await applyReconcileDecisions(locttDir, root, decisions);
     for (const r of outcome.results) {
-      console.log(r.ok ? `  ${r.taskKey}: applied` : `  ${r.taskKey}: FAILED — ${r.error ?? "unknown"}`);
+      if (!r.ok) {
+        console.log(`  ${r.taskKey}: FAILED — ${r.error ?? "unknown"}`);
+        continue;
+      }
+      // GIT-16: a delete-vs-edit outcome names kept/deleted by key.
+      const dve = r.resolved.find(f => f.field === "deletion");
+      console.log(dve !== undefined ? `  ${r.taskKey}: ${dve.value}` : `  ${r.taskKey}: applied`);
     }
     // GIT-8/K92: the field conflicts resolved, but completing the sync
     // found a key collision that needs a rekey. The CLI auto-applies it

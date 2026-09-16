@@ -110,6 +110,45 @@ export const TaskConflictFieldSchema = z.object({
 }).strict();
 export type TaskConflictField = z.infer<typeof TaskConflictFieldSchema>;
 
+/**
+ * A task deleted on one side and edited on the other (GIT-16).
+ *
+ * Unlike {@link TaskConflictField}, this is a whole-TASK decision, not a
+ * per-field one: the task is present on only one side (the editing side)
+ * and absent on the other (the deleting side), so there are no two values
+ * to reconcile — the choice is keep-the-deletion or keep-the-task.
+ *
+ * `deletedSide`/`editedSide` are always opposite (`"local"`/`"remote"`),
+ * stated plainly so the surface can say which side did which. The decision
+ * reuses {@link ReconcileDecision} with the reserved field
+ * {@link DELETE_VS_EDIT_FIELD} and `choice`:
+ *   - `choice === deletedSide` → keep the deletion (the task is removed);
+ *   - `choice === editedSide`  → keep the task (its edited version stands).
+ * Keeping the task does NOT reissue a colliding key silently — the
+ * completing sync routes a collision through the K92 rekey gate (A193/A196).
+ */
+export const DeleteVsEditConflictSchema = z.object({
+  /** The task's ULID — the stable identity a decision is applied by. */
+  taskId: z.string().min(1),
+  /** The user-facing key (`WEB-3`), for display and result reporting. */
+  taskKey: z.string().min(1),
+  /** The task title, for display; falls back to the key when degraded (K26). */
+  taskTitle: z.string(),
+  /** Which side deleted the task. */
+  deletedSide: z.enum(["local", "remote"]),
+  /** Which side edited the task (always the opposite of `deletedSide`). */
+  editedSide: z.enum(["local", "remote"]),
+}).strict();
+export type DeleteVsEditConflict = z.infer<typeof DeleteVsEditConflictSchema>;
+
+/**
+ * The reserved `ReconcileDecision.field` a delete-vs-edit decision carries.
+ * A task can have at most one such row, so a single reserved field per task
+ * is unambiguous, and it can never collide with a real frontmatter field
+ * (no field starts with `__`).
+ */
+export const DELETE_VS_EDIT_FIELD = "__delete_vs_edit__";
+
 /** A field that merged or converged without a conflict, named so the result can mention it (GIT-5, GIT-17). */
 export const AutoMergedFieldSchema = z.object({
   taskKey: z.string().min(1),
@@ -133,6 +172,12 @@ export const ReconcilePlanSchema = z.object({
   base_commit: z.string(),
   remote_commit: z.string(),
   conflicts: z.array(TaskConflictFieldSchema),
+  /**
+   * Tasks deleted on one side and edited on the other (GIT-16). Each is a
+   * whole-task keep-deletion / keep-task decision, distinct from the
+   * per-field `conflicts`. Empty on a plan with no delete-vs-edit case.
+   */
+  deleteVsEdit: z.array(DeleteVsEditConflictSchema).default([]),
   autoMerged: z.array(AutoMergedFieldSchema),
 }).strict();
 export type ReconcilePlan = z.infer<typeof ReconcilePlanSchema>;

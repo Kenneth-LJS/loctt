@@ -1649,9 +1649,10 @@ async function detectPublishReconcile(
     const config = await loadWorkflowConfig(locttDir).catch(() => undefined);
     const reconcilePlan = await computeReconcilePlan({
       localDir: locttDir, incomingDir: worktreeDir, conflicts: plan.conflicts,
+      deletes: plan.deletes, copies: plan.copies,
       config, mode: "publish", baseCommit: base, remoteCommit: remoteHead, root,
     });
-    if (reconcilePlan.conflicts.length > 0) {
+    if (reconcilePlan.conflicts.length > 0 || reconcilePlan.deleteVsEdit.length > 0) {
       return { kind: "reconcile", plan: reconcilePlan, baseCommit: base, remoteHead };
     }
     // G1: no field conflict does NOT mean fast-forward. `planSync`
@@ -1836,6 +1837,16 @@ export async function pullFromLocttBranch(
      * means the rekey waits for a confirm.
      */
     readonly rekeyConfirmed?: boolean;
+    /**
+     * GIT-16: task ids whose delete-vs-edit decision the user made. On the
+     * completion pass these must NOT be re-classified as delete-vs-edit (the
+     * decision is settled), and — for a keep-task where LOCAL had deleted the
+     * task — the completing sync's `copy` must still bring the remote-edited
+     * file in. So they suppress delete-vs-edit detection but do NOT filter the
+     * copy from the plan (that is `resolvedTaskIds`' job). A keep-deletion /
+     * keep-local-file decision lands in BOTH sets.
+     */
+    readonly deleteVsEditResolvedTaskIds?: readonly string[];
   },
   /**
    * GIT-23: reports incremental write progress. Fires only in the write
@@ -1959,23 +1970,48 @@ export async function pullFromLocttBranch(
     // conflicting files keep local (the resolved values are on disk), so
     // they are dropped from the conflict set the merge sees and never
     // re-halt or get last-write-wins-merged over the user's picks.
+    // The tasks the user already resolved (field conflicts AND delete-vs-edit
+    // decisions applied on disk by `applyReconcile`). Their paths are dropped
+    // from EVERY bucket of the completion plan so the merge/copy/delete does
+    // not undo the resolution: a kept task must not be re-deleted (GIT-16), a
+    // resolved conflict must not be last-write-wins-merged over the picks.
     const resolvedTaskIds = new Set(reconcileResolution?.resolvedTaskIds ?? []);
     const activePlan: SyncPlan = resolvedTaskIds.size === 0
       ? plan
-      : { ...plan, conflicts: filterResolvedTaskConflicts(plan.conflicts, resolvedTaskIds) };
+      : {
+          ...plan,
+          conflicts: filterResolvedTaskConflicts(plan.conflicts, resolvedTaskIds),
+          deletes: filterResolvedTaskConflicts(plan.deletes, resolvedTaskIds),
+          copies: filterResolvedTaskConflicts(plan.copies, resolvedTaskIds),
+        };
+
+    // GIT-16: on the completion pass, a delete-vs-edit the user already
+    // decided must not be re-detected (it would re-halt). Suppress detection
+    // for those task ids by dropping their paths from the deletes/copies the
+    // detector sees — the copy/delete write itself is governed by activePlan.
+    const dveResolved = new Set(reconcileResolution?.deleteVsEditResolvedTaskIds ?? []);
+    const dropDveResolved = (paths: readonly PathPlan[]): PathPlan[] =>
+      dveResolved.size === 0
+        ? [...paths]
+        : paths.filter((p) => {
+            const m = /^tasks\/([^/]+)\/task\.md$/.exec(p.path);
+            return m === null || !dveResolved.has(m[1] as string);
+          });
 
     const workflowForPlan = await loadWorkflowConfig(locttDir).catch(() => undefined);
     const reconcilePlan = await computeReconcilePlan({
       localDir: locttDir,
       incomingDir: worktreeDir,
       conflicts: activePlan.conflicts,
+      deletes: dropDveResolved(activePlan.deletes),
+      copies: dropDveResolved(activePlan.copies),
       config: workflowForPlan,
       mode: "sync",
       baseCommit: syncState.git.last_synced_commit ?? remoteHead,
       remoteCommit: remoteHead,
       root,
     });
-    if (reconcilePlan.conflicts.length > 0) {
+    if (reconcilePlan.conflicts.length > 0 || reconcilePlan.deleteVsEdit.length > 0) {
       // Sentinel first, so a reload recomputes the same plan (GIT-26) and
       // publish/sync stay blocked until it resolves (GIT-31). No task
       // file has been touched — the plan is read-only.
@@ -2002,7 +2038,7 @@ export async function pullFromLocttBranch(
         activePlan.conflicts,
         worktreeDir,
         locttDir,
-        await mergedTaskSet(plan, firstPass, worktreeDir, locttDir),
+        await mergedTaskSet(activePlan, firstPass, worktreeDir, locttDir),
       )
       : firstPass;
     if (resolution.unresolved.length > 0) {
@@ -2038,7 +2074,7 @@ export async function pullFromLocttBranch(
       started_at: new Date().toISOString(),
     });
 
-    await applyPlan(plan, worktreeDir, locttDir, onProgress);
+    await applyPlan(activePlan, worktreeDir, locttDir, onProgress);
     // After applyPlan: the merged content must win over whatever the
     // plan copied for that path.
     await applyResolution(resolution, locttDir);

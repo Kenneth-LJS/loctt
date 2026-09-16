@@ -323,11 +323,26 @@ export interface ReconcileAutoMerged {
   readonly fields: readonly string[];
   readonly kind: "union" | "converged";
 }
+/**
+ * A task deleted on one side and edited on the other (GIT-16) — a whole-task
+ * keep-deletion / keep-task decision, distinct from a per-field conflict.
+ * Mirrors core's `DeleteVsEditConflict`.
+ */
+export interface ReconcileDeleteVsEdit {
+  readonly taskId: string;
+  readonly taskKey: string;
+  readonly taskTitle: string;
+  readonly deletedSide: "local" | "remote";
+  readonly editedSide: "local" | "remote";
+}
+/** The reserved `field` a delete-vs-edit decision carries (GIT-16). */
+export const DELETE_VS_EDIT_FIELD = "__delete_vs_edit__";
 export interface ReconcilePlan {
   readonly mode: "publish" | "sync";
   readonly base_commit: string;
   readonly remote_commit: string;
   readonly conflicts: readonly ReconcileConflict[];
+  readonly deleteVsEdit: readonly ReconcileDeleteVsEdit[];
   readonly autoMerged: readonly ReconcileAutoMerged[];
 }
 export interface ReconcileSentinel {

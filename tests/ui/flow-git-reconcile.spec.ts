@@ -17,7 +17,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { editFromOtherClone, expect, type GitTrackerFixture, linkFromOtherClone, test } from "./fixtures/git-tracker.ts";
+import { deleteFromOtherClone, editFromOtherClone, expect, type GitTrackerFixture, linkFromOtherClone, test } from "./fixtures/git-tracker.ts";
 
 function syncYamlPath(root: string): string {
   return path.join(root, ".loctt", "local", "sync.yaml");
@@ -480,6 +480,76 @@ test("GIT-15: publish detects divergence, opens reconciliation tagged publish, p
   // Far end: the branch advanced past its pre-reconcile head.
   await expect.poll(async () => gitTracker.bareCommit("loctt")).not.toBe(branchBefore);
   void key;
+  expect(errors).toEqual([]);
+});
+
+// ── GIT-16 · one side deleted a task the other side edited ─────────────
+
+test("GIT-16: a task deleted on the remote and edited locally surfaces a keep-deletion/keep-task row; keep-task keeps it", async ({
+  page, gitTracker,
+}) => {
+  // @verifies GIT-16
+  const errors = guardPageErrors(page);
+  const [key] = await gitTracker.seed(["Contested delete"]);
+  if (key === undefined) throw new Error("seed returned no key");
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.run(["git", "publish"]);
+  // Remote deletes it; local edits it. The classic delete-vs-edit.
+  await deleteFromOtherClone(gitTracker.remoteRepo, [key]);
+  await gitTracker.run(["set", key, "title", "Edited locally"]);
+
+  await gotoSync(page, gitTracker.baseURL);
+  await page.getByTestId("git-sync").click();
+
+  // The delete-vs-edit is surfaced explicitly, not resolved silently.
+  const panel = page.getByTestId("git-reconcile-panel");
+  await expect(panel).toBeVisible();
+  const dveRow = panel.getByTestId("git-reconcile-dve-row");
+  await expect(dveRow).toHaveCount(1);
+  // It states which side deleted and which edited, in plain terms.
+  await expect(dveRow.getByTestId("git-reconcile-dve-desc")).toContainText("deleted on the remote side");
+  await expect(dveRow.getByTestId("git-reconcile-dve-desc")).toContainText("edited on the local side");
+  // Apply is gated on the row being decided.
+  await expect(page.getByTestId("git-reconcile-apply")).toBeDisabled();
+
+  // Keep the task.
+  await dveRow.getByTestId("git-reconcile-dve-keep-task").click();
+  await expect(page.getByTestId("git-reconcile-apply")).toBeEnabled();
+  await page.getByTestId("git-reconcile-apply").click();
+
+  // Far end: the edited task is still on disk (kept), reconcile.yaml cleared.
+  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible();
+  const raw = await taskFileByKey(gitTracker.root, key);
+  expect(raw).toContain("Edited locally");
+  expect(await fileExists(reconcileYamlPath(gitTracker.root))).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("GIT-16: choosing keep-the-deletion removes the task", async ({
+  page, gitTracker,
+}) => {
+  // @verifies GIT-16
+  const errors = guardPageErrors(page);
+  const [key] = await gitTracker.seed(["Doomed"]);
+  if (key === undefined) throw new Error("seed returned no key");
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.run(["git", "publish"]);
+  await deleteFromOtherClone(gitTracker.remoteRepo, [key]);
+  await gitTracker.run(["set", key, "title", "Edited locally"]);
+
+  await gotoSync(page, gitTracker.baseURL);
+  await page.getByTestId("git-sync").click();
+  const panel = page.getByTestId("git-reconcile-panel");
+  await expect(panel).toBeVisible();
+
+  // Keep the deletion.
+  await panel.getByTestId("git-reconcile-dve-keep-deletion").click();
+  await page.getByTestId("git-reconcile-apply").click();
+  await expect(page.getByTestId("git-reconcile-applied")).toBeVisible();
+
+  // Far end: the task is gone from disk; reconcile.yaml cleared.
+  expect(await taskFileByKey(gitTracker.root, key)).toBe("");
+  expect(await fileExists(reconcileYamlPath(gitTracker.root))).toBe(false);
   expect(errors).toEqual([]);
 });
 

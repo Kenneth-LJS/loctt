@@ -6,6 +6,7 @@ import type {
   ConflictOption,
   ConflictValue,
   CustomFieldDef,
+  DeleteVsEditConflict,
   ReconcilePlan,
   StatusDef,
   Task,
@@ -378,8 +379,90 @@ async function readTaskFileAt(dir: string, path: string): Promise<Task | undefin
 }
 
 /**
+ * Detects a delete-vs-edit (GIT-16): a task present on only one side of a
+ * `planSync` because the other side deleted it, where the present side
+ * ALSO edited it relative to the base.
+ *
+ * `planSync` labels these paths `delete` (local present, remote absent) or
+ * `copy` (remote present, local absent) and would resolve them silently —
+ * a `delete` propagates the remote deletion over a local edit, a `copy`
+ * resurrects the remote edit over a local deletion. Both are one-side-wins
+ * data loss the case forbids, so each becomes a keep-deletion / keep-task
+ * row instead.
+ *
+ * Detection is from the BASE, not a new diff: the path is in base, present
+ * on exactly one side, and that side's content differs from base. A pure
+ * delete (the present side never touched the file since base) stays a
+ * silent, correct propagation. No base ⇒ no classification (a create/delete
+ * with no base is not an edit-vs-delete).
+ *
+ * `deletes` and `copies` come straight from the same `planSync` output the
+ * caller already passes for `conflicts`.
+ */
+function detectDeleteVsEdit(input: {
+  readonly deletes: readonly PathPlan[];
+  readonly copies: readonly PathPlan[];
+  readonly readBase: (path: string) => Task | undefined;
+  readonly readLocal: (path: string) => Promise<Task | undefined>;
+  readonly readIncoming: (path: string) => Promise<Task | undefined>;
+}): Promise<DeleteVsEditConflict[]> {
+  const { deletes, copies, readBase, readLocal, readIncoming } = input;
+
+  const rowFor = async (
+    path: string,
+    presentSide: "local" | "remote",
+  ): Promise<DeleteVsEditConflict | undefined> => {
+    if (!isTaskFile(path) || basename(path) !== "task.md") return undefined;
+    const base = readBase(path);
+    if (base === undefined) return undefined; // no base to prove an edit against
+    const [local, incoming] = await Promise.all([readLocal(path), readIncoming(path)]);
+    const present = presentSide === "local" ? local : incoming;
+    const absent = presentSide === "local" ? incoming : local;
+    if (present === undefined) return undefined;
+    // A delete-vs-edit needs the OTHER side genuinely GONE. A `planSync`
+    // `copy`/`delete` also covers both-present-one-changed (a plain one-sided
+    // edit that merges silently) — that is not a deletion, so bail when the
+    // opposite side still has the file.
+    if (absent !== undefined) return undefined;
+    // An edit is any frontmatter/body change from the base. Compare by the
+    // stored bytes' JSON of frontmatter + body — the same identity the
+    // scalar classifier uses, so a whitespace-only rewrite is not an edit.
+    const changed = JSON.stringify(present.frontmatter) !== JSON.stringify(base.frontmatter)
+      || (present.body ?? "").trim() !== (base.body ?? "").trim();
+    if (!changed) return undefined; // pure delete — silent propagation is correct
+    const taskKey = present.frontmatter.key;
+    const taskTitle = present.frontmatter.title ?? present.frontmatter.key;
+    return {
+      taskId: present.frontmatter.id,
+      taskKey,
+      taskTitle,
+      deletedSide: presentSide === "local" ? "remote" : "local",
+      editedSide: presentSide,
+    };
+  };
+
+  return (async () => {
+    const rows: DeleteVsEditConflict[] = [];
+    // A `delete` path: local kept it, remote deleted it.
+    for (const d of deletes) {
+      const row = await rowFor(d.path, "local");
+      if (row !== undefined) rows.push(row);
+    }
+    // A `copy` path: remote kept it, local deleted it — but ONLY when local
+    // genuinely deleted a base file. A plain remote-only add (absent from
+    // base) is not a delete-vs-edit; `readBase` returns undefined there and
+    // `rowFor` drops it.
+    for (const c of copies) {
+      const row = await rowFor(c.path, "remote");
+      if (row !== undefined) rows.push(row);
+    }
+    return rows;
+  })();
+}
+
+/**
  * The whole reconciliation report for a sync/publish (GIT-6, GIT-11,
- * GIT-13, GIT-14, GIT-17).
+ * GIT-13, GIT-14, GIT-16, GIT-17).
  *
  * Reads both sides of every conflicting task file — the local workspace
  * and the checked-out branch (`incomingDir`) — and classifies each into
@@ -396,6 +479,15 @@ export async function computeReconcilePlan(input: {
   readonly localDir: string;
   readonly incomingDir: string;
   readonly conflicts: readonly PathPlan[];
+  /**
+   * The file-level `deletes`/`copies` from the same `planSync` output. A
+   * task deleted on one side but edited on the other lands in one of these
+   * (never in `conflicts`, which is both-sides-present), so they are the
+   * input to the delete-vs-edit detection (GIT-16). Omit both to skip the
+   * detection (e.g. a caller that only reports field conflicts).
+   */
+  readonly deletes?: readonly PathPlan[];
+  readonly copies?: readonly PathPlan[];
   readonly config: WorkflowConfig | undefined;
   readonly mode: "publish" | "sync";
   readonly baseCommit: string;
@@ -409,7 +501,7 @@ export async function computeReconcilePlan(input: {
   readonly root?: string;
   readonly basePrefix?: string;
 }): Promise<ReconcilePlan> {
-  const { localDir, incomingDir, conflicts, config, mode, baseCommit, remoteCommit, root, basePrefix = "" } = input;
+  const { localDir, incomingDir, conflicts, deletes = [], copies = [], config, mode, baseCommit, remoteCommit, root, basePrefix = "" } = input;
 
   const readBase = (path: string): Task | undefined => {
     if (root === undefined) return undefined;
@@ -456,11 +548,22 @@ export async function computeReconcilePlan(input: {
     allAuto.push(...autoMerged);
   }
 
+  // GIT-16: a task deleted one side and edited the other lives in the
+  // file-level deletes/copies, never in `conflicts`. Surface each as a
+  // keep-deletion / keep-task row rather than letting the merge win silently.
+  const deleteVsEdit = await detectDeleteVsEdit({
+    deletes, copies,
+    readBase,
+    readLocal: (p) => readTaskFileAt(localDir, p),
+    readIncoming: (p) => readTaskFileAt(incomingDir, p),
+  });
+
   return {
     mode,
     base_commit: baseCommit,
     remote_commit: remoteCommit,
     conflicts: allConflicts,
+    deleteVsEdit,
     autoMerged: allAuto,
   };
 }

@@ -43,3 +43,4 @@ export {
 } from "./reconcile-session.js";
 export type { Disposition, PathPlan, SyncPlan } from "./three-way.js";
 export { LOCAL_OWNED, NEVER_MIRROR, planSync } from "./three-way.js";
+export { DELETE_VS_EDIT_FIELD } from "@loctt/contracts";
