@@ -182,7 +182,7 @@ import {
   restoreBackup,
   type RestoreMode,
   RestoreRefusedError,
-  runDoctor,
+  runDoctorStream,
   saveCalendarConfig,
   saveListViewConfig,
   saveReconcileDecisions,
@@ -1305,8 +1305,50 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleDoctor: RouteHandler = async ({ res }) => {
-    const checks = await runDoctor(root);
-    json(res, checks as DoctorCheckResponse[]);
+    // SET-29: stream each check as it completes rather than sitting on
+    // one spinner and dumping the whole set at once. The transport is
+    // newline-delimited JSON (NDJSON) over a chunked response — one
+    // `DoctorCheckResponse` object per line. NDJSON over SSE because the
+    // panel already speaks `fetch` (it needs `X-Loctt-Client` and the
+    // React Query abort signal, neither of which `EventSource` carries),
+    // and splitting on `\n` is all the client has to add.
+    //
+    // The check *set* is `runDoctorStream`, which `runDoctor` drains for
+    // the CLI/MCP — so this route cannot report a different set of checks
+    // than `loctt doctor` (P10).
+    res.writeHead(200, {
+      "Content-Type": "application/x-ndjson",
+      // Defeat proxy/browser buffering so a check is visible the instant
+      // it is written, which is the entire point of streaming here.
+      "Cache-Control": "no-cache, no-transform",
+      "X-Content-Type-Options": "nosniff",
+    });
+
+    // Bullet 3: a client that navigates away aborts the request; stop
+    // producing so we neither keep scanning a large tracker for a gone
+    // reader nor write to a closed socket.
+    let aborted = false;
+    const onClose = () => { aborted = true; };
+    res.on("close", onClose);
+
+    try {
+      for await (const check of runDoctorStream(root)) {
+        if (aborted || res.writableEnded) break;
+        res.write(JSON.stringify(check as DoctorCheckResponse) + "\n");
+      }
+    } catch (err) {
+      // A failure mid-run: emit a trailing error line so the panel can
+      // tell "the run itself broke" (SET-40) from "every check passed",
+      // rather than a truncated stream that looks like a clean finish.
+      if (!aborted && !res.writableEnded) {
+        res.write(JSON.stringify({
+          error: err instanceof Error ? err.message : "diagnostics failed",
+        }) + "\n");
+      }
+    } finally {
+      res.off("close", onClose);
+      if (!res.writableEnded) res.end();
+    }
   };
 
   const handleListViews: RouteHandler = async ({ res, locttDir }) => {

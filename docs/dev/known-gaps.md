@@ -2807,6 +2807,35 @@ the network — one request to `/api/tasks`, no follow-up.
 
 ## SET-29 diagnostics do not stream — they arrive in one batched response
 
+**RESOLVED 2026-09-16 (decisions.md A182).** Core gained
+`runDoctorStream(root)`, an `async function*` that yields each
+`DiagnosticCheck` as it completes; `runDoctor` now drains it into the
+array it always returned, so the CLI/MCP surfaces are unchanged (P10,
+proven by the CLI + MCP doctor integration tests). `GET /api/doctor`
+streams the checks as newline-delimited JSON (`application/x-ndjson`),
+and `DiagnosticsPanel` renders each check the instant its line arrives
+with a distinct pending "Running" row while the stream is open (bullets
+1 and 2). Bullet 3's abort-on-navigation wiring is kept (the panel still
+uses `fetch` with an `AbortController` cleared on unmount). Verified by
+`packages/core/.../diagnostics.test.ts` (stream≡batch + incremental),
+`apps/web/src/server/server.doctor-stream.test.ts` (NDJSON content-type
++ per-line + first-chunk-before-end), and the DiagnosticsPanel streaming
+tests in `dataPanels.test.tsx`.
+
+**SET-40 caveat (do not read as fully closed).** SET-40's "reports what
+it managed to complete … and marks the rest as not run rather than as
+passed" bullet IS now built and `@verifies`-tagged: a mid-run failure is
+a trailing `{"error":…}` NDJSON line, and the panel keeps the
+already-streamed checks visible (with real states) beneath the failure
+banner. BUT streaming makes SET-40's other wording — "the route returns
+500" — structurally not hold on this route: `writeHead(200)` goes out
+before any check runs, so a post-headers 500 is impossible; a mid-run
+failure is signalled only by the trailing error line (see decisions.md
+A182). The SET-40 CASE WORDING in `flow-settings.md` is intentionally
+left untouched — whether the case should keep the literal 500 phrasing
+is a spec question for Ken. Code/docs do not claim the literal 500
+wording is satisfied via this route.
+
 **Measured 2026-09-04.**
 
 SET-29 bullet 1: "Checks stream in individually as they complete rather

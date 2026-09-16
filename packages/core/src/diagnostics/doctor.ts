@@ -51,23 +51,22 @@ export interface DoctorOptions {
  * the others cannot run in — a tracker this build refuses to open is
  * exactly when someone runs `doctor`.
  */
-async function checkSchemaVersion(
+async function* checkSchemaVersion(
   locttDir: string,
-  checks: DiagnosticCheck[],
-): Promise<void> {
+): AsyncGenerator<DiagnosticCheck> {
   const name = "schema version";
 
   // A migration that died partway is the more urgent problem: the
   // version on disk may be either side of the change.
   if (await isMigrationLocked(locttDir)) {
-    checks.push({
+    yield {
       name,
       status: "error",
       message:
         `an interrupted migration is in progress — `
         + `.loctt/.schema-migration-in-progress records the backup to restore from. `
         + `Do not run other commands until it is resolved`,
-    });
+    };
     return;
   }
 
@@ -75,132 +74,142 @@ async function checkSchemaVersion(
   try {
     onDisk = await readSchemaVersion(locttDir);
   } catch (err) {
-    checks.push({
+    yield {
       name,
       status: "error",
       message: `${(err as Error).message} — expected ${String(CURRENT_SCHEMA_VERSION)}`,
-    });
+    };
     return;
   }
 
   if (onDisk === null) {
     // Distinct from "outdated": there is no version to migrate *from*,
     // so `loctt migrate` is not the answer.
-    checks.push({
+    yield {
       name,
       status: "error",
       message:
         `no .schema-version file — this tracker predates schema versioning `
         + `and must be re-initialized (expected ${String(CURRENT_SCHEMA_VERSION)})`,
-    });
+    };
     return;
   }
 
   if (onDisk > CURRENT_SCHEMA_VERSION) {
-    checks.push({
+    yield {
       name,
       status: "error",
       message:
         `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)} `
         + `— update LocTT rather than migrating down`,
-    });
+    };
     return;
   }
 
   if (onDisk < CURRENT_SCHEMA_VERSION) {
-    checks.push({
+    yield {
       name,
       status: "error",
       message:
         `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)} `
         + `— run loctt migrate`,
-    });
+    };
     return;
   }
 
-  checks.push({ name, status: "ok", message: `${String(onDisk)} (current)` });
+  yield { name, status: "ok", message: `${String(onDisk)} (current)` };
 }
 
-/** Runs diagnostic checks on a .loctt tracker. */
-export async function runDoctor(
+/**
+ * Runs the diagnostic checks on a .loctt tracker, yielding each check
+ * the instant it completes rather than collecting them all first.
+ *
+ * This is the primitive: `runDoctor` is "drain this into an array", so
+ * the CLI and MCP surfaces (which want the whole set) and the web
+ * surface (which streams each check as it lands, SET-29) derive from
+ * one producer and cannot drift in what they check or in what order.
+ *
+ * The check *set* and each check's pass/fail logic are unchanged from
+ * the batched version — only the delivery is incremental.
+ */
+export async function* runDoctorStream(
   root: string,
   options: DoctorOptions = {},
-): Promise<readonly DiagnosticCheck[]> {
-  const checks: DiagnosticCheck[] = [];
+): AsyncGenerator<DiagnosticCheck> {
   const locttDir = resolveLocttDir(root);
 
   // Check .loctt exists
   if (!(await fileExists(locttDir))) {
-    checks.push({ name: ".loctt directory", status: "error", message: "not found — run loctt init" });
-    return checks;
+    yield { name: ".loctt directory", status: "error", message: "not found — run loctt init" };
+    return;
   }
-  checks.push({ name: ".loctt directory", status: "ok", message: "exists" });
+  yield { name: ".loctt directory", status: "ok", message: "exists" };
 
   // Schema version. Doctor is exempt from the boot guard precisely so it
   // can report this: every other command refuses to run on a mismatch,
   // and the guard's message is all the user would otherwise see.
-  await checkSchemaVersion(locttDir, checks);
+  yield* checkSchemaVersion(locttDir);
 
   // Check config directory
   if (!(await fileExists(getConfigDir(locttDir)))) {
-    checks.push({ name: "config directory", status: "error", message: "missing .loctt/config/" });
+    yield { name: "config directory", status: "error", message: "missing .loctt/config/" };
   } else {
-    checks.push({ name: "config directory", status: "ok", message: "exists" });
+    yield { name: "config directory", status: "ok", message: "exists" };
   }
 
   // Check tasks directory
   if (!(await fileExists(getTasksDir(locttDir)))) {
-    checks.push({ name: "tasks directory", status: "warn", message: "missing .loctt/tasks/ — will be created on first task" });
+    yield { name: "tasks directory", status: "warn", message: "missing .loctt/tasks/ — will be created on first task" };
   } else {
-    checks.push({ name: "tasks directory", status: "ok", message: "exists" });
+    yield { name: "tasks directory", status: "ok", message: "exists" };
   }
 
   // Check workflow.yaml
   let workflowConfig: Awaited<ReturnType<typeof loadWorkflowConfig>> | undefined;
   const workflowPath = getWorkflowConfigPath(locttDir);
   if (!(await fileExists(workflowPath))) {
-    checks.push({ name: "workflow.yaml", status: "error", message: "missing" });
+    yield { name: "workflow.yaml", status: "error", message: "missing" };
   } else {
     try {
       workflowConfig = await loadWorkflowConfig(locttDir);
       const errors = validateWorkflowConfig(workflowConfig);
       if (errors.length > 0) {
-        checks.push({
+        yield {
           name: "workflow.yaml",
           status: "warn",
           message: `${errors.length} validation issue(s): ${errors.map(e => e.message).join("; ")}`,
-        });
+        };
       } else {
-        checks.push({ name: "workflow.yaml", status: "ok", message: "valid" });
+        yield { name: "workflow.yaml", status: "ok", message: "valid" };
       }
     } catch (err) {
-      checks.push({ name: "workflow.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+      yield { name: "workflow.yaml", status: "error", message: `parse error: ${(err as Error).message}` };
     }
   }
 
   // Check queries.yaml
   const queriesPath = getQueriesConfigPath(locttDir);
   if (!(await fileExists(queriesPath))) {
-    checks.push({ name: "queries.yaml", status: "warn", message: "missing — saved views unavailable" });
+    yield ({ name: "queries.yaml", status: "warn", message: "missing — saved views unavailable" });
   } else {
     try {
       await loadQueriesConfig(locttDir);
-      checks.push({ name: "queries.yaml", status: "ok", message: "valid" });
+      yield ({ name: "queries.yaml", status: "ok", message: "valid" });
     } catch (err) {
-      checks.push({ name: "queries.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+      yield ({ name: "queries.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
     }
   }
 
   // Check state.yaml
   const statePath = getStateFilePath(locttDir);
   if (!(await fileExists(statePath))) {
-    checks.push({ name: "state.yaml", status: "error", message: "missing" });
+    yield ({ name: "state.yaml", status: "error", message: "missing" });
   } else {
     try {
       await loadState(locttDir);
-      checks.push({ name: "state.yaml", status: "ok", message: "valid" });
+      yield ({ name: "state.yaml", status: "ok", message: "valid" });
     } catch (err) {
-      checks.push({ name: "state.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+      yield ({ name: "state.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
     }
   }
 
@@ -209,17 +218,17 @@ export async function runDoctor(
   const projectsPath = getProjectsConfigPath(locttDir);
   let projectsConfig: Awaited<ReturnType<typeof loadProjectsConfig>> | undefined;
   if (!(await fileExists(projectsPath))) {
-    checks.push({ name: "projects.yaml", status: "error", message: "missing" });
+    yield ({ name: "projects.yaml", status: "error", message: "missing" });
   } else {
     try {
       projectsConfig = await loadProjectsConfig(locttDir);
-      checks.push({
+      yield ({
         name: "projects.yaml",
         status: "ok",
         message: `${projectsConfig.projects.length} project(s)`,
       });
     } catch (err) {
-      checks.push({ name: "projects.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+      yield ({ name: "projects.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
     }
   }
 
@@ -229,9 +238,9 @@ export async function runDoctor(
   if (await fileExists(getLabelsConfigPath(locttDir))) {
     try {
       labelsConfig = await loadLabelsConfig(locttDir);
-      checks.push({ name: "labels.yaml", status: "ok", message: `${labelsConfig.labels.length} label(s)` });
+      yield ({ name: "labels.yaml", status: "ok", message: `${labelsConfig.labels.length} label(s)` });
     } catch (err) {
-      checks.push({ name: "labels.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+      yield ({ name: "labels.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
     }
   }
 
@@ -239,13 +248,13 @@ export async function runDoctor(
   if (await fileExists(getMilestonesConfigPath(locttDir))) {
     try {
       milestonesConfig = await loadMilestonesConfig(locttDir);
-      checks.push({
+      yield ({
         name: "milestones.yaml",
         status: "ok",
         message: `${milestonesConfig.milestones.length} milestone(s)`,
       });
     } catch (err) {
-      checks.push({ name: "milestones.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+      yield ({ name: "milestones.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
     }
   }
 
@@ -253,22 +262,22 @@ export async function runDoctor(
   if (await fileExists(getSprintsConfigPath(locttDir))) {
     try {
       sprintsConfig = await loadSprintsConfig(locttDir);
-      checks.push({
+      yield ({
         name: "sprints.yaml",
         status: "ok",
         message: `${sprintsConfig.sprints.length} sprint(s)`,
       });
     } catch (err) {
-      checks.push({ name: "sprints.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+      yield ({ name: "sprints.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
     }
   }
 
   if (await fileExists(getCalendarConfigPath(locttDir))) {
     try {
       await loadCalendarConfig(locttDir);
-      checks.push({ name: "calendar.yaml", status: "ok", message: "valid" });
+      yield ({ name: "calendar.yaml", status: "ok", message: "valid" });
     } catch (err) {
-      checks.push({ name: "calendar.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+      yield ({ name: "calendar.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
     }
   }
 
@@ -284,7 +293,7 @@ export async function runDoctor(
         ...(lv.filters?.visible ?? []),
         ...(lv.filters?.hidden ?? []),
       ];
-      checks.push({
+      yield ({
         name: "list-view.yaml",
         status: "ok",
         message: `${entries.length} chip entry/entries`,
@@ -298,7 +307,7 @@ export async function runDoctor(
         if (dangling.length > 0) {
           const sample = dangling.slice(0, 3).join(", ");
           const more = dangling.length > 3 ? ` (+${dangling.length - 3} more)` : "";
-          checks.push({
+          yield ({
             name: "list-view.yaml references",
             status: "warn",
             message: `${dangling.length} entry/entries refer to unknown fields: ${sample}${more}`,
@@ -306,7 +315,7 @@ export async function runDoctor(
         }
       }
     } catch (err) {
-      checks.push({ name: "list-view.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
+      yield ({ name: "list-view.yaml", status: "error", message: `parse error: ${(err as Error).message}` });
     }
   }
 
@@ -314,13 +323,13 @@ export async function runDoctor(
   if (await fileExists(getUsersDir(locttDir))) {
     try {
       const users = await loadAllUsers(locttDir);
-      checks.push({
+      yield ({
         name: "users/",
         status: "ok",
         message: `${users.length} user(s)`,
       });
     } catch (err) {
-      checks.push({ name: "users/", status: "error", message: `load error: ${(err as Error).message}` });
+      yield ({ name: "users/", status: "error", message: `load error: ${(err as Error).message}` });
     }
   }
 
@@ -330,7 +339,7 @@ export async function runDoctor(
     try {
       const relErrors = await validateRelationships(locttDir, workflowConfig);
       if (relErrors.length > 0) {
-        checks.push({
+        yield ({
           name: "relationships",
           status: "warn",
           message: `${relErrors.length} issue(s) found`,
@@ -378,7 +387,7 @@ export async function runDoctor(
         }
       }
       if (driftCount > 0) {
-        checks.push({
+        yield ({
           name: "workflow drift",
           status: "error",
           message:
@@ -387,13 +396,13 @@ export async function runDoctor(
         });
       }
       if (danglingCount > 0) {
-        checks.push({
+        yield ({
           name: "task references",
           status: "warn",
           message: `${danglingCount} dangling reference(s); e.g. ${samples.join("; ")}`,
         });
       } else if (relErrors.length === 0) {
-        checks.push({
+        yield ({
           name: "tasks",
           status: "ok",
           message: `${tasks.length} task(s) found, references valid`,
@@ -414,7 +423,7 @@ export async function runDoctor(
           .map(c => `${c.relationshipKey}: ${byKeyToString(c.path)}`)
           .join("; ");
         const more = cycles.length > 2 ? ` (+${cycles.length - 2} more)` : "";
-        checks.push({
+        yield ({
           name: "relationship cycles",
           status: "warn",
           message: `${cycles.length} cycle(s) found: ${sample}${more}`,
@@ -435,7 +444,7 @@ export async function runDoctor(
   try {
     const pending = await readPrefixRenameState(locttDir);
     if (pending) {
-      checks.push({
+      yield ({
         name: "prefix rename",
         status: "warn",
         message:
@@ -445,7 +454,7 @@ export async function runDoctor(
       });
     }
   } catch (err) {
-    checks.push({
+    yield ({
       name: "prefix rename",
       status: "error",
       message: `unreadable sentinel: ${(err as Error).message}`,
@@ -460,7 +469,7 @@ export async function runDoctor(
   try {
     const pending = await readReconcileState(locttDir);
     if (pending) {
-      checks.push({
+      yield ({
         name: "reconciliation",
         status: "error",
         message:
@@ -472,7 +481,7 @@ export async function runDoctor(
       });
     }
   } catch (err) {
-    checks.push({
+    yield ({
       name: "reconciliation",
       status: "error",
       message: `unreadable reconcile sentinel: ${(err as Error).message}`,
@@ -485,7 +494,7 @@ export async function runDoctor(
     try {
       const index = await loadKeyIndex(locttDir);
       if (!index) {
-        checks.push({
+        yield ({
           name: "key index",
           status: "warn",
           message: "no index on disk — will rebuild on next lookup",
@@ -522,13 +531,13 @@ export async function runDoctor(
           if (orphanIds.length > 0) {
             parts.push(`${orphanIds.length} task dir(s) not in index`);
           }
-          checks.push({
+          yield ({
             name: "key index",
             status: "warn",
             message: `${parts.join("; ")} — run \`loctt doctor --rebuild-index\` to repair`,
           });
         } else {
-          checks.push({
+          yield ({
             name: "key index",
             status: "ok",
             message: `${Object.keys(index.entries).length} entry/entries, in sync`,
@@ -536,7 +545,7 @@ export async function runDoctor(
         }
       }
     } catch (err) {
-      checks.push({
+      yield ({
         name: "key index",
         status: "error",
         message: `check failed: ${(err as Error).message}`,
@@ -550,14 +559,14 @@ export async function runDoctor(
   try {
     const findings = await checkDataIntegrity(locttDir);
     if (findings.length === 0) {
-      checks.push({
+      yield ({
         name: "data integrity",
         status: "ok",
         message: "no unreadable files or malformed entries found",
       });
     } else {
       for (const f of findings) {
-        checks.push({
+        yield ({
           name: "data integrity",
           // A malformed entry is a *warning*: the data is intact and
           // preserved, and the tracker works. Only a file we cannot
@@ -568,7 +577,7 @@ export async function runDoctor(
       }
     }
   } catch (err) {
-    checks.push({
+    yield ({
       name: "data integrity",
       status: "error",
       message: `check failed: ${(err as Error).message}`,
@@ -578,19 +587,36 @@ export async function runDoctor(
   if (options.rebuildIndex) {
     try {
       const rebuilt = await rebuildKeyIndex(locttDir);
-      checks.push({
+      yield ({
         name: "key index rebuild",
         status: "ok",
         message: `rebuilt with ${Object.keys(rebuilt.entries).length} entry/entries`,
       });
     } catch (err) {
-      checks.push({
+      yield ({
         name: "key index rebuild",
         status: "error",
         message: `failed: ${(err as Error).message}`,
       });
     }
   }
+}
 
+/**
+ * Runs diagnostic checks on a .loctt tracker and returns them all.
+ *
+ * Kept as the surface for callers that want the complete set — the CLI
+ * `doctor` command and the MCP doctor tool — by draining
+ * {@link runDoctorStream}. The signature and result are unchanged from
+ * before streaming existed, so those surfaces stay identical (P10).
+ */
+export async function runDoctor(
+  root: string,
+  options: DoctorOptions = {},
+): Promise<readonly DiagnosticCheck[]> {
+  const checks: DiagnosticCheck[] = [];
+  for await (const check of runDoctorStream(root, options)) {
+    checks.push(check);
+  }
   return checks;
 }

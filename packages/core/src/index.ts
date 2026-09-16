@@ -127,7 +127,7 @@ export type { SchemaStatus, TrackerInfo } from "./diagnostics/index.js";
 export type { CheckStatus,DiagnosticCheck } from "./diagnostics/index.js";
 export type { IntegrityFinding, IntegritySeverity } from "./diagnostics/index.js";
 export { computeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
-export { blockingFindings, checkDataIntegrity, runDoctor } from "./diagnostics/index.js";
+export { blockingFindings, checkDataIntegrity, runDoctor, runDoctorStream } from "./diagnostics/index.js";
 export type { LocttErrorOptions } from "./errors.js";
 export { errorEnvelope, LocttError } from "./errors.js";
 export type { FetchResult, GitStatusResult, PreflightReport, PushResult } from "./git/index.js";
