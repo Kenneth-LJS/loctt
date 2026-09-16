@@ -11553,6 +11553,37 @@ change — that idea is dropped (it conflated discarded with archived).
 
 **This is Ken's, not an agent's — not revertible by an agent.**
 
+### K91 · Custom fields scope to task types via an optional allowlist; out-of-scope stored values are kept and shown read-only (TSK-12)
+
+**The situation.** TSK-12's fourth bullet asks that custom fields "scoped
+to a task type appear only for tasks of that type, and changing the type
+updates the visible field set without a reload." `CustomFieldDef` has no
+scope today; the first three bullets (control-per-type, multi, `fields:`
+storage) are already built.
+
+**Ruling (Ken, 2026-09-16).**
+- **Scope shape:** add an **optional** `task_types?: string[]` allowlist to
+  `CustomFieldDef`. A field with the list set appears only for those task
+  types; a field with **no list appears for all types** (so every existing
+  field stays global — backward-compatible, no migration).
+- **Out-of-scope stored value:** when a task has a value in a field not in
+  scope for its current type (a formerly-global field, or the task's type
+  changed after the value was set), the value is **kept on disk and shown
+  read-only** with an "out of scope for this type" note and a clear
+  action — **never silently hidden**, because a value the user cannot see
+  but that is still written is a trap. **No automatic disk write on type
+  change** — changing a task's type does not delete or rewrite an
+  out-of-scope value.
+
+**Scope.** `CustomFieldDefSchema` (contract) + core validation (a value is
+still valid to *store* regardless of scope; scope is a display concern),
+MetaPanel (task detail: filter the editable set by the task's type, react
+to a type change without reload, render out-of-scope-with-value read-only)
+and the create modal (offer only the in-scope fields for the chosen type).
+Owes the schema-reference doc. Cases + `@verifies` tests.
+
+**This is Ken's, not an agent's — not revertible by an agent.**
+
 ### A-K88 · A80/K88 built — prefix stored bare, dash inserted at render
 
 **Built (agent-level) implementing K88.** Prefix is stored bare uppercase
