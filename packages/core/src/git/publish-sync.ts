@@ -594,13 +594,22 @@ export function remoteExists(root: string, remote: string): boolean {
 export interface PushResult {
   readonly pushed: boolean;
   readonly skipped?: "no-remote" | "disabled" | "no-remote-configured";
+  /** Human-facing cause, kept for callers that only print a string. */
   readonly error?: string;
+  /**
+   * The classified failure (GIT-29). Present whenever `error` is, so a
+   * surface can branch on the cause (auth vs non-fast-forward vs
+   * unreachable) rather than pattern-matching the string.
+   */
+  readonly failure?: GitRemoteFailure;
 }
 
 export interface FetchResult {
   readonly fetched: boolean;
   readonly skipped?: "no-remote" | "disabled" | "no-remote-configured";
   readonly error?: string;
+  /** The classified failure (GIT-30). Present whenever `error` is. */
+  readonly failure?: GitRemoteFailure;
 }
 
 /**
@@ -667,6 +676,96 @@ export function classifyAuthError(stderr: string): string | undefined {
     return "authentication failed";
   }
   return undefined;
+}
+
+/**
+ * The classes of remote push/fetch failure a surface must tell apart
+ * (GIT-29, GIT-30). A bare stderr string cannot be branched on: an auth
+ * failure and a non-fast-forward rejection need opposite next actions
+ * (fix credentials vs. Sync first), and a network-down failure needs the
+ * remote named and Retry offered without entering a permanent error
+ * state. `other` is the honest fallback — a real cause we do not
+ * (yet) recognise, carried verbatim rather than mislabelled.
+ */
+export type GitRemoteFailureKind =
+  | "auth"
+  | "non_fast_forward"
+  | "unreachable"
+  | "other";
+
+/**
+ * A classified remote failure. `message` is the human-facing cause (the
+ * auth-classified string, or the extracted git failure); `remote` is the
+ * configured remote name so every surface can name it (GIT-30) without
+ * re-plumbing it. Rides inside the *success* result of publish/sync —
+ * the local commit/local state is safe, so this is a partial success,
+ * not a thrown error (GIT-29/30: "local state was not modified").
+ */
+export interface GitRemoteFailure {
+  readonly kind: GitRemoteFailureKind;
+  /**
+   * A one-line, class-level summary the surface phrases the remedy
+   * around ("the remote has moved on…"). Distinct from {@link detail},
+   * which keeps git's specific cause (GIT-C4: name the cause, not a
+   * generic label). `message` is kept as an alias of `detail` for
+   * callers that only print one string.
+   */
+  readonly summary: string;
+  /** Git's specific cause — the auth-classified string or extracted stderr. */
+  readonly detail: string;
+  /** Alias of {@link detail}; the string a bare printer shows. */
+  readonly message: string;
+  readonly remote: string;
+}
+
+/**
+ * Classifies a push/fetch stderr into {@link GitRemoteFailureKind}.
+ *
+ * Order matters: auth is checked first (it can co-occur with a generic
+ * "could not read from remote repository" tail that would otherwise read
+ * as unreachable), then non-fast-forward (a rejection git states
+ * explicitly), then unreachable (host/network), then `other`.
+ *
+ * Every branch keeps git's specific cause in `detail`/`message` — the
+ * class label goes in `summary`, so a surface can say both "could not be
+ * reached" AND "does not appear to be a git repository" (GIT-C4).
+ */
+export function classifyRemoteFailure(
+  stderr: string,
+  remote: string,
+): GitRemoteFailure {
+  const make = (kind: GitRemoteFailureKind, summary: string, detail: string): GitRemoteFailure =>
+    ({ kind, summary, detail, message: detail, remote });
+
+  const auth = classifyAuthError(stderr);
+  if (auth !== undefined) {
+    return make("auth", "authentication was rejected by the remote", auth);
+  }
+  // Non-fast-forward: git rejects the push because the branch moved.
+  // "[rejected] ... (non-fast-forward)" / "(fetch first)" and the
+  // "Updates were rejected because the remote contains work" hint are
+  // the stable markers across git versions.
+  if (
+    /\bnon-fast-forward\b/i.test(stderr) ||
+    /\(fetch first\)/i.test(stderr) ||
+    /Updates were rejected because/i.test(stderr) ||
+    /\[rejected\][^\n]*\(fetch first\)/i.test(stderr)
+  ) {
+    return make("non_fast_forward", "the remote has moved on since your last sync", extractGitFailure(stderr));
+  }
+  // Unreachable: DNS, network, or the remote path/URL does not exist.
+  if (
+    /Could not resolve host/i.test(stderr) ||
+    /Could not read from remote repository/i.test(stderr) ||
+    /unable to access/i.test(stderr) ||
+    /Connection (?:refused|timed out)/i.test(stderr) ||
+    /does not appear to be a git repository/i.test(stderr) ||
+    /repository .* not found/i.test(stderr) ||
+    /and the repository exists/i.test(stderr)
+  ) {
+    return make("unreachable", "the remote could not be reached", extractGitFailure(stderr));
+  }
+  return make("other", "the push was rejected", extractGitFailure(stderr));
 }
 
 /**
@@ -798,14 +897,13 @@ export function pushLocttBranch(
     return { pushed: true };
   }
   const stderr = (result.stderr ?? "").toString();
-  const auth = classifyAuthError(stderr);
   // Git's failures are multi-line and the *last* line is often the tail
   // of a sentence: "repository not found" ends with "and the repository
-  // exists.", which on its own explains nothing. Keep the lines that
-  // carry the cause — git prefixes those with "fatal:" or "error:" —
-  // and fall back to the whole thing rather than a fragment of it.
-  const reason = auth ?? extractGitFailure(stderr);
-  return { pushed: false, error: reason };
+  // exists.", which on its own explains nothing. `classifyRemoteFailure`
+  // keeps the cause-bearing lines and tags the class so a surface can
+  // tell auth from non-fast-forward from unreachable (GIT-29).
+  const failure = classifyRemoteFailure(stderr, remote);
+  return { pushed: false, error: failure.message, failure };
 }
 
 /**
@@ -833,9 +931,11 @@ export function fetchLocttBranch(
     return { fetched: true };
   }
   const stderr = (result.stderr ?? "").toString();
-  const auth = classifyAuthError(stderr);
-  const reason = auth ?? (stderr.trim().split(/\r?\n/).pop() ?? "git fetch failed");
-  return { fetched: false, error: reason };
+  // Classify the fetch failure so sync can name the remote and tell
+  // "could not be reached" from "nothing to sync" (GIT-30), rather than
+  // surfacing a truncated git-stderr fragment.
+  const failure = classifyRemoteFailure(stderr, remote);
+  return { fetched: false, error: failure.message, failure };
 }
 
 /**
@@ -1021,7 +1121,14 @@ export async function publish(
    * should now be committed onto the branch tip.
    */
   opts?: { readonly afterReconcile?: boolean },
-): Promise<{ committed: boolean; branch: string; pushed?: boolean; pushError?: string }> {
+): Promise<{
+  committed: boolean;
+  branch: string;
+  pushed?: boolean;
+  pushError?: string;
+  /** Classified push failure (GIT-29) — present iff `pushError` is. */
+  pushFailure?: GitRemoteFailure;
+}> {
   // GIT-31: a reconciliation in progress blocks publish outright — the
   // block names it and nothing is pushed.
   if (opts?.afterReconcile !== true) {
@@ -1099,6 +1206,7 @@ export async function publish(
     branch,
     pushed: false,
     ...(pushResult.error !== undefined ? { pushError: pushResult.error } : {}),
+    ...(pushResult.failure !== undefined ? { pushFailure: pushResult.failure } : {}),
   };
 }
 
@@ -1364,7 +1472,7 @@ export async function pullFromLocttBranch(
 export async function sync(
   locttDir: string,
   root: string,
-): Promise<SyncOutcome & { fetched?: boolean; fetchError?: string }> {
+): Promise<SyncOutcome & { fetched?: boolean; fetchError?: string; fetchFailure?: GitRemoteFailure }> {
   const syncState = await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
     throw new GitSyncError("Git-backed mode is not enabled");
@@ -1372,6 +1480,7 @@ export async function sync(
 
   let fetched: boolean | undefined;
   let fetchError: string | undefined;
+  let fetchFailure: GitRemoteFailure | undefined;
 
   if (syncState.git.auto_fetch && syncState.git.remote && remoteExists(root, syncState.git.remote)) {
     const r = fetchLocttBranch(root, {
@@ -1383,6 +1492,7 @@ export async function sync(
     } else if (r.error) {
       fetched = false;
       fetchError = r.error;
+      fetchFailure = r.failure;
       const remote = syncState.git.remote;
       const branch = syncState.git.branch;
       process.stderr.write(
@@ -1396,5 +1506,6 @@ export async function sync(
     ...result,
     ...(fetched !== undefined ? { fetched } : {}),
     ...(fetchError ? { fetchError } : {}),
+    ...(fetchFailure ? { fetchFailure } : {}),
   };
 }

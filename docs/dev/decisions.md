@@ -12786,3 +12786,42 @@ warnings only); core builderTree/buildDsl/dslToSearch tests green;
 QueryBuilder/FilterBar/AdvancedQueryEditor units green; full
 `flow-list.spec.ts` incl. the SHL a11y bits (see report). Not committed —
 left in the working tree for the coordinator to commit.
+
+### A188 · Git-sync backlog line is stale — the engine exists; residual is 7 scoped features, split safe-vs-escalate
+
+**Context.** TEMP-TODO listed "the git-sync engine" (GIT-8,9,16,19,21,22,23,25,29,30,33,34,35,36 + git-sync UI cases) as the last buildable item, described as "no engine exists — a build." A read-only Plan-agent audit (2026-09-16) plus direct source spot-checks found that framing **stale**: a per-field reconciliation engine was built 2026-09-04 (commit e99bfec, decisions A121, which **superseded A68**, the "ship the panel, report the rest" ruling that the TEMP-TODO line was written against and never updated). The engine is wired into all three surfaces and tested.
+
+**Verified against source (not just the agent's claim):**
+- `computeReconcilePlan`/`computeTaskConflicts` called at `publish-sync.ts:968,1213` — engine is wired, NOT dormant.
+- `git merge-base --is-ancestor` absent anywhere in `packages/core/src/git/` — GIT-21 force-push detection genuinely UNBUILT.
+- Push has no `--force` (`publish-sync.ts` push path) — LocTT can never *originate* a history rewrite (load-bearing safety guard, do not touch).
+
+**What actually remains** (each already declined-with-reasoning in known-gaps.md, not "an engine"): GIT-8/9/33 rekey preview+confirm, GIT-16 delete-vs-edit row, GIT-19 rekey-affects-open-tab, GIT-21 force-push detection, GIT-22 fstype enable-warning, GIT-23 progress channel, GIT-25 adopt-branch prompt, GIT-29/30 push/fetch error classification, GIT-34/35/36 named-error reporting.
+
+**Decision — split along the user's "extremely devastating" line:**
+- **Safe, implementer-decidable (build autonomously):** GIT-29/30 error classification, GIT-23 progress channel, GIT-22 fstype warning, GIT-34/36 named errors, GIT-19 open-tab UI — all surfacing/quality work over already-safe behavior. Plus a docs-only pass correcting three stale artifacts (TEMP-TODO line, both flow-git-sync.md banners, GitSyncPanel.tsx header comment) and lifting the ~24 already-built GIT-* cases into ui-test-cases/flow-git-sync.md.
+- **HELD for Ken (escalated, see § below):** GIT-21 force-push handling (live data-loss hazard: no ancestry check today means a remote rewrite can take incoming over local edits whose base is gone; the recovery action touches `last_synced_commit`), GIT-8 rekey confirm semantics (reissues a key — P-7 territory; confirm-everywhere vs UI-only-auto-and-report is a product call), GIT-35 newer-schema refusal (migration-adjacent posture).
+
+**To revert.** This is a finding + a work-split, not a code change. Nothing to revert; superseded if a later ground-truth pass contradicts the audit (re-verify the three source checks above).
+
+### A189 · GIT-29/30 push/fetch error classification — enrich the partial success, do NOT throw a 4xx
+
+**Ticket:** GIT-29 + GIT-30 (A188's safe/implementer-decidable split) · **Date:** 2026-09-16 · **Commit:** uncommitted (working tree).
+
+**Situation.** GIT-29 (a push rejected: auth vs non-fast-forward, indistinguishable) and GIT-30 (a sync against an unreachable remote renders a bare success). The motivating task brief directed making core's push/sync *throw* typed errors mapped to 4xx (unreachable/non-ff/auth → NOT 200), extending `gitErrorResponse`.
+
+**What to decide.** Whether push/fetch failure should become a thrown 4xx error (task-brief shape) or stay a partial success (200) with richer, typed classification.
+
+**Options.**
+- (a) **Throw → 4xx** (as the brief said). Cost: discards the load-bearing fact that the *local commit succeeded* / *local state is untouched*; inverts two green core tests (`push-fetch.test.ts` "does not throw…") that assert the deliberate, documented "Never throws — returns a result" contract; and **contradicts the case specification** — GIT-30 bullet 3 ("does not enter a permanent error state that requires a reload") and GIT-29 bullet 2 ("the message states the local state was not modified by the failed push"). A 4xx error branch with retry-only is exactly what GIT-30 says not to do.
+- (b) **Enrich the partial success** (chosen). Classify the stderr in core (`classifyRemoteFailure` → `GitRemoteFailure {kind, summary, detail, message, remote}`), ride it in the success body as `pushFailure`/`fetchFailure`, and have each surface (panel, CLI, MCP) name the remote, state local-untouched, distinguish auth/non-ff/unreachable, and offer Retry (plus Sync-first for non-ff). This is **option (b) verbatim from known-gaps.md's GIT-30 "To close"**, and it is what both GIT-29 and GIT-30's own bullets require.
+
+**Decided.** (b). The case doc is the specification (build-loop.md: "Never reword a case to fit the code"); the brief's prose is not. When the brief and the case conflict on shape, the case governs. Recorded the divergence-from-brief prominently rather than halting the whole run, because known-gaps had already pre-authorized (b) as a valid close and there was a single clearly-correct option.
+
+**Why not throw.** A push that fails after the local commit landed is a *partial success*, not a failure — throwing loses that, and the whole point of the existing warning ("the commit is safe locally") is that the user must not redo safe work. `last_synced_commit` advances on the *commit*, not the push, so it is already correct on a failed push; the cases confirm it must not reset.
+
+**Scope note (non-ff is defensively unreachable end-to-end).** `detectPublishReconcile` fetches the remote and intercepts any remote movement (throwing `GitSyncFirstError`/`GitReconcileNeededError`) *before* the push, so a genuine non-fast-forward rejection at the push only happens in a fetch→push race. The classification is therefore defensive; it is proven at the **core** level (`push-fetch.test.ts` drives a genuinely-behind local ref) and the **panel-text** level (`GitSyncPanel.test.tsx` `publishFailureLine`), not via a Playwright end-to-end (which cannot deterministically arrange the race). The UI Playwright specs cover the reachable unreachable-remote path for both publish and sync.
+
+**Files.** core `git/publish-sync.ts` (classifier + `PushResult.failure`/`FetchResult.failure` + `publish`/`sync` return `pushFailure`/`fetchFailure`), `git/index.ts` + top-level `index.ts` (exports); `apps/web` client `useGit.ts` (wire type), `GitSyncPanel.tsx` (`publishFailureLine`/`fetchFailureClause` + Retry/Sync-first affordances); `apps/cli/commands/git.ts`; `apps/mcp/tools/git.ts`; docs (CLI + MCP reference); cases tagged in `ui-test-cases/flow-git-sync.md` (GIT-29/30) via tests.
+
+**To revert.** Drop `pushFailure`/`fetchFailure` from the `publish`/`sync` return shapes and `PushResult`/`FetchResult`, delete `classifyRemoteFailure` + `GitRemoteFailure`, restore the two push/fetch functions to `error: auth ?? extractGitFailure(...)`, revert the four surface diffs (panel helpers + affordances, CLI/MCP branches, client type), and un-tag the GIT-29/30 tests. No on-disk format change, so no migration. The behavior returns to the pre-existing "warning string in a 200 body," which the cases consider incomplete.

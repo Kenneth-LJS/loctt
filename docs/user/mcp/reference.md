@@ -1207,13 +1207,13 @@ No parameters. Returns JSON `{enabled, branch, remote, remote_configured, auto_p
 
 Commits the current task state to the local `loctt` branch and (if `remote` and `auto_push` are set) pushes to the remote. Only call when the user has indicated they want to share or sync — not speculatively after routine edits. No parameters.
 
-Output is prose: which of `Published local state to <branch> branch` / `No changes to publish`, and whether the push succeeded or `Published locally; remote push failed: <reason>`. The branch is named from config — it is not always `loctt`.
+Output is prose: which of `Published local state to <branch> branch` / `No changes to publish`, and whether the push succeeded. When the local commit lands but the push does not, the push failure is classified so the next action is clear (the local commit is safe in every case): a non-fast-forward rejection says the remote has moved on and recommends `sync_from_git` first; an authentication failure names credentials; an unreachable remote names it and says to retry. Each still carries git's specific cause. The branch is named from config — it is not always `loctt`.
 
 ### `sync_from_git`
 
 Pulls the `loctt` branch state into the local workspace. If a remote is configured and `auto_fetch` is set, fetches first. No parameters.
 
-Output is prose: fetch result (or `Remote fetch failed: <reason>`), then either `Synced loctt branch into local workspace` or `Already up to date`.
+Output is prose: fetch result, then either `Synced loctt branch into local workspace` or `Already up to date`. When the fetch fails, the remote is named and the failure is classified (e.g. could not be reached), with git's specific cause — local state is untouched and the sync continues against the local copy of the branch.
 
 When both sides changed the same task fields since the last sync, `publish_to_git` / `sync_from_git` do not pick a winner: they open a reconciliation and return the conflicts (task, field, both values, and a drift note when a value references config missing locally), stating nothing was written. Resolution is web-UI-primary — tell the user to resolve it in Settings → Sync; the operation completes after they Apply.
 
