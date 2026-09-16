@@ -1,6 +1,5 @@
 import type {
   CalendarConfig,
-  CustomFieldDef,
   LabelDef,
   MilestoneDef,
   SprintDef,
@@ -157,10 +156,13 @@ export function MetaPanel({
 
   // TSK-12's fourth bullet: fields scoped to a task type appear only
   // for that type, and changing the type updates the set without a
-  // reload — which it does for free, because the visible set is
-  // derived from `fm.task_type` on every render and the optimistic
-  // type change updates that immediately.
-  const customDefs = scopedCustomFields(workflow?.custom_fields ?? [], fm.task_type);
+  // reload — which it does for free, because `customFieldRows` derives
+  // the visible set from `fm.task_type` on every render, and the
+  // optimistic type change updates that immediately (no refetch). The
+  // full declared set is passed through; the scope filter (and the
+  // out-of-scope-with-value read-only rendering) lives in
+  // `customFieldRows`.
+  const allCustomDefs = workflow?.custom_fields ?? [];
 
   const estimate = estimateControl(workflow, fm.estimate, onSet, onUnset);
 
@@ -378,7 +380,8 @@ export function MetaPanel({
         )}
 
         {customFieldRows({
-          defs: customDefs,
+          defs: allCustomDefs,
+          taskType: fm.task_type,
           values: fm.fields ?? {},
           onSet,
           onUnset,
@@ -532,27 +535,6 @@ function estimateControl(
       onClear={() => { onUnset("estimate"); }}
     />
   );
-}
-
-/**
- * Custom fields visible for a task of this type.
- *
- * **`CustomFieldDef` carries no type scope today.** TSK-12's fourth
- * bullet describes fields "scoped to a task type", and the schema
- * (`packages/contracts/src/workflow.ts`) has `key`, `label`, `type`,
- * `multi`, `searchable` and `values` — no `task_types`. So every
- * declared field applies to every task, and this function is the seam
- * where scoping would land rather than a scoping implementation.
- *
- * Adding the field to the contract is a schema change with CLI, MCP
- * and settings-UI consequences, which is outside this ticket. The
- * bullet is reported unmet rather than faked.
- */
-function scopedCustomFields(
-  defs: readonly CustomFieldDef[],
-  _taskType: string | undefined,
-): readonly CustomFieldDef[] {
-  return defs;
 }
 
 /**

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import type { CustomFieldDef } from "./workflow.js";
 import {
   BoardsConfigSchema,
   CustomFieldDefSchema,
+  customFieldInScope,
+  customFieldsForType,
   defaultStatus,
   EstimationConfigSchema,
   IconStringSchema,
@@ -301,6 +304,75 @@ describe("CustomFieldDef enum values", () => {
     for (const type of ["string", "number", "date", "boolean"]) {
       expect(CustomFieldDefSchema.safeParse({ ...base, type }).success).toBe(true);
     }
+  });
+});
+
+// @verifies TSK-12
+describe("CustomFieldDef task_types scope allowlist (TSK-12 / K91)", () => {
+  const base = { key: "component", label: "Component", type: "string", multi: false, searchable: false };
+
+  it("parses a field that declares a task_types allowlist", () => {
+    const r = CustomFieldDefSchema.safeParse({ ...base, task_types: ["defect", "chore"] });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.task_types).toEqual(["defect", "chore"]);
+  });
+
+  it("parses a field with task_types absent — the global, backward-compatible default", () => {
+    const r = CustomFieldDefSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.task_types).toBeUndefined();
+  });
+
+  it("accepts an empty task_types array (a valid allowlist that admits no type)", () => {
+    const r = CustomFieldDefSchema.safeParse({ ...base, task_types: [] });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects a non-string entry in task_types", () => {
+    const r = CustomFieldDefSchema.safeParse({ ...base, task_types: [123] });
+    expect(r.success).toBe(false);
+  });
+
+  it("still rejects unknown keys — .strict() is intact with task_types added", () => {
+    const r = CustomFieldDefSchema.safeParse({ ...base, task_types: ["defect"], nope: true });
+    expect(r.success).toBe(false);
+  });
+});
+
+// @verifies TSK-12
+describe("customFieldInScope / customFieldsForType (TSK-12 / K91)", () => {
+  const scoped: CustomFieldDef = { key: "sev", label: "Severity", type: "string", multi: false, searchable: false, task_types: ["defect"] };
+  const global: CustomFieldDef = { key: "cmp", label: "Component", type: "string", multi: false, searchable: false };
+
+  it("a scoped field is in scope for a listed type", () => {
+    expect(customFieldInScope(scoped, "defect")).toBe(true);
+  });
+
+  it("a scoped field is out of scope for an unlisted type", () => {
+    expect(customFieldInScope(scoped, "chore")).toBe(false);
+  });
+
+  it("a scoped field is out of scope for a task with no type", () => {
+    expect(customFieldInScope(scoped, undefined)).toBe(false);
+  });
+
+  it("a global field (no allowlist) is in scope for every type, and for no type", () => {
+    expect(customFieldInScope(global, "defect")).toBe(true);
+    expect(customFieldInScope(global, "chore")).toBe(true);
+    expect(customFieldInScope(global, undefined)).toBe(true);
+  });
+
+  it("an empty allowlist is in scope for no type", () => {
+    const none = { ...scoped, task_types: [] };
+    expect(customFieldInScope(none, "defect")).toBe(false);
+    expect(customFieldInScope(none, undefined)).toBe(false);
+  });
+
+  it("customFieldsForType filters to the in-scope defs, order preserved", () => {
+    const defs = [scoped, global];
+    expect(customFieldsForType(defs, "defect")).toEqual([scoped, global]);
+    expect(customFieldsForType(defs, "chore")).toEqual([global]);
+    expect(customFieldsForType(defs, undefined)).toEqual([global]);
   });
 });
 

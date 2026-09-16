@@ -149,6 +149,20 @@ custom_fields:
     type: number
     multi: false
     searchable: false
+
+  - key: severity
+    label: Severity
+    type: enum
+    multi: false
+    searchable: true
+    # Scoped: this field appears only on tasks of type `bug`.
+    task_types:
+      - bug
+    values:
+      - key: minor
+        label: Minor
+      - key: major
+        label: Major
 ```
 
 ### Field Types
@@ -168,6 +182,7 @@ custom_fields:
 | `multi` | yes | Allow multiple values |
 | `searchable` | yes | Whether the field is exposed to the query DSL |
 | `values` | for `enum` | Allowed values with `key`, `label`, optional `value` |
+| `task_types` | no | Scope the field to specific task types. Omit it and the field is global (shows for every type). Listed, and it appears only on tasks whose type is in the list. A value already stored in a field that is out of scope for the task's current type is kept and shown read-only — never hidden or auto-removed. |
 
 > `searchable` has **no default** — omitting it is a parse error. The
 > normative field-by-field spec is

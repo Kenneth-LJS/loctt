@@ -1,4 +1,5 @@
 import type { CalendarConfig, CustomFieldDef, ProjectDef, WorkflowConfig } from "@loctt/contracts";
+import { customFieldsForType } from "@loctt/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -660,14 +661,21 @@ export function CreateTaskModal({
             onChange={v => { setForm(f => ({ ...f, estimate: v })); }}
           />
 
-          {wfReady && wf.custom_fields.length > 0 && (
+          {/* TSK-12 / K91: offer only the custom fields in scope for
+              the currently-selected type. `form.task_type` drives this,
+              so switching the type in the modal updates the set live —
+              no reload — and the "Custom fields" header still exists
+              only when the in-scope set is non-empty (NEW-10). A new
+              task has no stored values, so there is no out-of-scope
+              read-only case to handle here. */}
+          {wfReady && customFieldsForType(wf.custom_fields, form.task_type).length > 0 && (
             <fieldset className="space-y-2 rounded border border-border-subtle p-3">
               {/* NEW-10's fourth bullet: this header exists only when
                   there is something under it. */}
               <legend className="px-1 text-[0.8571rem] font-medium text-text-secondary">
                 Custom fields
               </legend>
-              {wf.custom_fields.map(def => (
+              {customFieldsForType(wf.custom_fields, form.task_type).map(def => (
                 <CreateCustomField
                   key={def.key}
                   def={def}

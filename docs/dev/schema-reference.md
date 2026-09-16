@@ -366,6 +366,7 @@ estimation:
 | `multi` | boolean | yes | Whether the field accepts multiple values |
 | `searchable` | boolean | yes | Whether the field is exposed to the query DSL |
 | `values` | array | no | Required for `type: enum`. Each entry has `key`, `label`, optional numeric `value` for sorting |
+| `task_types` | string[] | no | Allowlist of `task_types[].key`s this field is scoped to. When **absent**, the field is global — it shows for every task type (the backward-compatible default; existing fields need no migration). When present, the field is editable only on a task whose `task_type` is in the list. An empty list scopes the field to no type. Scope is a **display** concern: a value stored in a field now out of scope for the task's type (a field that became scoped, or a task whose type changed) is **kept on disk** and shown read-only — it is never silently hidden or auto-deleted, and no validation rejects storing an out-of-scope value |
 
 ### `estimation`
 

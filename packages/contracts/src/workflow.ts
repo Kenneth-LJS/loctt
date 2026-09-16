@@ -237,6 +237,20 @@ export const CustomFieldDefSchema = z.object({
   multi: z.boolean(),
   searchable: z.boolean(),
   values: z.array(CustomFieldValueDefSchema).optional(),
+  // TSK-12 / K91. An OPTIONAL allowlist of task_type keys the field is
+  // scoped to. ABSENT ⇒ the field is global (shows for every type) —
+  // this is the backward-compatible default, so every field declared
+  // before this feature stays global with no migration. When present,
+  // the field is in scope only for a task whose task_type is listed
+  // (see `customFieldInScope` / `customFieldsForType`). An EMPTY array
+  // is a valid allowlist that admits no type — the field then shows for
+  // no task; it is not rejected because it is unambiguous and a config
+  // the user can reach back and fix, and rejecting it would be a second
+  // way to fail a hand-edited file for no gain. Scope is a DISPLAY
+  // concern only: a value stored in an out-of-scope field is still
+  // valid to store and is kept on disk (K91) — nothing here validates a
+  // task value against scope.
+  task_types: z.array(z.string().min(1)).optional(),
 }).strict().superRefine((def, ctx) => {
   // `values` is conditional, the same shape as EstimationConfig's
   // `preset_values` below. Without this an enum field with no values
@@ -271,6 +285,43 @@ export const CustomFieldDefSchema = z.object({
   }
 });
 export type CustomFieldDef = z.infer<typeof CustomFieldDefSchema>;
+
+/**
+ * Whether a custom field is in scope for a task of `taskType` (TSK-12,
+ * K91).
+ *
+ * The single source of truth for the scope rule, so task-detail, the
+ * create modal, and any surface that filters custom fields cannot
+ * drift on what "scoped to a type" means:
+ *
+ *  - `task_types` ABSENT ⇒ global: in scope for every type (and for a
+ *    task with no type set at all).
+ *  - `task_types` present ⇒ in scope only when `taskType` is one of the
+ *    listed keys. An empty list admits nothing. A task with no type
+ *    (`taskType` undefined) is never in a listed type's scope.
+ *
+ * Pure — no I/O, no config lookup beyond the def itself.
+ */
+export function customFieldInScope(
+  def: Pick<CustomFieldDef, "task_types">,
+  taskType: string | undefined,
+): boolean {
+  if (def.task_types === undefined) return true;
+  if (taskType === undefined) return false;
+  return def.task_types.includes(taskType);
+}
+
+/**
+ * The subset of `defs` in scope for a task of `taskType`, order
+ * preserved. Wraps {@link customFieldInScope} so callers filter through
+ * one definition of the rule.
+ */
+export function customFieldsForType<T extends Pick<CustomFieldDef, "task_types">>(
+  defs: readonly T[],
+  taskType: string | undefined,
+): readonly T[] {
+  return defs.filter(def => customFieldInScope(def, taskType));
+}
 
 /** Key prefix configuration from workflow.yaml. */
 export const KeyConfigSchema = z.object({

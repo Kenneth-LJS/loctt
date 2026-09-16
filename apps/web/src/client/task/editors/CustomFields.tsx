@@ -1,4 +1,5 @@
 import type { CustomFieldDef } from "@loctt/contracts";
+import { customFieldInScope } from "@loctt/contracts";
 
 import { Checkbox } from "../../ui/Checkbox.tsx";
 import { ICON } from "../../ui/icons.ts";
@@ -34,11 +35,22 @@ import { isNumeric, TextField } from "./TextField.tsx";
  *     names the field and what is expected, and the control keeps the
  *     stored text rather than rendering an empty numeric input that
  *     would overwrite on the next save.
+ *  4. **The field is declared but out of scope for the task's type**
+ *     (TSK-12 / K91). The field's `task_types` allowlist does not
+ *     include the task's current type — because the field is scoped to
+ *     other types, or because the task's type changed after the value
+ *     was set. If the task has NO value in that field, the row does not
+ *     appear (an out-of-scope field a task never touched is simply not
+ *     its concern). If the task DOES have a value, the row renders
+ *     read-only with an "out of scope for this type" note and a
+ *     Remove action — the value is kept on disk (K91 forbids silently
+ *     hiding or auto-deleting it), and the user's route is to remove
+ *     it deliberately or change the type back.
  *
- * None of the three deletes anything. That is XS-26's second bullet
- * and it holds structurally: every write from this panel names one
- * field, so saving an unrelated one cannot strip a value it never
- * mentioned.
+ * None of the four deletes anything without the user asking. That is
+ * XS-26's second bullet and it holds structurally: every write from
+ * this panel names one field, so saving an unrelated one cannot strip
+ * a value it never mentioned.
  */
 
 export interface CustomFieldRow {
@@ -49,12 +61,20 @@ export interface CustomFieldRow {
 
 export function customFieldRows({
   defs,
+  taskType,
   values,
   onSet,
   onUnset,
 }: {
-  /** Declared fields, already narrowed to this task's type. */
+  /**
+   * ALL declared custom fields — unfiltered. Scope filtering happens
+   * here, against `taskType`, so the in-scope (editable) and
+   * out-of-scope-with-value (read-only) sets are derived from one pass
+   * over one rule ({@link customFieldInScope}) and cannot disagree.
+   */
   readonly defs: readonly CustomFieldDef[];
+  /** The task's current type, from `fm.task_type`. */
+  readonly taskType: string | undefined;
   /** `frontmatter.fields`, which may hold keys no def matches. */
   readonly values: Readonly<Record<string, unknown>>;
   readonly onSet: (field: string, value: unknown) => void;
@@ -63,14 +83,50 @@ export function customFieldRows({
   const rows: CustomFieldRow[] = [];
 
   for (const def of defs) {
+    if (customFieldInScope(def, taskType)) {
+      // In scope: the normal editable control.
+      rows.push({
+        key: def.key,
+        label: def.label,
+        node: renderControl(def, values[def.key], onSet, onUnset),
+      });
+      continue;
+    }
+    // Case 4: out of scope for this type. Skip it entirely unless the
+    // task actually holds a value — an empty out-of-scope field is not
+    // rendered (TSK-12: it "does not appear").
+    const stored = values[def.key];
+    if (stored === undefined) continue;
     rows.push({
       key: def.key,
       label: def.label,
-      node: renderControl(def, values[def.key], onSet, onUnset),
+      node: (
+        <div>
+          <span
+            data-testid={`meta-out-of-scope-${def.key}`}
+            className="break-words text-[0.9286rem] text-text-primary"
+          >
+            {displayScalar(stored)}
+          </span>
+          <span className="mt-0.5 block text-[0.7857rem] text-warn-fg">
+            Not in scope for this type — kept in the file, not editable here.{" "}
+            <button
+              type="button"
+              aria-label={`Remove ${def.label}`}
+              onClick={() => { onUnset(def.key); }}
+              className="underline"
+            >
+              Remove
+            </button>
+          </span>
+        </div>
+      ),
     });
   }
 
-  // Case 1: stored under `fields:` with no declaration left.
+  // Case 1: stored under `fields:` with no declaration left. An
+  // out-of-scope field (case 4) is still declared, so it is excluded
+  // here by the full `defs` set, not just the in-scope subset.
   const declared = new Set(defs.map(d => d.key));
   for (const [key, value] of Object.entries(values)) {
     if (declared.has(key)) continue;

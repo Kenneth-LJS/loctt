@@ -777,6 +777,54 @@ test.describe("TSK — meta panel pickers", () => {
     expect(multi).toMatch(/platforms:\n\s+- ios\n\s+- android/);
   });
 
+  // @verifies TSK-12
+  test("TSK-12: custom fields scope to the task's type, and an out-of-scope value stays read-only", async ({
+    page,
+    tracker,
+  }) => {
+    // `severity` is scoped to type `defect`; `component` is global. The
+    // SEVEN_STATUS_WORKFLOW declares types chore / defect / investigation.
+    await writeWorkflow(tracker.root, SEVEN_STATUS_WORKFLOW.replace("custom_fields: []", SCOPED_FIELDS_BLOCK));
+    const [key] = await tracker.seed([{ title: "Scoped task" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    // Make it a defect and set the defect-scoped field.
+    await tracker.run(["set", key, "task_type", "defect"]);
+    await tracker.run(["set", key, "severity", "high"]);
+
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+
+    // As a defect: both the scoped Severity and the global Component
+    // rows are editable and present.
+    await expect(trigger(page, "severity")).toBeVisible();
+    await expect(trigger(page, "component")).toBeVisible();
+    // The out-of-scope read-only presentation is NOT shown while in scope.
+    await expect(page.getByTestId("meta-out-of-scope-severity")).toHaveCount(0);
+
+    // Change the type to Chore in the UI — no reload. Severity is now out
+    // of scope, but it HAS a value, so it must show read-only with a note
+    // and a Remove action (K91), never silently vanish.
+    await trigger(page, "type").click();
+    await options(page, "type").getByRole("option", { name: "Chore" }).click();
+    await waitForFile(tracker.root, key, t => /^task_type:\s*chore\s*$/m.test(t), "became a chore");
+
+    // The editable Severity control is gone; the read-only kept-value is shown.
+    await expect(trigger(page, "severity")).toHaveCount(0);
+    const readonly = page.getByTestId("meta-out-of-scope-severity");
+    await expect(readonly).toBeVisible();
+    await expect(readonly).toContainText("high");
+    // Global Component stays editable throughout.
+    await expect(trigger(page, "component")).toBeVisible();
+
+    // The value is still on disk — K91 forbids an automatic write on the
+    // type change.
+    expect(await frontmatterOf(tracker.root, key)).toMatch(/severity: high/);
+
+    // The Remove action removes it deliberately.
+    await page.getByRole("button", { name: /Remove Severity/i }).click();
+    await waitForFile(tracker.root, key, t => !/severity:/.test(t), "removed the out-of-scope value");
+    await expect(page.getByTestId("meta-out-of-scope-severity")).toHaveCount(0);
+  });
+
   // @verifies TSK-13
   // @verifies TSK-37
   test("TSK-13/TSK-37: rapid successive changes settle on the last one, on screen and on disk", async ({
@@ -1613,6 +1661,26 @@ estimation:
   unit: points
   unit_label: pts
 `;
+
+/**
+ * TSK-12 / K91 scope fixture: a `severity` field scoped to type
+ * `defect` (via `task_types`), plus a global `component` field with no
+ * allowlist. Used to prove the visible set follows the task's type and
+ * that an out-of-scope stored value is kept read-only.
+ */
+const SCOPED_FIELDS_BLOCK = `custom_fields:
+  - key: component
+    label: Component
+    type: string
+    multi: false
+    searchable: false
+  - key: severity
+    label: Severity
+    type: string
+    multi: false
+    searchable: false
+    task_types:
+      - defect`;
 
 /** One field per declared type, plus a multi enum. */
 const CUSTOM_FIELDS_BLOCK = `custom_fields:
