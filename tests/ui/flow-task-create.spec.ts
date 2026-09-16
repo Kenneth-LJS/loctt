@@ -75,6 +75,34 @@ async function setStatuses(
   );
 }
 
+/**
+ * Replaces `custom_fields: []` with a block of fields. The default init
+ * file writes an empty `custom_fields: []`; each field is a complete
+ * `.strict()` entry.
+ */
+async function setCustomFields(
+  root: string,
+  fields: readonly { key: string; label: string; task_types?: readonly string[] }[],
+): Promise<void> {
+  const wfPath = path.join(root, ".loctt", "config", "workflow.yaml");
+  const text = await readFile(wfPath, "utf8");
+  const block = fields
+    .map(f =>
+      [
+        `  - key: ${f.key}`,
+        `    label: ${f.label}`,
+        `    type: string`,
+        `    multi: false`,
+        `    searchable: false`,
+        ...(f.task_types !== undefined
+          ? ["    task_types:", ...f.task_types.map(t => `      - ${t}`)]
+          : []),
+      ].join("\n"),
+    )
+    .join("\n");
+  await writeFile(wfPath, text.replace(/^custom_fields: \[\]$/m, `custom_fields:\n${block}`));
+}
+
 /** Opens the modal via the header's "+ New task". */
 async function openModal(page: import("@playwright/test").Page): Promise<void> {
   await page.getByTestId("header-new-task").click();
@@ -312,6 +340,39 @@ test.describe("NEW — create task modal", () => {
     const text = await fileByTitle(tracker.root, "Pre-filled defaults");
     expect(fmValue(text, "status")).toBe("backlog");
     expect(fmValue(text, "task_type")).toBe("story");
+  });
+
+  // @verifies TSK-12
+  test("TSK-12: the modal offers only the custom fields in scope for the chosen type, live", async ({
+    page,
+    tracker,
+  }) => {
+    // `sev` is scoped to type `bug`; `owner` is global. Default type is
+    // Story (NEW-42), so `sev` must be absent at open and `owner` present.
+    await setCustomFields(tracker.root, [
+      { key: "sev", label: "Severity", task_types: ["bug"] },
+      { key: "owner", label: "Owner" },
+    ]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await openModal(page);
+
+    // Default type Story: the global field shows, the bug-scoped one does not.
+    await expect(page.getByTestId("create-type")).toHaveText("Story");
+    await expect(page.getByTestId("create-field-owner")).toBeVisible();
+    await expect(page.getByTestId("create-field-sev")).toHaveCount(0);
+
+    // Switch the type to Bug — no reload. The scoped field appears live.
+    await page.getByTestId("create-type").getByRole("button").first().click();
+    await page.getByRole("option", { name: "Bug" }).click();
+    await expect(page.getByTestId("create-field-sev")).toBeVisible();
+    await expect(page.getByTestId("create-field-owner")).toBeVisible();
+
+    // Switch to a type the field is not scoped to — it disappears again,
+    // still without a reload.
+    await page.getByTestId("create-type").getByRole("button").first().click();
+    await page.getByRole("option", { name: "Spike" }).click();
+    await expect(page.getByTestId("create-field-sev")).toHaveCount(0);
+    await expect(page.getByTestId("create-field-owner")).toBeVisible();
   });
 
   // @verifies NEW-11

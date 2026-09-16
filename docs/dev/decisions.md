@@ -11584,6 +11584,86 @@ Owes the schema-reference doc. Cases + `@verifies` tests.
 
 **This is Ken's, not an agent's — not revertible by an agent.**
 
+### A-K91 · K91 built — `task_types` allowlist on custom fields; scope is display-only; out-of-scope values kept read-only
+
+**Built (agent-level) implementing K91 / TSK-12 bullet 4.** The first
+three TSK-12 bullets (control-per-type, multi, `fields:` storage) were
+already built; this closes the fourth.
+
+- **Contract.** `CustomFieldDefSchema` gains optional
+  `task_types?: string[]` (`packages/contracts/src/workflow.ts`).
+  `.strict()` intact. No `superRefine` rule added for it.
+- **Shared helper.** `customFieldInScope(def, taskType)` and
+  `customFieldsForType(defs, taskType)` are pure functions colocated
+  with the schema in `contracts/workflow.ts` (exported from the
+  contracts index), next to the existing `relationshipTypeKeys` /
+  `effectiveInverseKey` pure helpers. **Home decision:** contracts, not
+  core — it is a pure predicate over a contract type with no I/O, both
+  the web client (which imports `@loctt/contracts` directly) and
+  core/CLI/MCP can use it without a core dependency, and putting it in
+  core would force the web client through a core import for a one-line
+  rule. **To revert home choice:** move the two functions to a core
+  module and re-point the two web imports.
+- **Web task detail.** `customFieldRows` (`editors/CustomFields.tsx`)
+  now takes the FULL declared set + `taskType` and partitions: in-scope
+  → editable; out-of-scope WITH a stored value → read-only row
+  (`meta-out-of-scope-<key>`) with a "Not in scope for this type" note
+  and a Remove action (bare-key `onUnset`); out-of-scope with NO value
+  → omitted. The placeholder `scopedCustomFields` in `MetaPanel.tsx`
+  (which returned all defs and reported the bullet unmet) is deleted.
+  Reactivity to a type change is free — the visible set derives from
+  `fm.task_type` each render.
+- **Web create modal.** `CreateTaskModal.tsx` renders
+  `customFieldsForType(wf.custom_fields, form.task_type)`; switching
+  the type updates the offered set live, and the "Custom fields" header
+  still only appears when the in-scope set is non-empty.
+
+**Empty-array decision (mine, not stated by Ken).** `task_types: []` is
+ACCEPTED (not rejected) and means the field is in scope for no type. An
+absent field is global. Reasoning: it is unambiguous, it is a config the
+user can reach back and fix, the helper handles it naturally
+(`[].includes(x)` is false), and rejecting it would be a second way to
+fail a hand-edited file for no real gain — consistent with how K91
+frames scope as display-only rather than a validation surface. **To
+revert:** add a `superRefine` on `CustomFieldDefSchema` rejecting an
+empty `task_types`, and drop the "empty allowlist" test cases.
+
+**Scope is display-only.** No validator rejects storing an out-of-scope
+value (K91: the type may change, keep values). Verified: the existing
+core task-value validation was not touched.
+
+**Parity (P10) — display-only-on-web is intentional, not a gap.** K91's
+Scope paragraph names MetaPanel + create modal only; CLI `show`
+(`apps/cli/src/commands/task-crud.ts:376`) and MCP `get_task` render every
+stored `fm.fields` entry verbatim with no scope filter, and `set` on any
+surface does not reject an out-of-scope value. This is the correct
+reading: scope is a web form-layout affordance; the raw-file surfaces show
+all stored data (never hide it), and the load-bearing fact — the value is
+kept and valid — is identical across all three surfaces. The scope rule
+lives in `@loctt/contracts` as a pure predicate, so a future scope-aware
+CLI/MCP view can import the same one rule. Verified 2026-09-16 (PM review):
+no CLI/MCP file consults `task_types` for value display.
+
+**Tests (all shown-to-fail, restored green).**
+- `contracts/workflow.test.ts`: parses with `task_types`, absent = valid,
+  empty array accepted, non-string entry rejected, `.strict()` still
+  rejects unknown keys; helper scope matrix (scoped/global/empty/no-type)
+  and `customFieldsForType` filtering. Red-proven by (a) making
+  `customFieldInScope` return `true` and (b) removing `task_types` from
+  the schema.
+- `apps/web/.../MetaPanel.test.tsx`: 4 jsdom cases (shows/hides by type,
+  type-change flips the set via rerender, out-of-scope-with-value
+  read-only + Remove, out-of-scope-no-value omitted). Red-proven by
+  forcing the in-scope branch always-true.
+- UI `flow-task-meta.spec.ts` + `flow-task-create.spec.ts`: one spec
+  each. Red-proven by removing the scope filter in both source files,
+  rebuilding web+cli, watching the wrong field appear.
+
+**Docs.** `schema-reference.md` custom_fields[] table + user
+`configuration.md` (property row + scoped example). **To revert the
+whole feature:** `git revert` the commit; the change is additive and
+backward-compatible (absent `task_types` = prior global behaviour).
+
 ### A-K88 · A80/K88 built — prefix stored bare, dash inserted at render
 
 **Built (agent-level) implementing K88.** Prefix is stored bare uppercase

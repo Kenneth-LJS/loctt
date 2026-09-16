@@ -178,6 +178,121 @@ describe("DEG-29 — a corrupt CUSTOM field clears by its bare key, not the dott
   });
 });
 
+describe("TSK-12 / K91 — custom fields scope to a task's type", () => {
+  // `sev` is scoped to type `defect`; `cmp` is global (no allowlist).
+  const SCOPE_WORKFLOW = {
+    statuses: [{ key: "todo", label: "To do", category: "todo" }],
+    priorities: [],
+    task_types: [
+      { key: "defect", label: "Defect" },
+      { key: "chore", label: "Chore" },
+    ],
+    relationship_types: [],
+    custom_fields: [
+      { key: "sev", label: "Severity", type: "string", multi: false, searchable: false, task_types: ["defect"] },
+      { key: "cmp", label: "Component", type: "string", multi: false, searchable: false },
+    ],
+  } as unknown as WorkflowConfig;
+  const SCOPE_LOOKUPS = buildLookups({ projects: [], users: [], labels: [], workflow: SCOPE_WORKFLOW });
+
+  function renderScoped(fm: Partial<TaskFrontmatterPublic>, onUnset = vi.fn()) {
+    const rendered = render(
+      <MetaPanel
+        frontmatter={{ id: "01TASK0000000000000000000", key: "T-1", title: "A task", status: "todo", ...fm } as TaskFrontmatterPublic}
+        lookups={SCOPE_LOOKUPS}
+        workflow={SCOPE_WORKFLOW}
+        users={[]}
+        labels={[]}
+        milestones={[]}
+        sprints={[]}
+        calendar={undefined}
+        onSet={vi.fn()}
+        onUnset={onUnset}
+        onCreateLabel={vi.fn(() => Promise.resolve(undefined))}
+        searchLabels={vi.fn(() => Promise.resolve([]))}
+        searchMilestones={vi.fn(() => Promise.resolve([]))}
+        searchSprints={vi.fn(() => Promise.resolve([]))}
+        searchUsers={vi.fn(() => Promise.resolve([]))}
+      />,
+    );
+    return { onUnset, rerender: rendered.rerender };
+  }
+
+  // The editable string control is collapsed behind `meta-edit-<slug>`
+  // (slug is the lower-cased label) until clicked; asserting on the
+  // trigger's presence is asserting the row exists.
+  // @verifies TSK-12
+  it("a scoped field shows for its type and hides for another; a global field shows for both", () => {
+    // Type `defect`: both the scoped `sev` (label Severity) and the
+    // global `cmp` (label Component) appear.
+    renderScoped({ task_type: "defect" });
+    expect(screen.getByTestId("meta-edit-severity")).toBeTruthy();
+    expect(screen.getByTestId("meta-edit-component")).toBeTruthy();
+    cleanup();
+
+    // Type `chore`: the scoped Severity is gone (no stored value),
+    // Component stays.
+    renderScoped({ task_type: "chore" });
+    expect(screen.queryByTestId("meta-edit-severity")).toBeNull();
+    expect(screen.getByTestId("meta-edit-component")).toBeTruthy();
+  });
+
+  // @verifies TSK-12
+  it("changing the type flips the visible set with no reload — the panel re-renders from fm", () => {
+    const { rerender } = renderScoped({ task_type: "defect" });
+    expect(screen.getByTestId("meta-edit-severity")).toBeTruthy();
+
+    // Same component instance, new frontmatter (as the optimistic type
+    // change delivers). No refetch, no remount.
+    rerender(
+      <MetaPanel
+        frontmatter={{ id: "01TASK0000000000000000000", key: "T-1", title: "A task", status: "todo", task_type: "chore" } as TaskFrontmatterPublic}
+        lookups={SCOPE_LOOKUPS}
+        workflow={SCOPE_WORKFLOW}
+        users={[]}
+        labels={[]}
+        milestones={[]}
+        sprints={[]}
+        calendar={undefined}
+        onSet={vi.fn()}
+        onUnset={vi.fn()}
+        onCreateLabel={vi.fn(() => Promise.resolve(undefined))}
+        searchLabels={vi.fn(() => Promise.resolve([]))}
+        searchMilestones={vi.fn(() => Promise.resolve([]))}
+        searchSprints={vi.fn(() => Promise.resolve([]))}
+        searchUsers={vi.fn(() => Promise.resolve([]))}
+      />,
+    );
+    expect(screen.queryByTestId("meta-edit-severity")).toBeNull();
+  });
+
+  // @verifies TSK-12
+  it("an out-of-scope field WITH a stored value renders read-only, with a note and a Remove action (K91)", () => {
+    // The task is now a `chore` but carries a `sev` value set while it
+    // was a `defect`. K91: keep it, show it read-only, never hide it.
+    const onUnset = vi.fn();
+    renderScoped({ task_type: "chore", fields: { sev: "high" } }, onUnset);
+
+    // Not the editable control — it is out of scope.
+    expect(screen.queryByTestId("meta-edit-severity")).toBeNull();
+
+    const readonly = screen.getByTestId("meta-out-of-scope-sev");
+    expect(readonly.textContent).toContain("high");
+
+    // The note names why, and there is a Remove action.
+    const remove = screen.getByRole("button", { name: /Remove Severity/i });
+    fireEvent.click(remove);
+    expect(onUnset).toHaveBeenCalledWith("sev");
+  });
+
+  // @verifies TSK-12
+  it("an out-of-scope field with NO stored value does not appear at all", () => {
+    renderScoped({ task_type: "chore" });
+    expect(screen.queryByTestId("meta-out-of-scope-sev")).toBeNull();
+    expect(screen.queryByTestId("meta-edit-severity")).toBeNull();
+  });
+});
+
 describe("DEG-7 / DEG-29 — unrecognised preserved fields render in a client group", () => {
   const JIRA: WireHealth = {
     field: "jira_id",

@@ -228,6 +228,8 @@ export {
   BoardsConfigSchema,
   CliConfigSchema,
   CustomFieldDefSchema,
+  customFieldInScope,
+  customFieldsForType,
   CustomFieldTypeSchema,
   CustomFieldValueDefSchema,
   defaultStatus,
