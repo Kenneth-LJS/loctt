@@ -49,7 +49,11 @@ function stubFetch() {
   vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const path = url.replace(/^https?:\/\/[^/]+/, "");
-    return Promise.resolve(new Response(JSON.stringify(routeFetch(path)), { status: 200, headers: { "Content-Type": "application/json" } }));
+    // The builder's live-q preview runs through the same validate surface
+    // as the text editor; a bare {} would read as invalid. The builder is
+    // fed from constrained pickers, so a valid verdict is the norm here.
+    const body = path.startsWith("/api/query/validate") ? { valid: true } : routeFetch(path);
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
   });
 }
 
@@ -256,6 +260,140 @@ describe("FilterBar", () => {
     fireEvent.click(option);
     const checked = await screen.findByRole("menuitemcheckbox", { name: "In progress" });
     await vi.waitFor(() => expect(checked.getAttribute("aria-checked")).toBe("true"));
+  });
+});
+
+/**
+ * K83 step 3 — the Advanced surface's mode picker, refuse-on-unrenderable,
+ * and how a builder apply composes with the chip filters (LST-40/41).
+ *
+ * These mount the whole FilterBar so the surface is exercised the way the
+ * user reaches it: click "Advanced", then assert which mode opened and
+ * what applying writes to the URL. The URL is the source of truth, so the
+ * q + chip composition (LST-40) is asserted against location.search.
+ */
+describe("FilterBar — Advanced surface (K83 step 3)", () => {
+  // @verifies K83
+  it("refuses the visual builder for a NOT query, landing in the text box with the reason", async () => {
+    await mountFilterBar(`?q=${encodeURIComponent("not status = done")}`);
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+
+    // K83-i / K83-iii: a `not` is unrenderable → the TEXT box, never the
+    // visual builder that would silently misrepresent it.
+    const surface = await screen.findByTestId("advanced-query-surface");
+    expect(surface.getAttribute("data-mode")).toBe("text");
+    expect(screen.queryByTestId("query-builder")).toBeNull();
+
+    // The reason note names why, and "Switch to visual" is disabled with it.
+    const note = screen.getByTestId("advanced-refuse-note");
+    expect(note.textContent).toContain("visual builder");
+    const toVisual = screen.getByTestId("switch-to-visual");
+    expect(toVisual.hasAttribute("disabled")).toBe(true);
+    expect(toVisual.getAttribute("title") ?? "").not.toBe("");
+  });
+
+  // @verifies K83
+  it("refuses the visual builder for a has_link query too", async () => {
+    await mountFilterBar(`?q=${encodeURIComponent('has_link("blocks")')}`);
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+
+    const surface = await screen.findByTestId("advanced-query-surface");
+    expect(surface.getAttribute("data-mode")).toBe("text");
+    expect(screen.getByTestId("advanced-refuse-note")).toBeTruthy();
+  });
+
+  // @verifies K83
+  it("opens the visual builder for a renderable OR query, showing two leaves", async () => {
+    await mountFilterBar(`?q=${encodeURIComponent("priority = high or priority = critical")}`);
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+
+    const surface = await screen.findByTestId("advanced-query-surface");
+    expect(surface.getAttribute("data-mode")).toBe("builder");
+    expect(screen.getByTestId("query-builder")).toBeTruthy();
+
+    // An OR group of two leaves: the root toggle reads OR and there are
+    // two leaf rows (each with a field picker).
+    const orBtn = screen.getByTestId("qb-and-or-or");
+    expect(orBtn.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getAllByTestId("qb-field")).toHaveLength(2);
+    // The preview round-trips the two leaves unchanged.
+    expect(screen.getByTestId("query-builder-preview").textContent)
+      .toBe("priority = high or priority = critical");
+  });
+
+  // @verifies LST-40
+  // @verifies K83
+  it("applying from the builder sets q and leaves the active chip params untouched", async () => {
+    const router = await mountFilterBar(
+      `?status=done&q=${encodeURIComponent("title ~ foo")}`,
+    );
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await screen.findByTestId("query-builder");
+
+    // Edit the (only) leaf's free-text value foo → bar, then apply. A text
+    // field's value control is a plain input, so the edit lands as typed.
+    fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "bar" } });
+    fireEvent.click(screen.getByTestId("qb-apply"));
+
+    await vi.waitFor(() => {
+      const s = search(router);
+      // LST-40: the chip param survives AND the new q is set — intersection.
+      expect(s.status).toEqual(["done"]);
+      expect(s.q).toBe("title ~ bar");
+    });
+  });
+
+  // @verifies LST-41
+  // @verifies K83
+  it("emptying the builder and applying clears q but keeps the chips", async () => {
+    const router = await mountFilterBar(
+      `?status=done&q=${encodeURIComponent("priority = high")}`,
+    );
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await screen.findByTestId("query-builder");
+
+    // Remove the sole condition → an empty builder → q cleared.
+    fireEvent.click(screen.getByTestId("qb-remove"));
+    fireEvent.click(screen.getByTestId("qb-apply"));
+
+    await vi.waitFor(() => {
+      const s = search(router);
+      expect(s.q).toBeUndefined();
+      expect(s.status).toEqual(["done"]); // LST-41: chips untouched
+    });
+  });
+
+  // @verifies K83
+  it("opening Advanced with no query shows the text box with NO parse-error note, and the empty builder is one click away", async () => {
+    // A fresh Advanced open (no `q`) keeps the existing text path (VUE-8:
+    // type a query, run it) — but the empty string is "no query yet", not
+    // a parse error, so there is no refuse note, and "Switch to visual" is
+    // enabled so the empty builder is reachable in one click.
+    await mountFilterBar();
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+
+    const surface = await screen.findByTestId("advanced-query-surface");
+    expect(surface.getAttribute("data-mode")).toBe("text");
+    expect(screen.queryByTestId("advanced-refuse-note")).toBeNull();
+    const toVisual = screen.getByTestId("switch-to-visual");
+    expect(toVisual.hasAttribute("disabled")).toBe(false);
+
+    // Clicking it opens the empty builder.
+    fireEvent.click(toVisual);
+    expect((await screen.findByTestId("advanced-query-surface")).getAttribute("data-mode")).toBe("builder");
+    expect(screen.getByTestId("qb-add-condition")).toBeTruthy();
+  });
+
+  // @verifies K83
+  it("opening the builder on a renderable q and applying unchanged leaves q semantically the same", async () => {
+    const original = "status = done and priority = high";
+    const router = await mountFilterBar(`?q=${encodeURIComponent(original)}`);
+    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await screen.findByTestId("query-builder");
+
+    // No edits — the open/save round-trip must not mutate the query (K83-i).
+    fireEvent.click(screen.getByTestId("qb-apply"));
+    await vi.waitFor(() => expect(search(router).q).toBe(original));
   });
 });
 

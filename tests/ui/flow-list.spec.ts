@@ -5620,31 +5620,43 @@ test.describe("SHL — the app shell (M1.1)", () => {
 
 test.describe("SHL — the sidebar groups (M1.1)", () => {
   // @verifies SHL-8
-  test("SHL-8: Mentions me is inert, badge-free, and explains itself", async ({
+  //
+  // Rewritten for CMT-10 / A183: "Mentions me" is no longer deferred. It
+  // resolves to `comment_mentions = currentUser()`, so with a current user
+  // (which `init` bootstraps) it is an active, navigable, badge-carrying
+  // filter like "Assigned to me". The previous version of this test
+  // asserted the now-superseded deferred/inert behaviour and failed on
+  // HEAD once the built-in was wired. The no-current-user inert branch is
+  // covered at the unit level (Sidebar.test.tsx: null currentUserId).
+  test("SHL-8: Mentions me is an active filter that navigates and counts, with a current user", async ({
     page,
     tracker,
   }) => {
-    await tracker.seed([{ title: "One" }]);
+    const [key] = await tracker.seed([{ title: "One" }]);
+    if (key === undefined) throw new Error("seed returned no keys");
+    // A comment mentioning the current user, so the filter has a non-empty
+    // result and an honest count of 1.
+    const current = await tracker.run(["user", "current"]);
+    const userId = current.trim().split(/\s+/)[0];
+    if (userId === undefined || userId === "") throw new Error("no current user id");
+    await tracker.run(["comment", key, `ping @user:${userId}`]);
+
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    const mentions = page.locator("aside").getByText("Mentions me").first();
-    await expect(mentions).toBeVisible();
+    // It is a real link (navigable), not inert text.
+    const link = page.getByRole("link", { name: /Mentions me/ });
+    await expect(link).toBeVisible();
 
-    // No count badge — a `0` would be a false claim about data the
-    // app cannot see yet.
-    const row = mentions.locator("xpath=ancestor::*[@aria-disabled][1]");
-    await expect(row).toHaveAttribute("aria-disabled", /true|/);
-    await expect(row).not.toContainText(/\b0\b/);
+    // It carries a count badge — the honest total, here 1.
+    await expect(link.locator("xpath=..")).toContainText("1");
 
-    // Not a link, so it cannot navigate.
-    expect(await page.locator("aside a").filter({ hasText: "Mentions me" }).count())
-      .toBe(0);
-
-    // And it says why it is inert rather than being silently dead.
-    const explained = await row.getAttribute("title")
-      ?? await mentions.getAttribute("title") ?? "";
-    expect(explained.length).toBeGreaterThan(0);
+    // Clicking it navigates to the filter state and reproduces the row.
+    await link.click();
+    await expect(page.getByText(/Showing 1–1 of 1/)).toBeVisible();
+    await expect(link).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await expect(page.locator("tbody")).toContainText("One");
   });
 
   // @verifies SHL-6
@@ -5652,16 +5664,25 @@ test.describe("SHL — the sidebar groups (M1.1)", () => {
     page,
     tracker,
   }) => {
-    await tracker.seed([
+    const keys = await tracker.seed([
       { title: "Hot", fields: { priority: "high" } },
       { title: "Late", fields: { due_date: "2020-01-01" } },
       { title: "Plain" },
     ]);
 
-    for (const name of ["High priority", "Overdue"]) {
+    // CMT-10: "Mentions me" is now a live built-in too. Seed a comment
+    // mentioning the current user so its result set is non-empty, matching
+    // the other filters exercised here.
+    const firstKey = keys[0];
+    if (firstKey === undefined) throw new Error("seed returned no keys");
+    const current = await tracker.run(["user", "current"]);
+    const userId = current.trim().split(/\s+/)[0];
+    if (userId === undefined || userId === "") throw new Error("no current user id");
+    await tracker.run(["comment", firstKey, `cc @user:${userId}`]);
+
+    for (const name of ["High priority", "Overdue", "Mentions me"]) {
       await page.goto(`${tracker.baseURL}/list`);
       await page.getByRole("link", { name: new RegExp(name, "i") }).click();
-      await expect(page.getByText(/Showing 1–\d+ of \d+/)).toBeVisible();
 
       // Marked active while its state is in the URL. Scoped to the
       // saved-filters group: the Views group's "List" entry also points
@@ -5671,12 +5692,32 @@ test.describe("SHL — the sidebar groups (M1.1)", () => {
         page.getByRole("link", { name: new RegExp(name, "i") }),
       ).toHaveAttribute("aria-current", "page");
 
-      // And the URL alone reproduces the same rows in a fresh tab.
+      // Read the filtered total from the "of N" summary rather than a live
+      // `tbody tr` count. Clicking a filter flips the URL and aria-current
+      // before the row list refetches, so the pre-click "Showing 1–3 of 3"
+      // can still be on screen for a tick — counting DOM rows then races
+      // that stale render (it read 3 for a 1-row "Mentions me" filter). The
+      // summary text is `aria-live` and settles to the filtered total, so
+      // waiting for it to match a specific N is the deterministic signal.
+      const summaryTotal = async (p: typeof page): Promise<number> => {
+        const text = await p.getByText(/Showing 1–\d+ of \d+/).textContent();
+        const n = /of (\d+)/.exec(text ?? "")?.[1];
+        if (n === undefined) throw new Error(`no total in summary: ${text ?? "null"}`);
+        return Number(n);
+      };
+
+      // The URL alone reproduces the same result in a fresh tab: load it
+      // clean (no stale state), take its total as the source of truth, and
+      // assert the original page has converged on the same total and rows.
       const url = page.url();
-      const rows = await page.locator("tbody tr").count();
       const fresh = await page.context().newPage();
       await fresh.goto(url);
-      await expect(fresh.locator("tbody tr")).toHaveCount(rows);
+      await expect(fresh.getByText(/Showing 1–\d+ of \d+/)).toBeVisible();
+      const total = await summaryTotal(fresh);
+      await expect(fresh.locator("tbody tr")).toHaveCount(total);
+
+      await expect(page.getByText(new RegExp(`Showing 1–\\d+ of ${total}\\b`))).toBeVisible();
+      await expect(page.locator("tbody tr")).toHaveCount(total);
       await fresh.close();
     }
   });
@@ -5829,6 +5870,103 @@ test.describe("LST — toolbar / list UX polish (B4)", () => {
     await expect(
       page.getByRole("menuitemcheckbox", { name: "In progress" }),
     ).toHaveAttribute("aria-checked", "true");
+    await expect(page).toHaveURL(/status=in_progress/);
+  });
+});
+
+/**
+ * K83 step 3 — the visual query builder wired into the Advanced surface.
+ *
+ * The reachability + composition half, asserted through the rendered page:
+ *  - refuse-on-unrenderable (a NOT lands in the text box with the reason,
+ *    the visual escape hatch disabled);
+ *  - a renderable query opens the visual builder;
+ *  - a builder apply composes with an active facet chip (LST-40) and an
+ *    empty builder clears q while keeping the chip (LST-41).
+ */
+test.describe("K83 — visual query builder in the Advanced surface (step 3)", () => {
+  // @verifies K83
+  test("K83: a NOT query refuses the visual builder and edits as text", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha" }]);
+    // Land on a `q` the builder cannot represent (a negation, K83-iii).
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("not status = done")}`);
+
+    await page.getByTestId("advanced-query-toggle").click();
+    const surface = page.getByTestId("advanced-query-surface");
+    await expect(surface).toBeVisible();
+    // K83-i: the TEXT box, never the visual builder that would misrepresent it.
+    await expect(surface).toHaveAttribute("data-mode", "text");
+    await expect(page.getByTestId("query-builder")).toHaveCount(0);
+    await expect(page.getByTestId("advanced-refuse-note")).toBeVisible();
+    // The visual escape hatch is disabled with a reason.
+    await expect(page.getByTestId("switch-to-visual")).toBeDisabled();
+    await expect(page.getByTestId("switch-to-visual-reason")).toBeVisible();
+  });
+
+  // @verifies K83
+  test("K83: a renderable query opens the visual builder", async ({ page, tracker }) => {
+    await tracker.seed([{ title: "Alpha", fields: { priority: "high" } }]);
+    await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("priority = high")}`);
+
+    await page.getByTestId("advanced-query-toggle").click();
+    const surface = page.getByTestId("advanced-query-surface");
+    await expect(surface).toHaveAttribute("data-mode", "builder");
+    await expect(page.getByTestId("query-builder")).toBeVisible();
+    // The preview round-trips the query unchanged (open must not mutate).
+    await expect(page.getByTestId("query-builder-preview")).toHaveText("priority = high");
+  });
+
+  // @verifies K83
+  // @verifies LST-40
+  test("K83/LST-40: a builder apply sets q and leaves an active chip in place", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([
+      { title: "Alpha", fields: { status: "in_progress" } },
+      { title: "Beta", fields: { status: "in_progress" } },
+    ]);
+    // A status chip is active AND a renderable q is present.
+    await page.goto(
+      `${tracker.baseURL}/list?status=in_progress&q=${encodeURIComponent("title ~ foo")}`,
+    );
+
+    await page.getByTestId("advanced-query-toggle").click();
+    await expect(page.getByTestId("query-builder")).toBeVisible();
+
+    // Edit the free-text value foo → Alpha, apply.
+    await page.getByTestId("qb-value").fill("Alpha");
+    await page.getByTestId("qb-apply").click();
+
+    // LST-40: both params live in the URL — intersection preserved.
+    // `~` encodes as %7E and spaces as `+` in the search string.
+    await expect(page).toHaveURL(/status=in_progress/);
+    await expect(page).toHaveURL(/q=title(\+|%20)%7E(\+|%20)Alpha/);
+  });
+
+  // @verifies K83
+  // @verifies LST-41
+  test("K83/LST-41: emptying the builder clears q but keeps the chip", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Alpha", fields: { status: "in_progress" } }]);
+    await page.goto(
+      `${tracker.baseURL}/list?status=in_progress&q=${encodeURIComponent("title ~ foo")}`,
+    );
+
+    await page.getByTestId("advanced-query-toggle").click();
+    await expect(page.getByTestId("query-builder")).toBeVisible();
+
+    // Remove the sole condition, then apply the now-empty builder.
+    await page.getByTestId("qb-remove").click();
+    await page.getByTestId("qb-apply").click();
+
+    // LST-41: q is gone from the URL, the status chip remains.
+    await expect(page).not.toHaveURL(/[?&]q=/);
     await expect(page).toHaveURL(/status=in_progress/);
   });
 });

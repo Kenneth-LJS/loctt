@@ -15,7 +15,7 @@ import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ICON } from "../ui/icons.ts";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
-import { AdvancedQueryEditor } from "./AdvancedQueryEditor.tsx";
+import { AdvancedQuerySurface } from "./AdvancedQuerySurface.tsx";
 import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
 import { SaveViewDialog } from "./SaveViewDialog.tsx";
 
@@ -202,14 +202,18 @@ export function FilterBar({
 
   if (advanced) {
     return (
-      <AdvancedQueryEditor
-        value={draft}
-        onChange={setDraft}
-        onRun={() => {
+      <AdvancedQuerySurface
+        query={query}
+        draft={draft}
+        onDraftChange={setDraft}
+        // K83-ii: applying writes ONLY `q`, leaving every facet chip
+        // param untouched, so q + chips compose as intersection in the
+        // URL (LST-40). An empty query removes the `q` param (LST-41).
+        onApply={(q: string) => {
           void navigate({
             search: (prev: Record<string, unknown>) => ({
               ...prev,
-              q: draft.trim().length > 0 ? draft : undefined,
+              q: q.trim().length > 0 ? q : undefined,
             }),
           });
         }}
@@ -218,7 +222,12 @@ export function FilterBar({
           void navigate({ search: () => next });
         }}
         onClose={() => { setAdvanced(false); }}
-        dirty={draft !== query}
+        workflow={workflow.data}
+        projects={(projects.data?.items ?? []).map(p => ({ value: p.id, label: p.name }))}
+        users={(users.data?.items ?? []).map(u => ({ value: u.id, label: u.name ?? u.id }))}
+        labels={(labels.data?.items ?? []).map(l => ({ value: l.id, label: l.name }))}
+        milestones={(milestones.data?.items ?? []).map(m => ({ value: m.id, label: m.name }))}
+        sprints={(sprints.data?.items ?? []).map(s => ({ value: s.id, label: s.name }))}
       />
     );
   }

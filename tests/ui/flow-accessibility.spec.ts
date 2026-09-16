@@ -1123,20 +1123,18 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     await page.keyboard.press("Enter");
     await expect(more).toHaveAttribute("aria-expanded", "false");
 
-    // The non-interactive "Mentions me" entry (SHL-8) is announced as
-    // unavailable rather than presenting as an actionable control that
-    // does nothing: it is aria-disabled and is not a link/button.
-    const mentions = page.getByText("Mentions me", { exact: true });
+    // CMT-10 / A183: "Mentions me" is now an active built-in filter
+    // (`comment_mentions = currentUser()`) whenever a current user is set —
+    // which `init` bootstraps, so it is the state here. It must therefore
+    // be a real, keyboard-reachable link, not an inert text blob. (The
+    // inert-when-unavailable pattern this case also covers — a user filter
+    // with no current user — is exercised at the unit level in
+    // Sidebar.test.tsx, where the null-user branch is reachable without the
+    // server's self-healing recreating a user.)
+    const mentions = page.getByRole("link", { name: "Mentions me" });
     await expect(mentions).toBeVisible();
-    const inert = mentions.locator(
-      "xpath=ancestor-or-self::*[@aria-disabled='true'][1]",
-    );
-    await expect(inert).toHaveCount(1);
-    // It carries no link/button role — a keyboard user does not land on
-    // it as an actionable control.
-    await expect(
-      page.getByRole("link", { name: "Mentions me" }),
-    ).toHaveCount(0);
+    await mentions.focus();
+    await expect(mentions).toBeFocused();
   });
 
   // @verifies A11Y-51
