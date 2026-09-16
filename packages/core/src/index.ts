@@ -130,7 +130,7 @@ export { computeSchemaStatus, getTrackerInfo } from "./diagnostics/index.js";
 export { blockingFindings, checkDataIntegrity, runDoctor, runDoctorStream } from "./diagnostics/index.js";
 export type { LocttErrorOptions } from "./errors.js";
 export { errorEnvelope, LocttError } from "./errors.js";
-export type { AppliedRekey, EnableGitResult, FetchResult, FsProbe, FsProbeResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, MalformedSyncedTask, PreflightReport, PushResult, SyncFsAdvisory, SyncFsClass, SyncOutcome, SyncProgress } from "./git/index.js";
+export type { AppliedRekey, EnableGitOptions, EnableGitResult, FetchResult, FsProbe, FsProbeResult, GitRemoteFailure, GitRemoteFailureKind, GitStatusResult, MalformedSyncedTask, PreflightReport, PushResult, SyncFsAdvisory, SyncFsClass, SyncOutcome, SyncProgress } from "./git/index.js";
 export type {
   ApplyReconcileOutcome,
   ApplyReconcileResult,
@@ -159,6 +159,9 @@ export {
   fetchLocttBranch,
   getGitStatus,
   getReconcileState,
+  // GIT-25: the adopt-or-stop refusal for a pre-existing LocTT-written
+  // branch, so a surface can distinguish it from a foreign-content refusal.
+  GitBranchAdoptNeededError,
   // Re-exported so callers can distinguish a conflict from any other git
   // failure (GIT-C5). It lived in git/index.ts only, which put it out of
   // reach of apps/web — the reason every git error there was reported

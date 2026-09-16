@@ -13,7 +13,7 @@ import { getLocalDir,getSyncStatePath } from "../paths/index.js";
 import { loadSyncState,saveSyncState } from "../state/sync.js";
 import { fileExists } from "../utils/fs.js";
 import { detectSyncFsAdvisory, type FsProbe, type SyncFsAdvisory } from "./fstype.js";
-import { branchExists, branchHasForeignContent, branchHeadCommit, countLocalChanges, remoteExists } from "./publish-sync.js";
+import { branchExists, branchHasForeignContent, branchHeadCommit, countLocalChanges, GitBranchAdoptNeededError, remoteExists } from "./publish-sync.js";
 
 export interface GitStatusResult {
   readonly enabled: boolean;
@@ -91,6 +91,37 @@ export interface EnableGitResult {
    * Enable still succeeded; the caller surfaces this as an advisory.
    */
   readonly fstypeAdvisory?: SyncFsAdvisory;
+  /**
+   * GIT-25: present when enable *adopted* a pre-existing LocTT-written
+   * branch (the caller passed `adopt: true` and such a branch existed).
+   * Carries the adopted branch, its head commit — which `last_synced_commit`
+   * was set to — and whether local state already agrees with that branch,
+   * so the surface can tell the user whether a sync is needed rather than
+   * leave them guessing. Absent on a fresh enable (no pre-existing branch).
+   */
+  readonly adopted?: {
+    readonly branch: string;
+    readonly branchHead: string;
+    /**
+     * True when local publishable state matches the adopted branch (no
+     * sync needed); false when it differs (a sync/publish would move
+     * work); undefined when it could not be determined (drift uncountable).
+     */
+    readonly inAgreement: boolean | undefined;
+  };
+}
+
+/** Options for {@link enableGit}. */
+export interface EnableGitOptions {
+  /**
+   * GIT-25: confirm adopting a pre-existing LocTT-written branch. Without
+   * it, enable throws {@link GitBranchAdoptNeededError} (naming the branch
+   * + head, writing nothing) so a non-interactive surface reports the
+   * choice rather than silently adopting. With it, enable adopts — sets
+   * `last_synced_commit` to the branch head and reports agreement. Has no
+   * effect when no such branch exists.
+   */
+  readonly adopt?: boolean;
 }
 
 /**
@@ -106,6 +137,7 @@ export async function enableGit(
   locttDir: string,
   root: string,
   probe?: FsProbe,
+  options?: EnableGitOptions,
 ): Promise<EnableGitResult> {
   if (!isGitRepo(root)) {
     throw new Error("not inside a Git repository — cannot enable Git-backed mode");
@@ -121,6 +153,11 @@ export async function enableGit(
   // reconfigured branch is checked instead (GIT-C10).
   const branch = (await loadSyncState(locttDir).catch(() => undefined))?.git.branch
     ?? DEFAULT_GIT_BRANCH;
+  // GIT-25: a pre-existing branch that LocTT wrote is safe to adopt but
+  // must not be adopted silently — resolved after the enabled-guard
+  // below so we do not report an adopt decision on a tracker that is
+  // already enabled (that stays the "already enabled" error).
+  let adoptDecision: EnableGitResult["adopted"];
   if (branchExists(root, branch)) {
     const foreign = branchHasForeignContent(root, branch);
     if (foreign.length > 0) {
@@ -142,6 +179,28 @@ export async function enableGit(
     }
   }
 
+  // GIT-25: the branch is LocTT-written (the foreign guard above passed)
+  // and already exists. Adopting it is a knowing choice — without an
+  // explicit confirmation, refuse-and-report (naming the branch + head,
+  // writing nothing), exactly as the foreign-content case refuses up
+  // front (GIT-C7). With confirmation, adopt below.
+  const existingHead = branchExists(root, branch) ? branchHeadCommit(root, branch) : undefined;
+  if (existingHead !== undefined) {
+    if (options?.adopt !== true) {
+      throw new GitBranchAdoptNeededError({ branch, branchHead: existingHead });
+    }
+    // Adopt: record the branch head as the baseline and report whether
+    // local already agrees with it. countLocalChanges compares local
+    // publishable files against the branch; 0 means in agreement, >0
+    // means a sync/publish would move work, undefined means uncountable.
+    const localChanges = countLocalChanges(root, locttDir, branch);
+    adoptDecision = {
+      branch,
+      branchHead: existingHead,
+      inAgreement: localChanges === undefined ? undefined : localChanges === 0,
+    };
+  }
+
   // Created only once every guard above has passed. A failed enable
   // that leaves local/ behind is a tracker holding the shape of
   // git-backed mode without the state to perform it (GIT-C9).
@@ -155,6 +214,10 @@ export async function enableGit(
       remote: DEFAULT_GIT_REMOTE,
       auto_push: DEFAULT_GIT_AUTO_PUSH,
       auto_fetch: DEFAULT_GIT_AUTO_FETCH,
+      // GIT-25: adopting an existing branch sets the sync baseline to its
+      // head — the one legitimate `last_synced_commit` write at enable
+      // time. A fresh enable (no existing branch) leaves it unset.
+      ...(adoptDecision !== undefined ? { last_synced_commit: adoptDecision.branchHead } : {}),
     },
   };
 
@@ -165,7 +228,10 @@ export async function enableGit(
   // enable on a hazardous filesystem still succeeds and simply carries
   // the warning back.
   const fstypeAdvisory = detectSyncFsAdvisory(root, probe);
-  return fstypeAdvisory !== undefined ? { fstypeAdvisory } : {};
+  return {
+    ...(fstypeAdvisory !== undefined ? { fstypeAdvisory } : {}),
+    ...(adoptDecision !== undefined ? { adopted: adoptDecision } : {}),
+  };
 }
 
 /**

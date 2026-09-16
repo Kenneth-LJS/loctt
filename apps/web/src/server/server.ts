@@ -120,6 +120,7 @@ import {
   getGitStatus,
   getTrackerInfo,
   getWorkflowConfigPath,
+  GitBranchAdoptNeededError,
   GitConflictError,
   GitHistoryRewrittenError,
   GitReconcileInterruptedError,
@@ -3261,11 +3262,43 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleGitEnable: RouteHandler = async ({ res, locttDir }) => {
+  const handleGitEnable: RouteHandler = async ({ req, res, locttDir }) => {
+    // GIT-25: the panel confirms adopting a pre-existing LocTT-written
+    // branch by re-POSTing with `{ adopt: true }`. Absent/false means
+    // "stop and report" so the found branch is surfaced rather than
+    // silently adopted.
+    const body = await parseJsonBody<{ adopt?: boolean }>(req, res);
+    const adopt = body.adopt === true;
     try {
-      await enableGit(locttDir, root);
-      json(res, { enabled: true });
+      const result = await enableGit(locttDir, root, undefined, { adopt });
+      json(res, {
+        enabled: true,
+        // GIT-25: report the adopt outcome so the panel can tell the user
+        // whether a sync is needed. Absent on a fresh enable.
+        ...(result.adopted !== undefined
+          ? {
+              adopted: {
+                branch: result.adopted.branch,
+                branchHead: result.adopted.branchHead,
+                inAgreement: result.adopted.inAgreement ?? null,
+              },
+            }
+          : {}),
+      });
     } catch (err) {
+      // GIT-25: a pre-existing LocTT-written branch and adopt was not
+      // confirmed. Carry the branch + head in the envelope so the panel
+      // states what was found and shows the head before offering
+      // adopt-or-stop — nothing was written.
+      if (err instanceof GitBranchAdoptNeededError) {
+        error(res, err.message, 409, {
+          code: "branch_adopt_needed",
+          data_state: "not_saved",
+          recovery: { kind: "none" },
+          branch_adopt_needed: { branch: err.branch, branch_head: err.branchHead },
+        });
+        return;
+      }
       error(res, (err as Error).message, 400, {
         code: "git_failed",
         data_state: "not_saved",

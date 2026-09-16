@@ -1189,7 +1189,9 @@ The same counts are available as `loctt config usage` on the CLI and `GET /api/w
 
 ### `enable_git`
 
-Enables git-backed mode for this tracker. Sets up a dedicated `loctt` branch, published via a temporary worktree. One-time infrastructure setup — only call when explicitly asked. No parameters.
+Enables git-backed mode for this tracker. Sets up a dedicated `loctt` branch, published via a temporary worktree. One-time infrastructure setup — only call when explicitly asked.
+
+Parameter: `adopt` (boolean, optional). If the configured branch already exists from a previous setup and was written by LocTT, `enable_git` does **not** silently adopt it: it returns a report naming the branch and its head commit and asks the caller to decide (GIT-25). Call again with `adopt: true` to adopt it — this sets `last_synced_commit` to the branch head and reports whether local state already agrees with the branch (so you can tell the user whether a `sync_from_git` is needed). A branch holding content LocTT did not write is refused outright, naming the files in the way; `adopt` does not override that refusal.
 
 ### `disable_git`
 

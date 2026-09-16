@@ -13275,3 +13275,78 @@ lines; delete the new tests + the Playwright spec; revert the doc subsections.
 No on-disk format change (the sentinel is unchanged; the decision reuses the
 existing schema with a reserved field name), so no migration. Reverting reopens
 the silent delete-vs-edit data loss.
+
+### A197 · GIT-25 adopt-existing-branch prompt — enable refuses-and-reports a pre-existing LocTT branch, adopts only on explicit confirm
+
+**The situation.** `enableGit` (packages/core/src/git/git-mode.ts) already
+refused a branch holding **foreign** content (a hard error, GIT-C7) but
+**silently adopted** a branch that LocTT itself had written on a previous
+setup — it just wrote a fresh sync.yaml with no `last_synced_commit` and no
+word to the user. GIT-25 (docs/dev/ui-test-cases/flow-git-sync.md:209) wants
+the LocTT-written case surfaced: state the branch was found, show its head,
+ask adopt-or-stop, and on adopt set `last_synced_commit` to the head and
+report whether local already agrees.
+
+**Decision — mirror GIT-C7's non-interactive shape.** CLI/MCP cannot prompt,
+so "ask" is: without an explicit adopt confirmation, refuse-and-report
+(name branch + head, write NOTHING, exit non-zero / return a needs-decision
+result); with it, adopt.
+
+- **Engine.** `enableGit` gains an `EnableGitOptions { adopt?: boolean }`
+  fourth param. A pre-existing LocTT-written branch (foreign guard passed)
+  with `adopt !== true` throws the new typed `GitBranchAdoptNeededError`
+  (branch + branchHead) before any write. With `adopt: true` it adopts:
+  writes sync.yaml with `last_synced_commit = branchHeadCommit(branch)` and
+  returns `EnableGitResult.adopted = { branch, branchHead, inAgreement }`,
+  where `inAgreement = countLocalChanges(...) === 0` (undefined when
+  uncountable). The adopt-time `last_synced_commit` write is the **only** new
+  write of that field and is the case's legitimate adopt path (bullet 3) —
+  NOT a history-rewrite/base-reset (K93 stays untouched: no `last_synced_commit`
+  write anywhere else).
+- **CLI (`git.ts`).** `--adopt` flag (added to `ACCEPTED_FLAGS`); catches
+  `GitBranchAdoptNeededError` → prints message + exit `EXIT.RUNTIME`;
+  reports the adopt outcome + agreement on success. Mirrors GIT-C7's
+  flag-or-exit shape.
+- **MCP (`git.ts`).** `adopt` boolean input on `enable_git`; catches the
+  error → returns its message; reports outcome + agreement on success.
+- **Web.** `POST /api/git/enable` reads `{ adopt }` from the body; on the
+  error returns a `409 branch_adopt_needed` envelope carrying
+  `{ branch, branch_head }` (new `ErrorCode` + payload in contracts). The
+  panel's new `branchAdoptNeeded` detector routes that to an adopt-or-stop
+  control (`git-adopt-branch`, showing the head) instead of the generic
+  retryable ErrorState; Adopt re-POSTs `{ adopt: true }`. The agreement
+  report (`git-adopt-report`) is lifted to `GitSyncPanel` so it survives the
+  panel flipping to the enabled view on the status refetch.
+
+**Why refuse rather than local-only-adopt-and-warn.** The no-remote (GIT-27)
+and fstype (GIT-22) cases *warn and proceed* because proceeding is safe and
+reversible. Adopting is different: it silently decides whether the branch's
+state or the user's current local state becomes the sync baseline — a choice
+with data consequences the next sync acts on. GIT-25's own wording ("asks
+whether to adopt … rather than silently overwriting it") calls for a
+decision, so this refuses-and-reports, matching GIT-C7, not GIT-22/27.
+
+**Not touched.** No-`--force`, `NEVER_MIRROR`/`LOCAL_OWNED`, reconcile/rekey,
+the foreign-branch refusal (still a hard error, `--adopt` does not override
+it), GIT-21/35/8/22/34/36/19/16 guards. The rekey engine and
+`last_synced_commit` are unchanged except for the one legitimate adopt write.
+
+**Tests.** git-mode.test.ts GIT-25 block (without-adopt refuses + writes
+nothing; with-adopt enables + sets `last_synced_commit` + reports agreement;
+disagreement when local differs; fresh enable reports no adopt) — each
+red-proved (gate removed → without-adopt red; adopt `last_synced_commit`
+write removed → with-adopt red; `inAgreement` forced true → disagreement
+red). GitSyncPanel.test.tsx `branchAdoptNeeded` detector test (red-proved by
+deleting the payload return). Playwright flow-git-sync.spec.ts GIT-25 e2e
+(authored; unit-red-proved per the minor/P4 cadence, full suite not run).
+
+**To revert.** Remove `EnableGitOptions`/`adopt` + the adopt branch in
+`enableGit` (revert to silent adopt); delete `GitBranchAdoptNeededError` +
+its exports; drop `adopted` from `EnableGitResult`; remove `--adopt`
+(CLI) and the `adopt` input (MCP) + their error/outcome handling; remove
+`branch_adopt_needed` from contracts (ErrorCode + payload); revert the web
+enable route to the plain `enableGit(...)` call; remove the panel detector,
+adopt-or-stop control, and lifted agreement report; delete the new tests +
+the e2e spec + these doc paragraphs. No on-disk format change (reuses the
+existing optional `last_synced_commit`), so no migration. Reverting restores
+the silent-adopt behaviour.
