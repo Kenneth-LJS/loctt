@@ -2899,9 +2899,12 @@ them would be a tag that cannot fail:
   `@verifies A11Y-10` spec drives the whole flow by keyboard.
 - **A11Y-12** — RESOLVED 2026-09-12: the project switcher's truncation
   control is now a two-way toggle carrying `aria-expanded`, toggling on
-  Enter/Space (Sidebar.tsx); the inert "Mentions me" entry was already
-  `aria-disabled` and out of tab order. `@verifies A11Y-12` spec; the old
-  untagged "no group is collapsible" gap test removed.
+  Enter/Space (Sidebar.tsx); the "Mentions me" entry was inert and
+  `aria-disabled` at the time. `@verifies A11Y-12` spec; the old
+  untagged "no group is collapsible" gap test removed. (CMT-10/A183 later
+  made "Mentions me" an active filter when a current user is set, so the
+  A11Y-12 spec now asserts it is a keyboard-reachable link; the
+  inert-when-no-user pattern is covered in Sidebar.test.tsx.)
 - **A11Y-17** — RESOLVED 2026-09-12: a refetch that *keeps* the focused
   row preserves focus natively (React keyed reconciliation); for the
   unmount/remount case a MutationObserver in `ListView` restores focus to
@@ -3342,3 +3345,4 @@ PRU-37 PRU-39 PRU-40 PRU-41 PRU-42 PRU-43 PRU-8 PRU-9 XS-55`. M4.1 shipped
 M4.3 set) and the remaining project/user management surface (the M4.1
 set). Neither was in v1's 23-ticket scope, so neither is a defect in that
 run.
+

@@ -107,7 +107,7 @@ minority of these.
 
 - Every group header and entry is reachable in a predictable order.
 - Collapsible groups expose their expanded/collapsed state to assistive tech and toggle on `Enter`/`Space`.
-- The non-interactive "Mentions me" entry (SHL-8) is either skipped by the tab order or focusable-but-announced-as-unavailable — it never presents as an actionable control that does nothing.
+- An inert built-in entry — a user-scoped filter such as "Mentions me" (SHL-8) or "Assigned to me" when there is no current user — is either skipped by the tab order or focusable-but-announced-as-unavailable; it never presents as an actionable control that does nothing. (When a current user is set these are ordinary links, tested as such.)
 
 ### A11Y-13 · M4 · major · P8
 **The header avatar menu is keyboard-operable per menu conventions.** `Tab` to the avatar and press `Enter`.

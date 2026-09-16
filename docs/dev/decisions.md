@@ -11817,6 +11817,27 @@ backward-compatible (absent `task_types` = prior global behaviour).
   `builtinToDsl.test.ts`, `builtinFilters.test.ts`) were updated to the
   new contract, and the deferred-Mentions-me comments in `Sidebar.tsx` /
   `useBuiltinCounts.ts` / `inertReason` corrected.
+- **Follow-up (post-commit, working tree) — the Playwright specs the first
+  pass missed.** The initial CMT-10 commit left three UI specs asserting
+  the old deferred/inert "Mentions me", which then failed on HEAD once the
+  built-in was wired (a real CMT-10 regression, not pre-existing).
+  Corrected: `flow-list.spec.ts` SHL-8 (was "inert, badge-free" → now
+  "active filter that navigates and counts, with a current user"; the
+  no-user inert branch is unit-covered in `Sidebar.test.tsx`) and SHL-6
+  (now includes "Mentions me" among the URL-reproducing built-ins, seeding
+  a comment that mentions the current user); `flow-accessibility.spec.ts`
+  A11Y-12 (asserts "Mentions me" is a keyboard-reachable link). Case
+  wording updated to match: `flow-app-shell.md` SHL-8 + SHL-6,
+  `flow-accessibility.md` A11Y-12. Each spec red-proven by reverting the
+  built-in to `resolve: () => null` and rebuilding (all three go red;
+  restored → green). The known-gaps entry a later agent had filed as
+  "SHL-8/SHL-6 fail … pre-existing, unrelated to the query builder" was
+  removed — it was this regression, now fixed. SHL-6 also had a latent
+  race the added "Mentions me" iteration exposed (clicking a filter flips
+  the URL/aria-current before the row list refetches, so a `tbody tr`
+  count could read the pre-click rows); rewritten to wait on the
+  `aria-live` "of N" summary total and assert both tabs converge on it —
+  deterministic across `--repeat-each=4`.
 
 ### A-K88 · A80/K88 built — prefix stored bare, dash inserted at render
 
@@ -12545,3 +12566,107 @@ Gates: core types rebuilt (`tsc --build packages/core`), typecheck 0 (all
 workspaces incl. web — the `buildDsl` import resolves), lint 0 on changed
 files, 59 new tests green, 387 core-query tests green, 20 web-list tests
 (buildDsl + dslToSearch) green. Not committed — left in the working tree.
+
+### A186 · Visual query builder — Advanced-surface wiring (K83 step 3, web)
+
+**Ticket:** K83 (query-builder, step 3: wire `<QueryBuilder>` into
+FilterBar's Advanced surface) · **Date:** 2026-09-16 · **Commit:**
+(uncommitted working tree)
+
+**The situation.** K83 (i) requires refuse-on-unrenderable; (ii) requires
+the builder to coexist with the chip bar, editing only `q`; (iii) defers
+NOT. Steps 1 (core) and 2 (the `<QueryBuilder>` form) existed. Step 3 is
+the glue: which mode the Advanced surface opens in, how it switches, and
+how a builder apply writes to the URL. Three calls the docs did not settle
+had to be made.
+
+**Decided (agent level — decide-and-record).**
+
+1. **A new glue component owns the mode, not FilterBar.**
+   `apps/web/src/client/list/AdvancedQuerySurface.tsx` replaces FilterBar's
+   direct mount of `AdvancedQueryEditor`. FilterBar still owns *whether*
+   Advanced is open (its `advanced` boolean) and the text `draft`; the
+   surface owns *which mode* (`"builder" | "text"`) and the builder's tree.
+   The mode is seeded ONCE from `queryToBuilderTree(q)` at mount — `ok`
+   opens the visual builder, `ok:false` opens the text box with the reason
+   note — then the user drives it with "Switch to text" / "Switch to
+   visual". Keeping the mode local (not in the URL) mirrors how the text
+   `draft` is already local until applied. **Why a component and not
+   inline:** the refuse logic, the two switch controls, and the shared
+   validation are ~200 lines; inlining them into FilterBar's already-long
+   body would bury the chip-bar logic. It stays in the list dir per the
+   ticket.
+
+2. **A seeded single-leaf query is normalized to a one-child group root
+   (`asGroupRoot`).** A single comparison (`priority = high`) parses to a
+   bare `leaf`, and the step-2 builder's edit paths (`editAt`) reach into a
+   *group's* children — a bare-leaf root has no child slot, so removing the
+   sole condition would no-op and "+ Condition" would not attach beside it.
+   That would break LST-41 (empty-to-clear) for any single-clause query.
+   Wrapping a leaf in `{group, op:"and", children:[leaf]}` is
+   query-equivalent (a single-child group serializes as just its child, per
+   `builderTreeToQuery`) and gives an editable structure. **Why here and
+   not in core's `queryToBuilderTree`:** core's contract is "the flattened
+   tree that round-trips"; a leaf round-trips fine, so forcing a group
+   there would be a UI concern leaking into core. The wrap is applied at
+   the surface, on the two paths that seed the builder (initial mount and
+   Switch-to-visual).
+
+3. **The builder's live `q` runs through the SAME `useValidateQuery` the
+   text editor uses.** Step 2 deferred validation to step 3. The surface's
+   builder mode feeds `builderTreeToQuery(tree)` into `useValidateQuery` and
+   renders the verdict in a `qb-validation` region, so an invalid
+   in-progress state (a free-text `~` value, say) surfaces the same
+   classifier the text path shows — builder and text agree on "invalid" by
+   construction, not by two copies.
+
+4. **An empty `q` opens the TEXT box with no refuse note, not the
+   builder.** `queryToBuilderTree("")` is `ok:false` ("empty query" parse
+   error), so by the ticket's literal rule an empty open lands in text —
+   which is right, because it keeps VUE-8's path ("open Advanced, type a
+   query, run it") unchanged. But an empty string is "no query yet", not
+   an error to apologise for, so the refuse note is suppressed for it
+   (`!initial.ok && !isEmpty`), and "Switch to visual" is ENABLED on an
+   empty box (`parseForBuilder` treats empty as a renderable empty group)
+   so the empty builder is one click away. **Considered and rejected:**
+   defaulting an empty open straight to the builder — it would break VUE-8
+   (a locked case whose steps use `dsl-input` right after opening
+   Advanced), and rewriting a locked case to fit new code is exactly what
+   the build loop forbids.
+
+**Coexistence (K83-ii).** Apply calls FilterBar's `onApply(q)`, which
+navigates `search: prev => ({ ...prev, q: q||undefined })` — ONLY the `q`
+key changes; every facet chip param (`status=`, `labels=`, …) is spread
+through untouched, so q + chips compose as intersection (LST-40). An empty
+builder serializes to `""`, which clears `q` while leaving the chips
+(LST-41). This is the same navigate shape the old text `onRun` used.
+
+**Tests + red-proofs.** `FilterBar.test.tsx` (@verifies K83, LST-40,
+LST-41): refuse-on-NOT and refuse-on-has_link land in text with the reason
++ disabled "Switch to visual"; a renderable OR query opens the builder
+showing two leaves; a builder edit applied with a `status` chip active
+keeps `status` AND sets `q` (LST-40); emptying the builder clears `q` and
+keeps `status` (LST-41); an unedited open→apply leaves `q` byte-identical;
+an empty open shows the text box with NO refuse note and an enabled
+"Switch to visual".
+`flow-list.spec.ts` adds the rendered-page half (NOT-refuse, renderable
+open, LST-40 compose, LST-41 clear). Each shown to fail: force
+`mode="builder"` → NOT-refuse red (jsdom + Playwright); force `mode="text"`
+→ renderable-open + round-trip red; make `onApply` navigate with
+`search: () => ({q})` (dropping the spread) → LST-40 compose red (jsdom +
+Playwright); make `onApply` always set `q` → LST-41 clear red. All
+restored.
+
+**To revert.** Delete
+`apps/web/src/client/list/AdvancedQuerySurface.tsx` and its two test
+blocks (the "Advanced surface (K83 step 3)" describe in
+`FilterBar.test.tsx` and the "K83 — visual query builder…" describe in
+`flow-list.spec.ts`), and restore FilterBar's `if (advanced)` block to
+mount `AdvancedQueryEditor` directly (see git history for the exact
+prior block). No on-disk format change, so no migration.
+
+**Built (agent-level).** The Advanced-surface wiring + refuse-on-
+unrenderable + chip coexistence, as specced. Gates: typecheck 0, lint 0
+(pre-existing warnings only), 23 FilterBar unit tests + 175 web-list unit
+tests green, 4 new + full `flow-list.spec.ts` UI green (see report). Not
+committed — left in the working tree.

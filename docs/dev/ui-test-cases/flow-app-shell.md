@@ -54,7 +54,7 @@ config changing underneath a live session is
 - Archived projects do not appear in the group.
 
 ### SHL-6 · M1 · blocker · P2 P10
-**The five live built-in saved filters click through to URL filter state.** Click Assigned to me, Reported by me, Due this week, Overdue, and High priority in turn.
+**The six live built-in saved filters click through to URL filter state.** Click Assigned to me, Reported by me, Mentions me, Due this week, Overdue, and High priority in turn. (Each is live once its precondition holds — the three user filters need a current user; "Mentions me" (CMT-10) also needs a task whose comment mentions that user to produce a non-empty result.)
 
 - Each sets filter state in the URL such that pasting the URL into a new tab reproduces the same result set.
 - The resulting result set matches what the equivalent `loctt list --query` returns for the same filter — no UI-only filter semantics.
@@ -68,12 +68,11 @@ config changing underneath a live session is
 - Creating a task that matches a filter updates that badge without a full page reload (on refetch at the latest).
 
 ### SHL-8 · M1 · blocker · P4 P6
-**"Mentions me" renders without a count and is non-interactive until M2.4.** Inspect the Mentions me entry on an M1 build.
+**"Mentions me" is an active built-in filter when a current user is set, and inert only when there is none.** It resolves to `comment_mentions = currentUser()` (CMT-10 / A183), so it behaves exactly like the other user-scoped filters ("Assigned to me", "Reported by me").
 
-- It renders in the Saved filters group in its final position, so the group doesn't reorder when it goes live.
-- It shows **no** count badge — not a `0`, which would be a false claim about the data.
-- It is not clickable and does not navigate; the disabled state is conveyed by more than colour and is exposed to assistive tech (see A11Y-31).
-- Hovering or focusing it explains why it is inert and when it arrives ("Available once comments land"), rather than being silently dead.
+- It renders in the Saved filters group in its final position, so the group order is stable.
+- **With a current user set** (the default — `init` bootstraps one): it is a real link that navigates to the filter state, and it carries a count badge like the other live filters (the count may be `0` when no comment mentions the user, which is an honest count, not a blank).
+- **With no current user** (the same precondition that makes "Assigned to me" inert): it renders inert — not clickable, no count. The disabled state is conveyed by more than colour and is exposed to assistive tech (see A11Y-31), and hovering or focusing it explains it is unavailable, rather than being silently dead. The explanation is the generic user-filter one, not a "comments land" promise (that feature has shipped).
 
 ### SHL-9 · M1 · major · P3 P6
 **Milestones, Sprints, and Labels groups render from config.** On a tracker with several of each.
