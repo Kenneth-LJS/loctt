@@ -12469,3 +12469,79 @@ to `absolute`/`top: band.y`; remove the `onPointerEnter/Leave` + the
 errors (69 pre-existing warnings untouched), 112 timeline unit tests,
 full flow-timeline.spec.ts 56/56 (was 54: +TML-26, +TML-32; TML-21
 extended). Not committed — left in the working tree.
+
+### A185 · Visual query builder — the renderable leaf subset (K83 step 1, core)
+
+**Ticket:** K83 (query-builder, step 1: core serializer + AST→tree +
+renderability predicate) · **Date:** 2026-09-16 · **Commit:**
+(uncommitted working tree)
+
+**The situation.** K83 (Ken's) fixes the builder's *shape* — a tree of
+AND/OR groups over leaf comparisons, nesting allowed, NO `not` (v2), and
+"refuse rather than render a query it can't represent". It does not
+enumerate *which leaf comparisons* the visual builder can hold. That line
+had to be drawn to write the renderability predicate.
+
+**Decided (agent level — decide-and-record).** A leaf comparison is
+**renderable** iff all three hold:
+- `op` ∈ {`=`, `!=`, `in`, `not in`, `<`, `<=`, `>`, `>=`, `~`,
+  `is empty`, `is not empty`};
+- `field` is a plain queryable field or a `fields.<key>` custom field
+  (kept verbatim — `validateQuery` owns field-name validity, not the
+  builder);
+- `value` kind ∈ {string, number, boolean, date, today, current_user, or
+  a list of those}, plus the `empty` sentinel for the two postfix
+  presence ops.
+
+A whole query is **UNRENDERABLE** (`queryToBuilderTree` returns
+`{ ok: false, reason }`) when it contains any of: a `not` node anywhere
+(deferred to v2); a `has_link(...)` node; a comparison carrying a `call`
+(i.e. `link_count(...)`); a `date_fn` value anywhere (date functions edit
+as text in v1); a query that does not parse; or anything else outside the
+subset. The UI (a later step) reads `ok: false` to refuse opening the
+visual view (K83 (i)); step 1 is pure core.
+
+**Why.** The subset is exactly the leaf shapes a two-field-plus-value row
+editor can hold without inventing UI. `date_fn` is excluded on purpose —
+editing `startOfWeek("+1w")` needs its own control, so in v1 those queries
+stay text-only rather than being silently flattened to a date. Excluding
+`link_count`/`has_link`/`not` follows K83 directly.
+
+**Also decided (small refactor).** `dslAtom` — the canonical
+quote/escape rule — **moved into core** as
+`packages/core/src/query/serialize.ts`, so the web's `buildDsl.ts` and
+the new serializer share ONE atom formatter and quoting round-trips
+identically on both paths. `buildDsl.ts` now imports it and re-exports it
+(its test and any importer keep the `./buildDsl` entry point). New subpath
+exports added to `@loctt/core` for `query/builderTree.js` and
+`query/serialize.js` so the web bundle imports them WITHOUT the barrel
+(the barrel pulls `node:path`/`sharp` into the browser — the A37 /
+dslToSearch constraint). NOTE: `apps/web/src/server/server.ts:873` has its
+own private `dslAtom` copy (server side, not browser-bundle-constrained) —
+left untouched; a later parity pass could fold it in too.
+
+**Tests + red-proofs.** `builderTree.test.ts` (@verifies K83): round-trip
+table (flat AND/OR, mixed nesting `a and (b or c)`, `in`, `is empty`, `~`,
+`< <= > >=`, `currentUser()`, `today`, quoted/escaped strings incl.
+`text ~ "say \"hi\""`, `fields.points > 3`) asserting normalized-AST
+equality and second-round-trip stability; flatten (`a and b and c` → one
+3-child group); refuse cases (`not`, `has_link`, `link_count`, `date_fn`,
+parse error); LST-42 quoting round-trip. Each shown to fail by breaking
+its mechanism: drop the parens rule → mixed-nesting round-trip red;
+disable flatten → flatten + stability red; accept `not` → refuse-on-not
+red; accept `date_fn` → date_fn-refusal red; strip `dslAtom` escaping →
+quoting round-trip red. All restored.
+
+**To revert.** Delete `packages/core/src/query/builderTree.ts` and its
+test; delete `packages/core/src/query/serialize.ts` and inline `dslAtom`
+back into `apps/web/src/client/list/buildDsl.ts` (removing the import +
+re-export); drop the `builderTree`/`serialize` lines from the query barrel
+(`packages/core/src/query/index.ts`) and the two subpath exports from
+`packages/core/package.json`. No on-disk format change, so no migration.
+
+**Built (agent-level).** Core serializer + AST→tree + renderability
+predicate + round-trip tests, all as specced. No UI (that is step 2).
+Gates: core types rebuilt (`tsc --build packages/core`), typecheck 0 (all
+workspaces incl. web — the `buildDsl` import resolves), lint 0 on changed
+files, 59 new tests green, 387 core-query tests green, 20 web-list tests
+(buildDsl + dslToSearch) green. Not committed — left in the working tree.
