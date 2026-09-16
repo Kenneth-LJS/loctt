@@ -89,7 +89,18 @@ interface Context {
   readonly previous: unknown;
 }
 
-export function useSetField(ref: string) {
+/**
+ * @param ref the key/id the tab navigated by — the URL ref, used for the
+ *   endpoint and the cache key.
+ * @param expectedId the stable ULID the tab fetched for this task. Sent as
+ *   the write's `expectedId` precondition (GIT-19): the server refuses,
+ *   writing nothing, if `ref` now resolves to a *different* task — the
+ *   wrong-task write a background rekey would otherwise cause. Passing the
+ *   id the client already holds is what keeps every edit targeted at the
+ *   task the user is looking at, without turning `ref` itself into an id
+ *   (which would break retired-key resolution the read path relies on).
+ */
+export function useSetField(ref: string, expectedId?: string) {
   const qc = useQueryClient();
   const queryKey = ["task", ref];
 
@@ -102,12 +113,12 @@ export function useSetField(ref: string) {
       vars.value === undefined
         ? apiClient.post<TaskFrontmatterPublic>(
             `/api/tasks/${encodeURIComponent(ref)}/unset`,
-            { field: vars.field },
+            { field: vars.field, ...(expectedId !== undefined ? { expectedId } : {}) },
             { timeoutMs: SET_FIELD_TIMEOUT_MS },
           )
         : apiClient.post<TaskFrontmatterPublic>(
             `/api/tasks/${encodeURIComponent(ref)}/set`,
-            { field: vars.field, value: vars.value },
+            { field: vars.field, value: vars.value, ...(expectedId !== undefined ? { expectedId } : {}) },
             { timeoutMs: SET_FIELD_TIMEOUT_MS },
           ),
 

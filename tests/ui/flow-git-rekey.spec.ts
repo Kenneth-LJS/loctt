@@ -145,3 +145,69 @@ test("GIT-9: the preview states the ULID tiebreak when created_at ties", async (
 
   expect(errors).toEqual([]);
 });
+
+/**
+ * GIT-19: a rekey affects a task open in another tab.
+ *
+ * @verifies GIT-19
+ *
+ * The two-clone collision reuses the contested key: after the rekey the
+ * LOSER (the local task) is renumbered and keeps the old key in
+ * `key_history`, while the WINNER (the clone's earlier task) KEEPS the old
+ * key. So the old-key URL now resolves to the WINNER — the exact hazard
+ * bullet 3 forbids a write from riding.
+ *
+ * Bullets 1/2 (the tab never shows a stale key as authoritative) and
+ * bullet 4 (reload resolves via key_history) are locked at unit level in
+ * `apps/web/.../server.git19-rekey-precondition.test.ts` and
+ * `packages/core/.../lookup.test.ts`. This spec is the through-the-browser
+ * proof of the two ends the case turns on: the old key resolving to the
+ * OTHER task, and an edit against the renumbered task still landing on it.
+ */
+test("GIT-19: after a rekey the old-key URL resolves to the winner; an edit on the loser's new key lands on the loser", async ({
+  page, gitTracker,
+}) => {
+  const errors = guardPageErrors(page);
+  const { root, remoteRepo } = gitTracker;
+
+  const [baseKey] = await gitTracker.seed(["base"]);
+  expect(baseKey).toBeDefined();
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.run(["git", "publish"]);
+
+  const [localKey] = await gitTracker.seed(["local next"]);
+  const contested = localKey as string;
+
+  await createCollidingFromOtherClone(remoteRepo, root, "clone next");
+
+  await gotoSync(page, gitTracker.baseURL);
+  await page.getByTestId("git-sync").click();
+  await expect(page.getByTestId("git-rekey-preview")).toBeVisible();
+  await page.getByTestId("git-rekey-confirm").click();
+  await expect(page.getByTestId("git-rekey-applied")).toBeVisible();
+
+  // Find the loser's NEW key from disk (the task titled "local next").
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  const { readdir } = await import("node:fs/promises");
+  let loserKey = "";
+  for (const id of await readdir(tasksDir)) {
+    const raw = await readFile(path.join(tasksDir, id, "task.md"), "utf8").catch(() => "");
+    if (/title:\s*local next/.test(raw)) {
+      loserKey = (/^key:\s*(\S+)/m.exec(raw)?.[1]) ?? "";
+    }
+  }
+  expect(loserKey).not.toEqual("");
+  expect(loserKey).not.toEqual(contested);
+
+  // The OLD (contested) key now resolves to the WINNER — the clone's task.
+  await page.goto(`${gitTracker.baseURL}/tasks/${contested}`);
+  await expect(page.getByTestId("task-key-chip")).toHaveText(contested);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("clone next");
+
+  // The loser lives at its NEW key, and reloading it there shows that key.
+  await page.goto(`${gitTracker.baseURL}/tasks/${loserKey}`);
+  await expect(page.getByTestId("task-key-chip")).toHaveText(loserKey);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("local next");
+
+  expect(errors).toEqual([]);
+});

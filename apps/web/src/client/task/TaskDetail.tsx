@@ -66,10 +66,18 @@ import { TaskNotFound } from "./TaskNotFound.tsx";
 export function TaskDetail({
   taskRef,
   activityTab,
+  rekeyedFrom,
 }: {
   readonly taskRef: string;
   /** The activity tab from `?tab=` (CMT-18); undefined → the default. */
   readonly activityTab?: "comments" | "activity" | "all";
+  /**
+   * GIT-19. The retired key this tab was following before it was rekeyed
+   * elsewhere, from `?rekeyedFrom=`. Set by the follow-the-rekey redirect
+   * below so the note can still explain the change after the URL has moved
+   * to the current key.
+   */
+  readonly rekeyedFrom?: string;
 }) {
   const task = useTask(taskRef);
   const queryClient = useQueryClient();
@@ -108,7 +116,11 @@ export function TaskDetail({
   const [fieldError, setFieldError] = useState<FieldFailure | null>(null);
   const [labelError, setLabelError] = useState<string | null>(null);
 
-  const setField = useSetField(taskRef);
+  // GIT-19: the write carries the stable id the tab fetched, so an edit
+  // submitted after the ref was rekeyed onto another task is refused rather
+  // than landing on the wrong task. Undefined until the first fetch lands;
+  // a write cannot fire before then (the controls render from `task.data`).
+  const setField = useSetField(taskRef, task.data?.frontmatter.id);
   const createLabel = useCreateLabel();
 
   const archive = useArchiveTask(taskRef);
@@ -123,6 +135,38 @@ export function TaskDetail({
     const t = setTimeout(() => { setCopied(null); }, 2500);
     return () => { clearTimeout(t); };
   }, [copied]);
+
+  /**
+   * GIT-19 — follow a rekey that happened in another tab.
+   *
+   * When a background poll returns this task with a *different* current
+   * key than the one in the URL, and the URL key is now one of its retired
+   * keys, the task was renumbered while the tab sat open (a collision rekey
+   * in another tab). The header already renders the current key (`fm.key`)
+   * rather than the stale URL ref, so nothing here ever presents the old
+   * key as authoritative — but the address bar still names the retired key.
+   * Follow it: navigate to the current key and carry the retired one in
+   * `?rekeyedFrom=` so the note below can keep explaining the change.
+   *
+   * `replace` so the retired-key URL does not become a back-stack entry
+   * that would just redirect again. Skipped once we have already followed
+   * (`taskRef === currentKey`), and skipped for a cold navigation through a
+   * retired key (there `rekeyedFrom` is unset and the note already fires on
+   * `navigatedByRetired` — the tab was never showing the old key as live).
+   */
+  const currentKey = task.data?.frontmatter.key;
+  const currentHistory = task.data?.frontmatter.key_history;
+  useEffect(() => {
+    if (currentKey === undefined || currentKey === taskRef) return;
+    if (rekeyedFrom !== undefined) return;
+    if (!(currentHistory ?? []).includes(taskRef)) return;
+    void navigate({
+      to: "/tasks/$key",
+      params: { key: currentKey },
+      search: prev => ({ ...prev, rekeyedFrom: taskRef }),
+      replace: true,
+    });
+  }, [currentKey, currentHistory, taskRef, rekeyedFrom, navigate]);
 
   if (task.isPending) {
     // Named, and distinguishable from both the 404 and the error
@@ -187,9 +231,20 @@ export function TaskDetail({
    * key with the retired one in `key_history`. So the chip can show
    * what is live while the page still says which key was navigated by
    * — the user can tell which is which without a second request.
+   *
+   * GIT-19. Two shapes reach this note. Cold navigation through a retired
+   * key: `taskRef` is the retired one and differs from `fm.key`. And the
+   * follow-the-rekey redirect above, after which `taskRef === fm.key` (the
+   * URL has moved to the current key) but `rekeyedFrom` names the retired
+   * key the tab was on when it was renumbered elsewhere.
    */
-  const navigatedByRetired =
-    taskRef !== fm.key && (fm.key_history ?? []).includes(taskRef);
+  const retiredKey =
+    taskRef !== fm.key && (fm.key_history ?? []).includes(taskRef)
+      ? taskRef
+      : rekeyedFrom !== undefined && (fm.key_history ?? []).includes(rekeyedFrom)
+        ? rekeyedFrom
+        : undefined;
+  const navigatedByRetired = retiredKey !== undefined;
 
   const copy = async (text: string, label: string): Promise<void> => {
     try {
@@ -384,12 +439,16 @@ export function TaskDetail({
             </h1>
             {navigatedByRetired && (
               <p className="mt-1.5 text-[0.8571rem] text-text-tertiary">
-                You followed{" "}
+                {rekeyedFrom !== undefined && rekeyedFrom === retiredKey
+                  ? "This task was renumbered while you had it open. It used to be "
+                  : "You followed "}
                 <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.7857rem]">
-                  {taskRef}
+                  {retiredKey}
                 </code>
-                , which is a retired key for this task. Its current key
-                is <strong className="font-medium text-text-primary">{fm.key}</strong>.
+                {rekeyedFrom !== undefined && rekeyedFrom === retiredKey
+                  ? ". Its current key is "
+                  : ", which is a retired key for this task. Its current key is "}
+                <strong className="font-medium text-text-primary">{fm.key}</strong>.
               </p>
             )}
           </div>

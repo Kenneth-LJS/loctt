@@ -688,6 +688,67 @@ const REJECTED_WRITE_NO_RETRY = {
 } as const satisfies Omit<Partial<ErrorResponse>, "message">;
 
 /**
+ * GIT-19 — the mutate-by-key hazard, and its guard.
+ *
+ * Every meta-panel write reaches `POST /api/tasks/:ref/{set,unset}` with
+ * `:ref` a *key* the tab holds from its URL (`useSetField(taskRef)`), and
+ * the handler resolves that ref to a task id at write time via
+ * `lookupTask`. That resolution is by key, so it follows the key — not the
+ * task. After a collision rekey (GIT-8/A193) the loser is renumbered and
+ * the WINNER keeps the old key; `rebuildKeyIndex` then points the old key
+ * at the winner (live keys shadow historical, `state/key-index.ts`). A tab
+ * still on the loser's old URL that submits an edit would therefore resolve
+ * its stale key to the *other* task and silently write the wrong file —
+ * the P-11 data-integrity failure GIT-19's third bullet forbids.
+ *
+ * The guard is an OPTIONAL precondition: a client that knows which task it
+ * is editing sends `expectedId` (the stable ULID it fetched), and the
+ * handler refuses when the resolved task's id does not match — nothing is
+ * written. Optional on the wire so the CLI, MCP, and any existing caller
+ * keep resolve-by-ref last-write-wins (the same shape as the body write's
+ * `expectedToken`, K2). The web client always sends it (`useSetField`).
+ *
+ * Returns a refusal envelope to hand to {@link error} when the ref has
+ * changed owners, or `null` when the write may proceed. 409 + `conflict`:
+ * the request is well-formed and was well-formed when composed — the world
+ * moved under it — and `conflict` is the code the UI already routes for
+ * "someone else changed this". Retrying the identical request reproduces
+ * the mismatch, so no retry is offered; the recovery is to reload onto the
+ * task's current key.
+ */
+function checkExpectedId(
+  resolvedId: string,
+  expectedId: unknown,
+  field: string,
+): { status: number; envelope: Omit<Partial<ErrorResponse>, "message"> & { readonly message: string } } | null {
+  if (expectedId === undefined) return null;
+  if (typeof expectedId !== "string" || expectedId.length === 0) {
+    return {
+      status: 400,
+      envelope: {
+        message: "The task identifier for this edit could not be read.",
+        ...REJECTED_WRITE_NO_RETRY,
+        field,
+      },
+    };
+  }
+  if (expectedId === resolvedId) return null;
+  return {
+    status: 409,
+    envelope: {
+      message:
+        "This task's key now belongs to a different task, so your edit was "
+        + "not saved — it would have changed the wrong task. Reload the page "
+        + "to continue on the task you were viewing.",
+      code: "conflict",
+      data_state: "not_saved",
+      recovery: { kind: "reload" },
+      field,
+    },
+  };
+}
+
+/**
  * No user is registered yet, which every user-scoped route depends on.
  *
  * The remedy is a CLI command, so ERR-15 wants the exact string carried
@@ -4742,6 +4803,14 @@ export function createWebApp(options: WebAppOptions) {
     }
     const wfConfig = await loadWorkflowConfig(locttDir);
     const task = await lookupTask(locttDir, ref);
+    // GIT-19: refuse before writing if the ref has changed owners since the
+    // client fetched the task. See {@link checkExpectedId}.
+    const idCheck = checkExpectedId(task.frontmatter.id, request.expectedId, request.field);
+    if (idCheck !== null) {
+      const { message, ...rest } = idCheck.envelope;
+      error(res, message, idCheck.status, rest);
+      return;
+    }
     const archivedGuard = await loadArchivedGuardConfigs(locttDir);
     try {
       const updated = await setField({
@@ -4817,12 +4886,20 @@ export function createWebApp(options: WebAppOptions) {
   const handleUnsetField: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = requireValidRef(captures, res, 0, req);
     if (ref === null) return;
-    const { field } = await parseJsonBody<{ field: string }>(req, res);
+    const { field, expectedId } = await parseJsonBody<{ field: string; expectedId?: unknown }>(req, res);
     if (typeof field !== "string" || field.length === 0) {
       error(res, "No field was named to clear.", 400, REJECTED_WRITE);
       return;
     }
     const task = await lookupTask(locttDir, ref);
+    // GIT-19: refuse before writing if the ref has changed owners since the
+    // client fetched the task. See {@link checkExpectedId}.
+    const idCheck = checkExpectedId(task.frontmatter.id, expectedId, field);
+    if (idCheck !== null) {
+      const { message, ...rest } = idCheck.envelope;
+      error(res, message, idCheck.status, rest);
+      return;
+    }
     try {
       const updated = await unsetField(locttDir, task.frontmatter.id, field);
       json(res, projectTaskFrontmatter(updated.frontmatter));
