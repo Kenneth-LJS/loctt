@@ -4,6 +4,7 @@ import {
   disableGit,
   enableGit,
   getGitStatus,
+  GitHistoryRewrittenError,
   GitReconcileNeededError,
   loadReconcileSession,
   preflight,
@@ -131,6 +132,13 @@ export async function run(args: string[], root: string): Promise<void> {
           process.exitCode = EXIT.RUNTIME;
           break;
         }
+        // GIT-21 (K93): the branch history was rewritten. Refuse, name the
+        // missing commit + remote, and point at git — no LocTT recovery.
+        if (err instanceof GitHistoryRewrittenError) {
+          reportHistoryRewritten(err);
+          process.exitCode = EXIT.RUNTIME;
+          break;
+        }
         throw err;
       }
       if (result.committed) {
@@ -182,6 +190,13 @@ export async function run(args: string[], root: string): Promise<void> {
       } catch (err) {
         if (err instanceof GitReconcileNeededError) {
           reportReconcileNeeded(err);
+          process.exitCode = EXIT.RUNTIME;
+          break;
+        }
+        // GIT-21 (K93): the branch history was rewritten. Refuse, name the
+        // missing commit + remote, and point at git — no LocTT recovery.
+        if (err instanceof GitHistoryRewrittenError) {
+          reportHistoryRewritten(err);
           process.exitCode = EXIT.RUNTIME;
           break;
         }
@@ -283,6 +298,18 @@ function reportReconcileNeeded(err: GitReconcileNeededError): void {
     + "'loctt git reconcile status' to inspect and "
     + "'loctt git reconcile abandon' to discard the in-progress reconciliation.",
   );
+}
+
+/**
+ * Prints the force-push / history-rewrite refusal (GIT-21, K93). Names the
+ * commit that can no longer be found and the remote, states nothing was
+ * written, and points the user at git for recovery — the CLI offers no
+ * automated rebase/base-reset, exactly as K93 requires. The error's own
+ * message already carries the full guidance; this just routes it to stderr
+ * (progress/diagnostics stream, not the command's stdout output).
+ */
+function reportHistoryRewritten(err: GitHistoryRewrittenError): void {
+  console.error(err.message);
 }
 
 /**

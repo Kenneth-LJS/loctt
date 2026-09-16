@@ -157,6 +157,7 @@ export {
   // reach of apps/web — the reason every git error there was reported
   // identically.
   GitConflictError,
+  GitHistoryRewrittenError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
   GitSyncError,

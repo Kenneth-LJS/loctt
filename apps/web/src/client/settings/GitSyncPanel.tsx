@@ -1,3 +1,4 @@
+import type { ErrorResponse } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -15,6 +16,83 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { ReconcilePanel } from "./ReconcilePanel.tsx";
+
+/**
+ * The `history_rewritten` refusal payload (GIT-21, K93), read off the
+ * error envelope. Present only when the branch was force-pushed past the
+ * last-synced base; `undefined` for every other error, so the caller
+ * falls back to the generic `ErrorState`.
+ */
+export function historyRewritten(error: unknown):
+  | NonNullable<ErrorResponse["history_rewritten"]>
+  | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  if (error.code !== "history_rewritten") return undefined;
+  return error.envelope?.history_rewritten;
+}
+
+/**
+ * The force-push / history-rewrite refusal (GIT-21, K93). NOT an ordinary
+ * conflict and NOT retryable in LocTT: the panel states the branch history
+ * was rewritten, names the remote and the commit that can no longer be
+ * found, affirms local state is untouched, and gives the two concrete next
+ * actions — both things the user does *in git*, never a LocTT button that
+ * rewrites state. K93 forbids any automated rebase/base-reset, so this
+ * offers no action controls at all.
+ */
+function HistoryRewrittenRefusal({
+  info,
+  testId,
+}: {
+  readonly info: NonNullable<ErrorResponse["history_rewritten"]>;
+  readonly testId: string;
+}) {
+  const where = info.remote !== null ? `${info.remote}/${info.branch}` : `the ${info.branch} branch`;
+  return (
+    <div
+      role="alert"
+      data-testid={testId}
+      data-git-refusal="history-rewritten"
+      data-missing-commit={info.missing_commit}
+      data-remote={info.remote ?? "none"}
+      className="mb-3 rounded-md border border-danger-fg p-3 text-[0.9286rem] text-danger-fg"
+    >
+      <p className="font-semibold">The history of {where} was rewritten.</p>
+      <p className="mt-1 text-text-secondary">
+        The last commit LocTT synced against —{" "}
+        <code className="font-mono text-[0.8571rem]">{info.missing_commit.slice(0, 8)}</code>{" "}
+        — is no longer part of the branch (its head is now{" "}
+        <code className="font-mono text-[0.8571rem]">{info.remote_head.slice(0, 8)}</code>).
+        This is not an ordinary conflict: a force-push or history rewrite
+        happened on {info.remote !== null ? `"${info.remote}"` : "the remote"}.
+      </p>
+      <p className="mt-2 text-text-secondary">
+        <strong>Nothing was written.</strong> Your local task files are
+        untouched and the last-synced commit was not changed. LocTT will not
+        silently re-base onto the new head, because that would discard local
+        changes you have made since{" "}
+        <code className="font-mono text-[0.8571rem]">{info.missing_commit.slice(0, 8)}</code>.
+      </p>
+      <p className="mt-2 text-text-secondary">Recover in git (LocTT cannot do this for you):</p>
+      <ul className="mt-1 ml-4 list-disc text-text-secondary">
+        <li data-testid={`${testId}-inspect`}>
+          <strong>Inspect the branch in git.</strong> Run{" "}
+          <code className="font-mono text-[0.8571rem]">git log {info.branch}</code>{" "}
+          and compare it with your local <code className="font-mono text-[0.8571rem]">.loctt/</code>{" "}
+          so you can see what the rewrite dropped. This only reads — it changes nothing.
+        </li>
+        <li data-testid={`${testId}-rebase`}>
+          <strong>Re-establish a base explicitly in git.</strong> Once you have
+          reviewed and merged the two by hand, point the branch at a commit you have
+          inspected (for example{" "}
+          <code className="font-mono text-[0.8571rem]">git branch -f {info.branch} &lt;commit&gt;</code>),
+          then sync again. Doing this by hand is what keeps the decision about
+          your local changes yours — LocTT will not make it for you.
+        </li>
+      </ul>
+    </div>
+  );
+}
 
 /**
  * The sentence a failed push shows (GIT-29). Every branch states the
@@ -84,8 +162,13 @@ export function fetchFailureClause(failure: GitRemoteFailure): string {
  * is now built here too: the sync mutation streams `{applied,total}`
  * ticks that drive a determinate progress bar during a large sync, and
  * the result summarises with counts plus an expand-for-full-breakdown
- * affordance rather than enumerating every key inline. The residual
- * conflict-resolution cases still unbuilt are GIT-8/16/19/21/25/33/34/35/36;
+ * affordance rather than enumerating every key inline. GIT-21 (a
+ * force-pushed / rewritten branch) is now built here too: core refuses
+ * with a distinct `GitHistoryRewrittenError` and this panel renders a
+ * dedicated refusal (`HistoryRewrittenRefusal`) naming the remote and the
+ * missing commit, stating local state is untouched, and pointing at git
+ * for recovery — no LocTT rebase/base-reset control, per K93. The residual
+ * conflict-resolution cases still unbuilt are GIT-8/16/19/25/33/34/35/36;
  * the rest of the GIT-* range is built and tested.
  *
  * This panel also carries GIT-18's first duty: detect that a
@@ -295,8 +378,22 @@ function EnabledState({ status, checkedAt, onRefresh }: {
    */
   const reconcileSession = useReconcileSession();
   const reconcileInProgress = reconcileSession.data?.reconcile != null;
+
+  // GIT-21 (K93): a force-push / history-rewrite refusal is rendered as a
+  // dedicated banner (not the generic ErrorState), so pull the typed payload
+  // off whichever operation refused.
+  const publishRewrite = historyRewritten(publish.error);
+  const syncRewrite = historyRewritten(sync.error);
+
+  // A reconcile is "blocked" when the sentinel is present, or an op erred
+  // with a reconcile code. Branch on the error CODE, not a message
+  // substring: a history-rewrite refusal (GIT-21) is emphatically NOT a
+  // reconcile (K93), and its message legitimately mentions merging by hand
+  // — matching /reconcil/ against the text mislabelled it and hid the
+  // dedicated banner (the same fragility for any future wording).
   const reconcileBlocked = reconcileInProgress || [publish.error, sync.error].some(
-    e => e instanceof ApiError && /reconcil/i.test(e.message),
+    e => e instanceof ApiError
+      && (e.code === "reconcile_needed" || e.code === "reconcile_in_progress"),
   );
 
   const localDrift = status.localChanges;
@@ -600,29 +697,44 @@ function EnabledState({ status, checkedAt, onRefresh }: {
       )}
 
       {publish.isError && !reconcileBlocked && (
-        <div className="mb-3" data-testid="git-publish-error">
-          <ErrorState
-            error={publish.error}
-            onRetry={() => { publish.mutate(); }}
-            context="publishing to the git branch"
-          />
-          <p className="mt-1 text-[0.9286rem] text-text-secondary">
-            Your local task files were not modified by the failed publish.
-          </p>
-        </div>
+        publishRewrite !== undefined
+          ? (
+              // GIT-21 (K93): a rewritten history is a refusal, not a
+              // retryable error — render the dedicated banner, never the
+              // generic ErrorState with its Retry control.
+              <HistoryRewrittenRefusal info={publishRewrite} testId="git-publish-history-rewritten" />
+            )
+          : (
+              <div className="mb-3" data-testid="git-publish-error">
+                <ErrorState
+                  error={publish.error}
+                  onRetry={() => { publish.mutate(); }}
+                  context="publishing to the git branch"
+                />
+                <p className="mt-1 text-[0.9286rem] text-text-secondary">
+                  Your local task files were not modified by the failed publish.
+                </p>
+              </div>
+            )
       )}
 
       {sync.isError && !reconcileBlocked && (
-        <div className="mb-3" data-testid="git-sync-error">
-          <ErrorState
-            error={sync.error}
-            onRetry={() => { sync.mutate(); }}
-            context="syncing from the git branch"
-          />
-          <p className="mt-1 text-[0.9286rem] text-text-secondary">
-            Your local task files were not modified by the failed sync.
-          </p>
-        </div>
+        syncRewrite !== undefined
+          ? (
+              <HistoryRewrittenRefusal info={syncRewrite} testId="git-sync-history-rewritten" />
+            )
+          : (
+              <div className="mb-3" data-testid="git-sync-error">
+                <ErrorState
+                  error={sync.error}
+                  onRetry={() => { sync.mutate(); }}
+                  context="syncing from the git branch"
+                />
+                <p className="mt-1 text-[0.9286rem] text-text-secondary">
+                  Your local task files were not modified by the failed sync.
+                </p>
+              </div>
+            )
       )}
 
       <section>

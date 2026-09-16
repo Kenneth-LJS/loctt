@@ -1167,6 +1167,26 @@ Each still prints git's specific stderr cause. Likewise a failed fetch in
 "nothing to sync"); local state is untouched and the sync continues
 against the local copy of the branch.
 
+### Force-pushed / rewritten branch history
+
+If the `loctt` branch is force-pushed or its history is otherwise
+rewritten so that the commit you last synced against is no longer part of
+it, `sync` (and `publish`) **refuse and write nothing** — this is not
+treated as an ordinary conflict. The command exits non-zero and reports
+that the branch history was rewritten, names the commit that can no longer
+be found and the remote, and states that your local files and
+`last_synced_commit` are unchanged.
+
+LocTT does **not** silently re-base onto the new head, because that would
+discard local changes you made since the missing commit. Recovery is
+yours to do in git — LocTT will not do it for you:
+
+- inspect the rewritten branch (`git log loctt`) and compare it with your
+  local `.loctt/` to see what the rewrite dropped; and
+- once you have reviewed and merged the two by hand, re-establish a base
+  explicitly in git (for example `git branch -f loctt <commit>` to a
+  commit you have inspected), then run `loctt git sync` again.
+
 ## Config
 
 ```

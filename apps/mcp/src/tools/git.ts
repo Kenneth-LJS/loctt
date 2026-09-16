@@ -13,6 +13,7 @@ import {
   disableGit,
   enableGit,
   getGitStatus,
+  GitHistoryRewrittenError,
   GitReconcileNeededError,
   GitSyncFirstError,
   loadReconcileSession,
@@ -94,6 +95,11 @@ export const TOOLS: readonly ToolDef[] = [
         // clobber. Surface the actionable "run sync first" message rather
         // than letting it fall through as a framework fault.
         if (err instanceof GitSyncFirstError) return text(err.message);
+        // GIT-21 (K93): force-push / history rewrite — refuse and explain,
+        // naming the missing commit + remote. The message already tells the
+        // agent (and user) to recover in git; LocTT offers no automated
+        // rebase, so surface it rather than throwing a framework fault.
+        if (err instanceof GitHistoryRewrittenError) return text(err.message);
         throw err;
       }
       const lines: string[] = [];
@@ -140,6 +146,9 @@ export const TOOLS: readonly ToolDef[] = [
         result = await sync(locttDir, root);
       } catch (err) {
         if (err instanceof GitReconcileNeededError) return reconcileNeededResult(err);
+        // GIT-21 (K93): force-push / history rewrite — refuse and explain,
+        // naming the missing commit + remote. Recovery is the user's in git.
+        if (err instanceof GitHistoryRewrittenError) return text(err.message);
         throw err;
       }
       const lines: string[] = [];

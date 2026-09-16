@@ -602,6 +602,19 @@ export interface ErrorResponse {
    * flight.
    */
   readonly reconcile_state?: unknown;
+  /**
+   * Present on `history_rewritten` (GIT-21, K93): the last-synced base the
+   * remote head no longer contains, the current remote head, the branch,
+   * and the remote name (or null). Carried so the panel can name the
+   * rewritten branch and the missing commit without a second fetch — the
+   * refusal is `recovery: none`, and recovery is the user's, done in git.
+   */
+  readonly history_rewritten?: {
+    readonly missing_commit: string;
+    readonly remote_head: string;
+    readonly branch: string;
+    readonly remote: string | null;
+  };
 }
 
 /**
@@ -623,6 +636,7 @@ export type ErrorCode =
   | "reconcile_needed"
   | "reconcile_in_progress"
   | "sync_needed"
+  | "history_rewritten"
   | "io_failed"
   | "partial_failure"
   | "unknown";

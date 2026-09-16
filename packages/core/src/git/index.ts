@@ -7,6 +7,7 @@ export {
   commitToLocttBranch,
   fetchLocttBranch,
   GitConflictError,
+  GitHistoryRewrittenError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
   GitSyncError,

@@ -28,7 +28,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { expect, publishFromOtherClone,test } from "./fixtures/git-tracker.ts";
+import { expect, forcePushRewriteRemote, publishFromOtherClone,test } from "./fixtures/git-tracker.ts";
 
 function syncYamlPath(root: string): string {
   return path.join(root, ".loctt", "local", "sync.yaml");
@@ -216,6 +216,60 @@ test("GIT-3: sync writes the remote's new tasks to disk and advances last_synced
   const noop = page.getByTestId("git-sync-result");
   await expect(noop).toHaveAttribute("data-git-sync", "no-op");
   await expect(noop).toContainText("Already up to date");
+
+  expect(errors).toEqual([]);
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// GIT-21 · The loctt branch was force-pushed and no longer contains the
+// last synced commit (K93). Sync must DETECT the rewrite and REFUSE,
+// naming the missing commit, NOT as an ordinary conflict, and offering
+// only user-does-in-git recovery — never a LocTT rebase/base-reset button.
+// ─────────────────────────────────────────────────────────────────────
+
+test("GIT-21: a force-pushed rewrite is refused, names the missing commit, and offers only git recovery — local state untouched", async ({
+  page,
+  gitTracker,
+}) => {
+  // @verifies GIT-21
+  const errors = guardPageErrors(page);
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.seed(["local work before the rewrite"]);
+  await gitTracker.run(["git", "publish"]);
+  const base = await lastSyncedCommit(gitTracker.root);
+  expect(base).toBeDefined();
+
+  // Another machine force-pushes a rewritten history: the last-synced
+  // commit is no longer an ancestor of the new remote head.
+  const newHead = await forcePushRewriteRemote(gitTracker.remoteRepo);
+  expect(newHead).not.toBe(base);
+
+  await gotoSync(page, gitTracker.baseURL);
+  await page.getByTestId("git-sync").click();
+
+  // The dedicated refusal renders — NOT the generic sync-error/ErrorState.
+  const refusal = page.getByTestId("git-sync-history-rewritten");
+  await expect(refusal).toBeVisible();
+  await expect(refusal).toHaveAttribute("data-git-refusal", "history-rewritten");
+  // It names the branch history was rewritten and is not an ordinary conflict.
+  await expect(refusal).toContainText("rewritten");
+  await expect(refusal).toContainText("not an ordinary conflict");
+  // Names the remote and the (short) missing commit.
+  await expect(refusal).toContainText("origin");
+  await expect(refusal).toContainText((base as string).slice(0, 8));
+  // States local state is untouched and the base was not changed.
+  await expect(refusal).toContainText("Nothing was written");
+  // The two concrete next actions, both user-does-in-git.
+  await expect(page.getByTestId("git-sync-history-rewritten-inspect")).toContainText("Inspect the branch in git");
+  await expect(page.getByTestId("git-sync-history-rewritten-rebase")).toContainText("Re-establish a base explicitly in git");
+  // No LocTT-automated recovery control (no Retry button in this refusal).
+  await expect(refusal.getByRole("button")).toHaveCount(0);
+
+  // Far end: nothing was written. The local task survives and
+  // last_synced_commit is unchanged — no silent re-base.
+  const listAfter = await gitTracker.run(["list"]);
+  expect(listAfter).toContain("local work before the rewrite");
+  expect(await lastSyncedCommit(gitTracker.root)).toBe(base);
 
   expect(errors).toEqual([]);
 });
