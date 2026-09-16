@@ -2961,22 +2961,18 @@ features with no existing core support — not reconciliation-detail work:
   under the same key — the rekey happens silently, no summary is shown.
 
 - **GIT-21 · force-pushed branch no longer contains the last synced
-  commit.** The case wants sync to detect that `last_synced_commit` is
-  not an ancestor of the remote head, stop, say the history was
-  rewritten (naming the missing commit), refuse to silently re-base, and
-  offer concrete next actions (inspect in git, or re-establish a base).
-  There is no ancestry check anywhere: `planSync` treats a missing base
-  as "no base available" and classifies conflicts, and `pullFromLocttBranch`
-  has no "is last_synced an ancestor of remote head" guard. Building
-  GIT-21 needs a `git merge-base --is-ancestor` check before planning,
-  a dedicated `GitHistoryRewrittenError` carrying the missing commit,
-  and the two recovery actions on the panel. To reproduce: publish, then
-  `git push --force` a rewritten `loctt` history to the remote, then
-  sync — it currently proceeds as an ordinary divergence rather than
-  naming the rewrite.
+  commit.** RESOLVED 2026-09-16 (K93, A191). `assertNotHistoryRewrite`
+  runs `git merge-base --is-ancestor` before `planSync` on both the sync
+  and publish divergence paths and throws `GitHistoryRewrittenError`,
+  writing nothing and leaving `last_synced_commit` untouched; recovery is
+  the user's, in git (no automated rebase). The ancestry check resolves
+  the true remote head from the remote-tracking ref, because a non-ff
+  fetch leaves the local `loctt` ref stale on a rewrite. All surfaces +
+  docs; `@verifies GIT-21` at unit + e2e, red-proven. See decisions.md
+  A191.
 
-Both are scoped as their own tickets. The reconciliation feature does not
-depend on either.
+GIT-8 remains scoped as its own ticket (K92). The reconciliation feature
+does not depend on it.
 
 ## Re-audit 2026-09-05: some "blocked" cases were mis-filed built-but-untested
 

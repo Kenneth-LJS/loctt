@@ -152,6 +152,34 @@ export async function linkFromOtherClone(
   });
 }
 
+/**
+ * Simulates a force-push / history rewrite on the bare remote (GIT-21):
+ * builds a brand-new orphan `loctt` history in a throwaway clone and
+ * `push --force`es it onto the bare remote's `loctt` ref, so the commit
+ * the local tracker last synced against is no longer an ancestor of the
+ * remote head. Returns the new (rewritten) remote head sha.
+ *
+ * A throwaway working clone rather than a bare-repo poke, so the orphan
+ * commit is a real commit git will happily force onto the ref — exactly
+ * what `git push --force` of a rewritten branch produces.
+ */
+export async function forcePushRewriteRemote(remoteRepo: string): Promise<string> {
+  const other = await mkdtemp(path.join(workspaceRoot, "loctt-rewrite-"));
+  const env = { ...process.env, ...GIT_ENV };
+  try {
+    await execa("git", ["init", "-q", "-b", "loctt"], { cwd: other, env });
+    await execa("git", ["config", "user.email", "test@example.com"], { cwd: other, env });
+    await execa("git", ["config", "user.name", "Test"], { cwd: other, env });
+    // An orphan commit: no shared ancestry with anything on the remote.
+    await execa("git", ["commit", "--allow-empty", "-q", "-m", "rewritten history"], { cwd: other, env });
+    const head = (await execa("git", ["rev-parse", "HEAD"], { cwd: other, env })).stdout.trim();
+    await execa("git", ["push", "--force", remoteRepo, "loctt:loctt"], { cwd: other, env });
+    return head;
+  } finally {
+    await rm(other, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 export interface NonRepoTrackerFixture {
   /** Absolute path to the tracker root — a directory that is NOT a git repo. */
   readonly root: string;

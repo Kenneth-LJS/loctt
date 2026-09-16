@@ -168,6 +168,145 @@ export class GitSyncFirstError extends GitSyncError {
 }
 
 /**
+ * Raised when the branch was force-pushed / had its history rewritten so
+ * that `last_synced_commit` — the base every three-way plan is computed
+ * against — is no longer an ancestor of the remote head (GIT-21, K93).
+ *
+ * Without this guard the missing base is treated as "no base available":
+ * `planSync` reclassifies every task, and a task the branch happens to
+ * carry can be taken over a local edit whose base is gone — silent
+ * data loss (A188 H-e). So the safe answer is to refuse and write
+ * NOTHING, exactly like the other divergence errors, and to explain that
+ * this is *not* an ordinary conflict.
+ *
+ * K93 is explicit that recovery is the user's, done in git: LocTT must
+ * not offer or perform an automated rebase, base-reset, or any mutation
+ * of `last_synced_commit`, because doing so on the user's behalf can
+ * discard the local work the guard exists to protect. The message points
+ * at git — inspect the branch, or re-establish a base explicitly there —
+ * and states that nothing local was touched.
+ */
+export class GitHistoryRewrittenError extends GitSyncError {
+  /** The last-synced base that the remote head no longer contains. */
+  readonly missingCommit: string;
+  /** The current remote head the base is no longer an ancestor of. */
+  readonly remoteHead: string;
+  /** The branch whose history was rewritten. */
+  readonly branch: string;
+  /** The remote name, when one is configured (for naming it in messages). */
+  readonly remote: string | undefined;
+  constructor(opts: {
+    missingCommit: string;
+    remoteHead: string;
+    branch: string;
+    remote: string | undefined;
+  }) {
+    const where = opts.remote !== undefined
+      ? `${opts.remote}/${opts.branch}`
+      : `the ${opts.branch} branch`;
+    super(
+      `sync aborted: the history of ${where} was rewritten. The last commit `
+      + `LocTT synced against (${opts.missingCommit.slice(0, 8)}) is no longer part `
+      + `of the branch (its head is now ${opts.remoteHead.slice(0, 8)}), so there is `
+      + `no shared base to merge against. This is not an ordinary conflict — a force-push `
+      + `or history rewrite happened on the remote.\n\n`
+      + `Nothing was written. Your local files are untouched, and last_synced_commit `
+      + `was NOT changed. LocTT will not silently re-base onto the new head, because `
+      + `that would discard local changes made since ${opts.missingCommit.slice(0, 8)}.\n\n`
+      + `Recover in git (LocTT will not do this for you):\n`
+      + `  - Inspect the rewritten branch: 'git log ${opts.branch}' and compare with your `
+      + `local .loctt/, so you can see what the rewrite dropped.\n`
+      + `  - Re-establish a base explicitly in git once you have reviewed and merged the two by hand `
+      + `(for example 'git branch -f ${opts.branch} <commit>' to a commit you have inspected), `
+      + `then sync again. Doing this by hand is what keeps your local changes yours to keep or discard.`,
+    );
+    this.name = "GitHistoryRewrittenError";
+    this.missingCommit = opts.missingCommit;
+    this.remoteHead = opts.remoteHead;
+    this.branch = opts.branch;
+    this.remote = opts.remote;
+  }
+}
+
+/**
+ * The commit the *remote* branch head points at, for the ancestry check
+ * (GIT-21). A force-push is the whole point of this ticket, and a plain
+ * `git fetch <remote> <branch>:<branch>` REJECTS a non-fast-forward update
+ * of the local branch ref (git refuses to rewind a local branch) — so
+ * after a rewrite the local `<branch>` ref is left stale while the
+ * remote-tracking ref `refs/remotes/<remote>/<branch>` force-updates to
+ * the true remote head. Reading the local ref alone would therefore miss
+ * exactly the rewrite this guard exists to catch. So: when a remote is
+ * configured and its tracking ref resolves, that tracking ref is the true
+ * remote head; otherwise (local-only, or no tracking ref) fall back to the
+ * local branch ref, which is authoritative when there is no remote.
+ */
+function resolveRemoteHeadForAncestry(
+  root: string,
+  branch: string,
+  remote: string | undefined,
+  localBranchHead: string,
+): string {
+  if (remote === undefined) return localBranchHead;
+  // `--verify` + status check: a bare `git rev-parse <missing-ref>` prints
+  // the literal ref name to stdout AND exits non-zero, so reading stdout
+  // alone (gitSafe) would hand back "refs/remotes/…" as if it were a sha.
+  // Resolve only when git actually confirms the ref.
+  const { ok, stdout } = gitStatusSafe(
+    ["rev-parse", "--verify", "--quiet", `refs/remotes/${remote}/${branch}`],
+    root,
+  );
+  return ok && stdout !== "" ? stdout : localBranchHead;
+}
+
+/**
+ * Refuses a sync/publish whose recorded base no longer sits in the
+ * branch's history (GIT-21, K93). Call *before* `planSync` on any path
+ * where a moved remote head is about to be three-way-planned against
+ * `last_synced_commit`.
+ *
+ * `git merge-base --is-ancestor <base> <remoteHead>` exits 0 when the base
+ * is an ancestor (ordinary fast-forward or divergence — proceed), 1 when
+ * it is not (the branch was rewritten past it), and non-0/non-1 (128) when
+ * `<base>` cannot even be resolved as a commit — which is the *strongest*
+ * force-push case: the base was rewritten away and garbage-collected, so
+ * it is gone entirely. Both the not-an-ancestor and the unresolvable cases
+ * mean the shared base is missing, so both refuse. A merge-base that
+ * cannot run at all (git missing) is left to the surrounding code, which
+ * already handles a broken git invocation — the guard only fires on git's
+ * definitive answers.
+ */
+function assertNotHistoryRewrite(
+  root: string,
+  base: string,
+  remoteHead: string,
+  branch: string,
+  remote: string | undefined,
+): void {
+  if (base === remoteHead) return; // identical: trivially an ancestor
+  const result = spawnSync(
+    "git",
+    ["merge-base", "--is-ancestor", base, remoteHead],
+    { cwd: root, encoding: "utf-8", stdio: "pipe" },
+  );
+  // status 0 → base is an ancestor of remoteHead: not a rewrite, proceed.
+  if (result.status === 0) return;
+  // status 1 → base is NOT an ancestor: the branch was rewritten past it.
+  // status 128 (or any other non-zero) → base is not a resolvable commit
+  // at all: it was rewritten away and pruned. Either way the base is gone.
+  if (result.status === 1 || result.status === 128) {
+    throw new GitHistoryRewrittenError({ missingCommit: base, remoteHead, branch, remote });
+  }
+  // A null status (the process could not be spawned) is not git's verdict
+  // on ancestry — leave it to the caller's existing broken-git handling
+  // rather than refusing on an inconclusive check.
+  if (result.status === null) return;
+  // Any other definite non-zero exit still means git could not confirm the
+  // base is an ancestor; refuse rather than fall through to take-incoming.
+  throw new GitHistoryRewrittenError({ missingCommit: base, remoteHead, branch, remote });
+}
+
+/**
  * Applies a {@link SyncPlan} to the local workspace.
  *
  * Only paths the plan explicitly marks `copy` or `delete` are touched;
@@ -1083,6 +1222,22 @@ async function detectPublishReconcile(
   }
   if (!branchExists(root, branch)) return undefined;
   const remoteHead = git(["rev-parse", branch], root);
+
+  // GIT-21 (K93): the publish-side equivalent of the sync guard, run
+  // BEFORE the fast-forward short-circuit below. A force-push is a
+  // non-fast-forward fetch, which git refuses to apply to the local
+  // `loctt` ref — so on a rewrite the local ref is left stale and
+  // `remoteHead === base` would (wrongly) read as "branch has not moved"
+  // and let the publish proceed to a push that then fails opaquely. So
+  // check ancestry against the TRUE remote head (the remote-tracking ref)
+  // first: if `base` is no longer an ancestor of it, the branch history
+  // was rewritten — refuse before `planSync`, write nothing, and leave
+  // recovery to the user in git. `base` is already known defined above.
+  const trueRemoteHead = resolveRemoteHeadForAncestry(
+    root, branch, syncState.git.remote, remoteHead,
+  );
+  assertNotHistoryRewrite(root, base, trueRemoteHead, branch, syncState.git.remote);
+
   if (remoteHead === base) return undefined; // branch has not moved: fast-forward publish
 
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-publish-check");
@@ -1305,6 +1460,42 @@ export async function pullFromLocttBranch(
   }
 
   const remoteHead = git(["rev-parse", branch], root);
+
+  // GIT-21 (K93): before three-way planning — and before the no-op
+  // short-circuit below — refuse a rewritten history. If a base was
+  // recorded but it is no longer an ancestor of the remote head, the
+  // branch was force-pushed past it: `planSync` would see "no base" and
+  // could take incoming over local edits whose base is gone. Refuse and
+  // write nothing; recovery is the user's, done in git.
+  //
+  // Two reasons this runs before the `last_synced === remoteHead` no-op
+  // check: (1) a force-push is a non-fast-forward fetch, which git refuses
+  // to apply to the local `loctt` ref, so on a rewrite the local ref is
+  // left stale and `remoteHead` still equals `base` — the no-op check
+  // would swallow the rewrite. So the check uses the TRUE remote head (the
+  // remote-tracking ref), not the local ref (see
+  // resolveRemoteHeadForAncestry). (2) It must fire whether or not the
+  // local ref moved. The sync fetch above already updated the tracking
+  // ref; the extra best-effort fetch here keeps direct callers of
+  // `pullFromLocttBranch` robust. An unreachable remote leaves the
+  // tracking ref as-is and the guard compares against whatever is known.
+  // Only runs when a base exists (a first sync has none to be rewritten).
+  if (syncState.git.last_synced_commit !== undefined) {
+    if (syncState.git.remote !== undefined && remoteExists(root, syncState.git.remote)) {
+      fetchLocttBranch(root, { remote: syncState.git.remote, branch });
+    }
+    const trueRemoteHead = resolveRemoteHeadForAncestry(
+      root, branch, syncState.git.remote, remoteHead,
+    );
+    assertNotHistoryRewrite(
+      root,
+      syncState.git.last_synced_commit,
+      trueRemoteHead,
+      branch,
+      syncState.git.remote,
+    );
+  }
+
   if (syncState.git.last_synced_commit === remoteHead) {
     return { updated: false, branch };
   }

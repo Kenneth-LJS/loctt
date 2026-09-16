@@ -120,6 +120,7 @@ import {
   getTrackerInfo,
   getWorkflowConfigPath,
   GitConflictError,
+  GitHistoryRewrittenError,
   GitReconcileInterruptedError,
   GitReconcileNeededError,
   GitSyncFirstError,
@@ -453,6 +454,9 @@ function error(
     ...(extra.failures !== undefined ? { failures: extra.failures } : {}),
     ...(extra.detail !== undefined ? { detail: extra.detail } : {}),
     ...(extra.schema_status !== undefined ? { schema_status: extra.schema_status } : {}),
+    // GIT-21 (K93): the force-push refusal payload the panel names the
+    // rewritten branch + missing commit from, without a second fetch.
+    ...(extra.history_rewritten !== undefined ? { history_rewritten: extra.history_rewritten } : {}),
   };
   json(res, envelope, status);
 }
@@ -521,6 +525,30 @@ function gitErrorResponse(err: unknown): {
           ref: path,
           message: "changed on the branch since your last sync",
         })),
+      },
+    };
+  }
+  if (err instanceof GitHistoryRewrittenError) {
+    // GIT-21 (K93): the branch was force-pushed past the last-synced base.
+    // A client-actionable refusal, not a server fault — 409, and the
+    // recovery is explicitly `none` because K93 forbids any LocTT-driven
+    // rebase/base-reset; the only recovery is the user's, done in git.
+    // Nothing was written and `last_synced_commit` is unchanged, so this
+    // is `not_saved`, never `unknown`. The missing commit + remote head +
+    // remote are carried so the panel can name them without re-fetching.
+    return {
+      status: 409,
+      message: err.message,
+      extra: {
+        code: "history_rewritten",
+        data_state: "not_saved",
+        recovery: { kind: "none" },
+        history_rewritten: {
+          missing_commit: err.missingCommit,
+          remote_head: err.remoteHead,
+          branch: err.branch,
+          remote: err.remote ?? null,
+        },
       },
     };
   }
