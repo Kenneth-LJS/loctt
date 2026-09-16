@@ -60,6 +60,16 @@ export interface ListOptions {
    * user, MCP's caller). When absent, `currentUser()` matches nothing.
    */
   readonly currentUserId?: string;
+  /**
+   * K80: full ISO-8601 timestamp for `now()`, in the workspace clock.
+   * Derived once per list call like `today`. Defaults to the real UTC now.
+   */
+  readonly now?: string;
+  /**
+   * K80: first day of the week (0=Sun..6=Sat) for `startOfWeek`/
+   * `endOfWeek`, from `calendar.first_day_of_week`. Defaults to Monday.
+   */
+  readonly weekStartsOn?: number;
 }
 
 /** Full options bag for listTasks. */
@@ -285,6 +295,8 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
         ...(workflowConfig !== undefined ? { workflow: workflowConfig } : {}),
         ...(options.today !== undefined ? { today: options.today } : {}),
         ...(options.currentUserId !== undefined ? { currentUserId: options.currentUserId } : {}),
+        ...(options.now !== undefined ? { now: options.now } : {}),
+        ...(options.weekStartsOn !== undefined ? { weekStartsOn: options.weekStartsOn } : {}),
       };
       return evaluateQuery(ast, task.frontmatter, evalCtx);
     });

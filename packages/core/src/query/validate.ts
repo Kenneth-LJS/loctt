@@ -2,7 +2,8 @@ import type { WorkflowConfig } from "@loctt/contracts";
 import { relationshipTypeKeys } from "@loctt/contracts";
 
 import { LocttError } from "../errors.js";
-import type { QueryNode } from "./parser.js";
+import { dateFieldKind } from "./evaluator.js";
+import type { QueryNode, QueryValue } from "./parser.js";
 
 /**
  * Raised when a query is syntactically valid but references something
@@ -259,6 +260,12 @@ function validateComparison(
     return;
   }
 
+  // K80: a date function is only meaningful against a date-ish field, and
+  // `now()` (an instant) not against a calendar date. Checked before the
+  // dotted-field early return so `fields.<date> = startOfWeek()` is
+  // covered too.
+  validateDateFunctions(node, field, pos, opts);
+
   if (field.includes(".")) {
     validateDottedField(field, pos, opts);
     return;
@@ -288,6 +295,47 @@ function validateComparison(
   }
 
   validateEnumValue(node, pos, opts);
+}
+
+/**
+ * K80: a date function is only valid against a date-ish field.
+ * - `startOf*`/`endOf*` resolve to a calendar date → valid on a calendar
+ *   date field or a timestamp field (compared by day is still sensible).
+ * - `now()` is an instant → valid only on a timestamp field
+ *   (created_at/updated_at/…); on a calendar date it is a category error,
+ *   steered to `today`/`startOfDay()`.
+ * A date function on a non-date field (e.g. `title = startOfWeek()`) is
+ * rejected with a message rather than silently comparing a date string
+ * against text.
+ */
+function validateDateFunctions(
+  node: Extract<QueryNode, { type: "comparison" }>,
+  field: string,
+  pos: number,
+  opts: ValidateQueryOptions,
+): void {
+  const operands: readonly QueryValue[] =
+    node.value.type === "list" ? node.value.values : [node.value];
+  const kind = dateFieldKind(field, opts.workflow);
+  for (const v of operands) {
+    if (v.type !== "date_fn") continue;
+    if (kind === "none") {
+      throw new QueryValidationError(
+        `"${field}" is not a date field — ${v.fn}() can only be compared `
+        + `against a date field (e.g. due_date, start_date, updated_at)`,
+        pos,
+        [],
+      );
+    }
+    if (v.fn === "now" && kind === "calendar") {
+      throw new QueryValidationError(
+        `${field} is a calendar date; use today or startOfDay() rather than `
+        + `now(), which carries a time of day`,
+        pos,
+        [],
+      );
+    }
+  }
 }
 
 /**

@@ -320,3 +320,33 @@ describe("validateQuery — without workflow config", () => {
     expect(() => validateQuery(q("relationship.whatever = T-1"))).toThrow(/has_link/);
   });
 });
+
+// @verifies K80
+describe("validateQuery — date functions (K80)", () => {
+  it("accepts boundary functions on calendar-date fields", () => {
+    expect(() => validateQuery(q("due_date >= startOfWeek()"), { workflow })).not.toThrow();
+    expect(() => validateQuery(q('due_date <= endOfWeek("+1w")'), { workflow })).not.toThrow();
+    expect(() => validateQuery(q("start_date < startOfMonth()"), { workflow })).not.toThrow();
+  });
+
+  it("accepts now() and boundary functions on timestamp fields", () => {
+    expect(() => validateQuery(q("updated_at < now()"), { workflow })).not.toThrow();
+    expect(() => validateQuery(q('created_at >= startOfDay("-7d")'), { workflow })).not.toThrow();
+  });
+
+  it("rejects a date function on a non-date field", () => {
+    expect(expectInvalid("title = startOfWeek()").message).toMatch(/not a date field/);
+    expect(expectInvalid("status = now()").message).toMatch(/not a date field/);
+  });
+
+  it("rejects now() on a calendar-date field, steering to today/startOfDay()", () => {
+    const err = expectInvalid("due_date = now()");
+    expect(err.message).toMatch(/calendar date/);
+    expect(err.message).toMatch(/today or startOfDay/);
+  });
+
+  it("validates date functions inside an in-list too", () => {
+    expect(() => validateQuery(q("due_date in (startOfWeek(), endOfWeek())"), { workflow })).not.toThrow();
+    expect(expectInvalid("title in (startOfWeek())").message).toMatch(/not a date field/);
+  });
+});

@@ -193,3 +193,80 @@ describe("function-call syntax (has_link / link_count)", () => {
     expect(p("status = done").type).toBe("comparison");
   });
 });
+
+// @verifies K80
+describe("parseQuery — date functions (K80)", () => {
+  const value = (s: string): unknown => {
+    const ast = parseQuery(tokenize(s));
+    if (ast.type !== "comparison") throw new Error("expected a comparison");
+    return ast.value;
+  };
+
+  it("parses each date function with no offset", () => {
+    for (const fn of [
+      "now", "startOfDay", "startOfWeek", "startOfMonth",
+      "endOfDay", "endOfWeek", "endOfMonth",
+    ]) {
+      expect(value(`due_date = ${fn}()`)).toEqual({ type: "date_fn", fn });
+    }
+  });
+
+  it("is case-insensitive on the function name but stores the canonical form", () => {
+    expect(value("due_date = STARTOFWEEK()")).toEqual({ type: "date_fn", fn: "startOfWeek" });
+    expect(value("due_date = startofmonth()")).toEqual({ type: "date_fn", fn: "startOfMonth" });
+  });
+
+  it("parses a signed offset argument on a boundary function", () => {
+    expect(value('due_date <= endOfWeek("+1w")')).toEqual({
+      type: "date_fn", fn: "endOfWeek", offset: { sign: 1, n: 1, unit: "w" },
+    });
+    expect(value('updated_at >= startOfDay("-7d")')).toEqual({
+      type: "date_fn", fn: "startOfDay", offset: { sign: -1, n: 7, unit: "d" },
+    });
+    expect(value('due_date < startOfMonth("+2m")')).toEqual({
+      type: "date_fn", fn: "startOfMonth", offset: { sign: 1, n: 2, unit: "m" },
+    });
+  });
+
+  it("treats a bare word matching a function name (no parens) as a string value", () => {
+    // Only `name(` is a call; a bare `startOfWeek` is an ordinary value.
+    expect(value("status = startOfWeek")).toEqual({ type: "string", value: "startOfWeek" });
+  });
+
+  it("rejects an offset on now()", () => {
+    expect(() => parseQuery(tokenize('created_at < now("+1d")'))).toThrow(/now\(\) takes no offset/);
+  });
+
+  it("rejects an unsigned offset", () => {
+    expect(() => parseQuery(tokenize('due_date = startOfWeek("1w")'))).toThrow(/needs a sign/);
+  });
+
+  it("rejects an unknown offset unit", () => {
+    expect(() => parseQuery(tokenize('due_date = startOfWeek("+1y")'))).toThrow(/unknown offset unit "y"/);
+  });
+
+  it("rejects a malformed but signed offset", () => {
+    // Signed (so it passes the sign check) but no digits: the general
+    // "invalid offset" message.
+    expect(() => parseQuery(tokenize('due_date = startOfWeek("+xw")'))).toThrow(/invalid offset "\+xw"/);
+  });
+
+  it("rejects an unsigned non-offset word on the sign check", () => {
+    expect(() => parseQuery(tokenize('due_date = startOfWeek("soon")'))).toThrow(/needs a sign/);
+  });
+
+  it("rejects a non-string argument", () => {
+    expect(() => parseQuery(tokenize("due_date = startOfWeek(1)"))).toThrow(/takes a quoted offset/);
+  });
+
+  it("reports the error at the argument's position", () => {
+    try {
+      parseQuery(tokenize('due_date = startOfWeek("1w")'));
+      throw new Error("expected a ParseError");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ParseError);
+      // The offset string starts after `due_date = startOfWeek(`.
+      expect((e as ParseError).position).toBe('due_date = startOfWeek('.length);
+    }
+  });
+});

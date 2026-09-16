@@ -66,7 +66,9 @@ not a query that matches nothing.
 - Strings: `"quoted"` or bare words (e.g., `in_progress`)
 - Lists: `(value1, value2, value3)`
 - Literals: `true`, `false`, `today`
-- Functions: `currentUser()`
+- Functions: `currentUser()`; date functions `now()`, `startOfDay()`,
+  `startOfWeek()`, `startOfMonth()`, `endOfDay()`, `endOfWeek()`,
+  `endOfMonth()`
 
 ### `today`
 
@@ -100,6 +102,39 @@ reporter = currentUser() and status != done
 When no current user is set, `currentUser()` matches **nothing** rather
 than every unassigned task — an empty result is safer than silently
 matching the wrong rows.
+
+### Date functions
+
+Date functions resolve against the same workspace clock as `today`, so
+they give the same answer on the CLI, MCP, and web UI.
+
+| Function | Resolves to |
+|---|---|
+| `startOfDay()` / `endOfDay()` | Today's calendar date |
+| `startOfWeek()` / `endOfWeek()` | The first / last day of the current week |
+| `startOfMonth()` / `endOfMonth()` | The first / last day of the current month |
+| `now()` | The current instant (a full timestamp) |
+
+The `startOf`/`endOf` functions resolve to a **calendar date** and are
+compared by day, exactly like `today`. `now()` resolves to a **timestamp**
+and is meant for the event-time fields (`created_at`, `updated_at`); it is
+rejected on calendar-date fields like `due_date` (use `today` or
+`startOfDay()` there).
+
+Each `startOf`/`endOf` function takes an optional **signed offset** — a
+sign (`+`/`-`), a number, and a unit (`d` days, `w` weeks, `m` months):
+
+```
+due_date < today                                        # overdue
+due_date >= startOfWeek() and due_date <= endOfWeek()   # due this week
+due_date >= startOfMonth() and due_date <= endOfMonth() # due this month
+due_date <= endOfWeek("+1w")                            # due by end of next week
+updated_at >= startOfDay("-7d")                         # touched in the last 7 days
+```
+
+The week's first day comes from `first_day_of_week` in
+`.loctt/config/calendar.yaml` (Monday by default), so `startOfWeek()`
+respects how the workspace defines a week.
 
 ## Special Aliases
 
