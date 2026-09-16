@@ -7,7 +7,7 @@ import { afterEach,beforeEach, describe, expect, it } from "vitest";
 import { initLoctt } from "../init/init.js";
 import { CURRENT_SCHEMA_VERSION, writeSchemaVersion } from "../schema/index.js";
 import { saveReconcileState } from "../state/reconcile.js";
-import { runDoctor } from "./doctor.js";
+import { runDoctor, runDoctorStream } from "./doctor.js";
 import { getTrackerInfo } from "./info.js";
 
 describe("getTrackerInfo", () => {
@@ -269,5 +269,83 @@ describe("runDoctor", () => {
     // A permanent entry would train users to ignore the row that
     // matters.
     expect(checks.find(c => c.name === "prefix rename")).toBeUndefined();
+  });
+});
+
+/**
+ * @verifies SET-29
+ *
+ * `runDoctorStream` is the primitive `runDoctor` drains, so the two
+ * must never disagree on which checks run or in what order — that
+ * equivalence is what lets the web surface stream each check as it
+ * lands while the CLI/MCP still get the whole set (P10).
+ */
+describe("runDoctorStream", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-doctor-stream-"));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("yields the same checks, in the same order, as batched runDoctor", async () => {
+    await initLoctt(root);
+
+    const streamed: { name: string; status: string; message: string }[] = [];
+    for await (const check of runDoctorStream(root)) {
+      streamed.push({ name: check.name, status: check.status, message: check.message });
+    }
+    const batched = (await runDoctor(root)).map(c => ({
+      name: c.name,
+      status: c.status,
+      message: c.message,
+    }));
+
+    // Identical content and order. If the generator dropped, reordered,
+    // or duplicated a check relative to the array form, the surfaces
+    // would drift — the exact failure P10 forbids.
+    expect(streamed).toEqual(batched);
+    // Guard against both being empty (a broken producer that yields
+    // nothing would still satisfy `toEqual` above).
+    expect(streamed.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("resolves its first check before the whole run's I/O has finished", async () => {
+    await initLoctt(root);
+
+    // The streaming guarantee, made observable without module mocking:
+    // stand a slow async task alongside the drain. A streaming producer
+    // hands over `.loctt directory` on the first pull — which happens on
+    // the current tick, before a `setTimeout(0)` scheduled just before
+    // the pull can fire. A producer that computed the whole array first
+    // would have to await every check's filesystem work before the first
+    // `next()` resolved, and that work yields the event loop, so the
+    // timer would fire first. Ordering is the assertion.
+    const order: string[] = [];
+    const timer = new Promise<void>((resolve) => {
+      setTimeout(() => { order.push("timer"); resolve(); }, 0);
+    });
+
+    const it = runDoctorStream(root);
+    const first = await it.next();
+    order.push("first-check");
+    expect(first.value?.name).toBe(".loctt directory");
+
+    await timer;
+    // The first check came back before the macrotask timer fired: the
+    // producer did not block on the rest of the run. Red-proof: make
+    // `runDoctorStream` collect every check into an array before yielding
+    // any (the batched shape), and "timer" lands before "first-check".
+    expect(order).toEqual(["first-check", "timer"]);
+
+    // Drain the remainder so nothing is left suspended.
+    const rest: string[] = [];
+    for (let n = await it.next(); !n.done; n = await it.next()) {
+      rest.push(n.value.name);
+    }
+    expect(rest.length).toBeGreaterThanOrEqual(4);
   });
 });

@@ -10561,6 +10561,85 @@ wrong-tracker write costs data.
 whenever `rootFlag !== undefined`; delete the "given together with
 different values errors" test in `cli.test.ts`.
 
+### A182 · Diagnostics stream as NDJSON, produced by a `runDoctorStream` generator that `runDoctor` drains (SET-29)
+
+**Ticket:** SET-29 · **Date:** 2026-09-16 · **Commit:** (this one)
+
+**The situation.** SET-29 requires the Diagnostics panel on a
+large/slow tracker to stream checks in individually (bullet 1) and show
+a still-running check as visibly distinct from a passed one (bullet 2).
+`known-gaps.md` recorded these as unbuilt: `runDoctor` returned the whole
+`DiagnosticCheck[]` in one tick and `GET /api/doctor` sent it as one JSON
+array, so the panel could only sit on one spinner then dump every check
+together. Bullet 3 (abort on navigation) was already met and had to stay
+met. The gap called this an escalate-by-rule data-shape change (it
+touches core, the web route, and the panel at once).
+
+**What had to be decided.** (a) The core producer shape; (b) the
+streaming transport; (c) whether to keep a batched `/api/doctor` or
+migrate the panel fully.
+
+**Options considered.**
+- Core: a `runDoctor(root, onCheck?)` callback form, or an
+  `async function* runDoctorStream` generator. The generator composes
+  with `for await` and needs no inversion of control.
+- Transport: SSE (`text/event-stream`) or NDJSON over a chunked
+  response. SSE needs `EventSource`, which cannot send the
+  `X-Loctt-Client` header or carry the React Query abort signal — the
+  panel would have to abandon `fetch`. NDJSON is one `res.write(JSON +
+  "\n")` on the server and a `getReader()` + split-on-`\n` on the client.
+- Route: keep both a batched and a streaming route (two consumers, drift
+  risk), or make `/api/doctor` stream and adapt the one batched consumer.
+
+**Decided.** (a) `runDoctorStream(root, options)` is the primitive;
+`runDoctor` is now "drain the generator into an array", so its signature
+and behaviour are unchanged and CLI/MCP are untouched (P10). (b) NDJSON,
+content-type `application/x-ndjson`. (c) `/api/doctor` streams NDJSON;
+the panel consumes the stream and renders a per-check pending→result
+transition; the server's own `LocttClient.getDoctor()` (the one batched
+consumer, currently unused) collects the NDJSON back into its array so
+its contract is preserved and cannot drift from the panel's.
+
+**Why.** The generator is the smallest change that makes one producer
+serve both the "whole set" surfaces and the "stream each" surface. NDJSON
+keeps the panel on `fetch`, so bullet 3's existing abort wiring is kept
+rather than rebuilt. Both consumers derive from `runDoctorStream`, so
+they cannot report different checks.
+
+**Nuance recorded.** A mid-run failure is emitted as a trailing
+`{ "error": "…" }` NDJSON line; the panel treats it as a failed run
+(SET-40) and shows the failure banner **above** the already-streamed
+checks, which stay rendered with their real states — the partial results
+are not hidden, and the remaining checks are shown as absent/not-run
+rather than passing (SET-40 bullet 2). Pending-vs-done is expressed in
+the DOM as `data-check-state="pending" | "done"` plus a distinct
+"Running" row shown only while the stream is open (never on a failed
+run).
+
+**Streaming changes SET-40's failure signalling.** Because the handler
+sends `writeHead(200, …)` before it runs any check, a post-headers HTTP
+500 is structurally impossible on this route: once the first byte is
+written the status line is already 200. A failure that happens *during*
+the run is therefore signalled ONLY by the trailing `{ "error": "…" }`
+NDJSON line, which the panel and `getDoctor` both treat as a failed run.
+A genuine 500 is still possible only if the run fails *before the first
+write* (e.g. `runDoctorStream` throws on its very first pull), which the
+handler's `try/catch` would surface — but with checks already streamed,
+the trailing error line is the mechanism. This is why SET-40's literal
+"the route returns 500" wording no longer holds via this route; the
+case's exact phrasing is left as a spec question for Ken (the code does
+not claim to satisfy the literal 500 wording).
+
+**To revert (back to batched).** In `apps/web/src/server/server.ts`
+`handleDoctor`, replace the NDJSON writer with
+`json(res, await runDoctor(root))`; restore `LocttClient.getDoctor` to
+`this.fetch("/api/doctor")`; revert `DiagnosticsPanel.tsx` to the
+`useQuery`/`apiClient.get` form. `runDoctorStream` can stay exported and
+unused, or be inlined back into `runDoctor` and removed from the core
+index exports. Delete `server.doctor-stream.test.ts`, the
+`runDoctorStream` describe in `diagnostics.test.ts`, and the streaming
+DiagnosticsPanel tests in `dataPanels.test.tsx`.
+
 ### K34 · `--root` is the canonical tracker-root flag; `--cwd` is a kept alias; `LOCTT_ROOT` is accepted (CLI-1)
 
 **The situation.** The same "which tracker" concept had two different

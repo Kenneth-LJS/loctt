@@ -63,8 +63,32 @@ export class LocttClient {
     return this.fetch("/api/info");
   }
 
+  /**
+   * `/api/doctor` streams checks as newline-delimited JSON (SET-29), so
+   * this collects the stream into the array its callers expect. The
+   * streaming shape is the panel's concern; a batched consumer using
+   * this client gets the same complete set, derived from the same core
+   * producer — the two cannot report different checks.
+   *
+   * Retained deliberately though the panel does not use it: `LocttClient`
+   * is the typed one-method-per-endpoint contract for the co-located API,
+   * and `getDoctor` is the batched shape any non-streaming consumer of
+   * `/api/doctor` (a script, a future non-React surface) would want. It
+   * is kept in parity with the endpoint rather than deleted as
+   * momentarily-unreferenced.
+   */
   async getDoctor(): Promise<DoctorCheckResponse[]> {
-    return this.fetch("/api/doctor");
+    const res = await fetch(`${this.base}/api/doctor`, {
+      headers: { "X-Loctt-Client": "1" },
+    });
+    if (!res.ok) {
+      throw new Error(await this.readErrorMessage(res));
+    }
+    const text = await res.text();
+    return text
+      .split("\n")
+      .filter(line => line.trim().length > 0)
+      .map(line => JSON.parse(line) as DoctorCheckResponse);
   }
 
   async getConfig(): Promise<ConfigResponse> {

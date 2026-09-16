@@ -405,10 +405,57 @@ describe("MilestonesPanel silent-write + staleness (B2 bugs 3, 4, 5)", () => {
   });
 });
 
+/**
+ * A `Response` whose body streams the given lines as NDJSON — one JSON
+ * object per line — the shape `/api/doctor` now serves (SET-29). All
+ * lines are enqueued up front and the stream is closed, so the panel
+ * receives every check and then reaches its "done" phase.
+ */
+function ndjsonResponse(objects: readonly unknown[], status = 200): Response {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const enc = new TextEncoder();
+      for (const obj of objects) {
+        controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
+      }
+      controller.close();
+    },
+  });
+  return new Response(body, {
+    status,
+    headers: { "Content-Type": "application/x-ndjson" },
+  });
+}
+
+/**
+ * A controllable NDJSON `Response`: the returned `push`/`close` drive
+ * the stream from the test so it can assert the panel's state *between*
+ * checks — the whole point of SET-29's incremental delivery.
+ */
+function controllableNdjson(): {
+  response: Response;
+  push: (obj: unknown) => void;
+  close: () => void;
+} {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const enc = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(c) { controller = c; },
+  });
+  return {
+    response: new Response(body, {
+      status: 200,
+      headers: { "Content-Type": "application/x-ndjson" },
+    }),
+    push: (obj: unknown) => controller.enqueue(enc.encode(JSON.stringify(obj) + "\n")),
+    close: () => controller.close(),
+  };
+}
+
 describe("DiagnosticsPanel", () => {
   /** @verifies SET-14 */
   it("renders every check with its own pass/warn/fail state, not one aggregate", async () => {
-    fetchMock.mockResolvedValue(jsonResponse([
+    fetchMock.mockResolvedValue(ndjsonResponse([
       { name: "workflow.yaml", status: "ok", message: "valid" },
       { name: "key index", status: "warn", message: "1 stale entry — rerun with --rebuild-index to repair" },
       { name: "state.yaml", status: "error", message: "missing" },
@@ -416,6 +463,10 @@ describe("DiagnosticsPanel", () => {
     render(<DiagnosticsPanel />, { wrapper: wrapper() });
 
     const list = await screen.findByTestId("diagnostics-checks");
+    // Wait for the stream to finish and the running row to disappear.
+    await waitFor(() => {
+      expect(screen.queryByTestId("diagnostics-check-running")).toBeNull();
+    });
     const rows = list.querySelectorAll("li");
     // SET-14: every check by name, each with an explicit state.
     expect(rows.length).toBe(3);
@@ -427,7 +478,7 @@ describe("DiagnosticsPanel", () => {
     // `runDoctor` pushes one "data integrity" check PER finding, so the
     // name is not unique. Keying rows by name collapsed these into one
     // and silently hid real failures.
-    fetchMock.mockResolvedValue(jsonResponse([
+    fetchMock.mockResolvedValue(ndjsonResponse([
       { name: "data integrity", status: "warn", message: "a.md: malformed" },
       { name: "data integrity", status: "warn", message: "b.md: malformed" },
       { name: "data integrity", status: "error", message: "c.md: unreadable" },
@@ -435,6 +486,9 @@ describe("DiagnosticsPanel", () => {
     render(<DiagnosticsPanel />, { wrapper: wrapper() });
 
     const list = await screen.findByTestId("diagnostics-checks");
+    await waitFor(() => {
+      expect(screen.queryByTestId("diagnostics-check-running")).toBeNull();
+    });
     expect(list.querySelectorAll("li").length).toBe(3);
     expect(list.textContent).toContain("a.md");
     expect(list.textContent).toContain("b.md");
@@ -447,13 +501,59 @@ describe("DiagnosticsPanel", () => {
     expect(consoleErrors.some(m => /same key|duplicate key/i.test(m))).toBe(false);
   });
 
+  /**
+   * @verifies SET-29
+   *
+   * The substance of SET-29: a check that has completed and a check
+   * still running are visibly distinct, and completed checks appear
+   * before the run finishes rather than all at the end. Driving the
+   * stream by hand lets us catch the state *between* the first check and
+   * the rest — which a batched response, delivering everything in one
+   * tick, could never exhibit.
+   */
+  it("shows a distinct running state, then flips it to a result", async () => {
+    const stream = controllableNdjson();
+    fetchMock.mockResolvedValue(stream.response);
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+
+    // Before any check lands, the panel shows a running row — a pending
+    // state, distinct from any pass/fail row (bullet 2).
+    const running = await screen.findByTestId("diagnostics-check-running");
+    expect(running.getAttribute("data-check-state")).toBe("pending");
+    expect(screen.queryByTestId("diagnostics-check-workflow.yaml")).toBeNull();
+
+    // First check arrives: it renders as a completed result WHILE the
+    // running row is still present (more checks are coming). This is the
+    // incremental delivery of bullet 1 — a batched response cannot show
+    // one result alongside a still-running indicator.
+    stream.push({ name: "workflow.yaml", status: "ok", message: "valid" });
+    const firstRow = await screen.findByTestId("diagnostics-check-workflow.yaml");
+    expect(firstRow.getAttribute("data-check-state")).toBe("done");
+    expect(firstRow.getAttribute("data-check-status")).toBe("ok");
+    // The pending and the completed rows are simultaneously present and
+    // carry different states — the visible distinction SET-29 requires.
+    expect(screen.getByTestId("diagnostics-check-running").getAttribute("data-check-state"))
+      .toBe("pending");
+
+    // Close the stream: the running row disappears, leaving only results.
+    stream.push({ name: "state.yaml", status: "error", message: "missing" });
+    stream.close();
+    await waitFor(() => {
+      expect(screen.queryByTestId("diagnostics-check-running")).toBeNull();
+    });
+    expect(screen.getByTestId("diagnostics-checks").querySelectorAll("li").length).toBe(2);
+  });
+
   /** @verifies XS-41 */
   it("makes a CLI-only remedy copyable and offers no rebuild button", async () => {
-    fetchMock.mockResolvedValue(jsonResponse([
+    fetchMock.mockResolvedValue(ndjsonResponse([
       { name: "key index", status: "warn", message: "1 stale entry — rerun with --rebuild-index to repair" },
     ]));
     render(<DiagnosticsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("diagnostics-checks");
+    await waitFor(() => {
+      expect(screen.queryByTestId("diagnostics-check-running")).toBeNull();
+    });
 
     // XS-41: the exact command is shown, and the UI offers NO rebuild
     // button — rebuild stays CLI-only, and a button that cannot work is
@@ -464,14 +564,84 @@ describe("DiagnosticsPanel", () => {
 
   /** @verifies SET-40 */
   it("reports a failed run as failed, not as all-passed", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ message: "boom" }, 500));
+    fetchMock.mockResolvedValue(new Response("server error", { status: 500 }));
     render(<DiagnosticsPanel />, { wrapper: wrapper() });
 
     // SET-40: distinguished clearly from "all checks passed", and it
     // must not mark any check as passing.
     const failed = await screen.findByTestId("diagnostics-run-failed");
     expect(failed.getAttribute("data-diagnostics-state")).toBe("run-failed");
+    // No check ever landed, so there are no rows claiming to pass.
     expect(screen.queryByTestId("diagnostics-checks")).toBeNull();
-    expect(failed.textContent).toMatch(/no checks completed/i);
+    expect(failed.textContent).toMatch(/did not complete/i);
+  });
+
+  /**
+   * @verifies SET-40
+   *
+   * A mid-run failure line after some checks already streamed: the
+   * partial results stay visible with their real states, and the panel
+   * still says the run did not complete rather than treating the last
+   * check as the end of a clean run.
+   */
+  it("does not report a mid-stream failure as all-passed", async () => {
+    fetchMock.mockResolvedValue(ndjsonResponse([
+      { name: "workflow.yaml", status: "ok", message: "valid" },
+      { error: "relationships: unreadable task file" },
+    ]));
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+
+    const failed = await screen.findByTestId("diagnostics-run-failed");
+    expect(failed.getAttribute("data-diagnostics-state")).toBe("run-failed");
+    expect(failed.textContent).toMatch(/did not complete/i);
+
+    // SET-40 bullet 2 / A182: the check that had already streamed in
+    // BEFORE the failure line stays visible with its real state — it is
+    // not hidden by the failure, and it is not relabelled. Red-proof for
+    // FIX 1: with the old `{phase !== "failed" && …}` gate over the whole
+    // list, this row vanishes and the query returns null.
+    const survivor = screen.queryByTestId("diagnostics-check-workflow.yaml");
+    expect(survivor).not.toBeNull();
+    expect(survivor?.getAttribute("data-check-status")).toBe("ok");
+    expect(survivor?.getAttribute("data-check-state")).toBe("done");
+
+    // The remaining checks that never ran are absent, not shown as
+    // passing: the "running" pending row is gone on a failed run, and no
+    // extra rows were invented for the checks the run never reached.
+    expect(screen.queryByTestId("diagnostics-check-running")).toBeNull();
+    expect(screen.getByTestId("diagnostics-checks").querySelectorAll("li").length).toBe(1);
+  });
+
+  /**
+   * @verifies SET-29
+   *
+   * Bullet 3: navigating away must not leave a permanently spinning
+   * check. The panel aborts its in-flight fetch on unmount; this pins
+   * that wiring so a future edit cannot silently drop it. The stream is
+   * left open (never closed) so that, absent the abort, the request
+   * would hang — the abort is the only thing that ends it.
+   */
+  it("aborts the in-flight request when it unmounts", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const stream = controllableNdjson();
+    fetchMock.mockImplementation((...args: never[]) => {
+      const init = args[1] as RequestInit | undefined;
+      capturedSignal = init?.signal ?? undefined;
+      return Promise.resolve(stream.response);
+    });
+
+    const { unmount } = render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    // Let one check land so the stream is genuinely mid-flight.
+    stream.push({ name: "workflow.yaml", status: "ok", message: "valid" });
+    await screen.findByTestId("diagnostics-check-workflow.yaml");
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    // Unmount aborted the fetch — nothing is left running behind a gone
+    // component, which is what "no permanently spinning check" means.
+    expect(capturedSignal?.aborted).toBe(true);
   });
 });
