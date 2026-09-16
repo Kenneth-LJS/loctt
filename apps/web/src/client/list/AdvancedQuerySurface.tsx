@@ -262,8 +262,14 @@ function BuilderMode({
         <button
           type="button"
           data-testid="qb-apply"
-          onClick={() => { onApply(liveQ); }}
-          className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-primary"
+          // F5: an invalid live query must not be applicable — applying it
+          // would write a `q` the list then rejects. `invalid` reflects the
+          // last settled validation; an empty builder (liveQ = "") is not
+          // "invalid" (it clears q, LST-41), so Apply stays enabled for it.
+          disabled={invalid}
+          title={invalid ? (result.message ?? "This query is not valid.") : undefined}
+          onClick={() => { if (!invalid) onApply(liveQ); }}
+          className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-primary disabled:opacity-50"
         >
           Apply
         </button>

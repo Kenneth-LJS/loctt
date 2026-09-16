@@ -1,8 +1,8 @@
 {
   "generated_from": "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
   "counts": {
-    "total": 1042,
-    "ui": 942,
+    "total": 1047,
+    "ui": 947,
     "surface": 100,
     "resolved": 4
   },
@@ -6633,7 +6633,7 @@
       "id": "LST-43",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 540,
+      "line": 604,
       "title": "A query matching every task still paginates.",
       "milestone": "M1",
       "severity": "minor",
@@ -6649,7 +6649,7 @@
       "id": "LST-44",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 549,
+      "line": 613,
       "title": "A malformed query reports the error instead of returning zero results.",
       "milestone": "M1",
       "severity": "blocker",
@@ -6665,7 +6665,7 @@
       "id": "LST-45",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 565,
+      "line": 629,
       "title": "An unknown field in a query names the field and what is valid.",
       "milestone": "M1",
       "severity": "blocker",
@@ -6682,7 +6682,7 @@
       "id": "LST-46",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 577,
+      "line": 641,
       "title": "A query referencing an undeclared custom field is distinguished from a typo'd built-in.",
       "milestone": "M1",
       "severity": "major",
@@ -6698,7 +6698,7 @@
       "id": "LST-47",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 588,
+      "line": 652,
       "title": "The API being unreachable is reported as such, distinctly from an empty tracker.",
       "milestone": "M1",
       "severity": "blocker",
@@ -6715,7 +6715,7 @@
       "id": "LST-48",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 600,
+      "line": 664,
       "title": "One corrupt task file does not take down the list.",
       "milestone": "M1",
       "severity": "blocker",
@@ -6732,7 +6732,7 @@
       "id": "LST-49",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 611,
+      "line": 675,
       "title": "A failed \"Load more\" does not look like the end of the list.",
       "milestone": "M1",
       "severity": "major",
@@ -6749,7 +6749,7 @@
       "id": "LST-50",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 624,
+      "line": 688,
       "title": "A server error while applying a filter does not leave a lying view.",
       "milestone": "M1",
       "severity": "major",
@@ -6765,7 +6765,7 @@
       "id": "LST-51",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 634,
+      "line": 698,
       "title": "A workflow config that fails schema validation is explained, not crashed on.",
       "milestone": "M1",
       "severity": "major",
@@ -6782,7 +6782,7 @@
       "id": "LST-52",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 647,
+      "line": 711,
       "title": "A request that times out is reported as a timeout, not as empty.",
       "milestone": "M1",
       "severity": "minor",
@@ -6798,7 +6798,7 @@
       "id": "LST-53",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 658,
+      "line": 722,
       "title": "A free-query (`q=`) filter shows a chip and a Clear-all.",
       "milestone": "M1",
       "severity": "major",
@@ -6815,7 +6815,7 @@
       "id": "LST-54",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 667,
+      "line": 731,
       "title": "The first click on a priority (and due) sort header sorts the most-useful direction.",
       "milestone": "M1",
       "severity": "minor",
@@ -6831,7 +6831,7 @@
       "id": "LST-55",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 676,
+      "line": 740,
       "title": "Sidebar links do not silently carry the ambient sort",
       "milestone": "M1",
       "severity": "minor",
@@ -6847,7 +6847,7 @@
       "id": "LST-56",
       "tree": "ui",
       "file": "docs/dev/ui-test-cases/flow-list.md",
-      "line": 683,
+      "line": 747,
       "title": "Facet dropdown items show a multi-select affordance before the first click.",
       "milestone": "M1",
       "severity": "minor",
@@ -9969,6 +9969,87 @@
       "surfaces": [
         "CLI",
         "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "QBLD-1",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-list.md",
+      "line": 540,
+      "title": "The visual query builder refuses to open on a query it cannot represent, and edits it as text instead.",
+      "milestone": "M1",
+      "severity": "major",
+      "principles": [
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "QBLD-2",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-list.md",
+      "line": 552,
+      "title": "Switching between visual and text preserves the query.",
+      "milestone": "M1",
+      "severity": "major",
+      "principles": [
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "QBLD-3",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-list.md",
+      "line": 563,
+      "title": "The builder edits only the query; chips coexist with it.",
+      "milestone": "M1",
+      "severity": "major",
+      "principles": [
+        "P2",
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "QBLD-4",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-list.md",
+      "line": 576,
+      "title": "Opening the builder on a representable query and applying it unchanged does not mutate the query — including values whose text collides with the DSL grammar.",
+      "milestone": "M1",
+      "severity": "major",
+      "principles": [
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "QBLD-5",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-list.md",
+      "line": 591,
+      "title": "The builder cannot offer an operator the validator would reject.",
+      "milestone": "M1",
+      "severity": "minor",
+      "principles": [
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
       ],
       "resolved": false
     },

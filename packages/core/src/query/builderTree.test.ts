@@ -167,6 +167,59 @@ describe("refuse unrenderable queries (K83)", () => {
   });
 });
 
+describe("grammar-colliding string values stay STRINGs (F1 / LST-42)", () => {
+  // A STRING value whose TEXT collides with the DSL grammar must survive
+  // serialize∘parse as the SAME string, not silently re-type as a
+  // boolean/number/date/keyword or break the query. Before the dslAtom
+  // fix these serialized bare (`status = true`) and re-parsed as a
+  // different type, or threw (`title ~ and`) — the P-11 / K83-(i) bug.
+  it.each([
+    ['status = "true"', "true"],
+    ['status = "false"', "false"],
+    ['label = "today"', "today"],
+    ['owner = "currentUser"', "currentUser"],
+    ['code = "123"', "123"],
+    ['tag = "2024-01-15"', "2024-01-15"],
+    ['title ~ "and"', "and"],
+    ['title ~ "or"', "or"],
+    ['title ~ "not"', "not"],
+    ['title ~ "in"', "in"],
+    ['title ~ "is"', "is"],
+  ])("keeps %s as a STRING of that exact text", (q, text) => {
+    const res = queryToBuilderTree(q);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+
+    const reserialized = builderTreeToQuery(res.tree);
+    // Must re-parse (no throw) and to the identical structure...
+    const reparsed = parse(reserialized);
+    expect(normalize(reparsed)).toEqual(normalize(parse(q)));
+    // ...and the value must still be a STRING carrying the same text —
+    // the assertion that pins "did not silently re-type".
+    expect(reparsed.type).toBe("comparison");
+    if (reparsed.type !== "comparison") return;
+    expect(reparsed.value).toEqual({ type: "string", value: text });
+  });
+
+  it("keeps a list of colliding values as STRINGs: foo in (\"true\", \"123\")", () => {
+    const q = 'foo in ("true", "123")';
+    const res = queryToBuilderTree(q);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const reparsed = parse(builderTreeToQuery(res.tree));
+    expect(normalize(reparsed)).toEqual(normalize(parse(q)));
+    expect(reparsed.type).toBe("comparison");
+    if (reparsed.type !== "comparison") return;
+    expect(reparsed.value).toEqual({
+      type: "list",
+      values: [
+        { type: "string", value: "true" },
+        { type: "string", value: "123" },
+      ],
+    });
+  });
+});
+
 describe("quoting round-trip (LST-42)", () => {
   it.each([
     'title = "has space"',
