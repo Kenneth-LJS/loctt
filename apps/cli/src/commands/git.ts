@@ -146,7 +146,26 @@ export async function run(args: string[], root: string): Promise<void> {
         // Core already warned with the cause and the retry command, and
         // the local commit is durable. What was missing is the exit
         // code: reporting success meant a script saw 0 while the work
-        // never left the machine (GIT-C4).
+        // never left the machine (GIT-C4). GIT-29: name the class so a
+        // non-fast-forward rejection tells the user to Sync first,
+        // distinct from an auth failure pointing at credentials.
+        if (result.pushFailure?.kind === "non_fast_forward") {
+          console.error(
+            `Push rejected: ${result.pushFailure.remote} has moved on since your last sync `
+            + `(${result.pushFailure.detail}). The local commit succeeded and is safe. `
+            + "Run 'loctt git sync' to reconcile, then publish again.",
+          );
+        } else if (result.pushFailure?.kind === "auth") {
+          console.error(
+            `Push failed authenticating to ${result.pushFailure.remote}: ${result.pushFailure.detail}. `
+            + "The local commit succeeded and is safe. Fix your git credentials, then retry.",
+          );
+        } else if (result.pushFailure?.kind === "unreachable") {
+          console.error(
+            `Push failed: ${result.pushFailure.remote} could not be reached (${result.pushFailure.detail}). `
+            + "The local commit succeeded and is safe. Retry once the remote is reachable.",
+          );
+        }
         process.exitCode = EXIT.RUNTIME;
       }
       break;
@@ -169,6 +188,17 @@ export async function run(args: string[], root: string): Promise<void> {
       }
       if (result.fetched === true) {
         console.log("Fetched from remote");
+      } else if (result.fetchFailure !== undefined) {
+        // GIT-30: name the remote and say it could not be reached,
+        // distinct from "nothing to sync". Core already wrote the warning
+        // + retry command to stderr and continued against the local
+        // branch copy — the local state is untouched, so this is not a
+        // hard failure; the sync result below still reports.
+        console.error(
+          `Fetch failed: ${result.fetchFailure.remote} ${result.fetchFailure.summary} `
+          + `(${result.fetchFailure.detail}). Local state is untouched; synced against the `
+          + "local copy of the branch only. Retry once the remote is reachable.",
+        );
       }
       // A duplicate key makes `loctt show <key>` ambiguous, so this is
       // not a detail to leave in a warning stream the user may not read.

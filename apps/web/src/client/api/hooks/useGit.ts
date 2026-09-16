@@ -40,11 +40,36 @@ export interface GitStatus {
   readonly unreadable?: { readonly path: string; readonly reason: string };
 }
 
+/**
+ * Classes of remote push/fetch failure the panel must tell apart
+ * (GIT-29, GIT-30). Mirrors core's `GitRemoteFailureKind`; the wire shape
+ * is duplicated here because the client types are hand-mirrored, not
+ * imported from core.
+ */
+export type GitRemoteFailureKind =
+  | "auth"
+  | "non_fast_forward"
+  | "unreachable"
+  | "other";
+
+export interface GitRemoteFailure {
+  readonly kind: GitRemoteFailureKind;
+  /** Class-level summary the panel phrases the remedy around. */
+  readonly summary: string;
+  /** Git's specific cause (GIT-C4). */
+  readonly detail: string;
+  /** Alias of `detail`; the string a bare printer shows. */
+  readonly message: string;
+  readonly remote: string;
+}
+
 export interface PublishResult {
   readonly committed: boolean;
   readonly branch: string;
   readonly pushed?: boolean;
   readonly pushError?: string;
+  /** Classified push failure (GIT-29) — present iff `pushError` is. */
+  readonly pushFailure?: GitRemoteFailure;
 }
 
 export interface SyncResult {
@@ -59,6 +84,8 @@ export interface SyncResult {
   readonly unresolvedKeys?: readonly string[];
   readonly fetched?: boolean;
   readonly fetchError?: string;
+  /** Classified fetch failure (GIT-30) — present iff `fetchError` is. */
+  readonly fetchFailure?: GitRemoteFailure;
 }
 
 export function useGitStatus() {

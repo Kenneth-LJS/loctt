@@ -51,6 +51,14 @@ describe("CLI git publish reports a failed push (spawned binary)", () => {
       // line yielded "and the repository exists." — the tail of a
       // sentence, which explains nothing on its own.
       expect(out).toMatch(/does not appear to be a git repository|repository not found/i);
+
+      // @verifies GIT-29
+      // The failure is classified, not opaque: the CLI names the remote
+      // and states it could not be reached (distinct from an auth failure
+      // or a non-fast-forward rejection, which say different things) —
+      // P10 parity with the panel's push-failure classification.
+      expect(out).toMatch(/could not be reached/i);
+      expect(out).toMatch(/origin/);
     });
   });
 

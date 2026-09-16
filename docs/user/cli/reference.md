@@ -1148,6 +1148,19 @@ is set up.
 `publish` commits any local changes to the `loctt` branch (and pushes if
 auto-push is on). `sync` pulls the latest `loctt` branch into the workspace.
 
+When the local commit lands but the push cannot, `publish` exits non-zero
+and names the cause distinctly — the local commit is safe in every case:
+
+- a **non-fast-forward** rejection says the remote has moved on and tells
+  you to run `loctt git sync` first, then publish again;
+- an **authentication** failure names credentials as the fix;
+- an **unreachable** remote names it and says to retry.
+
+Each still prints git's specific stderr cause. Likewise a failed fetch in
+`sync` names the remote and says it could not be reached (distinct from
+"nothing to sync"); local state is untouched and the sync continues
+against the local copy of the branch.
+
 ## Config
 
 ```

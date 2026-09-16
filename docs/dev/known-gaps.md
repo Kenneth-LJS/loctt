@@ -73,38 +73,14 @@ below. Measured against the four bullets:
 `CommentsPanel`/`useComments`), then add a CMT-20 spec to
 `tests/ui/flow-comments.spec.ts` and delete this entry.
 
-### GIT-30 — Sync against an unreachable remote is a 200 warning, not the error surface the case needs (declined)
+### GIT-9/16/19/22/23/25/33/34/35/36 — git-sync cases with no engine behind them (declined)
 
-**Found 2026-09-04 while covering the git-sync UI batch.** GIT-30
-(blocker, P4) — "Sync fails because the remote is unreachable" — is
-**declined, not tagged**, correcting A69, which omitted it, and
-`GitSyncPanel.tsx`'s header comment, which lists it as covered.
-
-**Measured, not inferred.** With `origin` set to `/nonexistent/path.git`,
-`POST /api/git/sync` returns **HTTP 200**
-`{updated:false, fetched:false, fetchError:"and the repository exists."}`.
-The panel renders its *success* branch (`git-sync-result`,
-`data-git-sync="no-op"`) with a warning span, not `git-sync-error`.
-
-Against GIT-30's bullets:
-
-| bullet | state |
-|---|---|
-| names the remote, says it could not be reached, distinct from "nothing to sync" | **partial/wrong** — the warning does not name the remote, and the `fetchError` is a truncated git-stderr fragment ("and the repository exists.") |
-| local state untouched and the panel says so explicitly | **absent** — the success branch has no "local state untouched" line (only the `git-sync-error` branch does) |
-| Retry is offered | **absent** — Retry lives on the error branch, which a 200 never reaches |
-
-The `git-sync-error` block is only reachable on a non-2xx (a reconcile
-block, or a thrown git error) — the network-down case produces neither.
-
-**To close:** either have core's `sync` raise on an unreachable remote
-(so `handleGitSync` hits `gitErrorResponse` and the panel's error branch,
-with a message naming the remote), or add a dedicated fetch-unreachable
-render to the panel's success branch that names the remote, states local
-state is untouched, and offers Retry. Then add a GIT-30 spec and delete
-this entry.
-
-### GIT-9/16/19/22/23/25/29/33/34/35/36 — git-sync cases with no engine behind them (declined)
+> **GIT-29/30 removed from this list 2026-09-16 — now built** (decisions.md
+> A189). Push/fetch failures are classified in core
+> (`classifyRemoteFailure`) and surfaced with the remote name, a
+> local-untouched statement, and Retry (plus Sync-first for non-ff) by the
+> panel, CLI, and MCP. `@verifies GIT-29`/`GIT-30` tests are green and
+> red-proven.
 
 **Confirmed 2026-09-04 during the git-sync UI batch**, re-verifying the
 A69 declines that fell in this batch rather than trusting them:
@@ -123,9 +99,6 @@ A69 declines that fell in this batch rather than trusting them:
 - **GIT-25** — adopt-existing-branch prompt. `enableGit` silently adopts
   a LocTT-written branch (or throws on a foreign one); it neither shows
   the branch head nor asks adopt-or-stop, and the panel has no UI for it.
-- **GIT-29** — non-fast-forward vs auth distinction. `gitErrorResponse`
-  maps everything non-conflict to one generic 500, and `PushResult.error`
-  is an opaque string — the two causes cannot be told apart.
 - **GIT-34, GIT-35, GIT-36** — malformed-remote-file, newer-schema-version,
   and missing-worktree surfaces. Each needs task-and-field-granularity
   reporting or a schema-version/worktree guard that the file-count sync

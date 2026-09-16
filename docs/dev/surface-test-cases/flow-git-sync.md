@@ -13,13 +13,27 @@ Gaps only. See [README.md](README.md) for conventions.
 
 ---
 
-## A. Reconciliation that still does not exist
+## A. Reconciliation (built as of A121 / commit e99bfec, 2026-09-04)
 
-`rekeyCollisions`, `mergeRelationships`, and `mergeKeyHistory`
-(`packages/core/src/git/reconcile.ts`) plus the whole `reconcile.yaml`
-lifecycle (`packages/core/src/state/reconcile.ts`) are exported and
-unit-tested with **zero production call sites**. Sync now *stops* on a
-divergent file instead of destroying one side — correct but blunt.
+> **STALE-BANNER CORRECTION (see decisions.md A188).** An earlier version
+> of this section claimed the reconciliation engine had "zero production
+> call sites." That is no longer true. `rekeyCollisions`,
+> `mergeRelationships`, `mergeKeyHistory`
+> (`packages/core/src/git/reconcile.ts`), `computeReconcilePlan`
+> (`reconcile-plan.ts`), `applyReconcile` (`reconcile-apply.ts`), and the
+> `reconcile.yaml` lifecycle (`state/reconcile.ts`) are **wired into
+> production** — `computeReconcilePlan` is called at
+> `publish-sync.ts:968,1213`, and the web UI drives it via
+> `ReconcilePanel.tsx`. The cases below (GIT-C1..) are the acceptance
+> criteria for that engine; treat them as *covered*, not aspirational,
+> except the genuinely-unbuilt residual (GIT-8/9/16/19/21/22/23/25/33/34/
+> 35/36 — see A188). GIT-29 (push rejected: auth vs non-fast-forward) and
+> GIT-30 (fetch against an unreachable remote) are now **built**
+> (`classifyRemoteFailure` in `publish-sync.ts`, surfaced by the panel,
+> CLI, and MCP — see the GIT-29/30 UI cases in
+> [`../ui-test-cases/flow-git-sync.md`](../ui-test-cases/flow-git-sync.md)).
+> Sync no longer merely *stops* on divergence; it plans a per-field
+> reconciliation.
 
 ### GIT-C1 · blocker · P1 P10 · CLI MCP
 **Two edits to different fields of one task merge instead of conflicting.**
@@ -112,9 +126,9 @@ alone.
 
 ### GIT-C6 · major · P4 P6 · CLI MCP
 **Git status reports drift, not just configuration.** `getGitStatus`
-returns a config echo plus an `isGitRepo` boolean — so a UI built on it
-cannot render reconciliation state even if written. There is no git UI at
-all today.
+returns a config echo plus an `isGitRepo` boolean. (An earlier note here
+said "there is no git UI at all today" — stale; `GitSyncPanel.tsx` and
+`ReconcilePanel.tsx` now exist and render this status. See A188.)
 
 - The result includes separate local-drift and remote-drift indicators.
 - It includes a remote-configured boolean distinct from the remote name.

@@ -5789,7 +5789,7 @@
       "id": "GIT-C1",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 24,
+      "line": 38,
       "title": "Two edits to different fields of one task merge instead of conflicting.",
       "severity": "blocker",
       "principles": [
@@ -5806,7 +5806,7 @@
       "id": "GIT-C2",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 40,
+      "line": 54,
       "title": "Two clones creating tasks offline do not collide on keys.",
       "severity": "blocker",
       "principles": [
@@ -5822,7 +5822,7 @@
       "id": "GIT-C3",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 56,
+      "line": 70,
       "title": "An interrupted reconciliation is resumable.",
       "severity": "major",
       "principles": [
@@ -5839,7 +5839,7 @@
       "id": "GIT-C4",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 74,
+      "line": 88,
       "title": "A failed push is reported as a failure.",
       "severity": "blocker",
       "principles": [
@@ -5855,7 +5855,7 @@
       "id": "GIT-C5",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 92,
+      "line": 106,
       "title": "Git failures are named, not passed through raw.",
       "severity": "major",
       "principles": [
@@ -5871,7 +5871,7 @@
       "id": "GIT-C6",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 113,
+      "line": 127,
       "title": "Git status reports drift, not just configuration.",
       "severity": "major",
       "principles": [
@@ -5888,7 +5888,7 @@
       "id": "GIT-C7",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 130,
+      "line": 144,
       "title": "`loctt git enable` on a repo with an existing `loctt` branch is deliberate.",
       "severity": "major",
       "principles": [
@@ -5904,7 +5904,7 @@
       "id": "GIT-C8",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 145,
+      "line": 159,
       "title": "`enable_git`'s description matches what it does.",
       "severity": "major",
       "principles": [
@@ -5920,7 +5920,7 @@
       "id": "GIT-C9",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 183,
+      "line": 197,
       "title": "Enable on a non-git directory leaves nothing behind.",
       "severity": "minor",
       "principles": [
@@ -5935,7 +5935,7 @@
       "id": "GIT-C10",
       "tree": "surface",
       "file": "docs/dev/surface-test-cases/flow-git-sync.md",
-      "line": 159,
+      "line": 173,
       "title": "Every git operation honours a reconfigured `git.branch`.",
       "severity": "major",
       "principles": [

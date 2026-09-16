@@ -105,7 +105,27 @@ export const TOOLS: readonly ToolDef[] = [
       if (result.pushed === true) {
         lines.push("Pushed to remote");
       } else if (result.pushError) {
-        lines.push(`Published locally; remote push failed: ${result.pushError}`);
+        // GIT-29: distinguish the cause so an agent knows the next
+        // action. The local commit succeeded in every case.
+        if (result.pushFailure?.kind === "non_fast_forward") {
+          lines.push(
+            `Published locally; push rejected because ${result.pushFailure.remote} has moved on `
+            + `since the last sync (${result.pushFailure.detail}). Local commit is safe. `
+            + "Recommended: sync_from_git, then publish again.",
+          );
+        } else if (result.pushFailure?.kind === "auth") {
+          lines.push(
+            `Published locally; push failed authenticating to ${result.pushFailure.remote}: `
+            + `${result.pushFailure.detail}. Local commit is safe. Fix git credentials, then retry.`,
+          );
+        } else if (result.pushFailure?.kind === "unreachable") {
+          lines.push(
+            `Published locally; ${result.pushFailure.remote} could not be reached `
+            + `(${result.pushFailure.detail}). Local commit is safe. Retry once the remote is reachable.`,
+          );
+        } else {
+          lines.push(`Published locally; remote push failed: ${result.pushError}`);
+        }
       }
       return text(lines.join("\n"));
     },
@@ -126,7 +146,16 @@ export const TOOLS: readonly ToolDef[] = [
       if (result.fetched === true) {
         lines.push("Fetched from remote");
       } else if (result.fetchError) {
-        lines.push(`Remote fetch failed: ${result.fetchError}`);
+        // GIT-30: name the remote and say it could not be reached; local
+        // state is untouched and the sync continued against the local
+        // branch copy.
+        lines.push(
+          result.fetchFailure !== undefined
+            ? `Remote ${result.fetchFailure.remote} ${result.fetchFailure.summary} `
+              + `(${result.fetchFailure.detail}); local state untouched, synced against the `
+              + "local copy of the branch only."
+            : `Remote fetch failed: ${result.fetchError}`,
+        );
       }
       if (result.updated) {
         // Report the shape of the change, not just that one happened —

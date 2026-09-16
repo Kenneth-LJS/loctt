@@ -430,3 +430,105 @@ test("GIT-28: outside a git repo, enable is disabled with a reason and names git
 
   expect(errors).toEqual([]);
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// GIT-29 · Publish fails because the push cannot reach the remote.
+//
+// The panel must NOT enter a permanent error state (the local commit
+// landed): it names the remote, states the commit is safe locally, and
+// offers Retry. The auth-vs-non-fast-forward *distinction* is proven in
+// GitSyncPanel.test.tsx (publishFailureLine) and push-fetch.test.ts
+// (core classification) — a non-fast-forward rejection cannot be
+// triggered end-to-end because the reconcile detector fetches and
+// intercepts remote movement before the push (publish-sync.ts).
+// ─────────────────────────────────────────────────────────────────────
+
+test("GIT-29: a push that cannot reach the remote is a safe partial success — commit landed, remote named, Retry offered", async ({
+  page,
+  gitTracker,
+}) => {
+  // @verifies GIT-29
+  const errors = guardPageErrors(page);
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.seed(["task that will fail to push"]);
+
+  // Point origin at a path that does not exist, so the push is rejected
+  // (unreachable) while the local commit still lands.
+  await gitTracker.git(["remote", "set-url", "origin", "/no/such/loctt/remote/path"]);
+
+  await gotoSync(page, gitTracker.baseURL);
+  await expect(page.getByTestId("git-enabled")).toBeVisible();
+
+  await page.getByTestId("git-publish").click();
+  const result = page.getByTestId("git-publish-result");
+  await expect(result).toBeVisible();
+  // The commit is still reported as committed — not an error state.
+  await expect(result).toHaveAttribute("data-git-publish", "committed");
+  await expect(result).toHaveAttribute("data-push-failure", "unreachable");
+  // Names the remote, says the commit is safe locally.
+  await expect(result).toContainText("origin");
+  await expect(result).toContainText("could not be reached");
+  await expect(result).toContainText("safe locally");
+  // Retry is offered; the hard-error block is NOT shown.
+  await expect(page.getByTestId("git-publish-retry")).toBeVisible();
+  await expect(page.getByTestId("git-publish-error")).toHaveCount(0);
+
+  // Far end: the local commit persisted (last_synced_commit is set) even
+  // though the remote never received it.
+  const committed = await lastSyncedCommit(gitTracker.root);
+  expect(committed).toMatch(/^[0-9a-f]{40}$/);
+  expect(await gitTracker.bareCommit("loctt")).toBeUndefined();
+
+  expect(errors).toEqual([]);
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// GIT-30 · Sync fails because the remote is unreachable.
+//
+// Network down / host does not resolve: the panel names the remote, says
+// it could not be reached (distinct from "nothing to sync"), states local
+// state is untouched, and offers Retry — it does NOT enter a permanent
+// error state that requires a reload after the network returns.
+// ─────────────────────────────────────────────────────────────────────
+
+test("GIT-30: sync against an unreachable remote names it, keeps local untouched, and offers Retry — not a permanent error", async ({
+  page,
+  gitTracker,
+}) => {
+  // @verifies GIT-30
+  const errors = guardPageErrors(page);
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.seed(["local task kept through a failed sync"]);
+  await gitTracker.run(["git", "publish"]);
+  const committed = await lastSyncedCommit(gitTracker.root);
+
+  // Break the remote so the fetch inside sync fails.
+  await gitTracker.git(["remote", "set-url", "origin", "/no/such/loctt/remote/path"]);
+
+  await gotoSync(page, gitTracker.baseURL);
+  await expect(page.getByTestId("git-enabled")).toBeVisible();
+
+  await page.getByTestId("git-sync").click();
+  const result = page.getByTestId("git-sync-result");
+  await expect(result).toBeVisible();
+  // A success-shaped result (no-op against the local branch copy), NOT the
+  // hard-error block — this is the "not a permanent error state" bullet.
+  await expect(result).toHaveAttribute("data-fetch-failure", "unreachable");
+  await expect(page.getByTestId("git-sync-error")).toHaveCount(0);
+
+  // Names the remote, distinguishes from "nothing to sync", says local
+  // state is untouched.
+  const warning = page.getByTestId("git-sync-fetch-warning");
+  await expect(warning).toContainText("origin");
+  await expect(warning).toContainText("could not be reached");
+  await expect(warning).toContainText("not modified");
+
+  // Retry is offered inline.
+  await expect(page.getByTestId("git-sync-retry")).toBeVisible();
+
+  // Far end: local state untouched — last_synced_commit is exactly what it
+  // was before the failed sync.
+  expect(await lastSyncedCommit(gitTracker.root)).toBe(committed);
+
+  expect(errors).toEqual([]);
+});

@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
+  type GitRemoteFailure,
   type GitStatus,
   useGitDisable,
   useGitEnable,
@@ -15,18 +16,74 @@ import { ErrorState } from "../ui/ErrorState.tsx";
 import { ReconcilePanel } from "./ReconcilePanel.tsx";
 
 /**
+ * The sentence a failed push shows (GIT-29). Every branch states the
+ * local commit is safe — the push failed, not the commit — and names the
+ * remote; the non-fast-forward branch recommends Sync, the auth branch
+ * points at credentials, distinguishing the two causes.
+ */
+export function publishFailureLine(branch: string, failure: GitRemoteFailure): string {
+  const safe = "The commit is safe locally; your work was not lost.";
+  switch (failure.kind) {
+    case "non_fast_forward":
+      return (
+        `Committed to ${branch}, but the push was rejected: the remote "${failure.remote}" `
+        + `has moved on since your last sync. ${safe} Sync first to bring in the remote work, then publish again.`
+      );
+    case "auth":
+      return (
+        `Committed to ${branch}, but the push failed authenticating to "${failure.remote}" `
+        + `(${failure.detail}). ${safe} Check your git credentials, then retry.`
+      );
+    case "unreachable":
+      return (
+        `Committed to ${branch}, but the remote "${failure.remote}" could not be reached `
+        + `(${failure.detail}). ${safe} Retry once the remote is reachable.`
+      );
+    default:
+      return `Committed to ${branch}, but the push failed: ${failure.detail}. ${safe}`;
+  }
+}
+
+/**
+ * The clause a failed fetch shows after the remote name (GIT-30). A
+ * network/DNS failure reads "could not be reached"; other classes (auth
+ * on a private remote) carry their own cause verbatim so the user is not
+ * told the wrong remedy.
+ */
+export function fetchFailureClause(failure: GitRemoteFailure): string {
+  switch (failure.kind) {
+    case "unreachable":
+      return `could not be reached (${failure.detail})`;
+    case "auth":
+      return `rejected authentication (${failure.detail})`;
+    default:
+      return `could not be fetched (${failure.detail})`;
+  }
+}
+
+/**
  * Settings → Tracker → Sync (GIT-1..GIT-4, GIT-10, GIT-20, GIT-24,
  * GIT-27, GIT-28, GIT-30, GIT-38).
  *
- * What this panel deliberately does **not** contain: a reconciliation
- * UI. `local/reconcile.yaml` is a four-field crash sentinel — `mode`,
- * `base_commit`, `remote_commit`, `started_at`, under a `.strict()`
- * schema — with no per-task rows, no per-field decisions, and no core
- * function that applies a choice. `GitConflictError` carries a flat
- * array of file *paths*. So the conflict-resolution cases (GIT-5..9,
- * GIT-11..19, GIT-21, GIT-25, GIT-26, GIT-31..37) have no data to
- * render and no engine to drive; see decisions.md A68. What this panel
- * does do for that state is GIT-18's first duty: detect that a
+ * Reconciliation UI lives in the child `<ReconcilePanel/>` (rendered
+ * below). An earlier version of this comment claimed there was no
+ * reconcile UI or engine and cited decisions.md A68 ("ship the panel,
+ * report the rest") — that was **superseded by A121** (commit e99bfec,
+ * 2026-09-04): the per-field reconciliation engine
+ * (`computeReconcilePlan`/`applyReconcile`, wired at
+ * `publish-sync.ts:968,1213`) now exists, and `ReconcilePanel` drives
+ * it. See decisions.md A188 for the up-to-date audit of what is built.
+ * GIT-29 (push rejected: auth vs non-fast-forward) and GIT-30 (fetch
+ * against an unreachable remote) are now built here: the push/fetch
+ * failure is classified in core (`classifyRemoteFailure`), rides in the
+ * success body as `pushFailure`/`fetchFailure`, and this panel names the
+ * remote, states the local state was untouched, and offers Retry (plus
+ * Sync-first for a non-fast-forward push) without entering a permanent
+ * error state. The residual conflict-resolution cases still unbuilt are
+ * GIT-8/16/19/21/22/23/25/33/34/35/36; the rest of the GIT-* range is
+ * built and tested.
+ *
+ * This panel also carries GIT-18's first duty: detect that a
  * reconciliation is in progress and refuse to start another operation
  * over it.
  *
@@ -358,19 +415,54 @@ function EnabledState({ status, checkedAt, onRefresh }: {
         change produces — no empty commit is created.
       */}
       {publish.isSuccess && !reconcileBlocked && (
-        <p
+        <div
           data-testid="git-publish-result"
           data-git-publish={publish.data.committed ? "committed" : "nothing-to-publish"}
+          data-push-failure={publish.data.pushFailure?.kind}
           className="mb-3 text-[0.9286rem] text-text-secondary"
         >
-          {!publish.data.committed
-            ? "Nothing to publish — local state already matches the branch."
-            : publish.data.pushed === true
-              ? `Published to ${status.remote}/${publish.data.branch}.`
-              : publish.data.pushError !== undefined
-                ? `Committed to ${publish.data.branch}, but the push failed: ${publish.data.pushError}. The commit is safe locally; your work was not lost.`
-                : `Committed to ${publish.data.branch}. Not pushed — no remote is configured.`}
-        </p>
+          <p>
+            {!publish.data.committed
+              ? "Nothing to publish — local state already matches the branch."
+              : publish.data.pushed === true
+                ? `Published to ${status.remote}/${publish.data.branch}.`
+                : publish.data.pushFailure !== undefined
+                  ? publishFailureLine(publish.data.branch, publish.data.pushFailure)
+                  : publish.data.pushError !== undefined
+                    ? `Committed to ${publish.data.branch}, but the push failed: ${publish.data.pushError}. The commit is safe locally; your work was not lost.`
+                    : `Committed to ${publish.data.branch}. Not pushed — no remote is configured.`}
+          </p>
+          {/* GIT-29: the push failed but the local commit landed — this is
+              not a permanent error state. Offer Retry, and for a
+              non-fast-forward rejection recommend Sync first (which merges
+              the remote work in) over a bare retry that would fail again. */}
+          {publish.data.pushFailure !== undefined && (
+            <div className="mt-2 flex gap-2">
+              {publish.data.pushFailure.kind === "non_fast_forward" && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  testId="git-publish-sync-first"
+                  disabled={busy || reconcileInProgress}
+                  onClick={() => { sync.mutate(); }}
+                >
+                  Sync first
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                testId="git-publish-retry"
+                disabled={busy || reconcileInProgress}
+                onClick={() => { publish.mutate(); }}
+              >
+                Retry push
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
       {/*
@@ -380,27 +472,52 @@ function EnabledState({ status, checkedAt, onRefresh }: {
         data cannot support.
       */}
       {sync.isSuccess && !reconcileBlocked && (
-        <p
+        <div
           data-testid="git-sync-result"
           data-git-sync={sync.data.updated ? "updated" : "no-op"}
+          data-fetch-failure={sync.data.fetchFailure?.kind}
           className="mb-3 text-[0.9286rem] text-text-secondary"
         >
-          {sync.data.updated
-            ? `Synced: ${String(sync.data.copied ?? 0)} file(s) taken from the branch, `
-              + `${String(sync.data.merged ?? 0)} merged, ${String(sync.data.deleted ?? 0)} removed.`
-            : "Already up to date — the branch has not moved since the last sync."}
+          <p>
+            {sync.data.updated
+              ? `Synced: ${String(sync.data.copied ?? 0)} file(s) taken from the branch, `
+                + `${String(sync.data.merged ?? 0)} merged, ${String(sync.data.deleted ?? 0)} removed.`
+              : "Already up to date — the branch has not moved since the last sync."}
+            {/* GIT-30: name the remote and say it could not be reached,
+                distinguishing this from "nothing to sync", and state
+                explicitly that local state is untouched. */}
+            {sync.data.fetchError !== undefined && (
+              <span className="ml-1 text-warn-fg" data-testid="git-sync-fetch-warning">
+                {sync.data.fetchFailure !== undefined
+                  ? `The remote "${sync.data.fetchFailure.remote}" ${fetchFailureClause(sync.data.fetchFailure)}, `
+                  : `The remote could not be reached (${sync.data.fetchError}), `}
+                so this compared against the local copy of the branch only. Your
+                local task files were not modified.
+              </span>
+            )}
+            {sync.data.unresolvedKeys !== undefined && sync.data.unresolvedKeys.length > 0 && (
+              <span className="ml-1 text-warn-fg">
+                Unresolved keys: {sync.data.unresolvedKeys.join(", ")}.
+              </span>
+            )}
+          </p>
+          {/* GIT-30: not a permanent error state — offer Retry inline so
+              the user does not have to reload after the network returns. */}
           {sync.data.fetchError !== undefined && (
-            <span className="ml-1 text-warn-fg">
-              The remote could not be reached ({sync.data.fetchError}), so this
-              compared against the local copy of the branch only.
-            </span>
+            <div className="mt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                testId="git-sync-retry"
+                disabled={busy || reconcileInProgress}
+                onClick={() => { sync.mutate(); }}
+              >
+                Retry sync
+              </Button>
+            </div>
           )}
-          {sync.data.unresolvedKeys !== undefined && sync.data.unresolvedKeys.length > 0 && (
-            <span className="ml-1 text-warn-fg">
-              Unresolved keys: {sync.data.unresolvedKeys.join(", ")}.
-            </span>
-          )}
-        </p>
+        </div>
       )}
 
       {publish.isError && !reconcileBlocked && (
