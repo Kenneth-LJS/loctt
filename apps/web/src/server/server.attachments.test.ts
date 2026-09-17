@@ -190,6 +190,88 @@ describe("web server attachments", () => {
     });
   });
 
+  // The inline-serve path (K95, REL-16 bullet 1): the tile's `<img src>`
+  // asks for the raw bytes with `?inline=1` and an image Content-Type.
+  // This is a SEPARATE path from the download above, which stays
+  // octet-stream + attachment (REL-38) — the tests below assert both
+  // that images serve inline with the right type + nosniff AND that the
+  // download path is untouched.
+  describe("GET /api/tasks/:ref/attachments/:name?inline=1", () => {
+    async function upload(name: string, content: Buffer | string): Promise<void> {
+      const { body, contentType } = buildMultipart("file", name, content);
+      await fetch(`${base}/api/tasks/${key}/attachments`, {
+        method: "POST",
+        headers: { "Content-Type": contentType, "X-Loctt-Client": "1" },
+        body,
+      });
+    }
+
+    // A minimal valid 1×1 PNG.
+    const PNG_1PX = Buffer.from(
+      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+        + "890000000d49444154789c6360000002000100ffff03000006000557bfabd4"
+        + "0000000049454e44ae426082",
+      "hex",
+    );
+
+    // @verifies REL-16
+    it("serves an image inline with the extension-derived Content-Type and nosniff", async () => {
+      await upload("shot.png", PNG_1PX);
+      const res = await fetch(`${base}/api/tasks/${key}/attachments/shot.png?inline=1`);
+      expect(res.status).toBe(200);
+      // Matches core's mimeForFilename table — the same type the tile
+      // uses to decide it is an image family.
+      expect(res.headers.get("content-type")).toBe("image/png");
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      // Inline: NOT a forced download.
+      expect(res.headers.get("content-disposition")).toBeNull();
+      const bytes = Buffer.from(await res.arrayBuffer());
+      expect(bytes.equals(PNG_1PX)).toBe(true);
+    });
+
+    // @verifies REL-16
+    it("serves an SVG inline as image/svg+xml with nosniff (safe under <img>; nosniff blocks doc navigation)", async () => {
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>';
+      await upload("vector.svg", svg);
+      const res = await fetch(`${base}/api/tasks/${key}/attachments/vector.svg?inline=1`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("image/svg+xml");
+      // nosniff: a *navigation* to this URL cannot execute the SVG as a
+      // top-level document. The <img> render relies on the image
+      // sandbox, but the header guards the navigation case.
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    });
+
+    // @verifies REL-16
+    it("does NOT serve a non-image inline — a .txt with ?inline=1 falls through to the octet-stream download", async () => {
+      await upload("notes.txt", "plain text");
+      const res = await fetch(`${base}/api/tasks/${key}/attachments/notes.txt?inline=1`);
+      expect(res.status).toBe(200);
+      // Falls through to the REL-38 download path: no derived text/plain
+      // inline type, which would be an XSS vector for text/html.
+      expect(res.headers.get("content-type")).toBe("application/octet-stream");
+      expect(res.headers.get("content-disposition")).not.toBeNull();
+    });
+
+    // @verifies REL-16
+    it("leaves the download path (no ?inline) exactly as REL-38 protects it, even for an image", async () => {
+      await upload("dl.png", PNG_1PX);
+      const res = await fetch(`${base}/api/tasks/${key}/attachments/dl.png`);
+      expect(res.status).toBe(200);
+      // Without ?inline the image is still a forced octet-stream
+      // download — the inline serve did not weaken this.
+      expect(res.headers.get("content-type")).toBe("application/octet-stream");
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(res.headers.get("content-disposition")).not.toBeNull();
+    });
+
+    // @verifies REL-16
+    it("returns 404 for a missing image asked inline", async () => {
+      const res = await fetch(`${base}/api/tasks/${key}/attachments/gone.png?inline=1`);
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe("DELETE /api/tasks/:ref/attachments/:name", () => {
     it("returns 204 and removes the file", async () => {
       const { body, contentType } = buildMultipart("file", "del.txt", "bye");

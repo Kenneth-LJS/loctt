@@ -162,6 +162,7 @@ import {
   migrateToCurrent,
   MilestoneError,
   milestoneProgressDetailed,
+  mimeForFilename,
   ParseError,
   parseQuery,
   PartialRemapError,
@@ -5194,7 +5195,7 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
-  const handleGetAttachment: RouteHandler = async ({ res, locttDir, captures }) => {
+  const handleGetAttachment: RouteHandler = async ({ res, url, locttDir, captures }) => {
     const ref = requireValidRef(captures, res);
     if (ref === null) return;
     const rawName = decodeURIComponent(captures[1] ?? "");
@@ -5219,6 +5220,55 @@ export function createWebApp(options: WebAppOptions) {
       code: "not_found",
       recovery: { kind: "reload" },
     } as const satisfies Omit<Partial<ErrorResponse>, "message">;
+
+    // The tile's inline-image render (REL-16 bullet 1 / K95) asks for
+    // the raw bytes with `?inline=1` and an image Content-Type so an
+    // `<img src>` can display them. This is a SEPARATE path from the
+    // download below — the download stays octet-stream + attachment
+    // (REL-38), which is what neutralises a text/html or svg upload
+    // opened as a document. The inline path is only taken for
+    // image-family types (the `<img>` sandbox is what makes an SVG
+    // safe here — scripts don't run in image context — and nosniff
+    // stops a *navigation* to this URL from executing it as a
+    // document). Anything non-image asking for inline falls through
+    // to the download path rather than being served with a guessed
+    // inline type.
+    const inlineType = mimeForFilename(rawName);
+    const wantsInline =
+      url.searchParams.get("inline") === "1"
+      && inlineType !== undefined
+      && inlineType.startsWith("image/");
+
+    if (wantsInline) {
+      // lstat (not stat) so a symlink dropped into attachments/ can't
+      // smuggle out an arbitrary file under an image Content-Type.
+      // The download path below tolerates a symlink because it never
+      // renders — this path does, so it must not follow one.
+      let linkStat;
+      try {
+        linkStat = await fsLstat(filePath);
+      } catch {
+        error(res, `"${rawName}" is not attached to this task.`, 404, attachmentMissing);
+        return;
+      }
+      if (linkStat.isSymbolicLink() || !linkStat.isFile()) {
+        error(res, `"${rawName}" is not attached to this task.`, 404, attachmentMissing);
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": inlineType,
+        // nosniff stops a *navigation* to this URL from being run as a
+        // document (an SVG in particular); the `<img>` render relies on
+        // the image sandbox, not on this header.
+        "X-Content-Type-Options": "nosniff",
+        "Content-Length": String(linkStat.size),
+      });
+      const stream = createReadStream(filePath);
+      stream.on("error", () => { try { res.end(); } catch { /* ignore */ } });
+      stream.pipe(res);
+      return;
+    }
+
     let fileStat;
     try {
       fileStat = await fsStat(filePath);
@@ -5238,11 +5288,12 @@ export function createWebApp(options: WebAppOptions) {
     //
     // The UI gets the inferred MIME type via the `mime` field on
     // `AttachmentResponse` (returned by GET /api/tasks/:ref), and
-    // dispatches client-side — e.g. fetching the bytes here and
-    // wrapping them in a sandboxed `<img>`/`<video>`/`<audio>` blob
-    // URL. Don't switch this endpoint to a derived Content-Type —
-    // an inline image/svg+xml or text/html upload would be an XSS
-    // hole even with nosniff.
+    // for image-family types renders an inline `<img>` against the
+    // `?inline=1` path above. This default path stays download-only —
+    // an inline image/svg+xml or text/html upload served here (with a
+    // Content-Type derived from the name) would be an XSS hole even
+    // with nosniff, which is why the derived-type serve is confined to
+    // the image-only branch guarded above.
     res.writeHead(200, {
       "Content-Type": "application/octet-stream",
       "X-Content-Type-Options": "nosniff",

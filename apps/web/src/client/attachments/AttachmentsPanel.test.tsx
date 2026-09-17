@@ -45,6 +45,13 @@ function attachment(over: Partial<AttachmentResponse> = {}): AttachmentResponse 
   return { name: "spec.pdf", size: 2048, mime: "application/pdf", ...over };
 }
 
+/** An attachment with no inferred MIME (a name with no known extension). */
+function attachmentNoMime(name: string): AttachmentResponse {
+  const a = attachment({ name });
+  delete (a as { mime?: string }).mime;
+  return a;
+}
+
 // No `globals: true` in this workspace's vitest config, so RTL's
 // auto-cleanup afterEach is not registered — unmount explicitly, or one
 // test's tiles leak into the next test's `screen` queries.
@@ -133,6 +140,82 @@ describe("AttachmentsPanel — corruption survival (S7)", () => {
         { wrapper: wrapper() },
       );
       expect(screen.queryByTestId("attachments-retry")).toBeNull();
+    });
+  });
+
+  // REL-16 bullet 1 / K95: an image-family tile renders an inline
+  // <img> (the full image, CSS-scaled) against the ?inline=1 bytes
+  // endpoint; a non-image keeps its type icon; an <img> load error
+  // falls back to the type icon (K14 pt 4), never a broken-image icon.
+  describe("REL-16 — image tiles render an inline thumbnail", () => {
+    // @verifies REL-16
+    it("renders an <img> pointing at the ?inline=1 bytes for an image family, not a glyph", () => {
+      render(
+        <AttachmentsPanel
+          taskRef="T-7"
+          attachments={[attachment({ name: "shot.png", mime: "image/png" })]}
+        />,
+        { wrapper: wrapper() },
+      );
+      const img = screen.getByTestId("attachment-thumb");
+      expect(img.tagName).toBe("IMG");
+      expect(img.getAttribute("src")).toBe(
+        "/api/tasks/T-7/attachments/shot.png?inline=1",
+      );
+      // The type glyph is not shown while the image renders.
+      expect(screen.queryByTestId("attachment-icon")).toBeNull();
+    });
+
+    // @verifies REL-16
+    it("renders an inline <img> for an SVG too (safe under the <img> sandbox)", () => {
+      render(
+        <AttachmentsPanel
+          taskRef="T-7"
+          attachments={[attachment({ name: "vector.svg", mime: "image/svg+xml" })]}
+        />,
+        { wrapper: wrapper() },
+      );
+      expect(screen.getByTestId("attachment-thumb")).toBeTruthy();
+      expect(screen.queryByTestId("attachment-icon")).toBeNull();
+    });
+
+    // @verifies REL-16
+    it("shows the type icon (not an <img>) for a non-image: pdf, mp4, and unknown", () => {
+      render(
+        <AttachmentsPanel
+          taskRef="T-7"
+          attachments={[
+            attachment({ name: "doc.pdf", mime: "application/pdf" }),
+            attachment({ name: "clip.mp4", mime: "video/mp4" }),
+            attachmentNoMime("blob"),
+          ]}
+        />,
+        { wrapper: wrapper() },
+      );
+      // No inline images anywhere.
+      expect(screen.queryByTestId("attachment-thumb")).toBeNull();
+      // Every tile shows its type glyph.
+      expect(screen.getAllByTestId("attachment-icon")).toHaveLength(3);
+    });
+
+    // @verifies REL-16
+    it("falls back to the type icon when the <img> fails to load (K14 pt 4), not a broken-image icon", () => {
+      render(
+        <AttachmentsPanel
+          taskRef="T-7"
+          attachments={[attachment({ name: "corrupt.png", mime: "image/png" })]}
+        />,
+        { wrapper: wrapper() },
+      );
+      const img = screen.getByTestId("attachment-thumb");
+      // Before the error the icon is absent.
+      expect(screen.queryByTestId("attachment-icon")).toBeNull();
+      // A file that fails to decode as an image fires onError.
+      fireEvent.error(img);
+      // The <img> is gone; the tile now shows the type icon instead —
+      // "as if the image wasn't there", never a broken-image glyph.
+      expect(screen.queryByTestId("attachment-thumb")).toBeNull();
+      expect(screen.getByTestId("attachment-icon")).toBeTruthy();
     });
   });
 });

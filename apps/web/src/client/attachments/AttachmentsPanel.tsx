@@ -482,6 +482,22 @@ function AttachmentTile({
   const href =
     `/api/tasks/${encodeURIComponent(taskRef)}/attachments/`
     + encodeURIComponent(attachment.name);
+  /**
+   * The raw-bytes URL served inline with an image Content-Type (K95;
+   * REL-16 bullet 1). It is a *separate* endpoint from `href` above —
+   * `href` (no `?inline`) stays the octet-stream download REL-38
+   * protects. The tile's "thumbnail" is the full image, CSS-scaled.
+   */
+  const inlineSrc = `${href}?inline=1`;
+
+  /**
+   * K14 pt 4: a file that fails to load as an image renders "as if the
+   * image wasn't there" — i.e. it falls back to the type icon, never a
+   * broken-image glyph. The `<img>` `onError` sets this and the tile
+   * re-renders with the icon.
+   */
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = family === "image" && !imageFailed;
 
   return (
     <li
@@ -491,21 +507,45 @@ function AttachmentTile({
       data-mime={displayMime(attachment.mime)}
       className="flex min-w-0 flex-col gap-1 overflow-hidden rounded-md border border-border-subtle p-2"
     >
+      {showImage && (
+        // The inline image (K95). `<img>` sandboxes the bytes — an SVG
+        // served here cannot run scripts in image context — so this is
+        // safe even for image/svg+xml. On a load failure we drop to the
+        // icon path below (K14 pt 4), never a broken-image icon.
+        <a
+          href={href}
+          download={attachment.name}
+          data-testid="attachment-thumb-link"
+          aria-label={`Download ${attachment.name}`}
+          className="block overflow-hidden rounded"
+        >
+          <img
+            src={inlineSrc}
+            alt=""
+            data-testid="attachment-thumb"
+            loading="lazy"
+            onError={() => { setImageFailed(true); }}
+            className="h-24 w-full rounded object-cover"
+          />
+        </a>
+      )}
       <div className="flex min-w-0 items-center gap-2">
         {/*
-          REL-38: a generic glyph, and no thumbnail. Nothing here
-          fetches the bytes to preview them — an image/svg+xml or
-          text/html upload rendered inline is a script-execution path,
-          which is why the download endpoint serves octet-stream +
-          nosniff in the first place.
+          The type glyph. Shown for every non-image family, and for an
+          image whose bytes failed to load (K14 pt 4 — the fallback is
+          the icon, as if the image weren't there). An image that loads
+          shows its thumbnail above instead; the aria-hidden glyph never
+          competes with it for the accessible name.
         */}
-        <span
-          aria-hidden="true"
-          data-testid="attachment-icon"
-          className="shrink-0 text-[1.1429rem]"
-        >
-          {glyphFor(family)}
-        </span>
+        {!showImage && (
+          <span
+            aria-hidden="true"
+            data-testid="attachment-icon"
+            className="shrink-0 text-[1.1429rem]"
+          >
+            {glyphFor(family)}
+          </span>
+        )}
         <a
           href={href}
           download={attachment.name}

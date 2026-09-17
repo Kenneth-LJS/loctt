@@ -13443,3 +13443,47 @@ required by any case and are not part of REL-16; K14's pt-4 fallback (a
 file corrupted after storage renders "as if the image wasn't there", i.e.
 the type icon, not a broken-image icon) still holds and the `<img>`
 `onerror` path provides it. Not agent-revertible.
+
+### A199 · REL-16 inline image render — a separate `?inline=1` serve path, raw bytes, `<img>` sandbox (implements K95)
+
+**Ticket:** REL-16 bullet 1 · **Date:** 2026-09-17 · **Implements:** K95.
+
+**What was built.** An image attachment tile renders the full local image
+inline (K95: no thumbnail pipeline, no re-encode — the tile's "thumbnail"
+is the full file, CSS-scaled). Two halves:
+
+- **Server (`handleGetAttachment`):** a new `?inline=1` path serves the raw
+  bytes with an image Content-Type from core's `mimeForFilename` +
+  `X-Content-Type-Options: nosniff`, taken ONLY for `image/*` types
+  (anything else falls through to the existing download path). It is a
+  SEPARATE path from the default download, which stays octet-stream +
+  attachment (REL-38 untouched). The inline path uses `lstat` (not `stat`)
+  and refuses a symlink or non-file — because this path *renders*, a
+  symlink could otherwise smuggle an arbitrary file out under an image
+  Content-Type (the download path tolerates a symlink because it never
+  renders). This symlink guard on the render path is a deliberate addition.
+- **Client (`AttachmentTile`):** for `family === "image"`, renders
+  `<img src=".../attachments/<name>?inline=1">` wrapped in the download
+  link; `<img>` sandboxes the bytes so an SVG cannot execute scripts in
+  image context (K95). On load failure (`onError`) it falls back to the
+  type icon — never a broken-image glyph (K14 pt 4). Non-image families
+  keep the type icon.
+
+**REL-18 preserved.** Storing raw + serving inline does not re-encode, so
+the byte-identity guarantee (REL-18) still holds — its test stays green
+(verified). K95 supersedes K14's compress-on-upload as unnecessary.
+
+**Not built (per K95):** thumbnail pipeline, re-encode, cropper, video
+poster frames (ffmpeg). On-the-fly server thumbnails remain an optional
+future optimization.
+
+**Tests.** `@verifies REL-16` at core (mime table), server (inline
+Content-Type + nosniff; non-image falls through; symlink refused), client
+(image renders `<img>`; non-image renders icon; `onError` → icon), + a
+Playwright spec. Each red-proven (server content-type, client image render,
+onError fallback — all confirmed red when broken).
+
+**To revert.** Drop the `?inline=1` branch in `handleGetAttachment` and the
+`<img>`/`inlineSrc`/`imageFailed` render in `AttachmentTile` (restore the
+family-glyph-only tile); un-tag the REL-16 tests. No stored-format change,
+no migration — storage was never touched.
