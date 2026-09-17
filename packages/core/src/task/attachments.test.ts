@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,6 +49,24 @@ describe("attachments", () => {
       const dst = getAttachmentPath(locttDir, taskId, "design.pdf");
       const st = await stat(dst);
       expect(st.isFile()).toBe(true);
+    });
+
+    // @verifies REL-18
+    it("stores an image byte-for-byte — no recompression (K95 keeps REL-18)", async () => {
+      // K95 renders images inline via <img> against the raw bytes, so
+      // the stored file MUST remain byte-identical to the source: no
+      // sharp re-encode, no thumbnail pipeline. Bytes chosen to include
+      // a NUL and high bytes so a text round-trip would corrupt them.
+      const original = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const src = join(sourceDir, "raw.png");
+      await writeFile(src, original);
+
+      const result = await attachFile({ locttDir, taskId, sourcePath: src });
+      expect(result.size).toBe(original.length);
+
+      const dst = getAttachmentPath(locttDir, taskId, "raw.png");
+      const stored = await readFile(dst);
+      expect(stored.equals(original)).toBe(true);
     });
 
     it("appends an attachment_added history entry", async () => {
