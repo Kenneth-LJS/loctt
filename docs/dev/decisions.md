@@ -13350,3 +13350,56 @@ adopt-or-stop control, and lifted agreement report; delete the new tests +
 the e2e spec + these doc paragraphs. No on-disk format change (reuses the
 existing optional `last_synced_commit`), so no migration. Reverting restores
 the silent-adopt behaviour.
+
+### A198 · ERR-11/ERR-12 body-save I/O failures — verify-and-close; add the missing ERR-11 client test
+
+**The situation.** TEMP-TODO listed ERR-11 (read-only/wrong-ownership
+`.loctt/`) and ERR-12 (disk full) as blocked on "the body editor
+(milestone-deferred)". That premise was **stale**: `BodyEditor` +
+`useBodyAutosave` (apps/web/src/client/editor/) exist and are wired into
+TaskDetail. Investigation established the actual state of each half:
+
+- **Server half — already done.** `packages/core/src/utils/fs-errors.ts`
+  classifies `EACCES/EPERM→permission_denied`, `ENOSPC→disk_full`,
+  `EROFS→read_only`, etc., naming the path in user-facing copy with the raw
+  errno on `cause`. `server.errors.test.ts:333` (`@verifies ERR-11`) proves
+  an unwritable `.loctt/` yields `code: io_failed`, `message` matching
+  `/permission/i` + containing `.loctt`, `data_state: not_saved`,
+  `recovery.kind: retry`, EACCES behind `detail` not the headline.
+- **Client half, ERR-12 (disk-full) — already done.**
+  `useBodyAutosave.test.ts:325` (`@verifies ERR-12`) proves the disk-full
+  cause is named, ENOSPC rides in `detail`, and the buffer survives (retry
+  writes the same body). The catch in `write()` deliberately does NOT reset
+  the buffer on `io_failed`; `failureCopy` relays the server's named cause.
+- **Client half, ERR-11 (permission-denied at save time) — the gap.** The
+  `@verifies ERR-11` tag existed **only** on the server envelope test.
+  ERR-11's distinct client crux — "if discovered at save time, the typed
+  content is retained on screen" — had **no client test**. The mechanism
+  (shared with disk-full) worked, but nothing asserted it for the
+  permission cause specifically.
+
+**Decision — verify-and-close, world = "behavior-exists-tests-missing".**
+No production code changed. Added one client test in
+`useBodyAutosave.test.ts` (`@verifies ERR-11`): a permission-denied
+`io_failed` save (a) names permissions as the cause + names `.loctt`, not a
+generic "save failed", (b) says the change was not saved, (c) carries
+EACCES in `detail` not the headline (ERR-16), (d) retains the buffer —
+proved by asserting the retry issues a *fresh* POST of the same text (a
+clobbered buffer would equal `savedRef` and the dirty-flag guard would skip
+the POST, so write-count, not last-body, is the discriminator).
+
+**Red-proofs (both restored).**
+1. Buffer retention: inserted `bufferRef.current = savedRef.current` in the
+   catch → retry's write skipped, write-count assertion went red.
+2. Named cause: replaced `failureCopy`'s `ApiError` branch with a generic
+   "The description could not be saved." → the `/permission/i` assertion
+   went red.
+
+**Not touched.** No git-sync, reconcile, or unrelated code. No production
+source changed at all — this is a test-coverage close over verified
+behavior.
+
+**To revert.** Delete the `@verifies ERR-11` client test in
+`useBodyAutosave.test.ts` and this entry. (The server ERR-11 test and the
+ERR-12 client test predate this and stay.) No code, contract, or on-disk
+change, so nothing else to undo.

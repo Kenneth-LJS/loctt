@@ -357,6 +357,57 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
     expect(api.writes.at(-1)?.body).toBe("a long body the user wrote");
   });
 
+  // @verifies ERR-11
+  it("names a permission problem at save time and keeps the buffer", async () => {
+    const { result } = harness();
+    // ERR-11's client half: when an unwritable `.loctt/` is discovered
+    // *at save time*, the message must identify it as a permissions
+    // problem (not "save failed"), and the typed content stays on screen
+    // so the user can copy it out. The errno lives server-side, so — as
+    // with ERR-12's disk-full — the client relays the server's cause
+    // rather than substituting a generic phrase. This is a DISTINCT case
+    // from ERR-12: a client that only handled disk-full would still pass
+    // ERR-12 while leaving a permission-denied save unnamed.
+    api.failWith(500, {
+      code: "io_failed",
+      message:
+        "LocTT does not have permission to write to this file "
+        + "(.loctt/tasks/T-1/task.md). Check the file's permissions and "
+        + "the ownership of the .loctt directory.",
+      data_state: "not_saved",
+      recovery: { kind: "retry" },
+      detail: "EACCES: permission denied, open '.loctt/tasks/T-1/task.md'",
+    });
+
+    act(() => { result.current.edit("work the user does not want to lose"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    await settle();
+
+    const failed = result.current.state;
+    expect(failed.kind).toBe("failed");
+    // Named as a permissions/ownership problem, not a generic write fail.
+    expect(failed.kind === "failed" && failed.message).toMatch(/permission/i);
+    expect(failed.kind === "failed" && failed.message).toContain(".loctt");
+    // Says the change was not saved.
+    expect(failed.kind === "failed" && failed.message).toContain("not been saved");
+    // ERR-16: the raw errno rides in detail, never the headline.
+    expect(failed.kind === "failed" && failed.detail).toContain("EACCES");
+    expect(failed.kind === "failed" && failed.message).not.toContain("EACCES");
+    // The buffer is retained: there is unsaved work, and a retry (after
+    // the user fixes permissions) issues a FRESH write of the same text —
+    // nothing cleared it on failure. Asserting a new write appears (not
+    // just that the last recorded body matches) is what distinguishes a
+    // retained buffer from one clobbered back to the saved baseline: a
+    // clobbered buffer equals `savedRef`, so retry's dirty-flag guard
+    // would skip the POST entirely and no new write would be recorded.
+    expect(result.current.hasUnsavedWork).toBe(true);
+    const writesBeforeRetry = api.writes.length;
+    api.succeed();
+    await act(async () => { await result.current.retry(); });
+    expect(api.writes.length).toBe(writesBeforeRetry + 1);
+    expect(api.writes.at(-1)?.body).toBe("work the user does not want to lose");
+  });
+
   // @verifies ERR-27
   it("an auto-save failure is reported without the user clicking anything", async () => {
     const { result } = harness();
