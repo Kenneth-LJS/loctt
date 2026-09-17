@@ -13403,3 +13403,43 @@ behavior.
 `useBodyAutosave.test.ts` and this entry. (The server ERR-11 test and the
 ERR-12 client test predate this and stay.) No code, contract, or on-disk
 change, so nothing else to undo.
+
+### K95 · Image attachments render the full local file inline via `<img>`; store raw, no re-encode, no thumbnail pipeline (resolves K14 ↔ REL-18)
+
+**Ken's ruling (2026-09-17).** REL-16 bullet 1 ("the PNG shows an inline
+image thumbnail") collided with two M2 guarantees: K14 said crop/compress
+image attachments on upload (so the stored file is re-encoded), while
+REL-18 says attachments are stored **byte-identical** to the source (a
+checksum test asserts it). Ken's resolution:
+
+- **Store raw.** REL-18 stands unchanged — image attachments are stored
+  byte-for-byte, no recompression. K14's "crop and compress on the way in"
+  is **superseded as unnecessary**: LocTT is local-first and single-machine,
+  so there is no network cost to serving the full image, which was the only
+  thing that motivated upload-time downscaling.
+- **Render the full image inline via `<img src>`.** The tile points a plain
+  `<img>` at the raw-bytes attachment endpoint for image-family types —
+  **both raster and SVG**. This is safe: an SVG loaded via `<img>` runs in
+  the browser's sandboxed image context, where scripts do not execute and
+  external references do not load (the XSS risk exists only when an SVG is
+  loaded as a *document* — inline, `<object>`, `<iframe>`, or navigated to).
+- **Keep `nosniff` on the bytes endpoint** so a *navigation* to that URL
+  cannot execute an SVG as a top-level document — the existing
+  download-endpoint guard (REL-38) does the real safety work; the `<img>`
+  render path relies on the sandbox, not on rejecting SVGs.
+- **No thumbnail pipeline, no re-encode, no cropper** in this build. The
+  "thumbnail" a tile shows IS the full image, browser-scaled. On-the-fly
+  server thumbnails (sharp is already a dep; a derived, cached image that
+  leaves the byte-identical original untouched) remain an **optional future
+  optimization**, not a requirement, and only if a very large local image
+  ever feels sluggish.
+- **Video poster frames are out of scope** (would need `ffmpeg`, not a
+  dependency; a bundled binary is a heavy addition for a local tool). MP4
+  keeps its type icon — which REL-16 explicitly permits (only the PNG must
+  render an image; PDF/MP4/unknown show a type icon).
+
+Cropper (K14 pt 3) and upload-time validation-refusal (K14 pt 1) are not
+required by any case and are not part of REL-16; K14's pt-4 fallback (a
+file corrupted after storage renders "as if the image wasn't there", i.e.
+the type icon, not a broken-image icon) still holds and the `<img>`
+`onerror` path provides it. Not agent-revertible.
