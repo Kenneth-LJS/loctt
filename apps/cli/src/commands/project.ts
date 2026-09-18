@@ -14,7 +14,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
-import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
+import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -62,6 +62,9 @@ export async function run(args: string[], root: string): Promise<void> {
         const idCol = showIds ? `\t${p.id}` : "";
         console.log(`${p.name}${star}\t${p.prefix}-${idCol}${arch}`);
       }
+      // DEG-C3: surface a hand-broken project entry preserved in
+      // `cfg.broken` so one broken project does not read as "no projects".
+      renderBrokenEntries(cfg.broken);
       const notice = truncationNotice(page);
       if (notice !== undefined) console.log(notice);
       if (cfg.default !== undefined) {

@@ -59,6 +59,10 @@ export const TOOLS: readonly ToolDef[] = [
         // they are reported at the top level. Present only when non-empty
         // so a caller reading only `milestones` is unaffected.
         ...(report.unreadable.length > 0 ? { unreadable: report.unreadable } : {}),
+        // DEG-C3: the non-progress path spreads `cfg.broken` via `...cfg`,
+        // but this fresh object would drop it — a `--progress` list must
+        // still name a hand-broken milestone entry, not silently omit it.
+        ...(cfg.broken !== undefined && cfg.broken.length > 0 ? { broken: cfg.broken } : {}),
       }, null, 2));
     },
   },

@@ -129,7 +129,13 @@ Get a task by key or ID, optionally including the markdown body.
 | `ref` | string | yes | Task key (e.g. `T-1`) or ID |
 | `include_body` | boolean | no | Include markdown body (default `true`) |
 
-Returns JSON: all frontmatter fields, plus `relationships` (each as `{type, target, title?, status?, missing?}` — `target` is rendered as a user-facing key like `T-2` when resolvable, and `title`/`status` carry the target's live values so you need not call `get_task` per edge; deleted targets carry `missing: true`, retain the raw ID, and omit `title`/`status`), `attachments` (each as `{name, size, mime?}` — `mime` is derived from the filename extension and is omitted when the extension is unknown; consumers should treat its absence as `application/octet-stream`), and `body` when requested. The `relationships` key is omitted when empty.
+Returns JSON: all frontmatter fields, plus `relationships` (each as `{type, target, title?, status?, missing?, targetCorrupt?}` — `target` is rendered as a user-facing key like `T-2` when resolvable, and `title`/`status` carry the target's live values so you need not call `get_task` per edge; deleted targets carry `missing: true`, retain the raw ID, and omit `title`/`status`), `attachments` (each as `{name, size, mime?}` — `mime` is derived from the filename extension and is omitted when the extension is unknown; consumers should treat its absence as `application/octet-stream`), and `body` when requested. The `relationships` key is omitted when empty.
+
+`title` is always present: a task with no title (never set, or a corrupt title lifted into `health`) returns its key in the `title` slot, never null or absent.
+
+A relationship edge distinguishes **four target states**, so a corrupt link is not mistaken for a deleted one: a resolved target has neither flag; a resolved target with a field-level problem of its own carries `targetCorrupt: true` (and no `missing`); a target on disk that cannot be parsed carries both `missing: true` and `targetCorrupt: true` (corrupt, not deleted — repair the file); a genuinely-absent target carries `missing: true` alone.
+
+A **derived operation refuses over a corrupt structural field.** `link_tasks` / `unlink_tasks` must read and merge `relationships`; when that field's stored value is corrupt, the tool returns an `isError` envelope naming the field, not a fault. Repair or unset the field, then retry.
 
 When the body is included the result also carries **`body_token`** — pass it as `expected_token` on `replace_task_body` / `append_task_body` so your write is refused rather than silently overwriting an edit made while you were composing. See [Not overwriting someone else's edit](#not-overwriting-someone-elses-edit).
 
@@ -172,7 +178,9 @@ List tasks with optional query, view, and limit.
 | `limit` | number | no | Max results (default 30) |
 | `include_archived` | boolean | no | Include archived tasks (default false). Ignored when the query already mentions `archived` or when a saved view is used — saved views are respected as authored |
 
-Returns JSON array of `{key, title, status, priority}`.
+Returns JSON array of `{key, title, status, priority}`. A task with no title returns its key in `title` (never null). A task with a field-level problem carries `health: true` on its row — call `get_task` on it for the field-level `health` detail; the flag is omitted when the task is clean.
+
+**Tasks whose files cannot be parsed are reported, not dropped.** When any task is unreadable, the response becomes an object `{ tasks: [...], unreadable: [{ id, path, reason }] }` (also used when the list is truncated, which adds `matched`/`returned`/`offset`); a clean, untruncated tracker returns the bare array. Do not treat a short list as the whole tracker without checking `unreadable` — a corrupt file is named there rather than silently omitted.
 
 A query naming an unknown field or an invalid enum value is an **error**, not an empty result — `stat = done` reports the typo rather than returning `[]`. Treat an empty array as a genuine "no tasks match".
 
@@ -480,13 +488,17 @@ Get the activity/history log for a task. Returns a paginated page of structured 
 | `limit` | number | no | Max entries to return (default: all) |
 | `offset` | number | no | Entries to skip from the newest end (default: 0) |
 
-Returns a JSON object `{ entries, total, offset, limit? }`:
+Returns a JSON object `{ entries, total, offset, limit?, incomplete? }`:
 
 - `entries` — the requested page, newest first.
 - `total` — the full count of readable entries, so a caller can tell "the
   newest N" from "all there is".
 - `offset` — the offset applied (echoes the argument, `0` when omitted).
 - `limit` — present only when a `limit` was supplied.
+- `incomplete` — present only when the history file has hand-broken rows
+  that cannot be read as entries: the count of them. The readable rows are
+  still returned, but the log is known to be partial — do not treat it as
+  complete.
 
 `offset` and `limit` compose into a partition — `offset` skips that many
 entries from the newest end, so paging with `offset += limit` walks a long
@@ -524,7 +536,7 @@ Returns: `Detached <name> from <KEY>`. Errors via `AttachmentNotFoundError` when
 
 ### `list_projects`
 
-Returns JSON `{projects: [...], default: <id|null>}` from `projects.yaml`. `default` is a project **id** (ULID), not a name, and is computed over the full config regardless of `q`/paging.
+Returns JSON `{projects: [...], default: <id|null>, broken?: [...]}` from `projects.yaml`. `default` is a project **id** (ULID), not a name, and is computed over the full config regardless of `q`/paging. When an entry does not validate, the tolerant loader keeps it: the valid projects load as usual and the broken one rides in a `broken[]` array (`{id?, index, rawText, error}`), present only when non-empty — so one broken project never reads as "no projects". `list_labels`, `list_sprints` and `list_milestones` carry `broken` the same way (including on their `progress: true` responses).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

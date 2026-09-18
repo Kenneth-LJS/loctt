@@ -234,6 +234,18 @@ same footer `loctt log` prints), so a truncated list never reads as complete.
 (Same convention across `label`, `milestone`, `sprint`, and `user` `list`,
 except those match on name only.)
 
+**A hand-broken entry is listed, not silently skipped.** When one entry
+in `projects.yaml` (or `labels.yaml` / `milestones.yaml` /
+`sprints.yaml`) does not validate, the tolerant loader keeps it and
+loads the rest — so `list` shows the valid entries as usual and the
+broken one as a marked row (`<raw>  [broken: <id or #index> — <reason>]`),
+distinct from an empty list. One broken sprint never reads as "no
+sprints". The write subcommands preserve such a broken sibling untouched,
+and `loctt doctor` reports it as a non-blocking `malformed` finding. MCP's
+matching `list_*` tools carry the same entries in a `broken[]` array.
+(This mirrors the saved-views `list`, which has always shown its broken
+entries this way.)
+
 ### Changing a project's prefix
 
 `set-prefix` rewrites the project's key prefix and **renames every task in
@@ -650,6 +662,17 @@ loctt list --archived
 MCP's `list_tasks` takes the same three as `sort`, `direction` and
 `offset`, so a saved ordering reads identically from either surface.
 
+**Corrupt and unreadable tasks are shown, not hidden.** A task with a
+field-level problem still lists — its row is prefixed with `⚠` so you
+know to `loctt show` it for the details — and a task with an untitled
+value shows its key where the title would go, never a blank. A task
+whose file cannot be parsed at all cannot be a row; those are named in a
+trailer on stderr (`N file(s) could not be read: <path>: <reason>`) so a
+corpus of 50 never reads as 48 with nothing said. The list itself stays
+on stdout and the command still exits 0 — run `loctt doctor` for a
+failing exit. MCP's `list_tasks` mirrors both: a corrupt row carries
+`health: true`, and unreadable files ride in an `unreadable[]` list.
+
 ### `loctt export`
 
 Export tasks as CSV or JSON — the same report the web list view's
@@ -897,6 +920,13 @@ most recent. When a `--limit`/`--offset` page is not the whole history,
 a `Showing X–Y of N.` footer names the total so the page is not mistaken
 for everything.
 
+A hand-broken history row (one with no timestamp/kind) is kept in the
+file but cannot be displayed, so it is left out of the entries and the
+count of what could not be read is reported on stderr (`N entries could
+not be read`). The readable rows still print — the log says it is
+incomplete rather than presenting a partial history as complete. MCP's
+`get_task_history` carries the same count as an `incomplete` field.
+
 ### `loctt attach`
 
 Attach a file to a task. The file is copied into the task's directory under
@@ -945,6 +975,26 @@ loctt unlink <task> <relationship> <target>
 ```
 
 Example: `loctt unlink T-5 blocks T-8`
+
+**A derived operation refuses over a corrupt structural field.** `link`
+and `unlink` must read and merge the task's `relationships`; if that
+field's stored value is corrupt, the command refuses with an error
+naming the field (`… it must read "relationships", whose stored value is
+corrupt …`) and a non-zero exit, rather than a stack trace. Set a valid
+value or `unset` it, then retry.
+
+**`loctt show` distinguishes four states for a relationship target**,
+matching the web:
+
+- **healthy** — the target's key, title and status.
+- **corrupt-but-present** — the key, prefixed `⚠`: the target loaded but
+  has a field-level problem of its own.
+- **corrupt-unreadable** — `<id>… (corrupt)`: the target file is on disk
+  but cannot be parsed. Distinct from deleted — the fix is to repair it.
+- **deleted** — `<id>… (deleted)`: there is no task there any more.
+
+MCP's `get_task` carries the same distinction as `missing` and
+`targetCorrupt` flags on each relationship.
 
 ## Ranks
 

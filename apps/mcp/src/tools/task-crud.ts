@@ -26,7 +26,6 @@ import {
   filterForExport,
   getCurrentUser,
   listTasks,
-  loadAllTasks,
   loadAllTasksDetailed,
   loadArchivedGuardConfigs,
   loadOptionalConfigs,
@@ -70,7 +69,7 @@ function optionalString(
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "get_task",
-    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`. When the body is included the result carries `body_token` — pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit.",
+    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. When the body is included the result carries `body_token` — pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
       include_body: z.boolean().optional().describe("Whether to include the markdown body (default true)"),
@@ -90,6 +89,12 @@ export const TOOLS: readonly ToolDef[] = [
       });
       const result: Record<string, unknown> = {
         ...model.task.frontmatter,
+        // DEG-C2: an untitled task (title never set, or lifted whole into
+        // `health`) shows its key where the title would go — never absent,
+        // never "undefined". Mirrors the web and `list_tasks` (DEG-8). The
+        // corrupt title, when that is why it is absent, still rides in
+        // `health` below so the agent can repair it.
+        title: model.task.frontmatter.title ?? model.task.frontmatter.key,
         relationships: model.relationships.map(r => ({
           type: r.type,
           target: r.missing ? r.target : r.resolvedKey ?? r.target,
@@ -98,6 +103,15 @@ export const TOOLS: readonly ToolDef[] = [
           ...(r.resolvedTitle !== undefined ? { title: r.resolvedTitle } : {}),
           ...(r.resolvedStatus !== undefined ? { status: r.resolvedStatus } : {}),
           ...(r.missing ? { missing: true } : {}),
+          // DEG-C5: carry the corrupt flag so the four target states are
+          // distinguishable on the wire, matching core and the web (DEG-15):
+          //   healthy               → missing absent, targetCorrupt absent
+          //   corrupt-but-present   → missing absent, targetCorrupt:true
+          //   corrupt-unreadable    → missing:true,   targetCorrupt:true
+          //   absent/deleted        → missing:true,   targetCorrupt absent
+          // Without this an agent could not tell a repairable corrupt target
+          // from a deleted one, and would act on the wrong remedy (P-4).
+          ...(r.targetCorrupt === true ? { targetCorrupt: true } : {}),
         })),
         attachments: model.attachments.map(a => ({
           name: a.name,
@@ -154,7 +168,13 @@ export const TOOLS: readonly ToolDef[] = [
       offset: z.number().optional().describe("Rows to skip, for paging past the first `limit`."),
     },
     handler: async ({ locttDir }, args) => {
-      const tasks = await loadAllTasks(locttDir);
+      // DEG-C1 (P10 parity with the web list and the CLI): load with the
+      // unreadable trailer, not plain `loadAllTasks`. A field-local corrupt
+      // task rides in `tasks` carrying `health` (so its row can be marked);
+      // an object-fatal one cannot be a row at all and is reported in the
+      // `unreadable[]` list below rather than silently dropped, so a
+      // corpus of 50 does not read as 48 with nothing said.
+      const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
       const { workflowConfig, queriesConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
       // K80: the configured current user, so `currentUser()` in a query
       // resolves to the caller's id. Undefined when none is set.
@@ -212,14 +232,32 @@ export const TOOLS: readonly ToolDef[] = [
       const paged = result.slice(start, start + effectiveLimit);
       const summary = paged.map(t => ({
         key: t.frontmatter.key,
-        title: t.frontmatter.title,
+        // DEG-C2: an untitled task shows its key where the title would go,
+        // never null/undefined. Mirrors the web list and get_task (DEG-8).
+        title: t.frontmatter.title ?? t.frontmatter.key,
         status: t.frontmatter.status,
         priority: t.frontmatter.priority,
+        // DEG-C1: mark a field-local corrupt row so the agent knows to
+        // `get_task` it for the field-level `health`. Omitted when the task
+        // is clean, so a healthy list is unchanged. The full findings ride
+        // on `get_task`, not here — a list row carries a flag, not the
+        // rawText of every bad field.
+        ...((t.health?.length ?? 0) > 0 ? { health: true } : {}),
       }));
       const truncated = paged.length < matched;
+      // DEG-C1: object-fatal tasks (on disk, unparseable) are named in an
+      // `unreadable[]` list — not silently omitted. An agent reading a bare
+      // array would take a short list as the whole tracker (P-4). Present
+      // only when non-empty, so a clean tracker returns the plain shape.
+      const unreadableList = unreadable.map(u => ({ id: u.id, path: u.path, reason: u.reason }));
+      const needsEnvelope = truncated || unreadableList.length > 0;
       const body = JSON.stringify(
-        truncated
-          ? { matched, returned: paged.length, offset: start, tasks: summary }
+        needsEnvelope
+          ? {
+              ...(truncated ? { matched, returned: paged.length, offset: start } : {}),
+              tasks: summary,
+              ...(unreadableList.length > 0 ? { unreadable: unreadableList } : {}),
+            }
           : summary,
         null,
         2,
@@ -598,7 +636,10 @@ export const TOOLS: readonly ToolDef[] = [
       "Get the activity/history log for a task. Returns structured entries (newest first), " +
       "paginated: `{ entries, total, offset, limit }`. `total` is the full count so an agent " +
       "knows how much history remains beyond the page; `offset` skips that many entries from " +
-      "the newest end, so `offset` + `limit` walk a long history without gaps or repeats.",
+      "the newest end, so `offset` + `limit` walk a long history without gaps or repeats. " +
+      "When the history file has hand-broken rows that cannot be read as entries, an " +
+      "`incomplete` count is included — the readable rows are still returned, but the log is " +
+      "known to be partial.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
       limit: z.number().int().nonnegative().optional().describe("Max entries to return (default: all)"),
@@ -624,6 +665,12 @@ export const TOOLS: readonly ToolDef[] = [
         total: page.total,
         offset: offset ?? 0,
         ...(limit !== undefined ? { limit } : {}),
+        // DEG-C7: rows that could not be read as entries are kept in the
+        // file but excluded from `entries`/`total`. Report the count so an
+        // agent knows the log is incomplete rather than taking the readable
+        // subset as the whole history (P10 parity with the web activity
+        // feed's `unreadable`). Present only when non-zero.
+        ...(page.incomplete > 0 ? { incomplete: page.incomplete } : {}),
       }, null, 2));
     },
   },
