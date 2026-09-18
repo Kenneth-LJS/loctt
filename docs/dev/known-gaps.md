@@ -262,7 +262,13 @@ would always resolve it, but that contradicts GIT-C2's stated rule
 only arises from a hand-edited branch, which P-12 already classes as
 unsupported. Not worth a spec change on that evidence.
 
-## One malformed `task.md` breaks the whole list (BLK-44 deferred)
+## One malformed `task.md` breaks the whole list (BLK-44) — RESOLVED
+
+**RESOLVED (verified 2026-09-19, H1 audit).** `loadAllTasksDetailed`
+(`packages/core/src/task/load-all.ts:92-111`) now catches a per-task
+parse failure and returns it in `unreadable[]` rather than aborting the
+whole load; the list surfaces the bad one and keeps the rest. The
+original entry (kept below for history) is no longer accurate.
 
 **Found 2026-08-25 while building M1.4 subsection 5. Verified against
 the built CLI, not inferred.**
@@ -695,7 +701,14 @@ Better still, give a gate agent its own worktree — but note the base
 commit is wrong by default (see the worktree entry above), so it must
 be told which commit to use.
 
-## An unreadable `task.md` reports as "task not found" — in every surface
+## An unreadable `task.md` reports as "task not found" — RESOLVED
+
+**RESOLVED (verified 2026-09-19, H1 audit).** `lookupByKey`/`lookupById`
+now throw a distinct `UnreadableTaskError` (`packages/core/src/task/lookup.ts:58`,
+`io_failed`, names the path + parse line, with an `indeterminate` variant)
+instead of `TaskNotFoundError` — the code comment there explicitly guards
+against "claiming absence over a corrupt file." Surfaced correctly on CLI,
+MCP, and web. Original entry kept below for history.
 
 **Found 2026-08-29 by the M2.1 review, then measured wider.**
 
