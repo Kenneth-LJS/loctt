@@ -223,3 +223,28 @@ edits. `loctt doctor` reports the same thing if you want to check later.
 To recover: compare your `.loctt/` against the `loctt` branch, make it
 whole, then delete `.loctt/local/reconcile.yaml`. The next sync re-plans
 from scratch.
+
+## Where to keep the tracker: local disks only
+
+Git sync serializes concurrent writes with **POSIX advisory locks**. These
+are reliable on ordinary local disks, but **not** on network or
+file-syncing filesystems:
+
+- **iCloud Drive, Dropbox, OneDrive** (and similar sync-folder services)
+- **NFS, SMB / network shares**
+
+On those, two machines writing at once can defeat the lock and corrupt
+tracker state — precisely the situation git sync is otherwise designed to
+handle safely. LocTT detects this and **warns you** when it can:
+
+- **At enable and at startup**, if the tracker sits on one of these
+  filesystems, LocTT shows an advisory naming the service and noting that
+  a key rekey during sync may fail to serialize. Git sync still works —
+  the warning is informational, not a block.
+- **If a lock actually fails**, the error names advisory-lock unreliability
+  on these filesystems as the likely cause.
+
+**Recommendation:** keep the `.loctt/` tracker on a local disk and let
+**git** (not the file-syncing service) move it between machines — that is
+what git sync is for. If you must keep it in a synced folder, avoid
+writing from two machines at the same time.

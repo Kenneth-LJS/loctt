@@ -155,8 +155,8 @@ but they are in-scope for launch, not a post-launch roadmap. The rulings
 |---|---|---|---|
 | B1 license/version metadata | both | metadata | DONE |
 | B2 document security model | both | docs | DONE |
-| B3 relocate TEMP-TODO | both | hygiene | DEFERRED to end-of-run (A-B3-DEFER) |
+| B3 relocate TEMP-TODO | both | hygiene | DONE (moved to docs/dev/, 2026-09-18) |
 | B4 web packaging | npm | packaging | DONE (A-B4/K89) |
 | H1 corruption coverage audit | both | robustness | not started |
-| H2 git-sync stability/labelling | both | robustness | partial (tests exist) |
+| H2 git-sync stability/labelling | both | robustness | DONE — STABLE (2026-09-18): full engine built to K92-K95, all data-safety paths guarded + tested (incl. real-remote integration); shipped unlabeled. The one untestable edge (advisory locks on network/sync filesystems) is detected + warned in-app (GIT-22/XS-50) and documented in docs/user/common/git-sync.md. Ken's call. |
 | H3 community files | public repo | hygiene | not started |
