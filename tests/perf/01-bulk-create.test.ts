@@ -2,7 +2,13 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 
-import { createTask, loadOptionalConfigs, loadState, saveState } from "@loctt/core";
+import {
+  createTask,
+  loadOptionalConfigs,
+  loadState,
+  resolveProjectIdForUser,
+  saveState,
+} from "@loctt/core";
 import { describe, expect, it } from "vitest";
 
 import { withTmpLoctt } from "../integration/fixtures/tmp-loctt.js";
@@ -17,13 +23,15 @@ describe("perf: bulk create 1000 tasks", () => {
       const state = await loadState(locttDir);
       const { workflowConfig } = await loadOptionalConfigs(locttDir);
 
+      const project = await resolveProjectIdForUser(locttDir);
+
       const t0 = performance.now();
       for (let i = 0; i < TASK_COUNT; i++) {
         await createTask({
           locttDir,
           state,
-          workflowConfig,
-          options: { title: `bulk task ${i}` },
+          ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+          options: { project, title: `bulk task ${i}` },
         });
       }
       // Persist state once at the end (matches CLI behavior per-call, but

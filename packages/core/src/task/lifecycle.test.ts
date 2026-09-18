@@ -5,9 +5,10 @@ import { join } from "node:path";
 import type { Task } from "@loctt/contracts";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
+import { readHistory } from "./history.js";
 import { readTask,writeTask } from "./io.js";
-import { archiveTask, deleteTask, TaskLifecycleError,unarchiveTask } from "./lifecycle.js";
-import { listTaskIds } from "./lookup.js";
+import { archiveTask, deleteTask,unarchiveTask } from "./lifecycle.js";
+import { listTaskIds } from "./list-ids.js";
 
 describe("task lifecycle", () => {
   let locttDir: string;
@@ -51,10 +52,24 @@ describe("task lifecycle", () => {
       expect(loaded.frontmatter.archived).toBe(true);
     });
 
-    it("throws if already archived", async () => {
+    // K25: idempotent archive/unarchive (behavior recorded in decisions.md K25/A127; no canonical case)
+    it("is idempotent: archiving an already-archived task is a no-op success (K25)", async () => {
       await seedTask();
-      await archiveTask(locttDir, "abc");
-      await expect(archiveTask(locttDir, "abc")).rejects.toThrow(TaskLifecycleError);
+      const first = await archiveTask(locttDir, "abc");
+      const historyAfterFirst = await readHistory(locttDir, "abc");
+
+      // K25: a second archive does NOT throw — it returns the task in
+      // the requested (archived) state, matching bulkArchive. Before
+      // K25 this threw TaskLifecycleError, which the web layer turned
+      // into a generic 500 (TSK-57 / B16).
+      const second = await archiveTask(locttDir, "abc");
+      expect(second.frontmatter.archived).toBe(true);
+
+      // ...and writes nothing new: no extra history entry, and the
+      // archived_at timestamp is not bumped by the no-op.
+      const historyAfterSecond = await readHistory(locttDir, "abc");
+      expect(historyAfterSecond.length).toBe(historyAfterFirst.length);
+      expect(second.frontmatter.archived_at).toBe(first.frontmatter.archived_at);
     });
   });
 
@@ -67,9 +82,16 @@ describe("task lifecycle", () => {
       expect(result.frontmatter.archived_at).toBeUndefined();
     });
 
-    it("throws if not archived", async () => {
+    // K25: idempotent archive/unarchive (behavior recorded in decisions.md K25/A127; no canonical case)
+    it("is idempotent: unarchiving a task that is not archived is a no-op success (K25)", async () => {
       await seedTask();
-      await expect(unarchiveTask(locttDir, "abc")).rejects.toThrow(TaskLifecycleError);
+      const historyBefore = await readHistory(locttDir, "abc");
+      // K25 (mirror): returns the task in the requested (unarchived)
+      // state rather than throwing.
+      const result = await unarchiveTask(locttDir, "abc");
+      expect(result.frontmatter.archived).toBeUndefined();
+      const historyAfter = await readHistory(locttDir, "abc");
+      expect(historyAfter.length).toBe(historyBefore.length);
     });
   });
 

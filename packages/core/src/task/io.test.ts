@@ -72,7 +72,10 @@ describe("task I/O", () => {
     const loaded = await readTask(locttDir, "abc123");
 
     expect(loaded.frontmatter.updated_at).not.toBe("2020-01-01T00:00:00Z");
-    expect(new Date(loaded.frontmatter.updated_at).getTime()).toBeGreaterThan(
+    // updated_at is optional in the type now (K26) but always present on a
+    // freshly-written task; assert it's set, then compare.
+    expect(loaded.frontmatter.updated_at).toBeDefined();
+    expect(new Date(loaded.frontmatter.updated_at ?? "").getTime()).toBeGreaterThan(
       new Date("2020-01-01T00:00:00Z").getTime(),
     );
   });

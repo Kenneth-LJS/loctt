@@ -1,11 +1,30 @@
 import { spawnSync } from "node:child_process";
-import { cp, readdir,rm } from "node:fs/promises";
-import { join } from "node:path";
+import { readdirSync } from "node:fs";
+import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
-import type { SyncState } from "@loctt/contracts";
+import type { ReconcilePlan, ReconcileState, RekeyPlan, SyncState, Task } from "@loctt/contracts";
 
-import { getLocalDir } from "../paths/index.js";
+import { loadProjectsConfig } from "../config/projects.js";
+import { loadWorkflowConfig } from "../config/workflow.js";
+import type { IntegrityFinding } from "../diagnostics/integrity.js";
+import { blockingFindings, checkDataIntegrity } from "../diagnostics/integrity.js";
+import { getLocalDir, getTaskFilePath } from "../paths/index.js";
+import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
+import { rebuildKeyIndex } from "../state/key-index.js";
+import { appendKeyHistory } from "../state/keys.js";
+import { clearReconcileState, readReconcileState, saveReconcileState } from "../state/reconcile.js";
+import { loadState, saveState } from "../state/state.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
+import { parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
+import { readTask, writeTask } from "../task/io.js";
+import { loadAllTasks } from "../task/load-all.js";
+import { previewRekey, rekeyCollisions } from "./reconcile.js";
+import { computeReconcilePlan } from "./reconcile-plan.js";
+import type { ResolveResult } from "./resolve-conflicts.js";
+import { applyResolution, resolveConflicts } from "./resolve-conflicts.js";
+import type { PathPlan, SyncPlan } from "./three-way.js";
+import { LOCAL_OWNED,NEVER_MIRROR, planSync, readTreeFile } from "./three-way.js";
 
 async function mirrorDir(
   srcDir: string,
@@ -36,6 +55,936 @@ export class GitSyncError extends Error {
   }
 }
 
+/**
+ * Raised when local and branch state both changed the same file since the
+ * last sync. Carries the offending paths so callers can name them.
+ */
+export class GitConflictError extends GitSyncError {
+  readonly paths: readonly string[];
+  constructor(paths: readonly string[]) {
+    const list = paths.slice(0, 10).map(p => `  - ${p}`).join("\n");
+    const more = paths.length > 10 ? `\n  …and ${paths.length - 10} more` : "";
+    super(
+      `sync aborted: ${paths.length} file(s) changed both locally and on the branch since the last sync:\n${list}${more}\n\n` +
+        "Nothing was written — your local files are untouched. Resolve by making one side match the other " +
+        "(edit locally, or check out the branch and edit there), then re-run 'loctt git sync'.",
+    );
+    this.name = "GitConflictError";
+    this.paths = paths;
+  }
+}
+
+/**
+ * Raised when a previous reconciliation left its sentinel behind — it
+ * started writing and never finished.
+ *
+ * Unlike a prefix rename, this is not auto-resumable: the interrupted run
+ * applied an unknown subset of a plan computed against a base commit
+ * whose diff no longer describes the workspace. Finishing it blind could
+ * overwrite local edits, so the message states what was in flight and
+ * gives the user the two commands that can resolve it — re-sync after
+ * checking the workspace, or clear the sentinel to abort.
+ */
+export class GitReconcileInterruptedError extends GitSyncError {
+  readonly state: ReconcileState;
+  constructor(state: ReconcileState) {
+    super(
+      `a previous '${state.mode}' reconciliation was interrupted `
+      + `(started ${state.started_at}, syncing ${state.base_commit.slice(0, 8)} `
+      + `→ ${state.remote_commit.slice(0, 8)}).\n\n`
+      + "Your workspace may hold a partly-applied sync. Compare it against "
+      + "the branch and make it whole, then delete "
+      + ".loctt/local/reconcile.yaml to clear this record — the next "
+      + "'loctt git sync' will re-plan from scratch. Sync will not run "
+      + "while the record is present, because the commit it would plan "
+      + "against no longer describes your files.",
+    );
+    this.name = "GitReconcileInterruptedError";
+    this.state = state;
+  }
+}
+
+/**
+ * Raised when a sync or publish found per-field conflicts that need a
+ * human decision (GIT-6, GIT-11, GIT-13, GIT-14, GIT-15).
+ *
+ * Unlike {@link GitConflictError} — a flat list of file paths, aborting
+ * with nothing to do but hand-edit — this carries the full
+ * {@link ReconcilePlan}: which task, which field, both values, enum
+ * options and drift markers. The reconciliation sentinel is written
+ * before this throws, so a re-fetch of status recomputes the same plan
+ * (GIT-26) and publish/sync are blocked until it is resolved (GIT-31).
+ *
+ * Nothing was written to task files: the plan is computed read-only from
+ * the branch worktree, and the caller aborts before `applyPlan`. The
+ * originally-requested operation completes only after the panel's Apply.
+ */
+export class GitReconcileNeededError extends GitSyncError {
+  readonly plan: ReconcilePlan;
+  constructor(plan: ReconcilePlan) {
+    const n = plan.conflicts.length;
+    super(
+      `reconciliation needed: ${n} field conflict(s) across `
+      + `${new Set(plan.conflicts.map(c => c.taskKey)).size} task(s) changed on `
+      + `both sides since the last sync. Nothing was written — resolve them in `
+      + `Settings → Sync, then the ${plan.mode} completes.`,
+    );
+    this.name = "GitReconcileNeededError";
+    this.plan = plan;
+  }
+}
+
+/**
+ * Raised when a divergent sync/publish has merged, but two offline-created
+ * tasks now share a key and one must be renumbered (GIT-8/GIT-9, K92).
+ *
+ * Unlike the auto-merge cases, a rekey reissues a user-facing key, so K92
+ * requires the web UI to show a preview (keeper vs loser, both `created_at`,
+ * both ULIDs, the tiebreak, the planned new key) and WAIT for a confirm.
+ * This carries that {@link RekeyPlan}. It is thrown from within the completing
+ * sync, AFTER the copy/merge/reprefix writes (which are resumable via the
+ * sync sentinel, GIT-C3) but BEFORE the loser's key is reissued — so the
+ * colliding key is still on disk untouched until the user confirms.
+ *
+ * CLI and MCP never see this: they auto-apply (K92 — scriptable) by passing
+ * a confirmed rekey resolution, and report the applied old→new instead.
+ */
+export class GitRekeyNeededError extends GitSyncError {
+  readonly plan: RekeyPlan;
+  constructor(plan: RekeyPlan) {
+    const n = plan.losers.length;
+    super(
+      `rekey needed: ${n} task(s) share a key with another after the merge `
+      + `and must be renumbered. Nothing has been renumbered yet — review the `
+      + `rekey in Settings → Sync and confirm, then the operation completes.`,
+    );
+    this.name = "GitRekeyNeededError";
+    this.plan = plan;
+  }
+}
+
+/**
+ * Raised when a publish cannot proceed because the branch has advanced
+ * with remote-only work that local has not incorporated — a divergence
+ * that is *not* a per-field conflict (a task the branch added, or a task
+ * the branch edited that local never touched) and so produces no
+ * {@link ReconcilePlan}, yet is destroyed by the blind mirror in
+ * `commitToLocttBranch`.
+ *
+ * The Phase Z finding G1: `detectPublishReconcile` opened reconciliation
+ * only on field conflicts, treating "no field conflicts" as "safe to
+ * fast-forward mirror". It is not — the mirror deletes every branch entry
+ * absent from local, so a remote-only task or edit was silently deleted
+ * from the branch *and pushed away on the remote*. "No field conflict"
+ * means "safe to auto-merge", which is exactly what `sync` does — so the
+ * safe, predictable answer (P-2) is to refuse the publish and send the
+ * user through `sync` first, which merges the remote work in. Nothing is
+ * written when this throws.
+ */
+export class GitSyncFirstError extends GitSyncError {
+  /** The remote-only paths that would be lost, for the message + callers. */
+  readonly incomingPaths: readonly string[];
+  constructor(incomingPaths: readonly string[]) {
+    const n = incomingPaths.length;
+    super(
+      `the sync branch has ${n} change(s) you have not synced `
+      + `(work published from another clone). Publishing now would overwrite `
+      + `them. Run 'loctt git sync' first to merge the branch's changes into `
+      + `your workspace, then publish. Nothing was written.`,
+    );
+    this.name = "GitSyncFirstError";
+    this.incomingPaths = incomingPaths;
+  }
+}
+
+/**
+ * Raised when the branch was force-pushed / had its history rewritten so
+ * that `last_synced_commit` — the base every three-way plan is computed
+ * against — is no longer an ancestor of the remote head (GIT-21, K93).
+ *
+ * Without this guard the missing base is treated as "no base available":
+ * `planSync` reclassifies every task, and a task the branch happens to
+ * carry can be taken over a local edit whose base is gone — silent
+ * data loss (A188 H-e). So the safe answer is to refuse and write
+ * NOTHING, exactly like the other divergence errors, and to explain that
+ * this is *not* an ordinary conflict.
+ *
+ * K93 is explicit that recovery is the user's, done in git: LocTT must
+ * not offer or perform an automated rebase, base-reset, or any mutation
+ * of `last_synced_commit`, because doing so on the user's behalf can
+ * discard the local work the guard exists to protect. The message points
+ * at git — inspect the branch, or re-establish a base explicitly there —
+ * and states that nothing local was touched.
+ */
+export class GitHistoryRewrittenError extends GitSyncError {
+  /** The last-synced base that the remote head no longer contains. */
+  readonly missingCommit: string;
+  /** The current remote head the base is no longer an ancestor of. */
+  readonly remoteHead: string;
+  /** The branch whose history was rewritten. */
+  readonly branch: string;
+  /** The remote name, when one is configured (for naming it in messages). */
+  readonly remote: string | undefined;
+  constructor(opts: {
+    missingCommit: string;
+    remoteHead: string;
+    branch: string;
+    remote: string | undefined;
+  }) {
+    const where = opts.remote !== undefined
+      ? `${opts.remote}/${opts.branch}`
+      : `the ${opts.branch} branch`;
+    super(
+      `sync aborted: the history of ${where} was rewritten. The last commit `
+      + `LocTT synced against (${opts.missingCommit.slice(0, 8)}) is no longer part `
+      + `of the branch (its head is now ${opts.remoteHead.slice(0, 8)}), so there is `
+      + `no shared base to merge against. This is not an ordinary conflict — a force-push `
+      + `or history rewrite happened on the remote.\n\n`
+      + `Nothing was written. Your local files are untouched, and last_synced_commit `
+      + `was NOT changed. LocTT will not silently re-base onto the new head, because `
+      + `that would discard local changes made since ${opts.missingCommit.slice(0, 8)}.\n\n`
+      + `Recover in git (LocTT will not do this for you):\n`
+      + `  - Inspect the rewritten branch: 'git log ${opts.branch}' and compare with your `
+      + `local .loctt/, so you can see what the rewrite dropped.\n`
+      + `  - Re-establish a base explicitly in git once you have reviewed and merged the two by hand `
+      + `(for example 'git branch -f ${opts.branch} <commit>' to a commit you have inspected), `
+      + `then sync again. Doing this by hand is what keeps your local changes yours to keep or discard.`,
+    );
+    this.name = "GitHistoryRewrittenError";
+    this.missingCommit = opts.missingCommit;
+    this.remoteHead = opts.remoteHead;
+    this.branch = opts.branch;
+    this.remote = opts.remote;
+  }
+}
+
+/**
+ * Raised when the branch was written by a NEWER LocTT than this one
+ * (GIT-35, K94). Before applying a sync, LocTT reads the branch's
+ * `.schema-version`; if it is strictly greater than the local
+ * `CURRENT_SCHEMA_VERSION`, the branch carries a schema this build cannot
+ * read, so applying it could silently corrupt or drop data. invariants.md
+ * holds that schema travels via `loctt migrate`, never via sync — so the
+ * only safe answer is to refuse and write NOTHING, exactly like the other
+ * divergence errors.
+ *
+ * The remedy is to UPGRADE LocTT, not to migrate: the data is already at a
+ * higher schema than this build understands, so there is nothing forward to
+ * migrate *to* here. The message names both versions and says nothing was
+ * written.
+ *
+ * `.schema-version` stays `LOCAL_OWNED`/`NEVER_MIRROR`: this guard only
+ * READS the remote's value to refuse, and never writes it anywhere.
+ */
+export class GitRemoteSchemaNewerError extends GitSyncError {
+  /** The `.schema-version` value read from the branch. */
+  readonly remoteVersion: number;
+  /** This build's `CURRENT_SCHEMA_VERSION`. */
+  readonly localVersion: number;
+  /** The branch whose schema is newer. */
+  readonly branch: string;
+  constructor(opts: {
+    remoteVersion: number;
+    localVersion: number;
+    branch: string;
+  }) {
+    super(
+      `sync aborted: the ${opts.branch} branch was written by a newer version of `
+      + `LocTT (schema v${opts.remoteVersion}), but this installation only understands `
+      + `up to schema v${opts.localVersion}. Applying it could corrupt or drop data, so `
+      + `nothing was written — your local files are untouched.\n\n`
+      + `Upgrade LocTT to a version that supports schema v${opts.remoteVersion} or newer, `
+      + `then sync again. (This is not a migration: the branch is already ahead of what `
+      + `this build can read, so there is nothing for 'loctt migrate' to do here — the fix `
+      + `is a newer LocTT.)`,
+    );
+    this.name = "GitRemoteSchemaNewerError";
+    this.remoteVersion = opts.remoteVersion;
+    this.localVersion = opts.localVersion;
+    this.branch = opts.branch;
+  }
+}
+
+/**
+ * Raised when the temporary publish/sync worktree cannot be established
+ * because git still holds a registration for it that neither `rm` nor
+ * `worktree prune` cleared (GIT-36).
+ *
+ * The ordinary case — a hand-deleted worktree *directory* — heals itself:
+ * publish/sync `rm` the path, `worktree prune` drops the stale
+ * registration, and `worktree add` re-creates it. This error is for the
+ * case prune cannot clear: a worktree git records as *locked* (or
+ * otherwise registered) whose directory is gone. `git worktree add` then
+ * dies with `fatal: '<path>' is a missing but locked worktree` — an
+ * opaque message naming an internal path the user has never chosen to see.
+ *
+ * We refuse with the worktree named and the fact that it is missing, plus
+ * a concrete repair path, rather than surfacing git's raw fatal. Nothing
+ * about the user's `.loctt/` task files is touched: publish stages into
+ * this worktree and never writes back to `.loctt/`, and sync's `worktree
+ * add` runs in the read-only planning phase, *before* the first
+ * `applyPlan` write — so a failure here cannot have moved a local task
+ * file. The message says so.
+ *
+ * Two repair paths, each stating what it does to local task files:
+ *  - **Re-establish the worktree** — clear git's stale registration
+ *    (`git worktree prune`, or `git worktree remove --force <path>` /
+ *    `git worktree unlock <path>` if it is locked), then retry. Touches
+ *    only git's own bookkeeping under `.git/worktrees/`; your `.loctt/`
+ *    task files are not read or written by this.
+ *  - **Disable then re-enable git sync** — `loctt git disable` followed by
+ *    `loctt git enable`. This rebuilds the git-backed setup from scratch.
+ *    It leaves your `.loctt/` task files exactly as they are on disk; it
+ *    only rewrites LocTT's own git state (`state.yaml`'s git block).
+ */
+export class GitWorktreeMissingError extends GitSyncError {
+  /** The worktree path git could not (re-)establish. */
+  readonly worktreeDir: string;
+  /** Which operation hit it — for the surface to phrase "Publish"/"Sync". */
+  readonly operation: "publish" | "sync";
+  /** The raw git fatal, kept for a "show details" affordance. */
+  readonly detail: string;
+  constructor(opts: {
+    worktreeDir: string;
+    operation: "publish" | "sync";
+    detail: string;
+  }) {
+    const op = opts.operation === "publish" ? "Publish" : "Sync";
+    super(
+      `${op} could not start: LocTT's temporary git worktree at `
+      + `'${opts.worktreeDir}' is missing, but git still has it registered `
+      + `(most likely it was deleted by hand while git had it locked), so it `
+      + `cannot be re-created. This is not an ordinary git failure — the `
+      + `worktree named above is the specific thing that is wrong.\n\n`
+      + `Your local task files were not touched: the ${opts.operation} never `
+      + `reached the point of writing to .loctt/, so nothing was applied.\n\n`
+      + `Repair with either:\n`
+      + `  - Re-establish the worktree: run 'git worktree prune' (or, if git `
+      + `reports it locked, 'git worktree remove --force ${opts.worktreeDir}' `
+      + `or 'git worktree unlock ${opts.worktreeDir}'), then ${opts.operation} `
+      + `again. This clears git's stale bookkeeping only — your .loctt/ task `
+      + `files are left exactly as they are.\n`
+      + `  - Disable and re-enable git sync: 'loctt git disable' then `
+      + `'loctt git enable'. This rebuilds LocTT's git setup from scratch and `
+      + `also leaves your .loctt/ task files exactly as they are on disk.`,
+    );
+    this.name = "GitWorktreeMissingError";
+    this.worktreeDir = opts.worktreeDir;
+    this.operation = opts.operation;
+    this.detail = opts.detail;
+  }
+}
+
+/**
+ * Raised when `enableGit` finds a `loctt` branch that already exists and
+ * *was written by LocTT* (its top-level entries are LocTT-shaped — not
+ * the foreign-content case, which stays a hard refusal), and the caller
+ * did not pass an explicit adopt confirmation (GIT-25).
+ *
+ * A pre-existing LocTT branch is safe to adopt, but adopting it is still
+ * a decision the user should make knowingly rather than have happen
+ * silently: enable used to adopt it without a word, so the user could
+ * not tell whether their new local state or the old branch's state was
+ * about to become the baseline. So enable *states* the branch was found,
+ * *shows its head commit*, and *asks* adopt-or-stop — mirroring the
+ * foreign-content refusal's up-front shape (GIT-C7), except this one is
+ * recoverable by re-running with adopt confirmed.
+ *
+ * Non-interactive surfaces (CLI/MCP) cannot prompt, so this is the
+ * "stop and report" half: enable without the adopt flag/param throws
+ * this, names the branch + head, and writes NOTHING. Enable *with* the
+ * adopt confirmation takes the other path — it adopts, setting
+ * `last_synced_commit` to the branch head (the one legitimate adopt
+ * write) and reporting whether local already agrees with the branch.
+ */
+export class GitBranchAdoptNeededError extends GitSyncError {
+  /** The existing LocTT-written branch that would be adopted. */
+  readonly branch: string;
+  /** Its head commit, so the surface can show it before adopting. */
+  readonly branchHead: string;
+  constructor(opts: { branch: string; branchHead: string }) {
+    super(
+      `branch '${opts.branch}' already exists from a previous setup and was `
+      + `written by LocTT (head ${opts.branchHead.slice(0, 8)}). Enabling git `
+      + `sync can adopt it, but adopting is a choice — LocTT will not do it `
+      + `silently, because it decides whether that branch's state or your `
+      + `current local state becomes the sync baseline.\n\n`
+      + `Nothing was written. Re-run enable with adopt confirmed to adopt the `
+      + `existing branch (this sets last_synced_commit to ${opts.branchHead.slice(0, 8)} `
+      + `and reports whether your local state already agrees with it), or `
+      + `choose a different branch with 'loctt config set git.branch <name>' `
+      + `before enabling.`,
+    );
+    this.name = "GitBranchAdoptNeededError";
+    this.branch = opts.branch;
+    this.branchHead = opts.branchHead;
+  }
+}
+
+/**
+ * Whether a `git worktree add` failure is the "registered but the
+ * directory is gone" family GIT-36 names, as opposed to any other git
+ * fault (a bad ref, a full disk). git phrases this several ways depending
+ * on whether the stale worktree is locked, prunable, or the path is now a
+ * non-worktree — match the stable fragments rather than a whole line.
+ *
+ * Deliberately narrow: only a failure that clearly names a missing /
+ * already-registered / non-working-tree worktree is re-thrown as the
+ * named error. Anything else falls through to the generic git failure,
+ * because mislabelling an unrelated git error "worktree missing" would
+ * point the user's repair at the wrong thing.
+ */
+function isWorktreeRegistrationFailure(stderr: string): boolean {
+  const s = stderr.toLowerCase();
+  return (
+    /missing but (locked|already registered)/.test(s)
+    || /already registered worktree/.test(s)
+    || /is not a working tree/.test(s)
+    || (/worktree/.test(s) && /already exists/.test(s))
+  );
+}
+
+/**
+ * Runs `git worktree add <dir> <branch>`, translating the "registered but
+ * the directory is gone" family of failures into a named
+ * {@link GitWorktreeMissingError} (GIT-36). Any other git failure is
+ * re-thrown unchanged, so the generic git-error path still applies.
+ */
+function addWorktreeOrNameMissing(
+  root: string,
+  worktreeDir: string,
+  branch: string,
+  operation: "publish" | "sync",
+): void {
+  try {
+    git(["worktree", "add", worktreeDir, branch], root);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    if (isWorktreeRegistrationFailure(detail)) {
+      throw new GitWorktreeMissingError({ worktreeDir, operation, detail });
+    }
+    throw err;
+  }
+}
+
+/**
+ * Refuses a sync/publish whose branch `.schema-version` is strictly newer
+ * than this build's `CURRENT_SCHEMA_VERSION` (GIT-35, K94). Call *before*
+ * `planSync` on any path that would apply the branch's content, on the
+ * same true remote head the rewrite guard uses.
+ *
+ * Reads the branch's `.schema-version` blob directly from the tree (no
+ * checkout needed) — the file publish mirrors to the branch root. Three
+ * postures, chosen per corruption-handling-guide.md so the guard degrades
+ * rather than crashing the whole sync:
+ *  - **absent** — a legacy/older remote that predates `.schema-version`.
+ *    An absent version is the normal migrate-forward direction, NOT newer;
+ *    do not refuse, proceed as today.
+ *  - **malformed** (non-numeric / non-positive-integer) — a version that
+ *    cannot be proven ≤ local. We CANNOT prove the branch is safe to read,
+ *    and silently syncing unknown-version data is the exact hazard this
+ *    guard exists to prevent, so we refuse with a clear message rather than
+ *    proceed. Reported as `remoteVersion: NaN` so the message still names
+ *    "a newer LocTT" (the honest posture: unknown ⇒ treat as ahead).
+ *  - **equal or older** — proceed unchanged.
+ *
+ * A blob that cannot be read at all (git error) reads as absent and
+ * proceeds — the surrounding code already handles a broken git invocation,
+ * and refusing on an inconclusive read would break ordinary syncs.
+ */
+function assertRemoteSchemaNotNewer(
+  root: string,
+  remoteHead: string,
+  branch: string,
+): void {
+  const raw = readTreeFile(root, remoteHead, ".schema-version");
+  // Absent (older/legacy remote, or unreadable): not newer — proceed.
+  if (raw === undefined) return;
+  const trimmed = raw.trim();
+  // An empty file is a present-but-unwritten `.schema-version`: treat it as
+  // absent rather than malformed — there is no version claim to refuse on,
+  // and a legacy publish that touched but did not populate it must not brick
+  // every future sync.
+  if (trimmed === "") return;
+  const parsed = Number(trimmed);
+  // Malformed: cannot be proven ≤ local, so refuse (safe posture, K94).
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new GitRemoteSchemaNewerError({
+      remoteVersion: Number.NaN,
+      localVersion: CURRENT_SCHEMA_VERSION,
+      branch,
+    });
+  }
+  // Strictly greater than what this build understands: refuse (K94).
+  if (parsed > CURRENT_SCHEMA_VERSION) {
+    throw new GitRemoteSchemaNewerError({
+      remoteVersion: parsed,
+      localVersion: CURRENT_SCHEMA_VERSION,
+      branch,
+    });
+  }
+  // Equal or older: proceed unchanged.
+}
+
+/**
+ * The commit the *remote* branch head points at, for the ancestry check
+ * (GIT-21). A force-push is the whole point of this ticket, and a plain
+ * `git fetch <remote> <branch>:<branch>` REJECTS a non-fast-forward update
+ * of the local branch ref (git refuses to rewind a local branch) — so
+ * after a rewrite the local `<branch>` ref is left stale while the
+ * remote-tracking ref `refs/remotes/<remote>/<branch>` force-updates to
+ * the true remote head. Reading the local ref alone would therefore miss
+ * exactly the rewrite this guard exists to catch. So: when a remote is
+ * configured and its tracking ref resolves, that tracking ref is the true
+ * remote head; otherwise (local-only, or no tracking ref) fall back to the
+ * local branch ref, which is authoritative when there is no remote.
+ */
+function resolveRemoteHeadForAncestry(
+  root: string,
+  branch: string,
+  remote: string | undefined,
+  localBranchHead: string,
+): string {
+  if (remote === undefined) return localBranchHead;
+  // `--verify` + status check: a bare `git rev-parse <missing-ref>` prints
+  // the literal ref name to stdout AND exits non-zero, so reading stdout
+  // alone (gitSafe) would hand back "refs/remotes/…" as if it were a sha.
+  // Resolve only when git actually confirms the ref.
+  const { ok, stdout } = gitStatusSafe(
+    ["rev-parse", "--verify", "--quiet", `refs/remotes/${remote}/${branch}`],
+    root,
+  );
+  return ok && stdout !== "" ? stdout : localBranchHead;
+}
+
+/**
+ * Refuses a sync/publish whose recorded base no longer sits in the
+ * branch's history (GIT-21, K93). Call *before* `planSync` on any path
+ * where a moved remote head is about to be three-way-planned against
+ * `last_synced_commit`.
+ *
+ * `git merge-base --is-ancestor <base> <remoteHead>` exits 0 when the base
+ * is an ancestor (ordinary fast-forward or divergence — proceed), 1 when
+ * it is not (the branch was rewritten past it), and non-0/non-1 (128) when
+ * `<base>` cannot even be resolved as a commit — which is the *strongest*
+ * force-push case: the base was rewritten away and garbage-collected, so
+ * it is gone entirely. Both the not-an-ancestor and the unresolvable cases
+ * mean the shared base is missing, so both refuse. A merge-base that
+ * cannot run at all (git missing) is left to the surrounding code, which
+ * already handles a broken git invocation — the guard only fires on git's
+ * definitive answers.
+ */
+function assertNotHistoryRewrite(
+  root: string,
+  base: string,
+  remoteHead: string,
+  branch: string,
+  remote: string | undefined,
+): void {
+  if (base === remoteHead) return; // identical: trivially an ancestor
+  const result = spawnSync(
+    "git",
+    ["merge-base", "--is-ancestor", base, remoteHead],
+    { cwd: root, encoding: "utf-8", stdio: "pipe" },
+  );
+  // status 0 → base is an ancestor of remoteHead: not a rewrite, proceed.
+  if (result.status === 0) return;
+  // status 1 → base is NOT an ancestor: the branch was rewritten past it.
+  // status 128 (or any other non-zero) → base is not a resolvable commit
+  // at all: it was rewritten away and pruned. Either way the base is gone.
+  if (result.status === 1 || result.status === 128) {
+    throw new GitHistoryRewrittenError({ missingCommit: base, remoteHead, branch, remote });
+  }
+  // A null status (the process could not be spawned) is not git's verdict
+  // on ancestry — leave it to the caller's existing broken-git handling
+  // rather than refusing on an inconclusive check.
+  if (result.status === null) return;
+  // Any other definite non-zero exit still means git could not confirm the
+  // base is an ancestor; refuse rather than fall through to take-incoming.
+  throw new GitHistoryRewrittenError({ missingCommit: base, remoteHead, branch, remote });
+}
+
+/**
+ * Applies a {@link SyncPlan} to the local workspace.
+ *
+ * Only paths the plan explicitly marks `copy` or `delete` are touched;
+ * everything else is left exactly as it was. This is the safety property
+ * the old blind mirror lacked.
+ */
+/**
+ * The tasks as they will exist once this sync lands: local tasks, with
+ * merged versions substituted and incoming-only tasks added.
+ *
+ * Built from the plan rather than by re-reading the tree after writing,
+ * because nothing has been written yet — the counters have to be
+ * derivable *before* anything lands, so an abort leaves no trace.
+ */
+async function mergedTaskSet(
+  plan: SyncPlan,
+  firstPass: ResolveResult,
+  incomingDir: string,
+  localDir: string,
+): Promise<Task[]> {
+  const byPath = new Map<string, Task>();
+
+  const readAt = async (dir: string, rel: string): Promise<Task | undefined> => {
+    try {
+      const raw = await readFile(join(dir, rel), "utf-8");
+      const { rawYaml, body } = splitTaskFile(raw);
+      const { frontmatter, health } = parseFrontmatter(rawYaml);
+      return { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
+    } catch {
+      return undefined;
+    }
+  };
+
+  // Everything local, as the baseline.
+  for (const rel of await listTaskFiles(localDir)) {
+    const t = await readAt(localDir, rel);
+    if (t) byPath.set(rel, t);
+  }
+  // Tasks the branch is bringing in.
+  for (const p of plan.copies) {
+    if (!/^tasks\/[^/]+\/task\.md$/.test(p.path)) continue;
+    const t = await readAt(incomingDir, p.path);
+    if (t) byPath.set(p.path, t);
+  }
+  // Merged versions win over both.
+  for (const m of firstPass.merged) {
+    if (!/^tasks\/[^/]+\/task\.md$/.test(m.path)) continue;
+    const { rawYaml, body } = splitTaskFile(m.content);
+    const { frontmatter, health } = parseFrontmatter(rawYaml);
+    byPath.set(m.path, { frontmatter, body, ...(health.length > 0 ? { health } : {}) });
+  }
+  // Tasks the branch deleted are not part of the result.
+  for (const d of plan.deletes) byPath.delete(d.path);
+
+  return [...byPath.values()];
+}
+
+/** Relative paths of every `tasks/<id>/task.md` under a tracker dir. */
+async function listTaskFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  let entries: string[];
+  try {
+    entries = await readdir(join(dir, "tasks"));
+  } catch {
+    return out;
+  }
+  for (const id of entries) out.push(`tasks/${id}/task.md`);
+  return out;
+}
+
+/** One task the merge renumbered, for the honest old→new report (GIT-9). */
+export interface AppliedRekey {
+  readonly taskId: string;
+  readonly oldKey: string;
+  readonly newKey: string;
+}
+
+/**
+ * Restores the two invariants a merge can break: one prefix per
+ * project, one key per task.
+ *
+ * Ordered deliberately. Prefixes are fixed first, because rekeying a
+ * task allocates from its project's prefix — doing it the other way
+ * round hands out keys from a prefix that is about to change. Both
+ * passes are derived from what is on disk, so two clones running this
+ * on the same merged tree reach the same answer.
+ *
+ * The key-collision REKEY (two tasks in one project sharing a key) waits
+ * for an explicit confirm (GIT-8/K92): a rekey reissues a user-facing
+ * key, so unlike the auto-merge cases it is not applied silently. When
+ * `rekeyConfirmed` is false and a collision is found, the reprefix writes
+ * (already applied and resumable) are persisted, a `rekey_pending`
+ * sentinel is written, and {@link GitRekeyNeededError} is thrown carrying
+ * the preview — the loser's key is left untouched on disk until confirm.
+ * CLI/MCP pass `rekeyConfirmed: true` (scriptable auto-apply) and read the
+ * applied old→new from the returned `rekeys`.
+ */
+async function normaliseAfterMerge(
+  locttDir: string,
+  rekeyConfirmed: boolean,
+): Promise<{
+  rekeyed: number;
+  reprefixed: number;
+  unresolvedKeys: readonly string[];
+  rekeys: readonly AppliedRekey[];
+}> {
+  // projects.yaml already carries unique prefixes — the resolver assigns
+  // provisional ones before writing, because the schema rejects a
+  // duplicate on read and an invalid file cannot be loaded to fix.
+  // What is left is the tasks, whose keys still carry the *old* prefix.
+  const config = await loadProjectsConfig(locttDir);
+  const state = await loadState(locttDir);
+  const tasks = await loadAllTasks(locttDir);
+
+  let rekeyed = 0;
+  let reprefixed = 0;
+
+  for (const p of config.projects) {
+    // A task whose key does not start with its project's prefix is one
+    // the resolver re-prefixed underneath it.
+    const stale = tasks.filter(
+      t => t.frontmatter.project === p.id && !t.frontmatter.key.startsWith(p.prefix),
+    );
+    if (stale.length === 0) continue;
+    reprefixed += 1;
+
+    for (const t of stale) {
+      // Keep the number, replace the prefix — the same rule set-prefix
+      // follows, so a reference like "the third one" survives.
+      const suffix = /(\d+)$/.exec(t.frontmatter.key)?.[1] ?? "";
+      if (suffix === "") continue;
+      await writeTask(locttDir, t.frontmatter.id, {
+        ...t,
+        frontmatter: {
+          ...t.frontmatter,
+          key: `${p.prefix}-${suffix}`,
+          key_history: [...appendKeyHistory(t.frontmatter.key_history, t.frontmatter.key)],
+        },
+      });
+      rekeyed += 1;
+    }
+
+    const entry = state.keys[p.id];
+    if (entry) {
+      state.keys[p.id] = { prefix: p.prefix, next_number: entry.next_number };
+    }
+  }
+
+  // Any key collisions left (two tasks in the *same* project sharing a
+  // key) are the rekey pass's job.
+  const after = await loadAllTasks(locttDir);
+
+  // GIT-8/K92: the rekey renumbers a key, so it waits for a confirm. When
+  // it is NOT confirmed and there is at least one collision, persist the
+  // reprefix work done so far (resumable), mark the sentinel, and throw the
+  // preview. previewRekey applies nothing, so the colliding key stays on
+  // disk untouched until the confirmed re-run.
+  if (!rekeyConfirmed) {
+    const plan = previewRekey(after, state);
+    if (plan.losers.length > 0) {
+      // Persist the reprefix counters + the reprefixed task writes so the
+      // confirmed re-run does not redo them, then record that a rekey is
+      // pending. The plan itself is not stored — the confirmed pass
+      // recomputes it from disk, so it cannot drift (GIT-26).
+      await saveState(locttDir, state);
+      await rebuildKeyIndex(locttDir);
+      const sentinel = await readReconcileState(locttDir);
+      if (sentinel !== undefined) {
+        await saveReconcileState(locttDir, { ...sentinel, rekey_pending: true });
+      }
+      throw new GitRekeyNeededError(plan);
+    }
+  }
+
+  const outcome = rekeyCollisions(after, state);
+  const rekeys: AppliedRekey[] = [];
+  for (const r of outcome.rekeyed) {
+    const t = after.find(x => x.frontmatter.id === r.taskId);
+    if (!t) continue;
+    await writeTask(locttDir, r.taskId, {
+      ...t,
+      frontmatter: { ...t.frontmatter, key: r.newKey, key_history: [...r.keyHistory] },
+    });
+    rekeyed += 1;
+    rekeys.push({ taskId: r.taskId, oldKey: r.oldKey, newKey: r.newKey });
+  }
+
+  // A skipped collision leaves two tasks sharing a key — the exact state
+  // this pass exists to remove. RekeyOutcome's contract says a skip is
+  // "never silently dropped", and the only caller was dropping it, so a
+  // duplicate key looked like a successful merge.
+  if (outcome.skipped.length > 0) {
+    const detail = outcome.skipped
+      .map(s => `${s.key} (${s.taskId}): ${s.reason}`)
+      .join("; ");
+    process.stderr.write(
+      `warning: ${String(outcome.skipped.length)} key collision(s) could not be resolved `
+      + `— ${detail}. Run 'loctt doctor' for detail.\n`,
+    );
+  }
+
+  await saveState(locttDir, state);
+  await rebuildKeyIndex(locttDir);
+
+  return { rekeyed, reprefixed, unresolvedKeys: outcome.skipped.map(s => s.key), rekeys };
+}
+
+/**
+ * Incremental progress for a sync's write phase (GIT-23). `applied` is
+ * the count of paths written so far, `total` the number the plan will
+ * write, so a caller can render determinate progress ("N of M") rather
+ * than an indefinite spinner. Reported *before* each path is written —
+ * the same "called while the work is still happening" contract as
+ * `restoreBackup`'s `onProgress`.
+ *
+ * Only the copy/delete write loop reports; the read-only planning and
+ * in-memory merge that precede it do not, because that is where a sync
+ * can still abort (a conflict, an unreachable remote) and no files have
+ * moved yet. Progress therefore begins only once the sync has committed
+ * to writing.
+ */
+export type SyncProgress = (applied: number, total: number) => void;
+
+async function applyPlan(
+  plan: SyncPlan,
+  incomingDir: string,
+  localDir: string,
+  onProgress?: SyncProgress,
+): Promise<void> {
+  // GIT-23: a 500-task sync must report progress. `total` counts every
+  // path this loop will touch (deletes then copies) so the fraction is
+  // honest against the whole write, not just one bucket.
+  const total = plan.deletes.length + plan.copies.length;
+  let applied = 0;
+  for (const { path } of plan.deletes) {
+    onProgress?.(applied, total);
+    await rm(join(localDir, path), { recursive: true, force: true });
+    applied += 1;
+  }
+  for (const { path } of plan.copies) {
+    onProgress?.(applied, total);
+    const dest = join(localDir, path);
+    await mkdir(dirname(dest), { recursive: true });
+    await rm(dest, { recursive: true, force: true });
+    await cp(join(incomingDir, path), dest, { recursive: true, force: true });
+    applied += 1;
+  }
+  // The final tick: every path is written. Without it a caller that
+  // renders "applied/total" would stall one short of 100%.
+  onProgress?.(applied, total);
+  // Deleting files can strand their directories. A task whose files are all
+  // gone must leave no directory behind, or it still shows up in listings
+  // (and reads as a corrupt task rather than an absent one).
+  await pruneEmptyDirs(plan.deletes.map(d => d.path), localDir);
+}
+
+/**
+ * The task ids the plan just wrote whose `task.md` does not parse (GIT-34).
+ *
+ * A sync copies a branch task file verbatim — it does not re-validate it
+ * before writing, and it must not, because a malformed remote task is not
+ * grounds to abort the whole sync (GIT-34: "one bad file does not abort
+ * the whole sync"). But it is also not something to write silently and say
+ * nothing about. This reads back each task the plan wrote and names the
+ * ones that will not parse, so the sync report can point the user at the
+ * file — the same tolerant read `loadAllTasksDetailed` uses for the list,
+ * so a task named here is exactly the broken-file row the list will show.
+ *
+ * Scans only the tasks this plan touched (copies + merges), not the whole
+ * tracker: a pre-existing local corruption is `doctor`'s job to surface,
+ * not this sync's to claim it just applied.
+ */
+async function malformedAppliedTasks(
+  localDir: string,
+  taskIds: Iterable<string>,
+): Promise<MalformedSyncedTask[]> {
+  const out: MalformedSyncedTask[] = [];
+  const seen = new Set<string>();
+  for (const id of taskIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    try {
+      await readTask(localDir, id);
+    } catch (err) {
+      out.push({
+        id,
+        path: getTaskFilePath(localDir, id),
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The task ids a sync plan touched (a copy or a merge of anything under
+ * `tasks/<id>/`), for the malformed-task readback (GIT-34). Deletions are
+ * excluded — a deleted task is gone, not applied.
+ */
+function taskIdsTouchedBy(plan: SyncPlan, mergedPaths: readonly string[]): string[] {
+  const ids = new Set<string>();
+  const collect = (path: string): void => {
+    const m = /^tasks\/([^/]+)\//.exec(path);
+    if (m?.[1] !== undefined) ids.add(m[1]);
+  };
+  for (const { path } of plan.copies) collect(path);
+  for (const path of mergedPaths) collect(path);
+  return [...ids];
+}
+
+/**
+ * Removes directories left empty by deletions, walking upward from each
+ * deleted path. Stops at the first non-empty parent, and never removes
+ * a structural directory.
+ *
+ * `KEEP` is the floor the docstring always claimed and the code never
+ * had: syncing away the last task would otherwise delete
+ * `.loctt/tasks/` itself, leaving a tracker whose shape no longer
+ * matches what `init` creates. An empty `tasks/` is a tracker with no
+ * tasks; a missing one is a tracker that looks broken.
+ */
+const PRUNE_FLOOR: ReadonlySet<string> = new Set([
+  "tasks", "config", "users", "docs", "local",
+]);
+
+async function pruneEmptyDirs(
+  deletedPaths: readonly string[],
+  rootDir: string,
+): Promise<void> {
+  const candidates = new Set<string>();
+  for (const p of deletedPaths) {
+    let dir = dirname(p);
+    while (dir && dir !== "." && dir !== "/") {
+      // Stop *at* the floor rather than adding it: its own parent is
+      // the .loctt root, which must never be a candidate either.
+      if (PRUNE_FLOOR.has(dir)) break;
+      candidates.add(dir);
+      dir = dirname(dir);
+    }
+  }
+  // Deepest first, so a parent is only considered after its children.
+  const ordered = [...candidates].sort((a, b) => b.split("/").length - a.split("/").length);
+  for (const rel of ordered) {
+    const abs = join(rootDir, rel);
+    const entries = await readdir(abs).catch(() => undefined);
+    if (entries !== undefined && entries.length === 0) {
+      await rm(abs, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * True when `branch` holds content that did not come from a LocTT publish.
+ *
+ * A publish mirrors `.loctt/` to the branch root, so a LocTT-owned branch
+ * has a recognisable shape. Adopting an unrelated branch would delete
+ * whatever was there, so callers refuse rather than guess.
+ */
+export function branchHasForeignContent(root: string, branch: string): string[] {
+  const { ok, stdout: listed } = gitStatusSafe(["ls-tree", "--name-only", branch], root);
+  // A failed listing is not an empty branch. Returning [] here would
+  // report "safe to adopt" for a branch we could not read, and the
+  // caller's next move is to mirror over it.
+  if (!ok) {
+    throw new GitSyncError(
+      `could not read branch '${branch}' to check for existing content. `
+      + `Refusing to continue: publishing would mirror over whatever is `
+      + `there. Check that the branch exists and the repository is readable.`,
+    );
+  }
+  if (!listed) return [];
+  const entries = listed.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (entries.length === 0) return [];
+  const locttShaped = new Set([
+    "config", "tasks", "users", "state.yaml", "docs",
+    ".gitignore", ".schema-version",
+  ]);
+  return entries.filter(e => !locttShaped.has(e));
+}
+
 function git(args: string[], cwd: string): string {
   const result = spawnSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" });
   if (result.status !== 0) {
@@ -44,12 +993,139 @@ function git(args: string[], cwd: string): string {
   return result.stdout.trim();
 }
 
+/**
+ * Runs git and returns stdout, or `""` when the command fails.
+ *
+ * Callers must treat `""` as "no answer", never as a meaningful empty
+ * result. That distinction matters most in `branchHasForeignContent`,
+ * where an empty listing means "the branch is safe to adopt" — a
+ * transient `ls-tree` failure read as exactly that would disable the
+ * guard which stops a publish deleting someone else's branch. That
+ * caller now checks the status itself via `gitStatusSafe`.
+ */
 function gitSafe(args: string[], cwd: string): string {
-  const result = spawnSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" });
-  return result.stdout?.trim() ?? "";
+  return gitStatusSafe(args, cwd).stdout;
 }
 
-function branchExists(root: string, branch: string): boolean {
+/**
+ * As {@link gitSafe}, but reports whether git actually succeeded, so a
+ * caller can tell "empty output" from "the command failed".
+ */
+function gitStatusSafe(
+  args: string[],
+  cwd: string,
+): { ok: boolean; stdout: string } {
+  const result = spawnSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" });
+  return { ok: result.status === 0, stdout: result.stdout?.trim() ?? "" };
+}
+
+/**
+ * Counts files under `.loctt/` whose content differs from what is on
+ * `branch` — the work a publish would send.
+ *
+ * Compares blob hashes directly rather than going through git's index.
+ * The index route looks tidier but is wrong here: a publish mirrors
+ * `.loctt/` to the *branch root*, so the branch's paths are not the
+ * working tree's paths, and every index-based comparison either reports
+ * the whole tree as changed or silently ignores files git does not
+ * track. Hashing both sides sidesteps the path mismatch entirely.
+ *
+ * Counts modified, added, and removed paths alike — all three are work a
+ * publish would carry. Returns `undefined` when the comparison cannot be
+ * made (no such branch, git unavailable), which callers must keep
+ * distinct from zero.
+ */
+export function countLocalChanges(
+  root: string,
+  locttDir: string,
+  branch: string,
+): number | undefined {
+  if (!branchExists(root, branch)) return undefined;
+
+  const listed = gitSafe(["ls-tree", "-r", "--format=%(objectname) %(path)", branch], root);
+  if (!listed) return undefined;
+
+  const onBranch = new Map<string, string>();
+  for (const line of listed.split(/\r?\n/)) {
+    const sep = line.indexOf(" ");
+    if (sep > 0) onBranch.set(line.slice(sep + 1), line.slice(0, sep));
+  }
+
+  let changed = 0;
+  const seen = new Set<string>();
+  for (const relative of listLocalPublishablePaths(locttDir)) {
+    seen.add(relative);
+    const local = gitSafe(["hash-object", join(locttDir, relative)], root);
+    const remote = onBranch.get(relative);
+    // Absent on the branch counts as changed: it is a file a publish
+    // would add.
+    if (local === "" || remote === undefined || local !== remote) changed += 1;
+  }
+  // Paths the branch has and the workspace no longer does — a publish
+  // would delete them, which is just as much a pending change.
+  for (const relative of onBranch.keys()) {
+    if (!seen.has(relative)) changed += 1;
+  }
+  return changed;
+}
+
+/**
+ * Lists `.loctt/` paths a publish would mirror, relative to `.loctt/`.
+ *
+ * Three things are excluded, and each would otherwise show as drift that
+ * no publish could ever clear:
+ *  - `NEVER_MIRROR` / `LOCAL_OWNED`, the same sets `mirrorDir` uses, so
+ *    this cannot disagree with what publish actually copies;
+ *  - anything `.loctt/.gitignore` excludes (`.current-user`, per-user
+ *    settings), because publish stages with `git add -A` and git drops
+ *    them. Asked of git rather than hardcoded — the ignore file ships in
+ *    `.loctt/` and a user may extend it.
+ */
+function listLocalPublishablePaths(locttDir: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, prefix: string): void => {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+      if (prefix === "" && (NEVER_MIRROR.has(entry.name) || LOCAL_OWNED.has(entry.name))) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        walk(join(dir, entry.name), relative);
+      } else if (entry.isFile()) {
+        out.push(relative);
+      }
+    }
+  };
+  walk(locttDir, "");
+  if (out.length === 0) return out;
+
+  // `check-ignore` exits 1 when nothing matched, which is not an error.
+  const checked = spawnSync(
+    "git",
+    ["-C", locttDir, "check-ignore", "--no-index", "--stdin"],
+    { input: out.join("\n"), encoding: "utf-8", stdio: "pipe" },
+  );
+  const ignored = new Set(
+    (checked.stdout ?? "").split(/\r?\n/).map(l => l.trim()).filter(Boolean),
+  );
+  return ignored.size === 0 ? out : out.filter(p => !ignored.has(p));
+}
+
+/**
+ * The commit `branch` points at, or `undefined` if it does not resolve.
+ */
+export function branchHeadCommit(root: string, branch: string): string | undefined {
+  const head = gitSafe(["rev-parse", branch], root);
+  return head === "" ? undefined : head;
+}
+
+export function branchExists(root: string, branch: string): boolean {
   try {
     git(["rev-parse", "--verify", branch], root);
     return true;
@@ -69,7 +1145,15 @@ function ensureBranch(root: string, branch: string): void {
   }
 }
 
-function remoteExists(root: string, remote: string): boolean {
+/**
+ * Whether `remote` is actually configured in this repository.
+ *
+ * Exported for status (GIT-C6): the remote *name* always has a value
+ * because it defaults to `origin`, so "has a name" and "has a remote"
+ * are different questions and only the second one predicts whether a
+ * push can work.
+ */
+export function remoteExists(root: string, remote: string): boolean {
   const out = gitSafe(["remote"], root);
   if (!out) return false;
   return out.split(/\r?\n/).map(s => s.trim()).includes(remote);
@@ -78,13 +1162,98 @@ function remoteExists(root: string, remote: string): boolean {
 export interface PushResult {
   readonly pushed: boolean;
   readonly skipped?: "no-remote" | "disabled" | "no-remote-configured";
+  /** Human-facing cause, kept for callers that only print a string. */
   readonly error?: string;
+  /**
+   * The classified failure (GIT-29). Present whenever `error` is, so a
+   * surface can branch on the cause (auth vs non-fast-forward vs
+   * unreachable) rather than pattern-matching the string.
+   */
+  readonly failure?: GitRemoteFailure;
 }
 
 export interface FetchResult {
   readonly fetched: boolean;
   readonly skipped?: "no-remote" | "disabled" | "no-remote-configured";
   readonly error?: string;
+  /** The classified failure (GIT-30). Present whenever `error` is. */
+  readonly failure?: GitRemoteFailure;
+}
+
+/**
+ * What a sync actually did. The counts let callers report the change
+ * rather than a bare "Synced" — a success message that names nothing is
+ * indistinguishable from a sync that quietly destroyed work.
+ */
+export interface SyncOutcome {
+  readonly updated: boolean;
+  /**
+   * The branch that was synced. Present so callers can name it rather
+   * than printing the literal "loctt": the branch is user-configurable,
+   * and every message said "loctt branch" regardless of what it actually
+   * was (GIT-C10). Absent on the early returns that never reached a
+   * branch.
+   */
+  readonly branch?: string;
+  /** Files taken from the branch. */
+  readonly copied?: number;
+  /** Files removed locally because the branch deleted them. */
+  readonly deleted?: number;
+  /** Files left alone (identical, local-only, or locally-owned). */
+  readonly kept?: number;
+  /**
+   * Files both sides changed that were merged field-by-field rather
+   * than aborted on (decisions M1-M4).
+   */
+  readonly merged?: number;
+  /** Tasks renumbered because the merge left them sharing a key. */
+  readonly rekeyed?: number;
+  /**
+   * The per-task detail behind `rekeyed` — old key → new key for each task
+   * renumbered (GIT-9). Lets CLI/MCP report exactly which task took which
+   * new key rather than a bare count. Present only when non-empty.
+   */
+  readonly rekeys?: readonly AppliedRekey[];
+  /**
+   * Projects given a provisional prefix because the merge left two
+   * claiming the same one. The user is expected to replace these with
+   * `loctt project set-prefix`.
+   */
+  readonly reprefixed?: number;
+  /**
+   * Keys the rekey pass could not resolve, so two tasks still share
+   * them. Present only when non-empty.
+   *
+   * Reported rather than dropped because a duplicate key makes
+   * `loctt show <key>` ambiguous, and a sync that says "merged" while
+   * leaving one behind has told the user it succeeded when it half did.
+   */
+  readonly unresolvedKeys?: readonly string[];
+  /**
+   * Tasks the sync applied from the branch whose `task.md` does not parse
+   * (GIT-34). The branch published a file with malformed frontmatter; the
+   * sync copies it (one bad file does not abort the rest — the other
+   * counts above still report what applied), but the file is not silently
+   * absorbed: each one is named here by task id and path so the surface
+   * can tell the user which file to inspect. The list view still renders
+   * these as broken-file rows (loadAllTasksDetailed keeps them), rather
+   * than taking the page down. Present only when non-empty.
+   */
+  readonly malformed?: readonly MalformedSyncedTask[];
+}
+
+/**
+ * A task the sync copied from the branch whose `task.md` will not parse
+ * (GIT-34). Named by id + path + the parse reason so the surface can point
+ * the user at the exact file.
+ */
+export interface MalformedSyncedTask {
+  /** The task id (its directory name — the handle that always survives). */
+  readonly id: string;
+  /** The `task.md` path under `.loctt/tasks/<id>/`, so the user can open it. */
+  readonly path: string;
+  /** The parse error, verbatim — it names the YAML line/field. */
+  readonly reason: string;
 }
 
 /**
@@ -109,6 +1278,96 @@ export function classifyAuthError(stderr: string): string | undefined {
 }
 
 /**
+ * The classes of remote push/fetch failure a surface must tell apart
+ * (GIT-29, GIT-30). A bare stderr string cannot be branched on: an auth
+ * failure and a non-fast-forward rejection need opposite next actions
+ * (fix credentials vs. Sync first), and a network-down failure needs the
+ * remote named and Retry offered without entering a permanent error
+ * state. `other` is the honest fallback — a real cause we do not
+ * (yet) recognise, carried verbatim rather than mislabelled.
+ */
+export type GitRemoteFailureKind =
+  | "auth"
+  | "non_fast_forward"
+  | "unreachable"
+  | "other";
+
+/**
+ * A classified remote failure. `message` is the human-facing cause (the
+ * auth-classified string, or the extracted git failure); `remote` is the
+ * configured remote name so every surface can name it (GIT-30) without
+ * re-plumbing it. Rides inside the *success* result of publish/sync —
+ * the local commit/local state is safe, so this is a partial success,
+ * not a thrown error (GIT-29/30: "local state was not modified").
+ */
+export interface GitRemoteFailure {
+  readonly kind: GitRemoteFailureKind;
+  /**
+   * A one-line, class-level summary the surface phrases the remedy
+   * around ("the remote has moved on…"). Distinct from {@link detail},
+   * which keeps git's specific cause (GIT-C4: name the cause, not a
+   * generic label). `message` is kept as an alias of `detail` for
+   * callers that only print one string.
+   */
+  readonly summary: string;
+  /** Git's specific cause — the auth-classified string or extracted stderr. */
+  readonly detail: string;
+  /** Alias of {@link detail}; the string a bare printer shows. */
+  readonly message: string;
+  readonly remote: string;
+}
+
+/**
+ * Classifies a push/fetch stderr into {@link GitRemoteFailureKind}.
+ *
+ * Order matters: auth is checked first (it can co-occur with a generic
+ * "could not read from remote repository" tail that would otherwise read
+ * as unreachable), then non-fast-forward (a rejection git states
+ * explicitly), then unreachable (host/network), then `other`.
+ *
+ * Every branch keeps git's specific cause in `detail`/`message` — the
+ * class label goes in `summary`, so a surface can say both "could not be
+ * reached" AND "does not appear to be a git repository" (GIT-C4).
+ */
+export function classifyRemoteFailure(
+  stderr: string,
+  remote: string,
+): GitRemoteFailure {
+  const make = (kind: GitRemoteFailureKind, summary: string, detail: string): GitRemoteFailure =>
+    ({ kind, summary, detail, message: detail, remote });
+
+  const auth = classifyAuthError(stderr);
+  if (auth !== undefined) {
+    return make("auth", "authentication was rejected by the remote", auth);
+  }
+  // Non-fast-forward: git rejects the push because the branch moved.
+  // "[rejected] ... (non-fast-forward)" / "(fetch first)" and the
+  // "Updates were rejected because the remote contains work" hint are
+  // the stable markers across git versions.
+  if (
+    /\bnon-fast-forward\b/i.test(stderr) ||
+    /\(fetch first\)/i.test(stderr) ||
+    /Updates were rejected because/i.test(stderr) ||
+    /\[rejected\][^\n]*\(fetch first\)/i.test(stderr)
+  ) {
+    return make("non_fast_forward", "the remote has moved on since your last sync", extractGitFailure(stderr));
+  }
+  // Unreachable: DNS, network, or the remote path/URL does not exist.
+  if (
+    /Could not resolve host/i.test(stderr) ||
+    /Could not read from remote repository/i.test(stderr) ||
+    /unable to access/i.test(stderr) ||
+    /Connection (?:refused|timed out)/i.test(stderr) ||
+    /does not appear to be a git repository/i.test(stderr) ||
+    /repository .* not found/i.test(stderr) ||
+    /and the repository exists/i.test(stderr)
+  ) {
+    return make("unreachable", "the remote could not be reached", extractGitFailure(stderr));
+  }
+  return make("other", "the push was rejected", extractGitFailure(stderr));
+}
+
+/**
  * Commits the current .loctt state to the configured loctt branch (filesystem only).
  * No remote interaction. Returns whether a commit was created.
  */
@@ -122,15 +1381,48 @@ export async function commitToLocttBranch(
   }
 
   const branch = syncState.git.branch;
+
+  // Adopting a branch that already holds unrelated content would delete it:
+  // the mirror below removes every branch entry not present in .loctt/.
+  // Only refuse on first publish — once we have published, the branch is ours.
+  if (syncState.git.last_synced_commit === undefined && branchExists(root, branch)) {
+    const foreign = branchHasForeignContent(root, branch);
+    if (foreign.length > 0) {
+      throw new GitSyncError(
+        `refusing to publish: branch '${branch}' already exists and holds content LocTT did not write ` +
+          `(${foreign.slice(0, 5).join(", ")}${foreign.length > 5 ? ", …" : ""}). ` +
+          `Publishing would delete it. Choose a different branch with ` +
+          `'loctt config set git.branch <name>', or delete '${branch}' if it is no longer needed.`,
+      );
+    }
+  }
+
   ensureBranch(root, branch);
 
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-publish");
   await rm(worktreeDir, { recursive: true, force: true });
+  // `rm` clears the directory; it does not clear git's registration in
+  // .git/worktrees. A hard kill (SIGKILL, power loss) skips the finally
+  // block that would have removed it, leaving a worktree git still
+  // believes exists — and the next `add` then dies with "missing but
+  // already registered worktree", which names a path the user has never
+  // seen. Prune is a no-op when nothing is stale.
+  //
+  // invariants.md: a crash leaves either something the tracker finishes
+  // or something it refuses to boot on, never something it ignores.
+  gitSafe(["worktree", "prune"], root);
 
   try {
-    git(["worktree", "add", worktreeDir, branch], root);
+    // GIT-36: name a stale-but-missing worktree instead of surfacing git's
+    // opaque "missing but locked worktree" fatal. Publish stages into this
+    // worktree and never writes back to .loctt/, so a failure here leaves
+    // local task files untouched — the named error says so.
+    addWorktreeOrNameMissing(root, worktreeDir, branch, "publish");
 
-    await mirrorDir(locttDir, worktreeDir, new Set(["local", ".git"]));
+    // Publish is intentionally a one-way mirror: local is canonical for the
+    // branch. Local-owned files are withheld so they never reach the branch
+    // and so cannot be mirrored back onto another clone (see LOCAL_OWNED).
+    await mirrorDir(locttDir, worktreeDir, new Set([...NEVER_MIRROR, ...LOCAL_OWNED]));
 
     git(["add", "-A"], worktreeDir);
 
@@ -169,6 +1461,23 @@ export async function commitToLocttBranch(
  * Pushes the loctt branch to the configured remote.
  * Never throws — returns a result describing what happened.
  */
+/**
+ * Pulls the meaningful lines out of a git failure.
+ *
+ * Prefers the `fatal:`/`error:` lines, which is where git states the
+ * cause; falls back to the full text. Never a single arbitrary line —
+ * that is how "and the repository exists." became a user-facing reason.
+ */
+function extractGitFailure(stderr: string): string {
+  const text = stderr.trim();
+  if (text === "") return "git push failed";
+  const named = text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => /^(fatal|error|remote):/i.test(l));
+  return named.length > 0 ? named.join("; ") : text.replace(/\s*\n\s*/g, " ");
+}
+
 export function pushLocttBranch(
   root: string,
   opts: { remote: string; branch: string },
@@ -191,9 +1500,13 @@ export function pushLocttBranch(
     return { pushed: true };
   }
   const stderr = (result.stderr ?? "").toString();
-  const auth = classifyAuthError(stderr);
-  const reason = auth ?? (stderr.trim().split(/\r?\n/).pop() ?? "git push failed");
-  return { pushed: false, error: reason };
+  // Git's failures are multi-line and the *last* line is often the tail
+  // of a sentence: "repository not found" ends with "and the repository
+  // exists.", which on its own explains nothing. `classifyRemoteFailure`
+  // keeps the cause-bearing lines and tags the class so a surface can
+  // tell auth from non-fast-forward from unreachable (GIT-29).
+  const failure = classifyRemoteFailure(stderr, remote);
+  return { pushed: false, error: failure.message, failure };
 }
 
 /**
@@ -221,30 +1534,284 @@ export function fetchLocttBranch(
     return { fetched: true };
   }
   const stderr = (result.stderr ?? "").toString();
-  const auth = classifyAuthError(stderr);
-  const reason = auth ?? (stderr.trim().split(/\r?\n/).pop() ?? "git fetch failed");
-  return { fetched: false, error: reason };
+  // Classify the fetch failure so sync can name the remote and tell
+  // "could not be reached" from "nothing to sync" (GIT-30), rather than
+  // surfacing a truncated git-stderr fragment.
+  const failure = classifyRemoteFailure(stderr, remote);
+  return { fetched: false, error: failure.message, failure };
+}
+
+/**
+ * Raised when pre-flight finds data a publish must not carry.
+ *
+ * Only unreadable files block. A malformed *entry* is kept and merged
+ * (P-11), so the data is intact and publishing it is safe — blocking on
+ * one would make a hand-edit typo render the tracker unpublishable,
+ * which is destruction by another route.
+ */
+export class PreflightError extends Error {
+  readonly name = "PreflightError" as const;
+  readonly findings: ReadonlyArray<IntegrityFinding>;
+
+  constructor(findings: ReadonlyArray<IntegrityFinding>) {
+    super(
+      `pre-flight found ${String(findings.length)} problem(s) that must be fixed before publishing:\n`
+      + findings.map(f => `  ${f.path}: ${f.message}`).join("\n"),
+    );
+    this.findings = findings;
+  }
+}
+
+export interface PreflightReport {
+  /** Everything found, blocking or not. */
+  readonly findings: ReadonlyArray<IntegrityFinding>;
+  /** True when a real publish would be refused. */
+  readonly wouldBlock: boolean;
+}
+
+/**
+ * Runs the checks a publish depends on, without publishing (V4).
+ *
+ * The same function backs `--dry-run` and the real thing, so the two
+ * cannot drift: a dry run that passes and a publish that then refuses
+ * would make the dry run worse than useless.
+ */
+export async function preflight(locttDir: string): Promise<PreflightReport> {
+  const findings = await checkDataIntegrity(locttDir);
+  return { findings, wouldBlock: blockingFindings(findings).length > 0 };
 }
 
 /**
  * Publishes local .loctt state to the canonical loctt branch, then optionally
  * pushes to the configured remote. Local commit is durable even if the push fails.
+ *
+ * Refuses up front on anything pre-flight considers blocking (V4). A
+ * file we could not read must not be mirrored to a branch other
+ * machines will sync from — that turns one machine's damage into
+ * everyone's.
  */
+/**
+ * Whether a publish must reconcile first (GIT-15), and the plan if so.
+ *
+ * Divergence means the branch head moved since `last_synced_commit`
+ * (someone else published) while local also changed the same task files.
+ * A three-way plan against the last sync base names those conflicts; if
+ * any are per-field conflicts the user must resolve them before the push.
+ * Returns undefined when there is nothing to reconcile — a fast-forward
+ * publish, or a first publish with no base.
+ */
+/**
+ * Whether a path's content on the branch tip genuinely differs from the
+ * last-synced base — i.e. the branch changed it, as opposed to local
+ * having deleted a base file the branch never touched.
+ *
+ * G1 uses this to tell a real remote-only add/edit (branch content ≠
+ * base, or the path is new on the branch and absent from base) from a
+ * local deletion (`planSync` labels both `copy`, but only the former is
+ * remote work the publish must not clobber). A path absent from base but
+ * present on the branch is a remote add → differs. A path whose branch
+ * content equals its base content was not changed on the branch, so the
+ * only change is local's own deletion → does not differ.
+ */
+function branchDiffersFromBase(
+  root: string,
+  base: string,
+  remoteHead: string,
+  path: string,
+): boolean {
+  const baseText = readTreeFile(root, base, path);
+  const branchText = readTreeFile(root, remoteHead, path);
+  return baseText !== branchText;
+}
+
+/**
+ * The outcome of the pre-publish divergence check:
+ *  - `undefined` — a true fast-forward (branch has not moved past base, or
+ *    local strictly contains the branch): the blind mirror is safe.
+ *  - `{ kind: "reconcile" }` — per-field task conflicts need a human
+ *    decision; open reconciliation tagged `mode: publish`.
+ *  - `{ kind: "sync-first" }` — the branch has remote-only work (adds /
+ *    remote-only edits) with no field conflict. The mirror would delete
+ *    it (G1), so publish must refuse and route through `sync`, which
+ *    merges it in. `incomingPaths` names what would be lost.
+ */
+type PublishDivergence =
+  | { kind: "reconcile"; plan: ReconcilePlan; baseCommit: string; remoteHead: string }
+  | { kind: "sync-first"; incomingPaths: readonly string[] };
+
+async function detectPublishReconcile(
+  locttDir: string,
+  root: string,
+  syncState: SyncState,
+): Promise<PublishDivergence | undefined> {
+  const branch = syncState.git.branch;
+  const base = syncState.git.last_synced_commit;
+  if (base === undefined) return undefined; // first publish: nothing to diverge from
+  // Bring the local branch ref up to date with the remote before checking
+  // for divergence — another clone's publish lives on the remote until we
+  // fetch it, and a publish that pushed without seeing it would be
+  // rejected non-fast-forward (or clobber it). Best-effort: an
+  // unreachable remote just means we compare against the local ref.
+  if (syncState.git.remote !== undefined && remoteExists(root, syncState.git.remote)) {
+    fetchLocttBranch(root, { remote: syncState.git.remote, branch });
+  }
+  if (!branchExists(root, branch)) return undefined;
+  const remoteHead = git(["rev-parse", branch], root);
+
+  // GIT-21 (K93): the publish-side equivalent of the sync guard, run
+  // BEFORE the fast-forward short-circuit below. A force-push is a
+  // non-fast-forward fetch, which git refuses to apply to the local
+  // `loctt` ref — so on a rewrite the local ref is left stale and
+  // `remoteHead === base` would (wrongly) read as "branch has not moved"
+  // and let the publish proceed to a push that then fails opaquely. So
+  // check ancestry against the TRUE remote head (the remote-tracking ref)
+  // first: if `base` is no longer an ancestor of it, the branch history
+  // was rewritten — refuse before `planSync`, write nothing, and leave
+  // recovery to the user in git. `base` is already known defined above.
+  const trueRemoteHead = resolveRemoteHeadForAncestry(
+    root, branch, syncState.git.remote, remoteHead,
+  );
+  assertNotHistoryRewrite(root, base, trueRemoteHead, branch, syncState.git.remote);
+
+  // GIT-35 (K94): the publish-side equivalent of the sync guard. If the
+  // branch has moved on and was written by a NEWER LocTT, publishing would
+  // route through the divergence handling / blind mirror against content
+  // this build cannot read — refuse before `planSync`, write nothing, and
+  // tell the user to upgrade LocTT. Reads the remote `.schema-version`
+  // only; never writes it. `trueRemoteHead` is the branch content that
+  // carries the schema file.
+  assertRemoteSchemaNotNewer(root, trueRemoteHead, branch);
+
+  if (remoteHead === base) return undefined; // branch has not moved: fast-forward publish
+
+  const worktreeDir = join(getLocalDir(locttDir), ".worktree-publish-check");
+  await rm(worktreeDir, { recursive: true, force: true });
+  gitSafe(["worktree", "prune"], root);
+  try {
+    git(["worktree", "add", "--detach", worktreeDir, remoteHead], root);
+    const plan = await planSync({
+      root, incomingDir: worktreeDir, localDir: locttDir, baseCommit: base,
+    });
+    const config = await loadWorkflowConfig(locttDir).catch(() => undefined);
+    const reconcilePlan = await computeReconcilePlan({
+      localDir: locttDir, incomingDir: worktreeDir, conflicts: plan.conflicts,
+      deletes: plan.deletes, copies: plan.copies,
+      config, mode: "publish", baseCommit: base, remoteCommit: remoteHead, root,
+    });
+    if (reconcilePlan.conflicts.length > 0 || reconcilePlan.deleteVsEdit.length > 0) {
+      return { kind: "reconcile", plan: reconcilePlan, baseCommit: base, remoteHead };
+    }
+    // G1: no field conflict does NOT mean fast-forward. `planSync`
+    // classifies remote-only work — a task the branch added, or a task
+    // the branch changed that local did not — as `copies`, and a
+    // branch-side deletion of a file local still has as `deletes`. The
+    // blind mirror in `commitToLocttBranch` would delete or overwrite
+    // every one of those on the branch and push the loss to the remote.
+    // Only a true fast-forward is safe to mirror; genuine remote-only
+    // work must go through `sync` first, which merges it.
+    //
+    // But NOT every `copy` is remote work: `planSync` labels a path that
+    // is on the branch and absent locally `copy` whether the branch added
+    // it (remote work — must not be lost) or LOCAL deleted a base file
+    // (the user's own intent — the mirror rightly removes it from the
+    // branch). The two are told apart by the branch content: a genuine
+    // remote change differs from base; a local-delete leaves the branch
+    // side identical to base. Fold only the genuinely-remote copies into
+    // the refusal, so a plain local delete still publishes (G1 review).
+    const remoteCopies: string[] = [];
+    for (const c of plan.copies) {
+      if (branchDiffersFromBase(root, base, remoteHead, c.path)) {
+        remoteCopies.push(c.path);
+      }
+    }
+    const incomingPaths = [
+      ...remoteCopies,
+      // A branch-side deletion local has not taken up is remote work too:
+      // mirroring local would resurrect the file on the branch.
+      ...plan.deletes.map(p => p.path),
+    ];
+    if (incomingPaths.length > 0) {
+      return { kind: "sync-first", incomingPaths };
+    }
+    return undefined;
+  } finally {
+    try { gitSafe(["worktree", "remove", worktreeDir, "--force"], root); } catch { /* best-effort */ }
+    await rm(worktreeDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 export async function publish(
   locttDir: string,
   root: string,
-): Promise<{ committed: boolean; pushed?: boolean; pushError?: string }> {
+  /**
+   * Set on the completion pass after a publish-mode reconciliation was
+   * resolved (GIT-15): the sentinel is already cleared and the divergence
+   * check is skipped, because the resolved local state is exactly what
+   * should now be committed onto the branch tip.
+   */
+  opts?: { readonly afterReconcile?: boolean },
+): Promise<{
+  committed: boolean;
+  branch: string;
+  pushed?: boolean;
+  pushError?: string;
+  /** Classified push failure (GIT-29) — present iff `pushError` is. */
+  pushFailure?: GitRemoteFailure;
+}> {
+  // GIT-31: a reconciliation in progress blocks publish outright — the
+  // block names it and nothing is pushed.
+  if (opts?.afterReconcile !== true) {
+    const pending = await readReconcileState(locttDir);
+    if (pending !== undefined) {
+      throw new GitReconcileInterruptedError(pending);
+    }
+  }
+  const report = await preflight(locttDir);
+  if (report.wouldBlock) {
+    throw new PreflightError(blockingFindings(report.findings));
+  }
+
+  // GIT-15: publish does not push-then-ask. If the branch moved since the
+  // last sync *and* local diverged, both sides changed the same files —
+  // pushing would either be rejected or clobber the remote. Detect it and
+  // open reconciliation first, tagged `mode: publish`, so the push happens
+  // only after Apply.
+  if (opts?.afterReconcile !== true) {
+    const preState = await loadSyncState(locttDir);
+    if (preState.git.enabled) {
+      const needed = await detectPublishReconcile(locttDir, root, preState);
+      if (needed?.kind === "sync-first") {
+        // G1: remote-only work would be clobbered by the mirror. Refuse
+        // and route through sync — nothing has been written.
+        throw new GitSyncFirstError(needed.incomingPaths);
+      }
+      if (needed?.kind === "reconcile") {
+        await saveReconcileState(locttDir, {
+          mode: "publish",
+          base_commit: needed.baseCommit,
+          remote_commit: needed.remoteHead,
+          started_at: new Date().toISOString(),
+        });
+        throw new GitReconcileNeededError(needed.plan);
+      }
+    }
+  }
+
   const commitResult = await commitToLocttBranch(locttDir, root);
   const syncState = commitResult.syncState;
+  // Returned on every path so callers can name the branch they actually
+  // wrote to. It is user-configurable, and every success message printed
+  // the literal "loctt" regardless (GIT-C10).
+  const branch = commitResult.branch;
 
   if (!syncState.git.auto_push) {
-    return { committed: commitResult.committed };
+    return { committed: commitResult.committed, branch };
   }
   if (!syncState.git.remote) {
-    return { committed: commitResult.committed };
+    return { committed: commitResult.committed, branch };
   }
   if (!remoteExists(root, syncState.git.remote)) {
-    return { committed: commitResult.committed };
+    return { committed: commitResult.committed, branch };
   }
 
   const pushResult = pushLocttBranch(root, {
@@ -253,7 +1820,7 @@ export async function publish(
   });
 
   if (pushResult.pushed) {
-    return { committed: commitResult.committed, pushed: true };
+    return { committed: commitResult.committed, branch, pushed: true };
   }
 
   if (pushResult.error) {
@@ -263,7 +1830,34 @@ export async function publish(
       `warning: push to ${remote} failed: ${pushResult.error}. local commit succeeded; run 'git push ${remote} ${branch}' to retry.\n`,
     );
   }
-  return { committed: commitResult.committed, pushed: false, pushError: pushResult.error };
+  return {
+    committed: commitResult.committed,
+    branch,
+    pushed: false,
+    ...(pushResult.error !== undefined ? { pushError: pushResult.error } : {}),
+    ...(pushResult.failure !== undefined ? { pushFailure: pushResult.failure } : {}),
+  };
+}
+
+/**
+ * Drops the conflicting task-file paths whose task the user already
+ * resolved, so the completion pass keeps local for them (GIT-7) instead
+ * of re-halting or last-write-wins-merging over the resolved values.
+ *
+ * The task id is the directory name in `tasks/<id>/task.md`. A resolved
+ * task's `_history.yaml`/`_comments.yaml` conflicts are left in place —
+ * those union safely and losing that content is the failure M2 exists to
+ * prevent.
+ */
+function filterResolvedTaskConflicts(
+  conflicts: readonly PathPlan[],
+  resolvedTaskIds: ReadonlySet<string>,
+): PathPlan[] {
+  return conflicts.filter((c) => {
+    const m = /^tasks\/([^/]+)\/task\.md$/.exec(c.path);
+    if (m === null) return true;
+    return !resolvedTaskIds.has(m[1] as string);
+  });
 }
 
 /**
@@ -273,29 +1867,306 @@ export async function pullFromLocttBranch(
   locttDir: string,
   root: string,
   preloadedState?: SyncState,
-): Promise<{ updated: boolean }> {
+  /**
+   * Set when this pull is the *completion* of a reconciliation the user
+   * already resolved (GIT-7). The named task ids' conflicts are treated
+   * as settled — the resolved values are already on disk locally — so
+   * the sync keeps local for them and does not re-halt. The sentinel
+   * check is skipped, because completing is precisely what clears it.
+   */
+  reconcileResolution?: {
+    readonly resolvedTaskIds: readonly string[];
+    /**
+     * GIT-8/K92: the user confirmed the rekey preview (or the caller is a
+     * scriptable CLI/MCP that auto-applies). When true, a key collision is
+     * renumbered without throwing {@link GitRekeyNeededError}. Absent/false
+     * means the rekey waits for a confirm.
+     */
+    readonly rekeyConfirmed?: boolean;
+    /**
+     * GIT-16: task ids whose delete-vs-edit decision the user made. On the
+     * completion pass these must NOT be re-classified as delete-vs-edit (the
+     * decision is settled), and — for a keep-task where LOCAL had deleted the
+     * task — the completing sync's `copy` must still bring the remote-edited
+     * file in. So they suppress delete-vs-edit detection but do NOT filter the
+     * copy from the plan (that is `resolvedTaskIds`' job). A keep-deletion /
+     * keep-local-file decision lands in BOTH sets.
+     */
+    readonly deleteVsEditResolvedTaskIds?: readonly string[];
+  },
+  /**
+   * GIT-23: reports incremental write progress. Fires only in the write
+   * phase (`applyPlan`), after all the read-only planning that can still
+   * abort — so a caller never shows progress for a sync that then throws.
+   */
+  onProgress?: SyncProgress,
+): Promise<SyncOutcome> {
   const syncState = preloadedState ?? await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
     throw new GitSyncError("Git-backed mode is not enabled");
   }
 
+  // A sentinel here means either a reconciliation is in progress (the
+  // user must finish it — GIT-31) or a previous one died mid-write
+  // (GIT-C3). Either way this run must not proceed and re-plan against a
+  // base that no longer describes the workspace. The one exception is a
+  // completion pass, which is what clears the sentinel.
+  if (reconcileResolution === undefined) {
+    const interrupted = await readReconcileState(locttDir);
+    if (interrupted) {
+      throw new GitReconcileInterruptedError(interrupted);
+    }
+  }
+
   const branch = syncState.git.branch;
   if (!branchExists(root, branch)) {
-    return { updated: false };
+    return { updated: false, branch };
   }
 
   const remoteHead = git(["rev-parse", branch], root);
+
+  // GIT-21 (K93): before three-way planning — and before the no-op
+  // short-circuit below — refuse a rewritten history. If a base was
+  // recorded but it is no longer an ancestor of the remote head, the
+  // branch was force-pushed past it: `planSync` would see "no base" and
+  // could take incoming over local edits whose base is gone. Refuse and
+  // write nothing; recovery is the user's, done in git.
+  //
+  // Two reasons this runs before the `last_synced === remoteHead` no-op
+  // check: (1) a force-push is a non-fast-forward fetch, which git refuses
+  // to apply to the local `loctt` ref, so on a rewrite the local ref is
+  // left stale and `remoteHead` still equals `base` — the no-op check
+  // would swallow the rewrite. So the check uses the TRUE remote head (the
+  // remote-tracking ref), not the local ref (see
+  // resolveRemoteHeadForAncestry). (2) It must fire whether or not the
+  // local ref moved. The sync fetch above already updated the tracking
+  // ref; the extra best-effort fetch here keeps direct callers of
+  // `pullFromLocttBranch` robust. An unreachable remote leaves the
+  // tracking ref as-is and the guard compares against whatever is known.
+  // Only runs when a base exists (a first sync has none to be rewritten).
+  if (syncState.git.last_synced_commit !== undefined) {
+    if (syncState.git.remote !== undefined && remoteExists(root, syncState.git.remote)) {
+      fetchLocttBranch(root, { remote: syncState.git.remote, branch });
+    }
+    const trueRemoteHead = resolveRemoteHeadForAncestry(
+      root, branch, syncState.git.remote, remoteHead,
+    );
+    assertNotHistoryRewrite(
+      root,
+      syncState.git.last_synced_commit,
+      trueRemoteHead,
+      branch,
+      syncState.git.remote,
+    );
+  }
+
+  // GIT-35 (K94): refuse a branch written by a NEWER LocTT before applying
+  // it. invariants.md holds that schema travels via `loctt migrate`, never
+  // via sync — so if the branch's `.schema-version` is strictly greater
+  // than what this build understands, applying it could corrupt or drop
+  // data. Read the remote value (never write it — `.schema-version` stays
+  // LOCAL_OWNED/NEVER_MIRROR) and refuse, writing nothing. Runs on the
+  // true branch head, and BEFORE the no-op short-circuit below so a
+  // newer-schema branch is refused even on a first sync (no base yet).
+  assertRemoteSchemaNotNewer(root, remoteHead, branch);
+
   if (syncState.git.last_synced_commit === remoteHead) {
-    return { updated: false };
+    return { updated: false, branch };
   }
 
   const worktreeDir = join(getLocalDir(locttDir), ".worktree-sync");
   await rm(worktreeDir, { recursive: true, force: true });
+  // `rm` clears the directory; it does not clear git's registration in
+  // .git/worktrees. A hard kill (SIGKILL, power loss) skips the finally
+  // block that would have removed it, leaving a worktree git still
+  // believes exists — and the next `add` then dies with "missing but
+  // already registered worktree", which names a path the user has never
+  // seen. Prune is a no-op when nothing is stale.
+  //
+  // invariants.md: a crash leaves either something the tracker finishes
+  // or something it refuses to boot on, never something it ignores.
+  gitSafe(["worktree", "prune"], root);
 
   try {
-    git(["worktree", "add", worktreeDir, branch], root);
+    // GIT-36: name a stale-but-missing worktree instead of surfacing git's
+    // opaque fatal. This `add` is in the read-only planning phase, before
+    // the first applyPlan write, so a failure here cannot have moved a
+    // local task file — the named error says so.
+    addWorktreeOrNameMissing(root, worktreeDir, branch, "sync");
 
-    await mirrorDir(worktreeDir, locttDir, new Set(["local", ".git"]));
+    // 3-way, not a blind mirror. `last_synced_commit` is the base: without
+    // it we cannot tell "the branch deleted this" from "I created this
+    // locally", so planSync keeps anything it cannot prove is a deletion.
+    const plan = await planSync({
+      root,
+      incomingDir: worktreeDir,
+      localDir: locttDir,
+      baseCommit: syncState.git.last_synced_commit,
+    });
+
+    // Per-field reconciliation (GIT-6, GIT-11, GIT-13, GIT-14, GIT-17).
+    // Before the silent last-write-wins merge, ask whether any
+    // conflicting TASK file changed the same field to two genuinely
+    // different values. If so, that is a decision for the user, not one
+    // for the merge to settle: write the sentinel and stop, carrying the
+    // per-field plan. The auto-mergeable cases (different keys → union,
+    // identical → converge) produce no conflicts and fall through to the
+    // existing merge untouched (GIT-5).
+    // A completion pass carries the tasks the user already resolved; their
+    // conflicting files keep local (the resolved values are on disk), so
+    // they are dropped from the conflict set the merge sees and never
+    // re-halt or get last-write-wins-merged over the user's picks.
+    // The tasks the user already resolved (field conflicts AND delete-vs-edit
+    // decisions applied on disk by `applyReconcile`). Their paths are dropped
+    // from EVERY bucket of the completion plan so the merge/copy/delete does
+    // not undo the resolution: a kept task must not be re-deleted (GIT-16), a
+    // resolved conflict must not be last-write-wins-merged over the picks.
+    const resolvedTaskIds = new Set(reconcileResolution?.resolvedTaskIds ?? []);
+    const activePlan: SyncPlan = resolvedTaskIds.size === 0
+      ? plan
+      : {
+          ...plan,
+          conflicts: filterResolvedTaskConflicts(plan.conflicts, resolvedTaskIds),
+          deletes: filterResolvedTaskConflicts(plan.deletes, resolvedTaskIds),
+          copies: filterResolvedTaskConflicts(plan.copies, resolvedTaskIds),
+        };
+
+    // GIT-16: on the completion pass, a delete-vs-edit the user already
+    // decided must not be re-detected (it would re-halt). Suppress detection
+    // for those task ids by dropping their paths from the deletes/copies the
+    // detector sees — the copy/delete write itself is governed by activePlan.
+    const dveResolved = new Set(reconcileResolution?.deleteVsEditResolvedTaskIds ?? []);
+    const dropDveResolved = (paths: readonly PathPlan[]): PathPlan[] =>
+      dveResolved.size === 0
+        ? [...paths]
+        : paths.filter((p) => {
+            const m = /^tasks\/([^/]+)\/task\.md$/.exec(p.path);
+            return m === null || !dveResolved.has(m[1] as string);
+          });
+
+    const workflowForPlan = await loadWorkflowConfig(locttDir).catch(() => undefined);
+    const reconcilePlan = await computeReconcilePlan({
+      localDir: locttDir,
+      incomingDir: worktreeDir,
+      conflicts: activePlan.conflicts,
+      deletes: dropDveResolved(activePlan.deletes),
+      copies: dropDveResolved(activePlan.copies),
+      config: workflowForPlan,
+      mode: "sync",
+      baseCommit: syncState.git.last_synced_commit ?? remoteHead,
+      remoteCommit: remoteHead,
+      root,
+    });
+    if (reconcilePlan.conflicts.length > 0 || reconcilePlan.deleteVsEdit.length > 0) {
+      // Sentinel first, so a reload recomputes the same plan (GIT-26) and
+      // publish/sync stay blocked until it resolves (GIT-31). No task
+      // file has been touched — the plan is read-only.
+      await saveReconcileState(locttDir, {
+        mode: "sync",
+        base_commit: syncState.git.last_synced_commit ?? remoteHead,
+        remote_commit: remoteHead,
+        started_at: new Date().toISOString(),
+      });
+      throw new GitReconcileNeededError(reconcilePlan);
+    }
+
+    // Field-level merge (decisions M1-M4). A path both sides changed is
+    // no longer fatal by itself: task frontmatter merges per field,
+    // history and comments union, and config lists union by id. Only
+    // paths with no rule — or one side that will not parse — still
+    // abort.
+    // Two passes. The first merges everything except state.yaml; the
+    // second derives the counters from the task set that results (M1),
+    // which cannot be known until the tasks themselves have merged.
+    const firstPass = await resolveConflicts(activePlan.conflicts, worktreeDir, locttDir);
+    const resolution = firstPass.unresolved.some(c => c.path === "state.yaml")
+      ? await resolveConflicts(
+        activePlan.conflicts,
+        worktreeDir,
+        locttDir,
+        await mergedTaskSet(activePlan, firstPass, worktreeDir, locttDir),
+      )
+      : firstPass;
+    if (resolution.unresolved.length > 0) {
+      // Abort before writing anything — a partially-applied sync is worse
+      // than none, and the user still has both versions intact.
+      throw new GitConflictError(resolution.unresolved.map(c => c.path));
+    }
+
+    // Everything above this line is read-only: planning, merging in
+    // memory, and aborting on an unresolvable conflict. Everything below
+    // writes to the workspace, across many files, with no single atomic
+    // point. A crash in that window used to leave a partly-applied sync
+    // with nothing on disk to say so — the next run would compute a
+    // fresh plan against a workspace that was neither the old state nor
+    // the new one (GIT-C3).
+    //
+    // The sentinel records what was in flight and against which commits,
+    // so the next sync can name the interrupted operation instead of
+    // starting over blindly. Written before the first mutation and
+    // cleared after the last one.
+    //
+    // Sync only. `mode: "publish"` exists in the schema but publish does
+    // not write one: it stages into a temporary worktree and commits
+    // there, so an interrupted publish leaves the user's .loctt/
+    // untouched — either the branch moved or it did not, and the next
+    // publish re-derives everything. There is no half-applied workspace
+    // to warn about, and a sentinel that blocked sync for a failed
+    // publish would be a refusal with nothing behind it.
+    await saveReconcileState(locttDir, {
+      mode: "sync",
+      base_commit: syncState.git.last_synced_commit ?? remoteHead,
+      remote_commit: remoteHead,
+      started_at: new Date().toISOString(),
+    });
+
+    await applyPlan(activePlan, worktreeDir, locttDir, onProgress);
+    // After applyPlan: the merged content must win over whatever the
+    // plan copied for that path.
+    await applyResolution(resolution, locttDir);
+
+    // NORMALISE. Merging can leave two projects sharing a prefix (two
+    // independently-init'ed trackers both mint `T-`), and tasks sharing
+    // a key. Neither is a state the rest of the codebase tolerates:
+    // `createProject` enforces prefix uniqueness, and a duplicate key
+    // makes `loctt show T-1` ambiguous.
+    //
+    // Runs after a merge *or a copy*. The earlier comment said "a merge
+    // is the only way to reach either state", which is wrong for the
+    // case GIT-C2 names: two clones each creating a task offline. The
+    // task exists on only one side, so it is copied rather than merged —
+    // and a copied task can collide on a key just as a merged one can.
+    // GIT-8/K92: the key-collision rekey inside normalise waits for a
+    // confirm unless this pull is a scriptable/confirmed completion. A
+    // fresh divergent sync (no reconcileResolution) is not confirmed, so a
+    // collision throws GitRekeyNeededError with the preview and leaves the
+    // colliding key on disk. The reconcile-completion caller passes
+    // rekeyConfirmed after the user confirmed the preview (or CLI/MCP pass
+    // it to auto-apply).
+    // Also normalise on a confirmed rekey even when THIS run's plan shows
+    // no copies/merges: the unconfirmed run that produced the preview
+    // already copied the colliding task to disk (leaving the sync sentinel),
+    // so on the confirmed re-run the branch task reads as identical/keep and
+    // the copy count is zero — but the pending collision is still on disk
+    // and must be applied.
+    const rekeyConfirmed = reconcileResolution?.rekeyConfirmed ?? false;
+    const normalised = resolution.merged.length > 0 || activePlan.copies.length > 0 || rekeyConfirmed
+      ? await normaliseAfterMerge(locttDir, rekeyConfirmed)
+      : {
+          rekeyed: 0,
+          reprefixed: 0,
+          unresolvedKeys: [] as readonly string[],
+          rekeys: [] as readonly AppliedRekey[],
+        };
+
+    // The key index maps key -> task id and is local, so it is never
+    // synced. Any sync that added or rewrote a task file leaves it
+    // stale — including one that only *copied* tasks, which never
+    // reaches normaliseAfterMerge. Rebuilding here rather than there
+    // covers both paths.
+    if (activePlan.copies.length > 0 || activePlan.deletes.length > 0 || resolution.merged.length > 0) {
+      await rebuildKeyIndex(locttDir);
+    }
 
     const updated: SyncState = {
       git: {
@@ -305,7 +2176,46 @@ export async function pullFromLocttBranch(
     };
     await saveSyncState(locttDir, updated);
 
-    return { updated: true };
+    // Last write of the reconciliation, so the sentinel goes now. Its
+    // absence is the only signal that the workspace is whole.
+    await clearReconcileState(locttDir);
+
+    // GIT-34: name any task the sync just applied whose task.md will not
+    // parse. Read back after the writes above (a merge can rewrite a file
+    // the plan copied), scoped to the tasks this plan touched so the sync
+    // does not claim a pre-existing local corruption as its own.
+    const malformed = await malformedAppliedTasks(
+      locttDir,
+      taskIdsTouchedBy(activePlan, resolution.merged.map(m => m.path)),
+    );
+
+    return {
+      branch,
+      updated:
+        activePlan.copies.length > 0 ||
+        activePlan.deletes.length > 0 ||
+        resolution.merged.length > 0 ||
+        // A confirmed rekey re-run may have empty copies/merges (the copy
+        // landed on the earlier unconfirmed pass) yet still change the
+        // workspace by renumbering a key.
+        normalised.rekeys.length > 0,
+      copied: activePlan.copies.length,
+      deleted: activePlan.deletes.length,
+      kept: activePlan.keeps.length,
+      merged: resolution.merged.length,
+      ...(normalised.rekeyed > 0 ? { rekeyed: normalised.rekeyed } : {}),
+      ...(normalised.rekeys.length > 0 ? { rekeys: normalised.rekeys } : {}),
+      ...(normalised.reprefixed > 0 ? { reprefixed: normalised.reprefixed } : {}),
+      // Surfaced, not just warned about: a caller that reports "synced"
+      // while two tasks share a key is telling the user the merge
+      // succeeded when it half did.
+      ...(normalised.unresolvedKeys.length > 0
+        ? { unresolvedKeys: normalised.unresolvedKeys }
+        : {}),
+      // GIT-34: the malformed task(s) this sync applied, by id + path, so
+      // the surface names the file to inspect. Present only when non-empty.
+      ...(malformed.length > 0 ? { malformed } : {}),
+    };
   } finally {
     try {
       gitSafe(["worktree", "remove", worktreeDir, "--force"], root);
@@ -327,7 +2237,21 @@ export async function pullFromLocttBranch(
 export async function sync(
   locttDir: string,
   root: string,
-): Promise<{ updated: boolean; fetched?: boolean; fetchError?: string }> {
+  /**
+   * GIT-23: incremental write progress, forwarded to `pullFromLocttBranch`.
+   * Optional so every existing caller (and MCP, which is request/response
+   * and cannot stream) is unaffected.
+   */
+  onProgress?: SyncProgress,
+  /**
+   * GIT-8/K92: when `rekeyConfirmed` is true, a key collision is renumbered
+   * without pausing for a confirm. CLI and MCP pass this — they auto-apply
+   * and report the old→new (K92: staying scriptable). The web leaves it
+   * off, so a rekey throws {@link GitRekeyNeededError} and the panel shows
+   * the preview before confirming.
+   */
+  options?: { readonly rekeyConfirmed?: boolean },
+): Promise<SyncOutcome & { fetched?: boolean; fetchError?: string; fetchFailure?: GitRemoteFailure }> {
   const syncState = await loadSyncState(locttDir);
   if (!syncState.git.enabled) {
     throw new GitSyncError("Git-backed mode is not enabled");
@@ -335,6 +2259,7 @@ export async function sync(
 
   let fetched: boolean | undefined;
   let fetchError: string | undefined;
+  let fetchFailure: GitRemoteFailure | undefined;
 
   if (syncState.git.auto_fetch && syncState.git.remote && remoteExists(root, syncState.git.remote)) {
     const r = fetchLocttBranch(root, {
@@ -346,6 +2271,7 @@ export async function sync(
     } else if (r.error) {
       fetched = false;
       fetchError = r.error;
+      fetchFailure = r.failure;
       const remote = syncState.git.remote;
       const branch = syncState.git.branch;
       process.stderr.write(
@@ -354,6 +2280,22 @@ export async function sync(
     }
   }
 
-  const result = await pullFromLocttBranch(locttDir, root, syncState);
-  return { updated: result.updated, ...(fetched !== undefined ? { fetched } : {}), ...(fetchError ? { fetchError } : {}) };
+  // A rekey confirm carries no field resolutions on a plain sync (there is
+  // no reconcile phase), only the confirm flag. The reconcileResolution
+  // arg also skips the interrupted-sentinel check — which is correct here:
+  // when CLI/MCP auto-apply, the rekey-pending sentinel that a prior web
+  // preview may have left is exactly what this confirm is completing.
+  const result = await pullFromLocttBranch(
+    locttDir,
+    root,
+    syncState,
+    options?.rekeyConfirmed ? { resolvedTaskIds: [], rekeyConfirmed: true } : undefined,
+    onProgress,
+  );
+  return {
+    ...result,
+    ...(fetched !== undefined ? { fetched } : {}),
+    ...(fetchError ? { fetchError } : {}),
+    ...(fetchFailure ? { fetchFailure } : {}),
+  };
 }

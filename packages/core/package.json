@@ -9,6 +9,34 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./board/columns.js": {
+      "types": "./dist/board/columns.d.ts",
+      "import": "./dist/board/columns.js"
+    },
+    "./users/pins.js": {
+      "types": "./dist/users/pins.d.ts",
+      "import": "./dist/users/pins.js"
+    },
+    "./users/sidebarGroups.js": {
+      "types": "./dist/users/sidebarGroups.d.ts",
+      "import": "./dist/users/sidebarGroups.js"
+    },
+    "./query/builderTree.js": {
+      "types": "./dist/query/builderTree.d.ts",
+      "import": "./dist/query/builderTree.js"
+    },
+    "./query/parser.js": {
+      "types": "./dist/query/parser.d.ts",
+      "import": "./dist/query/parser.js"
+    },
+    "./query/serialize.js": {
+      "types": "./dist/query/serialize.d.ts",
+      "import": "./dist/query/serialize.js"
+    },
+    "./query/tokenizer.js": {
+      "types": "./dist/query/tokenizer.d.ts",
+      "import": "./dist/query/tokenizer.js"
     }
   },
   "scripts": {
@@ -21,10 +49,12 @@
   "dependencies": {
     "@loctt/contracts": "*",
     "proper-lockfile": "^4.1.2",
+    "sharp": "^0.35.3",
     "ulid": "^3.0.2",
     "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@types/proper-lockfile": "^4.1.4"
-  }
+  },
+  "license": "MIT"
 }

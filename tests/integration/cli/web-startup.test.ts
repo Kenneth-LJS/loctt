@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { execa, type ResultPromise } from "execa";
+import { execa } from "execa";
 import { describe, expect, it } from "vitest";
 
 import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
@@ -25,7 +25,19 @@ async function waitForReady(port: number, timeoutMs: number): Promise<void> {
   throw new Error(`server did not become ready within ${timeoutMs}ms: ${String(lastErr)}`);
 }
 
-async function killAndWait(child: ResultPromise): Promise<void> {
+/**
+ * Structural, rather than execa's `ResultPromise`: that type is generic in
+ * the call's options, so naming it here would not accept this file's
+ * concrete invocation under exactOptionalPropertyTypes. Only these
+ * members are used.
+ */
+interface KillableProcess extends PromiseLike<unknown> {
+  readonly exitCode?: number | null | undefined;
+  kill(signal?: NodeJS.Signals): boolean;
+  catch(onrejected: () => unknown): PromiseLike<unknown>;
+}
+
+async function killAndWait(child: KillableProcess): Promise<void> {
   if (child.exitCode !== null && child.exitCode !== undefined) return;
   child.kill("SIGTERM");
   const exited = await Promise.race([
@@ -41,13 +53,13 @@ async function killAndWait(child: ResultPromise): Promise<void> {
   }
 }
 
-describe("CLI web startup (spawned binary)", () => {
+describe("CLI ui startup (spawned binary)", () => {
   it(
     "starts the web server and serves /api/info",
     async () => {
       await withTmpLoctt(async ({ root }) => {
         const port = 30000 + Math.floor(Math.random() * 30000);
-        const child = execa(process.execPath, [cliEntry, "web", "--port", String(port)], {
+        const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
           cwd: root,
           env: process.env,
           reject: false,

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,6 +49,24 @@ describe("attachments", () => {
       const dst = getAttachmentPath(locttDir, taskId, "design.pdf");
       const st = await stat(dst);
       expect(st.isFile()).toBe(true);
+    });
+
+    // @verifies REL-18
+    it("stores an image byte-for-byte — no recompression (K95 keeps REL-18)", async () => {
+      // K95 renders images inline via <img> against the raw bytes, so
+      // the stored file MUST remain byte-identical to the source: no
+      // sharp re-encode, no thumbnail pipeline. Bytes chosen to include
+      // a NUL and high bytes so a text round-trip would corrupt them.
+      const original = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const src = join(sourceDir, "raw.png");
+      await writeFile(src, original);
+
+      const result = await attachFile({ locttDir, taskId, sourcePath: src });
+      expect(result.size).toBe(original.length);
+
+      const dst = getAttachmentPath(locttDir, taskId, "raw.png");
+      const stored = await readFile(dst);
+      expect(stored.equals(original)).toBe(true);
     });
 
     it("appends an attachment_added history entry", async () => {
@@ -149,6 +167,13 @@ describe("attachments", () => {
       ).rejects.toBeInstanceOf(AttachmentSourceError);
     });
 
+    it("rejects sources larger than maxBytes", async () => {
+      const src = await makeSource("big.bin", "x".repeat(1024));
+      await expect(
+        attachFile({ locttDir, taskId, sourcePath: src, maxBytes: 100 }),
+      ).rejects.toBeInstanceOf(AttachmentSourceError);
+    });
+
     it("creates attachments/ lazily", async () => {
       const before = getAttachmentsDir(locttDir, taskId);
       await expect(stat(before)).rejects.toThrow();
@@ -204,6 +229,84 @@ describe("attachments", () => {
       await expect(
         detachFile({ locttDir, taskId, name: "ok\0.txt" }),
       ).rejects.toThrow();
+    });
+  });
+
+  /**
+   * @verifies REL-C5
+   *
+   * REL-C5 asks for a 300-character basename, which cannot exist: the
+   * OS caps a single path component at 255 bytes, so the *source* file
+   * could never be created and the CLI path is unreachable. A
+   * 255-character name attaches fine.
+   *
+   * The refusal is still reachable through total path length, which is
+   * what these use — a deep `locttDir` plus a legal basename. That is
+   * the case's real content: a filesystem refusal must be named rather
+   * than surfacing a raw errno, and must leave nothing behind.
+   */
+  describe("a destination the filesystem refuses", () => {
+    let deepRoot: string;
+    let deepLoctt: string;
+
+    beforeEach(async () => {
+      deepRoot = await mkdtemp(join(tmpdir(), "loctt-deep-"));
+      // Nest until the attachments dir is as deep as the OS will take.
+      // The target is a directory that creates fine but leaves no room
+      // for a long basename inside it — the depth cannot be hardcoded
+      // because tmpdir()'s own length varies by platform.
+      let dir = deepRoot;
+      for (;;) {
+        const next = join(dir, "y".repeat(250));
+        try {
+          await mkdir(getAttachmentsDir(next, taskId), { recursive: true });
+          dir = next;
+        } catch {
+          break;
+        }
+      }
+      deepLoctt = dir;
+      // Sanity: we must have nested at least once, or the fixture is
+      // just an ordinary directory and proves nothing.
+      expect(deepLoctt).not.toBe(deepRoot);
+    });
+
+    afterEach(async () => {
+      await rm(deepRoot, { recursive: true, force: true });
+    });
+
+    it("names the file and the limit instead of leaking ENAMETOOLONG", async () => {
+      const name = `${"z".repeat(200)}.txt`;
+      const src = join(root, name);
+      await writeFile(src, "payload");
+
+      const err = await attachFile({ locttDir: deepLoctt, taskId, sourcePath: src })
+        .catch((e: unknown) => e) as Error;
+
+      // Guard the fixture: if the OS accepted the write, this test is
+      // asserting nothing and should fail loudly rather than pass.
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).not.toMatch(/ENAMETOOLONG/);
+      expect(err.message).toContain(name);
+      expect(err.message).toMatch(/255/);
+    });
+
+    it("leaves no partial file behind", async () => {
+      const name = `${"z".repeat(200)}.txt`;
+      const src = join(root, name);
+      await writeFile(src, "payload");
+
+      await attachFile({ locttDir: deepLoctt, taskId, sourcePath: src }).catch(() => undefined);
+
+      // On this platform the name is rejected before any descriptor is
+      // opened, so nothing is created and removing the `rm` in
+      // attachFile does not fail this test — it is a guard against a
+      // future failure mode (a partially-copied large file, or a
+      // filesystem that creates before erroring), not proof of today's.
+      // Kept because a truncated file left here would be silently
+      // overwritten by the next `attach --force` and read as real.
+      const listed = await readdir(getAttachmentsDir(deepLoctt, taskId)).catch(() => []);
+      expect(listed).toEqual([]);
     });
   });
 });

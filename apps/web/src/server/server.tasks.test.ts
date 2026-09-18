@@ -1,0 +1,163 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import type { TaskFrontmatterPublic } from "@loctt/contracts";
+import { initLoctt } from "@loctt/core";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { createWebApp } from "./server.js";
+
+/**
+ * `GET /api/tasks` — the M1.2 sort/pagination surface. Backed by a
+ * real tracker (the existing convention in this suite); core's own
+ * sort/query logic is tested in packages/core, so these assert the
+ * route maps `?sort=&dir=` correctly, validates `dir`, and paginates.
+ */
+describe("GET /api/tasks (sort + pagination)", () => {
+  let root: string;
+  let app: ReturnType<typeof createWebApp>;
+  let base: string;
+  const csrf = { "Content-Type": "application/json", "X-Loctt-Client": "test" };
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-web-tasks-"));
+    await initLoctt(root);
+    app = createWebApp({ root, port: 0 });
+    await app.start();
+    const addr = app.server.address();
+    const port = typeof addr === "object" && addr ? addr.port : app.port;
+    base = `http://127.0.0.1:${port}`;
+
+    for (const title of ["Apple", "Cherry", "Banana"]) {
+      await fetch(`${base}/api/tasks`, { method: "POST", headers: csrf, body: JSON.stringify({ title }) });
+    }
+  });
+
+  afterAll(async () => {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function list(qs: string): Promise<{ items: TaskFrontmatterPublic[]; total: number }> {
+    const res = await fetch(`${base}/api/tasks?${qs}`);
+    expect(res.status).toBe(200);
+    return (await res.json()) as { items: TaskFrontmatterPublic[]; total: number };
+  }
+
+  it("sorts ascending by a field", async () => {
+    const { items } = await list("sort=title&dir=asc");
+    expect(items.map(t => t.title)).toEqual(["Apple", "Banana", "Cherry"]);
+  });
+
+  it("sorts descending by a field", async () => {
+    const { items } = await list("sort=title&dir=desc");
+    expect(items.map(t => t.title)).toEqual(["Cherry", "Banana", "Apple"]);
+  });
+
+  it("defaults dir to ascending when only sort is given", async () => {
+    const { items } = await list("sort=title");
+    expect(items.map(t => t.title)).toEqual(["Apple", "Banana", "Cherry"]);
+  });
+
+  it("rejects an invalid dir with 400", async () => {
+    const res = await fetch(`${base}/api/tasks?sort=title&dir=sideways`);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("dir");
+  });
+
+  it("reports the full total independent of the page slice", async () => {
+    const { items, total } = await list("sort=title&dir=asc&limit=2&offset=0");
+    expect(items).toHaveLength(2);
+    expect(total).toBe(3);
+  });
+
+  it("applies a structured status filter (single value)", async () => {
+    // Set one task's status so a status filter narrows the set. The
+    // default workflow's first status is the create-time default; move
+    // "Cherry" to a different status, then filter to it.
+    const all = await list("sort=title&dir=asc");
+    const cherry = all.items.find(t => t.title === "Cherry");
+    const otherStatus = (await (await fetch(`${base}/api/workflow`)).json() as {
+      statuses: { key: string }[];
+    }).statuses.find(s => s.key !== cherry?.status)?.key;
+    expect(otherStatus).toBeDefined();
+    await fetch(`${base}/api/tasks/${cherry!.key}/set`, {
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ field: "status", value: otherStatus }),
+    });
+
+    const filtered = await list(`status=${otherStatus}`);
+    expect(filtered.items.map(t => t.title)).toEqual(["Cherry"]);
+  });
+
+  it("filters on a comma-separated multi-value param (B8)", async () => {
+    // The single-value path above is what every existing test used, and
+    // it builds `status = x`. Two or more values build a list, which
+    // was emitted as `status in [a, b]` — a form the tokenizer has no
+    // `[` token for, so this returned 500 rather than filtering.
+    // Own fixtures: these tests share one tracker, so relying on what
+    // sibling cases leave behind makes this pass or fail on file order.
+    const workflow = await (await fetch(`${base}/api/workflow`)).json() as {
+      statuses: { key: string }[];
+    };
+    const [s1, s2] = workflow.statuses.map(s => s.key) as [string, string];
+    expect(s2).toBeDefined();
+
+    const made: string[] = [];
+    for (const [title, status] of [["B8-one", s1], ["B8-two", s2], ["B8-three", s1]] as const) {
+      const res = await fetch(`${base}/api/tasks`, {
+        method: "POST", headers: csrf, body: JSON.stringify({ title }),
+      });
+      const { key } = await res.json() as { key: string };
+      made.push(title);
+      await fetch(`${base}/api/tasks/${key}/set`, {
+        method: "POST", headers: csrf, body: JSON.stringify({ field: "status", value: status }),
+      });
+    }
+
+    // Each value alone selects a strict subset, so a multi-value query
+    // matching everything cannot pass by accident.
+    const onlyS2 = await list(`status=${s2}&sort=title&dir=asc`);
+    expect(onlyS2.items.map(t => t.title)).toContain("B8-two");
+    expect(onlyS2.items.map(t => t.title)).not.toContain("B8-one");
+
+    const both = await list(`status=${s1},${s2}&sort=title&dir=asc`);
+    const titles = both.items.map(t => t.title);
+    for (const title of made) expect(titles).toContain(title);
+  });
+
+  it("excludes archived tasks by default, includes them with archived=true", async () => {
+    const all = await list("sort=title&dir=asc");
+    const apple = all.items.find(t => t.title === "Apple");
+    await fetch(`${base}/api/tasks/${apple!.key}/archive`, { method: "POST", headers: csrf });
+
+    const visible = await list("");
+    expect(visible.items.map(t => t.title)).not.toContain("Apple");
+
+    const withArchived = await list("archived=true");
+    expect(withArchived.items.map(t => t.title)).toContain("Apple");
+  });
+
+  // K25: idempotent archive/unarchive (behavior recorded in decisions.md K25/A127; no canonical case)
+  it("archiving an already-archived task returns 200, not a 500 (K25)", async () => {
+    const created = await fetch(`${base}/api/tasks`, {
+      method: "POST", headers: csrf, body: JSON.stringify({ title: "Twice" }),
+    });
+    const task = await created.json() as { key: string };
+
+    const first = await fetch(`${base}/api/tasks/${task.key}/archive`, { method: "POST", headers: csrf });
+    expect(first.status).toBe(200);
+
+    // K25: the second archive is an idempotent no-op success. Before it,
+    // core threw a plain TaskLifecycleError that the global handler could
+    // not classify, so this returned a generic 500 — the B16 fallout
+    // TSK-57 names.
+    const second = await fetch(`${base}/api/tasks/${task.key}/archive`, { method: "POST", headers: csrf });
+    expect(second.status).toBe(200);
+    const body = await second.json() as { archived?: boolean };
+    expect(body.archived).toBe(true);
+  });
+});

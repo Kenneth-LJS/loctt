@@ -9,6 +9,7 @@ import {
   loadAllTasks,
   loadOptionalConfigs,
   loadState,
+  resolveProjectIdForUser,
   saveState,
 } from "@loctt/core";
 import { describe, expect, it } from "vitest";
@@ -33,6 +34,8 @@ describe("perf: 100-task chain traversal", () => {
       // as parent. linkTask(taskId=child, type="parent", target=parentId)
       // gives us: T-1 (root) -> T-2 -> ... -> T-100 via the structural
       // `parent` edge (and inverse `child` written on the parent).
+      const project = await resolveProjectIdForUser(locttDir);
+
       const tBuildStart = performance.now();
       const created: Task[] = [];
       for (let i = 0; i < CHAIN_LENGTH; i++) {
@@ -40,33 +43,45 @@ describe("perf: 100-task chain traversal", () => {
           locttDir,
           state,
           workflowConfig,
-          options: { title: `chain ${i}` },
+          options: { project, title: `chain ${i}` },
         });
         created.push(task);
       }
       await saveState(locttDir, state);
 
       for (let i = 1; i < CHAIN_LENGTH; i++) {
+        const child = created[i];
+        const parent = created[i - 1];
+        if (child === undefined || parent === undefined) {
+          throw new Error(`chain build produced no task at index ${i}`);
+        }
         await linkTask({
           locttDir,
-          taskId: created[i].frontmatter.id,
+          taskId: child.frontmatter.id,
           type: "parent",
-          target: created[i - 1].frontmatter.id,
+          target: parent.frontmatter.id,
           workflowConfig,
         });
       }
       const buildMs = performance.now() - tBuildStart;
 
-      // Traverse from the root (T-1) following structural children using
-      // getChildren over the in-memory task set.
+      // Traverse from the root (T-1) following children over the
+      // in-memory task set. `getChildren` finds tasks *holding* an
+      // `axis` edge that targets the given id, so walking downward uses
+      // the `parent` axis — the edge each child stores pointing up — not
+      // the inverse `child` edge stored on the parent.
+      const chainRoot = created[0];
+      if (chainRoot === undefined) throw new Error("chain build produced no root task");
+
       const tTravStart = performance.now();
       const tasks = await loadAllTasks(locttDir);
       const visited: string[] = [];
-      const stack: string[] = [created[0].frontmatter.id];
+      const stack: string[] = [chainRoot.frontmatter.id];
       while (stack.length > 0) {
-        const id = stack.pop() as string;
+        const id = stack.pop();
+        if (id === undefined) break;
         visited.push(id);
-        const children = getChildren(tasks, id, workflowConfig);
+        const children = getChildren(tasks, id, "parent");
         for (const c of children) {
           stack.push(c.frontmatter.id);
         }

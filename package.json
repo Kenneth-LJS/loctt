@@ -7,16 +7,24 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "tsc --build && npm run build --workspace apps/cli --workspace apps/mcp",
-    "test": "npm run test --workspaces --if-present",
+    "build": "tsc --build && npm run build --workspace apps/cli --workspace apps/mcp && npm run build --workspace apps/web",
+    "dev": "npm run dev --workspace apps/web",
+    "dev:host": "npm run dev:host --workspace apps/web",
+    "test": "npm run test --workspaces --if-present && npm run test:tools",
+    "test:tools": "vitest run --config tools/vitest.config.ts",
+    "cases:index": "tsx tools/case-index/main.ts",
+    "cases:check": "tsx tools/case-index/main.ts --check",
+    "cases:coverage": "tsx tools/coverage/main.ts",
     "pretest:integration": "npm run build",
     "test:integration": "vitest run --config tests/vitest.integration.config.ts",
     "pretest:e2e": "npm run build",
     "test:e2e": "vitest run --config tests/vitest.e2e.config.ts",
     "test:perf": "vitest run --config tests/vitest.perf.config.ts",
+    "pretest:ui": "npm run build",
+    "test:ui": "playwright test --config tests/ui/playwright.config.ts",
     "llm:verify": "tsx tests/llm/lib/runner.ts",
     "clean": "npm run clean --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p tools && tsc --noEmit -p tests && tsc --noEmit -p tests/ui",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
@@ -24,9 +32,13 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^25.6.0",
+    "axe-core": "^4.13.0",
     "eslint": "^10.2.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "execa": "^9.6.1",
     "tsup": "^8.5.1",
@@ -34,5 +46,7 @@
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.2",
     "vitest": "^4.1.4"
-  }
+  },
+  "license": "MIT",
+  "version": "0.1.0"
 }

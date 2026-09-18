@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,6 +52,39 @@ describe("task show model", () => {
     expect(attachments.every(a => a.size > 0)).toBe(true);
   });
 
+  it("derives mime types from known extensions", async () => {
+    await writeTask(locttDir, "abc123", task);
+    const attachmentsDir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(attachmentsDir, { recursive: true });
+    await writeFile(join(attachmentsDir, "shot.png"), "x");
+    await writeFile(join(attachmentsDir, "clip.mp4"), "x");
+    await writeFile(join(attachmentsDir, "doc.pdf"), "x");
+
+    const attachments = await discoverAttachments(locttDir, "abc123");
+    const byName = Object.fromEntries(attachments.map(a => [a.name, a.mime]));
+    expect(byName["shot.png"]).toBe("image/png");
+    expect(byName["clip.mp4"]).toBe("video/mp4");
+    expect(byName["doc.pdf"]).toBe("application/pdf");
+  });
+
+  it("omits the mime field when the extension is unknown", async () => {
+    await writeTask(locttDir, "abc123", task);
+    const attachmentsDir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(attachmentsDir, { recursive: true });
+    await writeFile(join(attachmentsDir, "blob.xyz"), "x");
+    await writeFile(join(attachmentsDir, "README"), "x");
+
+    const attachments = await discoverAttachments(locttDir, "abc123");
+    const blob = attachments.find(a => a.name === "blob.xyz");
+    const readme = attachments.find(a => a.name === "README");
+    expect(blob?.mime).toBeUndefined();
+    expect(readme?.mime).toBeUndefined();
+    // Field is genuinely absent (not just undefined-on-property) so
+    // JSON.stringify omits it on the wire.
+    expect("mime" in (blob ?? {})).toBe(false);
+    expect("mime" in (readme ?? {})).toBe(false);
+  });
+
   it("returns empty array for nonexistent task directory", async () => {
     const attachments = await discoverAttachments(locttDir, "nonexistent");
     expect(attachments).toEqual([]);
@@ -66,10 +99,7 @@ describe("task show model", () => {
   it("does not list system files at the task root as attachments", async () => {
     await writeTask(locttDir, "abc123", task);
     const taskDir = getTaskDir(locttDir, "abc123");
-    // Drop both the new and legacy history filenames at the task root —
-    // neither should be reported as an attachment.
     await writeFile(join(taskDir, "_history.yaml"), "[]");
-    await writeFile(join(taskDir, "history.yaml"), "[]");
 
     const attachments = await discoverAttachments(locttDir, "abc123");
     expect(attachments).toEqual([]);
@@ -127,10 +157,15 @@ describe("task show model", () => {
       type: "blocks",
       target: "target-id",
       resolvedKey: "T-2",
+      // Title and status come along so a relationships panel can show
+      // what a linked task is without a request per edge. Resolved per
+      // call rather than stored on the edge, which would go stale.
+      resolvedTitle: "Target",
       missing: false,
     });
   });
 
+  // @verifies DEG-14
   it("marks relationship targets as missing when the task is gone", async () => {
     const sourceTask: Task = {
       frontmatter: {
@@ -148,5 +183,298 @@ describe("task show model", () => {
       target: "vanished-id",
       missing: true,
     });
+  });
+
+  /**
+   * @verifies REL-49
+   *
+   * **"There is no attachments directory" and "I could not read it"
+   * are different answers.** A bare `catch { return [] }` made them
+   * the same, so an unreadable directory rendered as
+   * "No attachments on this task yet" over a directory holding a
+   * file — ERR-1's prohibition, and REL-49's first bullet inverted.
+   *
+   * Found by the M2 gate and confirmed on the CLI: `loctt show`
+   * dropped the section silently too, so the fix is core rather than
+   * the web client.
+   */
+  // @verifies DEG-20
+  it("reports an unreadable attachments directory rather than an empty one", async () => {
+    const dir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "present.txt"), "x", "utf-8");
+
+    // Sanity: readable, so the failure below cannot be "there was
+    // never a file". Paired deliberately.
+    expect((await discoverAttachments(locttDir, "abc123")).map(a => a.name))
+      .toEqual(["present.txt"]);
+
+    await chmod(dir, 0o000);
+    try {
+      await expect(discoverAttachments(locttDir, "abc123")).rejects.toThrow(/EACCES|permission/i);
+    } finally {
+      await chmod(dir, 0o755);
+    }
+  });
+
+  /**
+   * @verifies REL-49
+   *
+   * The guard the fix must not lose: a task with no attachments has
+   * no directory at all, which is the common path and is *not* a
+   * failure. Without this, "throw on everything" would satisfy the
+   * test above.
+   */
+  it("still returns [] when the directory does not exist", async () => {
+    expect(await discoverAttachments(locttDir, "no-such-task")).toEqual([]);
+  });
+
+
+  /**
+   * @verifies REL-25
+   *
+   * **A corrupt task must not take its neighbours down with it.**
+   *
+   * Relationship resolution tolerated `TaskNotFoundError` and rethrew
+   * everything else, so one unparseable `task.md` made *every* task
+   * linking to it answer 500 — naming the corrupt task's ULID, which
+   * the user can neither read nor act on, about a task they did not
+   * ask for. Found by the M2 gate (F3).
+   *
+   * From this task's point of view, "the target is gone" and "the
+   * target will not parse" are the same broken edge. The corrupt
+   * task's own page still reports the parse error with its path and
+   * position — that is where the user can act on it.
+   */
+  // @verifies DEG-14
+  it("marks a link to an unparseable task as missing rather than failing the page", async () => {
+    const base: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    };
+    const source: Task = {
+      frontmatter: {
+        ...base.frontmatter,
+        relationships: [{ type: "blocks", target: "broken-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+
+    // A target on disk whose frontmatter will not parse.
+    await mkdir(getTaskDir(locttDir, "broken-id"), { recursive: true });
+    await writeFile(
+      join(getTaskDir(locttDir, "broken-id"), "task.md"),
+      '---\nid: broken-id\nkey: T-9\nstatus: "backlog\n---\n',
+      "utf-8",
+    );
+
+    const model = await buildShowModel(locttDir, source);
+    expect(model.relationships).toHaveLength(1);
+    expect(model.relationships[0]?.missing).toBe(true);
+  });
+
+  /**
+   * @verifies REL-25 (corruption sweep S4)
+   *
+   * A target with a FIELD-LOCAL corruption (a wrong-typed `title`) loads
+   * via the tolerant read, so its edge is NOT missing — before this it
+   * rendered as an ordinary untitled-but-fine row, disguising a corrupt
+   * task as a healthy one. The edge now carries `targetCorrupt: true`,
+   * keeps its key, and stays `missing: false` so the row still links.
+   */
+  // @verifies DEG-15
+  it("marks a resolved-but-corrupt target as corrupt, not missing", async () => {
+    const source: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        relationships: [{ type: "blocks", target: "corrupt-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+
+    // A target whose `title` is wrong-typed: field-local (K26), so the
+    // tolerant read returns a Task with `health` rather than throwing.
+    // id/key are valid so it is addressable and resolves.
+    await mkdir(getTaskDir(locttDir, "corrupt-id"), { recursive: true });
+    await writeFile(
+      join(getTaskDir(locttDir, "corrupt-id"), "task.md"),
+      "---\nid: corrupt-id\nkey: T-9\ntitle: [not, a, string]\n"
+      + "created_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\n---\n",
+      "utf-8",
+    );
+
+    const model = await buildShowModel(locttDir, source);
+    expect(model.relationships).toHaveLength(1);
+    const edge = model.relationships[0];
+    expect(edge?.missing).toBe(false);
+    expect(edge?.targetCorrupt).toBe(true);
+    // It still resolved to a real key — the row links and can be repaired.
+    expect(edge?.resolvedKey).toBe("T-9");
+  });
+
+  /**
+   * @verifies REL-25 (corruption sweep S4)
+   *
+   * An OBJECT-FATALLY unreadable target (a YAML syntax error) is on disk
+   * but cannot be turned into a Task, so it is `missing` from this task's
+   * point of view — but `targetCorrupt: true` distinguishes it from a
+   * *deleted* target. Before this it rendered identically to a link whose
+   * target had been removed, telling the user a file that exists was gone.
+   */
+  // @verifies DEG-15
+  it("marks an unreadable (object-fatal) target as missing AND corrupt", async () => {
+    const source: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        relationships: [{ type: "blocks", target: "broken-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+
+    await mkdir(getTaskDir(locttDir, "broken-id"), { recursive: true });
+    await writeFile(
+      join(getTaskDir(locttDir, "broken-id"), "task.md"),
+      '---\nid: broken-id\nkey: T-9\nstatus: "backlog\n---\n',
+      "utf-8",
+    );
+
+    const model = await buildShowModel(locttDir, source);
+    const edge = model.relationships[0];
+    expect(edge?.missing).toBe(true);
+    expect(edge?.targetCorrupt).toBe(true);
+  });
+
+  /**
+   * @verifies REL-24 (corruption sweep S4)
+   *
+   * The absent-vs-unreadable split: a target with no directory at all is
+   * `missing` but NOT `targetCorrupt` — a genuine dangling link, distinct
+   * from the object-fatal case above. This is the guard that keeps the
+   * unreadable test honest: if `targetCorrupt` were set unconditionally
+   * on every missing edge, this would go red.
+   */
+  // @verifies DEG-15
+  it("leaves a genuinely-absent target missing but not corrupt", async () => {
+    const source: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        relationships: [{ type: "blocks", target: "vanished-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+
+    const model = await buildShowModel(locttDir, source);
+    const edge = model.relationships[0];
+    expect(edge?.missing).toBe(true);
+    expect(edge?.targetCorrupt).toBeUndefined();
+  });
+
+  /**
+   * @verifies REL-25
+   *
+   * The guard the fix must not lose: a healthy target still resolves.
+   * Without this, marking every edge missing would satisfy the test
+   * above.
+   */
+  it("still resolves a healthy link target", async () => {
+    const target: Task = {
+      frontmatter: {
+        id: "live-id", key: "T-2", title: "Live",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    };
+    const source: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Source",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        relationships: [{ type: "blocks", target: "live-id" }],
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", source);
+    await writeTask(locttDir, "live-id", target);
+
+    const model = await buildShowModel(locttDir, source);
+    expect(model.relationships[0]?.missing).toBe(false);
+    expect(model.relationships[0]?.resolvedKey).toBe("T-2");
+  });
+
+  /**
+   * @verifies REL-49
+   *
+   * **The gate's F5, and the test whose absence caused it.**
+   *
+   * REL-49 was marked covered by two tags asserting only that
+   * `discoverAttachments` *throws* on an unreadable directory.
+   * Nothing asserted that a **caller survives** it — so when the
+   * throw was introduced (correctly, replacing a silent `[]`),
+   * `buildShowModel`'s `Promise.all` let it reject the whole model
+   * and the entire task read began failing on all three surfaces.
+   * The UI suite was 332/332 green while the app violated the case.
+   *
+   * "The section degrades" is the assertion. "The reader throws" is
+   * not, and was never enough.
+   */
+  // @verifies DEG-20
+  it("degrades only the attachments section when the directory is unreadable", async () => {
+    const task: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Survivor",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "still here",
+    };
+    await writeTask(locttDir, "abc123", task);
+    const dir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "present.txt"), "x", "utf-8");
+    await chmod(dir, 0o000);
+
+    try {
+      const model = await buildShowModel(locttDir, task);
+      // The task itself survives — the point of the case.
+      expect(model.task.body).toBe("still here");
+      expect(model.relationships).toEqual([]);
+      // The section says why, rather than claiming emptiness.
+      expect(model.attachments).toEqual([]);
+      expect(model.attachmentsError).toMatch(/EACCES|permission/i);
+    } finally {
+      await chmod(dir, 0o755);
+    }
+  });
+
+  /**
+   * @verifies REL-49
+   *
+   * The paired positive: a readable directory carries no error, so
+   * the guard above cannot pass by reporting a failure every time.
+   */
+  it("carries no attachmentsError when the directory reads fine", async () => {
+    const task: Task = {
+      frontmatter: {
+        id: "abc123", key: "T-1", title: "Fine",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      },
+      body: "",
+    };
+    await writeTask(locttDir, "abc123", task);
+    const dir = getAttachmentsDir(locttDir, "abc123");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "ok.txt"), "x", "utf-8");
+
+    const model = await buildShowModel(locttDir, task);
+    expect(model.attachmentsError).toBeUndefined();
+    expect(model.attachments.map(a => a.name)).toEqual(["ok.txt"]);
   });
 });

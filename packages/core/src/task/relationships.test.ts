@@ -51,9 +51,9 @@ describe("relationships", () => {
     relationships: [
       { key: "blocks", label: "Blocks", inverse: "blocked_by", inverse_label: "Blocked by" },
       { key: "blocked_by", label: "Blocked by", inverse: "blocks", inverse_label: "Blocks" },
-      { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", structural: true },
-      { key: "child", label: "Child", inverse: "parent", inverse_label: "Parent", structural: true },
-      { key: "related_to", label: "Related to", inverse: "related_to", inverse_label: "Related to" },
+      { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", graph: "tree" },
+      { key: "child", label: "Child", inverse: "parent", inverse_label: "Parent", graph: "tree" },
+      { key: "related_to", label: "Related to", kind: "symmetric" },
     ],
     custom_fields: [],
   };
@@ -97,6 +97,17 @@ describe("relationships", () => {
       const b = await readTask(locttDir, "b");
       expect(a.frontmatter.relationships).toEqual([{ type: "related_to", target: "b" }]);
       expect(b.frontmatter.relationships).toEqual([{ type: "related_to", target: "a" }]);
+    });
+
+    it("symmetric relationships record the same forward type on both endpoints", async () => {
+      // Both endpoints store `type: related_to` (the canonical key), never
+      // a separate inverse spelling. Distinguishes symmetric from directional.
+      await seedAB();
+      await linkTask({ locttDir, taskId: "a", type: "related_to", target: "b", workflowConfig: workflow });
+      const a = await readTask(locttDir, "a");
+      const b = await readTask(locttDir, "b");
+      expect(a.frontmatter.relationships?.[0]?.type).toBe("related_to");
+      expect(b.frontmatter.relationships?.[0]?.type).toBe("related_to");
     });
 
     it("writes history entries on both tasks reflecting their perspective", async () => {
@@ -184,7 +195,7 @@ describe("relationships", () => {
     });
   });
 
-  describe("structural cycle detection", () => {
+  describe("cycle detection on graph-constrained relationships", () => {
     const seedC: Task = {
       frontmatter: {
         id: "c",
@@ -196,22 +207,22 @@ describe("relationships", () => {
       body: "",
     };
 
-    it("rejects a direct cycle on a structural relationship", async () => {
+    it("rejects a direct cycle on a graph: tree relationship", async () => {
       await seedAB();
       await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: workflow });
       await expect(
         linkTask({ locttDir, taskId: "b", type: "parent", target: "a", workflowConfig: workflow }),
-      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+      ).rejects.toThrow(/cannot create cycle in relationship 'parent'/);
     });
 
-    it("rejects an indirect cycle on a structural relationship", async () => {
+    it("rejects an indirect cycle on a graph: tree relationship", async () => {
       await seedAB();
       await writeTask(locttDir, "c", seedC);
       await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: workflow });
       await linkTask({ locttDir, taskId: "b", type: "parent", target: "c", workflowConfig: workflow });
       await expect(
         linkTask({ locttDir, taskId: "c", type: "parent", target: "a", workflowConfig: workflow }),
-      ).rejects.toThrow(/cannot create cycle in structural relationship 'parent'/);
+      ).rejects.toThrow(/cannot create cycle in relationship 'parent'/);
     });
 
     it("allows multiple children of the same parent (no cycle)", async () => {
@@ -249,6 +260,49 @@ describe("relationships", () => {
       await linkTask({ locttDir, taskId: "c", type: "parent", target: "a", workflowConfig: workflow });
       const c = await readTask(locttDir, "c");
       expect(c.frontmatter.relationships?.some(r => r.type === "parent" && r.target === "a")).toBe(true);
+    });
+
+    /**
+     * Production-shaped workflow: only the forward direction is
+     * listed as a workflow entry. The inverse direction is reached
+     * only via `inverse`. Earlier code matched `r.key === type` and
+     * silently skipped cycle detection on inverse-key calls.
+     */
+    const inverseOnlyWorkflow: WorkflowConfig = {
+      key: { prefix: "T" },
+      statuses: [],
+      priorities: [],
+      task_types: [],
+      relationships: [
+        { key: "parent", label: "Parent", inverse: "child", inverse_label: "Child", graph: "tree" },
+      ],
+      custom_fields: [],
+    };
+
+    it("rejects a direct cycle when called via the inverse key", async () => {
+      await seedAB();
+      // A is parent of B (canonical edge: A -[parent]-> B).
+      await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: inverseOnlyWorkflow });
+      // Now try to make A "child" of B. Canonically that's the edge
+      // B -[parent]-> A, which would close the cycle. Pre-fix this
+      // silently succeeded because the cycle walker couldn't find
+      // a workflow entry whose `key === "child"`.
+      await expect(
+        linkTask({ locttDir, taskId: "a", type: "child", target: "b", workflowConfig: inverseOnlyWorkflow }),
+      ).rejects.toThrow(/cannot create cycle in relationship 'parent'/);
+    });
+
+    it("rejects an indirect cycle when the final link uses the inverse key", async () => {
+      await seedAB();
+      await writeTask(locttDir, "c", seedC);
+      // A is parent of B, B is parent of C.
+      await linkTask({ locttDir, taskId: "a", type: "parent", target: "b", workflowConfig: inverseOnlyWorkflow });
+      await linkTask({ locttDir, taskId: "b", type: "parent", target: "c", workflowConfig: inverseOnlyWorkflow });
+      // Now try to make A "child" of C — canonically C -[parent]-> A,
+      // which closes the chain.
+      await expect(
+        linkTask({ locttDir, taskId: "a", type: "child", target: "c", workflowConfig: inverseOnlyWorkflow }),
+      ).rejects.toThrow(/cannot create cycle in relationship 'parent'/);
     });
   });
 
@@ -326,6 +380,54 @@ describe("relationships", () => {
       await seedAB();
       await expect(unlinkTask({ locttDir, taskId: "a", type: "blocks", target: "b", workflowConfig: workflow }))
         .rejects.toThrow(RelationshipError);
+    });
+
+    it("removes a dangling edge whose target no longer exists on disk", async () => {
+      /**
+       * REL-24. A task deleted out of band leaves every edge pointing
+       * at it dangling, and this call is the only way the surviving
+       * side gets cleaned up.
+       *
+       * It used not to work anywhere. `readTask` on the vanished target
+       * raised a raw ENOENT out of the inverse branch, so the forward
+       * edge could not be removed from any surface — the web API
+       * answered 500 with the ENOENT path in `detail`, and
+       * `loctt unlink` exited 1. Both measured before the fix.
+       */
+      await writeTask(locttDir, "a", {
+        ...seedA,
+        frontmatter: {
+          ...seedA.frontmatter,
+          relationships: [
+            { type: "blocks", target: "vanished" },
+            { type: "blocks", target: "b" },
+          ],
+        },
+      });
+      await writeTask(locttDir, "b", {
+        ...seedB,
+        frontmatter: { ...seedB.frontmatter, relationships: [{ type: "blocked_by", target: "a" }] },
+      });
+      // `vanished` was never written, so its directory does not exist.
+
+      const updated = await unlinkTask({
+        locttDir, taskId: "a", type: "blocks", target: "vanished", workflowConfig: workflow,
+      });
+
+      // The dangling edge is gone...
+      expect(updated.frontmatter.relationships?.map(r => r.target)).toEqual(["b"]);
+      // ...and the live sibling is untouched, so the removal was
+      // targeted rather than a wholesale rewrite.
+      const b = await readTask(locttDir, "b");
+      expect(b.frontmatter.relationships).toEqual([{ type: "blocked_by", target: "a" }]);
+    });
+
+    it("still refuses when the target is missing AND the edge does not exist", async () => {
+      // The tolerance above must not become "any unlink succeeds".
+      await seedAB();
+      await expect(unlinkTask({
+        locttDir, taskId: "a", type: "blocks", target: "vanished", workflowConfig: workflow,
+      })).rejects.toThrow(RelationshipError);
     });
 
     it("works without a workflow config (forward-only)", async () => {

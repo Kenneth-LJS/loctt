@@ -1,0 +1,234 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Wire CSS variables into Tailwind's @theme so utilities like
+ * bg-canvas, text-text-primary, border-border-default, shadow-raised
+ * resolve through whichever scope (:root vs .dark) is active.
+ *
+ * Tailwind v4 exposes these as CSS variables under --color-*, etc., so
+ * keep the names predictable.
+ */
+@theme {
+  --color-bg-canvas: var(--bg-canvas);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-surface-raised: var(--bg-surface-raised);
+  --color-bg-muted: var(--bg-muted);
+  --color-bg-muted-hover: var(--bg-muted-hover);
+  --color-bg-row-hover: var(--bg-row-hover);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-border-control: var(--border-control);
+  --color-border-divider: var(--border-divider);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-disabled: var(--text-disabled);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-contrast: var(--accent-contrast);
+
+  --color-status-pending-fg: var(--status-pending-fg);
+  --color-status-pending-bg: var(--status-pending-bg);
+  --color-status-active-fg: var(--status-active-fg);
+  --color-status-active-bg: var(--status-active-bg);
+  --color-status-completed-fg: var(--status-completed-fg);
+  --color-status-completed-bg: var(--status-completed-bg);
+  --color-status-discarded-fg: var(--status-discarded-fg);
+  --color-status-discarded-bg: var(--status-discarded-bg);
+
+  --color-danger-fg: var(--feedback-danger-fg);
+  --color-danger-bg: var(--feedback-danger-bg);
+  --color-warn-fg: var(--feedback-warn-fg);
+  --color-warn-bg: var(--feedback-warn-bg);
+  --color-success-fg: var(--feedback-success-fg);
+  --color-success-bg: var(--feedback-success-bg);
+
+  --color-priority-low: var(--priority-low);
+  --color-priority-medium: var(--priority-medium);
+  --color-priority-high: var(--priority-high);
+  --color-priority-critical: var(--priority-critical);
+
+  /* Shadows and radii stay as raw CSS vars in tokens.css; Tailwind
+   * v4 picks them up automatically because the names match its
+   * canonical token shape (--radius-sm/md/lg → rounded-sm/md/lg,
+   * --shadow-raised/overlay → shadow-raised/shadow-overlay). Aliasing
+   * them under their original names inside @theme would be circular —
+   * Tailwind emits @theme entries as :root variables, and a
+   * `--radius-md: var(--radius-md)` line would resolve to itself.
+   */
+
+  --font-sans:
+    "Inter",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+
+  /* Named type scale (B1). Tailwind v4 emits a font-size utility from each
+   * `--text-*` key, so these are `text-body`/`text-label`/`text-meta`/
+   * `text-heading`. 13/12/11 are the overwhelming majority; 15 is the
+   * section-heading size; 10 folds into `text-meta` (11px vs 10px is
+   * imperceptible at these weights).
+   *
+   * A11Y-39: the values are now in **rem** so a user agent's text-only
+   * zoom scales them (WCAG 1.4.4). They are relative to the 14px root
+   * (`html { font-size: 87.5% }`), so `--text-body` = 13/14rem renders the
+   * same 13px at 100% zoom and doubles with the root at 200%. The inline
+   * `text-[…rem]` sizes across the component tree use the same rem = px/14
+   * basis, so nothing re-pins an absolute px size text-zoom cannot move —
+   * which is exactly the regression A95 recorded and this closes.
+   *
+   * NOTE the spacing scale (--space-*) is intentionally NOT wired into
+   * @theme: Tailwind's `--spacing-*` namespace backs the numeric
+   * `p-2`/`gap-3`/… utilities already in use everywhere (and, being rem,
+   * they already scale with text-zoom too). */
+  --text-meta: 0.7857rem;   /* 11px */
+  --text-label: 0.8571rem;  /* 12px */
+  --text-body: 0.9286rem;   /* 13px */
+  --text-heading: 1.0714rem; /* 15px */
+}
+
+/* Tailwind v4's `dark:` variant defaults to a media query. Override it
+ * to use the `.dark` class on <html> so useTheme can force a mode
+ * regardless of OS preference.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Minimal base styles. Component look-and-feel is composed from
+ * utilities; this section is just the things every page needs.
+ */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  /* A11Y-39 (WCAG 1.4.4): the app's 14px base is expressed as a
+   * percentage of the browser's own root, not a fixed pixel size, so a
+   * user agent's *text-only* zoom — which scales the root font size —
+   * flows through to everything sized in `rem`/`em`. 87.5% of the 16px
+   * default is 14px, the design base, at 100% zoom; at 200% text zoom the
+   * root becomes 28px and every rem-based size doubles with it.
+   *
+   * The component tree sizes type in rem (the `--text-*` scale and the
+   * `text-[…rem]` utilities), so nothing re-pins an absolute px size that
+   * would override this — the failure the earlier absolute scale had. */
+  /* The root carries the base size, as a percentage of the browser root
+   * so text-zoom scales it. `body` must NOT re-set an absolute or `1rem`
+   * size here: a `font-size: 1rem` on `<html>, body` would re-resolve on
+   * the root element to the browser's 16px and cancel the 87.5%. So body
+   * simply inherits the root. */
+  html {
+    font-size: 87.5%;
+  }
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    line-height: 1.43;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /*
+   * A11Y-16's second bullet: the focus indicator must be visible
+   * against the element's *own* background, "including on coloured
+   * elements (status chips, label pills, primary buttons)".
+   *
+   * The browser default is not enough, and this is measurable rather
+   * than a matter of taste. Chrome paints `outline: auto` in its own
+   * accent blue, so on the header's primary button — itself
+   * `bg-accent` — the ring came out at **1.05:1** against the button
+   * in light and 1.71:1 in dark. A sighted keyboard user could not
+   * tell the button was focused.
+   *
+   * `--text-primary` is near-black in light and near-white in dark,
+   * so it clears 3:1 against both the page and every accent surface
+   * the app paints. The offset puts the ring just outside the
+   * control, so a dark ring on a dark button still reads.
+   *
+   * `:focus-visible`, not `:focus`, so the ring appears for keyboard
+   * focus and not on every mouse click — while the third bullet still
+   * holds, because a control focused *by keyboard after being
+   * clicked* matches `:focus-visible`.
+   */
+  :focus-visible {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+  }
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+  }
+}
+
+/**
+ * Deep-link highlight (K76). `useScrollToHash` stamps `data-hash-target`
+ * on the element a hash points at (a comment, a settings field) for one
+ * cycle. A brief background flash draws the eye to it after the scroll.
+ * It is an *animation*, so the reduced-motion rule below suppresses it
+ * automatically (SHL-28) — the scroll still lands, only the flash is
+ * dropped. `scroll-margin-top` keeps a targeted element clear of any
+ * sticky header it would otherwise hide behind.
+ */
+[data-hash-target] {
+  animation: hash-target-flash 1.6s ease-out;
+  scroll-margin-top: 1rem;
+}
+@keyframes hash-target-flash {
+  0%, 30% { background-color: var(--accent-muted); }
+  100% { background-color: transparent; }
+}
+
+/**
+ * Reduced motion (SHL-28).
+ *
+ * A global rule rather than per-component `motion-reduce:` variants:
+ * the case's requirement is that *nothing* animates, and one component
+ * added later without the variant is a silent regression. States still
+ * change — this removes the animation, not the transition.
+ *
+ * `0.01ms` rather than `0`: a zero-duration transition never fires
+ * `transitionend`, and anything waiting on that event would hang. This
+ * is the value the WCAG technique recommends for the same reason.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Rich-editor (TipTap) empty-state placeholder (TSK-62).
+ *
+ * The `Placeholder` extension only emits a decoration — the class
+ * `is-editor-empty` and a `data-placeholder` attr on the first empty
+ * node. Rendering the text is the app's job; without this rule the
+ * placeholder is configured but invisible, so an empty rich editor reads
+ * as blank/broken (the exact thing TSK-62 forbids) while a test that
+ * only checks the attribute still passes. `::before` with
+ * `pointer-events:none` so it never intercepts a click into the editor. */
+.ProseMirror .is-editor-empty:first-child::before,
+.tiptap .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-tertiary);
+  pointer-events: none;
+  height: 0;
+  float: left;
+}

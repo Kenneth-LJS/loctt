@@ -2,9 +2,15 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "composite": false,
-    "rootDir": ".",
+    // `rootDir` is the repo root, not `tests/`: some suites import app
+    // sources directly (the in-process CLI adapter), which sit outside
+    // this directory. Scoping it to `tests/` produced TS6059 on every
+    // such import, which is why this tree went untypechecked. With
+    // `noEmit` there is no output layout for it to constrain anyway.
+    "rootDir": "..",
     "outDir": "dist",
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
   "include": [
     "**/*.ts"

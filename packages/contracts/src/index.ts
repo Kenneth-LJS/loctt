@@ -1,24 +1,156 @@
-export type { HistoryEntry, HistoryKind } from "./history.js";
+export {
+  HexColor,
+  IanaTimezone,
+  IsoDate,
+  SlugKey,
+} from "./brands.js";
 export type {
+  CalendarConfig,
+  HolidayDef,
+} from "./calendar.js";
+export {
+  CalendarConfigSchema,
+  HolidayDefSchema,
+} from "./calendar.js";
+export type { BrokenEntry } from "./health.js";
+export { BrokenEntrySchema } from "./health.js";
+export type { HistoryEntry, HistoryKind } from "./history.js";
+export { HISTORY_KINDS, HistoryEntrySchema } from "./history.js";
+export type { LabelDef, LabelsConfig } from "./labels.js";
+export {
+  LabelDefSchema,
+  LabelsConfigSchema,
+} from "./labels.js";
+export type { ListViewConfig, ListViewFilters, RawListViewConfig } from "./list-view.js";
+export {
+  BUILTIN_FILTER_FIELD_KEYS,
+  ListViewConfigSchema,
+  ListViewFiltersSchema,
+  RawListViewConfigSchema,
+} from "./list-view.js";
+export type { MilestoneDef, MilestonesConfig } from "./milestones.js";
+export {
+  MilestoneDefSchema,
+  MilestonesConfigSchema,
+} from "./milestones.js";
+export type { ProjectDef, ProjectsConfig } from "./projects.js";
+export {
+  ProjectDefSchema,
+  ProjectsConfigSchema,
+} from "./projects.js";
+export type {
+  BoardGrouping,
+  BrokenSavedQuery,
   QueriesConfig,
   QuerySort,
   SavedQuery,
+  SavedViewDisplay,
+  SavedViewMode,
   SortDirection,
 } from "./query.js";
+export {
+  BoardGroupingSchema,
+  BrokenSavedQuerySchema,
+  QueriesConfigSchema,
+  QuerySortSchema,
+  SavedQuerySchema,
+  SavedViewDisplaySchema,
+  SavedViewModeSchema,
+  SortDirectionSchema,
+} from "./query.js";
+export type {
+  AutoMergedField,
+  ConflictChoice,
+  ConflictFieldKind,
+  ConflictOption,
+  ConflictValue,
+  DeleteVsEditConflict,
+  ReconcileDecision,
+  ReconcilePlan,
+  RekeyLoser,
+  RekeyPlan,
+  RekeySkip,
+  RekeyTiebreak,
+  TaskConflictField,
+} from "./reconcile.js";
+export {
+  AutoMergedFieldSchema,
+  ConflictChoiceSchema,
+  ConflictFieldKindSchema,
+  ConflictOptionSchema,
+  ConflictValueSchema,
+  DELETE_VS_EDIT_FIELD,
+  DeleteVsEditConflictSchema,
+  ReconcileDecisionSchema,
+  ReconcilePlanSchema,
+  RekeyLoserSchema,
+  RekeyPlanSchema,
+  RekeySkipSchema,
+  RekeyTiebreakSchema,
+  TaskConflictFieldSchema,
+} from "./reconcile.js";
 export type {
   AttachmentResponse,
+  AttachResultResponse,
+  BulkResponse,
+  CommentResponse,
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
+  ErrorCode,
+  ErrorDataState,
+  ErrorItemFailure,
+  ErrorRecovery,
+  ErrorRecoveryKind,
+  ErrorResponse,
+  InitState,
+  IntegritySummaryResponse,
   LinkRequest,
   ListTasksRequest,
+  LossyConstructResponse,
+  MigrateResponse,
+  MigrationPlanResponse,
+  MigrationStepResponse,
+  RecentTaskResponse,
+  ResolvedRelationshipResponse,
+  SchemaStatusResponse,
   TaskResponse,
   TrackerInfoResponse,
   UpdateTaskRequest,
+  WorkflowUsageResponse,
 } from "./service.js";
+export type {
+  CreateViewRequest,
+  EditViewRequest,
+  InitRequest,
+  PutWorkflowRequest,
+  ValidateQueryRequest,
+} from "./service-schemas.js";
+export {
+  BulkArchiveRequestSchema,
+  BulkDeleteRequestSchema,
+  BulkLinkRequestSchema,
+  BulkMoveRequestSchema,
+  BulkSetRequestSchema,
+  CreateViewRequestSchema,
+  EditCommentRequestSchema,
+  EditViewRequestSchema,
+  InitRequestSchema,
+  MAX_BULK_REFS,
+  PostCommentRequestSchema,
+  PutWorkflowRequestSchema,
+  ValidateQueryRequestSchema,
+} from "./service-schemas.js";
+export type { SprintDef, SprintsConfig, SprintState } from "./sprints.js";
+export {
+  SprintDefSchema,
+  SprintsConfigSchema,
+  SprintStateSchema,
+} from "./sprints.js";
 export type {
   KeyAllocationState,
   LocttState,
+  PrefixRenameState,
   ReconcileState,
   SyncState,
 } from "./state.js";
@@ -27,21 +159,112 @@ export {
   DEFAULT_GIT_AUTO_PUSH,
   DEFAULT_GIT_BRANCH,
   DEFAULT_GIT_REMOTE,
+  KeyAllocationStateSchema,
+  LocttStateSchema,
+  PrefixRenameStateSchema,
+  ReconcileStateSchema,
+  SyncStateSchema,
 } from "./state.js";
 export type {
+  FieldHealth,
+  FieldHealthKind,
   Task,
   TaskFrontmatter,
+  TaskFrontmatterPublic,
   TaskRelationship,
 } from "./task.js";
+export {
+  isSortableTaskField,
+  projectTaskFrontmatter,
+  TaskFrontmatterPublicSchema,
+  TaskFrontmatterSchema,
+  TaskRelationshipSchema,
+} from "./task.js";
 export type {
+  CardLayout,
+  CardLayoutField,
+  EditorMode,
+  SidebarFilterId,
+  SidebarGroupId,
+  SidebarGroups,
+  SidebarItemId,
+  SidebarPins,
+  ThemePreference,
+  UserProfile,
+  UserSettings,
+  UsersList,
+} from "./users.js";
+export {
+  CARD_LAYOUT_FIELDS,
+  CardLayoutSchema,
+  EditorModeSchema,
+  EmailSchema,
+  SIDEBAR_FILTER_IDS,
+  SIDEBAR_GROUP_IDS,
+  SIDEBAR_ITEM_IDS,
+  SidebarGroupsSchema,
+  SidebarPinsSchema,
+  ThemePreferenceSchema,
+  UserProfileSchema,
+  UserSettingsSchema,
+  UsersListSchema,
+} from "./users.js";
+export type {
+  BoardColumnDef,
+  BoardsConfig,
+  CliConfig,
   CustomFieldDef,
   CustomFieldType,
   CustomFieldValueDef,
+  EstimationConfig,
+  EstimationScale,
+  EstimationUnit,
+  EstimationWeights,
+  IconString,
   KeyConfig,
   PriorityDef,
   RelationshipDef,
+  RelationshipGraph,
+  RelationshipKind,
   StatusCategory,
   StatusDef,
   TaskTypeDef,
+  TimelineConfig,
+  TimelineGrouping,
+  TimelineZoom,
+  WorkflowBroken,
   WorkflowConfig,
+} from "./workflow.js";
+export {
+  BoardColumnDefSchema,
+  BoardsConfigSchema,
+  CliConfigSchema,
+  CustomFieldDefSchema,
+  customFieldInScope,
+  customFieldsForType,
+  CustomFieldTypeSchema,
+  CustomFieldValueDefSchema,
+  defaultStatus,
+  effectiveInverseKey,
+  effectiveInverseLabel,
+  EstimationConfigSchema,
+  EstimationScaleSchema,
+  EstimationUnitSchema,
+  EstimationWeightsSchema,
+  IconStringSchema,
+  isSymmetricRelationship,
+  KeyConfigSchema,
+  PriorityDefSchema,
+  RelationshipDefSchema,
+  RelationshipGraphSchema,
+  RelationshipKindSchema,
+  relationshipTypeKeys,
+  StatusCategorySchema,
+  StatusDefSchema,
+  TaskTypeDefSchema,
+  TimelineConfigSchema,
+  TimelineGroupingSchema,
+  TimelineZoomSchema,
+  WorkflowBrokenSchema,
+  WorkflowConfigSchema,
 } from "./workflow.js";

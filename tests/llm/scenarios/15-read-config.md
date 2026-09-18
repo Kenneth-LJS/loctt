@@ -4,7 +4,7 @@
 
 **Prompt:** *"What statuses can I use for tasks in this project?"*
 
-**Expected tools called:** `get_config`. The agent should pull the status list from the returned config rather than guessing.
+**Expected tools called:** `get_workflow_config`. The agent should pull the status list from the returned config rather than guessing.
 
 **Expected end-state:** read-only. Agent's response should list the actual statuses configured in `workflow.yaml`.
 
