@@ -211,3 +211,153 @@ test("GIT-19: after a rekey the old-key URL resolves to the winner; an edit on t
 
   expect(errors).toEqual([]);
 });
+
+/**
+ * XS-43: an old key still resolves after a sync collision rekeys the task.
+ *
+ * @verifies XS-43
+ *
+ * The sync-collision fixture renumbers the local task (the loser) into a new
+ * key with its old key kept in `key_history`; the winner (the clone's
+ * earlier task) keeps the contested key. This spec proves the guarantee the
+ * case turns on — the pre-rekey key URL keeps resolving, so bookmarks and
+ * links written before the rekey do not 404:
+ *   - Bullet 1: `/tasks/<contested>` resolves to a real task rather than
+ *     404-ing. In a collision the contested key is *reused* by the winner
+ *     (the key index maps a key to one id), so it lands on the winner — the
+ *     honest "resolves, not 404" outcome the case requires. (A purely
+ *     retired key with the in-place historical-key note is TSK-2's move
+ *     scenario / XS-46's footer; XS-43 here is the collision, where the key
+ *     is reused.)
+ *   - Bullet 3: bookmarks/links written before the rekey keep working — the
+ *     same URL still opens a task, and the renumbered loser is also
+ *     reachable at its new key, so neither side is orphaned.
+ */
+test("XS-43: an old key still resolves after a sync-collision rekey (no 404, bookmark keeps working)", async ({
+  page, gitTracker,
+}) => {
+  const errors = guardPageErrors(page);
+  const { root, remoteRepo } = gitTracker;
+
+  const [baseKey] = await gitTracker.seed(["base"]);
+  expect(baseKey).toBeDefined();
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.run(["git", "publish"]);
+
+  const [localKey] = await gitTracker.seed(["local next"]);
+  const contested = localKey as string;
+
+  await createCollidingFromOtherClone(remoteRepo, root, "clone next");
+
+  await gotoSync(page, gitTracker.baseURL);
+  await page.getByTestId("git-sync").click();
+  await expect(page.getByTestId("git-rekey-preview")).toBeVisible();
+  await page.getByTestId("git-rekey-confirm").click();
+  await expect(page.getByTestId("git-rekey-applied")).toBeVisible();
+
+  // Find the loser's NEW key (the task titled "local next"), and confirm the
+  // contested key is now in its key_history (the rekey retired it there).
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  const { readdir } = await import("node:fs/promises");
+  let loserKey = "";
+  let loserRaw = "";
+  for (const id of await readdir(tasksDir)) {
+    const raw = await readFile(path.join(tasksDir, id, "task.md"), "utf8").catch(() => "");
+    if (/title:\s*local next/.test(raw)) {
+      loserKey = (/^key:\s*(\S+)/m.exec(raw)?.[1]) ?? "";
+      loserRaw = raw;
+    }
+  }
+  expect(loserKey).not.toEqual("");
+  expect(loserKey).not.toEqual(contested);
+  // The old key was retired into the loser's key_history — the mechanism
+  // that keeps it resolving.
+  expect(loserRaw).toMatch(new RegExp(`key_history:[\\s\\S]*${contested}`, "m"));
+
+  // Bullet 1: the pre-rekey key URL resolves rather than 404-ing — a
+  // bookmark keeps working. It lands on a real task with a live key chip
+  // (the winner, which reused the contested key).
+  await page.goto(`${gitTracker.baseURL}/tasks/${contested}`);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.getByTestId("task-key-chip")).toHaveText(contested);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("clone next");
+
+  // Bullet 3: the renumbered loser is not orphaned — its new-key URL opens
+  // it, so no link is left pointing at a dead key.
+  await page.goto(`${gitTracker.baseURL}/tasks/${loserKey}`);
+  await expect(page.getByTestId("task-key-chip")).toHaveText(loserKey);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("local next");
+
+  expect(errors).toEqual([]);
+});
+
+/**
+ * XS-45: relationship links survive a rekey.
+ *
+ * @verifies XS-45
+ *
+ * A link is stored by the target's ULID, so a rekey of the target only
+ * changes the label the source resolves it to. This spec links a stable
+ * source task to the task that will lose the collision, rekeys via the
+ * collision fixture, and asserts the source's Relationships panel still
+ * resolves the link to the target's NEW key — never `missing`, never a raw
+ * ULID — and that following it lands on the target.
+ */
+test("XS-45: a relationship link survives a rekey of its target", async ({
+  page, gitTracker,
+}) => {
+  const errors = guardPageErrors(page);
+  const { root, remoteRepo } = gitTracker;
+
+  // A stable source ("holder") published so both clones share the counter.
+  const [baseKey] = await gitTracker.seed(["holder"]);
+  const holderKey = baseKey as string;
+  await gitTracker.run(["git", "enable"]);
+  await gitTracker.run(["git", "publish"]);
+
+  // The task that will lose the collision and be renumbered.
+  const [localKey] = await gitTracker.seed(["local next"]);
+  const contested = localKey as string;
+
+  // Link holder → the soon-to-be-rekeyed task, by its current key.
+  await gitTracker.run(["link", holderKey, "blocks", contested]);
+
+  await createCollidingFromOtherClone(remoteRepo, root, "clone next");
+
+  await gotoSync(page, gitTracker.baseURL);
+  await page.getByTestId("git-sync").click();
+  await expect(page.getByTestId("git-rekey-preview")).toBeVisible();
+  await page.getByTestId("git-rekey-confirm").click();
+  await expect(page.getByTestId("git-rekey-applied")).toBeVisible();
+
+  // The loser's NEW key.
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  const { readdir } = await import("node:fs/promises");
+  let loserKey = "";
+  for (const id of await readdir(tasksDir)) {
+    const raw = await readFile(path.join(tasksDir, id, "task.md"), "utf8").catch(() => "");
+    if (/title:\s*local next/.test(raw)) {
+      loserKey = (/^key:\s*(\S+)/m.exec(raw)?.[1]) ?? "";
+    }
+  }
+  expect(loserKey).not.toEqual("");
+  expect(loserKey).not.toEqual(contested);
+
+  // The holder's Relationships panel resolves the link to the target's NEW
+  // key — the rename only changed the label. Never `missing`, never a ULID.
+  await page.goto(`${gitTracker.baseURL}/tasks/${holderKey}`);
+  const row = page.locator('[data-group="blocks"] [data-testid="relationship-row"]');
+  await expect(row).toHaveCount(1);
+  // The row resolved (not broken/missing) and shows the target's NEW key.
+  await expect(row).toHaveAttribute("data-missing", "false");
+  await expect(row).toContainText(loserKey);
+  // The stored ULID is never shown where a key is available.
+  await expect(row).not.toContainText(/[0-9A-HJKMNP-TV-Z]{26}/);
+
+  // The link is clickable and lands on the target.
+  await row.getByRole("link").first().click();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("local next");
+  await expect(page.getByTestId("task-key-chip")).toHaveText(loserKey);
+
+  expect(errors).toEqual([]);
+});

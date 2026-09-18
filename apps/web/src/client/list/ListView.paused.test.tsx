@@ -34,6 +34,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createQueryClient } from "../api/queryClient.ts";
 import { listSearchSchema } from "../router/listSearch.ts";
+import { ServerUnreachableBanner } from "../shell/ServerUnreachableBanner.tsx";
 import { ListView } from "./ListView.tsx";
 
 function stubFetch(handler: (path: string) => Response | Promise<Response>) {
@@ -262,4 +263,119 @@ describe("ListView while the browser reports offline", () => {
     await screen.findByText("Back again", undefined, { timeout: 15_000 });
     expect(screen.queryByRole("alert")).toBeNull();
   }, 20_000);
+});
+
+/**
+ * XS-56 (assembly): the UI never presents stale data as authoritative when
+ * it knows it is stale.
+ *
+ * @verifies XS-56
+ *
+ * This ties together the two mechanisms the case turns on, in one tree with
+ * one shared query client — the state a server dying with `/list` open
+ * produces:
+ *   - Bullet 1: the already-rendered rows are NOT wiped to empty when the
+ *     *same-key* refetch fails — `ListView`'s `hasRealData` keeps real pages
+ *     for the current key on the screen.
+ *   - Bullet 2: the app shows an explicit, app-level indication it cannot
+ *     reach the tracker — `ServerUnreachableBanner` (mounted alongside the
+ *     list, as the real shell mounts it) speaks the moment a query that had
+ *     answered later fails with no envelope.
+ *   - Bullet 3: a write attempted during the outage fails loudly (the
+ *     mutation rejects) rather than optimistically appearing to succeed.
+ *   - Bullet 4: when the server returns, the banner clears on its own and
+ *     the data refreshes, with no reload and no click.
+ *
+ * The per-mechanism halves are locked elsewhere (ERR-1/ERR-2 above; SHL-41
+ * in ServerUnreachableBanner.test.tsx). What this asserts that they do not
+ * is the *assembly*: stale rows staying put UNDER the cannot-reach banner,
+ * with a write refused, all at once.
+ */
+describe("XS-56: the list never presents stale data as authoritative", () => {
+  it("keeps rows under a cannot-reach banner during an outage, refuses a write, and recovers", async () => {
+    let down = false;
+    const stub = vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = raw.replace(/^https?:\/\/[^/]+/, "");
+      const method = (init?.method ?? "GET").toUpperCase();
+      // A write during the outage must not appear to succeed.
+      if (method !== "GET") {
+        return down
+          ? Promise.reject(new TypeError("Failed to fetch"))
+          : Promise.resolve(ok({ frontmatter: { id: "t1", key: "WEB-1", title: "Held task" } }));
+      }
+      if (path.startsWith("/api/tasks")) {
+        if (down) return Promise.reject(new TypeError("Failed to fetch"));
+        return Promise.resolve(ok({
+          items: [{
+            id: "t1", key: "WEB-1", title: "Held task",
+            created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+          }],
+          total: 1, offset: 0, limit: 50,
+        }));
+      }
+      return Promise.resolve(ok({ items: [], total: 0, offset: 0, limit: 100 }));
+    });
+
+    const qc = createQueryClient();
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: listSearchSchema,
+      component: ListView,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: ["/list"] }),
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ServerUnreachableBanner />
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+
+    // Rows render from a live server.
+    await screen.findByText("Held task");
+    expect(screen.queryByRole("status")).toBeNull();
+
+    // The server dies. Force a same-key refetch (the poll / a Try now).
+    down = true;
+    await new Promise(r => setTimeout(r, 5));
+    void qc.refetchQueries();
+
+    // Bullet 2: the app says it cannot reach the tracker.
+    await screen.findByRole("status", undefined, { timeout: 5_000 });
+    // Bullet 1: the already-rendered rows are NOT wiped to an empty state —
+    // the stale rows stay put rather than reading as data loss, and the
+    // empty-state copy never appears.
+    expect(screen.getByText("Held task")).toBeTruthy();
+    expect(screen.queryByText(/No tasks match these filters/i)).toBeNull();
+
+    // Bullet 3: a write during the outage fails loudly rather than
+    // optimistically appearing to succeed.
+    await expect(
+      qc.getMutationCache().build(qc, {
+        mutationFn: async () => {
+          const res = await fetch("/api/tasks/WEB-1", {
+            method: "PATCH",
+            body: JSON.stringify({ title: "edited offline" }),
+          });
+          return res;
+        },
+      }).execute(undefined),
+    ).rejects.toThrow(/Failed to fetch/);
+    // The optimistic edit never became a visible row.
+    expect(screen.queryByText("edited offline")).toBeNull();
+
+    // Bullet 4: the server returns; the banner clears on its own and the
+    // data refreshes with no reload and no click.
+    down = false;
+    void qc.refetchQueries();
+    await waitFor(() => { expect(screen.queryByRole("status")).toBeNull(); }, { timeout: 5_000 });
+    expect(screen.getByText("Held task")).toBeTruthy();
+
+    stub.mockRestore();
+  }, 15_000);
 });

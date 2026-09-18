@@ -26,6 +26,12 @@ describe("slugify", () => {
 });
 
 describe("validateNewProject", () => {
+  // @verifies ONB-18
+  // The validation half of ONB-18's second bullet: a colliding prefix is
+  // rejected with a message that names the owning project AND states the
+  // rule ("must be unique") so the next action — pick a different prefix —
+  // is clear. The field-attachment and submit-block bullets are asserted by
+  // the flow-settings-projects-users.spec.ts PRU-19/ONB-18 UI test.
   it("rejects a prefix already held, naming the project that holds it (PRU-19)", () => {
     const problems = validateNewProject(
       { name: "New", prefix: "WEB", slug: "new" },

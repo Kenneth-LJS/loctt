@@ -256,3 +256,60 @@ describe("duplicateTask — reports dropped corrupt fields (DUP-H1)", () => {
     expect(dropped).toEqual([]);
   });
 });
+
+/**
+ * DEG-27 (duplicate half): a duplicate over a corrupt task carries health
+ * correctly — a corrupt scalar field is lifted into health and NOT copied
+ * (asserted by the DUP-H1 block above), and when `project` itself is corrupt
+ * the duplicate REFUSES rather than minting a key under a broken project
+ * (§ 13.3). The merge half of DEG-27 is explicitly "cannot be satisfied yet"
+ * in the case text (a write path with no test, cross-ref DEG-21), so this
+ * covers exactly the buildable half — same precedent as DEG-21, which is
+ * tagged despite an unbuildable remainder.
+ *
+ * @verifies DEG-27
+ */
+describe("duplicateTask — refuses over a corrupt project (DEG-27)", () => {
+  it("refuses when the source's project field is corrupt, naming the cause", async () => {
+    // Create a healthy source, then corrupt its `project` on disk so it
+    // loads as a health finding rather than a usable project reference.
+    const src = await createTask({
+      locttDir,
+      state: await loadState(locttDir),
+      options: { title: "Src", project: projectId },
+    });
+    const file = getTaskFilePath(locttDir, src.frontmatter.id);
+    const { readFile } = await import("node:fs/promises");
+    const raw = await readFile(file, "utf-8");
+    // A wrong-typed project (a number) is lifted into health, so
+    // `fm.project` reads undefined and the duplicate cannot allocate a key.
+    await writeFile(file, raw.replace(/project:.*/, "project: 42"), "utf-8");
+
+    const state = await loadState(locttDir);
+    await expect(
+      duplicateTask({ locttDir, state, sourceRef: src.frontmatter.id }),
+    ).rejects.toThrow(/project is corrupt/);
+  });
+
+  it("allows the duplicate when a --project override is supplied instead", async () => {
+    // The refusal is specifically about a missing/broken project with no
+    // way to allocate a key — an override provides one, so it succeeds.
+    const src = await createTask({
+      locttDir,
+      state: await loadState(locttDir),
+      options: { title: "Src", project: projectId },
+    });
+    const file = getTaskFilePath(locttDir, src.frontmatter.id);
+    const { readFile } = await import("node:fs/promises");
+    const raw = await readFile(file, "utf-8");
+    await writeFile(file, raw.replace(/project:.*/, "project: 42"), "utf-8");
+
+    const state = await loadState(locttDir);
+    const { task } = await duplicateTask({
+      locttDir, state, sourceRef: src.frontmatter.id,
+      overrides: { project: projectId },
+    });
+    await saveState(locttDir, state);
+    expect(task.frontmatter.project).toBe(projectId);
+  });
+});
