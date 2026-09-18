@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ActivityPanel } from "../activity/ActivityPanel.tsx";
 import { ApiError } from "../api/client.ts";
@@ -67,6 +67,7 @@ export function TaskDetail({
   taskRef,
   activityTab,
   rekeyedFrom,
+  rekeyedWhileOpen,
 }: {
   readonly taskRef: string;
   /** The activity tab from `?tab=` (CMT-18); undefined → the default. */
@@ -78,6 +79,14 @@ export function TaskDetail({
    * to the current key.
    */
   readonly rekeyedFrom?: string;
+  /**
+   * GIT-19. `true` only when the follow above came from a tab that was
+   * *open* on this task when it was renumbered elsewhere (from
+   * `?rekeyedWhileOpen=`). It selects the "renumbered while you had it open"
+   * note; a cold navigation to a retired key leaves it unset and shows the
+   * plain retired-key note (TSK-2).
+   */
+  readonly rekeyedWhileOpen?: boolean;
 }) {
   const task = useTask(taskRef);
   const queryClient = useQueryClient();
@@ -150,20 +159,44 @@ export function TaskDetail({
    *
    * `replace` so the retired-key URL does not become a back-stack entry
    * that would just redirect again. Skipped once we have already followed
-   * (`taskRef === currentKey`), and skipped for a cold navigation through a
-   * retired key (there `rekeyedFrom` is unset and the note already fires on
-   * `navigatedByRetired` — the tab was never showing the old key as live).
+   * (`taskRef === currentKey`).
+   *
+   * The follow fires for BOTH a cold navigation straight to a retired key
+   * (TSK-2's move scenario) and a tab renumbered while it sat open. What
+   * differs is the *note copy*, not whether we follow: a tab that was open
+   * during the rekey gets "renumbered while you had it open"; a plain
+   * retired-key visit gets "…which is a retired key for this task. Its
+   * current key is …" (TSK-2 / XS-43). Both are told apart by whether this
+   * tab ever observed `taskRef === currentKey` — only a tab that once showed
+   * this key as live was actually renumbered underneath the user. That
+   * signal is a ref (reset on each URL ref) and cannot survive the redirect,
+   * so it is stamped into the URL as `rekeyedWhileOpen` when true; the note
+   * reads it back after the redirect to pick the copy. A cold nav follows
+   * without the marker and shows the retired-key copy.
    */
   const currentKey = task.data?.frontmatter.key;
   const currentHistory = task.data?.frontmatter.key_history;
+  const sawLiveRef = useRef(false);
+  useEffect(() => {
+    // New URL ref — forget whatever a previous task looked like.
+    sawLiveRef.current = false;
+  }, [taskRef]);
+  useEffect(() => {
+    if (currentKey === taskRef) sawLiveRef.current = true;
+  }, [currentKey, taskRef]);
   useEffect(() => {
     if (currentKey === undefined || currentKey === taskRef) return;
     if (rekeyedFrom !== undefined) return;
     if (!(currentHistory ?? []).includes(taskRef)) return;
+    const whileOpen = sawLiveRef.current;
     void navigate({
       to: "/tasks/$key",
       params: { key: currentKey },
-      search: prev => ({ ...prev, rekeyedFrom: taskRef }),
+      search: prev => ({
+        ...prev,
+        rekeyedFrom: taskRef,
+        ...(whileOpen ? { rekeyedWhileOpen: true } : {}),
+      }),
       replace: true,
     });
   }, [currentKey, currentHistory, taskRef, rekeyedFrom, navigate]);
@@ -439,13 +472,21 @@ export function TaskDetail({
             </h1>
             {navigatedByRetired && (
               <p className="mt-1.5 text-[0.8571rem] text-text-tertiary">
-                {rekeyedFrom !== undefined && rekeyedFrom === retiredKey
+                {/* GIT-19: the "renumbered while you had it open" copy is
+                    reserved for a tab that was OPEN on this task when it was
+                    rekeyed elsewhere (`rekeyedWhileOpen`). A cold navigation
+                    to a retired key — which also follows to the live key —
+                    keeps the plain retired-key copy TSK-2 / XS-43 require.
+                    Keying on `rekeyedFrom === retiredKey` alone conflated the
+                    two, because the cold-nav follow also stamps
+                    `rekeyedFrom`. */}
+                {rekeyedWhileOpen === true
                   ? "This task was renumbered while you had it open. It used to be "
                   : "You followed "}
                 <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.7857rem]">
                   {retiredKey}
                 </code>
-                {rekeyedFrom !== undefined && rekeyedFrom === retiredKey
+                {rekeyedWhileOpen === true
                   ? ". Its current key is "
                   : ", which is a retired key for this task. Its current key is "}
                 <strong className="font-medium text-text-primary">{fm.key}</strong>.

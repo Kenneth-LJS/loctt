@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   createTask,
+  disableGit,
   enableGit,
   initLoctt,
   loadProjectsConfig,
@@ -354,6 +355,47 @@ describe("web git error classification", () => {
     // git line.
     expect(body.message).toContain(".worktree-publish");
     expect(body.message.toLowerCase()).toContain("missing");
+  });
+
+  // @verifies GIT-25
+  it("surfaces a pre-existing loctt branch as 409 branch_adopt_needed, carrying the branch + head on the wire", { timeout: 30_000 }, async () => {
+    // The harness enables + publishes (creating the loctt branch), so the
+    // branch is LocTT-written and present. Disable so the next enable is a
+    // fresh one that must rediscover the branch — the "previous setup" the
+    // case describes.
+    const { root, base } = await harness();
+    const locttDir = join(root, ".loctt");
+    const head = execFileSync("git", ["-C", root, "rev-parse", "loctt"], { encoding: "utf8" }).trim();
+    expect(head).toMatch(/^[0-9a-f]{40}$/);
+    await disableGit(locttDir);
+
+    // Enable without confirming adoption: a client-actionable refusal (409,
+    // not the retryable 500), reporting the decision rather than adopting.
+    const res = await fetch(`${base}/api/git/enable`, {
+      method: "POST",
+      headers: { "X-Loctt-Client": "test", "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json() as {
+      code: string;
+      message: string;
+      data_state?: string;
+      recovery?: { kind: string };
+      branch_adopt_needed?: { branch: string; branch_head: string };
+    };
+    expect(body.code).toBe("branch_adopt_needed");
+    expect(body.code).not.toBe("git_failed");
+    expect(body.data_state).toBe("not_saved");
+    // The panel reads the branch + head off the envelope to render the
+    // adopt control WITHOUT a second fetch. This is the field the `error()`
+    // serializer used to drop, which left the client falling back to the
+    // generic ErrorState and never showing the adopt-or-stop control — the
+    // GIT-25 regression the full UI suite caught (2026-09-18). Asserting the
+    // wire, not a mocked envelope, is what closes that seam.
+    expect(body.branch_adopt_needed).toBeDefined();
+    expect(body.branch_adopt_needed?.branch).toBe("loctt");
+    expect(body.branch_adopt_needed?.branch_head).toBe(head);
   });
 
   // @verifies GIT-34

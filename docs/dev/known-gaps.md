@@ -3336,37 +3336,75 @@ quoter across all three producers (core builder, `buildDsl.ts`, server
 search/facet DSL). Out of scope for the K83 follow-up; recorded so it
 isn't re-discovered as new.
 
-## Full-UI-suite run (2026-09-18) caught 4 real failures — 3 are GIT-19 regressions, 1 is GIT-25
+## Full-UI-suite run (2026-09-18) caught 4 real failures — all 4 fixed (2026-09-18)
 
 Ran the complete Playwright suite (`--config tests/ui/playwright.config.ts`,
 28 specs, workers=2): **837 passed, 5 failed**. Each failure was re-run in
-ISOLATION (workers=1) to separate flake from regression:
+ISOLATION (workers=1) to separate flake from regression. **All 4 real
+failures are now fixed; SPR-6 remains the documented parallel-load flake.**
 
 - **SPR-6** (`flow-sprints.spec.ts:414`) — passes in isolation. The
-  documented parallel-load flake (known-gaps SPR-6 above). Not a defect.
-- **TSK-2** (`flow-tasks.spec.ts:167`) — **REAL, fails isolated.** A task
-  reached by a RETIRED key must show "retired key" wording; the header now
-  shows GIT-19's follow-note copy instead ("This task was renumbered while
-  you had it open. It used to be T-1"). GIT-19 (commit 9938221,
-  `?rekeyedFrom=`) changed the header's retired-key messaging and TSK-2 was
-  not re-checked against it. The rekeyedFrom follow-note (for a tab that was
-  OPEN during a rekey) is bleeding into the cold-navigation-to-a-retired-key
-  case, which should keep the plain "retired key / current key is X" note.
-- **XS-7** (`flow-task-failure.spec.ts:93`) + **TSK-34** (`:178`) — **REAL,
-  fail isolated.** Both assert the setField request body is exactly
-  `{field, value}`; GIT-19 added `expectedId` (the wrong-task precondition),
-  so the body now has 3 keys. XS-7's actual intent is "only the changed
-  field, not a whole-frontmatter fragment" — `expectedId` is a precondition,
-  not a frontmatter field, so it does not violate the intent, but the tests'
-  literal key-set assertion must be updated to allow the precondition while
-  still guarding against frontmatter bleed. (Edit-a-green-test-because-the-
-  behavior-legitimately-changed, per CLAUDE.md — preserve the no-bleed
-  intent, don't just widen the assertion.)
-- **GIT-25** (`flow-git-sync.spec.ts:668`) — **fails isolated:**
-  `getByTestId('git-adopt-branch')` never appears. The GIT-25 adopt-branch
-  control is not rendering in the e2e path (the implementing agent reported
-  this spec green headless — needs a fresh diagnosis: setup-order dependency
-  vs a genuine render gap in the adopt flow).
+  documented parallel-load flake (known-gaps SPR-6 above). Not a defect;
+  NOT touched.
+- **TSK-2** (`flow-tasks.spec.ts:167`) — **REAL, was failing isolated.**
+  A task reached by a RETIRED key must show "retired key" wording; the
+  header was showing GIT-19's follow-note copy ("renumbered while you had it
+  open") instead. **Root cause:** the follow-the-rekey redirect in
+  `TaskDetail.tsx` fired for a cold navigation to a retired key too (its
+  first fetch already returns `currentKey !== taskRef`, indistinguishable
+  from a mid-session rekey), and the note copy keyed on
+  `rekeyedFrom === retiredKey` — which the cold-nav follow also satisfies —
+  so the "renumbered while you had it open" copy bled into TSK-2's scenario.
+  **Fix:** the follow still fires for both scenarios (a cold nav to a retired
+  key also normalizes to the live key, which `flow-task-meta.spec.ts:1997`'s
+  GIT-19 test requires — see below), but a `sawLiveRef` records whether this
+  tab ever observed `taskRef === currentKey`, and only a tab that lived
+  through the rekey stamps `?rekeyedWhileOpen=` on the redirect. The note
+  copy now keys on `rekeyedWhileOpen`: a cold nav shows "…which is a retired
+  key for this task. Its current key is X" (TSK-2 / XS-43); a tab open during
+  the rekey shows "renumbered while you had it open" (GIT-19). Both
+  `flow-task-meta.spec.ts:1997` (GIT-19 follow) and `flow-git-rekey.spec.ts`
+  (GIT-19/XS-43/XS-45) stay green. Touched: `TaskDetail.tsx`,
+  `taskDetailSearch.ts`, `router/index.tsx`.
+- **XS-7** (`flow-task-failure.spec.ts:93`) + **TSK-34** (`:190`) — **REAL,
+  were failing isolated.** Both asserted the setField request body key-set is
+  exactly `{field, value}`; GIT-19 (commit 9938221) legitimately added
+  `expectedId` (the wrong-task precondition — the client sends the stable
+  ULID so a stale-tab edit can't hit the wrong task), so the body now has 3
+  keys. **Fix:** both assertions widened to `["expectedId","field","value"]`
+  with a `typeof expectedId === "string"` check, and the no-frontmatter-bleed
+  guards (the forbidden-key list on the serialized body; the `status`/`title`
+  absence checks) are kept. Green-test edit justified because the behavior
+  legitimately changed — noted in the test comments citing CLAUDE.md's
+  edit-a-green-test rule. The no-whole-object intent is preserved, not just
+  widened away. Touched: `flow-task-failure.spec.ts`.
+- **GIT-25** (`flow-git-sync.spec.ts:668`) — **REAL, was failing isolated.**
+  `getByTestId('git-adopt-branch')` never appeared; the panel rendered the
+  generic `ErrorState` instead. **Root cause — a genuine product/wire bug,
+  not a spec-setup issue:** the server's `error()` response builder
+  (`apps/web/src/server/server.ts`) whitelists which envelope fields it
+  copies to the wire, and `branch_adopt_needed` was NOT in the list. So
+  `handleGitEnable` set `branch_adopt_needed: { branch, branch_head }` on the
+  409 envelope but `error()` silently dropped it; the client's
+  `branchAdoptNeeded()` read `undefined` and fell back to `ErrorState`, so
+  the adopt-or-stop control never rendered. A live user hitting a
+  pre-existing `loctt` branch on enable would have seen the raw refusal, not
+  the adopt control. **Fix:** added `branch_adopt_needed` to the `error()`
+  whitelist (one line). Also added a server-level test
+  (`git-errors.test.ts`, `@verifies GIT-25`) that asserts the field survives
+  on the wire — red-proven (reverting the whitelist line reddens it). The
+  seam was previously uncovered: `GitSyncPanel.test.tsx` mocked an envelope
+  that already had the field, and no server test asserted it on the wire.
+  Touched: `server.ts`, `git-errors.test.ts`.
 
-**Status:** these are the ONLY known real UI failures; the rest of the
-suite (837) is green. Fix before the PR is considered merge-ready.
+**Status:** all 4 fixed and verified in isolation. The re-run full suite
+(`--config tests/ui/playwright.config.ts --workers=2`) was **841 passed, 1
+failed** — but the single failure was **GIT-6**
+(`flow-git-reconcile.spec.ts:86`), NOT any of the 4 fixed cases and NOT
+SPR-6. GIT-6 passes cleanly in isolation (workers=1); it is a NEW
+parallel-load flake in the same family as SPR-6 (the git-reconcile specs
+spawn many real `loctt ui` + git subprocesses, and this run took 24.7m
+under heavy machine load — the contention signature `lessons.md`
+documents). It is not a regression from these fixes (they touch neither
+reconcile nor its render path). SPR-6 and GIT-6 are the two documented UI
+load flakes; both pass alone. The 4 real failures are resolved.
