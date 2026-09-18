@@ -18,6 +18,7 @@ import {
   getTaskFilePath,
   getTasksDir,
   getWorkflowConfigPath,
+  isPathContained,
   resolveLocttDir,
 } from "./index.js";
 
@@ -107,5 +108,25 @@ describe("path helpers", () => {
     // attach logic is what additionally rejects leading dots.
     expect(() => assertSafeBasename("file.txt")).not.toThrow();
     expect(() => assertSafeBasename(".env")).not.toThrow();
+  });
+
+  describe("isPathContained", () => {
+    const container = resolve("/tmp/tracker");
+
+    it("accepts a path inside the container, and the container itself", () => {
+      expect(isPathContained(container, resolve(container, "sub/file.txt"))).toBe(true);
+      expect(isPathContained(container, container)).toBe(true);
+    });
+
+    it("rejects a path outside the container", () => {
+      expect(isPathContained(container, resolve("/tmp/other/file.txt"))).toBe(false);
+      expect(isPathContained(container, resolve("/etc/passwd"))).toBe(false);
+    });
+
+    it("rejects a ../ escape and a sibling-prefix false positive", () => {
+      expect(isPathContained(container, resolve(container, "..", "escape.txt"))).toBe(false);
+      // "/tmp/tracker-evil" shares the prefix "tracker" but is NOT inside.
+      expect(isPathContained(container, resolve("/tmp/tracker-evil/x"))).toBe(false);
+    });
   });
 });

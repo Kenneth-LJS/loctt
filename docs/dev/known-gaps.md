@@ -3408,3 +3408,41 @@ under heavy machine load — the contention signature `lessons.md`
 documents). It is not a regression from these fixes (they touch neither
 reconcile nor its render path). SPR-6 and GIT-6 are the two documented UI
 load flakes; both pass alone. The 4 real failures are resolved.
+
+## AI/MCP hardening review (2026-09-19) — must-fix path-confinement gaps on the agent surface
+
+A fresh security review of the MCP (AI-facing) surface found real,
+verified path-escape issues. Threat model: an agent driving MCP, possibly
+auto-approved, possibly steered by untrusted task content.
+
+- **F1 (HIGH, verified) — `attach_file` reads any absolute path.**
+  `apps/mcp/src/tools/task-files.ts` only checks `isAbsolute`; the source
+  read in `core/task/attachments.ts` has no allowlist/confinement, so
+  `attach_file {source_path:"~/.ssh/id_rsa"}` copies secrets into
+  `.loctt/`, where git-backed mode commits+pushes them off-machine. The
+  DESTINATION is basename-confined + symlink-rejected (good); the SOURCE
+  read is unrestricted. Doc-guarded only (reference.md:512,
+  agent-setup.md:159 "do not auto-approve") — no code guard.
+- **F2 (HIGH/MED, verified, UNDOCUMENTED) — `backup.output` write-escape
+  and `restore.files` read-escape.** `apps/mcp/src/tools/backup.ts` uses
+  `node:path` `resolve(root, arg)` with NO confinement, so
+  `backup {output:"../../loot"}` writes the whole tracker anywhere and
+  `restore {files:["/abs"]}` reads any file. Same class as F1 but with NO
+  security note. (Restore's embedded-path CONTENTS are guarded by
+  `assertContainedPath` in `core/backup/restore.ts` — solid — but that
+  guard does not cover the MCP `output`/`files` ARGUMENTS.)
+- **F3 (MED) — `restore mode:"overwrite"` has no `confirm:true` gate**,
+  unlike every `delete_*` tool. `dry_run` exists but isn't required first.
+- **F4 (LOW, neutralized) — `git.branch`/`git.remote` config unvalidated**
+  into `git` argv; blunted because branch is always prefixed
+  (`refs/heads/<b>`) and remote is `remoteExists()`-checked. Defense-in-
+  depth only.
+- **Genuinely solid (do not touch):** uniform `confirm:true` on every
+  `delete_*`; all git via `spawnSync("git", argv)` (no shell); attachment
+  destination confinement; restore embedded-path traversal guard; no
+  stored-content-to-executable path.
+
+**Fix plan:** F1 + F2 confine/guard the argument paths (reuse
+`assertContainedPath` for backup/restore; allowlist-or-confirm for
+attach_file source); F3 confirm-gate overwrite; F4 validate ref/remote
+names. Must-fix (F1,F2) before publish.
