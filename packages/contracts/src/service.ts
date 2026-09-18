@@ -392,6 +392,22 @@ export interface TrackerInfoResponse {
    * can tell a bug from a correctly-configured workspace.
    */
   readonly timezone: string;
+  /**
+   * XS-50: present when the tracker's directory sits on a filesystem
+   * where POSIX advisory locks are unreliable (iCloud Drive, Dropbox,
+   * OneDrive, NFS, SMB). Computed best-effort at `loctt ui` boot for
+   * **any** tracker — independent of whether git sync is enabled — because
+   * the concurrency hazard the advisory names is a property of the
+   * filesystem, not of git. Absent means a local disk or a class the probe
+   * could not determine (no false warning). Mirrors core's
+   * `SyncFsAdvisory`. Informational and non-blocking; the client surfaces
+   * it as a dismissible boot banner naming the class and the `cwd`.
+   */
+  readonly fstypeAdvisory?: {
+    readonly fsClass: string;
+    readonly label: string;
+    readonly message: string;
+  };
 }
 
 /**

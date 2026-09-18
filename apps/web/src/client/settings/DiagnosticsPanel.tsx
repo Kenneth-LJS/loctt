@@ -203,6 +203,21 @@ export function DiagnosticsPanel() {
         <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">loctt doctor</code>{" "}
         runs, against this tracker.
       </p>
+      {/* XS-50, fifth bullet: filesystem detection (iCloud / Dropbox /
+          OneDrive / NFS / SMB, where advisory locks are unsafe) is
+          best-effort — it can miss cases — so the absence of the boot
+          advisory must not be read as a guarantee that the filesystem is
+          safe. Stated here so a user who saw no warning knows why. */}
+      <p
+        data-testid="diagnostics-fs-caveat"
+        className="mb-3 text-[0.8571rem] text-text-secondary"
+      >
+        Note: LocTT&rsquo;s filesystem check for unsafe advisory-lock
+        locations (iCloud Drive, Dropbox, OneDrive, NFS, SMB) is best-effort
+        and can miss cases. The absence of a warning is not a guarantee that
+        the tracker&rsquo;s filesystem is safe for concurrent access from two
+        machines.
+      </p>
 
       <Button
         type="button"

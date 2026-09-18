@@ -142,6 +142,28 @@ describe("text alias", () => {
   it("is case-insensitive", () => {
     expect(evaluateQuery(query('text ~ "EVALUATION"'), task)).toBe(true);
   });
+
+  /**
+   * XS-44: a retired key in `key_history` is matchable by `text ~`, so
+   * searching a former key (`T-42` after a rekey to `T-43`) finds the task
+   * it now belongs to. This is the core query-semantics change; CLI, MCP and
+   * web all route through this evaluator, so tagging it here covers the
+   * shared behaviour (surface parity confirmed by the integration suite).
+   *
+   * @verifies XS-44
+   */
+  it("XS-44: searches key_history so a retired key finds the task", () => {
+    const rekeyed: TaskFrontmatter = { ...task, key: "T-43", key_history: ["T-42"] };
+    // The retired key matches...
+    expect(evaluateQuery(query('text ~ "T-42"'), rekeyed)).toBe(true);
+    // ...as does the live key, and case does not matter for either.
+    expect(evaluateQuery(query('text ~ "t-42"'), rekeyed)).toBe(true);
+    expect(evaluateQuery(query('text ~ "T-43"'), rekeyed)).toBe(true);
+    // A key that was never this task's does not match.
+    expect(evaluateQuery(query('text ~ "T-99"'), rekeyed)).toBe(false);
+    // And with no key_history at all, an unrelated key still misses.
+    expect(evaluateQuery(query('text ~ "T-42"'), task)).toBe(false);
+  });
 });
 
 describe("parent alias", () => {

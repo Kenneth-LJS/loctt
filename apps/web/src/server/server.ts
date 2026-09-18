@@ -96,6 +96,7 @@ import {
   deleteUser,
   deleteView,
   detachFile,
+  detectSyncFsAdvisory,
   disableGit,
   duplicateTask,
   editComment,
@@ -1423,6 +1424,8 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleInfo: RouteHandler = async ({ res, locttDir }) => {
     const info = await getTrackerInfo(root);
+    // XS-50: probe once (a spawnSync mount/statfs call) at boot.
+    const fstypeAdvisory = detectSyncFsAdvisory(root);
     // Pick the "primary" counter to summarize the tracker. If a
     // workspace default project exists, use its counter; otherwise
     // fall back to whatever single counter is configured (or none).
@@ -1473,6 +1476,14 @@ export function createWebApp(options: WebAppOptions) {
       // *why* today is what it is rather than leaving an off-by-one
       // result unexplained.
       ...(await workspaceTodayWithZone(locttDir)),
+      // XS-50: the advisory-lock hazard is a property of the *filesystem*,
+      // not of git — a tracker on iCloud/Dropbox/OneDrive/NFS/SMB can be
+      // corrupted by concurrent writes from two machines whether or not git
+      // sync is enabled. So it is computed at boot for any tracker here,
+      // reusing core's detector (never reimplemented), rather than only at
+      // git-enable. Best-effort and never-throwing by construction; absent
+      // means a local disk or a class the probe could not determine.
+      ...(fstypeAdvisory !== undefined ? { fstypeAdvisory } : {}),
     };
     json(res, response);
   };

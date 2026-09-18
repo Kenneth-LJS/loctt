@@ -2911,8 +2911,13 @@ are NOT orphaned; each has a phase:
   A11Y-39/40 (absolute type scale, contrast harness).
 - **Migration-schema cases** → become testable **for free** when
   `CURRENT_SCHEMA_VERSION` first advances past 1 (a real migration to
-  run). Not a phase item — a natural unblock. SET-15/31/37,
-  XS-36/43/44/45/48/56.
+  run). Not a phase item — a natural unblock. SET-15/31/37, XS-36/48.
+  (XS-43/44/45 were mis-grouped here: they depend on the **rekey engine**
+  — retired keys resolving/searching/surviving after a sync-collision
+  rekey — which landed 2026-09-16, not on a schema migration; they are
+  covered as of 2026-09-18. XS-56 was also mis-grouped: it is the
+  server-unreachable staleness case, never schema-related, and is now
+  covered by the ListView/ServerUnreachableBanner assembly.)
 - **Avatar cases** → buildable **now** once PRU-13's 256→500 bullet is
   reworded (K20). PRU-13, 27, 28, 29, 31, 39, 40.
 

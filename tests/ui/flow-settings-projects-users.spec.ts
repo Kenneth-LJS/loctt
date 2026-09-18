@@ -284,6 +284,13 @@ test.describe("PRU — the projects panel", () => {
   });
 
   // @verifies PRU-19
+  // @verifies ONB-18
+  // ONB-18 is the same behaviour reached through the Settings→Projects
+  // create surface (the case explicitly allows it): a colliding prefix is
+  // refused inline on the prefix field (not a toast), the message names the
+  // owning project, and submit is blocked while invalid so no half-create
+  // request is sent. The "next action / must be unique" wording of ONB-18's
+  // second bullet is asserted by the projectForm.test.ts ONB-18 unit tests.
   test("PRU-19: a colliding prefix is refused at the field with submit disabled", async ({
     page,
     tracker,

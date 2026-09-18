@@ -100,6 +100,42 @@ describe("documented DSL constructs (spawned binary)", () => {
     });
   });
 
+  /**
+   * XS-44 surface parity: the core change (matching `key_history` in the
+   * `text` alias) is inherited by every surface because CLI, MCP and web all
+   * route text search through the same evaluator via `listTasks`. This pins
+   * that inheritance end-to-end: after a rekey (`move`, which retires the
+   * old key into `key_history`), searching the retired key finds the task on
+   * the CLI *and* through the MCP `list_tasks` tool.
+   *
+   * @verifies XS-44
+   */
+  it("XS-44: a retired key is found by `text ~` on the CLI and MCP alike", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["project", "create", "Backend", "--prefix", "B"], { cwd: root });
+      await runCli(["create", "rekeyed task"], { cwd: root });
+      // The move retires T-1 into key_history and allocates a Backend key.
+      const move = await runCli(["move", "T-1", "Backend"], { cwd: root });
+      expect(move.exitCode).toBe(0);
+
+      // CLI: searching the retired key finds the task.
+      const cli = await runCli(["list", "--query", 'text ~ "T-1"'], { cwd: root });
+      expect(cli.exitCode).toBe(0);
+      expect(cli.stdout).toContain("rekeyed task");
+
+      // MCP: the same search through list_tasks finds it too — one engine,
+      // one answer.
+      const client = await startMcpClient(root);
+      try {
+        const res = await client.callTool("list_tasks", { query: 'text ~ "T-1"' });
+        const text = res.content[0]?.text ?? "";
+        expect(text).toContain("rekeyed task");
+      } finally {
+        await client.close();
+      }
+    });
+  });
+
   // @verifies K80
   it("startOfWeek()/endOfWeek() filter by the workspace week end-to-end", async () => {
     await withTmpLoctt(async ({ root }) => {

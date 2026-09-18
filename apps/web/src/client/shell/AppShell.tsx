@@ -9,6 +9,7 @@ import { adoptStoredTheme } from "../theme/useTheme.ts";
 import { AnnouncerProvider } from "../ui/Announcer.tsx";
 import { CHROME_ATTR } from "../ui/Modal.tsx";
 import { ToastProvider } from "../ui/Toast.tsx";
+import { AdvisoryFsBanner } from "./AdvisoryFsBanner.tsx";
 import { Header } from "./Header.tsx";
 import { SchemaBanner } from "./SchemaBanner.tsx";
 import { ServerUnreachableBanner } from "./ServerUnreachableBanner.tsx";
@@ -154,6 +155,12 @@ function ShellChrome({
           nothing from a view-scoped error. */}
       <ServerUnreachableBanner />
       <SchemaBanner status={info.schemaStatus} />
+      {/* XS-50: a boot-time advisory when the tracker sits on a filesystem
+          where advisory locks are unsafe. App-level and independent of git
+          sync, because the hazard is the filesystem's, not git's. */}
+      {info.fstypeAdvisory !== undefined && (
+        <AdvisoryFsBanner advisory={info.fstypeAdvisory} cwd={info.cwd} />
+      )}
       <div className="grid min-h-0 flex-1 grid-cols-[auto_1fr] grid-rows-[48px_1fr]">
         <Header
           currentUser={currentUser}

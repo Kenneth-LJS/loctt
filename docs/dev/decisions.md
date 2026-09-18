@@ -13487,3 +13487,46 @@ onError fallback — all confirmed red when broken).
 `<img>`/`inlineSrc`/`imageFailed` render in `AttachmentTile` (restore the
 family-glyph-only tile); un-tag the REL-16 tests. No stored-format change,
 no migration — storage was never touched.
+
+### A200 · `text ~` matches `key_history` — a retired key is findable by search (XS-44)
+
+**Ticket:** XS-44 · **Date:** 2026-09-18.
+
+**The situation.** XS-44 (blocker, P1 P10): searching a former key (`T-42`
+after a rekey to `T-43`) must find the task it now belongs to, on the UI
+*and* through `loctt list "text ~ T-42"` — "both go through the same index
+and query engine." Core's `text` alias (`query/evaluator.ts`,
+`TEXT_SEARCH_FIELDS = ["title","key","id"]`) did **not** include
+`key_history`, so a retired key was not found by `text ~` on any surface.
+This is the exact widening A21 (REL-8) deferred as "a P10 decision about
+the query language, which [that] ticket has no mandate to make," noting it
+"can be replaced by option 1 later." XS-44 **is** that mandate.
+
+**Decided.** Match `key_history` member-wise in the `text` alias: a
+`text ~ <term>` matches when any retired key contains the term (same
+case-insensitive substring rule as the other text fields). `key_history` is
+an array, so it is matched via `toComparableArray` rather than added to
+`TEXT_SEARCH_FIELDS` (which coerces scalars through `toComparableString` and
+drops arrays).
+
+**Scope / why recorded.** This widens what `text ~` matches **app-wide** —
+CLI, MCP and web all route text search through this one evaluator (via
+`listTasks`), and any saved view using `text ~` now also matches on retired
+keys. The code is small but the semantics are shared, so it is recorded
+even though A21 already anticipated it. The web link-picker's two-request
+retired-key fallback (`useTaskSearch.ts`, A21 option 2) is left in place: it
+is confined to the picker, still correct, and now simply fires less often
+because the primary `/api/search` (which runs `text ~`) already surfaces
+the retired key; removing it is out of this ticket's scope.
+
+**Tests.** `@verifies XS-44` at core (`evaluator.test.ts` — retired key
+matches, live key matches, case-insensitive, an unrelated key misses, and a
+task with no `key_history` still misses) and an end-to-end surface-parity
+test (`tests/integration/cli/query-dsl.test.ts` — after a `move` retires a
+key, `text ~ <old>` finds the task on the CLI and through MCP `list_tasks`).
+Red-proven: the retired key is NOT found before the change, IS found after.
+
+**To revert.** Remove the `key_history` block in `evaluateTextAlias`
+(`packages/core/src/query/evaluator.ts`) and un-tag the XS-44 tests. XS-44's
+third bullet becomes unmet and a retired key is again unfindable by
+`text ~`. No stored-format change, no migration.
