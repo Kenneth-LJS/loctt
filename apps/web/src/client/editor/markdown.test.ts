@@ -289,6 +289,34 @@ describe("toMarkdown — the edited path", () => {
     const source = "| A | B |\n| --- | --- |\n| x \\| y | z |\n";
     expect(toMarkdown(fromMarkdown(source))).toBe(source);
   });
+
+  // @verifies TSK-66
+  it("escapes EACH of two adjacent bare pipes in a cell as its own \\|", () => {
+    // A cell whose text holds two adjacent bare pipes (`a||b`) must
+    // serialize to `a\|\|b` — one `\|` per pipe. The earlier "escape only
+    // a bare pipe" replace produced `a\||b` (the second pipe left bare):
+    // not the clean, canonical escaping GFM cells should carry. Asserted on
+    // the serializer output, where fix and bug genuinely differ.
+    const doc = {
+      type: "doc",
+      content: [{
+        type: "table",
+        content: [
+          { type: "tableRow", content: [
+            { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "A" }] }] },
+          ] },
+          { type: "tableRow", content: [
+            { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "a||b" }] }] },
+          ] },
+        ],
+      }],
+    };
+    const out = toMarkdown(doc);
+    // Every literal pipe carries exactly one backslash; no bare pipe survives
+    // inside the cell body.
+    expect(out).toContain("a\\|\\|b");
+    expect(out).not.toContain("a\\||b");
+  });
 });
 
 /**
