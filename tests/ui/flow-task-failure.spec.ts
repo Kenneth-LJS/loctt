@@ -149,9 +149,21 @@ test.describe("XS-7 / TSK-34 / XS-8 — the shape of the write", () => {
     // First bullet: only the changed field. `{field, value}` is core's
     // `setField` shape — the body names *which* field rather than
     // being a frontmatter fragment.
-    expect(Object.keys(body).sort()).toEqual(["field", "value"]);
+    //
+    // GIT-19 (commit 9938221) legitimately added a third key,
+    // `expectedId` — the stable ULID the tab fetched, sent as the
+    // wrong-task precondition so a background rekey can't land the edit
+    // on a different task. It is a precondition, NOT a frontmatter
+    // field, so it does not violate this bullet's intent ("only the
+    // changed field, not a whole-frontmatter fragment"). Per CLAUDE.md's
+    // edit-a-green-test rule, this assertion was widened because the
+    // behavior legitimately changed — but the no-bleed intent is
+    // preserved: every key must be one of {field, value, expectedId},
+    // and the frontmatter-key check below still fails on any leak.
+    expect(Object.keys(body).sort()).toEqual(["expectedId", "field", "value"]);
     expect(body["field"]).toBe("priority");
     expect(body["value"]).toBe("p1_week");
+    expect(typeof body["expectedId"]).toBe("string");
 
     // Second and third bullets, asserted on the serialized body so a
     // nested whole-frontmatter object would be caught too. Every one of
@@ -231,8 +243,17 @@ test.describe("XS-7 / TSK-34 / XS-8 — the shape of the write", () => {
     expect(bodies).toHaveLength(1);
     const body = bodies[0];
     if (body === undefined) throw new Error("no write body was captured");
-    expect(Object.keys(body).sort()).toEqual(["field", "value"]);
+    // GIT-19 (commit 9938221) added the `expectedId` precondition key —
+    // the stable ULID the tab holds, sent so a background rekey can't
+    // land this write on the wrong task. It is a precondition, not a
+    // frontmatter field, so the no-bleed intent (the body carries only
+    // the changed field, never the CLI-written `status`) is preserved.
+    // Per CLAUDE.md's edit-a-green-test rule, this assertion was widened
+    // because the behavior legitimately changed; the `status`/`title`
+    // absence checks below still guard against a whole-object write.
+    expect(Object.keys(body).sort()).toEqual(["expectedId", "field", "value"]);
     expect(body["field"]).toBe("priority");
+    expect(typeof body["expectedId"]).toBe("string");
     expect(JSON.stringify(body)).not.toContain("status");
     expect(JSON.stringify(body)).not.toContain("title");
   });

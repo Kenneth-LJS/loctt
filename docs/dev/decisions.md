@@ -13805,3 +13805,64 @@ server.ts`); `useIntegrity.ts`, `IntegrityBadge.tsx`, and its mount in
 useProjectMutations); the new tests; and un-tag `@verifies DEG-31` from
 `ListView.test.tsx`. To narrow `counts.tasks` to the literal design, drop
 `+ unreadable.length` in `computeIntegritySummary`.
+
+### A204 · Full-UI-suite regression fixes (2026-09-18) — TSK-2 retired-key copy, XS-7/TSK-34 body-shape green-test edits, GIT-25 wire drop
+
+**Situation.** A full Playwright run (`--config tests/ui/playwright.config.ts`,
+workers=2) found 5 failures; 4 real (fail isolated), documented in
+`known-gaps.md` "Full-UI-suite run (2026-09-18)". SPR-6 is the documented
+parallel-load flake (untouched). **Date:** 2026-09-18. **Commit:** working
+tree, on top of 12ca4a1. **Layer:** web client + web server + two UI/server
+test files. No engine/reconcile/rekey/query-evaluator/DEG/TSK-66 change.
+
+**The four calls.**
+
+1. **TSK-2 vs GIT-19 note copy — a genuine two-case tension, reconciled
+   (not adjudicated away).** `flow-tasks.spec.ts:167` (TSK-2, cold nav to a
+   retired key) requires "…retired key… current key is X"; the
+   `?rekeyedFrom=` follow-note copy ("renumbered while you had it open") was
+   bleeding into it. But `flow-task-meta.spec.ts:1997` (GIT-19) requires the
+   cold-nav-to-old-key URL to FOLLOW to the live key, and its note assertion
+   accepts EITHER copy. So both are satisfiable iff the follow still fires
+   for a cold nav but the note copy is chosen by *whether the tab was open
+   during the rekey*, not by `rekeyedFrom === retiredKey` (which the cold-nav
+   follow also satisfies). **Decided:** keep the follow for both scenarios;
+   add a `sawLiveRef` (did this tab ever see `taskRef === currentKey`) and
+   stamp `?rekeyedWhileOpen=` on the redirect only when true; the note copy
+   keys on `rekeyedWhileOpen`. Cold nav → retired-key copy (TSK-2/XS-43); tab
+   open during rekey → "renumbered while you had it open" (GIT-19).
+   *Not load-bearing:* one note's copy path in one component; both cases'
+   specs pin the outcome. Touched: `TaskDetail.tsx`, `taskDetailSearch.ts`,
+   `router/index.tsx`.
+
+2. **XS-7 / TSK-34 green-test edits — the behavior legitimately changed
+   (GIT-19 `expectedId`).** Both asserted the setField body key-set is
+   exactly `{field,value}`; GIT-19 (A195, commit 9938221) added `expectedId`
+   (the wrong-task precondition — a precondition, NOT a frontmatter field).
+   **Decided:** widen both to `["expectedId","field","value"]` +
+   `typeof expectedId === "string"`, KEEPING the no-frontmatter-bleed guards
+   (forbidden-key list on the serialized body; `status`/`title` absence).
+   This is CLAUDE.md's edit-a-green-test-because-the-behavior-changed case,
+   noted in-comment — NOT a test asserting a bug. The no-whole-object intent
+   is preserved, not widened away. Touched: `flow-task-failure.spec.ts`.
+
+3. **GIT-25 — a genuine product/wire bug, flagged.** The server `error()`
+   response builder (`apps/web/src/server/server.ts`) whitelists which
+   envelope fields reach the wire; `branch_adopt_needed` was missing, so
+   `handleGitEnable`'s 409 payload was silently dropped and the client
+   fell back to the generic `ErrorState` — the adopt-or-stop control never
+   rendered. **Severity: a live user hitting a pre-existing `loctt` branch on
+   enable saw the raw refusal, not the adopt control** — the GIT-25 (A197)
+   feature was inert on the web surface. **Decided:** add
+   `branch_adopt_needed` to the `error()` whitelist (one line). Added a
+   server test (`git-errors.test.ts`, `@verifies GIT-25`) asserting the field
+   on the wire — the seam was uncovered because `GitSyncPanel.test.tsx`
+   mocked an envelope that already carried the field and no server test
+   asserted it. Touched: `server.ts`, `git-errors.test.ts`.
+
+**To revert.** (1) Drop the `sawLiveRef`/`rekeyedWhileOpen` mechanism and
+restore the note copy to key on `rekeyedFrom === retiredKey` (returns TSK-2
+to red). (2) Restore the `["field","value"]` key-set assertions (returns
+XS-7/TSK-34 to red against the shipped GIT-19 body). (3) Remove
+`branch_adopt_needed` from the `error()` whitelist and delete the new
+git-errors test (returns GIT-25 to red — the adopt control disappears again).

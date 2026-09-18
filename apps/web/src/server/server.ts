@@ -476,6 +476,11 @@ function error(
     // GIT-36: the missing/corrupt-worktree refusal payload the panel names
     // the worktree + repair path from, without a second fetch.
     ...(extra.worktree_missing !== undefined ? { worktree_missing: extra.worktree_missing } : {}),
+    // GIT-25: the pre-existing-branch adopt-or-stop payload the panel reads
+    // to render the adopt control (branch + head) instead of the generic
+    // ErrorState. Without it here the field was dropped on the wire, so the
+    // client fell back to ErrorState and the adopt control never appeared.
+    ...(extra.branch_adopt_needed !== undefined ? { branch_adopt_needed: extra.branch_adopt_needed } : {}),
   };
   json(res, envelope, status);
 }

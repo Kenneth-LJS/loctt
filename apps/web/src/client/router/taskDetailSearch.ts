@@ -44,9 +44,24 @@ const rekeyedFromParam = z
     return s.length > 0 ? s : undefined;
   });
 
+/**
+ * GIT-19. Distinguishes the two follow scenarios that share `rekeyedFrom`.
+ * `true` only when the tab was *open* on this task when it was renumbered
+ * elsewhere (it once showed the URL key as live), which selects the
+ * "renumbered while you had it open" note. A cold navigation to a retired
+ * key follows without this marker and shows the plain retired-key note
+ * (TSK-2). Anything but the literal `true` (including a hand-typed value)
+ * parses to `undefined`, so the note degrades to the retired-key copy.
+ */
+const rekeyedWhileOpenParam = z
+  .unknown()
+  .optional()
+  .transform((v): true | undefined => (v === true || v === "true" ? true : undefined));
+
 export const taskDetailSearchSchema = z.object({
   tab: tabParam,
   rekeyedFrom: rekeyedFromParam,
+  rekeyedWhileOpen: rekeyedWhileOpenParam,
 });
 
 export type TaskDetailSearch = z.infer<typeof taskDetailSearchSchema>;
