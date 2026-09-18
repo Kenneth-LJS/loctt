@@ -1,4 +1,10 @@
 import { Mark, mergeAttributes, Node } from "@tiptap/core";
+import {
+  Table,
+  TableCell,
+  TableHeader,
+  TableRow,
+} from "@tiptap/extension-table";
 
 /**
  * TipTap nodes and marks for LocTT's own markdown extensions (B5).
@@ -126,6 +132,31 @@ export const AttachmentEmbed = Node.create({
   },
 });
 
+/**
+ * GFM pipe-table support (TSK-66).
+ *
+ * A GFM pipe table in the body must become a real, editable table node —
+ * not literal paragraph text, and not a forced-raw fallback. The stock
+ * TipTap table extensions (`@tiptap/extension-table`) register the four
+ * nodes `table`/`tableRow`/`tableHeader`/`tableCell`; `markdown.ts`'s
+ * `fromMarkdown`/`toMarkdown` are what map a GFM pipe table to and from
+ * those nodes. Registering them here is what keeps a table *editable*
+ * rather than dropped — the same reason the LocTT extensions above exist —
+ * and is why `findLossyConstructs` deliberately does not report tables.
+ *
+ * `resizable` is left off: column-resize is a mouse affordance that adds
+ * a `colwidth` attr with no GFM spelling, so it cannot round-trip to
+ * markdown. The case asks only that a table renders and edits as a table,
+ * not for pixel-width columns, so the affordance is scoped out to keep
+ * the serialized markdown faithful.
+ */
+const TABLE_EXTENSIONS = [
+  Table.configure({ resizable: false }),
+  TableRow,
+  TableHeader,
+  TableCell,
+] as const;
+
 /** Every LocTT-specific extension, for registering with an editor. */
 export const LOCTT_EXTENSIONS = [
   Superscript,
@@ -134,4 +165,5 @@ export const LOCTT_EXTENSIONS = [
   BlockMath,
   Mention,
   AttachmentEmbed,
+  ...TABLE_EXTENSIONS,
 ] as const;

@@ -19,6 +19,11 @@ describe("findLossyConstructs", () => {
       ["task reference", "blocked by T-123"],
       ["empty body", ""],
     ])("%s is editable visually", (_label, body) => {
+      // @verifies TSK-66
+      // The "gfm table" row is the TSK-66 half handled here: now that a
+      // pipe table parses to a first-class table node (markdown.ts), it
+      // must NOT also be reported lossy, or `BodyEditor` would force raw
+      // mode on a table the editor represents perfectly.
       expect(findLossyConstructs(body)).toEqual([]);
       expect(requiresSourceMode(body)).toBe(false);
     });

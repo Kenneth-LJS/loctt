@@ -48,6 +48,22 @@ describe("BodyRenderedView — K33 read state", () => {
     expect(screen.getByTestId("body-rendered")).toBeTruthy();
   });
 
+  // @verifies TSK-66
+  it("TSK-66: renders a GFM pipe table as a table, not literal text", () => {
+    renderView("| Name | Qty |\n| --- | --- |\n| Apple | 3 |\n");
+    // A real table element with the header and body cells — not a
+    // paragraph of `| Name | Qty |` characters, and not the `null` the
+    // default node branch would give (which would drop it entirely).
+    const table = document.querySelector("table");
+    expect(table).not.toBeNull();
+    expect(document.querySelectorAll("th")).toHaveLength(2);
+    expect(document.querySelectorAll("td")).toHaveLength(2);
+    expect(document.querySelector("th")?.textContent).toBe("Name");
+    expect(document.querySelector("td")?.textContent).toBe("Apple");
+    // The raw pipe syntax is not shown as visible text anywhere.
+    expect(screen.queryByText(/\| Name \| Qty \|/)).toBeNull();
+  });
+
   // @verifies TSK-68
   it("TSK-68: an empty body shows the placeholder in the read state", () => {
     renderView("   \n  ");

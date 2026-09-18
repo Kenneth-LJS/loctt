@@ -155,6 +155,40 @@ describe("fromMarkdown", () => {
     expect(inline[0]?.marks?.some(m => m.type === "code")).toBe(true);
     expect(inline[0]?.text).toBe("**not bold**");
   });
+
+  // @verifies TSK-66
+  it("parses a GFM pipe table into a table node, not paragraph text", () => {
+    // The failure the case forbids: a pipe table shown as literal
+    // paragraph characters. Delete the table branch in fromMarkdown and
+    // the header row becomes a `paragraph` whose text is `| Name | Qty |`,
+    // turning this red.
+    const doc = fromMarkdown("| Name | Qty |\n| --- | --- |\n| Apple | 3 |\n");
+    const table = (doc.content ?? []).find(n => n.type === "table");
+    expect(table).toBeDefined();
+    expect((doc.content ?? []).some(n => n.type === "paragraph")).toBe(false);
+    const rows = table?.content ?? [];
+    expect(rows.map(r => r.type)).toEqual(["tableRow", "tableRow"]);
+    // Header cells are tableHeader; body cells are tableCell.
+    expect((rows[0]?.content ?? []).map(c => c.type)).toEqual([
+      "tableHeader", "tableHeader",
+    ]);
+    expect((rows[1]?.content ?? []).map(c => c.type)).toEqual([
+      "tableCell", "tableCell",
+    ]);
+    // The cell text is inside a paragraph, editable — not the raw `| … |`.
+    const firstCellText = (rows[0]?.content?.[0]?.content?.[0]?.content ?? [])
+      .map(n => n.text ?? "").join("");
+    expect(firstCellText).toBe("Name");
+  });
+
+  // @verifies TSK-66
+  it("does not treat a lone piped line without a delimiter as a table", () => {
+    // A paragraph that merely contains pipes is not a table; forcing it
+    // into one would swallow ordinary text.
+    const doc = fromMarkdown("a | b | c is just prose\n");
+    expect((doc.content ?? [])[0]?.type).toBe("paragraph");
+    expect((doc.content ?? []).some(n => n.type === "table")).toBe(false);
+  });
 });
 
 describe("toMarkdown — the edited path", () => {
@@ -235,5 +269,53 @@ describe("toMarkdown — the edited path", () => {
     const family = "\u{1F468}‍\u{1F469}‍\u{1F467}";
     const source = `Family ${family} intact\n`;
     expect(toMarkdown(fromMarkdown(source))).toBe(source);
+  });
+
+  // @verifies TSK-66
+  it("round-trips a canonical GFM pipe table through parse and serialize", () => {
+    // Load → the doc has a table → save → still a valid GFM table.
+    // Written in the canonical spelling toMarkdown emits (single-space
+    // padding, `---` delimiter) so the round trip is exact. Break the
+    // table case in toMarkdown and the serialized body loses its pipes.
+    const source = "Intro.\n\n| Name | Qty |\n| --- | --- |\n| Apple | 3 |\n| Pear | 12 |\n\nAfter.\n";
+    expect(toMarkdown(fromMarkdown(source))).toBe(source);
+  });
+
+  // @verifies TSK-66
+  it("keeps an escaped pipe inside a cell escaped, not doubled", () => {
+    // `\|` is a literal pipe in a cell; re-serializing must not turn it
+    // into `\\|` (which would render a stray backslash) nor into a bare
+    // `|` (which would split the cell).
+    const source = "| A | B |\n| --- | --- |\n| x \\| y | z |\n";
+    expect(toMarkdown(fromMarkdown(source))).toBe(source);
+  });
+});
+
+/**
+ * TSK-66 no-reformat guard.
+ *
+ * Adding table support must not perturb bodies the user did not edit —
+ * the A14 / TSK-17 byte-identical invariant. A body *containing* a table,
+ * merely looked at (parsed for display, nothing written back), must return
+ * unchanged; and a body with awkward-but-untouched markdown beside a table
+ * must not be normalized.
+ */
+describe("RichBuffer — TSK-66 table does not perturb unedited bodies", () => {
+  // @verifies TSK-66
+  it("returns a table body byte-identical when the rich editor made no edit", () => {
+    // Alignment colons and irregular padding are spellings a serializer
+    // would rewrite; on the unedited path RichBuffer must not touch them.
+    const body = "| Name |Qty|\n| :-- | --: |\n| Apple |  3 |\n";
+    const buffer = new RichBuffer(body);
+    fromMarkdown(buffer.text); // the rich tab parses to display; no write-back
+    expect(buffer.text).toBe(body);
+  });
+
+  // @verifies TSK-66
+  it("does not normalize awkward markdown sitting next to a table", () => {
+    const body = "Some _italic_ text.\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n+ plus bullet\n";
+    const buffer = new RichBuffer(body);
+    fromMarkdown(buffer.text);
+    expect(buffer.text).toBe(body);
   });
 });

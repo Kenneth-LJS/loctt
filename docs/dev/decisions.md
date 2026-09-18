@@ -9800,6 +9800,10 @@ programmatically). The marks/nodes already round-trip, so no
 
 ### A160 · GFM pipe-table left as-is for now; TSK-66 scoped out (fix belongs in core `lossy.ts`, another lane's file)
 
+> **SUPERSEDED by A203 (2026-09-18).** Ken chose first-class table
+> editing; the in-lane parse-to-table alternative this entry named has
+> been implemented. TSK-66 is no longer scoped out.
+
 **Ticket:** B3 (Rich-text editor) · **Date:** 2026-09-08 · **Commit:** (staged)
 
 **The situation.** TSK-66 (ED-2): "A GFM pipe-table in the body is
@@ -13653,3 +13657,76 @@ the file and the exact validator error), not Delete, because:
 and the `broken.map(...)` block in `LabelsPanel`; restore the empty-state
 condition to `items.length === 0`. Un-tag the two DEG-30 tests in
 `dataPanels.test.tsx`. No stored-format, endpoint, or core change.
+
+### A203 · TSK-66 — a GFM pipe-table is first-class (parse-to-table), superseding the A160 scope-out
+
+**Case:** TSK-66 (ED-2, UI tree, M2 minor). **Date:** 2026-09-18.
+**Layer:** web (`apps/web` client editor only — no core, endpoint or
+stored-format change).
+
+**Supersedes A160.** A160 scoped TSK-66 out and recorded two routes in
+its "To revert": force-raw via `lossy.ts` (rejected — cross-lane core
+edit with CLI/MCP parity obligations) or the in-lane parse-to-table
+(the alternative). Ken chose **first-class table editing**, so this
+implements the in-lane alternative. A160 is now superseded, not still
+open.
+
+**What existed vs built.**
+- *Existed:* the four TipTap table extensions were installed in
+  `apps/web/package.json` but **not** registered; `fromMarkdown`/
+  `toMarkdown` had no table branch, so a pipe table became literal
+  paragraph text (the forbidden outcome); `findLossyConstructs`
+  (`packages/core/src/markdown/lossy.ts`) already did **not** flag a
+  pipe table, and `lossy.test.ts` already asserted "gfm table" is not
+  lossy. `looksLikeMarkdown` already diverted a pasted pipe table to
+  `fromMarkdown`.
+- *Built:* (1) registered `Table`/`TableRow`/`TableHeader`/`TableCell`
+  in `LOCTT_EXTENSIONS` (`editor/extensions.ts`), `resizable:false`;
+  (2) a pipe-table branch in `fromMarkdown` (`editor/markdown.ts`) —
+  header row + `| --- |` delimiter → `table` node with
+  `tableHeader`/`tableCell` cells, honouring escaped `\|` and padding
+  rows to the header's column count; (3) `toMarkdown` `table` case that
+  re-emits a canonical GFM pipe table (single-space padding, `---`
+  delimiter, bare pipes re-escaped without doubling an existing `\|`);
+  (4) `table`/`tableRow`/`tableHeader`/`tableCell` render cases in
+  `BodyRenderedView` (the K33 read state), because `fromMarkdown` now
+  yields table nodes there too and the `default` branch would have
+  rendered them as `null` — a silently vanished table.
+
+**The call: alignment/padding not preserved on the edited path.** GFM
+`:--`/`--:` alignment and irregular column padding are many-to-one
+spellings with no TipTap-cell home. A rich-mode *edit* re-emits a plain
+`---` delimiter and single-space padding — the documented A14 cost
+(editing normalizes the whole body to canonical spellings). The
+byte-identity invariant is intact for **unedited** bodies: `RichBuffer`
+returns the original bytes untouched, so a table merely looked at keeps
+its alignment/padding exactly (proven by two RichBuffer no-reformat
+tests). Column-resize (`resizable`) is off because its `colwidth` attr
+has no GFM spelling and could not round-trip.
+
+**Why not force-raw (A160's other route).** It edits a core file this
+lane does not own and drags CLI/MCP parity obligations, and it is the
+*worse* UX — a table the editor can represent perfectly would be shoved
+into source mode. Ken chose first-class, and parse-to-table stays in the
+editor lane.
+
+**Tests (all red-proven):** `extensions.test.ts` (4 node registrations —
+red when removed from `LOCTT_EXTENSIONS`); `markdown.test.ts` (parse to
+table not paragraph; lone piped line is not a table; canonical round-trip;
+escaped-pipe faithfulness; two RichBuffer no-reformat guards) — red when
+the `fromMarkdown`/`toMarkdown` branches are disabled; `BodyRenderedView
+.test.tsx` (renders `<table>`/`<th>`/`<td>`, no literal pipes) — red when
+the read-view case is removed; `lossy.test.ts` "gfm table" row tagged
+`@verifies TSK-66` (pre-existing green assertion — it asserts the
+lossy-half of the case, that a now-representable table is not flagged; not
+red-proven because it is independent of the node registration, and noted
+as such rather than claimed as a new red-proof).
+
+**To revert.** Remove `...TABLE_EXTENSIONS` from `LOCTT_EXTENSIONS` and
+the `TABLE_EXTENSIONS`/import in `extensions.ts`; delete the table branch
++ helpers (`isTableStart`/`parseTable`/`splitCells`) in `fromMarkdown`,
+the paragraph break-test line, the `table` case + `tableToMarkdown` in
+`toMarkdown`; remove the four table render cases in `BodyRenderedView`;
+un-tag the TSK-66 tests. Behaviour returns to A160 (pipe table shown as
+literal source text). Reinstating A160's alternative (force-raw) would
+instead need the `lossy.ts` `gfm_table` kind + CLI/MCP doc updates.
