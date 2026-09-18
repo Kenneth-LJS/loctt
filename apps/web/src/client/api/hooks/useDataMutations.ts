@@ -2,6 +2,7 @@ import type { BrokenEntry, LabelDef, MilestoneDef, SprintDef } from "@loctt/cont
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
+import { invalidateIntegrity } from "./invalidateIntegrity.ts";
 
 /**
  * Writes for the Settings → Data panels: Labels, Milestones, Sprints
@@ -80,6 +81,10 @@ function invalidator(qc: ReturnType<typeof useQueryClient>, key: string) {
     // The task list renders label pills and milestone names, so a
     // rename or a recolour has to reach it too (MSL-9).
     void qc.invalidateQueries({ queryKey: ["tasks"] });
+    // DEG-31: repairing a broken label/milestone/sprint entry through the
+    // panel changes the config integrity count. Covers all three kinds
+    // (milestoneInvalidator delegates here).
+    invalidateIntegrity(qc);
   };
 }
 

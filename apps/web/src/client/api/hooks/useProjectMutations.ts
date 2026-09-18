@@ -2,6 +2,7 @@ import type { ProjectDef } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
+import { invalidateIntegrity } from "./invalidateIntegrity.ts";
 
 /**
  * Project CRUD for Settings → Projects (PRU-5, PRU-6, PRU-7, PRU-17).
@@ -21,6 +22,8 @@ function invalidateProjectConsumers(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: ["projects"] });
   // Tasks carry a project; a remap or delete changes what they show.
   void qc.invalidateQueries({ queryKey: ["tasks"] });
+  // DEG-31: repairing a broken project entry changes the config count.
+  invalidateIntegrity(qc);
 }
 
 export interface CreateProjectVars {

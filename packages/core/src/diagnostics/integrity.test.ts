@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { postComment } from "../task/comments.js";
-import { blockingFindings, checkDataIntegrity } from "./integrity.js";
+import { blockingFindings, checkDataIntegrity, computeIntegritySummary } from "./integrity.js";
 
 /**
  * The other half of P-11.
@@ -433,5 +433,134 @@ describe("calendar holidays and user profiles degrade and are reported too", () 
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("computeIntegritySummary — the cheap badge count (DEG-31)", () => {
+  // Isolated, properly-initialised trackers per test: the file-level `dir`
+  // fixture leaves a `tasks/<TASK_ID>/` directory with no `task.md` (for the
+  // comment tests), which `loadAllTasksDetailed` would count as an
+  // unreadable task and skew these counts. A real tracker always has the
+  // task.md, so seeding a fresh root is the honest fixture.
+  let root: string;
+  let locttDir: string;
+
+  async function freshTracker(): Promise<void> {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    root = await mkdtemp(join(tmpdir(), "loctt-integrity-summary-"));
+    await initLoctt(root, { docs: false });
+    locttDir = resolveLocttDir(root);
+  }
+
+  async function writeTaskFile(id: string, key: string, extraFm: string): Promise<void> {
+    await mkdir(join(locttDir, "tasks", id), { recursive: true });
+    const fm =
+      `id: ${id}\nkey: ${key}\ntitle: T\n`
+      + `created_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\n`
+      + extraFm;
+    await writeFile(join(locttDir, "tasks", id, "task.md"), `---\n${fm}---\nBody.\n`, "utf-8");
+  }
+
+  const brokenSprint =
+    "sprints:\n  - id: s_bad\n    name: 5\n    start_date: 2026-01-15\n"
+    + "    end_date: 2026-01-28\n    state: future\n";
+
+  afterEach(async () => {
+    if (root !== undefined) await rm(root, { recursive: true, force: true });
+  });
+
+  // @verifies DEG-31
+  it("reports ok with all-zero counts for a clean tracker", async () => {
+    await freshTracker();
+    await writeTaskFile("01J00000000000000000CLEAN", "T-1", "");
+    const summary = await computeIntegritySummary(locttDir);
+    expect(summary).toEqual({ ok: true, counts: { tasks: 0, config: 0 }, total: 0 });
+  });
+
+  // @verifies DEG-31
+  it("counts a task with a field-local health finding, and is not ok", async () => {
+    await freshTracker();
+    // A clean neighbour must not be counted; only the degraded one is.
+    await writeTaskFile("01J0000000000000000CLEAN2", "T-1", "");
+    await writeTaskFile("01J00000000000000000BADF1", "T-2", "due_date: 42\n");
+    const summary = await computeIntegritySummary(locttDir);
+    expect(summary.counts.tasks).toBe(1);
+    expect(summary.counts.config).toBe(0);
+    expect(summary.total).toBe(1);
+    expect(summary.ok).toBe(false);
+  });
+
+  // @verifies DEG-31
+  it("counts an object-fatally unreadable task.md in the task count", async () => {
+    await freshTracker();
+    const id = "01J0000000000000000UNREAD";
+    await mkdir(join(locttDir, "tasks", id), { recursive: true });
+    // Unterminated string — object-fatal, lands in `unreadable`.
+    await writeFile(
+      join(locttDir, "tasks", id, "task.md"),
+      `---\nid: ${id}\nkey: T-3\ntitle: "unterminated\n---\nB\n`,
+      "utf-8",
+    );
+    const summary = await computeIntegritySummary(locttDir);
+    expect(summary.counts.tasks).toBe(1);
+    expect(summary.ok).toBe(false);
+  });
+
+  // @verifies DEG-31
+  it("counts a broken config entry in the config count", async () => {
+    await freshTracker();
+    // One valid + one hand-broken sprint (name is a number).
+    await writeFile(
+      join(locttDir, "config/sprints.yaml"),
+      "sprints:\n"
+      + "  - id: s_ok\n    name: Sprint 1\n    start_date: 2026-01-01\n    end_date: 2026-01-14\n    state: active\n"
+      + "  - id: s_bad\n    name: 5\n    start_date: 2026-01-15\n    end_date: 2026-01-28\n    state: future\n",
+      "utf-8",
+    );
+    const summary = await computeIntegritySummary(locttDir);
+    expect(summary.counts.config).toBe(1);
+    expect(summary.total).toBeGreaterThanOrEqual(1);
+    expect(summary.ok).toBe(false);
+  });
+
+  // @verifies DEG-31
+  it("sums task and config problems into total", async () => {
+    await freshTracker();
+    // A degraded task…
+    await writeTaskFile("01J000000000000000BOTHTSK", "T-5", "due_date: 42\n");
+    // …and a broken config entry.
+    await writeFile(join(locttDir, "config/sprints.yaml"), brokenSprint, "utf-8");
+    const summary = await computeIntegritySummary(locttDir);
+    expect(summary.counts.tasks).toBe(1);
+    expect(summary.counts.config).toBe(1);
+    expect(summary.total).toBe(2);
+    expect(summary.ok).toBe(false);
+  });
+
+  // @verifies DEG-31
+  it("is cheap: does NOT run the full doctor scan (a malformed comment is not counted)", async () => {
+    await freshTracker();
+    // The badge's sizing note forbids a per-load doctor. A malformed
+    // COMMENT is a finding `checkDataIntegrity`/doctor reports, but the
+    // summary reuses only the cheap task-`health`/config-`broken` signals —
+    // it never scans comment threads. So a tracker whose ONLY problem is a
+    // malformed comment must read as ok, proving the summary did not run the
+    // expensive scan. (If a future change routed the summary through the
+    // doctor, this count would become 1 and the test would fail.)
+    const cTask = "01J00000000000000COMMENT1";
+    await writeTaskFile(cTask, "T-7", "");
+    await postComment({ locttDir, taskId: cTask, body: "first", author: AUTHOR });
+    const cPath = join(locttDir, "tasks", cTask, "_comments.yaml");
+    const raw = parseYaml(await readFile(cPath, "utf-8")) as { comments: unknown[] };
+    raw.comments.push({ note: "hand-edited, not a comment" });
+    await writeFile(cPath, stringifyYaml(raw), "utf-8");
+    // Sanity: the full scan DOES see it — so a `total: 0` below is the
+    // summary being cheap, not the tracker being clean.
+    expect(await checkDataIntegrity(locttDir)).toHaveLength(1);
+
+    const summary = await computeIntegritySummary(locttDir);
+    expect(summary.total).toBe(0);
+    expect(summary.ok).toBe(true);
   });
 });

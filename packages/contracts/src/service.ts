@@ -433,6 +433,23 @@ export interface DoctorCheckResponse {
 }
 
 /**
+ * Response for `GET /api/integrity` — a tiny, FIXED-SIZE count of the
+ * tracker's data-integrity problems for the global integrity badge
+ * (DEG-31). Never a list: `total === 0` means clean, and any other number
+ * is the count the badge shows and Diagnostics explains. Computed cheaply
+ * (one shared task load + the config `broken` counts), never a full doctor
+ * run per page load. Mirrors core's `IntegritySummary`.
+ */
+export interface IntegritySummaryResponse {
+  readonly ok: boolean;
+  readonly counts: {
+    readonly tasks: number;
+    readonly config: number;
+  };
+  readonly total: number;
+}
+
+/**
  * Result of a bulk operation.
  *
  * Partial success is the normal outcome, not an exception — one bad

@@ -13730,3 +13730,78 @@ the paragraph break-test line, the `table` case + `tableToMarkdown` in
 un-tag the TSK-66 tests. Behaviour returns to A160 (pipe table shown as
 literal source text). Reinstating A160's alternative (force-raw) would
 instead need the `lossy.ts` `gfm_table` kind + CLI/MCP doc updates.
+
+### A-DEG31 · Global data-integrity badge + `GET /api/integrity` (cheap summary, reused signals)
+
+**Ticket:** DEG-31 (M1, major, P7/P8) · **Date:** 2026-09-18 · **Commit:** (working tree, on top of 5a5eceb)
+
+**The situation.** DEG-31 asks for a lightweight badge that shows the COUNT
+of integrity problems and links to Diagnostics, "so corruption is
+discoverable without three clicks behind a manual Run." The case's sizing
+note explicitly forbids a badge that runs a full `runDoctor`/
+`checkDataIntegrity` scan per page load (those walk every comment thread,
+history log and the relationship graph). UX-11's second half — "the corrupt
+task ALSO carries a marker in the List view" — was already built and tested
+end-to-end (`handleListTasks` attaches `health` via `wireHealth`; cells.tsx/
+ListView.tsx render `BrokenValue`/`FieldWarning`; `ListView.test.tsx`
+asserts the per-row marker), plus the whole-file `unreadable` banner. So the
+only genuine gap was the badge half. (A stale comment in `useTasks.ts`
+claimed the server still stripped `health`; corrected — the `wireHealth`
+wire-up had landed since.)
+
+**What had to be decided.** (1) How to compute the count cheaply. (2) What
+`counts.tasks` includes — the design (Ken-reviewed endpoint shape) says
+"tasks with a non-empty `health[]`"; does it also include object-fatally
+`unreadable` tasks? (3) Where to invalidate `["integrity"]` given the
+"don't touch git-sync" boundary.
+
+**Options considered.**
+- *Compute:* (a) reuse the cheap signals — one `loadAllTasksDetailed` pass
+  (already what `/api/tasks` loads) for task `health`/unreadable, plus the
+  eight config `broken` counts (each a small YAML load, the same set
+  `checkDataIntegrity` sweeps); or (b) call the doctor and count findings —
+  the case forbids this per load. Chose (a).
+- *`counts.tasks`:* (a) health-carrying tasks only, per the literal design;
+  or (b) health-carrying PLUS unreadable tasks. Chose (b): an unreadable
+  task is the *more* severe task-level corruption (it blocks a publish), and
+  a badge that omitted it would under-report the exact problem the user most
+  needs to find. Cost: one line beyond the literal design; recorded so Ken
+  can pare it back to (a) if he prefers strict fidelity.
+- *Invalidation:* add `["integrity"]` next to each existing `["tasks"]`
+  invalidation, via a shared `invalidateIntegrity(qc)` helper, at every
+  write family whose write can change the count (set-field, task mutations,
+  bulk, workflow, calendar, data/labels/milestones/sprints, projects). Git
+  sync/reconcile was left untouched per the task's explicit boundary; the
+  30s `staleTime` + the next task-affecting write cover it, and bare
+  `invalidateQueries()` (SchemaBanner/InitWizard) already refreshes it.
+  Attachments were deliberately skipped — an attachment write changes no
+  `health`/`broken` signal.
+
+**Decided.** New pure core `computeIntegritySummary(locttDir)` →
+`{ ok, counts: { tasks, config }, total }` (never a list); a thin
+`GET /api/integrity` handler over it; a `useIntegrity` hook (key
+`["integrity"]`, staleTime 30s); an `IntegrityBadge` in the Header rendered
+only when `ok === false` (`role="status"`, `aria-live="polite"`, a `<Link>`
+to `/settings/diagnostics`); `["integrity"]` invalidation added beside the
+existing `["tasks"]` invalidations. UX-11's List-marker test was tagged
+`@verifies DEG-31` (it already asserts the behaviour). Implements the
+endpoint shape Ken reviewed.
+
+**Why.** Principle 3 (parity) + the corruption-handling guide: the count is
+built from the same `health`/`broken` signals the surfaces already read, in
+one place (`computeIntegritySummary`), so CLI/MCP could reuse it and the
+badge can't drift from what the list and panels show. `role="status"` not
+`alert`/toast mirrors `AdvisoryFsBanner`: standing context, the app keeps
+working. The cheap-by-construction constraint is asserted by a test that a
+malformed *comment* (a doctor-only finding) is NOT counted.
+
+**To revert.** Remove `computeIntegritySummary` + its export
+(`diagnostics/integrity.ts`, `diagnostics/index.ts`, core `index.ts`);
+`IntegritySummaryResponse` (`contracts/service.ts` + `index.ts`); the
+`GET /api/integrity` route + `handleIntegrity` (`apps/web/src/server/
+server.ts`); `useIntegrity.ts`, `IntegrityBadge.tsx`, and its mount in
+`Header.tsx`; `invalidateIntegrity.ts` and its call at each write hook
+(useSetField/useTaskMutations/useBulk/useWorkflowMutations/useDataMutations/
+useProjectMutations); the new tests; and un-tag `@verifies DEG-31` from
+`ListView.test.tsx`. To narrow `counts.tasks` to the literal design, drop
+`+ unreadable.length` in `computeIntegritySummary`.

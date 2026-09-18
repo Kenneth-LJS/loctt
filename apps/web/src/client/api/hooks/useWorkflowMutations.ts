@@ -7,6 +7,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
+import { invalidateIntegrity } from "./invalidateIntegrity.ts";
 
 /**
  * Workflow + calendar writes for the M4.2 settings panels.
@@ -53,6 +54,9 @@ function invalidateWorkflowConsumers(qc: ReturnType<typeof useQueryClient>) {
   // show the pre-remap status.
   void qc.invalidateQueries({ queryKey: ["tasks"] });
   void qc.invalidateQueries({ queryKey: ["task"] });
+  // DEG-31: a workflow edit can repair a broken sub-list entry (a
+  // malformed status/priority/…), which changes the config integrity count.
+  invalidateIntegrity(qc);
 }
 
 export interface SaveWorkflowResult {
@@ -123,6 +127,9 @@ export function useSaveCalendar() {
       // Date rendering and "due this week" both read the calendar
       // (XS-31), so the task caches go with it.
       void qc.invalidateQueries({ queryKey: ["tasks"] });
+      // DEG-31: a calendar save can repair a broken holiday entry or a
+      // bad timezone, both of which the integrity count includes.
+      invalidateIntegrity(qc);
     },
   });
 }

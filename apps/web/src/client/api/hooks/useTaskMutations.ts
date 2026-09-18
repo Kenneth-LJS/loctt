@@ -2,6 +2,7 @@ import type { BulkResponse, TaskFrontmatterPublic } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
+import { invalidateIntegrity } from "./invalidateIntegrity.ts";
 
 /**
  * Single-task writes issued from the detail page's More menu.
@@ -30,6 +31,9 @@ function useInvalidateTask(): (ref: string) => void {
     // invalidate is all this needs.
     void qc.invalidateQueries({ queryKey: ["recents"] });
     void qc.invalidateQueries({ queryKey: ["builtin-count"] });
+    // DEG-31: deleting an unreadable task, or duplicating one, changes the
+    // integrity count — keep the badge in step with the list.
+    invalidateIntegrity(qc);
   };
 }
 
