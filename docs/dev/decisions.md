@@ -13617,3 +13617,39 @@ fallback, the row `health` flag and `unreadable[]` in `list_tasks`, the
 `get_task_history`. Core: remove `ReadHistoryPage.incomplete` and its two
 return sites in `history.ts`. Un-tag the DEG-C tests. No stored-format
 change, no migration — read-side surfacing only.
+
+### A202 · DEG-30 broken labels — a Repair (reload-from-disk) affordance, not a Delete button
+
+**Case:** DEG-30 (UI tree). **Date:** 2026-09-18. **Layer:** web
+(`apps/web` client only — the endpoint already rode `broken`).
+
+**What existed vs built.** Core (`config/labels.ts`) and the endpoint
+(`handleListLabels`, server.ts:2471) already lift a non-string-`name`
+label into `LabelsConfig.broken` and emit it on the wire. The gap was
+purely client-side: `CountedPage<T>` (in `useDataMutations.ts`) dropped
+`broken` from its type, so `LabelsPanel` never saw it and a broken label
+vanished from the list. Built: added `broken?: readonly BrokenEntry[]` to
+`CountedPage`, and a `BrokenLabelRow` in `LabelsPanel` that renders each
+broken entry as a marked, `aria-disabled` error row ("⚠ <id> — couldn't
+be read (<reason>)") after the healthy rows, and suppressed the empty
+state when only broken entries exist (A138). No core/endpoint change.
+
+**The call: Repair, not Delete.** DEG-30 says "a Repair or Delete action"
+(disjunctive). I chose **Repair** (a reload-from-disk button that names
+the file and the exact validator error), not Delete, because:
+- Core's `deleteLabel` (manage.ts:225) throws `unknown label: <id>` for an
+  id present only in `broken` and absent from `config.labels`; a broken
+  entry may also carry **no** readable `id` at all (BrokenEntry drops `id`
+  when the id itself failed). A Delete button wired to `DELETE
+  /api/labels/:id` would therefore be a dead control for exactly this
+  case — worse than no button.
+- Every existing broken-config surface takes the same shape: the workflow
+  panel (SET-33) and the sprints broken block offer "fix the file and
+  reload", never an in-app mutate-broken-entry path. LocTT never silently
+  rewrites a corrupt config entry (corruption-guide rule 3). Repair
+  (reload) is the consistent, precedent-aligned affordance.
+
+**To revert.** Drop `broken` from `CountedPage`; remove `BrokenLabelRow`
+and the `broken.map(...)` block in `LabelsPanel`; restore the empty-state
+condition to `items.length === 0`. Un-tag the two DEG-30 tests in
+`dataPanels.test.tsx`. No stored-format, endpoint, or core change.

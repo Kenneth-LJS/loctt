@@ -214,6 +214,61 @@ describe("LabelsPanel", () => {
       expect(String(del?.[0])).toContain("remap_to=L2");
     });
   });
+
+  /**
+   * DEG-30 / UX-13: a label whose stored fields do not validate is lifted
+   * by the tolerant loader into the response's `broken` array. The panel
+   * must show it as a marked, disabled error row naming the id and the
+   * reason — not omit it from the list with no notice.
+   */
+  describe("DEG-30 broken labels", () => {
+    const oneGoodOneBroken = {
+      items: [{ id: "L1", name: "bug", color: "#ff0000", taskCount: 3 }],
+      total: 1,
+      broken: [
+        { id: "l_broken", index: 1, rawText: "id: l_broken\nname: 999", error: "name must be text" },
+      ],
+    };
+
+    /** @verifies DEG-30 */
+    it("renders a broken label as a marked error row, not omitted", async () => {
+      fetchMock.mockResolvedValue(jsonResponse(oneGoodOneBroken));
+      render(<LabelsPanel />, { wrapper: wrapper() });
+      await screen.findByTestId("labels-list");
+
+      // The broken entry appears as its own row, named by its id and
+      // carrying the loader's reason — the whole point of DEG-30 is that
+      // it does not vanish.
+      const row = await screen.findByTestId("label-broken-l_broken");
+      expect(row.textContent).toContain("l_broken");
+      expect(row.textContent).toMatch(/couldn't be read/i);
+      expect(row.textContent).toContain("name must be text");
+      // Marked as a disabled/error affordance, distinct from a live row.
+      expect(row.getAttribute("aria-disabled")).toBe("true");
+      // And it offers a repair action.
+      expect(screen.getByTestId("label-broken-repair-l_broken")).not.toBeNull();
+      // The healthy label still renders alongside it.
+      expect(screen.getByTestId("label-row-L1")).not.toBeNull();
+    });
+
+    /** @verifies DEG-30 */
+    it("treats a file with only a broken label as non-empty, not as 'no labels'", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({
+        items: [],
+        total: 0,
+        broken: [
+          { id: "l_broken", index: 0, rawText: "id: l_broken\nname: 999", error: "name must be text" },
+        ],
+      }));
+      render(<LabelsPanel />, { wrapper: wrapper() });
+
+      // A138: `valid.length + broken.length` — a lone corrupt entry
+      // degrades rather than reading as "none", so the empty state must
+      // NOT show and the broken row must.
+      await screen.findByTestId("label-broken-l_broken");
+      expect(screen.queryByTestId("labels-empty")).toBeNull();
+    });
+  });
 });
 
 describe("MilestonesPanel", () => {
