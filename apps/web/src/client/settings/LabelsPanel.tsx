@@ -1,4 +1,4 @@
-import type { LabelDef } from "@loctt/contracts";
+import type { BrokenEntry, LabelDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -318,6 +318,68 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
   );
 }
 
+/**
+ * DEG-30 / UX-13: a label whose stored fields do not validate (a
+ * non-string `name`, an unknown key) is lifted by the tolerant loader
+ * into `broken` rather than dropped. It renders here as a disabled,
+ * marked error row — "⚠ <id> — couldn't be read (<reason>)" — so it is
+ * visible and repairable instead of vanishing from the list with no
+ * notice.
+ *
+ * The affordance is **Repair**, mirroring the workflow broken block
+ * (SET-33) and the sprints broken block: LocTT never rewrites a corrupt
+ * config entry for you (that would be a silent rewrite — corruption-guide
+ * rule 3), so the row names the file and the exact validator error and
+ * offers a reload-from-disk once the file is fixed by hand. A Delete
+ * affordance is deliberately not offered: core's `deleteLabel` only
+ * removes entries present in `config.labels`, and a broken entry may not
+ * even carry a readable `id` — a Delete button here would be a dead
+ * control. See decisions.md §8 (DEG-30).
+ */
+function BrokenLabelRow({ entry, onRepair, repairing }: {
+  readonly entry: BrokenEntry;
+  readonly onRepair: () => void;
+  readonly repairing: boolean;
+}) {
+  // Name the entry by its id when the loader could read one, otherwise by
+  // its position in the file (BrokenEntry drops `id` only when the id
+  // itself is what failed to validate).
+  const name = entry.id ?? `Label entry #${String(entry.index + 1)}`;
+  return (
+    <li
+      data-testid={`label-broken-${entry.id ?? `index-${String(entry.index)}`}`}
+      data-broken-label={entry.id ?? `index-${String(entry.index)}`}
+      aria-disabled="true"
+      className="flex items-start gap-2 border-b border-border-subtle py-2 text-danger-fg last:border-0"
+    >
+      <span aria-hidden="true" className="shrink-0 pt-0.5">⚠</span>
+      <div className="min-w-0 flex-1">
+        <span className="text-[0.9286rem] font-medium">{name}</span>
+        <span className="text-text-tertiary"> — couldn't be read</span>
+        <span className="ml-1 text-[0.8571rem] text-danger-fg/90">
+          ({entry.error})
+        </span>
+        <p className="mt-0.5 text-[0.8571rem] text-text-secondary">
+          Fix this entry in{" "}
+          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.7857rem]">
+            .loctt/config/labels.yaml
+          </code>{" "}
+          and reload — LocTT will not rewrite it for you.
+        </p>
+      </div>
+      <button
+        type="button"
+        data-testid={`label-broken-repair-${entry.id ?? `index-${String(entry.index)}`}`}
+        disabled={repairing}
+        onClick={onRepair}
+        className="shrink-0 rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-primary disabled:opacity-50"
+      >
+        Repair
+      </button>
+    </li>
+  );
+}
+
 export function LabelsPanel() {
   const labels = useCountedLabels();
 
@@ -360,6 +422,7 @@ export function LabelsPanel() {
   }
 
   const items = labels.data.items;
+  const broken = labels.data.broken ?? [];
 
   return (
     <div className="p-8" data-testid="labels-panel">
@@ -375,10 +438,11 @@ export function LabelsPanel() {
 
       <CreateLabelForm existing={items} />
 
-      {items.length === 0
+      {items.length === 0 && broken.length === 0
         ? (
             // Distinct from the load failure above: this one really is
-            // an empty file (MSL-31's "visually distinct").
+            // an empty file (MSL-31's "visually distinct"). A lone broken
+            // entry is NOT empty (DEG-30 / A138) — the list renders below.
             <p data-testid="labels-empty" data-labels-state="empty" className="text-[0.9286rem] text-text-tertiary">
               No labels yet. Create one above.
             </p>
@@ -391,6 +455,19 @@ export function LabelsPanel() {
                   label={label}
                   count={label.taskCount ?? 0}
                   allLabels={items}
+                />
+              ))}
+              {/*
+                DEG-30: broken entries render as marked error rows after
+                the healthy ones, so a corrupt label is shown and
+                repairable rather than silently omitted.
+              */}
+              {broken.map(entry => (
+                <BrokenLabelRow
+                  key={`broken-${entry.id ?? `index-${String(entry.index)}`}`}
+                  entry={entry}
+                  repairing={labels.isFetching}
+                  onRepair={() => { void labels.refetch(); }}
                 />
               ))}
             </ul>

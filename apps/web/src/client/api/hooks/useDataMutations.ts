@@ -1,4 +1,4 @@
-import type { LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
+import type { BrokenEntry, LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
@@ -22,6 +22,16 @@ import { apiClient } from "../client.ts";
 export interface CountedPage<T> {
   readonly items: readonly (T & { readonly taskCount?: number })[];
   readonly total: number;
+  /**
+   * DEG-30 / A138: per-entry corruption markers. A label (or milestone,
+   * or sprint) whose stored fields do not validate — a non-string `name`,
+   * an unknown key — is lifted by the tolerant loader into `broken`
+   * rather than dropped, so the panel can show it as a marked error row
+   * instead of silently omitting it. Omitted (never `[]`) when everything
+   * parsed; the endpoint already rides it (`handleListLabels`), the hook
+   * simply carries it through to the panel.
+   */
+  readonly broken?: readonly BrokenEntry[];
 }
 
 /**
