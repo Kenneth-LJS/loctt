@@ -24,7 +24,8 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 
-**Pre-publish work.** `TEMP-TODO.md` (repo root) is the pre-publish
+**Pre-publish work.** `docs/dev/TEMP-TODO.md` (moved out of the published
+root 2026-09-18, B3) is the pre-publish
 backlog: outstanding gaps and unresolved spec items — correctness
 defects, a11y (WCAG AA) failures, contract changes, deferred features,
 and the case/doc remainders. **Ken ruled (decisions.md K73) the whole
