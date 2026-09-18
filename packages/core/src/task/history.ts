@@ -64,6 +64,16 @@ export interface ReadHistoryOptions {
 export interface ReadHistoryPage {
   readonly entries: HistoryEntry[];
   readonly total: number;
+  /**
+   * How many stored rows could not be read as entries — a hand-broken
+   * `_history.yaml` row that has no `timestamp`/`kind` to sort or filter
+   * on (DEG-18 / DEG-C7). It is kept in the file (P-11), excluded from
+   * `entries` and `total`, and counted here so a surface can say "N
+   * entries could not be read" rather than presenting a partial log as
+   * complete. Present (0 when clean) on the paged overload only — the
+   * web activity feed computes the same number from `readHistoryRows`.
+   */
+  readonly incomplete: number;
 }
 
 /**
@@ -207,7 +217,7 @@ export async function readHistory(
   if (file.state === "unreadable") throw new UnreadableFileError(file);
   if (file.state === "absent") {
     if (options === undefined) return [];
-    return { entries: [], total: 0 };
+    return { entries: [], total: 0, incomplete: 0 };
   }
   // Same guard as `readHistoryRows` above, and it has to be repeated
   // because this reader parses independently rather than delegating.
@@ -264,7 +274,12 @@ export async function readHistory(
   const offset = Math.max(0, options.offset ?? 0);
   const limit = options.limit;
   const sliced = limit === undefined ? ordered.slice(offset) : ordered.slice(offset, offset + limit);
-  return { entries: sliced, total: filtered.length };
+  // DEG-C7: count the rows kept-but-unreadable (malformed) so a surface can
+  // report the log as incomplete rather than presenting the readable subset
+  // as the whole thing. `readable` is the valid entries; the difference from
+  // the full row set is what could not be interpreted.
+  const incomplete = all.length - readable.length;
+  return { entries: sliced, total: filtered.length, incomplete };
 }
 
 /**

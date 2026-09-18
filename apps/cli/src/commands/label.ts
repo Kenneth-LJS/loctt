@@ -11,7 +11,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
-import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
+import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -53,6 +53,9 @@ export async function run(args: string[], root: string): Promise<void> {
         const idCol = showIds ? `\t${l.id}` : "";
         console.log(`${l.name}${idCol}${color}${arch}`);
       }
+      // DEG-C3: surface a hand-broken label entry preserved in `cfg.broken`
+      // so one broken label does not read as "no labels".
+      renderBrokenEntries(cfg.broken);
       const notice = truncationNotice(page);
       if (notice !== undefined) console.log(notice);
       break;

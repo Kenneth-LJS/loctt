@@ -16,6 +16,8 @@
  * page. Filter before paging so you page through the *matches*.
  */
 
+import type { BrokenEntry } from "@loctt/contracts";
+
 import { getArg, getNonNegativeIntArg } from "./args.js";
 import { UsageError } from "./errors.js";
 
@@ -81,4 +83,35 @@ export function truncationNotice<T>(page: ConfigPage<T>): string | undefined {
   const end = page.offset + page.items.length;
   if (page.offset === 0 && end >= page.total) return undefined;
   return `\nShowing ${page.offset + 1}–${end} of ${page.total}. Use --limit/--offset to page.`;
+}
+
+/**
+ * Renders a config's per-entry `broken` degrades (DEG-C3) as marked rows
+ * in a `list` command's output, distinct from the valid entries above and
+ * from an empty list.
+ *
+ * The tolerant loaders lift an entry that does not validate into
+ * `config.broken` (a `BrokenEntry` carrying its index, its raw text and
+ * the validator's message) and load the rest, so the valid entries print
+ * normally — but a silent degrade reads as "that sprint just isn't
+ * configured", and one broken sprint reads as "no sprints" (A138 / DEG-11).
+ * Naming it here is the surface half of the parity the web list already
+ * gives (a marked, read-only row) and the CLI saved-views list pioneered
+ * (`views.ts` prints `[broken: …]`). On stdout, in the listing, so it is
+ * part of the answer rather than a side-channel warning.
+ *
+ * Prints nothing when the config is clean (`broken` omitted or empty), so
+ * a healthy list is byte-identical to before.
+ */
+export function renderBrokenEntries(
+  broken: readonly BrokenEntry[] | undefined,
+  log: (line: string) => void = console.log,
+): void {
+  if (broken === undefined || broken.length === 0) return;
+  for (const b of broken) {
+    // Name it by id when the loader could read one, else by position —
+    // the id is exactly what failed in the latter case.
+    const label = b.id !== undefined ? b.id : `#${b.index}`;
+    log(`${b.rawText}\t[broken: ${label} — ${b.error}]`);
+  }
 }

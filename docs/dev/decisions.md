@@ -13530,3 +13530,90 @@ Red-proven: the retired key is NOT found before the change, IS found after.
 (`packages/core/src/query/evaluator.ts`) and un-tag the XS-44 tests. XS-44's
 third bullet becomes unmet and a retired key is again unfindable by
 `text ~`. No stored-format change, no migration.
+
+### A201 · DEG-C CLI/MCP corruption-surface parity — mirror core's health/broken/four-state signals onto list/show/log and the config lists
+
+**Cases:** DEG-C1, DEG-C2, DEG-C3, DEG-C4, DEG-C5, DEG-C7, DEG-C8 (surface
+tree). **Date:** 2026-09-18. **Layer:** CLI (`apps/cli`) + MCP (`apps/mcp`)
+surfacing over the existing core corruption framework; one small core
+addition (`ReadHistoryPage.incomplete`). No new corruption *detection* —
+these reuse `loadAllTasksDetailed`, `Task.health`, `ResolvedRelationship`,
+config `broken`, and the bulk `TaskNotFoundError`-vs-else split that already
+exist. P10 parity: the web already renders all of this.
+
+**What was built (surfacing choices).**
+
+- **DEG-C2 (untitled → key).** CLI `list`/`show` and MCP `get_task`/
+  `list_tasks` render `title ?? key` where a title would go — never blank,
+  never `undefined`. Matches the web (`task.title ?? task.key`). `show`'s
+  header was `?? "(no title)"`; now the key.
+- **DEG-C1 (health travels + unreadable trailer).** CLI `list` and MCP
+  `list_tasks` switched from `loadAllTasks` to `loadAllTasksDetailed`. A
+  field-local corrupt row is marked (`⚠ ` prefix on CLI; `health: true` on
+  the MCP row); object-fatal tasks are named in a trailer on stderr (CLI,
+  exit still 0) / an `unreadable[]` list (MCP). MCP keeps the bare-array
+  shape when clean and untruncated; the envelope appears only when
+  truncated or when there are unreadable files.
+- **DEG-C3 (broken config entries).** New shared CLI helper
+  `renderBrokenEntries` (in `runtime/config-list.ts`) prints each `broken`
+  entry as a marked row on stdout, in the listing — wired into `sprint`/
+  `label`/`milestone`/`project` `list`. MCP: `list_projects` and the
+  `--progress` paths of `list_sprints`/`list_milestones` now carry
+  `broken` (the non-progress paths already spread it via `...cfg`).
+  Precedent: the saved-views list (`views.ts`) has always done this.
+- **DEG-C5 (four relationship states).** CLI `show` and MCP `get_task` now
+  distinguish healthy / corrupt-but-present (`⚠`, resolved key /
+  `targetCorrupt:true`) / corrupt-unreadable (`(corrupt)` / `missing +
+  targetCorrupt`) / deleted (`(deleted)` / `missing` alone), from core's
+  `ResolvedRelationship`. Previously both surfaces collapsed to
+  missing-vs-healthy and dropped `targetCorrupt`.
+- **DEG-C4.** No new surfacing needed — verified: `set` repairs a corrupt
+  field, `unset` removes it, an untouched corrupt sibling is preserved, and
+  a derived op (`link`/`unlink`) refuses with `CorruptFieldError` naming
+  the field (CLI non-zero exit; MCP `isError`). Tests only.
+- **DEG-C7 (incomplete history).** One core addition:
+  `ReadHistoryPage.incomplete` = malformed-row count (`all.length -
+  readable.length`) on the paged overload. CLI `log` reports it on stderr
+  (`N entries could not be read`); MCP `get_task_history` returns it as
+  `incomplete` (present only when > 0). Mirrors the web activity feed's
+  `unreadable`, computed from `readHistoryRows`.
+- **DEG-C8.** No new surfacing — verified: an object-fatal bulk member
+  lands in `failed` with its path (via `lookupTask`'s could-not-confirm
+  message), distinct from "not found" (a dangling ref) and from
+  `unchanged`. Tests only. **Triage refinement recorded:** DEG-C8's
+  bullet-1 "per-item refusal of a derived op over a field-local-corrupt
+  member" is not reachable through the *exposed* bulk ops (set/unset/
+  archive/move repair or preserve rather than refuse); a per-item
+  `CorruptFieldError` refusal only arises from `link`/`unlink`/`duplicate`,
+  which are single-item on CLI/MCP (exercised by DEG-C4). `bulkLink` exists
+  in core but no surface exposes it (CW-4 shipped bulk set/archive/move).
+  The bulk test therefore asserts bullet 2 (the explicitly-named gap in
+  known-gaps) plus that a field-local member is *included* (repaired), not
+  failed.
+
+**Why stderr for the CLI trailers/counts (list unreadable, log incomplete)
+but stdout for the config `broken` rows.** The task/history trailers are
+diagnostics about a primary stdout payload that must stay pipeable; the
+config-list `broken` rows ARE list entries (the saved-views precedent puts
+them on stdout), so they belong in the listing.
+
+**Tests.** `@verifies DEG-C1/2/3/4/5/7/8`, all integration
+(`tests/integration/cli/*.test.ts`), real on-disk corrupt fixtures for
+C4/C8 (not dangling refs). Every assertion red-proven: title fallbacks
+removed (C2 → 4 red); marker/trailer + MCP flag/list removed (C1 → red);
+`renderBrokenEntries` no-op'd + MCP `broken` spreads dropped (C3 → red);
+`CorruptFieldError` field name blanked + serializer re-emit disabled (C4 →
+red both halves); four-state logic collapsed + `targetCorrupt` dropped
+(C5 → red); `incomplete` forced to 0 (C7 → red); bulk catch made to say
+"task not found" for the else branch (C8 → red). All restored; suite green.
+
+**To revert.** CLI: restore `loadAllTasks` in `list`, drop the `⚠`
+marker/unreadable trailer and the `title ?? key` fallbacks; restore the
+2-state relationship block in `show`; drop `renderBrokenEntries` and its
+four call sites; drop the `log` incomplete line. MCP: drop the `title`
+fallback, the row `health` flag and `unreadable[]` in `list_tasks`, the
+`targetCorrupt` on `get_task` edges, the `broken` spreads in `list_projects`
++ sprint/milestone progress paths, and the `incomplete` field on
+`get_task_history`. Core: remove `ReadHistoryPage.incomplete` and its two
+return sites in `history.ts`. Un-tag the DEG-C tests. No stored-format
+change, no migration — read-side surfacing only.

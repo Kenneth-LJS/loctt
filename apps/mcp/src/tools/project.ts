@@ -47,6 +47,11 @@ export const TOOLS: readonly ToolDef[] = [
       return text(JSON.stringify({
         projects,
         default: cfg.default ?? null,
+        // DEG-C3: a hand-broken project entry is preserved in `cfg.broken`
+        // by the tolerant loader rather than dropped — carry it so an agent
+        // is not told "these are the projects" while one is silently
+        // missing. Present only when non-empty; parity with the web list.
+        ...(cfg.broken !== undefined && cfg.broken.length > 0 ? { broken: cfg.broken } : {}),
       }, null, 2));
     },
   },

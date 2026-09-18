@@ -16,7 +16,7 @@ import {
 
 import { formatNumber, pad } from "../format/value.js";
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
-import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
+import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -88,6 +88,10 @@ export async function run(args: string[], root: string): Promise<void> {
           : "";
         console.log(`${s.name}${idCol}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}${prog}${arch}`);
       }
+      // DEG-C3: a hand-broken sprint entry is preserved by the tolerant
+      // loader in `cfg.broken` rather than dropped — surface it as a marked
+      // row so one broken sprint does not read as "no sprints".
+      renderBrokenEntries(cfg.broken);
       const notice = truncationNotice(page);
       if (notice !== undefined) console.log(notice);
       break;

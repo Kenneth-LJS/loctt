@@ -13,7 +13,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
-import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
+import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -85,6 +85,10 @@ export async function run(args: string[], root: string): Promise<void> {
           : "";
         console.log(`${m.name}${idCol}${due}${prog}${arch}`);
       }
+      // DEG-C3: surface a hand-broken milestone entry preserved in
+      // `cfg.broken` so one broken milestone does not read as "no
+      // milestones".
+      renderBrokenEntries(cfg.broken);
       const notice = truncationNotice(page);
       if (notice !== undefined) console.log(notice);
       break;

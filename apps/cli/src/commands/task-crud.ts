@@ -11,7 +11,7 @@ import {
   duplicateTask,
   getCurrentUser,
   listTasks,
-  loadAllTasks,
+  loadAllTasksDetailed,
   loadAllUsers,
   loadArchivedGuardConfigs,
   loadLabelsConfig,
@@ -168,7 +168,14 @@ export async function create(args: string[], root: string): Promise<void> {
 export async function list(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_LIST_FLAGS);
   const locttDir = resolveLocttDir(root);
-  const tasks = await loadAllTasks(locttDir);
+  // DEG-C1 (P10 parity with the web list): load tasks *with* the
+  // unreadable trailer, not the plain `loadAllTasks`. A field-local
+  // corrupt task rides in `tasks` carrying its `health` (so a marker can
+  // be rendered on its row); an object-fatal one is on disk but could not
+  // be parsed, so it is named in a trailer rather than silently dropped —
+  // "N files could not be read" is the difference between a short list and
+  // a wrong one (P-5).
+  const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
   const { workflowConfig, queriesConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
 
   // ERR-10 / LST-51 (A-PRESCAN-2, P10 parity with the web list's banner):
@@ -285,8 +292,32 @@ export async function list(args: string[], root: string): Promise<void> {
   } else {
     for (const task of page) {
       const status = task.frontmatter.status ? ` [${task.frontmatter.status}]` : "";
-      console.log(`${task.frontmatter.key}  ${task.frontmatter.title}${status}`);
+      // DEG-C2: an untitled task (title never set, or lifted whole into
+      // `health` as corrupt) must show its key where the title would go —
+      // never a blank, never "undefined". Mirrors the web (`task.title ??
+      // task.key`, DEG-8) and `show` below.
+      const title = task.frontmatter.title ?? task.frontmatter.key;
+      // DEG-C1: a field-local corrupt task still lists (it is a task), but
+      // a silent row reads as healthy. Mark it with ⚠ — the same signal
+      // `show`'s "Needs attention" section and the web list's row marker
+      // use — so the reader knows to open it. `loctt show <key>` then names
+      // the fields. The marker is omitted when the task is clean, so a
+      // healthy list is byte-identical to before.
+      const marker = (task.health?.length ?? 0) > 0 ? "⚠ " : "";
+      console.log(`${marker}${task.frontmatter.key}  ${title}${status}`);
     }
+  }
+  // DEG-C1: object-fatal tasks (on disk, unparseable) cannot appear as
+  // rows — they have no readable frontmatter — so they are named in a
+  // trailer. Silence here would let a corpus of 50 read as 48 with nothing
+  // said (ERR-9 / P-5). On stderr so the row list on stdout stays
+  // pipeable; the command still exits 0 (the readable rows are a valid
+  // answer, and `doctor` is where a failing exit belongs).
+  if (unreadable.length > 0) {
+    console.error(
+      `${unreadable.length} file(s) could not be read (run 'loctt doctor' to inspect):`,
+    );
+    for (const u of unreadable) console.error(`  ${u.path}: ${u.reason}`);
   }
 }
 
@@ -362,7 +393,11 @@ export async function show(args: string[], root: string): Promise<void> {
     aux,
   });
 
-  console.log(`${model.task.frontmatter.key}: ${model.task.frontmatter.title ?? "(no title)"}`);
+  // DEG-C2: an untitled task shows its key where the title would go, never
+  // a blank or a placeholder. The header already leads with the key, so a
+  // corrupt/absent title renders as `T-1: T-1` — the corruption itself is
+  // spelled out in the "Needs attention" section below (from `health`).
+  console.log(`${model.task.frontmatter.key}: ${model.task.frontmatter.title ?? model.task.frontmatter.key}`);
   const fm = model.task.frontmatter;
   if (fm.status) console.log(`Status: ${fm.status}`);
   if (fm.priority) console.log(`Priority: ${fm.priority}`);
@@ -398,15 +433,30 @@ export async function show(args: string[], root: string): Promise<void> {
   if (model.relationships.length > 0) {
     console.log(`Relationships:`);
     for (const r of model.relationships) {
-      const display = r.missing
-        ? `${r.target.slice(0, 8)}… (deleted)`
-        : r.resolvedKey ?? r.target;
-      // Title and status make the line readable on its own — "blocks
-      // T-2" says less than "blocks T-2  Fix login  [in_progress]".
-      const detail = r.missing
-        ? ""
-        : [r.resolvedTitle, r.resolvedStatus ? `[${r.resolvedStatus}]` : undefined]
-            .filter(Boolean).join("  ");
+      // DEG-C5: mirror the four target states core resolves (and the web
+      // renders, DEG-15), not the two (missing vs healthy) this used to
+      // collapse them into. A corrupt-but-present target linked as ⚠, and
+      // an unreadable one marked "(corrupt)" rather than "(deleted)", are
+      // both distinct from a genuinely-absent target — telling the user a
+      // file that exists was removed is exactly ERR-1's conflation.
+      let display: string;
+      let detail = "";
+      if (r.missing && r.targetCorrupt === true) {
+        // On disk but object-fatally unreadable — corrupt, NOT deleted.
+        display = `${r.target.slice(0, 8)}… (corrupt)`;
+      } else if (r.missing) {
+        // No task directory at all — genuinely absent/deleted.
+        display = `${r.target.slice(0, 8)}… (deleted)`;
+      } else {
+        // Resolved. A ⚠ marks a target that loaded but carries field-local
+        // corruption (targetCorrupt), so it is not passed off as healthy.
+        const mark = r.targetCorrupt === true ? "⚠ " : "";
+        display = `${mark}${r.resolvedKey ?? r.target}`;
+        // Title and status make the line readable on its own — "blocks
+        // T-2" says less than "blocks T-2  Fix login  [in_progress]".
+        detail = [r.resolvedTitle, r.resolvedStatus ? `[${r.resolvedStatus}]` : undefined]
+          .filter(Boolean).join("  ");
+      }
       console.log(`  ${r.type} → ${display}${detail ? `  ${detail}` : ""}`);
     }
   }
@@ -799,7 +849,7 @@ export async function log(args: string[], root: string): Promise<void> {
   // it applies newest-first order, offset and limit in one place (the
   // source of truth MCP and web share) and returns `total` so a paged
   // view can say how much history remains (CMT-C4).
-  const { entries: display, total } = await readHistory(locttDir, task.frontmatter.id, {
+  const { entries: display, total, incomplete } = await readHistory(locttDir, task.frontmatter.id, {
     order: "desc",
     ...(limit !== undefined ? { limit } : {}),
     ...(offset !== undefined ? { offset } : {}),
@@ -807,11 +857,24 @@ export async function log(args: string[], root: string): Promise<void> {
 
   if (display.length === 0) {
     console.log("No history entries.");
+    // DEG-C7: even with no readable entries, a hand-broken row must be
+    // reported — "no history" over a file holding unreadable rows is the
+    // silent-shortening the case forbids.
+    if (incomplete > 0) {
+      console.error(`${incomplete} entr${incomplete === 1 ? "y" : "ies"} could not be read (run 'loctt doctor' to inspect).`);
+    }
     return;
   }
   const ctx = await buildHistoryDisplayContext(locttDir);
   for (const entry of display) {
     console.log(formatHistoryEntry(entry, ctx));
+  }
+  // DEG-C7 (P10 parity with the web activity feed's `unreadable` count): a
+  // malformed row is kept in the file but has no timestamp/kind to display,
+  // so it is excluded from the entries above. Say so on stderr, so a
+  // partial log does not read as complete; stdout stays the readable rows.
+  if (incomplete > 0) {
+    console.error(`\n${incomplete} entr${incomplete === 1 ? "y" : "ies"} could not be read (run 'loctt doctor' to inspect).`);
   }
   // Say how much was not shown, so a `--limit`/`--offset` page does not
   // read as the whole history. Silent when the page is the whole thing.
