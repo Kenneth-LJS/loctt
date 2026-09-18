@@ -3335,3 +3335,38 @@ separate does not apply server-side), giving one tokenizer-checked
 quoter across all three producers (core builder, `buildDsl.ts`, server
 search/facet DSL). Out of scope for the K83 follow-up; recorded so it
 isn't re-discovered as new.
+
+## Full-UI-suite run (2026-09-18) caught 4 real failures — 3 are GIT-19 regressions, 1 is GIT-25
+
+Ran the complete Playwright suite (`--config tests/ui/playwright.config.ts`,
+28 specs, workers=2): **837 passed, 5 failed**. Each failure was re-run in
+ISOLATION (workers=1) to separate flake from regression:
+
+- **SPR-6** (`flow-sprints.spec.ts:414`) — passes in isolation. The
+  documented parallel-load flake (known-gaps SPR-6 above). Not a defect.
+- **TSK-2** (`flow-tasks.spec.ts:167`) — **REAL, fails isolated.** A task
+  reached by a RETIRED key must show "retired key" wording; the header now
+  shows GIT-19's follow-note copy instead ("This task was renumbered while
+  you had it open. It used to be T-1"). GIT-19 (commit 9938221,
+  `?rekeyedFrom=`) changed the header's retired-key messaging and TSK-2 was
+  not re-checked against it. The rekeyedFrom follow-note (for a tab that was
+  OPEN during a rekey) is bleeding into the cold-navigation-to-a-retired-key
+  case, which should keep the plain "retired key / current key is X" note.
+- **XS-7** (`flow-task-failure.spec.ts:93`) + **TSK-34** (`:178`) — **REAL,
+  fail isolated.** Both assert the setField request body is exactly
+  `{field, value}`; GIT-19 added `expectedId` (the wrong-task precondition),
+  so the body now has 3 keys. XS-7's actual intent is "only the changed
+  field, not a whole-frontmatter fragment" — `expectedId` is a precondition,
+  not a frontmatter field, so it does not violate the intent, but the tests'
+  literal key-set assertion must be updated to allow the precondition while
+  still guarding against frontmatter bleed. (Edit-a-green-test-because-the-
+  behavior-legitimately-changed, per CLAUDE.md — preserve the no-bleed
+  intent, don't just widen the assertion.)
+- **GIT-25** (`flow-git-sync.spec.ts:668`) — **fails isolated:**
+  `getByTestId('git-adopt-branch')` never appears. The GIT-25 adopt-branch
+  control is not rendering in the e2e path (the implementing agent reported
+  this spec green headless — needs a fresh diagnosis: setup-order dependency
+  vs a genuine render gap in the adopt flow).
+
+**Status:** these are the ONLY known real UI failures; the rest of the
+suite (837) is green. Fix before the PR is considered merge-ready.
