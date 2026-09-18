@@ -104,6 +104,7 @@ export type {
   ErrorRecoveryKind,
   ErrorResponse,
   InitState,
+  IntegritySummaryResponse,
   LinkRequest,
   ListTasksRequest,
   LossyConstructResponse,

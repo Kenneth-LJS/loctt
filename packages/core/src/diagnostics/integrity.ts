@@ -49,6 +49,7 @@ import { TaskParseError } from "../task/frontmatter.js";
 import { isMalformedHistoryEntry, readHistoryRows } from "../task/history.js";
 import { readTask } from "../task/io.js";
 import { listTaskIds } from "../task/list-ids.js";
+import { loadAllTasksDetailed } from "../task/load-all.js";
 import { validateRelationships } from "../task/traversal.js";
 import { loadAllUsersDetailed } from "../users/profile.js";
 import { collectSidebarGroupsDrops } from "../users/settings.js";
@@ -476,4 +477,102 @@ export function blockingFindings(
   findings: ReadonlyArray<IntegrityFinding>,
 ): IntegrityFinding[] {
   return findings.filter(f => f.severity === "unreadable");
+}
+
+/**
+ * A tiny, FIXED-SIZE count of the tracker's data-integrity problems, for
+ * the global integrity badge (DEG-31 / UX-11): a badge that shows "N data
+ * issues" and points at Diagnostics, so corruption is discoverable without
+ * running the manual doctor.
+ *
+ * ## Why this is not `checkDataIntegrity`
+ *
+ * `checkDataIntegrity` (and `runDoctor`) walk every task's comment thread,
+ * history log and the whole relationship graph — the full, per-load-forbidden
+ * scan the DEG-31 case explicitly rules out for a badge. This reuses only the
+ * two CHEAP signals the surfaces already read:
+ *
+ *   - `tasks`: the count of tasks whose tolerant parse produced a non-empty
+ *     `health[]` (a wrong-typed / unrecognised field lifted out of
+ *     frontmatter — the same signal DEG-C1 and the list cells surface), PLUS
+ *     the object-fatally `unreadable` task files. Both come from ONE
+ *     `loadAllTasksDetailed` pass — the same call `/api/tasks` already makes.
+ *     Unreadable is folded in because it is the *more* severe task-level
+ *     corruption (it blocks a publish); a badge that omitted it would under-
+ *     report the exact problem the user most needs to find.
+ *   - `config`: the count of `BrokenEntry`s across the eight config lists —
+ *     the same per-entry `broken` outputs the settings panels and DEG-C3
+ *     read. Each is one small YAML load; workflow's keyed `broken` record is
+ *     flattened across its sub-lists, matching `checkDataIntegrity`.
+ *
+ * No ids, no field detail, no per-task message — that is Diagnostics' job.
+ * The shape is fixed regardless of how many problems exist, so the endpoint
+ * cost is O(tasks) for the single load it already shares, never O(findings).
+ */
+export interface IntegritySummary {
+  /** True when there are no known integrity problems (`total === 0`). */
+  readonly ok: boolean;
+  readonly counts: {
+    /** Tasks with field-local health findings, plus unreadable task files. */
+    readonly tasks: number;
+    /** Broken config entries across all config lists. */
+    readonly config: number;
+  };
+  /** `counts.tasks + counts.config` — what the badge shows. */
+  readonly total: number;
+}
+
+/** Sum the `broken` length of one config, swallowing an absent/fatal file. */
+async function countConfigBroken(
+  loadBroken: () => Promise<readonly BrokenLike[] | undefined>,
+): Promise<number> {
+  try {
+    return (await loadBroken())?.length ?? 0;
+  } catch {
+    // Object-fatal parse error / absent file — the same as
+    // `collectConfigBroken`: a whole-file parse failure is doctor's
+    // per-file check to report, not a per-entry `broken` marker, and an
+    // absent optional config is normal. Neither is a broken *entry*.
+    return 0;
+  }
+}
+
+export async function computeIntegritySummary(
+  locttDir: string,
+): Promise<IntegritySummary> {
+  // ONE task pass — shared with what the list already loads. A task with a
+  // non-empty `health` degraded a field; an `unreadable` one could not be
+  // parsed at all. Both are integrity problems the badge must count.
+  const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
+  const degradedTasks = tasks.filter(t => (t.health?.length ?? 0) > 0).length;
+  const taskCount = degradedTasks + unreadable.length;
+
+  // The eight config lists, exactly the set `checkDataIntegrity` sweeps —
+  // each a small YAML read, never the doctor's task/comment/history graph.
+  const configCounts = await Promise.all([
+    countConfigBroken(() => loadProjectsConfig(locttDir).then(c => c.broken)),
+    countConfigBroken(() => loadLabelsConfig(locttDir).then(c => c.broken)),
+    countConfigBroken(() => loadMilestonesConfig(locttDir).then(c => c.broken)),
+    countConfigBroken(() => loadSprintsConfig(locttDir).then(c => c.broken)),
+    countConfigBroken(() => loadQueriesConfig(locttDir).then(c => c.broken)),
+    countConfigBroken(() => loadListViewConfig(locttDir).then(c => c.broken)),
+    countConfigBroken(() => loadCalendarConfig(locttDir).then(c => c.broken)),
+    // workflow.yaml's `broken` is a keyed record (one BrokenEntry[] per
+    // sub-list), flattened here as `checkDataIntegrity` does.
+    countConfigBroken(async () => {
+      const wf = await loadWorkflowConfig(locttDir);
+      if (wf.broken === undefined) return undefined;
+      return Object.values(wf.broken)
+        .flat()
+        .filter((e): e is BrokenEntry => e !== undefined);
+    }),
+  ]);
+  const configCount = configCounts.reduce((a, b) => a + b, 0);
+
+  const total = taskCount + configCount;
+  return {
+    ok: total === 0,
+    counts: { tasks: taskCount, config: configCount },
+    total,
+  };
 }

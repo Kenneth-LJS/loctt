@@ -201,6 +201,7 @@ describe("ListView", () => {
   });
 
   // @verifies A137 / A137.1 (per-row health marker in the list)
+  // @verifies DEG-31 (UX-11: a corrupt task also carries a marker in the List view)
   it("marks a degraded field on a row that carries health", async () => {
     TASKS_OVERRIDE = {
       items: [{

@@ -124,3 +124,43 @@ test.describe("DEG-29 / DEG-7 — corruption on the task-detail meta panel", () 
       .not.toMatch(/^jira_id:\s*ABC-123\s*$/m);
   });
 });
+
+test.describe("DEG-31 — the global integrity badge points at Diagnostics", () => {
+  // @verifies DEG-31
+  test("a corrupt task raises a header badge that links to Diagnostics", async ({
+    page,
+    tracker,
+  }) => {
+    // Seed one corrupt task (a wrong-typed due_date). The badge is a
+    // whole-app affordance, so it must appear from an ordinary list view,
+    // not only on the corrupt task's own page.
+    const [key] = await tracker.seed([
+      { title: "Corrupt for badge", fields: { due_date: "42" } },
+    ]);
+    if (key === undefined) throw new Error("seed returned no key");
+    expect(await frontmatterOf(tracker.root, key)).toMatch(/^due_date:\s*42\s*$/m);
+
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const badge = page.getByTestId("integrity-badge");
+    await expect(badge).toBeVisible();
+    // Standing context, not a toast/alert.
+    await expect(badge).toHaveAttribute("role", "status");
+    await expect(badge).toContainText(/data issue/i);
+
+    // It routes to Diagnostics without three clicks behind a manual Run.
+    await badge.click();
+    await expect(page).toHaveURL(/\/settings\/diagnostics$/);
+    await expect(page.getByTestId("diagnostics-panel")).toBeVisible();
+  });
+
+  // @verifies DEG-31
+  test("a clean tracker shows no badge", async ({ page, tracker }) => {
+    // A healthy task — nothing corrupt anywhere.
+    await tracker.seed([{ title: "Perfectly fine" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    // Wait for the list to be present, then assert the badge is absent.
+    await expect(page.getByTestId("header-new-task")).toBeVisible();
+    await expect(page.getByTestId("integrity-badge")).toHaveCount(0);
+  });
+});

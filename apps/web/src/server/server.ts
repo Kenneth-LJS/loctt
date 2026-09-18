@@ -15,6 +15,7 @@ import type {
   ErrorCode,
   ErrorResponse,
   FieldHealth,
+  IntegritySummaryResponse,
   LinkRequest,
   ListTasksRequest,
   MigrateResponse,
@@ -73,6 +74,7 @@ import {
   bulkSetFields,
   BurndownError,
   completeInterruptedPrefixRename,
+  computeIntegritySummary,
   computeSchemaStatus,
   computeWorkflowKeyCounts,
   ConfigRouterError,
@@ -1533,6 +1535,18 @@ export function createWebApp(options: WebAppOptions) {
       res.off("close", onClose);
       if (!res.writableEnded) res.end();
     }
+  };
+
+  const handleIntegrity: RouteHandler = async ({ res, locttDir }) => {
+    // DEG-31: a tiny, fixed-size integrity summary for the global badge.
+    // Deliberately NOT `runDoctorStream`/`checkDataIntegrity` — those walk
+    // every comment thread, history log and the relationship graph, which
+    // the case forbids on a per-load badge. `computeIntegritySummary`
+    // reuses the cheap signals the surfaces already read (one shared task
+    // load for `health`/unreadable + the config `broken` counts). Counts
+    // only; ids and field detail are what Diagnostics is for.
+    const summary = await computeIntegritySummary(locttDir);
+    json(res, summary satisfies IntegritySummaryResponse);
   };
 
   const handleListViews: RouteHandler = async ({ res, locttDir }) => {
@@ -5446,6 +5460,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/migrate/plan", handler: handleMigratePlan },
     { method: "POST", pattern: "/api/migrate", handler: handleMigrate },
     { method: "GET", pattern: "/api/doctor", handler: handleDoctor },
+    { method: "GET", pattern: "/api/integrity", handler: handleIntegrity },
     { method: "GET", pattern: "/api/config", handler: handleConfig },
     { method: "GET", pattern: CONFIG_KEY_RE, handler: handleGetConfigKey },
     { method: "GET", pattern: "/api/projects", handler: handleListProjects },

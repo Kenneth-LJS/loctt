@@ -9,23 +9,16 @@ import { apiClient } from "../client.ts";
  * A list row = the public frontmatter plus, when the task is degraded,
  * its per-field health findings (A137 / A137.1).
  *
- * ## CROSS-LANE DEPENDENCY (Phase-7B S3 → coordinator)
- *
- * The list server (`handleListTasks` in `apps/web/src/server/server.ts`,
- * ~line 3334) currently maps each row through `projectTaskFrontmatter(
- * t.frontmatter)`, which drops `t.health`. So `health` below never
- * arrives on the wire yet, and every list cell renders exactly as
- * before. For the list to SHOW per-row corruption (not hide it), the
- * server must attach the task's `health` list to each row it emits —
- * e.g. `{ ...projectTaskFrontmatter(t.frontmatter), ...(t.health ? {
- * health: t.health } : {}) }`. That file is another agent's lane; this
- * is the client half, ready for that wire. The detail route already
- * carries `health` (`GET /api/tasks/:ref`), so the shape is proven —
- * the list read is the only place that still strips it.
- *
- * The render (cells.tsx / ListView.tsx) is written and tested against a
- * row carrying `health`, so it lights up the moment the server attaches
- * it, with no further client change.
+ * The wire carries `health` end-to-end: `handleListTasks` maps each row
+ * through `{ ...projectTaskFrontmatter(t.frontmatter), ...wireHealth(t) }`
+ * (server.ts), the same shape `GET /api/tasks/:ref` uses. So a corrupt
+ * task shows a per-row marker in the list (UX-11 / DEG-31), rendered by
+ * cells.tsx / ListView.tsx off this `health` list. (An earlier note here
+ * claimed the server still stripped `health` — it was stale; the
+ * `wireHealth` wire-up landed since.) The one deliberate boundary is that
+ * the list carries only INTRINSIC health (a wrong-typed field lifted out
+ * of frontmatter), not the extrinsic dangling-ref / invalid-enum pass the
+ * detail route computes — see `wireHealth`'s SCOPE note in server.ts.
  */
 export interface TaskListRow extends TaskFrontmatterPublic {
   /**

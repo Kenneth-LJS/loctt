@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { DELETE_CONFIRM_WORD } from "../../list/DeleteConfirmDialog.tsx";
 import { apiClient } from "../client.ts";
+import { invalidateIntegrity } from "./invalidateIntegrity.ts";
 
 /**
  * How long a bulk write may hang before the UI stops claiming to know
@@ -36,6 +37,8 @@ function useInvalidateTasks(): () => void {
   return () => {
     void qc.invalidateQueries({ queryKey: ["tasks-feed"] });
     void qc.invalidateQueries({ queryKey: ["tasks"] });
+    // DEG-31: a bulk set/delete can clear or introduce corrupt values.
+    invalidateIntegrity(qc);
   };
 }
 

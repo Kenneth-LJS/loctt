@@ -2,6 +2,7 @@ import type { TaskFrontmatterPublic } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
+import { invalidateIntegrity } from "./invalidateIntegrity.ts";
 
 /**
  * The meta panel's write verb (M2.2a).
@@ -145,6 +146,9 @@ export function useSetField(ref: string, expectedId?: string) {
       void qc.invalidateQueries({ queryKey });
       void qc.invalidateQueries({ queryKey: ["tasks-feed"] });
       void qc.invalidateQueries({ queryKey: ["tasks"] });
+      // DEG-31: a field edit can repair a corrupt value, so the badge
+      // must move with the list.
+      invalidateIntegrity(qc);
       // VUE-30: "Assigned to me" and "Overdue" are membership counts a
       // field edit can change, and the case requires them to move
       // without a page reload.

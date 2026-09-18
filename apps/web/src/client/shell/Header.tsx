@@ -10,6 +10,7 @@ import { useTheme } from "../theme/useTheme.ts";
 import { avatarPalette, initials } from "../ui/avatar.ts";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
+import { IntegrityBadge } from "./IntegrityBadge.tsx";
 
 /**
  * App header: sidebar toggle, brand, a (stub) search box, theme
@@ -119,6 +120,12 @@ export function Header({
       <div className="flex-1" />
 
       <HeaderSearch />
+
+      {/* DEG-31: the global data-integrity badge. Renders itself only when
+          there are problems; a clean tracker shows nothing here. Placed
+          before the theme toggle so it sits with the app-state affordances
+          rather than the per-task actions. */}
+      <IntegrityBadge />
 
       <ThemeToggle />
 
