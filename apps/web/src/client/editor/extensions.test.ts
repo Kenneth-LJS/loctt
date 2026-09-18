@@ -47,4 +47,15 @@ describe("LocTT TipTap extensions", () => {
     expect(schema.nodes["attachmentEmbed"]).toBeDefined();
     expect(schema.nodes["attachmentEmbed"]).not.toBe(schema.nodes["image"]);
   });
+
+  it.each(["table", "tableRow", "tableHeader", "tableCell"])(
+    "registers the %s node so a GFM pipe table is not dropped (TSK-66)",
+    name => {
+      // @verifies TSK-66
+      // Without these four nodes in the schema, TipTap drops a pasted or
+      // loaded pipe table — the paragraph-text failure the case forbids.
+      // Removing them from LOCTT_EXTENSIONS turns this red.
+      expect(schema.nodes[name]).toBeDefined();
+    },
+  );
 });

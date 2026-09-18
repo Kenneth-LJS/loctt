@@ -243,6 +243,37 @@ function renderNode(
         </code>
       );
 
+    /**
+     * A GFM pipe table (TSK-66). The read view renders the same table
+     * node the rich editor produces, so a body with a table reads as a
+     * table here too — not as the `null` the `default` branch would give
+     * a node with no `.text`, which would make the table silently vanish
+     * from the default read state.
+     */
+    case "table":
+      return (
+        <table className="my-1.5 w-full border-collapse text-[0.9286rem]">
+          <tbody>{kids()}</tbody>
+        </table>
+      );
+
+    case "tableRow":
+      return <tr>{kids()}</tr>;
+
+    case "tableHeader":
+      return (
+        <th className="border border-border-subtle px-2 py-1 text-left font-semibold">
+          {kids()}
+        </th>
+      );
+
+    case "tableCell":
+      return (
+        <td className="border border-border-subtle px-2 py-1 align-top">
+          {kids()}
+        </td>
+      );
+
     case "text":
       return renderText(node);
 

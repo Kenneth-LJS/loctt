@@ -201,6 +201,20 @@ export function fromMarkdown(md: string): JSONContent {
       continue;
     }
 
+    // GFM pipe table (TSK-66). A header row of `| a | b |`, a delimiter
+    // row of `| --- | :--: |`, then zero or more body rows. Recognised as
+    // a table only when the delimiter row is present — a lone `| a | b |`
+    // line with no `---` beneath is not a table, and forcing it into one
+    // would swallow ordinary text that merely contains pipes. When it is a
+    // table, the cells become editable `tableHeader`/`tableCell` nodes
+    // rather than the literal paragraph text the case forbids.
+    if (isTableStart(lines, i)) {
+      const table = parseTable(lines, i);
+      content.push(table.node);
+      i = table.next;
+      continue;
+    }
+
     // Lists. Task-list items are a bullet list with `checked` attrs, so
     // `- [x] done` does not degrade into the literal text "[x] done".
     const listItem = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(line);
@@ -233,6 +247,7 @@ export function fromMarkdown(md: string): JSONContent {
       if (l.trim() === "") break;
       if (/^(#{1,6})\s/.test(l) || /^\s*>/.test(l) || /^(\s*)([-*+]|\d+[.)])\s/.test(l)) break;
       if (/^(\s*)(`{3,}|~{3,})/.test(l)) break;
+      if (isTableStart(lines, i)) break;
       para.push(l);
       i++;
     }
@@ -249,6 +264,103 @@ export function fromMarkdown(md: string): JSONContent {
   }
 
   return { type: "doc", content: content.length > 0 ? content : [{ type: "paragraph" }] };
+}
+
+/* ------------------------------------------------------------------ *
+ * GFM pipe tables (TSK-66)
+ * ------------------------------------------------------------------ */
+
+/**
+ * A GFM delimiter row: `| --- | :--: | ---: |`. Each cell is a run of
+ * dashes with an optional leading and/or trailing colon (alignment).
+ * The row is what distinguishes a table from a paragraph that merely
+ * contains pipes, so the test is deliberately strict.
+ */
+const TABLE_DELIM_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+/** A line that carries at least one unescaped pipe — a candidate row. */
+function isTableRow(line: string): boolean {
+  return /(?:^|[^\\])\|/.test(line);
+}
+
+/**
+ * True when line `i` begins a GFM pipe table: a header row followed by a
+ * delimiter row. Both are required — a lone piped line is not a table.
+ */
+function isTableStart(lines: readonly string[], i: number): boolean {
+  const header = lines[i] ?? "";
+  const delim = lines[i + 1] ?? "";
+  return isTableRow(header) && TABLE_DELIM_RE.test(delim) && delim.includes("-");
+}
+
+/**
+ * Splits a pipe-table row into its cell texts.
+ *
+ * Leading and trailing pipes are optional in GFM and are stripped. A
+ * backslash-escaped pipe (`\|`) is a literal inside a cell, not a
+ * separator, so the split honours the escape and the cell keeps the raw
+ * `\|` — re-serialization emits it back unchanged.
+ */
+function splitCells(row: string): string[] {
+  const trimmed = row.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const cells: string[] = [];
+  let current = "";
+  for (let j = 0; j < trimmed.length; j++) {
+    const ch = trimmed[j];
+    if (ch === "\\" && trimmed[j + 1] === "|") {
+      current += "\\|";
+      j++;
+      continue;
+    }
+    if (ch === "|") {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+/**
+ * Parses the table starting at line `i` into a TipTap `table` node and
+ * reports the next unconsumed line. The first row becomes `tableHeader`
+ * cells; the delimiter row is consumed and dropped (alignment is not
+ * preserved as a node attr — GFM alignment has no TipTap-cell home, and
+ * a rich edit re-emits a plain `---` delimiter, which is the documented
+ * cost of editing in rich mode); subsequent piped rows become
+ * `tableCell` rows until a non-row line.
+ */
+function parseTable(
+  lines: readonly string[],
+  start: number,
+): { node: JSONContent; next: number } {
+  const header = splitCells(lines[start] ?? "");
+  const columns = header.length;
+  let i = start + 2; // skip header + delimiter
+  const bodyRows: string[][] = [];
+  while (i < lines.length && isTableRow(lines[i] ?? "") && (lines[i] ?? "").trim() !== "") {
+    bodyRows.push(splitCells(lines[i] ?? ""));
+    i++;
+  }
+
+  const cell = (text: string, kind: "tableHeader" | "tableCell"): JSONContent => ({
+    type: kind,
+    content: [{ type: "paragraph", content: inlineNodes(text) }],
+  });
+
+  const rows: JSONContent[] = [
+    { type: "tableRow", content: header.map(c => cell(c, "tableHeader")) },
+  ];
+  for (const row of bodyRows) {
+    // Pad or trim to the header's column count so the grid is rectangular
+    // — a malformed row with too few/many cells does not desync the table.
+    const padded = Array.from({ length: columns }, (_, c) => row[c] ?? "");
+    rows.push({ type: "tableRow", content: padded.map(c => cell(c, "tableCell")) });
+  }
+
+  return { node: { type: "table", content: rows }, next: i };
 }
 
 /**
@@ -410,11 +522,57 @@ function block(node: JSONContent, depth = 0): string {
         })
         .join("\n");
     }
+    case "table":
+      return tableToMarkdown(node);
     case "attachmentEmbed":
       return `![${attr(node, "alt")}](${attr(node, "src")})`;
     default:
       return inlineText(node.content ?? []);
   }
+}
+
+/**
+ * Serializes a `table` node back to a GFM pipe table (TSK-66).
+ *
+ * The first `tableRow` is emitted as the header, followed by a delimiter
+ * row of plain `---` per column, then the remaining rows as body cells.
+ * Cells are single-line: a hard break inside a cell becomes a space,
+ * because a GFM pipe-table cell cannot contain a literal newline without
+ * breaking the row. Column count is taken from the header so the
+ * delimiter always matches, even if a body row has a different length.
+ *
+ * This is the *edited* path only (see `RichBuffer`): an unedited body
+ * with a table returns its original bytes untouched. So a table the user
+ * merely looked at is never rewritten; only a table they actually edited
+ * is re-emitted in this canonical spelling, which is the documented cost
+ * of rich-mode editing (A14).
+ */
+function tableToMarkdown(node: JSONContent): string {
+  const rows = (node.content ?? []).filter(r => r.type === "tableRow");
+  if (rows.length === 0) return "";
+  const cellsOf = (row: JSONContent): string[] =>
+    (row.content ?? []).map(cellNode => {
+      const inner = (cellNode.content ?? [])
+        .map(c => inlineText(c.content ?? []))
+        .join(" ")
+        .replace(/\n/g, " ")
+        .trim();
+      // A literal pipe inside a cell must be escaped or it reads as a
+      // column separator on the next parse. Only escape a *bare* pipe —
+      // one already written `\|` (as it round-trips from the parser, which
+      // keeps the escape in the cell text) must not be doubled to `\\|`.
+      return inner.replace(/(^|[^\\])\|/g, "$1\\|");
+    });
+
+  const header = cellsOf(rows[0] as JSONContent);
+  const columns = header.length;
+  const line = (cells: readonly string[]): string =>
+    `| ${Array.from({ length: columns }, (_, c) => cells[c] ?? "").join(" | ")} |`;
+
+  const out: string[] = [line(header)];
+  out.push(`| ${Array.from({ length: columns }, () => "---").join(" | ")} |`);
+  for (const row of rows.slice(1)) out.push(line(cellsOf(row)));
+  return out.join("\n");
 }
 
 /**
