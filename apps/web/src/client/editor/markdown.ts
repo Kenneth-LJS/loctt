@@ -558,10 +558,13 @@ function tableToMarkdown(node: JSONContent): string {
         .replace(/\n/g, " ")
         .trim();
       // A literal pipe inside a cell must be escaped or it reads as a
-      // column separator on the next parse. Only escape a *bare* pipe —
-      // one already written `\|` (as it round-trips from the parser, which
-      // keeps the escape in the cell text) must not be doubled to `\\|`.
-      return inner.replace(/(^|[^\\])\|/g, "$1\\|");
+      // column separator on the next parse. Normalise first (drop any
+      // existing backslash before a pipe) then escape EVERY pipe, so the
+      // result is exactly one `\|` per pipe — a lookbehind-style
+      // "only a bare pipe" replace skipped the second of two adjacent
+      // pipes (`a||b`), leaving it to re-parse as a column break, and
+      // could not be fixed by a single non-overlapping global match.
+      return inner.replace(/\\\|/g, "|").replace(/\|/g, "\\|");
     });
 
   const header = cellsOf(rows[0] as JSONContent);
