@@ -18,14 +18,17 @@ export default defineConfig({
   // normal Node module at runtime.
   // proper-lockfile is CJS and uses dynamic require for graceful-fs;
   // bundling into ESM breaks at runtime. Keep external.
-  external: ["yaml", "ulid", "busboy", "proper-lockfile"],
+  // sharp ships a native .node binding loaded via dynamic require;
+  // can't be bundled. Must be installed as a runtime dep on the
+  // host that runs the CLI.
+  external: ["yaml", "ulid", "busboy", "proper-lockfile", "sharp"],
   noExternal: ["@loctt/core", "@loctt/contracts", "@loctt/mcp", "@loctt/web", "@modelcontextprotocol/sdk"],
   esbuildOptions(options) {
     options.alias = {
       "@loctt/contracts": resolve("../../packages/contracts/src/index.ts"),
       "@loctt/core": resolve("../../packages/core/src/index.ts"),
       "@loctt/mcp": resolve("../mcp/src/index.ts"),
-      "@loctt/web": resolve("../web/src/index.ts"),
+      "@loctt/web": resolve("../web/src/server/index.ts"),
     };
   },
 });

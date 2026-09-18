@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { LocttState, Task } from "@loctt/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { seedLabels } from "../test-support/entities.js";
 import { createTask } from "./create.js";
 import { readHistory } from "./history.js";
 import { writeTask, writeTaskBody } from "./io.js";
@@ -33,13 +34,27 @@ describe("history instrumentation", () => {
       updated_at: "2026-01-01T00:00:00Z",
       status: "not_started",
       labels: ["bug"],
-      fields: { sprint: "sprint_1" },
+      fields: { sprint_field: "sprint_1" },
     },
     body: "Body.\n",
   };
 
-  async function seedTask(): Promise<void> {
-    await writeTask(locttDir, "abc", seed);
+  /**
+   * Registers the labels the seed references and writes the task with
+   * their ids.
+   *
+   * `writeTask` bypasses validation, so the seed could hold the raw
+   * name `"bug"`. `setField` now resolves a name to its id, so a diff
+   * between the stored name and a resolved id reported a spurious
+   * add-and-remove. Returns the ids so assertions can name them.
+   */
+  async function seedTask(): Promise<{ bug: string; feature: string }> {
+    const [bug, feature] = await seedLabels(locttDir, "bug", "feature");
+    await writeTask(locttDir, "abc", {
+      ...seed,
+      frontmatter: { ...seed.frontmatter, labels: [bug] },
+    });
+    return { bug, feature };
   }
 
   describe("setField", () => {
@@ -69,14 +84,14 @@ describe("history instrumentation", () => {
 
     it("records custom_field_change for custom field", async () => {
       await seedTask();
-      await setField({ locttDir, taskId: "abc", field: "sprint", value: "sprint_2" });
+      await setField({ locttDir, taskId: "abc", field: "sprint_field", value: "sprint_2" });
 
       const history = await readHistory(locttDir, "abc");
       expect(history).toHaveLength(1);
       expect(history).toEqual([
         expect.objectContaining({
           kind: "custom_field_change",
-          field: "sprint",
+          field: "sprint_field",
           before: "sprint_1",
           after: "sprint_2",
         }),
@@ -84,25 +99,26 @@ describe("history instrumentation", () => {
     });
 
     it("records label_added and label_removed for label changes", async () => {
-      await seedTask();
-      await setField({ locttDir, taskId: "abc", field: "labels", value: ["feature", "bug"] });
+      const { bug, feature } = await seedTask();
+      await setField({ locttDir, taskId: "abc", field: "labels", value: [feature, bug] });
 
       const history = await readHistory(locttDir, "abc");
-      // "feature" was added, "bug" was already there — only "feature" should be recorded
+      // "feature" was added, "bug" was already there — only "feature"
+      // should be recorded, and by id, since that is what is stored.
       expect(history).toHaveLength(1);
       expect(history).toEqual([
-        expect.objectContaining({ kind: "label_added", after: "feature" }),
+        expect.objectContaining({ kind: "label_added", after: feature }),
       ]);
     });
 
     it("records label_removed when removing a label", async () => {
-      await seedTask();
+      const { bug } = await seedTask();
       await setField({ locttDir, taskId: "abc", field: "labels", value: [] });
 
       const history = await readHistory(locttDir, "abc");
       expect(history).toHaveLength(1);
       expect(history).toEqual([
-        expect.objectContaining({ kind: "label_removed", before: "bug" }),
+        expect.objectContaining({ kind: "label_removed", before: bug }),
       ]);
     });
 
@@ -142,14 +158,14 @@ describe("history instrumentation", () => {
 
     it("records custom_field_change with null after for unset custom field", async () => {
       await seedTask();
-      await unsetField(locttDir, "abc", "sprint");
+      await unsetField(locttDir, "abc", "sprint_field");
 
       const history = await readHistory(locttDir, "abc");
       expect(history).toHaveLength(1);
       expect(history).toEqual([
         expect.objectContaining({
           kind: "custom_field_change",
-          field: "sprint",
+          field: "sprint_field",
           before: "sprint_1",
           after: null,
         }),
@@ -157,13 +173,13 @@ describe("history instrumentation", () => {
     });
 
     it("records label_removed for each label when unsetting labels", async () => {
-      await seedTask();
+      const { bug } = await seedTask();
       await unsetField(locttDir, "abc", "labels");
 
       const history = await readHistory(locttDir, "abc");
       expect(history).toHaveLength(1);
       expect(history).toEqual([
-        expect.objectContaining({ kind: "label_removed", before: "bug" }),
+        expect.objectContaining({ kind: "label_removed", before: bug }),
       ]);
     });
   });
@@ -249,22 +265,24 @@ describe("history instrumentation", () => {
       expect(history).toEqual([
         expect.objectContaining({ kind: "body_edited" }),
       ]);
-      // Verify no content is captured
-      expect(history[0]).not.toHaveProperty("before");
-      expect(history[0]).not.toHaveProperty("after");
+      // Was asserting the *absence* of before/after. M3 reverses that:
+      // without the text, history records that the body changed and
+      // never to what, so no prior version can be reconstructed.
+      expect(history[0]?.before).toBe(seed.body);
+      expect(history[0]?.after).toBe("Updated body.\n");
     });
   });
 
   describe("createTask", () => {
     it("records created entry", async () => {
       const state: LocttState = {
-        keys: { task: { prefix: "T-", next_number: 1 } },
+        keys: { task: { prefix: "T", next_number: 1 } },
       };
 
       const task = await createTask({
         locttDir,
         state,
-        options: { title: "New task" },
+        options: { project: "task", title: "New task" },
       });
 
       const history = await readHistory(locttDir, task.frontmatter.id);
@@ -272,6 +290,12 @@ describe("history instrumentation", () => {
       expect(history).toEqual([
         expect.objectContaining({ kind: "created" }),
       ]);
+      // M3: the entry carries what the task was created as, so replaying
+      // history has a starting state to apply later changes to. Without
+      // it, `created` marks a point in time and nothing more.
+      const after = history[0]?.after as { frontmatter?: { title?: string }; body?: string };
+      expect(after.frontmatter?.title).toBe("New task");
+      expect(after.body).toBe("");
     });
   });
 });

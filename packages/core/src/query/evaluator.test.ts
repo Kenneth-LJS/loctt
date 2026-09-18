@@ -142,6 +142,28 @@ describe("text alias", () => {
   it("is case-insensitive", () => {
     expect(evaluateQuery(query('text ~ "EVALUATION"'), task)).toBe(true);
   });
+
+  /**
+   * XS-44: a retired key in `key_history` is matchable by `text ~`, so
+   * searching a former key (`T-42` after a rekey to `T-43`) finds the task
+   * it now belongs to. This is the core query-semantics change; CLI, MCP and
+   * web all route through this evaluator, so tagging it here covers the
+   * shared behaviour (surface parity confirmed by the integration suite).
+   *
+   * @verifies XS-44
+   */
+  it("XS-44: searches key_history so a retired key finds the task", () => {
+    const rekeyed: TaskFrontmatter = { ...task, key: "T-43", key_history: ["T-42"] };
+    // The retired key matches...
+    expect(evaluateQuery(query('text ~ "T-42"'), rekeyed)).toBe(true);
+    // ...as does the live key, and case does not matter for either.
+    expect(evaluateQuery(query('text ~ "t-42"'), rekeyed)).toBe(true);
+    expect(evaluateQuery(query('text ~ "T-43"'), rekeyed)).toBe(true);
+    // A key that was never this task's does not match.
+    expect(evaluateQuery(query('text ~ "T-99"'), rekeyed)).toBe(false);
+    // And with no key_history at all, an unrelated key still misses.
+    expect(evaluateQuery(query('text ~ "T-42"'), task)).toBe(false);
+  });
 });
 
 describe("parent alias", () => {
@@ -165,18 +187,560 @@ describe("parent alias", () => {
   });
 });
 
-describe("relationship-based query filtering", () => {
-  it("filters by relationship type and target", () => {
-    expect(evaluateQuery(query("relationship.blocks = blocked_id"), task)).toBe(true);
-    expect(evaluateQuery(query("relationship.blocks = other"), task)).toBe(false);
+describe("array-valued field comparison (labels)", () => {
+  const labeled: TaskFrontmatter = {
+    id: "lab",
+    key: "T-9",
+    title: "Has labels",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    status: "in_progress",
+    labels: ["bug", "ui"],
+  };
+  const unlabeled: TaskFrontmatter = { ...labeled, labels: undefined };
+
+  it("= matches when the value is in the array", () => {
+    expect(evaluateQuery(query("labels = bug"), labeled)).toBe(true);
+    expect(evaluateQuery(query("labels = backend"), labeled)).toBe(false);
   });
 
-  it("handles != for relationships", () => {
-    expect(evaluateQuery(query("relationship.blocks != other"), task)).toBe(true);
+  it("!= matches when the value is NOT in the array", () => {
+    expect(evaluateQuery(query("labels != bug"), labeled)).toBe(false);
+    expect(evaluateQuery(query("labels != backend"), labeled)).toBe(true);
   });
 
-  it("handles missing relationship type", () => {
-    expect(evaluateQuery(query("relationship.depends_on = x"), task)).toBe(false);
-    expect(evaluateQuery(query("relationship.depends_on != x"), task)).toBe(true);
+  it("~ matches case-insensitive substring against any element", () => {
+    expect(evaluateQuery(query("labels ~ U"), labeled)).toBe(true); // matches 'ui'
+    expect(evaluateQuery(query("labels ~ zzz"), labeled)).toBe(false);
+  });
+
+  it("in / not in evaluate set intersection with the array", () => {
+    expect(evaluateQuery(query("labels in (bug, frontend)"), labeled)).toBe(true);
+    expect(evaluateQuery(query("labels in (frontend, backend)"), labeled)).toBe(false);
+    expect(evaluateQuery(query("labels not in (frontend, backend)"), labeled)).toBe(true);
+    expect(evaluateQuery(query("labels not in (bug)"), labeled)).toBe(false);
+  });
+
+  it("empty / unset labels behaves as no match for =, match for !=", () => {
+    expect(evaluateQuery(query("labels = bug"), unlabeled)).toBe(false);
+    expect(evaluateQuery(query("labels != bug"), unlabeled)).toBe(true);
+  });
+});
+
+describe("has_link / link_count", () => {
+  it("has_link(kind) tests existence of that kind", () => {
+    expect(evaluateQuery(query('has_link("blocks")'), task)).toBe(true);
+    expect(evaluateQuery(query('has_link("parent")'), task)).toBe(true);
+    expect(evaluateQuery(query('has_link("depends_on")'), task)).toBe(false);
+  });
+
+  it("has_link() with no args tests for any link at all", () => {
+    expect(evaluateQuery(query("has_link()"), task)).toBe(true);
+    const orphan: TaskFrontmatter = { ...task, relationships: [] };
+    expect(evaluateQuery(query("has_link()"), orphan)).toBe(false);
+    expect(evaluateQuery(query("not has_link()"), orphan)).toBe(true);
+  });
+
+  it("has_link(kind, target) matches a single edge on both", () => {
+    expect(evaluateQuery(query('has_link("blocks", "blocked_id")'), task)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "other")'), task)).toBe(false);
+  });
+
+  it("the same-edge trap is not expressible", () => {
+    // THE defect this syntax replaces. The task blocks `blocked_id` and
+    // has parent `parent_id`. Under the old grammar,
+    //   relationship.type = blocks and relationship.target = parent_id
+    // matched — two independent existential filters satisfied by two
+    // DIFFERENT edges — while reading as "blocks parent_id", which is
+    // false. has_link takes both in one call, so one edge must satisfy
+    // both and the false reading cannot be written.
+    expect(evaluateQuery(query('has_link("blocks", "parent_id")'), task)).toBe(false);
+    expect(evaluateQuery(query('has_link("parent", "parent_id")'), task)).toBe(true);
+  });
+
+  it("negation means no edge matches, not some edge differs", () => {
+    // Under the old Form A, `!=` meant "some edge differs", so a task
+    // with two edges satisfied almost any inequality.
+    expect(evaluateQuery(query('not has_link("blocks", "other")'), task)).toBe(true);
+    expect(evaluateQuery(query('not has_link("blocks", "blocked_id")'), task)).toBe(false);
+  });
+
+  it("resolves a target by current key, not only stored id", () => {
+    // The old Form A compared the raw ULID and never called
+    // resolveKey, so the documented example could not match any task.
+    const ctx: EvalContext = {
+      resolveKey: (id: string) => (id === "blocked_id" ? "T-10" : undefined),
+    };
+    expect(evaluateQuery(query('has_link("blocks", "T-10")'), task, ctx)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "T-99")'), task, ctx)).toBe(false);
+  });
+
+  it("link_count counts edges of a kind", () => {
+    const many: TaskFrontmatter = {
+      ...task,
+      relationships: [
+        { type: "child", target: "a" },
+        { type: "child", target: "b" },
+        { type: "child", target: "c" },
+        { type: "blocks", target: "d" },
+      ],
+    };
+    expect(evaluateQuery(query('link_count("child") > 2'), many)).toBe(true);
+    expect(evaluateQuery(query('link_count("child") > 3'), many)).toBe(false);
+    expect(evaluateQuery(query('link_count("child") = 3'), many)).toBe(true);
+    expect(evaluateQuery(query('link_count("blocks") = 1'), many)).toBe(true);
+  });
+
+  it("link_count with no kind counts every edge", () => {
+    expect(evaluateQuery(query("link_count() = 2"), task)).toBe(true);
+  });
+
+  it("link_count is 0 for an absent kind", () => {
+    expect(evaluateQuery(query('link_count("depends_on") = 0'), task)).toBe(true);
+  });
+
+  it("the old relationship.* grammar errors with a message naming the new form", () => {
+    // A hard break: silently matching nothing would be worse than an
+    // error, since the old spelling is in saved views and scripts.
+    expect(() => evaluateQuery(query("relationship.blocks = blocked_id"), task))
+      .toThrow(/has_link/);
+    expect(() => evaluateQuery(query("relationship.type = blocks"), task))
+      .toThrow(/no longer supported/);
+  });
+});
+
+describe("nested field access (CW-9)", () => {
+  const workflow = {
+    statuses: [
+      { key: "in_progress", label: "In progress", category: "in_progress" },
+      { key: "done", label: "Done", category: "completed" },
+    ],
+    priorities: [
+      { key: "high", label: "High", weight: 1 },
+      { key: "low", label: "Low", weight: 3 },
+    ],
+    task_types: [{ key: "task", label: "Task" }],
+    relationships: [],
+    custom_fields: [],
+  } as unknown as Parameters<typeof evaluateQuery>[2] extends infer C
+    ? C extends { workflow?: infer W }
+      ? W
+      : never
+    : never;
+  const ctx: EvalContext = { workflow };
+
+  it("status.category resolves through workflow", () => {
+    expect(evaluateQuery(query("status.category = in_progress"), task, ctx)).toBe(true);
+    expect(evaluateQuery(query("status.category = completed"), task, ctx)).toBe(false);
+    const done: TaskFrontmatter = { ...task, status: "done" };
+    expect(evaluateQuery(query("status.category = completed"), done, ctx)).toBe(true);
+  });
+
+  it("priority.weight supports numeric ordering", () => {
+    expect(evaluateQuery(query("priority.weight < 2"), task, ctx)).toBe(true);
+    expect(evaluateQuery(query("priority.weight > 2"), task, ctx)).toBe(false);
+  });
+
+  it("returns undefined-shaped result (no match) when workflow context is absent", () => {
+    expect(evaluateQuery(query("status.category = in_progress"), task)).toBe(false);
+    expect(evaluateQuery(query("status.category != in_progress"), task)).toBe(true);
+  });
+
+  it("nested access on unknown status key yields no match", () => {
+    const weird: TaskFrontmatter = { ...task, status: "ghost" };
+    expect(evaluateQuery(query("status.category = in_progress"), weird, ctx)).toBe(false);
+  });
+});
+
+/**
+ * Direction and edge-shape behaviour of has_link. Both directions of a
+ * link are queryable as plain predicates because `linkTask` writes the
+ * forward edge on A and the inverse on B — "what blocks T-2" is a
+ * forward lookup on the inverse key, which in Jira needs ScriptRunner.
+ */
+describe("has_link — directions and edge shapes", () => {
+  const relCtx = { resolveKey: (id: string) => (id === "01BBB" ? "T-10" : undefined) };
+
+  function relFm(rels: { type: string; target: string }[]): TaskFrontmatter {
+    return {
+      id: "01AAA", key: "T-1", title: "t",
+      created_at: "2026-01-01", updated_at: "2026-01-01",
+      relationships: rels,
+    } as TaskFrontmatter;
+  }
+
+  it("queries the inverse direction as a plain predicate", () => {
+    // The stored inverse edge on the target task.
+    const fm = relFm([{ type: "is_blocked_by", target: "01BBB" }]);
+    expect(evaluateQuery(query('has_link("is_blocked_by")'), fm, relCtx)).toBe(true);
+    expect(evaluateQuery(query('has_link("is_blocked_by", "T-10")'), fm, relCtx)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks")'), fm, relCtx)).toBe(false);
+  });
+
+  it("matches a target by stored id as well as current key", () => {
+    const fm = relFm([{ type: "blocks", target: "01BBB" }]);
+    expect(evaluateQuery(query('has_link("blocks", "01BBB")'), fm, relCtx)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "T-10")'), fm, relCtx)).toBe(true);
+  });
+
+  it("distinguishes several edges of the same kind", () => {
+    const fm = relFm([
+      { type: "blocks", target: "x" },
+      { type: "blocks", target: "y" },
+    ]);
+    expect(evaluateQuery(query('has_link("blocks", "x")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "y")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks", "z")'), fm)).toBe(false);
+    expect(evaluateQuery(query('link_count("blocks") = 2'), fm)).toBe(true);
+  });
+
+  it("a task with no edges matches only negations", () => {
+    const fm = relFm([]);
+    expect(evaluateQuery(query('has_link("blocks")'), fm)).toBe(false);
+    expect(evaluateQuery(query('not has_link("blocks")'), fm)).toBe(true);
+    expect(evaluateQuery(query("not has_link()"), fm)).toBe(true);
+    expect(evaluateQuery(query('link_count("blocks") = 0'), fm)).toBe(true);
+  });
+
+  it("composes with and / or / not like any other predicate", () => {
+    const fm = relFm([
+      { type: "blocks", target: "x" },
+      { type: "parent", target: "p" },
+    ]);
+    expect(evaluateQuery(query('has_link("blocks") and has_link("parent")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("blocks") and has_link("clones")'), fm)).toBe(false);
+    expect(evaluateQuery(query('has_link("clones") or has_link("parent")'), fm)).toBe(true);
+    expect(evaluateQuery(query('not has_link("clones")'), fm)).toBe(true);
+  });
+
+  it("a kind named like a grammar word is queryable", () => {
+    // Kind names sit in quoted value position, so a workspace may name
+    // a relationship `type`, `target` or `count` without colliding.
+    // This is the main reason the function form beat a field form.
+    const fm = relFm([{ type: "type", target: "x" }, { type: "count", target: "y" }]);
+    expect(evaluateQuery(query('has_link("type")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("count", "y")'), fm)).toBe(true);
+    expect(evaluateQuery(query('has_link("target")'), fm)).toBe(false);
+  });
+});
+
+describe("parent alias reads the configured hierarchy kind", () => {
+  function fm(rels: { type: string; target: string }[]): TaskFrontmatter {
+    return {
+      id: "01AAA", key: "T-1", title: "t",
+      created_at: "2026-01-01", updated_at: "2026-01-01",
+      relationships: rels,
+    } as TaskFrontmatter;
+  }
+
+  const wfWith = (key: string, graph: "tree" | "none") => ({
+    key: { prefix: "T" },
+    statuses: [], priorities: [], task_types: [],
+    relationships: [{ key, label: key, inverse: `${key}_of`, inverse_label: "x", graph }],
+    custom_fields: [],
+  } as unknown as NonNullable<EvalContext["workflow"]>);
+
+  it("follows a renamed hierarchy relationship", () => {
+    // Hardcoding the literal "parent" meant a workspace that renamed
+    // its hierarchy kind saw the alias silently stop matching while
+    // still passing validation.
+    const task = fm([{ type: "belongs_to", target: "T-5" }]);
+    const ctx: EvalContext = { workflow: wfWith("belongs_to", "tree") };
+    expect(evaluateQuery(query("parent = T-5"), task, ctx)).toBe(true);
+  });
+
+  it("falls back to the literal kind with no tree relationship configured", () => {
+    const task = fm([{ type: "parent", target: "T-5" }]);
+    expect(evaluateQuery(query("parent = T-5"), task)).toBe(true);
+    expect(evaluateQuery(query("parent = T-9"), task)).toBe(false);
+  });
+});
+
+describe("text ~ honours `searchable`", () => {
+  function wf(searchable: boolean): NonNullable<EvalContext["workflow"]> {
+    return {
+      key: { prefix: "T" },
+      statuses: [], priorities: [], task_types: [], relationships: [],
+      custom_fields: [
+        { key: "notes", label: "Notes", type: "string", multi: false, searchable },
+      ],
+    } as unknown as NonNullable<EvalContext["workflow"]>;
+  }
+
+  const fm = {
+    id: "a", key: "T-1", title: "nothing in the title",
+    created_at: "2026-01-01", updated_at: "2026-01-01",
+    fields: { notes: "needle" },
+  } as TaskFrontmatter;
+
+  it("matches a custom field declared searchable", () => {
+    expect(evaluateQuery(query('text ~ needle'), fm, { workflow: wf(true) })).toBe(true);
+  });
+
+  it("does NOT match a custom field declared searchable: false", () => {
+    // `searchable` is required on every custom-field definition and the
+    // docs promise `text` honours it, but every string-valued custom
+    // field was searched regardless — so a field the user deliberately
+    // excluded still matched. That is a leak, not just a wrong result.
+    expect(evaluateQuery(query('text ~ needle'), fm, { workflow: wf(false) })).toBe(false);
+  });
+
+  it("searches every string custom field when no workflow config is given", () => {
+    // Deliberate asymmetry: with no config there is nothing to check
+    // `searchable` against. Every production path reaches the evaluator
+    // through listTasks, which passes the loaded config, so this
+    // permissive branch is confined to hand-built contexts — failing
+    // closed here would weaken `text ~` for callers that simply have no
+    // config to consult, without protecting any real workspace.
+    expect(evaluateQuery(query('text ~ needle'), fm)).toBe(true);
+  });
+
+  it("still searches the title regardless of custom-field config", () => {
+    const titled = { ...fm, title: "has a needle" } as TaskFrontmatter;
+    expect(evaluateQuery(query('text ~ needle'), titled, { workflow: wf(false) })).toBe(true);
+  });
+});
+
+describe("evaluateQuery — date fields compare by calendar day (Q1)", () => {
+  // A `due_date` may store a full ISO timestamp (`DateOrIsoString` and the
+  // MCP `DateLikeString` both permit it, and `setField` writes it
+  // verbatim). Comparing it lexicographically against a date-only operand
+  // sorts the longer timestamp after the bare date, so a task due *today*
+  // at 09:00 was judged strictly greater than `today` — never equal, never
+  // `<=`. The evaluator must treat such a value as its calendar day.
+  const dueAt9amToday = {
+    id: "a", key: "T-1", title: "timestamped due date",
+    created_at: "2026-06-01", updated_at: "2026-06-01",
+    due_date: "2026-06-01T09:00:00Z",
+  } as TaskFrontmatter;
+
+  const ctx: EvalContext = { today: "2026-06-01" };
+
+  it("treats a timestamped due_date as due today for the equal-day boundary", () => {
+    expect(evaluateQuery(query("due_date <= today"), dueAt9amToday, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date = today"), dueAt9amToday, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date >= today"), dueAt9amToday, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date in (today)"), dueAt9amToday, ctx)).toBe(true);
+  });
+
+  it("does not count a task due today as in the future", () => {
+    expect(evaluateQuery(query("due_date > today"), dueAt9amToday, ctx)).toBe(false);
+  });
+
+  it("keeps overdue (< today) correct for a timestamped value", () => {
+    // Was already correct lexicographically; must stay correct.
+    expect(evaluateQuery(query("due_date < today"), dueAt9amToday, ctx)).toBe(false);
+    const overdue = { ...dueAt9amToday, due_date: "2026-05-31T23:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query("due_date < today"), overdue, ctx)).toBe(true);
+  });
+
+  it("compares against a plain date literal by day too", () => {
+    expect(evaluateQuery(query("due_date <= 2026-06-01"), dueAt9amToday, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date > 2026-06-01"), dueAt9amToday, ctx)).toBe(false);
+  });
+
+  it("leaves date-only-vs-date-only comparisons unchanged", () => {
+    const dateOnly = { ...dueAt9amToday, due_date: "2026-06-01" } as TaskFrontmatter;
+    expect(evaluateQuery(query("due_date = today"), dateOnly, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= today"), dateOnly, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date > today"), dateOnly, ctx)).toBe(false);
+    expect(evaluateQuery(query("due_date < 2026-06-02"), dateOnly, ctx)).toBe(true);
+  });
+});
+
+/**
+ * K77: `is empty` / `is not empty` — the presence test that replaces the
+ * broken `field != null` (which matched everything). The fixture `task`
+ * has `status`/`priority` set and no `milestone`/`assignee`/`labels`.
+ *
+ * @verifies A80
+ */
+describe("is empty / is not empty (K77)", () => {
+  it("`is empty` matches an unset field, `is not empty` a set one", () => {
+    expect(evaluateQuery(query("milestone is empty"), task)).toBe(true);
+    expect(evaluateQuery(query("milestone is not empty"), task)).toBe(false);
+    expect(evaluateQuery(query("status is not empty"), task)).toBe(true);
+    expect(evaluateQuery(query("status is empty"), task)).toBe(false);
+  });
+
+  it("treats an empty array (no labels) as empty", () => {
+    expect(evaluateQuery(query("labels is empty"), task)).toBe(true);
+    expect(evaluateQuery(query("labels is not empty"), { ...task, labels: ["bug"] })).toBe(true);
+    expect(evaluateQuery(query("labels is empty"), { ...task, labels: ["bug"] })).toBe(false);
+  });
+
+  it("composes with and/or like any other comparison", () => {
+    expect(evaluateQuery(query("status is not empty and milestone is empty"), task)).toBe(true);
+    expect(evaluateQuery(query("milestone is not empty or status is not empty"), task)).toBe(true);
+  });
+
+  it("rejects `= null` / `!= null` with a pointer to `is empty` (the old silent-match bug)", () => {
+    expect(() => query("milestone = null")).toThrow(/is empty/);
+    expect(() => query("milestone != null")).toThrow(/is not empty/);
+    expect(() => query("milestone = none")).toThrow(/is empty/);
+  });
+
+  it("rejects a bare `is` that isn't followed by empty/not empty", () => {
+    expect(() => query("milestone is something")).toThrow(/empty/);
+  });
+
+  it("accepts `is null` / `is not null` as synonyms for the presence test", () => {
+    // Same result as `is empty` / `is not empty` — SQL/JQL users reach
+    // for null, and it means the identical presence test.
+    expect(evaluateQuery(query("milestone is null"), task)).toBe(true);
+    expect(evaluateQuery(query("milestone is not null"), task)).toBe(false);
+    expect(evaluateQuery(query("status is not null"), task)).toBe(true);
+    expect(evaluateQuery(query("status is null"), task)).toBe(false);
+    // Composes and mixes with the `empty` spelling.
+    expect(evaluateQuery(query("status is not null and milestone is empty"), task)).toBe(true);
+  });
+});
+
+describe("currentUser() (K80)", () => {
+  const mine: TaskFrontmatter = { ...task, assignee: "u_ken" };
+  const theirs: TaskFrontmatter = { ...task, assignee: "u_sam" };
+  const ctx: EvalContext = { currentUserId: "u_ken" };
+
+  it("resolves to the querying user's id — `assignee = currentUser()` means mine", () => {
+    expect(evaluateQuery(query("assignee = currentUser()"), mine, ctx)).toBe(true);
+    expect(evaluateQuery(query("assignee = currentUser()"), theirs, ctx)).toBe(false);
+  });
+
+  it("accepts the bare `currentUser` form without parentheses", () => {
+    expect(evaluateQuery(query("assignee = currentUser"), mine, ctx)).toBe(true);
+  });
+
+  it("is case-insensitive on the function name", () => {
+    expect(evaluateQuery(query("assignee = CURRENTUSER()"), mine, ctx)).toBe(true);
+  });
+
+  it("negates and composes", () => {
+    expect(evaluateQuery(query("assignee != currentUser()"), theirs, ctx)).toBe(true);
+    expect(evaluateQuery(query("assignee != currentUser()"), mine, ctx)).toBe(false);
+  });
+
+  it("matches nothing when no current user is supplied, rather than matching unassigned", () => {
+    // The sentinel guards against `= currentUser()` silently becoming
+    // `= ""` and matching every task with no assignee.
+    const unassigned: TaskFrontmatter = { ...task, assignee: undefined };
+    expect(evaluateQuery(query("assignee = currentUser()"), mine, {})).toBe(false);
+    expect(evaluateQuery(query("assignee = currentUser()"), unassigned, {})).toBe(false);
+  });
+
+  it("rejects `currentUser(` with no closing paren", () => {
+    expect(() => query("assignee = currentUser(")).toThrow();
+  });
+});
+
+// @verifies K80
+describe("evaluateQuery — date functions (K80)", () => {
+  // A fixed, stubbed clock: Monday 2026-06-15, week starts Monday.
+  const ctx: EvalContext = {
+    today: "2026-06-15",
+    now: "2026-06-15T09:00:00Z",
+    weekStartsOn: 1,
+  };
+  const withDue = (due: string): TaskFrontmatter =>
+    ({ id: "a", key: "T-1", title: "t", due_date: due } as TaskFrontmatter);
+
+  it("startOfWeek/endOfWeek bracket the current week", () => {
+    const dueThu = withDue("2026-06-18");
+    expect(evaluateQuery(query("due_date >= startOfWeek()"), dueThu, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= endOfWeek()"), dueThu, ctx)).toBe(true);
+    // A task due next week is outside this week's bracket.
+    const dueNextWeek = withDue("2026-06-23");
+    expect(evaluateQuery(query("due_date <= endOfWeek()"), dueNextWeek, ctx)).toBe(false);
+  });
+
+  it("the week bracket moves with weekStartsOn", () => {
+    // Sunday 2026-06-14 is in the current week only when the week starts
+    // Sunday; with a Monday start it belongs to the previous week.
+    const dueSun = withDue("2026-06-14");
+    expect(evaluateQuery(query("due_date >= startOfWeek()"), dueSun, ctx)).toBe(false);
+    expect(evaluateQuery(query("due_date >= startOfWeek()"), dueSun, { ...ctx, weekStartsOn: 0 })).toBe(true);
+  });
+
+  it("startOfMonth/endOfMonth bracket the month, timestamped values included", () => {
+    const dueEndOfMonth = withDue("2026-06-30T23:00:00Z");
+    expect(evaluateQuery(query("due_date >= startOfMonth()"), dueEndOfMonth, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= endOfMonth()"), dueEndOfMonth, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= endOfMonth()"), withDue("2026-07-01"), ctx)).toBe(false);
+  });
+
+  it("applies an offset — due by end of next week", () => {
+    const dueNextWeek = withDue("2026-06-23"); // Tue of next week
+    expect(evaluateQuery(query('due_date <= endOfWeek("+1w")'), dueNextWeek, ctx)).toBe(true);
+    expect(evaluateQuery(query("due_date <= endOfWeek()"), dueNextWeek, ctx)).toBe(false);
+  });
+
+  it("startOfDay with a negative offset — the last 7 days on a timestamp field", () => {
+    const updated = { id: "a", key: "T-1", title: "t", updated_at: "2026-06-10T12:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query('updated_at >= startOfDay("-7d")'), updated, ctx)).toBe(true);
+    const old = { ...updated, updated_at: "2026-06-01T12:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query('updated_at >= startOfDay("-7d")'), old, ctx)).toBe(false);
+  });
+
+  it("now() compares as an instant against a timestamp field", () => {
+    const updatedEarlier = { id: "a", key: "T-1", title: "t", updated_at: "2026-06-15T08:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query("updated_at < now()"), updatedEarlier, ctx)).toBe(true);
+    const updatedLater = { ...updatedEarlier, updated_at: "2026-06-15T10:00:00Z" } as TaskFrontmatter;
+    expect(evaluateQuery(query("updated_at < now()"), updatedLater, ctx)).toBe(false);
+  });
+
+  it("a boundary function works inside an `in` list, by calendar day", () => {
+    // due exactly on startOfMonth, stored as a timestamp.
+    const dueFirst = withDue("2026-06-01T09:00:00Z");
+    expect(evaluateQuery(query("due_date in (startOfMonth())"), dueFirst, ctx)).toBe(true);
+  });
+});
+
+/**
+ * @verifies CMT-10
+ *
+ * `comment_mentions` tests membership in the task's merged comment-mention
+ * union, injected via `EvalContext.commentMentions` exactly as `body` is —
+ * the evaluator never reads `_comments.yaml`.
+ */
+describe("comment_mentions (CMT-10)", () => {
+  const base: TaskFrontmatter = { id: "a", key: "T-1", title: "t" } as TaskFrontmatter;
+  const withMentions = (ids: string[], currentUserId?: string): EvalContext => ({
+    commentMentions: ids,
+    ...(currentUserId !== undefined ? { currentUserId } : {}),
+  });
+
+  it("matches comment_mentions = currentUser() when the user is in the set", () => {
+    const ctx = withMentions(["userX", "userZ"], "userX");
+    expect(evaluateQuery(query("comment_mentions = currentUser()"), base, ctx)).toBe(true);
+  });
+
+  it("does not match when the current user is not in the set", () => {
+    const ctx = withMentions(["userX", "userZ"], "userY");
+    expect(evaluateQuery(query("comment_mentions = currentUser()"), base, ctx)).toBe(false);
+  });
+
+  it("matches an explicit user id with =", () => {
+    const ctx = withMentions(["userX"]);
+    expect(evaluateQuery(query("comment_mentions = userX"), base, ctx)).toBe(true);
+    expect(evaluateQuery(query("comment_mentions = userQ"), base, ctx)).toBe(false);
+  });
+
+  it("supports `in (...)` membership", () => {
+    const ctx = withMentions(["userX"]);
+    expect(evaluateQuery(query("comment_mentions in (userA, userX)"), base, ctx)).toBe(true);
+    expect(evaluateQuery(query("comment_mentions in (userA, userB)"), base, ctx)).toBe(false);
+  });
+
+  it("negates with != and not in", () => {
+    const ctx = withMentions(["userX"]);
+    expect(evaluateQuery(query("comment_mentions != userQ"), base, ctx)).toBe(true);
+    expect(evaluateQuery(query("comment_mentions != userX"), base, ctx)).toBe(false);
+    expect(evaluateQuery(query("comment_mentions not in (userA, userB)"), base, ctx)).toBe(true);
+    expect(evaluateQuery(query("comment_mentions not in (userA, userX)"), base, ctx)).toBe(false);
+  });
+
+  it("matches nothing (and everything for negations) when no mention context is injected", () => {
+    // Absent commentMentions mirrors an absent body: `=`/`in` never hold.
+    expect(evaluateQuery(query("comment_mentions = userX"), base, { currentUserId: "userX" })).toBe(false);
+    expect(evaluateQuery(query("comment_mentions != userX"), base, {})).toBe(true);
   });
 });

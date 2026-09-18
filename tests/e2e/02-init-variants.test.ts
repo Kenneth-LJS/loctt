@@ -19,13 +19,13 @@ describe("E2E journey: init variants", () => {
     }, { init: false });
   });
 
-  it("--prefix BUG- sets the prefix and tasks are created with BUG-N keys", async () => {
+  it("--prefix BUG sets the prefix and tasks are created with BUG-N keys", async () => {
     await withTmpLoctt(async ({ root }) => {
-      const init = await runCli(["init", "--prefix", "BUG-"], { cwd: root });
+      const init = await runCli(["init", "--prefix", "BUG"], { cwd: root });
       expect(init.exitCode).toBe(0);
 
       const workflow = await readFile(path.join(root, ".loctt/config/workflow.yaml"), "utf-8");
-      expect(workflow).toMatch(/prefix:\s*"?BUG-"?/);
+      expect(workflow).toMatch(/prefix:\s*"?BUG"?/);
 
       const create = await runCli(["create", "first bug"], { cwd: root });
       expect(create.exitCode).toBe(0);

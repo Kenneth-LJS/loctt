@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, stat, unlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, rm, stat, unlink } from "node:fs/promises";
 import { basename, isAbsolute, resolve } from "node:path";
 
 import type { HistoryEntry } from "@loctt/contracts";
@@ -10,6 +10,13 @@ import {
 } from "../paths/index.js";
 import { appendHistory } from "./history.js";
 
+/**
+ * Default maximum attachment size, in bytes (50 MB). Callers can override
+ * via `AttachOptions.maxBytes`. Picked to match the web app's multipart
+ * per-file cap so a file accepted via either entry point behaves the same.
+ */
+export const DEFAULT_MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
 /** Options for attaching a file to a task. */
 export interface AttachOptions {
   readonly locttDir: string;
@@ -18,6 +25,11 @@ export interface AttachOptions {
   readonly sourcePath: string;
   /** When true, overwrite an existing attachment with the same basename. */
   readonly force?: boolean;
+  /**
+   * Maximum file size in bytes. Defaults to
+   * {@link DEFAULT_MAX_ATTACHMENT_BYTES}. Pass `Infinity` to disable.
+   */
+  readonly maxBytes?: number;
 }
 
 /** Result of a successful attachFile call. */
@@ -73,15 +85,16 @@ export class AttachmentSourceError extends Error {
  *   separators, no `..`, no null bytes, no leading dot.
  * - Symlinks are rejected outright; callers must pass the path to the
  *   target file directly.
+ * - Files larger than `maxBytes` (default
+ *   {@link DEFAULT_MAX_ATTACHMENT_BYTES}) are rejected before any copy.
  * - If the destination already exists and `force` is not true, throws
  *   `AttachmentExistsError`. If `force` is true, overwrites.
  * - On success, appends an `attachment_added` history entry with
  *   `meta: { name, size }`.
- *
- * TODO: consider warning at 10 MB.
  */
 export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
   const { locttDir, taskId, sourcePath, force = false } = opts;
+  const maxBytes = opts.maxBytes ?? DEFAULT_MAX_ATTACHMENT_BYTES;
 
   const absSource = isAbsolute(sourcePath)
     ? sourcePath
@@ -106,6 +119,11 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
   }
   if (!lst.isFile()) {
     throw new AttachmentSourceError("attachments must be regular files");
+  }
+  if (lst.size > maxBytes) {
+    throw new AttachmentSourceError(
+      `attachment is ${lst.size} bytes; max is ${maxBytes}`,
+    );
   }
   const copySource = absSource;
 
@@ -139,12 +157,32 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
     // ENOENT or other — treat as "doesn't exist", proceed.
   }
 
-  // Copy without following further symlinks at the source side.
-  // We've already resolved one level; copyFile will copy whatever
-  // copySource points at. If copySource happens to itself be another
-  // symlink, copyFile will resolve it. That's fine — we've documented
-  // a single-resolution policy and not promised deep symlink rejection.
-  await copyFile(copySource, dest);
+  // Symlinks at the source were already rejected above via lstat.
+  //
+  // A destination the filesystem refuses — most often ENAMETOOLONG,
+  // since the task directory's path counts toward the limit even when
+  // the basename alone is legal — must not surface as a raw errno, and
+  // must not leave a truncated file behind for the next `attach --force`
+  // to overwrite silently (REL-C5). copyFile can create the destination
+  // before failing, so the cleanup is not hypothetical.
+  try {
+    await copyFile(copySource, dest);
+  } catch (err) {
+    await rm(dest, { force: true }).catch(() => {
+      // Best-effort: the copy already failed, and a cleanup error must
+      // not replace the message that explains why.
+    });
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENAMETOOLONG") {
+      throw new AttachmentSourceError(
+        `attachment name is too long for the filesystem: "${name}" `
+        + `(${name.length} characters). Most filesystems cap a single name at `
+        + `255 characters, and the task's directory path counts toward the `
+        + `total. Rename the file and attach it again.`,
+      );
+    }
+    throw err;
+  }
 
   const stats = await stat(dest);
   const size = stats.size;

@@ -19,18 +19,18 @@ const SEED: readonly Seed[] = [
   { title: "in-progress 6", status: "in_progress" },
   { title: "in-progress 7", status: "in_progress" },
   { title: "in-progress 8", status: "in_progress", priority: "high" },
-  // 5 blocked
-  { title: "blocked 1", status: "blocked", priority: "high" },
-  { title: "blocked 2", status: "blocked" },
-  { title: "blocked 3", status: "blocked" },
-  { title: "blocked 4", status: "blocked", priority: "medium" },
-  { title: "blocked 5", status: "blocked" },
+  // 5 wont_do
+  { title: "wont-do 1", status: "wont_do", priority: "high" },
+  { title: "wont-do 2", status: "wont_do" },
+  { title: "wont-do 3", status: "wont_do" },
+  { title: "wont-do 4", status: "wont_do", priority: "medium" },
+  { title: "wont-do 5", status: "wont_do" },
   // 4 done
   { title: "done 1", status: "done" },
   { title: "done 2", status: "done", priority: "high" },
   { title: "done 3", status: "done" },
   { title: "done 4", status: "done" },
-  // 3 not_started (default)
+  // 3 left at the default status (backlog)
   { title: "todo login revamp" },
   { title: "todo 2" },
   { title: "todo 3" },
@@ -46,7 +46,7 @@ describe("E2E journey: query & saved views", () => {
         const m = /Created\s+(\S+):/.exec(create.stdout);
         expect(m).not.toBeNull();
         const key = m![1]!;
-        if (s.status && s.status !== "not_started") {
+        if (s.status && s.status !== "backlog") {
           expect((await runCli(["set", key, "status", s.status], { cwd: root })).exitCode).toBe(0);
         }
         if (s.priority) {
@@ -59,7 +59,7 @@ describe("E2E journey: query & saved views", () => {
       expect(inProgress.exitCode).toBe(0);
       expect(inProgress.stdout).toContain("fix login crash");
       expect(inProgress.stdout).toContain("logout flow");
-      expect(inProgress.stdout).not.toContain("blocked 1");
+      expect(inProgress.stdout).not.toContain("wont-do 1");
       expect(inProgress.stdout).not.toContain("done 1");
 
       // priority = high and status = in_progress
@@ -71,7 +71,7 @@ describe("E2E journey: query & saved views", () => {
       expect(highInProgress.stdout).toContain("fix login crash");
       expect(highInProgress.stdout).toContain("improve login UX");
       expect(highInProgress.stdout).toContain("in-progress 8");
-      expect(highInProgress.stdout).not.toContain("blocked 1"); // blocked, not in_progress
+      expect(highInProgress.stdout).not.toContain("wont-do 1"); // wont_do, not in_progress
       expect(highInProgress.stdout).not.toContain("logout flow"); // medium
 
       // title ~ "login" — contains match
@@ -83,11 +83,11 @@ describe("E2E journey: query & saved views", () => {
       expect(loginMatch.stdout).not.toContain("logout flow");
       expect(loginMatch.stdout).not.toContain("done 1");
 
-      // recent-open view: archived != true and status != done — open + not_started + blocked + in_progress = 16
+      // recent-open view: archived != true and status != done — backlog + wont_do + in_progress = 16
       const recentOpen = await runCli(["list", "--view", "recent-open"], { cwd: root });
       expect(recentOpen.exitCode).toBe(0);
       expect(recentOpen.stdout).toContain("fix login crash");
-      expect(recentOpen.stdout).toContain("blocked 1");
+      expect(recentOpen.stdout).toContain("wont-do 1");
       expect(recentOpen.stdout).toContain("todo 2");
       expect(recentOpen.stdout).not.toContain("done 1");
 

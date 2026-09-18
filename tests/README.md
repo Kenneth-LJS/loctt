@@ -21,13 +21,23 @@ tests/
     adapters/                # cli-in-process, cli-spawn, mcp-stdio
     scenarios/               # shared scenario DSL for parity tests
     cli/                     # CLI-spawn tests, one file per command
+      edges/                 # CLI argv / parser edge-case tests
     mcp/                     # MCP-stdio tests, one file per tool
+      edges/                 # MCP-protocol edge-case tests
     git/                     # git-backed scenarios
     parity.test.ts           # one scenario across all adapters
   e2e/
     *.test.ts                # full user journeys
   perf/
-    stress.test.ts           # 1k tasks, concurrent writers (opt-in)
+    01-bulk-create.test.ts   # bulk task creation throughput (in-process)
+    02-chain-traversal.test.ts # parent-chain walk on a 1k-node DAG (in-process)
+    03-concurrent-create.test.ts # spawned CLI; serializes via state lock
+  llm/
+    README.md                # manual LLM runbook
+    lib/                     # runner + verify helpers
+    scenarios/               # one folder per scenario
+    verify/                  # post-run checks
+    results/                 # gitignored: per-run logs
   workspace/                 # per-test tmpdirs created here
     .gitkeep
     .gitignore               # ignores everything except .gitkeep
@@ -38,15 +48,24 @@ Test workspaces are created via `mkdtemp(repoRoot/tests/workspace/loctt-)`. They
 ## How to run
 
 ```bash
-npm run test                 # unit + thin integration (existing)
+npm run test                 # unit + thin integration (existing) + tools
 npm run test:integration     # builds CLI/MCP, runs tests/integration
 npm run test:e2e             # builds CLI/MCP, runs tests/e2e
+npm run test:ui              # builds, runs the Playwright specs in tests/ui
 npm run test:perf            # opt-in, runs tests/perf — does NOT rebuild
 ```
 
-`pretest:integration` and `pretest:e2e` run `npm run build` so the spawned CLI/MCP binaries are current.
+`pretest:integration`, `pretest:e2e` and `pretest:ui` run `npm run build` so the spawned CLI/MCP binaries are current.
 
-**`test:perf` does not have a pretest hook by design.** Test 03 (`concurrent-create`) spawns the bundled CLI binary, so when iterating on CLI / MCP / core source you must `npm run build` first. The other two perf tests use core APIs in-process and don't need the build.
+**Never run two of these suites concurrently.** Each `pretest` hook runs
+`tsc --build`, which empties and rewrites `dist/` — and `integration`,
+`e2e`, `ui` and `perf` all spawn `apps/cli/dist/index.js`. A build started
+by one suite while another is running replaces the binary mid-run, and the
+second suite fails in scattered, unrelated-looking ways (~30 failures
+across ~16 files, none reproducible in isolation). The failures are an
+artifact of the race, not a defect. Run the suites one at a time.
+
+**`test:perf` does not have a pretest hook by design.** `concurrent-create.test.ts` spawns the bundled CLI binary, so when iterating on CLI / MCP / core source you must `npm run build` first. The other perf tests use core APIs in-process and don't need the build.
 
 For interactive sanity checks, [`tests/scripts/smoke.sh`](./scripts/smoke.sh) runs E2E journey #1 against the bundled binary directly — useful when you want pass/fail in <1 second without Vitest startup overhead.
 
@@ -106,7 +125,7 @@ Loctt aims for full parity between the CLI and the MCP server: an LLM agent shou
 | Tracker info | `info` | `info` |
 | Doctor | `doctor` | `doctor` |
 | List saved views | `views` | `list_views` |
-| Show workflow config | `schema` | `get_config` |
+| Show workflow config | `schema` | `get_workflow_config` |
 | Create | `create <title> [--status --priority --type]` | `create_task` |
 | Read one | `show <ref>` | `get_task` |
 | List | `list [--query --view --limit --archived]` | `list_tasks` |
@@ -116,28 +135,29 @@ Loctt aims for full parity between the CLI and the MCP server: an LLM agent shou
 | Append body | `body <ref> --append <text>` | `append_task_body` |
 | Archive | `archive <ref>` | `archive_task` |
 | Unarchive | `unarchive <ref>` | `unarchive_task` |
-| Delete | `delete <ref> --force` | `delete_task` (needs `confirm: true`) |
+| Delete (soft) | `delete <ref>` | `delete_task` |
+| Delete (hard) | `delete <ref> --hard` | `delete_task` with `hard: true, confirm: true` |
 | Link | `link <ref> <rel> <target>` | `link_tasks` |
 | Unlink | `unlink <ref> <rel> <target>` | `unlink_tasks` |
-| History | `log <ref> [--limit]` | `task_history` |
+| History | `log <ref> [--limit]` | `get_task_history` |
 | Attach | `attach <ref> <path> [--force]` | `attach_file` |
 | Detach | `detach <ref> <name>` | `detach_file` |
-| Git enable | `git enable` | `git_enable` |
-| Git disable | `git disable` | `git_disable` |
-| Git status | `git status` | `git_status` |
-| Git publish | `git publish` | `git_publish` |
-| Git sync | `git sync` | `git_sync` |
-| Config get | `config get <key>` | `config_get` |
-| Config set | `config set <key> <value>` | `config_set` |
-| Config unset | `config unset <key>` | `config_unset` |
-| Config list | `config list` | `config_list` |
+| Git enable | `git enable` | `enable_git` |
+| Git disable | `git disable` | `disable_git` |
+| Git status | `git status` | `get_git_status` |
+| Git publish | `git publish` | `publish_to_git` |
+| Git sync | `git sync` | `sync_from_git` |
+| Config get | `config get <key>` | `get_config_value` |
+| Config set | `config set <key> <value>` | `set_config_value` |
+| Config unset | `config unset <key>` | `unset_config_value` |
+| Config list | `config list` | `list_config_values` |
 
 **CLI-only (by definition):**
 - `mcp` — starts the MCP server itself.
-- `web` — starts the web HTTP server.
+- `ui` — starts the web HTTP server and UI (foreground).
 - `help` / `--help` / `-h` — usage text. MCP equivalent is `tools/list`.
 
-The parity runner asserts byte-equal `.loctt/` state across surfaces for the operations that exist on both. The MCP-specific tool descriptions for higher-authority operations (`init`, `git_enable`, `git_publish`, `config_set`, `config_unset`) include intent guidance reminding the agent these are infrastructure changes, not routine task edits.
+The parity runner asserts byte-equal `.loctt/` state across surfaces for the operations that exist on both. The MCP-specific tool descriptions for higher-authority operations (`init`, `enable_git`, `publish_to_git`, `set_config_value`, `unset_config_value`) include intent guidance reminding the agent these are infrastructure changes, not routine task edits.
 
 ### Modes
 
@@ -342,7 +362,7 @@ Under `tests/e2e/`. Same fixtures, same cleanup. Each journey exercises a full u
 7. Git-backed, no remote: enable → create → publish → sync round-trip
 8. Git-backed, with fake bare remote: enable → create → publish (auto-pushes) → mutate bare out-of-band → sync (auto-fetches)
 9. `loctt config` journey: list defaults, enable git, list shows enabled, toggle `auto_push` off, publish doesn't push, set custom branch, publish lands on custom branch
-10. Error-path journey: unknown command, bad query, missing `.loctt/`, bad ref, cycle attempt, delete without `--force`, `config set` before `git enable`
+10. Error-path journey: unknown command, bad query, missing `.loctt/`, bad ref, cycle attempt, double-delete on already-archived task without `--hard`, `config set` before `git enable`
 11. MCP schema contract: fetch `tools/list`, snapshot and compare
 
 **Exit:** all 11 E2E journeys pass locally.

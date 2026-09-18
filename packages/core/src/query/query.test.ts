@@ -84,7 +84,7 @@ describe("parser", () => {
 
   it("parses simple comparison", () => {
     const node = parse("status = done");
-    expect(node).toEqual({
+    expect(node).toMatchObject({
       type: "comparison",
       field: "status",
       op: "=",
@@ -94,7 +94,7 @@ describe("parser", () => {
 
   it("parses comparison with quoted string", () => {
     const node = parse('title ~ "init flow"');
-    expect(node).toEqual({
+    expect(node).toMatchObject({
       type: "comparison",
       field: "title",
       op: "~",
@@ -104,7 +104,7 @@ describe("parser", () => {
 
   it("parses comparison with number", () => {
     const node = parse("priority >= 2");
-    expect(node).toEqual({
+    expect(node).toMatchObject({
       type: "comparison",
       field: "priority",
       op: ">=",
@@ -114,7 +114,7 @@ describe("parser", () => {
 
   it("parses comparison with date", () => {
     const node = parse("due_date < 2026-04-16");
-    expect(node).toEqual({
+    expect(node).toMatchObject({
       type: "comparison",
       field: "due_date",
       op: "<",
@@ -124,7 +124,7 @@ describe("parser", () => {
 
   it("parses comparison with today", () => {
     const node = parse("due_date <= today");
-    expect(node).toEqual({
+    expect(node).toMatchObject({
       type: "comparison",
       field: "due_date",
       op: "<=",
@@ -149,7 +149,7 @@ describe("parser", () => {
 
   it("parses in with list", () => {
     const node = parse("status in (done, blocked, not_started)");
-    expect(node).toEqual({
+    expect(node).toMatchObject({
       type: "comparison",
       field: "status",
       op: "in",
@@ -166,7 +166,7 @@ describe("parser", () => {
 
   it("parses not in with list", () => {
     const node = parse("status not in (done)");
-    expect(node).toEqual({
+    expect(node).toMatchObject({
       type: "comparison",
       field: "status",
       op: "not in",

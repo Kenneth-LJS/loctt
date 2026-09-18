@@ -19,7 +19,11 @@ export interface McpToolResult {
 
 export interface McpClient {
   callTool: (name: string, args: Record<string, unknown>) => Promise<McpToolResult>;
-  listTools: () => Promise<Array<{ name: string; description?: string }>>;
+  // `description` is present-but-undefined when a tool declares none, so
+  // it is `| undefined` rather than optional: under
+  // exactOptionalPropertyTypes those are different types, and the MCP
+  // SDK returns the former.
+  listTools: () => Promise<Array<{ name: string; description: string | undefined }>>;
   close: () => Promise<void>;
 }
 

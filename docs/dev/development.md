@@ -63,7 +63,7 @@ node apps/cli/dist/index.js <command>
 ### Web app
 
 ```bash
-node apps/web/dist/index.js
+node apps/web/dist/server/index.js
 # Serves API + UI on http://localhost:4321
 ```
 

@@ -35,9 +35,14 @@ describe("MCP get_task (stdio)", () => {
         expect(result.isError).toBeFalsy();
         const text = result.content[0]?.text ?? "";
         const parsed = JSON.parse(text) as {
-          relationships?: Array<{ type: string; target: string }>;
+          relationships?: Array<{ type: string; target: string; title?: string; status?: string }>;
         };
-        expect(parsed.relationships).toEqual([{ type: "blocks", target: "T-2" }]);
+        // The key, not the raw ULID — that is what this case is about.
+        expect(parsed.relationships?.[0]).toMatchObject({ type: "blocks", target: "T-2" });
+        // Title and status ride along so an agent learns what a linked
+        // task is without a get_task per edge.
+        expect(parsed.relationships?.[0]?.title).toBe("second");
+        expect(parsed.relationships?.[0]?.status).toBe("backlog");
         // No ULIDs leaking through.
         expect(JSON.stringify(parsed.relationships)).not.toMatch(/[0-9A-HJKMNP-TV-Z]{26}/);
       } finally {

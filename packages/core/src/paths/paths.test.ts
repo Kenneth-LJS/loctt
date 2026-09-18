@@ -9,7 +9,6 @@ import {
   getConfigDir,
   getDocsDir,
   getHistoryFilePath,
-  getLegacyHistoryFilePath,
   getLocalDir,
   getQueriesConfigPath,
   getReconcileStatePath,
@@ -79,12 +78,6 @@ describe("path helpers", () => {
   it("resolves _history.yaml path under task dir", () => {
     expect(getHistoryFilePath(locttDir, "T1")).toBe(
       `${locttDir}${sep}tasks${sep}T1${sep}_history.yaml`,
-    );
-  });
-
-  it("resolves legacy history.yaml path under task dir", () => {
-    expect(getLegacyHistoryFilePath(locttDir, "T1")).toBe(
-      `${locttDir}${sep}tasks${sep}T1${sep}history.yaml`,
     );
   });
 

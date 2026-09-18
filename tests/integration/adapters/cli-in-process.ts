@@ -67,7 +67,7 @@ export function opToCliArgs(op: Op): string[] {
     case "unarchive":
       return ["unarchive", op.ref];
     case "delete":
-      return ["delete", op.ref, "--force"];
+      return ["delete", op.ref, "--yes"];
     case "link":
       return ["link", op.from, op.type, op.to];
     case "unlink":

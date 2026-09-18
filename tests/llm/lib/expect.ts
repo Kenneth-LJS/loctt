@@ -73,7 +73,7 @@ function loadAll(): LoadedTask[] {
       continue;
     }
     const { rawYaml, body } = splitTaskFile(raw);
-    const fm = parseFrontmatter(rawYaml);
+    const { frontmatter: fm } = parseFrontmatter(rawYaml);
     out.push({ id, frontmatter: fm, body });
   }
   return out;
@@ -108,24 +108,21 @@ function inverseOf(workflow: WorkflowConfig, type: string): string {
   // one direction with an `inverse` pointing at the other. So `type` may
   // appear as either `key` or `inverse`.
   const direct = workflow.relationships.find(r => r.key === type);
-  if (direct) return direct.inverse;
+  // A symmetric relationship declares no `inverse` — it folds onto
+  // itself, so the inverse edge carries the same key.
+  if (direct) return direct.inverse ?? direct.key;
   const reverse = workflow.relationships.find(r => r.inverse === type);
   if (reverse) return reverse.key;
   fail(`relationship type "${type}" is not defined in workflow.yaml`);
 }
 
 function readHistorySync(taskId: string): unknown[] {
-  const newPath = path.join(tasksDir(), taskId, "_history.yaml");
-  const legacyPath = path.join(tasksDir(), taskId, "history.yaml");
-  let content: string | undefined;
+  const filePath = path.join(tasksDir(), taskId, "_history.yaml");
+  let content: string;
   try {
-    content = readFileSync(newPath, "utf-8");
+    content = readFileSync(filePath, "utf-8");
   } catch {
-    try {
-      content = readFileSync(legacyPath, "utf-8");
-    } catch {
-      return [];
-    }
+    return [];
   }
   const parsed: unknown = parseYaml(content);
   return Array.isArray(parsed) ? parsed : [];
@@ -370,7 +367,8 @@ export function allTasks(): ReadonlyArray<{ id: string; key: string; title: stri
   return loadAll().map(t => ({
     id: t.id,
     key: t.frontmatter.key,
-    title: t.frontmatter.title,
+    // title is optional now (K26); a degraded title falls back to the key.
+    title: t.frontmatter.title ?? t.frontmatter.key,
     ...(t.frontmatter.status !== undefined ? { status: t.frontmatter.status } : {}),
     ...(t.frontmatter.archived !== undefined ? { archived: t.frontmatter.archived } : {}),
     ...(t.frontmatter.priority !== undefined ? { priority: t.frontmatter.priority } : {}),

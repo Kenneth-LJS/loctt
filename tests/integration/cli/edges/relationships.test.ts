@@ -14,8 +14,12 @@ describe("CLI link relationship edge cases (spawned binary)", () => {
         { cwd: root },
       );
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("unknown relationship type");
+      // CLI's assertWorkflowRelationshipKey produces "unknown
+      // relationship 'X'. Known: <list>" — surfaces a friendly hint
+      // at the boundary instead of letting core throw a deeper error.
+      expect(result.stderr).toContain("unknown relationship");
       expect(result.stderr).toContain("nonexistent_type");
+      expect(result.stderr).toContain("Known:");
     });
   });
 
@@ -63,22 +67,41 @@ describe("CLI link relationship edge cases (spawned binary)", () => {
       expect(r2.exitCode).toBe(0);
       const r3 = await runCli(["link", "T-3", "parent", "T-1"], { cwd: root });
       expect(r3.exitCode).not.toBe(0);
-      expect(r3.stderr).toContain("cannot create cycle in structural relationship 'parent'");
+      expect(r3.stderr).toContain("cannot create cycle in relationship 'parent'");
     });
   });
 
-  it("allows a cycle on a non-structural relationship (blocks)", async () => {
+  it("allows a cycle on a graph: none relationship (relates_to)", async () => {
+    // Was written against `blocks`, which the shipped default has always
+    // constrained — `structural: true` at b4f0fbf, `graph: acyclic` now.
+    // So this asserted a premise the config never held, and had been
+    // failing before the graph rename. `relates_to` carries no
+    // constraint, which is what the case is actually about.
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "A"], { cwd: root });
       await runCli(["create", "B"], { cwd: root });
       await runCli(["create", "C"], { cwd: root });
 
-      const r1 = await runCli(["link", "T-1", "blocks", "T-2"], { cwd: root });
+      const r1 = await runCli(["link", "T-1", "relates_to", "T-2"], { cwd: root });
       expect(r1.exitCode).toBe(0);
-      const r2 = await runCli(["link", "T-2", "blocks", "T-3"], { cwd: root });
+      const r2 = await runCli(["link", "T-2", "relates_to", "T-3"], { cwd: root });
       expect(r2.exitCode).toBe(0);
-      const r3 = await runCli(["link", "T-3", "blocks", "T-1"], { cwd: root });
+      const r3 = await runCli(["link", "T-3", "relates_to", "T-1"], { cwd: root });
       expect(r3.exitCode).toBe(0);
+    });
+  });
+
+  it("rejects a cycle on graph: acyclic (blocks), which is not a tree axis", () => {
+    // `acyclic` and `tree` differ only in tree-drawability; both refuse
+    // cycles. A blocks cycle is a deadlock.
+    return withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "A"], { cwd: root });
+      await runCli(["create", "B"], { cwd: root });
+
+      expect((await runCli(["link", "T-1", "blocks", "T-2"], { cwd: root })).exitCode).toBe(0);
+      const r = await runCli(["link", "T-2", "blocks", "T-1"], { cwd: root });
+      expect(r.exitCode).not.toBe(0);
+      expect(r.stderr).toContain("cannot create cycle in relationship 'blocks'");
     });
   });
 });
