@@ -507,19 +507,19 @@ the newest page and never reach older entries.
 
 ### `attach_file`
 
-Copy a local file into a task's attachments directory. Only filesystem paths are supported in v1 — no base64 content. The file must be readable from the MCP server's filesystem.
+Copy a local file into a task's attachments directory. Only filesystem paths are supported in v1 — no base64 content. The file must be readable from the MCP server's filesystem **and resolve to inside the tracker root**.
 
-> **Security note.** `attach_file` accepts any absolute path the MCP server process can read — including paths outside the repo such as `~/.ssh/id_rsa`, `~/.aws/credentials`, or `.env` files elsewhere on disk. The contents are then copied into `.loctt/tasks/<id>/attachments/`, where they may be committed, synced, or otherwise exfiltrated. **Do not auto-approve `attach_file` calls.** See [Agent setup → Permissions and auto-approval](agent-setup.md#permissions-and-auto-approval).
+> **Security note.** Over MCP the `source_path` is **confined to inside the tracker root**: a path that resolves outside it — an absolute path elsewhere on disk (`~/.ssh/id_rsa`, `~/.aws/credentials`, a `.env` outside the tracker), a `../` escape, or a symlink whose real target is outside — is refused before any read. This is a deliberate change from earlier behaviour, where any absolute path was accepted. To attach a file from elsewhere, **stage it inside the tracker first** (the refusal names the tracker root), then attach it by its path there. When git-backed mode is enabled, a successful attach also **auto-commits** the new attachment (publishes to the loctt branch); the result then carries `committed` (and `pushed` when a remote push ran, or `commit_note` when the commit could not proceed, e.g. a reconciliation is pending). When git-backed mode is off the file is stored on disk only and nothing is committed. (The CLI `loctt attach`, run by a person at a terminal, is **not** confined — a human choosing a file in `~/Downloads` is a deliberate act; the confinement guards the agent surface.)
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `ref` | string | yes | Task key or ID |
-| `source_path` | string | yes | **Absolute** path to the file to attach |
+| `source_path` | string | yes | **Absolute** path to the file to attach, **inside the tracker root** |
 | `force` | boolean | no | If true, overwrite an existing attachment with the same basename |
 
-Returns JSON `{name, size, overwritten, task_key}`.
+Returns JSON `{name, size, overwritten, task_key}`, plus `committed` (and optionally `pushed` / `commit_note`) when git-backed mode is enabled.
 
-Errors: `source_path must be absolute`; `<message>. Pass force: true to overwrite.` when an attachment with that basename already exists; source-readable errors from `AttachmentSourceError`.
+Errors: `source_path must be absolute`; `source path is outside the tracker and cannot be attached over MCP: <path>. Stage the file inside the tracker first …` when the source resolves outside the tracker; `<message>. Pass force: true to overwrite.` when an attachment with that basename already exists; source-readable errors from `AttachmentSourceError`.
 
 ### `detach_file`
 
@@ -977,6 +977,18 @@ them.
 tracker.** Say what you are about to do before calling either, and do
 not call them speculatively.
 
+> **Security note.** Backup and restore are an import/export boundary
+> **by design**, so their paths are **not** confined to the tracker —
+> `output`/`files` may point anywhere the server can read/write (this is
+> deliberate: "restore it from where I downloaded it"). Because they can
+> therefore cross the tracker boundary — writing the whole tracker out,
+> or reading and overwriting from an arbitrary file — both are
+> **`confirm`-gated** so an auto-approved or steered agent cannot do it
+> silently: `backup` requires `confirm: true`, and any **real** restore
+> requires `confirm: true`. A `dry_run` restore writes nothing and needs
+> no confirm — prefer it first. A human approving the confirm is the
+> guard here in place of path confinement.
+
 ### `backup`
 
 Writes a JSONL backup — one JSON value per line, so it streams. Line 1
@@ -987,6 +999,7 @@ is a header carrying the schema version.
 | `output` | string | yes | Destination path, relative to the tracker root |
 | `no_history` | boolean | no | Leave `_history.yaml` out. History is included by default. |
 | `split_bytes` | integer | no | Bytes per part; above this the output splits into numbered parts |
+| `confirm` | boolean | yes | Must be `true`. A backup writes the whole tracker to a file path. |
 
 Returns JSON `{files, bytes, tasks, configs, users, includedHistory,
 excluded, schemaVersion}`. `excluded` is a list of
@@ -1005,7 +1018,8 @@ Carries: task frontmatter and body, comments, history, attachments
 |---|---|---|---|
 | `files` | string[] | yes | Backup paths. A split backup needs **every** part; a partial set is refused and nothing is written. |
 | `mode` | enum | no | `bare` (default), `merge`, or `overwrite` |
-| `dry_run` | boolean | no | Predict counts, write nothing |
+| `dry_run` | boolean | no | Predict counts, write nothing. A dry run needs no `confirm`. |
+| `confirm` | boolean | yes* | Required for a **real** restore (any non-`dry_run`): it reads an arbitrary file and writes into the tracker (`overwrite`/`merge` can destroy work). Not required for `dry_run`. |
 
 | Mode | Behaviour |
 |---|---|

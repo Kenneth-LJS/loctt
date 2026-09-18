@@ -1,6 +1,8 @@
 import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { execaSync } from "execa";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../adapters/cli-spawn.js";
@@ -114,6 +116,97 @@ describe("MCP attach_file (stdio)", () => {
       } finally {
         await client.close();
       }
+
+      await rm(srcDir, { recursive: true, force: true });
+    });
+  });
+
+  it("refuses a source_path outside the tracker root (F1)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "confine"], { cwd: root });
+
+      // A concrete outside path: a file in the OS temp dir, not under root.
+      const outsideDir = await mkdtemp(path.join(tmpdir(), "loctt-mcp-outside-"));
+      const outside = path.join(outsideDir, "id_rsa");
+      await writeFile(outside, "SENSITIVE\n", "utf8");
+
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("attach_file", {
+          ref: "T-1",
+          source_path: outside,
+        });
+        expect(result.isError).toBe(true);
+        const text = result.content[0]?.text ?? "";
+        expect(text).toMatch(/outside the tracker/);
+        // Actionable: names the tracker root to stage into.
+        expect(text).toContain(root);
+        // Nothing was copied in.
+        expect(await findAttachment(root, "id_rsa")).toBeNull();
+      } finally {
+        await client.close();
+      }
+      await rm(outsideDir, { recursive: true, force: true });
+    });
+  });
+
+  it("auto-commits the attachment when git-backed mode is enabled", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      execaSync("git", ["init"], { cwd: root });
+      execaSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+      execaSync("git", ["config", "user.name", "test"], { cwd: root });
+      execaSync("git", ["commit", "--allow-empty", "-m", "init"], { cwd: root });
+      expect((await runCli(["git", "enable"], { cwd: root })).exitCode).toBe(0);
+      await runCli(["create", "committed"], { cwd: root });
+
+      const srcDir = await mkdtemp(path.join(root, "src-"));
+      const sourcePath = path.join(srcDir, "committed.txt");
+      await writeFile(sourcePath, "commit me\n", "utf8");
+
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("attach_file", {
+          ref: "T-1",
+          source_path: sourcePath,
+        });
+        expect(result.isError).toBeFalsy();
+        const parsed = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+        expect(parsed["committed"]).toBe(true);
+      } finally {
+        await client.close();
+      }
+      // The loctt branch now carries the attachment.
+      const lsTree = execaSync("git", ["ls-tree", "-r", "--name-only", "loctt"], { cwd: root });
+      expect(lsTree.stdout).toMatch(/attachments\/committed\.txt/);
+
+      await rm(srcDir, { recursive: true, force: true });
+    });
+  });
+
+  it("does NOT commit (or init git) when git-backed mode is off", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "uncommitted"], { cwd: root });
+
+      const srcDir = await mkdtemp(path.join(root, "src-"));
+      const sourcePath = path.join(srcDir, "loose.txt");
+      await writeFile(sourcePath, "just on disk\n", "utf8");
+
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("attach_file", {
+          ref: "T-1",
+          source_path: sourcePath,
+        });
+        expect(result.isError).toBeFalsy();
+        const parsed = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+        // No git → no `committed` field at all, and the file is on disk.
+        expect(parsed["committed"]).toBeUndefined();
+        expect(await findAttachment(root, "loose.txt")).not.toBeNull();
+      } finally {
+        await client.close();
+      }
+      // We never initialised git.
+      await expect(stat(path.join(root, ".git"))).rejects.toThrow();
 
       await rm(srcDir, { recursive: true, force: true });
     });

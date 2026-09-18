@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const LOCTT_DIR = ".loctt";
 const TASKS_DIR = "tasks";
@@ -50,6 +50,30 @@ export function assertSafeBasename(name: string): void {
   if (name.split(/[/\\]/).some(p => p === "..")) {
     throw new Error(`filename must not contain path traversal: ${name}`);
   }
+}
+
+/**
+ * Whether `candidate`, resolved, lands inside (or exactly on) `container`.
+ *
+ * The canonical "does this path escape a directory" check every confining
+ * caller shares: resolve both sides, take the relative path from container
+ * to candidate, and reject when that relative path climbs out (`..`, a
+ * `..`-prefixed segment) or is itself absolute (different drive/root on
+ * Windows). The container itself is accepted (relative path `""`).
+ *
+ * Callers pass ALREADY-resolved real paths when symlinks matter — this is
+ * a pure lexical containment check on resolved strings and does not itself
+ * follow links. `restore.ts` (config/attachment/avatar embedded paths) and
+ * `attachFile` (its source path) both route through this rather than each
+ * open-coding `relative()`/`startsWith("..")`, so they cannot disagree
+ * about what "inside the tracker" means.
+ */
+export function isPathContained(container: string, candidate: string): boolean {
+  const resolvedContainer = resolve(container);
+  const resolvedCandidate = resolve(candidate);
+  const rel = relative(resolvedContainer, resolvedCandidate);
+  if (rel === "") return true;
+  return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
 /**
