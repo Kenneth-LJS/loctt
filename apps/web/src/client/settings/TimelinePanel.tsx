@@ -1,8 +1,10 @@
-import type { TimelineConfig, TimelineGrouping, TimelineZoom, WorkflowConfig } from "@loctt/contracts";
-import { useState } from "react";
+import type { TimelineConfig, TimelineZoom, WorkflowConfig } from "@loctt/contracts";
+import { useMemo, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useSaveWorkflowCollection } from "../api/hooks/useWorkflowMutations.ts";
+import { buildGroupingCatalog } from "../grouping/catalog.ts";
+import { GroupByPicker } from "../grouping/GroupByPicker.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Select } from "../ui/Select.tsx";
@@ -36,14 +38,6 @@ const ZOOMS: readonly { value: TimelineZoom; label: string }[] = [
   { value: "month", label: "Month" },
 ];
 
-const GROUPINGS: readonly { value: TimelineGrouping; label: string }[] = [
-  { value: "none", label: "None" },
-  { value: "milestone", label: "Milestone" },
-  { value: "assignee", label: "Assignee" },
-  { value: "status", label: "Status" },
-  { value: "sprint", label: "Sprint" },
-];
-
 export function TimelinePanel() {
   return (
     <WorkflowPanelFrame
@@ -60,6 +54,7 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
   const stored = workflow.timeline ?? {};
   const [draft, setDraft] = useState<TimelineConfig>(stored);
 
+  const groupingCatalog = useMemo(() => buildGroupingCatalog(workflow), [workflow]);
   const relationships = workflow.relationships ?? [];
   const dep = draft.dependency_relationship ?? "";
   // A stored dependency key that is not among the current relationships is
@@ -91,14 +86,22 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
 
       <label className="grid gap-1">
         <span className="text-text-secondary">Default grouping</span>
-        <Select
-          data-testid="timeline-default-grouping"
+        <GroupByPicker
+          catalog={groupingCatalog}
           value={draft.default_grouping ?? "none"}
-          onChange={e => { patch({ default_grouping: e.target.value as TimelineGrouping }); }}
-          className="w-56"
-        >
-          {GROUPINGS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
-        </Select>
+          onChange={g => {
+            setDraft(prev => {
+              if (g === "none") {
+                const { default_grouping: _drop, ...rest } = prev;
+                return rest;
+              }
+              return { ...prev, default_grouping: g };
+            });
+          }}
+          size="md"
+          testIdBase="timeline-default-grouping"
+          aria-label="Default grouping"
+        />
       </label>
 
       <label className="flex items-center gap-2">

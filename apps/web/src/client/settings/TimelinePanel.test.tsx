@@ -90,7 +90,11 @@ describe("TimelinePanel", () => {
 
     const zoom = await screen.findByTestId<HTMLSelectElement>("timeline-default-zoom");
     expect(zoom.value).toBe("month");
-    expect(screen.getByTestId<HTMLSelectElement>("timeline-default-grouping").value).toBe("milestone");
+    // Grouping is no longer a native <select> — it is the shared
+    // searchable GroupByPicker, whose selected value is exposed on the
+    // trigger as `data-value` (asserting `.value` here was asserting the
+    // pre-redesign control).
+    expect(screen.getByTestId("timeline-default-grouping").getAttribute("data-value")).toBe("milestone");
     expect(screen.getByTestId<HTMLInputElement>("timeline-show-arrows").checked).toBe(false);
     expect(screen.getByTestId<HTMLSelectElement>("timeline-dependency-relationship").value).toBe("blocks");
   });
@@ -101,7 +105,10 @@ describe("TimelinePanel", () => {
 
     const zoom = await screen.findByTestId<HTMLSelectElement>("timeline-default-zoom");
     fireEvent.change(zoom, { target: { value: "day" } });
-    fireEvent.change(screen.getByTestId("timeline-default-grouping"), { target: { value: "assignee" } });
+    // Open the GroupByPicker and click the option row (the redesigned
+    // control; `fireEvent.change` on a <select> no longer applies).
+    fireEvent.click(screen.getByTestId("timeline-default-grouping"));
+    fireEvent.click(screen.getByTestId("timeline-default-grouping-opt-assignee"));
     fireEvent.click(screen.getByTestId("timeline-save"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });

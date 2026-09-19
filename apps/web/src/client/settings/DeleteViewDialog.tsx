@@ -1,3 +1,5 @@
+import type { RefObject } from "react";
+
 import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 
 /**
@@ -26,17 +28,26 @@ export function DeleteViewDialog({
   pinned,
   onCancel,
   onConfirm,
+  returnFocusTo,
 }: {
   readonly name: string;
   /** Whether this view is currently pinned to the sidebar. */
   readonly pinned: boolean;
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
+  /**
+   * Focus-restore target when the trigger will be gone on close — the
+   * sidebar opens this from a kebab menu item that unmounts on select, so
+   * it passes the stable "New filter…" button. The settings panels open
+   * it from a button that survives and omit it.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
 }) {
   return (
     <ConfirmDialog
       title={`Delete “${name}”?`}
       testId="delete-view-dialog"
+      {...(returnFocusTo !== undefined ? { returnFocusTo } : {})}
       body={
         <>
           The view <span className="font-medium text-text-primary">{name}</span>{" "}

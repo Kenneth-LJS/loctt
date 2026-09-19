@@ -481,9 +481,51 @@ export type BoardsConfig = z.infer<typeof BoardsConfigSchema>;
 export const TimelineZoomSchema = z.enum(["day", "week", "month"]);
 export type TimelineZoom = z.infer<typeof TimelineZoomSchema>;
 
-/** How tasks on the timeline are grouped into rows. */
-export const TimelineGroupingSchema = z.enum(["none", "milestone", "assignee", "status", "sprint"]);
-export type TimelineGrouping = z.infer<typeof TimelineGroupingSchema>;
+/**
+ * How tasks on the timeline are grouped into rows.
+ *
+ * Two shapes of value, both stored verbatim:
+ *  - one of the eight **builtins** — `none` (flat), `project`,
+ *    `milestone`, `sprint`, `assignee`, `status`, `priority`,
+ *    `task_type`; or
+ *  - a **custom-field reference** `field.<key>`, naming a single-value
+ *    (`multi: false`) enum custom field declared in `custom_fields`.
+ *    Labels and multi-value enum fields are deliberately NOT groupable:
+ *    a task carrying N label/multi values would land in N bands, which
+ *    breaks TML-7's invariant that the total row count is identical
+ *    across every grouping.
+ *
+ * The reference MAY DANGLE — a `field.<key>` whose field was deleted or
+ * changed to multi/non-enum no longer resolves. Like
+ * `dependency_relationship`, the value is preserved on write rather than
+ * silently dropped; the timeline's `resolveGrouping` rejects an
+ * unresolvable value (deferring to the next precedence layer, finally
+ * `none`) and the view names it in a notice. Eligibility is therefore
+ * *derived* from the live workflow at read time, not re-validated here.
+ */
+export const TimelineGroupingSchema = z.union([
+  z.enum([
+    "none",
+    "project",
+    "milestone",
+    "sprint",
+    "assignee",
+    "status",
+    "priority",
+    "task_type",
+  ]),
+  z.string().regex(/^field\.[A-Za-z0-9_-]+$/),
+]);
+export type TimelineGrouping =
+  | "none"
+  | "project"
+  | "milestone"
+  | "sprint"
+  | "assignee"
+  | "status"
+  | "priority"
+  | "task_type"
+  | `field.${string}`;
 
 /**
  * Optional timeline (Gantt) config. Workspace-level defaults applied
