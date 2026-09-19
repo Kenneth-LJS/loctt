@@ -67,6 +67,7 @@ export type IconName =
   | "subscript"
   | "undo"
   | "redo"
+  | "paperclip"
   | "sourceCode";
 
 /** Path/element content per icon, drawn in a shared 16x16 stroked frame. */
@@ -120,6 +121,7 @@ const PATHS: Record<IconName, ReactElement> = {
   undo: <><path d="M4 8h6.5a3 3 0 010 6H7" /><path d="M6 5.5L3.5 8 6 10.5" /></>,
   redo: <><path d="M12 8H5.5a3 3 0 000 6H9" /><path d="M10 5.5L12.5 8 10 10.5" /></>,
   sourceCode: <path d="M6 4L2.5 8 6 12M10 4l3.5 4L10 12" />,
+  paperclip: <path d="M12.5 7.5l-5 5a2.5 2.5 0 0 1-3.5-3.5l5.5-5.5a1.75 1.75 0 0 1 2.5 2.5L6.5 11.5a1 1 0 0 1-1.5-1.5l4.5-4.5" />,
 };
 
 /** Icons drawn as filled shapes rather than strokes (dots, star). */

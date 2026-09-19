@@ -156,6 +156,37 @@ describe("TextField", () => {
     expect(ref.current).toBeInstanceOf(HTMLInputElement);
     expect(screen.getByTestId("meta-input-title").tagName).toBe("INPUT");
   });
+
+  it("is full-width by default (backwards-compatible)", () => {
+    render(<TextField placeholder="wide" />);
+    expect(screen.getByPlaceholderText("wide").className).toContain("w-full");
+  });
+
+  it("drops w-full when fullWidth is false so a caller's width class applies", () => {
+    // cn is a plain join, not tailwind-merge — the ONLY way className='w-32'
+    // can win is if the primitive stops emitting w-full.
+    render(<TextField fullWidth={false} className="w-32" placeholder="narrow" />);
+    const cls = screen.getByPlaceholderText("narrow").className;
+    expect(cls).not.toContain("w-full");
+    expect(cls).toContain("w-32");
+  });
+
+  it("respects fullWidth=false on the leadingIcon wrapper too", () => {
+    const { container } = render(
+      <TextField fullWidth={false} leadingIcon={ICON.more} placeholder="find" />,
+    );
+    // The wrapper (the input's parent span) must not force full width.
+    const input = screen.getByPlaceholderText("find");
+    const wrapper = input.parentElement as HTMLElement;
+    expect(wrapper.tagName).toBe("SPAN");
+    expect(wrapper.className).not.toContain("w-full");
+  });
+
+  it("keeps the leadingIcon wrapper full-width by default", () => {
+    render(<TextField leadingIcon={ICON.more} placeholder="find2" />);
+    const wrapper = screen.getByPlaceholderText("find2").parentElement as HTMLElement;
+    expect(wrapper.className).toContain("w-full");
+  });
 });
 
 describe("Callout", () => {

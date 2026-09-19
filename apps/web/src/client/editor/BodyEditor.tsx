@@ -34,17 +34,16 @@
  * re-serialization. The prop contract to `TaskDetail` is unchanged.
  */
 
-import type { Editor, JSONContent } from "@tiptap/core";
+import type { JSONContent } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BodyConflictDialog } from "./BodyConflictDialog.tsx";
 import { BodyRenderedView } from "./BodyRenderedView.tsx";
 import { RichBuffer } from "./markdown.ts";
-import { MarkdownEditor } from "./MarkdownEditor.tsx";
+import type { EditorMode } from "./MarkdownField.tsx";
+import { MarkdownField } from "./MarkdownField.tsx";
 import type { MentionCandidate } from "./MentionMenu.tsx";
-import { RichEditor } from "./RichEditor.tsx";
 import { SaveIndicator } from "./SaveIndicator.tsx";
-import { Toolbar } from "./Toolbar.tsx";
 import { useBodyAutosave } from "./useBodyAutosave.ts";
 
 const PLACEHOLDER = "Describe this task…";
@@ -61,8 +60,6 @@ export interface BodyEditorProps {
   readonly mentionCandidates: readonly MentionCandidate[];
   readonly onSaved?: (token: string) => void;
 }
-
-type Mode = "rich" | "raw";
 
 export function BodyEditor({
   taskRef, body, bodyToken, lossyConstructs, mentionCandidates, onSaved,
@@ -127,7 +124,7 @@ function BodyEditSurface({
    * so every client applies one rule; this is the half that acts on it.
    */
   const forcedRaw = lossyConstructs.length > 0;
-  const [mode, setMode] = useState<Mode>(forcedRaw ? "raw" : "rich");
+  const [mode, setMode] = useState<EditorMode>(forcedRaw ? "raw" : "rich");
 
   const bufferRef = useRef<RichBuffer>(new RichBuffer(body));
   // Mirrors the buffer for rendering only; the buffer is the truth.
@@ -249,13 +246,6 @@ function BodyEditSurface({
     return () => { window.removeEventListener("keydown", onKey); };
   }, [flush, requestLeave, autosave.conflict]);
 
-  /**
-   * The live TipTap editor, surfaced by `RichEditor` so the single
-   * always-visible toolbar (below) can drive it. Null in raw mode and
-   * before the rich editor mounts.
-   */
-  const [richEditor, setRichEditor] = useState<Editor | null>(null);
-
   // Focus the active surface as soon as the editor mounts (TSK-69: the
   // click that entered edit leaves the editor focused, ready to type).
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -313,65 +303,47 @@ function BodyEditSurface({
       // horizontally.
       className="-mx-3 rounded border border-border-subtle"
     >
-      {/* One always-visible toolbar in edit mode (K33): formatting on the
-          left (rich mode only — the buttons disable in raw), the compact
-          Rich/Markdown toggle at the right. Its height is reserved so
-          entering edit does not shift the text down. The SaveIndicator
-          sits beside it. */}
-      <div className="flex items-stretch">
-        <div className="min-w-0 flex-1">
-          <Toolbar
-            editor={mode === "rich" ? richEditor : null}
-            mode={mode}
-            onModeChange={setMode}
-            forcedRaw={forcedRaw}
-          />
-        </div>
-        <div className="flex shrink-0 items-center border-b border-border-subtle px-2">
+      {/* The shared editing chrome (MarkdownField): the same always-visible
+          icon toolbar, mode toggle, and rich/source surfaces the comment
+          composer uses. What is specific to the description — the mode
+          toggle's bare testids, the SaveIndicator in the trailing slot, the
+          lossy banner, autosave-on-blur, and the caret-at-click — is passed
+          as props, not forked. */}
+      <MarkdownField
+        mode={mode}
+        onModeChange={setMode}
+        forcedRaw={forcedRaw}
+        text={text}
+        onRichDoc={onRichDoc}
+        onRawChange={onRawChange}
+        mentionCandidates={mentionCandidates}
+        // Remount the rich surface when the *task* changes, never on every
+        // keystroke — a key tied to the text would rebuild the editor
+        // mid-word and cost the user their caret.
+        richEditorKey={taskRef}
+        ariaLabel="Description"
+        placeholder={PLACEHOLDER}
+        onRichBlur={() => { void flush(); }}
+        {...(enterCoords !== undefined ? { focusCoords: enterCoords } : {})}
+        toolbarTrailing={
           <SaveIndicator state={autosave.state} onRetry={() => { void autosave.retry(); }} />
-        </div>
-      </div>
-
-      {forcedRaw && (
-        <p
-          data-testid="lossy-banner"
-          // `aria-live`, not `role="status"` — see SaveIndicator. This
-          // banner is also permanently on screen for a lossy body, so
-          // it would make `getByRole("status")` ambiguous the same way.
-          aria-live="polite"
-          className="mb-2 rounded border border-border-subtle bg-bg-muted px-3 py-2 text-[0.8571rem] text-text-secondary"
-        >
-          This task body contains markdown features that can’t be edited
-          visually ({lossyNote}). Edit in source mode.
-        </p>
-      )}
-
-      {mode === "rich" ? (
-        <RichEditor
-          // Remount when the *task* changes, never on every keystroke —
-          // a key tied to the text would rebuild the editor mid-word
-          // and cost the user their caret.
-          key={taskRef}
-          markdown={text}
-          onDocChange={onRichDoc}
-          onBlur={() => { void flush(); }}
-          mentionCandidates={mentionCandidates}
-          // BodyEditor owns the single always-visible toolbar (with the
-          // mode toggle), so RichEditor renders none of its own (K33).
-          hideToolbar
-          onEditorReady={setRichEditor}
-          // TSK-69: land the caret where the user clicked to enter edit.
-          {...(enterCoords !== undefined ? { focusCoords: enterCoords } : {})}
-        />
-      ) : (
-        <MarkdownEditor
-          value={text}
-          onChange={onRawChange}
-          ariaLabel="Description (markdown source)"
-          placeholder={PLACEHOLDER}
-          className="px-3 py-2"
-        />
-      )}
+        }
+        banner={forcedRaw
+          ? (
+              <p
+                data-testid="lossy-banner"
+                // `aria-live`, not `role="status"` — see SaveIndicator. This
+                // banner is also permanently on screen for a lossy body, so
+                // it would make `getByRole("status")` ambiguous the same way.
+                aria-live="polite"
+                className="mb-2 rounded border border-border-subtle bg-bg-muted px-3 py-2 text-[0.8571rem] text-text-secondary"
+              >
+                This task body contains markdown features that can’t be edited
+                visually ({lossyNote}). Edit in source mode.
+              </p>
+            )
+          : undefined}
+      />
 
       {autosave.conflict !== null && (
         <BodyConflictDialog

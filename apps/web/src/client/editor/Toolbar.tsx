@@ -135,6 +135,25 @@ export interface ToolbarProps {
   readonly onModeChange?: (mode: "rich" | "raw") => void;
   /** True when the body must stay in raw mode (lossy constructs, B5). */
   readonly forcedRaw?: boolean;
+  /**
+   * The `data-testid` stem for the mode toggle's two segments. The
+   * description body keeps the historical bare `mode-rich`/`mode-raw`;
+   * the comment composer passes its own testId so the two editors on the
+   * task-detail page do not collide (the same reason `RichEditor`'s
+   * `testId` is per-surface). Defaults to `mode`.
+   */
+  readonly modeTestIdPrefix?: string;
+  /**
+   * When present, an Attach button is shown in the toolbar. Clicking it
+   * asks the host to add an attachment (a file picker). The button is a
+   * plain affordance driven entirely by the callback, so both the
+   * description body and the comment composer can share it — the file's
+   * destination (the ticket's attachment store) is the host's concern,
+   * not the toolbar's.
+   */
+  readonly onAttach?: () => void;
+  /** Disables the Attach button while an upload is in flight. */
+  readonly attachPending?: boolean;
 }
 
 export function Toolbar({
@@ -142,6 +161,9 @@ export function Toolbar({
   mode,
   onModeChange,
   forcedRaw = false,
+  modeTestIdPrefix = "mode",
+  onAttach,
+  attachPending = false,
 }: ToolbarProps): React.JSX.Element | null {
   /**
    * Subscribes to selection *and* document changes. Without this the
@@ -322,10 +344,31 @@ export function Toolbar({
         </>
       )}
 
-      {/* The Rich/Markdown mode toggle sits at the right end (K33). */}
-      {mode !== undefined && onModeChange !== undefined && (
-        <div className="ml-auto flex items-center">
-          <ModeToggle mode={mode} onModeChange={onModeChange} forcedRaw={forcedRaw} />
+      {/* Attach + the Rich/Markdown mode toggle sit at the right end (K33).
+          `ml-auto` on this cluster pushes both to the far right whether or
+          not the formatting controls above are present (raw mode has none). */}
+      {(onAttach !== undefined || (mode !== undefined && onModeChange !== undefined)) && (
+        <div className="ml-auto flex items-center gap-1">
+          {onAttach !== undefined && (
+            <ToolbarButton
+              size="sm"
+              testId="fmt-attach"
+              aria-label="Attach a file"
+              title="Attach a file"
+              disabled={attachPending}
+              onClick={onAttach}
+            >
+              <Icon name="paperclip" size={16} />
+            </ToolbarButton>
+          )}
+          {mode !== undefined && onModeChange !== undefined && (
+            <ModeToggle
+              mode={mode}
+              onModeChange={onModeChange}
+              forcedRaw={forcedRaw}
+              testIdPrefix={modeTestIdPrefix}
+            />
+          )}
         </div>
       )}
     </div>
@@ -347,27 +390,33 @@ function ModeToggle({
   mode,
   onModeChange,
   forcedRaw,
+  testIdPrefix,
 }: {
   readonly mode: "rich" | "raw";
   readonly onModeChange: (mode: "rich" | "raw") => void;
   readonly forcedRaw: boolean;
+  readonly testIdPrefix: string;
 }): React.JSX.Element {
   return (
     <div role="group" aria-label="Editing mode" className="inline-flex items-center rounded-md bg-bg-muted p-0.5">
       <button
         type="button"
-        data-testid="mode-rich"
+        data-testid={`${testIdPrefix}-rich`}
         aria-pressed={mode === "rich"}
         disabled={forcedRaw}
-        title="Rich text"
+        // Both segments name their surface on hover. Rich text is WYSIWYG,
+        // Markdown shows the source — the glyph carries the shortcut of a
+        // toggle, the tooltip carries the meaning (Ken: icon + tooltip,
+        // not "Rich"/"Markdown" text labels).
+        title="Rich text (formatted)"
         onClick={() => { onModeChange("rich"); }}
         className={segClass(mode === "rich", forcedRaw)}
       >
-        Rich
+        <Icon name="eye" size={14} />
       </button>
       <button
         type="button"
-        data-testid="mode-raw"
+        data-testid={`${testIdPrefix}-raw`}
         aria-pressed={mode === "raw"}
         title="Markdown source"
         onClick={() => { onModeChange("raw"); }}

@@ -73,6 +73,34 @@ describe("markdown rendering", () => {
     expect(container.textContent).not.toContain("**bold text**");
     expect(container.textContent).not.toContain("```");
   });
+
+  /**
+   * GOAL 2: an attachment embedded from the composer must actually SHOW in
+   * the read view, not render as its reference text. The file is a ticket
+   * attachment referenced by its inline URL.
+   */
+  it("renders an embedded attachment with a safe src as a real <img>", () => {
+    render(renderCommentBody(
+      "![diagram.png](/api/tasks/T-1/attachments/diagram.png?inline=1)",
+      { resolveMention },
+    ));
+    const img = screen.getByTestId<HTMLImageElement>("comment-image");
+    // Red-proof: the pre-GOAL-2 reader rendered the embed as a
+    // `<span>` of reference text, so there was no <img> at all.
+    expect(img.tagName).toBe("IMG");
+    expect(img.getAttribute("src")).toBe("/api/tasks/T-1/attachments/diagram.png?inline=1");
+    expect(img.getAttribute("alt")).toBe("diagram.png");
+  });
+
+  /** @verifies CMT-22 — an unsafe embed src never becomes an <img src="javascript:…">. */
+  it("falls back to reference text for an unsafe embed src", () => {
+    const { container } = render(renderCommentBody(
+      "![x](javascript:alert(1))",
+      { resolveMention },
+    ));
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("x");
+  });
 });
 
 describe("mention chips", () => {
