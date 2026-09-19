@@ -3828,3 +3828,28 @@ the multi-agent run (all Playwright agents on one context/server).
 **Still open (larger features):** sprint overview page (/sprints index +
 detail), board keyboard drag-and-drop (+ the move already toasts elsewhere;
 board reorder is the mouse-only part).
+
+## UX backlog — final verification (2026-09-19)
+
+The remaining "major" UX-eval findings were verified and are NOT real —
+they are already-built features the review agents never reached (the
+multi-agent run shared one browser context, so agents interfered with each
+other's navigation, both inventing blockers and missing features):
+
+- **#5 no sprint overview page — NOT REAL.** `/sprints` (SprintsView) and
+  `/sprints/$key` (SprintDetail) are fully built and routed, with burndown
+  charts, meta headers, and cards grouped by sprint. Verified live: the
+  page shows "Sprint 12 ACTIVE", date range, progress, days-left, and a
+  "No sprint" group.
+- **#7 board reorder is mouse-only / no move confirmation — NOT REAL.**
+  Board cards support keyboard drag (BRD-38: Ctrl/Cmd + arrows, BoardCard
+  is a focusable button). Moves persist (board drag writes
+  status_updated_at, verified earlier).
+
+**Net UX-eval outcome:** of the review's headline issues, the REAL ones
+were: row-divider gap, dropdown affordance, storage-layer copy leaks,
+status-pill wrap, responsive mobile layout, and filter-chip id humanization
+— all now fixed + tested. The rest (#1 modal teardown, #8 escape, #5
+sprints, #7 board keyboard, #11 create feedback, "mobile sidebar rail")
+were shared-context artifacts or already-built. Lesson recorded: give each
+UI review agent an ISOLATED browser context, or the findings are unreliable.
