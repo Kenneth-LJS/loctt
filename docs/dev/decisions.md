@@ -14120,3 +14120,41 @@ from cli deps + external (re-breaks `loctt mcp`); delete the inline-
 attachment `Content-Security-Policy` line (re-opens SVG XSS) and revert
 `server.attachments.test.ts`; drop `blob:`/`form-action` from the doc CSP;
 remove the `fast-uri` override.
+### A208 · SVG icon component for affordances (supersedes the unsupported "glyphs only" comment)
+
+**Ticket:** ui/ux-polish-and-timeline-panel · **Date:** 2026-09-19
+
+**The situation.** The UI drew interactive/decorative affordances —
+collapsible-section carets, close buttons, kebab menus, reorder controls,
+dropdown/sort carets — with Unicode glyphs (`▾ ✕ ⋯ ↑ ↓ ▸`). Ken: "instead
+of using proper iconography, the ui uses ascii/emojis … collapsible
+sections using ascii? that's really fucking gross." He also asked for icons
+on functional actions where they aid scanning (e.g. Copy link → link icon).
+
+`ui/icons.ts` carried a comment asserting "the app's decision (see
+decisions.md) is literal Unicode glyphs, no icon font and no icon
+component." **No such decision exists** — verified by search; the only
+recorded icon decisions (S-8 era) merely unified *which glyph* stands for
+each affordance, not a ban on SVG. Ken confirmed the "no SVG" claim was a
+hallucination. So there was no decision to override.
+
+**Decided.** Introduce `ui/Icon.tsx` — a hand-rolled inline-SVG icon set
+(currentColor, tree-shaken, no font/dependency, 16-unit stroked frame).
+Affordances are drawn with `<Icon>`; `ICON` (icons.ts) is kept ONLY for
+glyphs that are legitimately text/status: the ★ saved/favourite marker
+(Ken: intentional, keep) and the ⚠ status marker. Keyboard-key labels
+(↑←→↓) and prose arrows stay literal too. Common functional actions get an
+icon + label where it aids scanning (Copy link, Edit, Delete, Archive,
+Export, and the task-detail More menu).
+
+**Why.** Glyph affordances read as unfinished ASCII and drift in weight/
+baseline; a shared SVG set is consistent, theme-coloured, and a11y-clean
+(decorative `aria-hidden`; the control carries the label). Hand-rolled
+rather than a dependency (e.g. lucide) keeps the bundle lean and matches
+the app's self-contained style; only the ~20 names actually used exist.
+
+**To revert.** Delete `apps/web/src/client/ui/Icon.tsx`; restore the
+migrated call sites to their `ICON.*` glyphs / raw glyphs (git history has
+each); restore the removed `ICON` imports; revert the Select control test's
+chevron assertion to the glyph-text form. The ★/⚠ glyphs in `icons.ts`
+were never removed.
