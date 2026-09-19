@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import { Icon } from "../ui/Icon.tsx";
@@ -117,6 +118,22 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
               mode-switch note the case asks for. */}
           Single-key shortcuts are ignored while a text field, editor,
           or dialog has focus, so they never shadow typing.
+        </p>
+
+        {/* CONFIG-5 / P4: this overlay is the discoverable summary; the
+            full, rebindable reference lives in Settings → Keyboard. A
+            deep link (labelled as navigation) keeps the two from being
+            two disconnected surfaces. Closes the dialog on the way. */}
+        <p className="mt-3 text-[0.8571rem] text-text-secondary">
+          <Link
+            to="/settings/$section"
+            params={{ section: "keyboard" }}
+            onClick={onClose}
+            data-testid="shortcut-help-keyboard-link"
+            className="text-accent underline hover:text-text-primary"
+          >
+            Full reference in Settings → Keyboard
+          </Link>
         </p>
       </div>
     </div>

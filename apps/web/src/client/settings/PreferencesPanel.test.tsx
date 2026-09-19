@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -49,13 +57,29 @@ function stubFetch(): void {
   }));
 }
 
+/**
+ * The panel now renders a TanStack `<Link>` (the CONFIG-5 cross-link to
+ * Projects), so a bare render throws in `useLinkProps` — the panel always
+ * lives under a router in the app. Mount it inside a memory router at
+ * `/settings/preferences` in addition to the QueryClient.
+ */
 function renderPanel() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  const rootRoute = createRootRoute({ component: Outlet });
+  const settingsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/$section",
+    component: () => <PreferencesPanel />,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([settingsRoute]),
+    history: createMemoryHistory({ initialEntries: ["/settings/preferences"] }),
+  });
   return render(
     <QueryClientProvider client={client}>
-      <PreferencesPanel />
+      <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
 }
@@ -140,5 +164,20 @@ describe("PreferencesPanel", () => {
 
     await waitFor(() => { expect(PUTS.length).toBe(1); });
     expect(PUTS[0]?.["default_project"]).toBe("p_backend");
+  });
+
+  /**
+   * @verifies CONFIG-5
+   *
+   * P4: the personal default here and the workspace default in Projects
+   * are two different "default project" concepts. This panel cross-links
+   * to the other so they are not mistaken for one.
+   */
+  it("cross-links the personal default to the workspace default in Projects", async () => {
+    renderPanel();
+    const link = (await screen.findByTestId("preferences-workspace-default-link"))
+      .closest("a") as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    expect(link.getAttribute("href")).toContain("/settings/projects");
   });
 });

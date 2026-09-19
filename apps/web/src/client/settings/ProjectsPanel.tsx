@@ -1,4 +1,5 @@
 import type { ProjectDef } from "@loctt/contracts";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -325,8 +326,26 @@ export function ProjectsPanel() {
   return (
     <div className="p-8" data-testid="settings-projects">
       <h1 className="mb-1 text-lg font-semibold">Projects</h1>
-      <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Each project has its own key prefix and counter.
+      <p className="mb-1 text-[0.9286rem] text-text-secondary">
+        Each project has its own key prefix and counter. Set the workspace
+        default — where new tasks land for a user with no personal default —
+        from a project row&rsquo;s actions.
+      </p>
+      {/* CONFIG-5 / P4: the row-level "Make default" here sets the
+          *workspace* default; each user can also set a *personal* default
+          that wins for them. Cross-link so the two "default project"
+          concepts are not mistaken for one. */}
+      <p className="mb-4 text-[0.7857rem] text-text-tertiary">
+        Your personal default is in{" "}
+        <Link
+          to="/settings/$section"
+          params={{ section: "preferences" }}
+          data-testid="projects-personal-default-link"
+          className="text-accent underline hover:text-text-primary"
+        >
+          Settings → My preferences
+        </Link>
+        .
       </p>
 
       {/* PRU-46 / K16: an interrupted rename is *already finished* by

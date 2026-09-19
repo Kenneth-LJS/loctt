@@ -499,11 +499,51 @@ function UserMenu({
             </div>
           ) : null}
 
+          {/* CONFIG-5 / P4: the menu used to offer one generic "Settings"
+              link, which taught the user nothing about *where* their own
+              settings live. These are differentiated deep links to the
+              exact section that owns each concept (K100), each labelled as
+              navigation. "My profile" jumps to the current user's row via
+              the `#row-<id>` anchor UsersPanel exposes; "Customize
+              sidebar…" lands on the sidebar-groups section that owns the
+              group order/visibility (and pins live one section over). The
+              plain "Settings" link is kept as the catch-all landing. */}
           <div className="border-t border-border-subtle py-1">
+            {currentUser ? (
+              <Link
+                to="/settings/$section"
+                params={{ section: "users" }}
+                hash={`row-${currentUser.id}`}
+                onClick={close}
+                data-testid="user-menu-profile"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
+              >
+                My profile
+              </Link>
+            ) : null}
+            <Link
+              to="/settings/$section"
+              params={{ section: "preferences" }}
+              onClick={close}
+              data-testid="user-menu-preferences"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
+            >
+              My preferences
+            </Link>
+            <Link
+              to="/settings/$section"
+              params={{ section: "sidebar-groups" }}
+              onClick={close}
+              data-testid="user-menu-sidebar"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
+            >
+              Customize sidebar…
+            </Link>
             <Link
               to="/settings/$section"
               params={{ section: "users" }}
               onClick={close}
+              data-testid="user-menu-settings"
               className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
             >
               Settings

@@ -1,10 +1,19 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectsPanel } from "./ProjectsPanel.tsx";
+
 
 /**
  * Row actions now live behind a per-row kebab overflow menu (responsive:
@@ -50,6 +59,13 @@ async function openProjectEdit(projectId: string): Promise<void> {
  * round-trip (server tests cover that against a real tracker).
  */
 
+/**
+ * The panel now renders a TanStack `<Link>` (the CONFIG-5 cross-link to
+ * My preferences), so a bare render throws in `useLinkProps` — the panel
+ * always lives under a router in the app. The wrapper therefore mounts a
+ * memory router at `/settings/projects` whose route renders `children`,
+ * in addition to the QueryClient the panel's fetches need.
+ */
 function wrapper() {
   const qc = new QueryClient({
     defaultOptions: {
@@ -57,9 +73,23 @@ function wrapper() {
       mutations: { retry: false },
     },
   });
-  return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-  );
+  return ({ children }: { children: ReactNode }) => {
+    const rootRoute = createRootRoute({ component: Outlet });
+    const settingsRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/settings/$section",
+      component: () => <>{children}</>,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([settingsRoute]),
+      history: createMemoryHistory({ initialEntries: ["/settings/projects"] }),
+    });
+    return (
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>
+    );
+  };
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -382,5 +412,22 @@ describe("ProjectsPanel editable prefix (PRU-44/PRU-45)", () => {
     await openWebEditPrefix();
     expect(saveButton().disabled).toBe(true);
     expect(screen.queryByTestId("project-prefix-error-p-web")).toBeNull();
+  });
+
+  /**
+   * @verifies CONFIG-5
+   *
+   * P4: the row-level "Make default" here sets the *workspace* default;
+   * each user can also set a *personal* default. This panel cross-links to
+   * My preferences so the two "default project" concepts are not conflated.
+   */
+  it("cross-links the workspace default to the personal default in My preferences", async () => {
+    stubHappyPath();
+    render(<ProjectsPanel />, { wrapper: wrapper() });
+
+    const link = (await screen.findByTestId("projects-personal-default-link"))
+      .closest("a") as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    expect(link.getAttribute("href")).toContain("/settings/preferences");
   });
 });
