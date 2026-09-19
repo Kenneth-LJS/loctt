@@ -117,45 +117,53 @@ export function AdvancedQuerySurface({
     initial.ok ? asGroupRoot(initial.tree) : { kind: "group", op: "and", children: [] },
   );
 
-  if (mode === "builder") {
-    return (
-      <BuilderMode
-        tree={tree}
-        onTreeChange={setTree}
-        config={config}
-        onApply={onApply}
-        onSwitchToText={() => {
-          // Carry the builder's current q into the text draft so the two
-          // modes show the same query across the switch, then edit as text.
-          onDraftChange(safeSerialize(tree));
-          setMode("text");
-        }}
-        onClose={onClose}
-      />
-    );
-  }
-
+  // A right-sized panel (Ken's review, problem #3): a bordered card that
+  // fills the available content width (`w-full`, `min-w-0` so the builder's
+  // flex children wrap rather than forcing one word per line at narrow
+  // widths) instead of a too-tall textarea floating in dead space. Both
+  // modes render inside it.
   return (
-    <TextMode
-      value={draft}
-      onChange={onDraftChange}
-      onApply={onApply}
-      onSwitchToBasic={onSwitchToBasic}
-      onSwitchToVisual={() => {
-        // Only reachable when the live text IS renderable (the control is
-        // disabled otherwise). Re-parse the draft so the visual builder
-        // opens on exactly what the text says — never an approximation.
-        const parsed = parseForBuilder(draft);
-        if (!parsed.ok) return; // defensive; the button is disabled here
-        setTree(asGroupRoot(parsed.tree));
-        setMode("builder");
-      }}
-      // The refuse note only appears when we LANDED in text because the
-      // incoming query was unrenderable — not when the user chose text,
-      // and NOT for an empty query (which is "no query yet", not an error).
-      refuseReason={!initial.ok && !isEmpty ? initial.reason : undefined}
-      onClose={onClose}
-    />
+    <div
+      data-testid="advanced-query-panel"
+      className="w-full min-w-0 rounded-lg border border-border-default bg-bg-surface p-4"
+    >
+      {mode === "builder" ? (
+        <BuilderMode
+          tree={tree}
+          onTreeChange={setTree}
+          config={config}
+          onApply={onApply}
+          onSwitchToText={() => {
+            // Carry the builder's current q into the text draft so the two
+            // modes show the same query across the switch, then edit as text.
+            onDraftChange(safeSerialize(tree));
+            setMode("text");
+          }}
+          onClose={onClose}
+        />
+      ) : (
+        <TextMode
+          value={draft}
+          onChange={onDraftChange}
+          onApply={onApply}
+          onSwitchToBasic={onSwitchToBasic}
+          onSwitchToVisual={() => {
+            // Only reachable when the live text IS renderable (the control is
+            // disabled otherwise). Re-parse the draft so the visual builder
+            // opens on exactly what the text says — never an approximation.
+            const parsed = parseForBuilder(draft);
+            if (!parsed.ok) return; // defensive; the button is disabled here
+            setTree(asGroupRoot(parsed.tree));
+            setMode("builder");
+          }}
+          // The refuse note only appears when we LANDED in text because the
+          // incoming query was unrenderable — not when the user chose text,
+          // and NOT for an empty query (which is "no query yet", not an error).
+          refuseReason={!initial.ok && !isEmpty ? initial.reason : undefined}
+          onClose={onClose}
+        />
+      )}
+    </div>
   );
 }
 
@@ -224,9 +232,22 @@ function BuilderMode({
   const { result, settled } = useValidateQuery(liveQ);
   const invalid = result !== null && !result.valid;
 
+  // Ken's toolbar review, problem #4: the builder must NOT leak a premature
+  // parse error. Adding a condition seeds an empty value (e.g. `status =
+  // ""`), which the validator rejects as "unknown status value ''" the
+  // instant the row appears — before the user has picked anything. So the
+  // error BANNER is suppressed while any condition is still incomplete (an
+  // empty/blank value on a non-presence op); Apply stays disabled either
+  // way, so an incomplete or truly-invalid query still cannot be written,
+  // but the user is not scolded for a value they have not yet supplied.
+  // A settled *and complete* invalid query (a real error, e.g. a bad
+  // free-text value) still surfaces.
+  const incomplete = hasIncompleteLeaf(tree);
+  const showError = invalid && settled && !incomplete;
+
   return (
-    <div data-testid="advanced-query-surface" data-mode="builder" className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
+    <div data-testid="advanced-query-surface" data-mode="builder" className="flex min-w-0 flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-[0.9286rem] font-medium text-text-secondary">
           Query builder
         </span>
@@ -234,31 +255,33 @@ function BuilderMode({
           type="button"
           data-testid="switch-to-text"
           onClick={onSwitchToText}
-          className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-secondary"
+          className="inline-flex h-8 items-center rounded-md border border-border-default px-2.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
         >
-          Switch to text
+          Edit as text
         </button>
       </div>
 
       <QueryBuilder tree={tree} onChange={onTreeChange} config={config} />
 
       {/* Shared validation surface: the same classifier the text editor
-          renders, so builder and text agree on what "invalid" means. */}
+          renders, so builder and text agree on what "invalid" means. The
+          message is scrubbed of any token/position tail so the builder UI
+          never leaks parser coordinates (problem #4). */}
       <div
         data-testid="qb-validation"
-        data-error-kind={invalid ? result.kind ?? "syntax" : "none"}
+        data-error-kind={showError ? result.kind ?? "syntax" : "none"}
         role="status"
         aria-live="polite"
         className="min-h-[1.25rem]"
       >
-        {invalid && settled && (
+        {showError && (
           <p className="m-0 text-[0.8571rem] text-danger-fg">
-            {result.message ?? "This query is not valid."}
+            {scrubPosition(result.message) ?? "This query is not valid."}
           </p>
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 border-t border-border-subtle pt-3">
         <button
           type="button"
           data-testid="qb-apply"
@@ -266,10 +289,15 @@ function BuilderMode({
           // would write a `q` the list then rejects. `invalid` reflects the
           // last settled validation; an empty builder (liveQ = "") is not
           // "invalid" (it clears q, LST-41), so Apply stays enabled for it.
-          disabled={invalid}
-          title={invalid ? (result.message ?? "This query is not valid.") : undefined}
-          onClick={() => { if (!invalid) onApply(liveQ); }}
-          className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-primary disabled:opacity-50"
+          // An incomplete builder is not yet applicable either.
+          disabled={invalid || incomplete}
+          title={
+            incomplete
+              ? "Finish every condition before applying."
+              : invalid ? (scrubPosition(result.message) ?? "This query is not valid.") : undefined
+          }
+          onClick={() => { if (!invalid && !incomplete) onApply(liveQ); }}
+          className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[0.8571rem] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           Apply
         </button>
@@ -277,13 +305,48 @@ function BuilderMode({
           type="button"
           data-testid="qb-close"
           onClick={onClose}
-          className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-secondary"
+          className="inline-flex h-8 items-center rounded-md border border-border-default px-3 text-[0.8571rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
         >
           Close
         </button>
       </div>
     </div>
   );
+}
+
+/**
+ * True when the tree has any leaf whose value is still blank on an op that
+ * requires one — a condition the user has added but not finished. Presence
+ * ops (`is empty`/`is not empty`) carry no value and are always complete;
+ * a list op is incomplete while its list is empty.
+ */
+function hasIncompleteLeaf(tree: BuilderTree): boolean {
+  if (tree.kind === "group") return tree.children.some(hasIncompleteLeaf);
+  const v = tree.value;
+  switch (v.type) {
+    case "empty":
+      return false; // presence op, no value needed
+    case "list":
+      return v.values.length === 0;
+    case "string":
+    case "date":
+      return v.value.trim().length === 0;
+    default:
+      // number/boolean/today/current_user always carry a concrete value.
+      return false;
+  }
+}
+
+/**
+ * Strips a trailing "at position N" / "at character N" tail from a
+ * validation message so the builder UI never shows token coordinates
+ * (problem #4: "never leak token positions into the builder UI"). The
+ * text editor keeps the caret + position, which makes sense over raw DSL;
+ * the visual builder has no text offset to point at.
+ */
+function scrubPosition(message: string | undefined): string | undefined {
+  if (message === undefined) return undefined;
+  return message.replace(/\s*at (?:position|character)\s+\d+\.?/gi, "").trim();
 }
 
 // ── Text mode ────────────────────────────────────────────────────────

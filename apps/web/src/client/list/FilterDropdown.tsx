@@ -31,6 +31,7 @@ export function FilterDropdown({
   options,
   selected,
   onChange,
+  onRemove,
   matchToggle,
   unavailable = false,
 }: {
@@ -38,6 +39,14 @@ export function FilterDropdown({
   readonly options: readonly FilterOption[];
   readonly selected: readonly string[];
   readonly onChange: (next: string[]) => void;
+  /**
+   * K97: hide this filter from the toolbar (and clear its value). Rendered
+   * as a "Remove this filter" row at the foot of the open panel — off the
+   * pill itself, which stays a plain open affordance. Absent for facets
+   * that are not removable (none today, but the sprint-scope route could
+   * withhold the control).
+   */
+  readonly onRemove?: (() => void) | undefined;
   /**
    * Optional control rendered at the top of the open panel — used by the
    * labels facet for its All/Any match toggle (LST-40/MSL-7). Shown only
@@ -164,6 +173,20 @@ export function FilterDropdown({
             })
           )}
         </div>
+        {onRemove !== undefined && (
+          <div className="border-t border-border-subtle p-1">
+            <button
+              type="button"
+              role="menuitem"
+              data-testid={`filter-remove-${label}`}
+              onClick={() => { onRemove(); }}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+            >
+              <Icon name="close" size={12} />
+              Remove this filter
+            </button>
+          </div>
+        )}
         </>
       )}
     </Menu>

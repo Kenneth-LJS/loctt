@@ -10,6 +10,7 @@ import type { ComparisonOp, QueryValue } from "@loctt/core/query/parser.js";
 import { useMemo } from "react";
 
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Select } from "../ui/Select.tsx";
 
 /**
@@ -486,9 +487,9 @@ function GroupNode({
                 data-testid="qb-remove"
                 aria-label="Remove condition"
                 onClick={() => { edit([...path, i], () => null); }}
-                className="mt-0.5 shrink-0 cursor-pointer rounded px-1 text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+                className="mt-0.5 grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
               >
-                ×
+                <Icon name="close" size={14} />
               </button>
             </div>
           ))
@@ -500,17 +501,19 @@ function GroupNode({
           type="button"
           data-testid="qb-add-condition"
           onClick={addCondition}
-          className="rounded border border-border-subtle px-2 py-0.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
+          className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-0.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
         >
-          + Condition
+          <Icon name="plus" size={12} />
+          Condition
         </button>
         <button
           type="button"
           data-testid="qb-add-group"
           onClick={addGroup}
-          className="rounded border border-border-subtle px-2 py-0.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
+          className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-0.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
         >
-          + Group
+          <Icon name="plus" size={12} />
+          Group
         </button>
       </div>
     </div>

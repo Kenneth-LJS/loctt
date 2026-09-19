@@ -60,9 +60,16 @@ function stubFetch() {
         try { return (JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { query?: string }).query ?? ""; }
         catch { return ""; }
       })();
+      // A blank-valued condition (`status = ""`) is what a freshly-added
+      // builder row serialises to before the user picks a value — the real
+      // server rejects it ("unknown status value '' at position N"), which
+      // is the premature error the builder must NOT surface (problem #4).
+      // Mirror that here so the suppression is genuinely exercised.
       body = q.includes("__INVALID__")
         ? { valid: false, kind: "syntax", message: "nope", position: 0 }
-        : { valid: true };
+        : /=\s*""/.test(q)
+          ? { valid: false, kind: "unknown_value", message: "unknown status value '' at position 0", position: 0 }
+          : { valid: true };
     } else {
       body = routeFetch(path);
     }
@@ -151,7 +158,14 @@ describe("FilterBar", () => {
   // @verifies PRU-25
   it("offers a Reporter facet whose options are existing users only", async () => {
     const router = await mountFilterBar();
-    fireEvent.click(screen.getByRole("button", { name: "Filter Reporter" }));
+    // Reporter is not in the built-in default visible set (K97:
+    // Project/Status/Priority/Assignee), so add it via the Add-filter
+    // picker first. (Previously every facet was a permanent pill; the
+    // configurable-visible-set redesign means non-default facets are added
+    // on demand — this asserts the new add path, then the facet itself.)
+    fireEvent.click(screen.getByTestId("add-filter"));
+    fireEvent.click(await screen.findByTestId("add-filter-reporter"));
+    fireEvent.click(await screen.findByRole("button", { name: "Filter Reporter" }));
     // Every option in the menu is a known user; a dangling ULID (a
     // deleted user, PRU-25) is never present because the options come
     // from the users list, not from task values.
@@ -356,11 +370,22 @@ describe("FilterBar — mobile filter sheet", () => {
  * q + chip composition (LST-40) is asserted against location.search.
  */
 describe("FilterBar — Advanced surface (K83 step 3)", () => {
+  // The redesign folds advanced querying INTO the filter system: there is
+  // no longer a leading "Advanced" pill (advanced-query-toggle). It is
+  // reached one level in, from the END of the Add-filter menu ("Advanced
+  // query…", data-testid `advanced-open`). This helper opens it the way a
+  // user now does; the tests below asserted the removed leading pill, which
+  // was exactly problem #2 in the toolbar review.
+  const openAdvanced = async (): Promise<void> => {
+    fireEvent.click(screen.getByTestId("add-filter"));
+    fireEvent.click(await screen.findByTestId("advanced-open"));
+  };
+
   // @verifies K83
   // @verifies QBLD-1
   it("refuses the visual builder for a NOT query, landing in the text box with the reason", async () => {
     await mountFilterBar(`?q=${encodeURIComponent("not status = done")}`);
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
 
     // K83-i / K83-iii: a `not` is unrenderable → the TEXT box, never the
     // visual builder that would silently misrepresent it.
@@ -380,7 +405,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
   // @verifies QBLD-1
   it("refuses the visual builder for a has_link query too", async () => {
     await mountFilterBar(`?q=${encodeURIComponent('has_link("blocks")')}`);
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
 
     const surface = await screen.findByTestId("advanced-query-surface");
     expect(surface.getAttribute("data-mode")).toBe("text");
@@ -391,7 +416,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
   // @verifies QBLD-1
   it("opens the visual builder for a renderable OR query, showing two leaves", async () => {
     await mountFilterBar(`?q=${encodeURIComponent("priority = high or priority = critical")}`);
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
 
     const surface = await screen.findByTestId("advanced-query-surface");
     expect(surface.getAttribute("data-mode")).toBe("builder");
@@ -411,7 +436,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
   // @verifies QBLD-2
   it("switches visual→text→visual preserving the query, and disables Switch-to-visual once the text is unrepresentable", async () => {
     await mountFilterBar(`?q=${encodeURIComponent("priority = high or priority = critical")}`);
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
     await screen.findByTestId("query-builder");
 
     // Visual → text carries the query into the text box verbatim.
@@ -444,7 +469,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
     const router = await mountFilterBar(
       `?status=done&q=${encodeURIComponent("title ~ foo")}`,
     );
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
     await screen.findByTestId("query-builder");
 
     // Edit the (only) leaf's free-text value foo → bar, then apply. A text
@@ -467,7 +492,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
     const router = await mountFilterBar(
       `?status=done&q=${encodeURIComponent("priority = high")}`,
     );
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
     await screen.findByTestId("query-builder");
 
     // Remove the sole condition → an empty builder → q cleared.
@@ -488,7 +513,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
     // a parse error, so there is no refuse note, and "Switch to visual" is
     // enabled so the empty builder is reachable in one click.
     await mountFilterBar();
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
 
     const surface = await screen.findByTestId("advanced-query-surface");
     expect(surface.getAttribute("data-mode")).toBe("text");
@@ -507,7 +532,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
   it("opening the builder on a renderable q and applying unchanged leaves q semantically the same", async () => {
     const original = "status = done and priority = high";
     const router = await mountFilterBar(`?q=${encodeURIComponent(original)}`);
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
     await screen.findByTestId("query-builder");
 
     // No edits — the open/save round-trip must not mutate the query (K83-i).
@@ -526,7 +551,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
     // failure. With the fix the quoted form survives byte-for-byte.
     const original = 'status = "true"';
     const router = await mountFilterBar(`?q=${encodeURIComponent(original)}`);
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
     await screen.findByTestId("query-builder");
 
     fireEvent.click(screen.getByTestId("qb-apply"));
@@ -537,7 +562,7 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
   // @verifies QBLD-5
   it("disables Apply while the live query is invalid, and applies nothing (F5)", async () => {
     const router = await mountFilterBar();
-    fireEvent.click(screen.getByTestId("advanced-query-toggle"));
+    await openAdvanced();
     // Reach the empty builder, then build a query the (stubbed) validator
     // rejects: a free-text title value carrying the __INVALID__ marker.
     fireEvent.click(screen.getByTestId("switch-to-visual"));
@@ -555,6 +580,103 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
     fireEvent.click(apply);
     await new Promise(r => setTimeout(r, 0));
     expect(search(router).q).toBeUndefined();
+  });
+
+  // @verifies K97 (problem #4)
+  it("does not leak a premature parse error when a fresh condition is added", async () => {
+    await mountFilterBar();
+    fireEvent.click(screen.getByTestId("add-filter"));
+    fireEvent.click(await screen.findByTestId("advanced-open"));
+    fireEvent.click(await screen.findByTestId("switch-to-visual"));
+    await screen.findByTestId("query-builder");
+
+    // Add a condition — it seeds a blank value (`status = ""`), which the
+    // stubbed validator rejects (as the real server does), the instant the
+    // row appears. The builder must NOT show that error before the user has
+    // picked a value, and Apply is disabled because the condition is
+    // incomplete.
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+
+    // Wait past the validate debounce so a leaked error WOULD have
+    // surfaced by now — then assert it did not. (Without the suppression
+    // this banner shows "unknown status value '' at position 0".)
+    await new Promise(r => setTimeout(r, 400));
+    const banner = screen.getByTestId("qb-validation");
+    expect(banner.textContent?.trim()).toBe("");
+    expect(banner.getAttribute("data-error-kind")).toBe("none");
+    expect(screen.getByTestId("qb-apply").hasAttribute("disabled")).toBe(true);
+  });
+});
+
+/**
+ * The toolbar redesign (A210): the configurable visible-filter set (K97)
+ * and the view-action cluster. These replace the assumption the older
+ * tests carried — that every facet is a permanent pill and Refresh/Export
+ * float as ListView siblings — which was exactly the toolbar review's
+ * complaint.
+ */
+describe("FilterBar — toolbar redesign (A210 / K97)", () => {
+  it("shows only the built-in default facets, not every facet", async () => {
+    await mountFilterBar();
+    // Built-in default (K97): Project/Status/Priority/Assignee are shown…
+    expect(screen.getByRole("button", { name: "Filter Project" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filter Assignee" })).toBeTruthy();
+    // …the non-default facets are NOT permanent pills anymore.
+    expect(screen.queryByRole("button", { name: "Filter Reporter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Filter Milestone" })).toBeNull();
+  });
+
+  it("adds a filter via the picker (writes vf) and removes it again", async () => {
+    const router = await mountFilterBar();
+    // Add Milestone.
+    fireEvent.click(screen.getByTestId("add-filter"));
+    fireEvent.click(await screen.findByTestId("add-filter-milestone"));
+    // The `vf` param is a comma-separated FilterId string in the URL.
+    const vf = (): string => {
+      const raw: unknown = search(router).vf;
+      return typeof raw === "string" ? raw : "";
+    };
+    // It appears as a pill and the visible set is materialised into `vf`.
+    expect(await screen.findByRole("button", { name: "Filter Milestone" })).toBeTruthy();
+    await vi.waitFor(() => expect(vf()).toContain("milestone"));
+
+    // Remove it from the toolbar via the dropdown's "Remove this filter".
+    fireEvent.click(screen.getByRole("button", { name: "Filter Milestone" }));
+    fireEvent.click(await screen.findByTestId("filter-remove-Milestone"));
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Filter Milestone" })).toBeNull());
+    expect(vf()).not.toContain("milestone");
+  });
+
+  it("renders the view-action cluster (Refresh + Export) when the props are passed", async () => {
+    stubFetch();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema,
+      component: () => (
+        <FilterBar
+          onRefresh={() => {}}
+          refreshBusy={false}
+          exportTotal={3}
+          exportQueryString=""
+        />
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: ["/list"] }),
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    // Both live inside the aligned action cluster, not floating siblings.
+    const cluster = await screen.findByTestId("view-actions");
+    expect(within(cluster).getByRole("button", { name: "Refresh" })).toBeTruthy();
+    expect(within(cluster).getByRole("button", { name: "Export" })).toBeTruthy();
+    expect(within(cluster).getByRole("button", { name: /Save as view/ })).toBeTruthy();
   });
 });
 
