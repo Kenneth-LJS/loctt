@@ -1,5 +1,5 @@
 import { Link, useSearch } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
@@ -9,6 +9,12 @@ import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { formatWorkspaceDate } from "../dates/workspaceDate.ts";
 import { PriorityCell, StatusBadge, TypeBadge } from "../list/cells.tsx";
 import { buildLookups } from "../list/lookups.ts";
+// K100: the detail header's Edit reuses the SAME dialog Settings and the
+// point-of-use rows use (fields + validation + `useUpdateMilestone`), so
+// an edit from the detail page cannot drift from an edit anywhere else.
+// Reading a settings/ component is allowed; this file does not edit it.
+import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import type { MilestoneWithProgress } from "./model.ts";
@@ -49,6 +55,12 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
   const info = useInfo();
   const workflow = useWorkflow();
   const search = useSearch({ from: "/milestones/$id" });
+
+  // K100: read-by-default, edit-behind-Edit — the header opens the shared
+  // dialog rather than exposing inline fields. `false` is the closed
+  // state; on save the dialog invalidates its own query, so the detail
+  // view reflects the change without extra wiring here.
+  const [editing, setEditing] = useState(false);
 
   const milestone: MilestoneWithProgress | undefined = useMemo(
     () => (milestones.data?.items ?? []).find(m => m.id === milestoneId),
@@ -157,13 +169,23 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
       data-milestone-id={milestone.id}
       className="flex h-full flex-col gap-4 overflow-auto p-4"
     >
-      <div>
+      <div className="flex items-baseline justify-between gap-3">
         <Link
           to="/milestones"
           data-testid="milestone-detail-back"
           className="text-[0.8571rem] text-text-tertiary no-underline hover:underline"
         >
           ← All milestones
+        </Link>
+        {/* K100 groundwork: a deep link to the milestones view, where the
+            full roster (create, archive, delete, reorder) lives — the
+            detail page only edits this one milestone's name and date. */}
+        <Link
+          to="/milestones"
+          data-testid="milestone-detail-manage"
+          className="text-[0.8571rem] text-text-tertiary no-underline hover:underline"
+        >
+          Manage all milestones…
         </Link>
       </div>
 
@@ -211,6 +233,21 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
             >
               {formatWorkspaceDate(milestone.target_date, calendar.data)}
             </span>
+            {/* K100: an in-place Edit on the detail header, mirroring
+                SprintMetaHeader's read-by-default → Edit control, but
+                opening the shared MilestoneEditDialog instead of
+                header-inline fields. The label names the milestone so the
+                accessible name is unambiguous when several controls read
+                "Edit" (P-4 / WCAG AA). */}
+            <Button
+              variant="secondary"
+              size="sm"
+              testId="milestone-detail-edit"
+              aria-label={`Edit ${milestone.name}`}
+              onClick={() => { setEditing(true); }}
+            >
+              Edit
+            </Button>
           </div>
         </div>
 
@@ -300,6 +337,19 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
           </table>
         )}
       </section>
+
+      {/* The same dialog MilestonesPanel and the sidebar kebab open.
+          `MilestoneWithProgress extends MilestoneDef`, so the resolved
+          milestone satisfies `existing` directly — no prop adaptation
+          needed. On success the dialog closes and invalidates the
+          milestones query, and this page re-reads the updated name/date
+          from that refetched list. */}
+      {editing && (
+        <MilestoneEditDialog
+          existing={milestone}
+          onClose={() => { setEditing(false); }}
+        />
+      )}
     </div>
   );
 }
