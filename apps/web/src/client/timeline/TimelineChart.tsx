@@ -1,6 +1,7 @@
 import type { CalendarConfig, TimelineZoom } from "@loctt/contracts";
 import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
 import type { DependencyEdge } from "./arrows.ts";
 import { arrowPath } from "./arrows.ts";
@@ -452,7 +453,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                   className="sticky left-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-muted/90 px-2 text-left text-[0.7857rem] font-semibold"
                   style={{ position: "sticky", top: 24, height: BAND_HEADER_H, width: props.width }}
                 >
-                  <span aria-hidden="true">{collapsed.has(band.id) ? ICON.caretRight : ICON.caretDown}</span>
+                  <Icon name={collapsed.has(band.id) ? "chevronRight" : "chevronDown"} size={12} />
                   <span>{band.label}</span>
                   <span
                     className="font-normal text-text-secondary"

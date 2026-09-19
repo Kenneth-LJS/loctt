@@ -27,7 +27,7 @@ import type { EstimationShape } from "../task/estimation.ts";
 import { estimationShape } from "../task/estimation.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
-import { ICON } from "../ui/icons.ts";
+import { Icon } from "../ui/Icon.tsx";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
 import {
   AssigneeCell,
@@ -796,23 +796,18 @@ export function ListView() {
                             this column is the active sort, the arrow is
                             in the stronger secondary text colour and
                             points up (asc) / down (desc); an unsorted
-                            column shows a faint neutral caret hint. All
-                            three use the canonical icon glyphs (ICON) so
-                            the list stops mixing `▼` with the app-wide
-                            `▾` (icons.ts §sort). */}
-                        <span
-                          className={
-                            isSorted
-                              ? "text-[0.7143rem] text-text-secondary"
-                              : "text-[0.7143rem] text-text-tertiary"
+                            column shows a faint neutral caret hint. */}
+                        <Icon
+                          name={
+                            isSorted && sortDir === "asc"
+                              ? "chevronUp"
+                              : "chevronDown"
                           }
-                        >
-                          {isSorted
-                            ? sortDir === "asc"
-                              ? ICON.caretUp
-                              : ICON.caretDown
-                            : ICON.caretDown}
-                        </span>
+                          size={12}
+                          className={
+                            isSorted ? "text-text-secondary" : "text-text-tertiary"
+                          }
+                        />
                       </button>
                     ) : (
                       col.label
@@ -1048,7 +1043,7 @@ export function ListView() {
             onClick={() => { setBulkResult(undefined); }}
             className="ml-auto rounded-md border border-border-subtle px-2 py-0.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted"
           >
-            ✕
+            <Icon name="close" size={14} />
           </button>
         </div>
       )}

@@ -2,7 +2,7 @@ import type { CustomFieldDef } from "@loctt/contracts";
 import { customFieldInScope } from "@loctt/contracts";
 
 import { Checkbox } from "../../ui/Checkbox.tsx";
-import { ICON } from "../../ui/icons.ts";
+import { Icon } from "../../ui/Icon.tsx";
 import { DateField } from "./DateField.tsx";
 import type { PickerOption } from "./OptionPicker.tsx";
 import { OptionPicker } from "./OptionPicker.tsx";
@@ -292,7 +292,7 @@ function MultiEnum({
                 onClick={() => { onChange(selected.filter(k => k !== key)); }}
                 className="opacity-60 hover:opacity-100"
               >
-                {ICON.close}
+                <Icon name="close" size={12} />
               </button>
             </span>
           );

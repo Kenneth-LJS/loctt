@@ -9,7 +9,7 @@ import { MAX_BULK_REFS } from "@loctt/contracts";
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
-import { ICON } from "../ui/icons.ts";
+import { Icon } from "../ui/Icon.tsx";
 
 /**
  * The bulk action bar, shown once at least one row is selected.
@@ -220,7 +220,7 @@ export function BulkBar({
         aria-label="Clear selection"
         className="ml-auto"
       >
-        Clear {ICON.close}
+        Clear <Icon name="close" size={14} />
       </Button>
     </div>
   );
@@ -348,9 +348,9 @@ function BulkPicker({
         disabled={disabled || (emptyReason !== undefined && options.length === 0)}
         title={options.length === 0 ? emptyReason : undefined}
         onClick={() => { setOpen(o => !o); }}
-        className="rounded-md border border-border-subtle px-2.5 py-1 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+        className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2.5 py-1 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
-        {label} {ICON.caretDown}
+        {label} <Icon name="chevronDown" size={12} />
       </button>
 
       {open && (
