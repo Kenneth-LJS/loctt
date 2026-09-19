@@ -6,7 +6,7 @@ LocTT's MCP server provides structured tools for AI agents to manage tasks via t
 
 - **Always use structured tools.** Never edit `task.md` frontmatter or any `.loctt/` config file directly via raw filesystem writes. The body of a task is editable only via `replace_task_body` and `append_task_body`.
 - **Use `get_workflow_config` and the `*_list` tools to discover valid values.** Statuses, priorities, task types, relationship types, projects, labels, milestones, sprints, and users all live in config — read them before writing.
-- **`delete_*` tools are hard-only and irreversible.** Every `delete_*` tool (`delete_task`, `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user`) requires `confirm: true`. For the reversible (soft) variant, use the matching `archive_*` tool — that's the same operation as the old soft path. `unarchive_*` brings them back.
+- **`delete_*` tools are hard-only and irreversible.** Every `delete_*` tool (`delete_task`, `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user`) requires `confirm: true`. For the reversible (soft) variant, use the matching `archive_*` tool; `unarchive_*` brings them back.
 - **Schema-version guard.** Every tool except `init` first calls `requireSupportedSchema`. If the tracker's `.schema-version` is missing or doesn't match this server, every route refuses with a clear error pointing at `loctt migrate`. The one exception is `migrate_schema`, which runs the migration over MCP; `loctt migrate` does the same from the CLI.
 - **Archived semantics.** Archived entities (projects, labels, milestones, sprints, users, tasks) are hidden from default listings but remain valid references on existing tasks. Pass `include_archived: true` (or the equivalent flag) to surface them.
 - **Validation failures are real.** If a structured operation rejects a value, do not bypass it by editing files; surface the error and ask the user.
@@ -39,9 +39,7 @@ If `.loctt/` is missing, returns a hint to run `loctt init`.
 If `.loctt/` exists but is **empty**, says so explicitly — "It is not a tracker
 yet. Run 'loctt init' to set one up in it." Do not read that as a schema
 problem: an empty directory has no schema because it is not yet a tracker, and
-`migrate` has nothing to migrate. Previously the schema guard refused every
-tool in this state with "No .schema-version file found … must be
-re-initialized", which sent agents to the wrong command.
+`migrate` has nothing to migrate.
 
 A `.loctt/` that is missing core files but still **holds tasks** is a different
 state: it is damaged, the schema guard still refuses, and the remedy is
@@ -116,9 +114,7 @@ message names the offending field, e.g.
 
     Error: invalid task: fields.points: expected finite number, got string
 
-rather than as a server fault. (Before 2026-08-30 `createTask` threw an
-untyped error, which `isKnownDomainError` did not recognise, so these
-surfaced as an MCP server fault instead of an actionable message.)
+rather than as a server fault.
 
 ### `get_task`
 
@@ -162,8 +158,8 @@ fields above — its stored value is `rawText`. `kind` is one of
 for), `invalid_value` (a value the workflow does not define), or
 `dangling` (a reference whose target is gone). To repair one: `set_field`
 writes a valid value over it (`repair` is `set` or `set_or_remove`);
-`unset_field` removes it (`repair` is `remove` or `set_or_remove`) — this
-now works for an unrecognised top-level key too. Repairing one field
+`unset_field` removes it (`repair` is `remove` or `set_or_remove`), which
+also works for an unrecognised top-level key. Repairing one field
 leaves every other field's stored value untouched.
 
 ### `list_tasks`
@@ -507,9 +503,9 @@ the newest page and never reach older entries.
 
 ### `attach_file`
 
-Copy a local file into a task's attachments directory. Only filesystem paths are supported in v1 — no base64 content. The file must be readable from the MCP server's filesystem **and resolve to inside the tracker root**.
+Copy a local file into a task's attachments directory. Only filesystem paths are supported — no base64 content. The file must be readable from the MCP server's filesystem **and resolve to inside the tracker root**.
 
-> **Security note.** Over MCP the `source_path` is **confined to inside the tracker root**: a path that resolves outside it — an absolute path elsewhere on disk (`~/.ssh/id_rsa`, `~/.aws/credentials`, a `.env` outside the tracker), a `../` escape, or a symlink whose real target is outside — is refused before any read. This is a deliberate change from earlier behaviour, where any absolute path was accepted. To attach a file from elsewhere, **stage it inside the tracker first** (the refusal names the tracker root), then attach it by its path there. When git-backed mode is enabled, a successful attach also **auto-commits** the new attachment (publishes to the loctt branch); the result then carries `committed` (and `pushed` when a remote push ran, or `commit_note` when the commit could not proceed, e.g. a reconciliation is pending). When git-backed mode is off the file is stored on disk only and nothing is committed. (The CLI `loctt attach`, run by a person at a terminal, is **not** confined — a human choosing a file in `~/Downloads` is a deliberate act; the confinement guards the agent surface.)
+> **Security note.** Over MCP the `source_path` is **confined to inside the tracker root**: a path that resolves outside it — an absolute path elsewhere on disk (`~/.ssh/id_rsa`, `~/.aws/credentials`, a `.env` outside the tracker), a `../` escape, or a symlink whose real target is outside — is refused before any read. To attach a file from elsewhere, **stage it inside the tracker first** (the refusal names the tracker root), then attach it by its path there. When git-backed mode is enabled, a successful attach also **auto-commits** the new attachment (publishes to the loctt branch); the result then carries `committed` (and `pushed` when a remote push ran, or `commit_note` when the commit could not proceed, e.g. a reconciliation is pending). When git-backed mode is off the file is stored on disk only and nothing is committed. (The CLI `loctt attach`, run by a person at a terminal, is **not** confined — a human choosing a file in `~/Downloads` is a deliberate act; the confinement guards the agent surface.)
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -544,13 +540,13 @@ Returns JSON `{projects: [...], default: <id|null>, broken?: [...]}` from `proje
 | `limit` | number | no | Max projects returned (default 100, cap 1000) |
 | `offset` | number | no | Projects to skip, for paging past the first `limit` |
 
-The filter applies before paging, so `offset`/`limit` page through the matches. (K90: name search is a core capability shared with the CLI and web surfaces.)
+The filter applies before paging, so `offset`/`limit` page through the matches.
 
 ### `create_project`
 
 Create a new project. Prefixes must be unique across the tracker, and a project's prefix is immutable after creation except via `set_project_prefix`.
 
-A project is `{id, name, slug?, prefix}`. `id` is a ULID minted at creation and `name` is mutable display text. The **slug** is the stable, URL-safe handle (`web`, `web-app`): generated from the name unless given, unique across the tracker, and **fixed once created** — renaming a project does not change it, so links keep resolving (K3, decisions.md A60). Trackers created before slugs existed have none and are referenced by name or id.
+A project is `{id, name, slug?, prefix}`. `id` is a ULID minted at creation and `name` is mutable display text. The **slug** is the stable, URL-safe handle (`web`, `web-app`): generated from the name unless given, unique across the tracker, and **fixed once created** — renaming a project does not change it, so links keep resolving. A project without a slug is referenced by name or id.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -634,13 +630,12 @@ Create a copy of a task with a fresh key. Copies title (suffixed `(copy)` unless
 |---|---|---|---|
 | `ref` | string | yes | Task key or id to copy |
 | `title` | string | no | Title for the copy; defaults to `<source> (copy)` |
-| `project` | string | no | Target project; defaults to the source's |
+| `project` | string | no | Target project (id, slug, or name); defaults to the source's |
 
-> **Known defect.** `project` here accepts only a project **id**, unlike every
-> sibling tool. `move_task` resolves a name through `resolveProjectIdForUser`;
-> `duplicate_task` does not, so a name fails with a raw internal message
-> (`no key allocation state for entity type "<name>"`). This contradicts P-3
-> and is recorded in [`audit-findings.md`](../../dev/audit-findings.md).
+Relationships, attachments, and archived state are deliberately not
+copied — the copy starts unlinked and active. When a source field is
+corrupt it is skipped and the count is reported, so the copy is not
+mistaken for a faithful clone.
 
 ### `set_default_project`
 
@@ -661,7 +656,7 @@ Set or clear the workspace default project.
 | `limit` | number | no | Max users returned (default 100, cap 1000) |
 | `offset` | number | no | Users to skip, for paging past the first `limit` |
 
-Returns JSON `{current: <id|null>, users: [...]}`. Order of operations (matching the web surface): archived filter, then name filter, then page. (K90.)
+Returns JSON `{current: <id|null>, users: [...]}`. Order of operations (matching the web surface): archived filter, then name filter, then page.
 
 ### `get_current_user`
 
@@ -686,7 +681,7 @@ zero tasks are kept: this checks existence, not results.
 ### `get_sidebar_groups`
 
 No parameters. Returns the active user's sidebar-groups customization —
-which built-in sidebar groups/filters show and in what order (SHL-45).
+which built-in sidebar groups/filters show and in what order.
 The payload is `{user, stored, resolved}`: `stored` is the raw
 `sidebar_groups` setting (`{order?: [...], hidden?: [...]}`), and
 `resolved` is the full ordered list with a `hidden` flag per item — every
@@ -698,7 +693,7 @@ filter ids: `assigned-to-me`, `reported-by-me`, `mentions-me`,
 
 ### `set_sidebar_groups`
 
-Sets the active user's sidebar-groups customization (SHL-45).
+Sets the active user's sidebar-groups customization.
 Parameters (all optional): `order` (ids in render order — any built-in
 not listed follows in default order), `hidden` (ids to hide — a hidden
 group renders nothing, a deliberate choice distinct from an empty

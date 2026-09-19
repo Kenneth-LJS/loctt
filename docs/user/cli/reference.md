@@ -77,9 +77,8 @@ the initializing machine isn't where the team actually works:
 loctt init --timezone Asia/Singapore
 ```
 
-An unrecognized zone is rejected before anything is written. Trackers
-created before this flag existed have no `calendar.yaml` and fall back
-to UTC; add the file to set a zone.
+An unrecognized zone is rejected before anything is written. A tracker
+with no `calendar.yaml` falls back to UTC; add the file to set a zone.
 
 `--repair` restores files missing from an existing `.loctt/` — the case
 where `config/` was deleted but the tasks survived. It only fills gaps:
@@ -110,9 +109,8 @@ It distinguishes three not-a-tracker states, because the remedy differs:
 | `.loctt/` exists but is **empty** | `Found an empty .loctt directory … It is not a tracker yet. Run 'loctt init' to set one up in it.` |
 | `.loctt/` holds tasks but core files are missing | The schema line reports the problem; the remedy is `loctt init --repair` (see `loctt doctor`) |
 
-The middle case used to be reported as a schema problem ("this tracker predates
-schema versioning"), which pointed at `loctt migrate` — a command with nothing
-to migrate. An empty directory has no schema because it is not yet a tracker.
+An empty directory has no schema because it is not yet a tracker, so it
+points at `loctt init` rather than `loctt migrate`.
 
 ### `loctt doctor`
 
@@ -215,8 +213,7 @@ means a project created as "Web" and later renamed "Website" keeps the
 slug `web`. Resolution prefers the slug over a name, so an unambiguous
 handle always wins.
 
-Trackers created before slugs existed have none; those projects are
-referenced by name or id exactly as before.
+A project without a slug is referenced by name or id.
 
 `list` hides archived projects unless `--all` is passed. The workspace default
 project is marked with `*`.
@@ -242,9 +239,8 @@ broken one as a marked row (`<raw>  [broken: <id or #index> — <reason>]`),
 distinct from an empty list. One broken sprint never reads as "no
 sprints". The write subcommands preserve such a broken sibling untouched,
 and `loctt doctor` reports it as a non-blocking `malformed` finding. MCP's
-matching `list_*` tools carry the same entries in a `broken[]` array.
-(This mirrors the saved-views `list`, which has always shown its broken
-entries this way.)
+matching `list_*` tools carry the same entries in a `broken[]` array, and
+the saved-views `list` marks a broken view the same way.
 
 ### Changing a project's prefix
 
@@ -357,7 +353,7 @@ the file. Pins whose views merely match zero tasks are kept — the sweep
 checks existence, not results.
 
 `sidebar-groups` reads or sets which built-in sidebar groups/filters show
-and in what order (SHL-45), a per-user setting the web sidebar-groups
+and in what order, a per-user setting the web sidebar-groups
 editor also writes. With no flags it prints the resolved order, one id
 per line, each marked `visible` or `hidden` — every group **and** every
 built-in filter, so a hidden filter reads back `hidden`. `--order <ids>`
@@ -764,8 +760,8 @@ Not recognised:
 ```
 
 To repair one: `loctt set <task> <field> <value>` writes a valid value
-over it, and `loctt unset <task> <field>` removes it (this now works for
-an unrecognised top-level key too). Every other field's stored value is
+over it, and `loctt unset <task> <field>` removes it (this also works for
+an unrecognised top-level key). Every other field's stored value is
 preserved untouched when you repair one. `loctt doctor` lists the same
 problems across the whole tracker as non-blocking `malformed` findings.
 
@@ -1162,7 +1158,7 @@ loctt git sync
 loctt git reconcile <status|apply|abandon>
 ```
 
-**Enabling on a pre-existing branch (GIT-25).** If the configured branch
+**Enabling on a pre-existing branch.** If the configured branch
 (`loctt` by default) already exists from a previous setup and was written by
 LocTT, `loctt git enable` does **not** silently adopt it. It reports the
 branch and its head commit and exits non-zero, so you decide rather than
@@ -1193,7 +1189,7 @@ but the CLI mirrors it:
 A parent (relationship) resolution maintains the inverse edge: choosing a
 new parent removes the losing parent's child edge.
 
-**Delete-vs-edit (GIT-16).** When a task was deleted on one side and edited
+**Delete-vs-edit.** When a task was deleted on one side and edited
 on the other, it is surfaced as a whole-task decision rather than a
 per-field one: `status` lists it under "delete-vs-edit", naming which side
 deleted and which edited. To decide it in the `apply` JSON, use the reserved

@@ -113,7 +113,7 @@ The top of every `task.md` is a YAML block delimited by `---`. The schema is `pa
 | `title` | string | yes | Task title (non-empty) |
 | `created_at` | ISO 8601 timestamp | yes | Creation timestamp |
 | `updated_at` | ISO 8601 timestamp | yes | Last modification timestamp |
-| `project` | string | no | Project key the task belongs to |
+| `project` | string | no | ULID `id` of the project the task belongs to (not a slug or prefix) |
 | `status` | string | no | Workflow status key. A task created without one gets the status marked `default: true` in `workflow.yaml`, so in practice every created task carries a status |
 | `status_updated_at` | ISO 8601 | no | Set automatically when `status` changes |
 | `task_type` | string | no | Task type key from workflow |
@@ -271,7 +271,7 @@ estimation:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `key` | object | yes | Task-key prefix configuration (legacy single-project field) |
+| `key` | object | yes | Fallback task-key prefix configuration. Per-project prefixes in `projects.yaml` take precedence |
 | `statuses` | array | yes | Status definitions |
 | `priorities` | array | yes | Priority definitions |
 | `task_types` | array | yes | Task-type definitions |
@@ -286,7 +286,7 @@ estimation:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `prefix` | string | yes | Default key prefix (e.g. `T-`). Per-project prefixes in `projects.yaml` take precedence |
+| `prefix` | string | yes | Bare key prefix, stored without a dash (e.g. `T`, `WEB`). The `-` separator is inserted at render, so keys read `T-1`, `WEB-42`. Per-project prefixes in `projects.yaml` take precedence |
 
 ### `statuses[]`
 
@@ -297,16 +297,13 @@ estimation:
 | `category` | enum | yes | One of `pending`, `active`, `completed`, `discarded` |
 | `default` | boolean | no | Marks the status a task gets when created without one. **Exactly one status must have it** |
 
-> **`default` is explicit, not positional.** Earlier docs claimed the
-> default was "the first status in `workflow.yaml`" (CLI reference) and
-> "the first `pending` status" (this table). Neither was implemented —
-> a task created without a status had no `status` key at all, matching
-> neither `status = backlog` nor `status != done`, so it was invisible
-> to ordinary filtering.
->
-> A config with no default, or with two, is rejected at parse time. The
-> default status therefore cannot be deleted without first reassigning
-> the flag — deleting it would produce a file the next read refuses.
+> **`default` is explicit, not positional.** The status a task gets when
+> created without one is exactly the status carrying `default: true` —
+> not "the first status" or "the first `pending` status". A config with
+> no default, or with two, is rejected at parse time
+> (`WorkflowConfigSchema`). The default status therefore cannot be
+> deleted without first reassigning the flag — deleting it would produce
+> a file the next read refuses.
 
 | Category | Meaning |
 |---|---|
@@ -342,19 +339,14 @@ estimation:
 | `graph` | `"none"` \| `"acyclic"` \| `"tree"` | no | Graph-shape constraint. `none` (default when omitted) imposes nothing; `acyclic` rejects cycles at link time; `tree` rejects cycles **and** marks the relationship drawable as a tree axis |
 | `ranked` | boolean | no | When `true`, edges of this type carry a `rank` lexorank string for ordering |
 
-> **`graph` replaced `structural: boolean`.** The old flag silently did
-> two unrelated jobs: gating cycle detection (per relationship, correctly)
-> and picking the tree axis — via `find(r => r.structural)`, first match
-> only. The shipped default marked both `blocks` and `parent` structural
-> with `blocks` declared first, so tree traversal walked *blocking* edges.
->
-> `graph` splits the two. Any number of relationships may be `tree`;
-> the axis to draw is a view parameter, passed to `buildTree` /
-> `getChildren` / `getParents` as a required argument rather than
-> searched for in config.
->
-> `structural` is rejected outright — the error names `graph` and the
-> value to use. There is no compatibility shim.
+> **`graph` gates cycle detection and marks the tree axis separately.**
+> Cycle detection is per relationship (`acyclic` or `tree`). Which axis a
+> tree view draws is a view parameter, passed to `buildTree` /
+> `getChildren` / `getParents` as a required argument rather than searched
+> for in config — so any number of relationships may be `tree` without
+> ambiguity. A `structural: boolean` key (the earlier flag `graph`
+> supersedes) is rejected at parse time, with an error naming `graph` and
+> the value to use.
 
 ### `custom_fields[]`
 
@@ -381,6 +373,7 @@ Two modes:
 | `unit_label` | string | conditional | Required when `unit` is `custom_numeric` or `custom_enum` |
 | `scale` | enum | no | One of `free`, `linear`, `fibonacci` |
 | `preset_values` | (number\|string)[] | conditional | Suggested values. Required and non-empty when `unit` is `custom_enum` |
+| `weights` | map (string → number ≥ 0) | no | Only valid for `custom_enum`. Per-category burndown weight; every key must appear in `preset_values`. When set, burndown uses `sum(weights)`; otherwise it falls back to a remaining task count. An empty `{}` is rejected — omit the field to disable |
 
 ### `boards`
 
@@ -470,7 +463,7 @@ implying it governs the other two surfaces. See decision A56.
 
 ## queries.yaml
 
-Located at `.loctt/config/queries.yaml`. Defines saved query views. `id` is the stable reference; `name` is just a display label and can be renamed without breaking pinning. Each query string is parsed through the DSL at load time — invalid queries fail the whole config.
+Located at `.loctt/config/queries.yaml`. Defines saved query views. `id` is the stable reference; `name` is just a display label and can be renamed without breaking pinning. Each query string is parsed through the DSL at load time. A single entry whose `query` does not parse degrades to a `broken` marker (kept out of `queries`, surfaced by `doctor`) rather than failing the whole file — only object-fatal problems (a whole-file YAML error, a missing `queries` array, a missing `id`/`name`/`query`, or a duplicate `id`) reject the config.
 
 ```yaml
 queries:
@@ -502,7 +495,7 @@ queries:
 |---|---|---|---|
 | `id` | string | yes | Stable unique identifier (ULID). Duplicate ids across queries are rejected |
 | `name` | string | yes | Display label |
-| `query` | string | yes | Query DSL string. The parser tokenizes and parses every `query` at load time, so a malformed entry rejects the whole file. See [query-language.md](../user/common/query-language.md) |
+| `query` | string | yes | Query DSL string. The parser tokenizes and parses every `query` at load time; an entry that fails to parse degrades to a `broken` marker rather than rejecting the whole file. See [query-language.md](../user/common/query-language.md) |
 | `sort` | array | no | Ordered list of sort specifiers |
 | `archived` | boolean | no | Hide from default lists. Still runnable by id |
 
@@ -616,8 +609,8 @@ default: 01JBQZ4X8N0000000000000030
 
 The schema enforces:
 - At least one project entry.
-- `id`, `slug` and `prefix` are unique across all projects.
-- `default` (if set) must point at an existing project id.
+- `id` and `prefix` are unique across all projects; `slug`, when present, is unique too.
+- `default`, if it names a project, must not name an **archived** one (new tasks would land somewhere hidden — a hard error). A `default` naming a project that no longer exists (a "ghost") is tolerated at load: resolution ignores it and reports the drift rather than rejecting the file (K23).
 
 ### Top-level
 
@@ -633,10 +626,10 @@ The schema enforces:
 | `id` | ULID | yes | Immutable internal identifier. Never shown to the user (invariant P-4) |
 | `name` | string | yes | Human display name (editable; renaming does not move any task) |
 | `slug` | string | no | Stable URL-safe handle (`web`, `web-app`) that URLs carry and the CLI/MCP accept. Generated from the name at creation; **fixed thereafter**, so a rename does not break existing links (K3, decisions.md A60). Absent on trackers created before slugs existed, which resolve by id (A61) |
-| `prefix` | string | yes | Task-key prefix (e.g. `BACKEND-`). Unique across projects. Changeable only via `loctt project set-prefix`, which renames every task in the project |
+| `prefix` | string | yes | Bare task-key prefix, stored without a dash (e.g. `BACKEND`, `WEB`); the `-` is inserted at render → `BACKEND-1`. Unique across projects. Changeable only via `loctt project set-prefix`, which renames every task in the project |
 | `archived` | boolean | no | When `true`, project is hidden but tasks remain accessible |
 
-Hard-deleting a project moves its counter to `state.yaml`'s `retired_keys` so re-creating it resumes numbering.
+Hard-deleting a project moves its counter to `state.yaml`'s `retired_keys`; creating a new project with the same `prefix` reclaims that counter so numbering resumes at the retired high-water mark.
 
 ---
 
@@ -798,14 +791,15 @@ retired_keys:
     next_number: 42
 ```
 
-Counters are keyed by the project's **ULID `id`**, not its name or prefix —
-`projects.yaml` has no slug field.
+Counters are keyed by the project's **ULID `id`**, not its name, slug, or
+prefix.
 
 `retired_keys` holds counters for hard-deleted projects, so historical
-references in `key_history` cannot be re-used by a fresh task. Note that
-re-creating a project does **not** automatically restore its retired
-counter (`packages/core/src/projects/manage.ts:176-188`); the entry is kept
-as a record, not as a restore point.
+references in `key_history` cannot be re-used by a fresh task. Creating a
+new project whose `prefix` matches a retired counter reclaims it
+(`createProject`, PRU-18): the new project resumes at the retired
+high-water mark and the retired entry is removed. When several retired
+counters share a prefix, the highest `next_number` wins.
 
 ### Top-level
 
@@ -945,7 +939,7 @@ sidebar:
 
 `card_layout` accepts: `key`, `status`, `priority`, `task_type`, `assignee`, `labels`, `due_date`, `estimate`, `milestone`, `sprint`. A repeated field is rejected — a field listed twice has no meaningful position.
 
-> `card_layout` is an **ordered array**, not a map of booleans. Position carries render order, so visibility and ordering are one setting rather than two. An earlier revision specified `{show_assignee: true, …}`; that form is now rejected so a hand-edited file using it fails loudly rather than rendering an empty card.
+> `card_layout` is an **ordered array**, not a map of booleans. Position carries render order, so visibility and ordering are one setting rather than two. A map form (`{show_assignee: true, …}`) is rejected, so a hand-edited file using it fails loudly rather than rendering an empty card.
 
 Every other key is passed through unchanged and survives a load → save round trip.
 

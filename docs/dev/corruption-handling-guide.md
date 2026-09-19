@@ -2,9 +2,8 @@
 
 **Durable reference.** When you add a new field, a new config object, or
 a new surface, this is the checklist for making it degrade correctly
-instead of crashing — and the principles behind why. Unlike the
-one-off sweep working docs that produced it, this guide outlives the
-sweep and is meant to be read before you write the code.
+instead of crashing — and the principles behind why. Read it before you
+write the code.
 
 Companions:
 - `docs/dev/north-star.md` § Operating principles — the *values* (1, 3,

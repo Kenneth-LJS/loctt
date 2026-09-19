@@ -7,39 +7,38 @@ assumes you know what `.loctt/` is and how it's shared.
 **Interfaces:** **CLI** (`loctt`), **MCP** (agent tools), **UI** (the web
 app at `loctt ui`).
 
-> The support matrix below reflects what is wired up today. The web UI is
-> mid-build — [ui/features.md](ui/features.md) describes the full UI.
-
 ---
 
 ## Support at a glance
 
 | Feature | CLI | MCP | UI |
 |---|---|---|---|
-| [Tasks](#tasks) | ✅ | ✅ | list only |
-| [Markdown body](#markdown-body) | ✅ | ✅ | planned |
-| [Relationships](#relationships) | ✅ | ✅ | planned |
-| [Attachments](#attachments) | ✅ | ✅ | planned |
-| [Comments](#comments) | ❌ | ❌ | planned |
-| [Activity log](#activity-log) | ✅ | ✅ | planned |
-| [Archive and delete](#archive-and-delete) | ✅ | ✅ | planned |
+| [Tasks](#tasks) | ✅ | ✅ | ✅ |
+| [Markdown body](#markdown-body) | ✅ | ✅ | ✅ |
+| [Relationships](#relationships) | ✅ | ✅ | ✅ |
+| [Attachments](#attachments) | ✅ | ✅ | ✅ |
+| [Comments](#comments) | ✅ | ✅ | ✅ |
+| [Activity log](#activity-log) | ✅ | ✅ | ✅ |
+| [Archive and delete](#archive-and-delete) | ✅ | ✅ | ✅ |
 | [Query language](#query-language) | ✅ | ✅ | ✅ |
-| [Saved views](#saved-views) | run only | run only | ✅ |
-| [Sorting](#sorting-and-pagination) | ❌ | ❌ | ✅ |
-| [Projects](#projects) | ✅ | ✅ | switch only |
-| [Users](#users) | ✅ | ✅ | switch only |
-| [Labels](#labels) | ✅ | ✅ | planned |
-| [Sprints](#sprints) | ✅ | ✅ | planned |
-| [Milestones](#milestones) | ✅ | ✅ | planned |
-| [Custom fields](#custom-fields) | ✅ | ✅ | planned |
-| [Configurable workflow](#configurable-workflow) | read | read | planned |
-| [Calendar](#calendar) | read | read | planned |
-| [Git sync](#git-sync) | ✅ | ✅ | planned |
-| [Diagnostics](#diagnostics-and-migration) | ✅ | ✅ | planned |
-| [Migration](#diagnostics-and-migration) | ✅ | ❌ | ❌ |
+| [Saved views](#saved-views) | ✅ | ✅ | ✅ |
+| [Sorting and pagination](#sorting-and-pagination) | ✅ | ✅ | ✅ |
+| [Projects](#projects) | ✅ | ✅ | ✅ |
+| [Users](#users) | ✅ | ✅ | ✅ |
+| [Labels](#labels) | ✅ | ✅ | ✅ |
+| [Sprints](#sprints) | ✅ | ✅ | ✅ |
+| [Milestones](#milestones) | ✅ | ✅ | ✅ |
+| [Custom fields](#custom-fields) | ✅ | ✅ | ✅ |
+| [Configurable workflow](#configurable-workflow) | read | read | ✅ |
+| [Calendar](#calendar) | read | read | ✅ |
+| [Git sync](#git-sync) | ✅ | ✅ | ✅ |
+| [Diagnostics](#diagnostics-and-migration) | ✅ | ✅ | ✅ |
+| [Migration](#diagnostics-and-migration) | ✅ | ✅ | ❌ |
 
-✅ full support · *read* = read-only · *run only* = can use but not create
-· ❌ not available · *planned* = specified, not built
+✅ full support · *read* = read-only · ❌ not available
+
+The web UI ships list, board, and timeline views. Schema migration is
+CLI- and MCP-only; everything else is available in the browser.
 
 ---
 
@@ -63,8 +62,8 @@ loctt unset T-1 priority
 `unset_field`. Validation happens server-side, so an agent cannot write an
 invalid status or unknown priority.
 
-**UI** — the list view at `/list`. Detail, create modal, and inline edits
-are planned.
+**UI** — list, board, and timeline views, a create modal, a task detail
+panel, and inline field edits.
 
 ## Markdown body
 
@@ -83,6 +82,10 @@ loctt body T-1 --append "\nFollow-up: cache npm install."
 `replace_task_body` (overwrites entirely — treat as destructive). Reading
 happens via `get_task`.
 
+**UI** — a rich markdown editor with a formatting toolbar, rendered and
+raw modes, autosave, and a conflict dialog when someone else edited the
+task while you were writing.
+
 ## Relationships
 
 Typed, directed links between tasks: `blocks`, `parent`, `clones`,
@@ -100,6 +103,9 @@ loctt link T-3 parent T-1
 **MCP** — `link_tasks`, `unlink_tasks`, `reorder_relationship`. Discover
 the configured kinds with `get_workflow_config`.
 
+**UI** — a relationships panel on the task detail view, with a link
+picker and a tree display for hierarchical kinds.
+
 ## Attachments
 
 Attach files to a task — screenshots, logs, spec PDFs. Files are stored
@@ -109,19 +115,29 @@ under the task's directory in `.loctt/` and travel with the task.
 
 **MCP** — `attach_file`, `detach_file`.
 
-> **Security note.** `attach_file` accepts any absolute path the MCP server
-> process can read — including paths outside the repo. **Do not
-> auto-approve `attach_file` calls** in your agent's permission settings.
-> See [agent-setup.md](mcp/agent-setup.md#permissions-and-auto-approval).
+**UI** — an attachments panel with upload, download, detach, and inline
+image previews.
+
+> **Security note.** Over MCP, `attach_file` refuses a `source_path` that
+> resolves outside the tracker root — stage the file inside the tracker
+> first, then attach it by its path there. The CLI `loctt attach`, run by
+> a person at a terminal, is not confined. See
+> [the MCP reference](mcp/reference.md#attach_file).
 
 ## Comments
 
-Threaded discussion on a task, separate from the body, with edit
-provenance.
+Discussion on a task, separate from the body, with `@`-mentions and edit
+provenance (the original author is preserved and the editor recorded).
+LocTT has no roles, so anyone may edit or delete any comment.
 
-> **Not available on any interface yet.** The storage layer exists, but no
-> CLI command, MCP tool, or HTTP endpoint reaches it. Use the markdown body
-> for now.
+**CLI** — `loctt comment`, `loctt comments`, `loctt comment-edit`,
+`loctt comment-delete`.
+
+**MCP** — `list_comments`, `post_comment`, `edit_comment`,
+`delete_comment`.
+
+**UI** — a comments panel with a composer, an `@`-mention menu, and
+inline editing.
 
 ## Activity log
 
@@ -133,6 +149,8 @@ timestamps and actor.
 
 **MCP** — `get_task_history`.
 
+**UI** — an activity timeline on the task detail view.
+
 ## Archive and delete
 
 Archive is a soft delete: hidden from default lists, fully restorable.
@@ -142,11 +160,14 @@ default for "I'm done with this."
 ```bash
 loctt archive T-1      # reversible
 loctt unarchive T-1
-loctt delete T-1 --force   # permanent
+loctt delete T-1 --yes   # permanent
 ```
 
 **MCP** — `archive_task` / `unarchive_task` / `delete_task`. Agents should
 not call `delete_task` without explicit instruction.
+
+**UI** — archive, unarchive, and delete from the task detail view; delete
+confirms first.
 
 By default, lists omit archived tasks; pass `--archived` (CLI) or the
 equivalent flag to include them.
@@ -171,20 +192,20 @@ corpus is a directory of markdown files.
 
 Named queries stored in `.loctt/config/queries.yaml` and invoked by name.
 
-**CLI** — `loctt list --view my-tasks`. **MCP** — `list_views`, and a
-`view` parameter on `list_tasks`. **UI** — create, save, and manage views.
-
-> Creating and editing views is currently UI-only; the CLI and MCP can run
-> saved views but not define them. Hand-editing `queries.yaml` works on any
-> interface.
+**CLI** — `loctt views` (create, edit, archive, delete) and
+`loctt list --view my-tasks` to run one. **MCP** — `list_views`,
+`create_view`, `edit_view`, `archive_view`, `delete_view`, and a `view`
+parameter on `list_tasks`. **UI** — create, save, and manage views, with
+a visual query builder. Hand-editing `queries.yaml` works on any
+interface.
 
 ## Sorting and pagination
 
-The UI and HTTP API support sorting by any field and paging through large
-result sets.
+Sort by any field and page through large result sets on every interface.
 
-> Not exposed on the CLI (`--sort`) or MCP (`sort` / `offset`) yet, though
-> the underlying engine supports both.
+**CLI** — `loctt list --sort <field> --dir asc|desc --offset <n>`.
+**MCP** — `sort`, `direction`, and `offset` on `list_tasks`. **UI** —
+column sorting and paging in the list view.
 
 ## Projects
 
@@ -192,8 +213,8 @@ One tracker, multiple projects. Each has its own key prefix (`BACKEND-`,
 `WEB-`) and counter. Useful for monorepos, or separating client work from
 internal work.
 
-**CLI / MCP** — full CRUD plus archive, unarchive, and a default-project
-setting. **UI** — switching only.
+**CLI / MCP / UI** — full CRUD plus archive, unarchive, and a
+default-project setting (Settings → Projects in the UI).
 
 Projects are addressed by ULID `id` internally; `name` is a mutable display
 label and is not unique.
@@ -213,9 +234,9 @@ Profiles with name, email, timezone, and avatar, used for assignee and
 reporter. Switching the current user changes who appears as the actor on
 log entries. Users can be archived without breaking tasks referencing them.
 
-**CLI / MCP** — full CRUD, archive, and switch. `get_current_user` is
-worth calling before handling "my tasks" requests rather than asking the
-user to type their name.
+**CLI / MCP / UI** — full CRUD, archive, and switch (Settings → Users in
+the UI). `get_current_user` is worth calling before handling "my tasks"
+requests rather than asking the user to type their name.
 
 > The current user is global tracker state, not a per-session identity —
 > switching affects every interface at once.
@@ -226,7 +247,8 @@ Optional colour-coded tags. Flat, no hierarchy, configurable per
 workspace.
 
 **CLI / MCP** — manage labels themselves with the label commands/tools;
-apply them to a task by setting the `labels` field.
+apply them to a task by setting the `labels` field. **UI** — manage
+labels in Settings and apply them from the task detail view.
 
 ## Sprints
 
@@ -235,14 +257,25 @@ Time-boxed groupings with a name, dates, and a state (`future`, `active`,
 carryover — state is a label you set.
 
 Tasks reference a sprint by its ULID `id`, so renaming a sprint never
-detaches its tasks.
+detaches its tasks. Progress rollups (done/total, computed from status
+category, discarded tasks excluded) come from `loctt sprint list
+--progress`, the `progress` option on `list_sprints`, and the UI; sprint
+burndown is available on the CLI (`loctt sprint burndown`), MCP
+(`get_sprint_burndown`), and the timeline view.
+
+**CLI / MCP** — full sprint CRUD, archive, and progress. **UI** — sprint
+list and detail views.
 
 ## Milestones
 
 Target-date-driven groupings for releases and deliverables.
 
-> Milestone **progress** (completed/total rollups) is specified but not
-> implemented on any interface.
+Progress rollups (done/total, computed from status category, discarded
+tasks excluded) come from `loctt milestone list --progress`, the
+`progress` option on `list_milestones`, and the UI.
+
+**CLI / MCP** — full milestone CRUD, archive, and progress. **UI** —
+milestone list and detail views.
 
 ## Custom fields
 
@@ -252,6 +285,9 @@ language like built-in fields.
 
 Agents discover them via `get_workflow_config` and set them via
 `update_task`; no separate tool is needed.
+
+**UI** — declare and edit custom fields in Settings → Custom fields, and
+set values from the task detail view.
 
 ## Configurable workflow
 
@@ -263,17 +299,21 @@ Statuses, priorities, task types, and relationship kinds live in
 **Agents should call `get_workflow_config` at the start of a session** so
 they use the workspace's actual vocabulary rather than assuming defaults.
 
-> Editing the workflow is currently done by hand or through the HTTP API;
-> there is no CLI or MCP write command.
+**UI** — Settings → Workflow edits statuses, priorities, task types,
+relationships, custom fields, and estimation. The CLI and MCP read the
+workflow (`loctt schema`, `get_workflow_config`) but do not write it;
+edit `workflow.yaml` directly or use the UI.
 
 ## Calendar
 
 Per-workspace timezone, working days, and holidays.
 
 **CLI** — `loctt calendar show`. **MCP** — `get_calendar`, useful when
-reasoning about due dates or "by end of week".
+reasoning about due dates or "by end of week". **UI** — edit the calendar
+in Settings → Calendar.
 
-> Read-only from the CLI and MCP; edit `calendar.yaml` directly.
+> Read-only from the CLI and MCP; edit it in the UI or in
+> `calendar.yaml` directly.
 
 ## Git sync
 
@@ -282,9 +322,10 @@ Optional mode publishing tracker state to a dedicated `loctt` branch
 [git-sync.md](common/git-sync.md) for operations, or
 [concepts.md](common/concepts.md) for the mental model.
 
-**CLI** — `loctt git enable|disable|status|publish|sync`. **MCP** —
-`enable_git`, `disable_git`, `get_git_status`, `publish_to_git`,
-`sync_from_git`.
+**CLI** — `loctt git enable|disable|status|publish|sync|reconcile`.
+**MCP** — `enable_git`, `disable_git`, `get_git_status`, `publish_to_git`,
+`sync_from_git`, `get_reconcile_status`. **UI** — Settings → Sync, with a
+reconcile panel and a rekey preview.
 
 Sync compares the branch against your local state using the last synced
 commit as a base. Where both sides changed the same file, it stops and
@@ -300,8 +341,12 @@ unrelated content is refused rather than overwriting it.
 inconsistent state. `loctt migrate` upgrades the tracker schema between
 LocTT versions; pass `--dry-run` to preview.
 
-**MCP** — `doctor` and `info` are exposed. There is deliberately **no MCP
-`migrate`**: schema migrations are a human action gated by version checks.
+**MCP** — `doctor`, `info`, and `migrate_schema` (call it without
+`confirm` to preview the plan first).
+
+**UI** — a data-integrity badge that links to Settings → Diagnostics,
+which streams the same checks `loctt doctor` runs. Schema migration is
+CLI- and MCP-only.
 
 ## Configuration values
 
