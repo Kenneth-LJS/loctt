@@ -13559,14 +13559,21 @@ chosen brand colour — inherited from the v1 tokens. Ken chose a green-leaning
 - **On-accent is BLACK, both modes** (`--accent-contrast: #0B0B0C`). Ken:
   "bright buttons should have black text/markings, not just white." White on
   `#0B9C81` is 3.45:1 (fails); black is 5.7:1 (AA). Dark accent black = 6.72:1.
-- **Fill vs text accent are SPLIT** (Ken chose this over one darker accent or
-  accepting an AA miss). The vibrant `--accent` is for FILLS (buttons,
-  checkbox/radio checked, toggles, the logo "L", progress). A separate,
-  darker **text-accent** (`#0F766E` light, 5.47:1 on white; the dark accent
-  already passes on dark surfaces) is for LINKS and accent TEXT, so link text
-  clears WCAG AA 4.5:1 which the vibrant fill colour does not. New token(s):
-  `--accent-text` (or equivalent) wired into `@theme` as a `text-accent`
-  utility; the fill utilities keep `--accent`.
+- **Final accent values (supersede the exploratory ones above):** light
+  `--accent: #0F766E` (white on-accent, 5.5:1), dark `--accent: #39A88F`
+  (black on-accent, 6.7:1). **The fill/text split was dropped as
+  unnecessary** — `#0F766E` is deep enough to serve as both a fill (white
+  text on it) and as link/accent text on the surfaces (4.9–5.5:1), and the
+  dark `#39A88F` passes as text on every dark surface (5.6–6.7:1). So there
+  is ONE `--accent` token, no separate `--accent-text`.
+- **Blue and orange (harmonised semantics).** Light: active/medium blue
+  `#1868B0`; high/warning orange `#CC6600` — a VIBRANT orange that clears
+  **AA-Large (3:1)** but not AA-normal on the pale chip. Ken chose vibrancy
+  over AA-normal for this one colour, acceptable because the chip/priority
+  text is bold (AA-Large applies to bold text). Dark: blue `#6FB6F0`, orange
+  `#F0A868` (both pass easily on the dark canvas). This is the only token in
+  the file that intentionally sits at AA-Large rather than AA-normal;
+  recorded here so it is not later "found" as an AA regression.
 - **Logo "o"** stays neutral ink (single-accent brand system; `--text-primary`
   pairing), unless revisited.
 - **Semantic colours harmonised.** Ken: status (pending/active/completed/
@@ -14322,6 +14329,82 @@ blocked even when its blocker is already done/wont_do; the DSL has no
 "edge whose target has status X" predicate, so this is the closest
 expressible approximation.
 
+### A210 · List toolbar redesign — band structure, folded Advanced, configurable visible filters (K97), builder-first surface
+
+**Ticket:** ui/ux-polish-and-timeline-panel · **Date:** 2026-09-19
+
+**The situation.** Ken's toolbar review flagged the list top as "gross":
+Refresh/Export floated in ListView's `justify-between` gutter (vertically
+centred in dead space, jumping as the chip row toggled); a leading
+"Advanced" pill led the facet row and was shorter than the facets;
+"Advanced" opened a raw DSL textbox rather than the visual builder that
+already existed (`QueryBuilder.tsx`); the builder leaked premature parse
+errors ("unknown status value ''") the instant a condition was added; and
+K97 (Ken's ruling) required the visible-filter set to become configurable.
+
+**Decided (all reversible; scope changes to K97 need Ken).**
+
+1. **FilterBar owns the whole toolbar.** ListView passed Refresh/Export as
+   siblings of FilterBar in one flex row; now it passes them as *props*
+   (`onRefresh`/`refreshBusy`/`exportTotal`/`exportQueryString`) and
+   FilterBar renders them in a right-aligned `view-actions` cluster on the
+   toolbar baseline. Fixes the floating/jumping. *Revert:* move the two
+   controls back into ListView's row and drop the four props.
+
+2. **Refresh demoted to icon-only** (`RefreshButton iconOnly`), since the
+   view auto-refreshes; `aria-label="Refresh"` unchanged so XS-3 + the
+   ListView.test locator still match. *Revert:* drop `iconOnly`.
+
+3. **Advanced folded into the filter system.** The leading
+   `advanced-query-toggle` pill is GONE. Advanced is reached from the END
+   of the "+ Add filter" menu ("Advanced query…", testid `advanced-open`),
+   and on mobile from the filter sheet. *Revert:* re-add the leading
+   ToolbarButton.
+
+4. **Builder-first surface, right-sized.** `AdvancedQuerySurface` already
+   opened the builder for renderable queries (K83); wrapped both modes in
+   a bordered `advanced-query-panel` card (`w-full min-w-0`) so it fills
+   the content width instead of a too-tall textarea, and relabelled the
+   builder's text toggle "Edit as text".
+
+5. **Premature-error suppression (problem #4).** BuilderMode now suppresses
+   the validation banner AND disables Apply while any leaf is *incomplete*
+   (blank value on a non-presence op) via `hasIncompleteLeaf`, and scrubs
+   any "at position N" tail from messages shown in the builder
+   (`scrubPosition`) so token coordinates never leak into the visual UI.
+   The text editor keeps its caret/position (it edits raw DSL). *Revert:*
+   drop the `incomplete` gate + `scrubPosition`.
+
+6. **Configurable visible filters (K97) — storage = URL `vf` param +
+   per-user setting.** New module `list/visibleFilters.ts`. Resolution
+   chain per K97: **active view's set → per-user default → built-in
+   default** (Project/Status/Priority/Assignee).
+   - The **active/transient set** is a comma-separated FilterId list in the
+     URL param `vf` (FilterId = a `FacetKey` or `field.<customKey>`). The
+     URL stays the single source of truth (`.passthrough()` already carries
+     unknown params), so a saved view stores it in its params like any
+     other filter, and it is transient for a bare `/list` until saved or
+     promoted. *Chosen over* a separate React/localStorage store because it
+     keeps the "URL is truth" invariant and needs no server change.
+   - The **per-user default** is `list_visible_filters` in `settings.yaml`,
+     read/written exactly like the board's `board_hidden_columns`
+     (A26/BRD-4) via `useUserSettings` + `useUserSettingsMutation`. Set by
+     an explicit "Save these as my default" action in the Add-filter menu.
+   - Migration-free: no `vf` and no stored default → built-in default.
+   - The "+ Add filter" affordance is a desktop `Menu` popover / mobile
+     `Sheet` (unified via a shared `AddFilterPanel`), grouped built-in /
+     custom, searchable when long. Removing a filter (panel foot of each
+     dropdown) also clears its active value so no invisible constraint is
+     left applied.
+   *Revert:* delete `visibleFilters.ts`, render every facet again, drop the
+   `vf` read/write and the `list_visible_filters` setting.
+
+**Not done / flagged (see known-gaps).** The Playwright e2e specs
+(`tests/ui/flow-list.spec.ts`, `flow-settings-projects-users.spec.ts`)
+still drive the removed `advanced-query-toggle` testid and assume every
+facet is a permanent pill; they are OUTSIDE this ticket's edit scope
+(client `list/**` + `ui/**` only) and need a follow-up pass.
+
 **Guard.** New init test "seeds queries that validate against the seeded
 workflow" (`init.test.ts`) runs `validateQuery(..., { workflow })` on every
 seeded query against the seeded workflow — shown to go red on the old
@@ -14333,3 +14416,85 @@ reproduced the old query verbatim).
 **To revert.** Restore `defaults.ts` line to `status = blocked`; remove the
 init guard test and revert the two doc lines. (Reverting reintroduces the
 bug — noted only for completeness.)
+
+### A211 · One searchable value picker: `ui/Combobox`, extracted from OptionPicker; the combobox-vs-Select rule
+
+**Context (Ken, 2026-09-19):** "query builder is still using native
+dropdown; some fields you pick values through checkboxes; native dropdown
+and checkboxes won't scale with too many values — we need a dropdown you
+can search in. I thought we did that for some selector? standardise. do
+an audit and fix." The searchable selector he remembered is
+`OptionPicker`'s K90 `search` prop (A-K90-SEARCH), which lived in
+`task/editors/` coupled to the meta trigger, so nothing outside the task
+panel could reuse it; the query builder's value control was a native
+`Select` for `=`/`!=` and a checkbox wall for `in`/`not in`.
+
+**Decision (agent-level).**
+
+1. **Extract, don't fork.** `ui/Combobox.tsx` is OptionPicker's listbox
+   lifted into a primitive: the 200ms debounced server query with
+   cancellation (K90), the current value merged into the list rather than
+   filtered out (P3/XS-27), present-but-disabled options with a reason
+   (TSK-10/33), per-option colour/suffix/hint (TSK-7), Escape → close
+   without a write → focus back on the trigger (TSK-41/P8). Added over
+   the original: a `mode="multi"` variant (replaces checkbox walls), a
+   client-side filter, and a full `aria-combobox`/`aria-activedescendant`
+   keyboard model (ArrowUp/Down, Home/End, Enter picks, Enter-with-
+   nothing-to-pick → `onSubmitQuery` for the labels "create" path). The
+   trigger is a render prop; `ComboboxButton` is the select-shaped
+   default so a row mixing a `Select` (operator) and a `Combobox` (value)
+   reads as one row. *Rejected:* a `searchable` mode on `ui/Select` — a
+   native `<select>` cannot host a text input, disabled-with-reason rows,
+   or a value outside its options (the XS-27 failure), so it would have
+   been a reimplementation behind Select's name.
+2. **The rule.** Sets the *user can grow* (labels, users, projects,
+   milestones, sprints, custom-enum values, timezones) → `Combobox`.
+   Small *fixed* sets (status/priority/type, operators, sprint state,
+   estimation unit, true/false, graph constraint) → plain `Select`/`Radio`.
+   Within a Combobox the search box appears when server search is wired
+   (always) or a static list reaches **12** options
+   (`COMBOBOX_SEARCH_THRESHOLD`, the same figure FilterDropdown used for
+   MSL-19); `filterable` overrides. So status on a task stays a plain
+   list, and a 30-value custom enum becomes typeable with no caller change.
+3. **Migrated.** `OptionPicker` → trigger over Combobox (all testids,
+   the `meta-unrecognized-*` flag, A11Y-23 wiring and the meta trigger
+   markup unchanged; 24 call sites untouched). `LabelsField` → Combobox
+   multi (`hideSelected` + `closeOnSelect`), the create offer in the
+   list footer, exact-name gate still server-authoritative (the last
+   unfiltered server answer, sequence-guarded). `QueryBuilder` value
+   control: `=`/`!=` on enum/entity/user → Combobox single with a
+   "Clear value" row, `@currentUser` (K80) and the not-in-config value
+   (XS-27) as options; `in`/`not in` → Combobox multi with a summarising
+   trigger ("A, B, C" / "N selected") and the `qb-value-opt-<key>`
+   testids on the option rows. `FilterDropdown` shares the threshold and
+   `filterOptions` but keeps `Menu` + `menuitemcheckbox` (see 4).
+4. **Deliberately NOT migrated (flagged, see known-gaps).**
+   - `FilterDropdown` facets: already searchable (≥12, client-side); its
+     `menuitemcheckbox` roving-focus contract (A11Y-10) is asserted by
+     ~25 Playwright specs outside this ticket's run scope. Re-rolling it
+     as `role="option"` is a contract change to make with the e2e suite
+     in hand.
+   - Settings/dialog selects over growable sets — `UsersPanel` and
+     `CalendarPanel` timezone (~400 IANA zones), `PreferencesPanel`
+     default project, `DeleteProjectDialog` remap, `MoveTaskDialog`
+     destination, `ReconcilePanel` pick-value, `UserDeleteDialog` /
+     `RemapDeleteDialog` radio lists — all use `selectOption`/`.check()`
+     in Playwright specs. Same reason. The create modal's multi-enum pill
+     toggles (`create-field-<key>-<v>`) likewise.
+   - The query builder's entity lists still come from the 1000-capped
+     sidebar hooks (client filter), not `?q=` — K90 parity for the
+     builder needs the search fns threaded into `BuilderConfig`.
+
+**Tests.** `ui/Combobox.test.tsx` (12 cases: threshold rule, filter +
+current-value pin, keyboard, Escape, onSubmitQuery, K90 debounce/merge,
+multi on/off + hideSelected, disabled-with-reason) — red-proven by five
+mutations (filter, Enter-pick, current-pin, threshold, hideSelected),
+each failing only its intended tests. `QueryBuilder.test.tsx`: four tests
+edited — they asserted `tagName === "SELECT"`, `fireEvent.change` on a
+select, and bare checkbox clicks, i.e. the controls this replaced; one
+added (`@verifies A211`: a 15-label set grows a box that filters).
+
+**To revert:** restore `OptionPicker.tsx`, `LabelsField.tsx`,
+`QueryBuilder.tsx` and `FilterDropdown.tsx` from `41d133c`, delete
+`ui/Combobox.tsx` + its test, and re-apply the four QueryBuilder test
+edits in reverse.
