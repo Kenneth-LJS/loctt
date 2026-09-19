@@ -164,7 +164,9 @@ export interface ComboboxSingleProps extends ComboboxCommonProps {
   readonly value: string | undefined;
   readonly onSelect: (key: string) => void;
   /** A "clear" row at the top of the list; omit to make the field non-clearable. */
-  readonly clear?: { readonly label: string; readonly onClear: () => void } | undefined;
+  readonly clear?:
+    | { readonly label: string; readonly onClear: () => void; readonly testId?: string | undefined }
+    | undefined;
 }
 
 export interface ComboboxMultiProps extends ComboboxCommonProps {
@@ -465,6 +467,7 @@ export function Combobox(props: ComboboxProps) {
                 type="button"
                 role="option"
                 aria-selected={false}
+                data-testid={clear.testId}
                 onClick={() => { clear.onClear(); close(true); }}
                 className="block w-full px-3 py-1.5 text-left text-body text-text-tertiary hover:bg-bg-muted"
               >
@@ -585,6 +588,7 @@ export function ComboboxButton({
   children,
   className,
   testId,
+  dataValue,
   "aria-label": ariaLabel,
   "aria-haspopup": haspopup,
   "aria-expanded": expanded,
@@ -596,6 +600,12 @@ export function ComboboxButton({
   /** Layout only. */
   readonly className?: string | undefined;
   readonly testId?: string | undefined;
+  /**
+   * The currently-selected value, exposed as `data-value` so a test can
+   * assert the selection without opening the list (the parity with a
+   * native `<select>`'s `value`).
+   */
+  readonly dataValue?: string | undefined;
   readonly "aria-label"?: string | undefined;
 }) {
   const empty = children === undefined || children === null || children === "";
@@ -604,6 +614,7 @@ export function ComboboxButton({
       ref={ref}
       type="button"
       data-testid={testId}
+      data-value={dataValue}
       aria-label={ariaLabel}
       aria-haspopup={haspopup}
       aria-expanded={expanded}

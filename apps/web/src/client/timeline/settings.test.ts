@@ -1,6 +1,7 @@
 import type { SavedQuery, WorkflowConfig } from "@loctt/contracts";
 import { describe, expect, it } from "vitest";
 
+import { buildGroupingCatalog,BUILTIN_TIMELINE_GROUPINGS } from "../grouping/catalog.ts";
 import {
   dependencyKey,
   dependencyRelationshipStatus,
@@ -8,6 +9,29 @@ import {
   resolveGrouping,
   resolveZoom,
 } from "./settings.ts";
+
+/**
+ * A catalog of just the eight builtins — the shape most resolveGrouping
+ * cases work in, where no custom field is in play.
+ */
+const BUILTINS = BUILTIN_TIMELINE_GROUPINGS;
+
+/** A workflow carrying one single-value enum custom field named `area`. */
+function wfWithArea(): WorkflowConfig {
+  return {
+    relationships: [],
+    custom_fields: [
+      {
+        key: "area",
+        label: "Area",
+        type: "enum",
+        multi: false,
+        searchable: false,
+        values: [{ key: "fe", label: "Frontend" }, { key: "be", label: "Backend" }],
+      },
+    ],
+  } as unknown as WorkflowConfig;
+}
 
 /**
  * The precedence chain (TML-1, TML-2, TML-8, TML-15) and the
@@ -64,12 +88,13 @@ describe("resolveZoom", () => {
 describe("resolveGrouping", () => {
   // @verifies TML-8
   it("uses default_grouping from config", () => {
-    expect(resolveGrouping({ workflow: wf({ default_grouping: "assignee" }) }).value).toBe("assignee");
+    expect(resolveGrouping({ workflow: wf({ default_grouping: "assignee" }) }, BUILTINS).value)
+      .toBe("assignee");
   });
 
   // @verifies TML-8
   it("opens at none when default_grouping is absent", () => {
-    expect(resolveGrouping({ workflow: wf({}) }).value).toBe("none");
+    expect(resolveGrouping({ workflow: wf({}) }, BUILTINS).value).toBe("none");
   });
 
   // @verifies TML-8
@@ -77,12 +102,57 @@ describe("resolveGrouping", () => {
     // TML-8: "pasting the `none` URL opens ungrouped even though the
     // workspace default is assignee". `none` is a real value, not an
     // absence — a truthiness check here would silently fall through.
-    const r = resolveGrouping({
-      urlGrouping: "none",
-      workflow: wf({ default_grouping: "assignee" }),
-    });
+    const r = resolveGrouping(
+      { urlGrouping: "none", workflow: wf({ default_grouping: "assignee" }) },
+      BUILTINS,
+    );
     expect(r.value).toBe("none");
     expect(r.source).toBe("url");
+  });
+
+  // @verifies TML-8
+  it("accepts a custom-field grouping the catalog offers", () => {
+    const workflow = wfWithArea();
+    const catalog = buildGroupingCatalog(workflow);
+    const r = resolveGrouping({ urlGrouping: "field.area", workflow }, catalog);
+    expect(r.value).toBe("field.area");
+    expect(r.source).toBe("url");
+    expect(r.dangling).toBeUndefined();
+  });
+
+  // @verifies TML-8
+  it("rejects an unresolvable field ref and DEFERS to the next layer, naming the dangle", () => {
+    // A URL pins a now-deleted custom field; a saved view names a real
+    // builtin. The dangling URL value must not win, must not drop
+    // straight to `none`, and must be named for the notice. The catalog
+    // here offers only builtins — `field.gone` is not in it.
+    const r = resolveGrouping(
+      {
+        urlGrouping: "field.gone" as never,
+        view: view({ mode: "timeline", grouping: "status" }),
+        workflow: wf({}),
+      },
+      BUILTINS,
+    );
+    expect(r.value).toBe("status");
+    expect(r.source).toBe("view");
+    expect(r.dangling).toBe("field.gone");
+  });
+
+  // @verifies TML-8
+  it("falls to none — naming the first dangle — when every layer is unresolvable", () => {
+    const r = resolveGrouping(
+      {
+        urlGrouping: "field.gone" as never,
+        view: view({ mode: "timeline", grouping: "field.alsoGone" as never }),
+        workflow: wf({}),
+      },
+      BUILTINS,
+    );
+    expect(r.value).toBe("none");
+    expect(r.source).toBe("builtin");
+    // The FIRST rejected value, in precedence order.
+    expect(r.dangling).toBe("field.gone");
   });
 });
 

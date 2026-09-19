@@ -10,13 +10,14 @@ import { useTaskDates } from "../api/hooks/useTaskDates.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { ConfigErrorState } from "../board/ConfigErrorState.tsx";
+import { buildGroupingCatalog, type GroupEntry } from "../grouping/catalog.ts";
+import { GroupByPicker } from "../grouping/GroupByPicker.tsx";
 import { FilterBar } from "../list/FilterBar.tsx";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
-import { Select } from "../ui/Select.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 import { dependencyGraph } from "./arrows.ts";
 import {
@@ -103,8 +104,20 @@ export function TimelineView() {
     [search.zoom, search.grouping, search.arrows, activeView, workflow.data],
   );
 
+  // The group-by catalog is derived from the live workflow: eight
+  // builtins plus every single-value enum custom field. It drives both
+  // the picker's options and `resolveGrouping`'s validation, so a saved
+  // view (or URL) naming a now-deleted custom field is rejected here
+  // rather than reaching `buildRows` and drawing a single mislabelled
+  // band.
+  const groupingCatalog = useMemo(
+    () => buildGroupingCatalog(workflow.data),
+    [workflow.data],
+  );
+
   const zoom = resolveZoom(settingsInput).value;
-  const grouping = resolveGrouping(settingsInput).value;
+  const groupingResolved = resolveGrouping(settingsInput, groupingCatalog);
+  const grouping = groupingResolved.value;
   const arrowsOn = resolveArrows(settingsInput).value;
 
   // Below sm the toolbar collapses (zoom + group + Today inline;
@@ -514,6 +527,7 @@ export function TimelineView() {
       <Toolbar
         zoom={zoom}
         grouping={grouping}
+        groupingCatalog={groupingCatalog}
         arrowsOn={arrowsOn}
         arrowsAvailable={depStatus.kind === "ok"}
         isNarrow={isNarrow}
@@ -522,6 +536,24 @@ export function TimelineView() {
         onArrows={v => { setParam({ arrows: v }); }}
         onToday={() => { centreToday(); }}
       />
+
+      {/* A `grouping` value — from a saved view or the URL — that names a
+          custom field which is no longer a single-value enum (deleted, or
+          changed to multi/non-enum). `resolveGrouping` deferred past it to
+          the next layer (finally `none`); this names what was dropped, in
+          the pattern of the dependency-config notice above. */}
+      {groupingResolved.dangling !== undefined && (
+        <div
+          role="alert"
+          data-testid="timeline-grouping-config-error"
+          className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[0.8571rem] text-text-primary"
+        >
+          Group by{" "}
+          <code data-testid="timeline-grouping-dangling-key">{groupingResolved.dangling}</code>
+          {" "}is no longer a single-value enum field — showing{" "}
+          {grouping === "none" ? "flat" : "the next available grouping"}.
+        </div>
+      )}
 
       {/* TML-34: a `dependency_relationship` naming a key that
           `relationships` does not define. Core no longer deletes the
@@ -744,6 +776,7 @@ function describeFilters(search: Record<string, unknown>): string | null {
 function Toolbar(props: {
   readonly zoom: TimelineZoom;
   readonly grouping: TimelineGrouping;
+  readonly groupingCatalog: readonly GroupEntry[];
   readonly arrowsOn: boolean;
   readonly arrowsAvailable: boolean;
   readonly isNarrow: boolean;
@@ -753,7 +786,6 @@ function Toolbar(props: {
   readonly onToday: () => void;
 }) {
   const zooms: TimelineZoom[] = ["day", "week", "month"];
-  const groupings: TimelineGrouping[] = ["none", "milestone", "assignee", "status", "sprint"];
 
   // TML-15: the toggle reflects the state even when no relationship is
   // configured, so it is disabled rather than hidden. On desktop it is an
@@ -791,17 +823,13 @@ function Toolbar(props: {
 
       <label className="flex items-center gap-1 text-[0.8571rem] text-text-secondary">
         Group by
-        <Select
-          size="sm"
-          data-testid="timeline-grouping"
+        <GroupByPicker
+          catalog={props.groupingCatalog}
           value={props.grouping}
-          onChange={e => { props.onGrouping(e.target.value as TimelineGrouping); }}
-          className="capitalize"
-        >
-          {groupings.map(g => (
-            <option key={g} value={g}>{g}</option>
-          ))}
-        </Select>
+          onChange={props.onGrouping}
+          testIdBase="timeline-grouping"
+          aria-label="Group by"
+        />
       </label>
 
       {!props.isNarrow && dependenciesToggle}

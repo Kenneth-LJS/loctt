@@ -433,7 +433,26 @@ Workspace-level defaults for the timeline (Gantt) view. Every field is optional;
 | `dependency_relationship` | string \| null | no | Relationship `key` whose links are drawn as dependency arrows (e.g. `blocks`). `null` means "no arrows", same as absent. **May dangle** — see below. Built-in: none |
 | `default_zoom` | enum | no | One of `day`, `week`, `month`. Built-in: `week` |
 | `show_arrows` | boolean | no | Whether arrows are drawn by default. Built-in: `true` |
-| `default_grouping` | enum | no | One of `none`, `milestone`, `assignee`, `status`, `sprint`. Built-in: `none` |
+| `default_grouping` | string | no | A builtin — `none`, `project`, `milestone`, `sprint`, `assignee`, `status`, `priority`, `task_type` — or a custom-field reference `field.<key>`. **May dangle** — see below. Built-in: `none` |
+
+**`default_grouping` spans builtins and custom fields.** The eight
+builtins group by the field named. A `field.<key>` value groups by a
+custom field, which must be a **single-value enum** (`type: enum`,
+`multi: false`, with at least one declared value). Labels and multi-value
+enum fields are deliberately **not** groupable: a task carries many of
+them, so grouping on one would place the task in several row bands at
+once and break the invariant that the timeline's total row count is the
+same under every grouping.
+
+**`default_grouping` is a reference that may dangle**, the same way
+`dependency_relationship` is. A `field.<key>` whose custom field was
+deleted, or changed to `multi: true` or a non-enum type, no longer
+resolves. The value is **preserved on write** rather than pruned; a
+consumer validates it against the live workflow and, when it does not
+resolve, falls back to the next layer in the precedence chain (a saved
+view's `grouping`, then the built-in `none`) and reports the dropped
+value by name. The same value shape and rule apply to a saved view's
+`display.grouping`.
 
 **`dependency_relationship` is a reference that may dangle.** Deleting its
 target from `relationships` leaves this field pointing at a key that no

@@ -34,6 +34,56 @@ async function setTimelineConfig(root: string, body: string | null): Promise<voi
   await writeFile(file, body === null ? without : `${without.trimEnd()}\n${body}\n`, "utf8");
 }
 
+/**
+ * Replaces the `custom_fields: []` line of workflow.yaml with one or more
+ * single-value enum fields, so the group-by catalog offers `field.<key>`
+ * for each.
+ */
+async function setCustomEnumFields(
+  root: string,
+  fields: readonly { key: string; label: string; values: readonly { key: string; label: string }[] }[],
+): Promise<void> {
+  const file = path.join(root, ".loctt", "config", "workflow.yaml");
+  const text = await readFile(file, "utf8");
+  const block =
+    `custom_fields:\n`
+    + fields.map(field =>
+      `  - key: ${field.key}\n`
+      + `    label: ${field.label}\n`
+      + `    type: enum\n`
+      + `    multi: false\n`
+      + `    searchable: false\n`
+      + `    values:\n`
+      + field.values.map(v => `      - key: ${v.key}\n        label: ${v.label}\n`).join(""),
+    ).join("");
+  const next = text.replace(/^custom_fields: \[\]\s*$/m, block.trimEnd());
+  if (next === text) throw new Error("custom_fields: [] not found to replace");
+  await writeFile(file, next, "utf8");
+}
+
+/** Sets one enum custom-field value on a task's frontmatter, by key. */
+async function setTaskField(
+  root: string,
+  taskKey: string,
+  field: string,
+  value: string,
+): Promise<void> {
+  const { readdir } = await import("node:fs/promises");
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    const p = path.join(tasksDir, id, "task.md");
+    let text: string;
+    try { text = await readFile(p, "utf8"); } catch { continue; }
+    if (!new RegExp(`^key: ${taskKey}$`, "m").test(text)) continue;
+    // Insert (or extend) a `fields:` map just before the closing `---`.
+    const line = `fields:\n  ${field}: ${value}\n`;
+    const next = text.replace(/\n---\n/, `\n${line}---\n`);
+    await writeFile(p, next, "utf8");
+    return;
+  }
+  throw new Error(`no task file for ${taskKey}`);
+}
+
 /** Overwrites calendar.yaml wholesale. */
 async function setCalendar(root: string, yaml: string): Promise<void> {
   await writeFile(path.join(root, ".loctt", "config", "calendar.yaml"), yaml, "utf8");
@@ -182,6 +232,30 @@ async function barBox(
   const left = await el.evaluate(n => parseFloat((n as HTMLElement).style.left));
   const width = await el.evaluate(n => parseFloat((n as HTMLElement).style.width));
   return { left, width };
+}
+
+/**
+ * The group-by control is no longer a native `<select>` — it is the
+ * shared searchable Combobox (the `GroupByPicker`). These helpers replace
+ * the old `selectOption` / `toHaveValue`:
+ *  - the selected value is on the trigger as `data-value` (the parity
+ *    with a `<select>`'s `value`), so assertions read that;
+ *  - to change it, open the trigger and click the option row
+ *    (`timeline-grouping-opt-<id>`; `none` is the pinned clear row).
+ */
+async function expectGrouping(
+  page: import("@playwright/test").Page,
+  id: string,
+): Promise<void> {
+  await expect(page.getByTestId("timeline-grouping")).toHaveAttribute("data-value", id);
+}
+
+async function chooseGrouping(
+  page: import("@playwright/test").Page,
+  id: string,
+): Promise<void> {
+  await page.getByTestId("timeline-grouping").click();
+  await page.getByTestId(`timeline-grouping-opt-${id}`).click();
 }
 
 test.describe("TML — timeline view", () => {
@@ -431,23 +505,77 @@ test.describe("TML — timeline view", () => {
     await setTimelineConfig(tracker.root, "timeline:\n  default_grouping: assignee");
 
     await page.goto(`${tracker.baseURL}/timeline`);
-    await expect(page.getByTestId("timeline-grouping")).toHaveValue("assignee");
+    await expectGrouping(page, "assignee");
 
-    // Changing to none flattens and updates the URL.
-    await page.getByTestId("timeline-grouping").selectOption("none");
+    // Changing to none flattens and updates the URL. `none` is the
+    // picker's pinned clear row.
+    await chooseGrouping(page, "none");
     await expect(page).toHaveURL(/grouping=none/);
     await expect(page.getByTestId("timeline-band-all")).toBeVisible();
 
     // The `none` URL opens ungrouped even though the default is
     // assignee — `none` is a value, not an absence.
     await page.goto(`${tracker.baseURL}/timeline?grouping=none`);
-    await expect(page.getByTestId("timeline-grouping")).toHaveValue("none");
+    await expectGrouping(page, "none");
     await expect(page.getByTestId("timeline-band-all")).toBeVisible();
 
     // With default_grouping absent, the view opens at none.
     await setTimelineConfig(tracker.root, null);
     await page.goto(`${tracker.baseURL}/timeline`);
-    await expect(page.getByTestId("timeline-grouping")).toHaveValue("none");
+    await expectGrouping(page, "none");
+  });
+
+  // @verifies TML-8
+  test("TML-8: the picker groups by a single-value enum custom field, found via search", async ({ page, tracker }) => {
+    // The full group-by set (Ken): a single-value enum custom field is
+    // groupable as `field.<key>`, and the searchable picker is how it is
+    // reached once the list is long. The two dated tasks carry different
+    // Area values, so grouping bands them apart and the total holds.
+    const [a, b] = await seedDated(tracker);
+    // Enough single-value enum fields that the catalog (7 builtins as
+    // options + these + the pinned None row) crosses the Combobox search
+    // threshold (12), so the search box appears on its own. `area` is the
+    // one we group by; the rest are padding to force search on.
+    await setCustomEnumFields(tracker.root, [
+      { key: "area", label: "Area", values: [{ key: "fe", label: "Frontend" }, { key: "be", label: "Backend" }] },
+      { key: "risk", label: "Risk", values: [{ key: "lo", label: "Low" }] },
+      { key: "tier", label: "Tier", values: [{ key: "t1", label: "T1" }] },
+      { key: "phase", label: "Phase", values: [{ key: "p1", label: "P1" }] },
+      { key: "squad", label: "Squad", values: [{ key: "s1", label: "S1" }] },
+      { key: "domain", label: "Domain", values: [{ key: "d1", label: "D1" }] },
+    ]);
+    await setTaskField(tracker.root, a as string, "area", "fe");
+    await setTaskField(tracker.root, b as string, "area", "be");
+
+    await page.goto(`${tracker.baseURL}/timeline`);
+
+    // Open the picker and type into the search box (it appears once the
+    // list crosses the threshold) to find the custom field by its label.
+    await page.getByTestId("timeline-grouping").click();
+    await expect(page.getByTestId("timeline-grouping-search")).toBeVisible();
+    await page.getByTestId("timeline-grouping-search").fill("area");
+    await page.getByTestId("timeline-grouping-opt-field.area").click();
+
+    // The URL and the trigger both reflect the custom-field grouping.
+    await expect(page).toHaveURL(/grouping=field\.area/);
+    await expectGrouping(page, "field.area");
+
+    // Bands read by the value LABELS from workflow.yaml, never the keys.
+    await expect(page.getByTestId("timeline-band-fe")).toContainText("Frontend");
+    await expect(page.getByTestId("timeline-band-be")).toContainText("Backend");
+    await expect(page.getByTestId("timeline-band-fe")).not.toContainText("fe(");
+
+    // TML-7: switching to a custom-field grouping does not change the set.
+    // seedDated makes three tasks (two dated + one undated); the undated
+    // one sits in the Unscheduled lane but is still counted in the total.
+    await expect(page.getByTestId("timeline-total")).toHaveText("3 tasks");
+
+    // A search for "custom" surfaces the custom field (its hint), not the
+    // builtins — the group reads as its own thing.
+    await page.getByTestId("timeline-grouping").click();
+    await page.getByTestId("timeline-grouping-search").fill("custom");
+    await expect(page.getByTestId("timeline-grouping-opt-field.area")).toBeVisible();
+    await expect(page.getByTestId("timeline-grouping-opt-status")).toHaveCount(0);
   });
 
   // @verifies TML-13
@@ -577,7 +705,7 @@ test.describe("TML — timeline view", () => {
     await page.goBack();
     await expect(page).toHaveURL(/\/timeline/);
     await expect(page.getByTestId("timeline-zoom-day")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("timeline-grouping")).toHaveValue("status");
+    await expectGrouping(page, "status");
     await expect(page.getByTestId("timeline-arrows")).not.toBeChecked();
   });
 });
@@ -1812,7 +1940,7 @@ test.describe("TML — timeline error cases (section C)", () => {
     await expect(page).toHaveURL(/zoom=day/);
 
     // The zoom survives a re-render driven by other interaction.
-    await page.getByTestId("timeline-grouping").selectOption("status");
+    await chooseGrouping(page, "status");
     await expect(page.getByTestId("timeline-zoom-day")).toHaveAttribute("aria-pressed", "true");
   });
 });

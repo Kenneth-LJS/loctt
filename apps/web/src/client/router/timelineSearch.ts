@@ -44,16 +44,38 @@ const zoomParam = z
     return s === "day" || s === "week" || s === "month" ? s : undefined;
   });
 
-/** One of the five groupings, or undefined when absent/unrecognised. */
+/**
+ * A grouping value, or undefined when absent/unparseable.
+ *
+ * Parses *leniently* to a well-formed token, not to a value known to be
+ * valid: the eight builtins, or a `field.<key>` custom-field reference.
+ * Whether a `field.<key>` actually resolves against the live workflow is
+ * `resolveGrouping`'s job (it holds the catalog); here we only reject
+ * syntactic garbage so a `?grouping=fortnight` opens at the configured
+ * default rather than throwing. Builtins are lowercased; a `field.` ref
+ * keeps its key's case, since custom-field keys are case-sensitive.
+ */
+const BUILTIN_GROUPINGS = new Set<TimelineGrouping>([
+  "none",
+  "project",
+  "milestone",
+  "sprint",
+  "assignee",
+  "status",
+  "priority",
+  "task_type",
+]);
+
 const groupingParam = z
   .string()
   .optional()
   .transform((v): TimelineGrouping | undefined => {
     if (v === undefined) return undefined;
-    const s = v.trim().toLowerCase();
-    return s === "none" || s === "milestone" || s === "assignee" || s === "status" || s === "sprint"
-      ? s
-      : undefined;
+    const s = v.trim();
+    const lower = s.toLowerCase();
+    if (BUILTIN_GROUPINGS.has(lower as TimelineGrouping)) return lower as TimelineGrouping;
+    if (/^field\.[A-Za-z0-9_-]+$/.test(s)) return s as TimelineGrouping;
+    return undefined;
   });
 
 /**

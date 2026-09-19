@@ -127,6 +127,16 @@ Two related gaps found in the Jira-comparison review:
 
 ### `ProgressReadout` hard-codes `aria-label="Milestone progress"`
 
+**Fixed** (2026-09-20, L4). `ProgressReadout` now takes a `label` prop
+(default `"Milestone progress"`, so the milestone/sprint callers are
+unchanged), and the new tree-child-progress caller
+(`RelationshipsPanel`) passes `label="Child progress"`. Covered by
+`apps/web/src/client/milestones/ProgressReadout.test.tsx` (default and
+override, red-proven against the old literal). Fixed as part of the L4
+child-progress-meter work, exactly as this note asked.
+
+Original report follows.
+
 `apps/web/src/client/milestones/ProgressReadout.tsx` sets a literal
 `aria-label="Milestone progress"`. Not a live bug — both current callers
 are milestone surfaces — but the label must become a `label` prop
@@ -411,7 +421,7 @@ ERR-32 asks that no routine failure lands in a developer-facing error
 channel — a codebase audit of error vocabulary, not a behaviour a single
 spec can assert. It is tracked as audit work, not as a coverable case.
 
-### Toolbar redesign (A210) — e2e specs assert the OLD toolbar structure
+### Toolbar redesign (A210) — e2e specs assert the OLD toolbar structure — FIXED 2026-09-20
 
 The list-toolbar redesign (A210) removed the leading `advanced-query-toggle`
 pill (advanced querying now lives at the end of the "+ Add filter" menu,
@@ -420,17 +430,28 @@ Project/Status/Priority/Assignee show by default; the rest are added via the
 picker). The unit/component suite (`src/client/list`) was updated to match
 and is green.
 
-The Playwright e2e specs were NOT updated — they are outside this ticket's
-edit scope (client `list/**` + `ui/**` only):
+**Resolved.** The Playwright e2e specs were updated to the new flow
+(structural fix only — no assertion weakened):
 
-- `tests/ui/flow-list.spec.ts` — drives `page.getByTestId("advanced-query-toggle")`
-  (removed) in several places (~line 4529, ~5898-5991), and assumes facets
-  like Reporter/Milestone/Type are always-present pills.
-- `tests/ui/flow-settings-projects-users.spec.ts` — references facet pills
-  that are no longer in the default visible set.
+- `tests/ui/flow-list.spec.ts` — added module-level `openAdvanced(page)`
+  (opens `add-filter` → `advanced-open`) and `addFacet(page, id)` helpers,
+  mirroring the FilterBar unit test. All six `advanced-query-toggle` clicks
+  now use `openAdvanced`. The removed `advanced-query-editor` testid
+  assertion (VUE-8) now asserts `advanced-query-surface` and switches to
+  `advanced-query-surface` and, for the empty-`q` VUE-8 case, asserts the
+  surface opens directly in `data-mode="text"` (by design: an empty query
+  is "no query yet" → text box) so `dsl-input` is reachable with no mode
+  switch. Label facet added via `add-filter-labels` (note the FacetKey is
+  `labels`, plural, though the label reads "Label") before its pill is
+  clicked (MSL-7, MSL-19).
+- `tests/ui/flow-settings-projects-users.spec.ts` — Reporter facet added via
+  `add-filter-reporter` before the "Filter Reporter" pill (PRU-25).
+- `tests/ui/flow-task-meta.spec.ts` — two more "Filter Label" pill clicks
+  (found in the same audit; same staleness) fixed the same way (TSK-11,
+  TSK-55).
 
-**To fix (follow-up):** reach Advanced via the Add-filter menu
-(`add-filter` → `advanced-open`); add non-default facets via the picker
-(`add-filter` → `add-filter-<id>`) before asserting on them. Export/Refresh
-locators are unchanged (aria-labels kept). Until then these specs fail
-against the redesigned UI.
+Export/Refresh locators were unchanged (aria-labels kept: `Export`,
+`Refresh`). Typechecked clean via `npx tsc -p tests/ui/tsconfig.json`, and
+every edited test was RUN headless against the built app (`apps/web/dist`)
+with the per-spec tracker fixture and passed: VUE-8, the five K83 tests,
+MSL-7 (both), MSL-19, PRU-25, TSK-11, TSK-55.
