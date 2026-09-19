@@ -266,6 +266,16 @@ describe("FilterBar", () => {
     expect(chip.textContent).not.toContain("u_ken");
   });
 
+  // Ken: a query filter must be EDITABLE from where it's shown, not only
+  // removable. Clicking the query chip's text opens the advanced editor
+  // pre-loaded with the query.
+  it("clicking the query chip opens the advanced editor to edit it", async () => {
+    await mountFilterBar(`?q=${encodeURIComponent("priority = high")}`);
+    fireEvent.click(await screen.findByTestId("query-chip-edit"));
+    const surface = await screen.findByTestId("advanced-query-surface");
+    expect(surface).toBeTruthy();
+  });
+
   // @verifies LST-53
   it("Clear all removes an active q= query too", async () => {
     const router = await mountFilterBar(
