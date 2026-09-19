@@ -6,6 +6,7 @@ import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useSaveCalendar } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { Select } from "../ui/Select.tsx";
@@ -129,17 +130,33 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
             field a GUI nudge (K75) links to. The `field-<key>` id scheme
             is what `useScrollToHash` targets; other settings fields adopt
             the same pattern as links to them are added. */}
-        <label id="field-timezone" className="grid gap-1">
+        <div id="field-timezone" className="grid gap-1">
           <span className="text-text-secondary">Timezone</span>
-          <Select
-            data-testid="calendar-timezone"
-            value={tzOk ? draft.timezone : ""}
-            onChange={e => { setDraft(prev => ({ ...prev, timezone: e.target.value })); }}
-            className="w-64"
-          >
-            {!tzOk && <option value="">Pick a valid timezone…</option>}
-            {options.map(z => <option key={z} value={z}>{z}</option>)}
-          </Select>
+          {/* A211: ~400 IANA zones — a searchable Combobox, not a native
+              <select>. SET-24: an unresolvable stored zone is not offered
+              (options omits it) and the trigger reads empty until a valid
+              one is picked. */}
+          <Combobox
+            label="Timezone"
+            options={options.map((z): ComboboxOption => ({ key: z, label: z }))}
+            value={tzOk ? draft.timezone : undefined}
+            onSelect={z => { setDraft(prev => ({ ...prev, timezone: z })); }}
+            listTestId="calendar-timezone-list"
+            optionTestId={o => `calendar-timezone-option-${o.key}`}
+            searchTestId="calendar-timezone-search"
+            trigger={p => (
+              <ComboboxButton
+                {...p}
+                testId="calendar-timezone"
+                dataValue={tzOk ? draft.timezone : ""}
+                aria-label="Timezone"
+                placeholder="Pick a valid timezone…"
+                className="w-64"
+              >
+                {tzOk ? draft.timezone : ""}
+              </ComboboxButton>
+            )}
+          />
           {!tzOk && (
             <div
               role="alert"
@@ -158,7 +175,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
               </p>
             </div>
           )}
-        </label>
+        </div>
 
         <fieldset className="border-0 p-0">
           <legend className="mb-1 text-text-secondary">First day of week</legend>

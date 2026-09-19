@@ -8,9 +8,9 @@ import type {
   DeleteProjectVars,
 } from "../api/hooks/useProjectMutations.ts";
 import { Button } from "../ui/Button.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { Radio } from "../ui/Radio.tsx";
-import { Select } from "../ui/Select.tsx";
 
 /**
  * PRU-17, PRU-33, PRU-34.
@@ -93,19 +93,34 @@ export function DeleteProjectDialog({
               <span className="text-text-secondary">Move them to another project</span>
             </label>
             {disposition === "remap" && (
-              <label className="ml-6 grid gap-1">
-                <span className="sr-only">Move those tasks to</span>
-                <Select
-                  data-testid="project-delete-remap"
-                  value={remapTo}
-                  onChange={e => { setRemapTo(e.target.value); }}
-                >
-                  <option value="">Choose a project…</option>
-                  {others.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </Select>
-              </label>
+              <div className="ml-6 grid gap-1">
+                <span className="sr-only" id="project-delete-remap-label">Move those tasks to</span>
+                {/* A211: the project list grows with the workspace — a
+                    searchable Combobox, not a native <select>. Dialog-safe
+                    (Combobox's Escape stops propagation so it does not also
+                    close the Modal). */}
+                <Combobox
+                  label="Move those tasks to"
+                  options={others.map((p): ComboboxOption => ({ key: p.id, label: p.name }))}
+                  value={remapTo === "" ? undefined : remapTo}
+                  onSelect={v => { setRemapTo(v); }}
+                  listTestId="project-delete-remap-list"
+                  optionTestId={o => `project-delete-remap-option-${o.key}`}
+                  searchTestId="project-delete-remap-search"
+                  trigger={p => (
+                    <ComboboxButton
+                      {...p}
+                      testId="project-delete-remap"
+                      dataValue={remapTo}
+                      aria-label="Move those tasks to"
+                      placeholder="Choose a project…"
+                      className="w-full"
+                    >
+                      {others.find(o => o.id === remapTo)?.name ?? ""}
+                    </ComboboxButton>
+                  )}
+                />
+              </div>
             )}
             <label className="flex items-center gap-2">
               <Radio

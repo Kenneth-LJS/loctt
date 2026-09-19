@@ -5,9 +5,9 @@ import { useProjects } from "../api/hooks/sidebarData.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { adoptStoredTheme, useTheme } from "../theme/useTheme.ts";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { Select } from "../ui/Select.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 
 /**
@@ -157,28 +157,54 @@ export function PreferencesPanel() {
           </p>
         ) : null}
 
-        <Select
-          data-testid="default-project-select"
-          aria-label="Default project"
-          value={defaultIsDead ? "" : (personalDefault ?? "")}
-          onChange={e => {
-            const v = e.target.value;
-            // Choosing "no personal default" removes the key rather
-            // than storing "", which the contract rejects anyway
-            // (`z.string().min(1)`).
-            if (v === "") {
-              const { default_project: _dropped, ...rest } = stored;
-              save.mutate(rest as UserSettings);
-            } else {
-              patch({ default_project: v });
-            }
-          }}
-        >
-          <option value="">No personal default (use the workspace default)</option>
-          {items.filter(p => p.archived !== true).map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </Select>
+        {(() => {
+          // Choosing "no personal default" removes the key rather than
+          // storing "", which the contract rejects anyway
+          // (`z.string().min(1)`).
+          const clearDefault = (): void => {
+            const { default_project: _dropped, ...rest } = stored;
+            save.mutate(rest as UserSettings);
+          };
+          const active = items.filter(p => p.archived !== true);
+          const projectOptions: ComboboxOption[] = active.map(p => ({ key: p.id, label: p.name }));
+          // The trigger label: the picked project's name, or empty (the
+          // placeholder) for "no personal default". A dead value shows as
+          // empty here — the unresolvable notice above names it.
+          const selectedValue = defaultIsDead ? undefined : personalDefault;
+          const selectedLabel = selectedValue === undefined
+            ? ""
+            : active.find(p => p.id === selectedValue)?.name ?? "";
+          return (
+            // A211: the project list grows with the workspace — a
+            // searchable Combobox, not a native <select>. "No personal
+            // default" is the clear row.
+            <Combobox
+              label="Default project"
+              options={projectOptions}
+              value={selectedValue}
+              onSelect={v => { patch({ default_project: v }); }}
+              clear={{
+                label: "No personal default (use the workspace default)",
+                onClear: clearDefault,
+                testId: "default-project-clear",
+              }}
+              listTestId="default-project-list"
+              optionTestId={o => `default-project-option-${o.key}`}
+              searchTestId="default-project-search"
+              trigger={p => (
+                <ComboboxButton
+                  {...p}
+                  testId="default-project-select"
+                  dataValue={selectedValue ?? ""}
+                  aria-label="Default project"
+                  placeholder="No personal default (use the workspace default)"
+                >
+                  {selectedLabel}
+                </ComboboxButton>
+              )}
+            />
+          );
+        })()}
       </section>
 
       {save.isError ? (
