@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat as fsLstat, mkdtemp, rm, stat as fsStat } from "node:fs/promises";
+import { lstat as fsLstat, mkdtemp, readFile as fsReadFile, rm, stat as fsStat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join as pathJoin, normalize as pathNormalize, resolve as pathResolve, sep as pathSep } from "node:path";
@@ -1289,6 +1289,91 @@ function mimeFor(filePath: string): string {
   return STATIC_MIME[filePath.slice(dot).toLowerCase()] ?? "application/octet-stream";
 }
 
+/**
+ * Security headers for the HTML document, computed once from the actual
+ * `index.html` being served and cached (keyed by absolute path so a
+ * dev/prod path swap recomputes rather than serving a stale CSP).
+ *
+ * The markdown render path is already XSS-safe by construction (it builds
+ * React elements, never raw HTML — no `dangerouslySetInnerHTML` anywhere
+ * in the client), so this is defense-in-depth: a second wall behind any
+ * future renderer regression or dependency (tiptap/codemirror) vuln.
+ *
+ * `script-src` is the wall that matters: `'self'` plus a SHA-256 hash of
+ * every inline `<script>` in the served HTML — today just the one blocking
+ * theme script (SHL-29) that must run before first paint and so cannot be
+ * externalised. Deriving the hash from the file (not a hardcoded constant)
+ * means the CSP can never silently drift from the shipped HTML: change the
+ * theme script and the hash tracks it.
+ *
+ * Deliberate loosenings, each load-bearing:
+ *  - `style-src 'unsafe-inline'`: CodeMirror/TipTap inject un-nonced
+ *    `<style>` blocks and element `style=` attributes at runtime; locking
+ *    this down breaks the editor. XSS protection lives in `script-src`.
+ *  - `img-src` allows `http:`/`https:`/`data:`: task bodies render external
+ *    images inline by Ken's ruling (A180, reopened) — the CSP must not
+ *    contradict a product decision.
+ * `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'` cost
+ * nothing and close plugin, base-tag, and clickjacking vectors.
+ */
+const htmlSecurityHeaderCache = new Map<string, Record<string, string>>();
+
+async function htmlSecurityHeaders(indexHtmlPath: string): Promise<Record<string, string>> {
+  const cached = htmlSecurityHeaderCache.get(indexHtmlPath);
+  if (cached) return cached;
+
+  // Hash every inline <script> (no src attr) so its own theme script is
+  // allowed while arbitrary injected inline script is not. A script that
+  // carries a src is external and covered by 'self' already.
+  const scriptHashes: string[] = [];
+  try {
+    const html = await fsReadFile(indexHtmlPath, "utf8");
+    const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) {
+      const body = m[1] ?? "";
+      const digest = createHash("sha256").update(body, "utf8").digest("base64");
+      scriptHashes.push(`'sha256-${digest}'`);
+    }
+  } catch {
+    // Unreadable index.html: fall through with no inline-script hashes.
+    // The CSP is then strictly tighter (only 'self'); the theme script
+    // would be blocked, but a page whose HTML cannot be read is already
+    // not serving. Never let header derivation break the response.
+  }
+
+  const scriptSrc = ["'self'", ...scriptHashes].join(" ");
+  const csp = [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    "style-src 'self' 'unsafe-inline'",
+    // blob: is required — avatar preview/crop render `<img>` from
+    // URL.createObjectURL (UsersPanel/prepareAvatar); without it the CSP
+    // blocks the avatar feature (caught by the publish-hardening fan-out).
+    // http/https honour A180 (external images render inline in bodies).
+    "img-src 'self' data: blob: https: http:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    // No <form> in this SPA posts cross-origin; pinning form-action to
+    // 'self' closes the residual vector of an injected/agent-authored
+    // <form action="https://attacker"> exfiltrating on submit. Cheap
+    // defense-in-depth behind script-src/connect-src (fan-out gap #4).
+    "form-action 'self'",
+  ].join("; ");
+
+  const headers = {
+    "Content-Security-Policy": csp,
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+  };
+  htmlSecurityHeaderCache.set(indexHtmlPath, headers);
+  return headers;
+}
+
 async function tryServeStatic(
   req: import("node:http").IncomingMessage,
   res: import("node:http").ServerResponse,
@@ -1341,7 +1426,18 @@ async function tryServeStatic(
 
   if (!target) return false;
 
-  res.writeHead(200, { "Content-Type": mimeFor(target) });
+  const contentType = mimeFor(target);
+  // The HTML document carries the full security header set (CSP,
+  // framing, referrer). Static assets (JS/CSS/fonts/images) get only
+  // `nosniff` — a CSP on a script response does nothing useful, and
+  // framing/referrer are document concerns. See htmlSecurityHeaders.
+  const headers: Record<string, string> = { "Content-Type": contentType };
+  if (contentType.startsWith("text/html")) {
+    Object.assign(headers, await htmlSecurityHeaders(target));
+  } else {
+    headers["X-Content-Type-Options"] = "nosniff";
+  }
+  res.writeHead(200, headers);
   if (req.method === "HEAD") {
     res.end();
     return true;
@@ -5287,9 +5383,21 @@ export function createWebApp(options: WebAppOptions) {
       }
       res.writeHead(200, {
         "Content-Type": inlineType,
-        // nosniff stops a *navigation* to this URL from being run as a
-        // document (an SVG in particular); the `<img>` render relies on
-        // the image sandbox, not on this header.
+        // nosniff stops the browser from re-interpreting these bytes as a
+        // DIFFERENT type. It does NOT stop a resource whose declared type
+        // genuinely is image/svg+xml from running its own inline <script>
+        // when NAVIGATED to as a top-level document — a real stored-XSS
+        // vector, because attach_file (the MCP/agent surface) accepts an
+        // arbitrary .svg and this path serves it inline (found by the
+        // publish-hardening fan-out; the old comment here claimed nosniff
+        // covered this and was wrong). The `<img>` render is safe on its
+        // own (scripts don't run in image context), but direct navigation
+        // is not. So we also send a restrictive CSP: `sandbox` (no allow-
+        // scripts) neutralises script execution even for a top-level SVG,
+        // while leaving the `<img src>` embedding untouched — an image's
+        // own CSP does not govern how another page embeds it. See
+        // known-gaps.md (SVG inline serve) / decisions.md A206.
+        "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:",
         "X-Content-Type-Options": "nosniff",
         "Content-Length": String(linkStat.size),
       });
