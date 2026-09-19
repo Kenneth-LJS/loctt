@@ -10,6 +10,7 @@ import type { ComparisonOp, QueryValue } from "@loctt/core/query/parser.js";
 import { useMemo } from "react";
 
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Select } from "../ui/Select.tsx";
 
@@ -690,9 +691,11 @@ function ValueControl({
       .filter(s => s.length > 0);
 
     if (constrained !== undefined) {
-      // A checkbox list constrained to config values — the multi-value
-      // analogue of the single enum dropdown, so `in (…)` can never name
-      // a value the validator rejects.
+      // A multi-select combobox constrained to config values — the
+      // multi-value analogue of the single enum picker, so `in (…)` can
+      // never name a value the validator rejects. A searchable list, not
+      // a wall of checkboxes: a label or user set can run to hundreds
+      // (A211), and the search box appears once it passes the threshold.
       const toggle = (optValue: string, on: boolean): void => {
         const nextKeys = on
           ? [...selectedKeys, optValue]
@@ -702,19 +705,34 @@ function ValueControl({
           values: nextKeys.map(k => scalarFromString(kind, k)),
         });
       };
+      const options: ComboboxOption[] = constrained.map(o => ({ key: o.value, label: o.label }));
+      const chosen = selectedKeys.map(k => constrained.find(o => o.value === k)?.label ?? k);
+      const summary =
+        chosen.length === 0 ? undefined
+        : chosen.length <= 3 ? chosen.join(", ")
+        : `${String(chosen.length)} selected`;
       return (
-        <span data-testid="qb-value" className="inline-flex flex-wrap items-center gap-1.5">
-          {constrained.map(opt => (
-            <label key={opt.value} className="inline-flex items-center gap-1 text-[0.8571rem] text-text-secondary">
-              <Checkbox
-                data-testid={`qb-value-opt-${opt.value}`}
-                checked={selectedKeys.includes(opt.value)}
-                onChange={e => { toggle(opt.value, e.target.checked); }}
-              />
-              {opt.label}
-            </label>
-          ))}
-        </span>
+        <Combobox
+          mode="multi"
+          label="Values"
+          options={options}
+          selected={selectedKeys}
+          onToggle={toggle}
+          optionTestId={o => `qb-value-opt-${o.key}`}
+          listTestId="qb-value-options"
+          trigger={p => (
+            <ComboboxButton
+              {...p}
+              size="sm"
+              testId="qb-value"
+              aria-label="Values"
+              placeholder="Choose values…"
+              className="max-w-[16rem]"
+            >
+              {summary}
+            </ComboboxButton>
+          )}
+        />
       );
     }
 
@@ -735,36 +753,51 @@ function ValueControl({
     );
   }
 
-  // Single enum/entity/user value: a dropdown constrained to config
-  // values — you cannot type an arbitrary value (LST/TSK precedent).
+  // Single enum/entity/user value: a picker constrained to config
+  // values — you cannot type an arbitrary value (LST/TSK precedent). The
+  // shared Combobox rather than the plain Select: an assignee/label/
+  // milestone set can be large, and the search box appears once the
+  // list passes the threshold (A211). Status/priority/type ride the
+  // same control and simply never grow a box.
   if (constrained !== undefined) {
     const current = value.type === "current_user" ? "@currentUser" : scalarToString(value);
+    const options: ComboboxOption[] = [
+      // K80: user fields offer the querying user as a live value.
+      ...(kind === "user" ? [{ key: "@currentUser", label: "Current user" }] : []),
+      ...constrained.map(o => ({ key: o.value, label: o.label })),
+      // A stored value outside the current config stays selectable so
+      // it isn't silently dropped (XS-27 precedent).
+      ...(current.length > 0 &&
+        current !== "@currentUser" &&
+        !constrained.some(o => o.value === current)
+        ? [{ key: current, label: `${current} (not in config)` }]
+        : []),
+    ];
+    const selected = current.length > 0 ? options.find(o => o.key === current) : undefined;
     return (
-      <Select
-        size="sm"
-        data-testid="qb-value"
-        aria-label="Value"
-        value={current}
-        onChange={e => {
-          const v = e.target.value;
+      <Combobox
+        label="Value"
+        options={options}
+        value={selected?.key}
+        onSelect={v => {
           if (v === "@currentUser") { onChange({ type: "current_user" }); return; }
           onChange(scalarFromString(kind, v));
         }}
-      >
-        <option value="">—</option>
-        {/* K80: user fields offer the querying user as a live value. */}
-        {kind === "user" && <option value="@currentUser">Current user</option>}
-        {constrained.map(opt => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-        {/* A stored value outside the current config stays selectable so
-            it isn't silently dropped (XS-27 precedent). */}
-        {current.length > 0 &&
-          current !== "@currentUser" &&
-          !constrained.some(o => o.value === current) && (
-            <option value={current}>{current} (not in config)</option>
-          )}
-      </Select>
+        clear={{ label: "Clear value", onClear: () => { onChange(scalarFromString(kind, "")); } }}
+        listTestId="qb-value-options"
+        trigger={p => (
+          <ComboboxButton
+            {...p}
+            size="sm"
+            testId="qb-value"
+            aria-label="Value"
+            placeholder="—"
+            className="max-w-[16rem]"
+          >
+            {selected?.label}
+          </ComboboxButton>
+        )}
+      />
     );
   }
 

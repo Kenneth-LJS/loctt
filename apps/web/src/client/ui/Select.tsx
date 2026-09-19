@@ -15,8 +15,11 @@ import { Icon } from "./Icon.tsx";
  * overlaid glyph is the theme-aware way to draw it. `pr-7` leaves room
  * for it.
  *
- * Skip `task/editors/OptionPicker.tsx` in migration — it is deliberately
- * a custom listbox, not a `<select>`.
+ * **Small, fixed sets only** (A211): statuses, operators, a unit or a
+ * state — lists the user cannot grow. A set that scales with the
+ * workspace (labels, users, projects, milestones, sprints, custom-enum
+ * values) uses `Combobox`, which searches. `OptionPicker` (the inline
+ * meta field) is a `Combobox` trigger, not a `<select>`.
  *
  * `data-testid` passes through to the `<select>`.
  */

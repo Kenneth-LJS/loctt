@@ -148,6 +148,26 @@ Use these rather than hand-rolled markup.
   shared destructive-confirm (don't write a bespoke delete dialog).
 - **`Sheet`** — bottom/full drawer for mobile (filter sheet, section
   switcher). Same focus-trap/inert/Esc/backdrop as Modal.
+- **`Combobox`** (A211) — THE searchable value picker: single or multi
+  select, a listbox popover with a search box, `aria-combobox` +
+  `aria-activedescendant` keyboard model (type to filter, ArrowUp/Down,
+  Home/End, Enter, Escape returns focus to the trigger), present-but-
+  disabled options with a reason, colour dot / suffix / hint per option,
+  and the current value kept in the list when a query does not return it.
+  Two search modes: `search={{ onQuery }}` for **server-side** (K90:
+  labels, users, projects, milestones, sprints) — the box is always shown;
+  no `search` for **client-side**, where the box appears once the static
+  list reaches `COMBOBOX_SEARCH_THRESHOLD` (12) or `filterable` forces it.
+  The trigger is a render prop; `ComboboxButton` is the select-shaped
+  default (same height/border/chevron as `Select`). `OptionPicker`
+  (task meta fields) and `LabelsField` are triggers over it; the query
+  builder's value pickers use `ComboboxButton`.
+  **The rule:** a set the *user can grow* (labels, users, projects,
+  milestones, sprints, custom-enum values, timezones) → `Combobox`. A
+  small *fixed* set (status/priority/type, operators, sprint state, unit,
+  true/false) → plain `Select` or `Radio`. `FilterDropdown` (the list
+  facets) keeps its `Menu`/`menuitemcheckbox` model (A11Y-10) but shares
+  the Combobox threshold and match rule.
 - **`Select`, `TextField`, `Checkbox`, `Radio`, `Toggle`, `Chip`,
   `Callout`, `Toast`, `UserAvatar`, `ErrorState`, `LoadingState`,
   `Announcer`** — use rather than re-implement. No raw `<select>`,

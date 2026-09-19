@@ -1,17 +1,24 @@
 import { useState } from "react";
 
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { COMBOBOX_SEARCH_THRESHOLD, filterOptions } from "../ui/Combobox.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Menu } from "../ui/Menu.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
- * Option count at which the dropdown grows a search box.
+ * Option count at which the dropdown grows a search box — the shared
+ * Combobox threshold (A211), so a facet and a picker over the same list
+ * become searchable at the same size. MSL-19 names forty labels as the
+ * case; twelve is where scanning starts to cost more than typing.
  *
- * MSL-19 names forty labels as the case; twelve is where scanning
- * starts to cost more than typing.
+ * This facet is NOT the `ui/Combobox` itself, deliberately: it is a
+ * `Menu` panel of `menuitemcheckbox` rows (A11Y-10's roving-focus
+ * contract, asserted by the e2e suite) whose state lives in the URL. It
+ * shares the primitive's threshold and match rule so the two cannot
+ * drift, and keeps the menu semantics.
  */
-const TYPEAHEAD_THRESHOLD = 12;
+const TYPEAHEAD_THRESHOLD = COMBOBOX_SEARCH_THRESHOLD;
 
 /** One selectable option in a filter dropdown. */
 export interface FilterOption {
@@ -74,9 +81,7 @@ export function FilterDropdown({
    */
   const [filter, setFilter] = useState("");
   const searchable = options.length >= TYPEAHEAD_THRESHOLD;
-  const shown = searchable && filter.trim() !== ""
-    ? options.filter(o => o.label.toLowerCase().includes(filter.trim().toLowerCase()))
-    : options;
+  const shown = searchable ? filterOptions(options, filter) : options;
 
   const toggle = (value: string): void => {
     const next = new Set(selectedSet);
