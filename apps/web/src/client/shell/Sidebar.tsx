@@ -21,6 +21,7 @@ import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 import { Chip } from "../ui/Chip.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
 import { TextField } from "../ui/TextField.tsx";
 import { requestSidebarCollapse } from "./useSidebarCollapse.ts";
@@ -890,7 +891,7 @@ function SavedFiltersGroup({
             onClick={() => { dismiss(v.id); }}
             className="shrink-0 hover:text-text-primary"
           >
-            ✕
+            <Icon name="close" size={14} />
           </button>
         </div>
       ))}

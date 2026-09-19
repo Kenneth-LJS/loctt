@@ -30,6 +30,7 @@ export type IconName =
   | "arrowUp"
   | "arrowDown"
   | "link"
+  | "copy"
   | "edit"
   | "trash"
   | "archive"
@@ -53,6 +54,7 @@ const PATHS: Record<IconName, ReactElement> = {
   arrowUp: <path d="M8 13V3M4 7l4-4 4 4" />,
   arrowDown: <path d="M8 3v10M4 9l4 4 4-4" />,
   link: <><path d="M6.5 9.5l3-3" /><path d="M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1" /><path d="M9 11.5l-1 1a2.5 2.5 0 01-3.5-3.5l1-1" /></>,
+  copy: <><rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1" /><path d="M10.5 5.5V4a1 1 0 00-1-1H4a1 1 0 00-1 1v5.5a1 1 0 001 1h1.5" /></>,
   edit: <><path d="M8.5 3.5l4 4L6 14H2v-4z" /><path d="M11 5l-1.5-1.5" /></>,
   trash: <><path d="M3 4.5h10" /><path d="M5.5 4.5V3h5v1.5" /><path d="M4.5 4.5l.5 8.5h6l.5-8.5" /></>,
   archive: <><rect x="2.5" y="3" width="11" height="3" rx="0.5" /><path d="M3.5 6v6.5h9V6" /><path d="M6.5 8.5h3" /></>,
@@ -78,7 +80,10 @@ export function Icon({
 }: {
   readonly name: IconName;
   readonly size?: number;
-  readonly className?: string;
+  // `string | undefined` (not just optional) so callers can pass a
+  // conditional `cond ? "cls" : undefined` inline under
+  // exactOptionalPropertyTypes.
+  readonly className?: string | undefined;
 } & Omit<SVGProps<SVGSVGElement>, "name">) {
   const filled = FILLED.has(name);
   return (
