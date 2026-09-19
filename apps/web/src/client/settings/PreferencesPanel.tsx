@@ -1,4 +1,5 @@
 import type { ThemePreference, UserSettings } from "@loctt/contracts";
+import { Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { useProjects } from "../api/hooks/sidebarData.ts";
@@ -139,6 +140,22 @@ export function PreferencesPanel() {
         <p className="mb-2 text-[0.8571rem] text-text-secondary">
           Where new tasks land when you do not pick a project. An explicit
           choice in the create form always wins.
+        </p>
+        {/* CONFIG-5 / P4: this is the *personal* default; the workspace
+            default (the fallback when a user has none) is a different
+            setting on a different panel. Cross-link so the two "default
+            project" concepts are not mistaken for one. */}
+        <p className="mb-2 text-[0.7857rem] text-text-tertiary">
+          The workspace-wide fallback is in{" "}
+          <Link
+            to="/settings/$section"
+            params={{ section: "projects" }}
+            data-testid="preferences-workspace-default-link"
+            className="text-accent underline hover:text-text-primary"
+          >
+            Settings → Projects
+          </Link>
+          .
         </p>
 
         {defaultIsDead ? (

@@ -1607,3 +1607,127 @@ describe("Sidebar point-of-use editing (K100)", () => {
     expect(link.getAttribute("href")).toContain("/settings/projects");
   });
 });
+
+/**
+ * CONFIG-5 / P4 + K100: the sprint sidebar rows gained a kebab. Sprint
+ * *editing* lives on the `/sprints/:key` detail page (no dialog), so the
+ * kebab only navigates: "Open sprint" → the detail page (where Edit
+ * lives), "Manage sprints…" → Settings → Sprints. The row's own click
+ * still filters the list by that sprint.
+ *
+ * These need the `/sprints/$key` and `/settings/$section` routes
+ * registered so `navigate` resolves; the shared `renderSidebarAt` only
+ * knows `/list`. The router is returned so the test can read where a
+ * kebab action landed.
+ */
+describe("Sidebar sprint row kebab (CONFIG-5, K100)", () => {
+  async function renderShellAt(pathname: string, search: Record<string, unknown> = {}) {
+    if (priorQc) {
+      await priorQc.cancelQueries();
+      priorQc.clear();
+    }
+    stubFetch();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    priorQc = qc;
+
+    const rootRoute = createRootRoute();
+    const sidebar = () => (
+      <Sidebar collapsed={false} info={info()} currentUserId="u_ken" today="2026-06-08" />
+    );
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: (s: Record<string, unknown>) => s,
+      component: sidebar,
+    });
+    const sprintDetailRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/sprints/$key",
+      validateSearch: (s: Record<string, unknown>) => s,
+      component: () => <div>sprint detail</div>,
+    });
+    const settingsRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/settings/$section",
+      component: () => <div>settings pane</div>,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute, sprintDetailRoute, settingsRoute]),
+      history: createMemoryHistory({
+        initialEntries: [
+          `${pathname}?${new URLSearchParams(
+            Object.fromEntries(Object.entries(search).map(([k, v]) => [k, String(v)])),
+          ).toString()}`,
+        ],
+      }),
+    });
+
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Projects");
+    return router;
+  }
+
+  function openKebab(ariaLabel: string): void {
+    const kebab = document.querySelector<HTMLButtonElement>(`[aria-label='${ariaLabel}']`);
+    if (kebab === null) throw new Error(`no kebab ${ariaLabel}`);
+    fireEvent.click(kebab);
+  }
+
+  it("offers 'Open sprint' navigating to the sprint's detail page", async () => {
+    const router = await renderShellAt("/list");
+    await screen.findByText("Sprint 12");
+    openKebab('Actions for sprint "Sprint 12"');
+    const open = document.querySelector<HTMLButtonElement>("[data-testid='sidebar-sprint-open']");
+    expect(open).not.toBeNull();
+    await waitFor(() => {
+      fireEvent.click(open as HTMLButtonElement);
+    });
+    // `/sprints/$key` is keyed by the sprint's ULID (route decision V3),
+    // so Open sprint lands on `/sprints/<id>` — where Edit lives.
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/sprints/sp_12");
+    });
+  });
+
+  it("offers 'Manage sprints…' deep-linking to Settings → Sprints", async () => {
+    const router = await renderShellAt("/list");
+    await screen.findByText("Sprint 12");
+    openKebab('Actions for sprint "Sprint 12"');
+    const manage = document.querySelector<HTMLButtonElement>("[data-testid='sidebar-sprint-manage']");
+    expect(manage).not.toBeNull();
+    fireEvent.click(manage as HTMLButtonElement);
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/settings/sprints");
+    });
+  });
+
+  it("keeps the row's filter-link: clicking the sprint name filters the list by it", async () => {
+    const router = await renderShellAt("/list");
+    const rowName = await screen.findByText("Sprint 12");
+    // The name is inside the row `<Link>`; the kebab is a sibling. The
+    // link still carries the `sprint: [id]` filter scope.
+    const link = rowName.closest("a") as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    fireEvent.click(link);
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/list");
+      expect(router.state.location.search).toMatchObject({ sprint: ["sp_12"] });
+    });
+  });
+
+  it("puts the kebab OUTSIDE the row anchor (a button in an anchor is invalid HTML)", async () => {
+    await renderShellAt("/list");
+    await screen.findByText("Sprint 12");
+    const kebab = document.querySelector<HTMLButtonElement>(
+      "[aria-label='Actions for sprint \"Sprint 12\"']",
+    );
+    expect(kebab).not.toBeNull();
+    expect(kebab?.closest("a")).toBeNull();
+  });
+});

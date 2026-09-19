@@ -1,4 +1,4 @@
-import type { LabelDef, MilestoneDef, ProjectDef, SavedQuery, SidebarGroupId, TrackerInfoResponse, UserSettings } from "@loctt/contracts";
+import type { LabelDef, MilestoneDef, ProjectDef, SavedQuery, SidebarGroupId, SprintDef, TrackerInfoResponse, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -1449,31 +1449,79 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
       {!failed && hasAnswered(sprints) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No active sprints</GroupEmpty>
       ) : null}
-      {items.map(s => (
-        <Link
-          key={s.id}
-          to="/list"
-          search={prev => ({ ...clearSort(prev), sprint: [s.id] })}
-          title={`${s.name} (${s.state})`}
-          className="no-underline"
-        >
-          <ItemShell collapsed={collapsed} title={`${s.name} (${s.state})`}>
-            <ColorDot color={s.state === "active" ? "var(--feedback-success-fg)" : "var(--text-tertiary)"} />
-            {!collapsed ? (
-              <>
-                <span className="truncate">{s.name}</span>
-                {/* The sprint's lifecycle state as a plain meta pill —
-                    migrated to the B1 Chip so it shares the app's one
-                    pill shape/height (K-6). */}
-                <span className="ml-auto">
-                  <Chip variant="neutral">{s.state}</Chip>
-                </span>
-              </>
-            ) : null}
-          </ItemShell>
-        </Link>
-      ))}
+      {items.map(s => {
+        const row = (
+          <Link
+            to="/list"
+            search={prev => ({ ...clearSort(prev), sprint: [s.id] })}
+            title={`${s.name} (${s.state})`}
+            className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
+          >
+            <ItemShell collapsed={collapsed} title={`${s.name} (${s.state})`}>
+              <ColorDot color={s.state === "active" ? "var(--feedback-success-fg)" : "var(--text-tertiary)"} />
+              {!collapsed ? (
+                <>
+                  <span className="truncate">{s.name}</span>
+                  {/* The sprint's lifecycle state as a plain meta pill —
+                      migrated to the B1 Chip so it shares the app's one
+                      pill shape/height (K-6). */}
+                  <span className="ml-auto">
+                    <Chip variant="neutral">{s.state}</Chip>
+                  </span>
+                </>
+              ) : null}
+            </ItemShell>
+          </Link>
+        );
+        // Collapsed rail: icon-only, no room for a kebab (matches the
+        // other groups, which also shed their trailing affordance when
+        // collapsed).
+        if (collapsed) return <div key={s.id}>{row}</div>;
+        return (
+          <div
+            key={s.id}
+            className="flex items-center rounded-md hover:bg-bg-muted"
+            data-sprint-row={s.id}
+          >
+            {row}
+            <SprintRowActions sprint={s} />
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+/**
+ * A sprint row's kebab (K100). Sibling of the row `<Link>` — a `<button>`
+ * inside an `<a>` is invalid HTML. Sprint *editing* lives on the
+ * `/sprints/:key` detail page (K100: no sprint edit dialog), so this only
+ * navigates: "Open sprint" to that detail page (where Edit lives) and
+ * "Manage sprints…" to the Settings panel that manages the roster. The
+ * row's own click still filters the list by this sprint.
+ *
+ * `/sprints/$key` is keyed by the sprint's ULID (route decision V3), so
+ * `key` is `sprint.id`.
+ */
+function SprintRowActions({ sprint }: { readonly sprint: SprintDef }) {
+  const navigate = useNavigate();
+  return (
+    <RowActions
+      size="sm"
+      label={`Actions for sprint "${sprint.name}"`}
+      actions={[
+        {
+          label: "Open sprint",
+          testId: "sidebar-sprint-open",
+          onSelect: () => { void navigate({ to: "/sprints/$key", params: { key: sprint.id } }); },
+        },
+        {
+          label: "Manage sprints…",
+          testId: "sidebar-sprint-manage",
+          onSelect: () => { void navigate({ to: "/settings/$section", params: { section: "sprints" } }); },
+        },
+      ]}
+    />
   );
 }
 
