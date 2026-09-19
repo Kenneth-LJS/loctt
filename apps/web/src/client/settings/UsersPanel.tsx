@@ -590,6 +590,11 @@ export function UsersPanel() {
             return (
               <tr
                 key={u.id}
+                // K100 deep-link anchor (`/settings/users#row-<id>`) — see
+                // useScrollToHash. The narrow-layout card carries the same
+                // id, and only one layout renders at a time, so they never
+                // collide.
+                id={`row-${u.id}`}
                 data-testid={`user-row-${u.id}`}
                 data-archived={u.archived === true ? "true" : "false"}
                 data-self={isSelf ? "true" : "false"}
@@ -642,6 +647,9 @@ export function UsersPanel() {
             return (
               <li
                 key={u.id}
+                // Same K100 anchor as the desktop row; only one layout is
+                // in the DOM at a time.
+                id={`row-${u.id}`}
                 data-testid={`user-card-${u.id}`}
                 data-self={isSelf ? "true" : "false"}
                 className="rounded-lg border border-border-default p-3"

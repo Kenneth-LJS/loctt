@@ -48,6 +48,10 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
 
   return (
     <li
+      // K100 deep-link anchor: a point-of-use "Edit view…" link scrolls
+      // to `/settings/saved-views#row-<id>`. `useScrollToHash` resolves it
+      // by DOM id, so the row carries one alongside its test id.
+      id={`row-${view.id}`}
       data-testid={`view-row-${view.id}`}
       data-view-archived={archived ? "true" : "false"}
       // flex-wrap so on a narrow pane the query drops to its own line
@@ -263,6 +267,7 @@ export function SavedViewsPanel() {
                     {broken.map(b => (
                       <li
                         key={b.id}
+                        id={`row-${b.id}`}
                         data-testid={`view-row-${b.id}`}
                         data-view-broken="true"
                         className="flex flex-col gap-0.5 border-b border-border-subtle py-2 last:border-0"

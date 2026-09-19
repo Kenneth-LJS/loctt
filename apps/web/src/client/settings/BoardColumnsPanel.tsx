@@ -195,6 +195,12 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
           return (
             <li
               key={col.key}
+              // K100 deep-link anchor. The board's "Set WIP limit…" menu
+              // item deep-links to `/settings/board-columns#column-<key>`
+              // (BoardView emits `hash={`column-${column.id}`}`, where the
+              // column id is its key), so this row's anchor is
+              // `column-<key>`, not `row-<id>` — see useScrollToHash.
+              id={`column-${col.key}`}
               data-testid={`board-column-${col.key}`}
               className="rounded-lg border border-border-default p-3"
             >
