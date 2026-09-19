@@ -13,6 +13,7 @@ import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { BoardCard } from "./BoardCard.tsx";
 import { resolveCardLayout, resolveColumnCardLayout } from "./cardLayout.ts";
 import { hiddenColumnsOf, withHiddenColumns } from "./chipSettings.ts";
@@ -602,8 +603,8 @@ function ChipsBar({
                 makes "this is a show/hide toggle" legible at a glance,
                 not only in the tooltip. Decorative (the action is in the
                 accessible name), so hidden from assistive tech. */}
-            <span aria-hidden="true" className="shrink-0 text-text-tertiary">
-              {off ? "🚫" : "👁"}
+            <span className="shrink-0 text-text-tertiary">
+              <Icon name={off ? "eyeOff" : "eye"} size={14} />
             </span>
             <span className="max-w-[18ch] truncate">{column.label}</span>
             <span className="text-text-tertiary">{loading ? "–" : count}</span>

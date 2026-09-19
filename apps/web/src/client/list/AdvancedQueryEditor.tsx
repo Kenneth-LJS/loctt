@@ -144,7 +144,7 @@ export function AdvancedQueryEditor({
         aria-describedby={invalid ? `${errorId}-error` : undefined}
         // VUE-23: the box scrolls rather than clipping; no maxLength,
         // so a long query cannot be truncated on the way in.
-        className="w-full resize-y overflow-auto whitespace-pre-wrap break-all rounded-md border border-border-default bg-bg-surface px-2.5 py-2 font-mono text-[0.8571rem] text-text-primary focus:border-accent"
+        className="w-full resize-y overflow-auto whitespace-pre-wrap break-all rounded-md border border-border-default bg-bg-surface px-2.5 py-2 text-[0.8571rem] text-text-primary focus:border-accent"
       />
 
       {/*
@@ -180,7 +180,7 @@ export function AdvancedQueryEditor({
               <pre
                 data-testid="dsl-error-caret"
                 aria-hidden="true"
-                className="m-0 overflow-x-auto whitespace-pre font-mono text-[0.8571rem] leading-none text-danger-fg"
+                className="m-0 overflow-x-auto whitespace-pre text-[0.8571rem] leading-none text-danger-fg"
               >
                 {caretLine(value, result.position)}
               </pre>
@@ -302,9 +302,9 @@ export function AdvancedQueryEditor({
               <ul className="m-0 list-none p-0">
                 {section.entries.map(e => (
                   <li key={e.syntax} className="flex flex-col gap-0.5 border-b border-border-subtle py-1 last:border-0">
-                    <code className="font-mono text-[0.8571rem] text-text-primary">{e.syntax}</code>
+                    <code className="text-[0.8571rem] text-text-primary">{e.syntax}</code>
                     <span className="text-[0.8571rem] text-text-secondary">{e.meaning}</span>
-                    <code className="font-mono text-[0.7857rem] text-text-tertiary">{e.example}</code>
+                    <code className="text-[0.7857rem] text-text-tertiary">{e.example}</code>
                   </li>
                 ))}
               </ul>

@@ -13506,23 +13506,24 @@ only or global.
 To revert: this is Ken's scope call for the unbuilt redesign; an agent may
 refine storage details but not change the primary scope without a new ruling.
 
-### K98 · Monospace is for code blocks/DSL and CLI commands ONLY — strip it everywhere else
+### K98 · Monospace is for code blocks and CLI commands ONLY — strip it everywhere else, including query/DSL text
 
 **Ken's ruling (2026-09-19).** `font-mono` had spread across the UI as a
 "make this text look different" device — on task keys, user IDs, project
 slugs/prefixes, file paths, config keys quoted in prose, confirm-word inputs,
-and hex colour fields (~150 sites). Ken: "i'd really rather have zero: only
-code blocks and cli commands."
+hex colour fields, and query/DSL text (~150 sites). Ken: "i'd really rather
+have zero: only code blocks and cli commands."
 
 **Keep monospace ONLY for:**
-- **A. Code blocks / DSL** — fenced code and inline code in task/comment
-  bodies (`.prose-body code`/`pre`), the query DSL editor, the saved-view
-  query preview, and the `weights`/`custom_enum`-style *code fences*.
+- **A. Code blocks** — fenced and inline code in task/comment *bodies*
+  (`.prose-body code`/`pre`) and `weights`/`custom_enum`-style code fences
+  in help prose. This is authored code content inside a markdown body.
 - **B. CLI commands** — literal shell commands shown in help/error prose
   (`loctt doctor`, `loctt restore`, `git worktree remove …`).
 
-**Strip `font-mono` from (they become normal text — quotes/emphasis/`text-
-secondary` may substitute where a boundary cue is wanted):**
+**Strip `font-mono` from everything else** (it becomes normal text —
+quotes/emphasis/`text-secondary` may substitute where a boundary cue is
+wanted):
 - **C. File / config paths** — `.loctt/config/workflow.yaml`, `sprints.yaml`.
 - **D. Config keys / values quoted in prose** — `due_date`, `boards:`,
   a relationship/status key mid-sentence.
@@ -13532,6 +13533,12 @@ secondary` may substitute where a boundary cue is wanted):**
 - **F. Confirm-word inputs** — the `OVERWRITE`/`DELETE`/task-key confirm
   field and the word shown to type.
 - **G. Hex colour input** — the `#aabbcc` label-colour field.
+- **H. Query / DSL text** — the advanced-query editor box, the visual
+  builder's live query preview, saved-view query previews, the filter-bar
+  query chip, and a query string shown in a broken-view notice. This is the
+  USER's own filter text, not authored code — it reads as normal text. (The
+  earlier version of this entry wrongly kept these as "DSL"; that was an
+  agent inference Ken never approved and rejected on sight — "i hate it".)
 
 A `<code>` element may stay as an element (semantics/quoting) but loses the
 `font-mono` class unless it is A or B. The `--font-mono` token stays (A/B
@@ -13539,6 +13546,40 @@ still use it, and `.prose-body` code uses it).
 
 **To revert.** Re-add `font-mono` to the stripped sites (git history has
 each). This is a taste ruling by Ken, not a correctness one.
+
+### K99 · Brand accent is a teal (emerald–teal midpoint); split fill vs text accent; on-accent is black; semantic colours harmonised to it
+
+**Ken's ruling (2026-09-19).** The v1 indigo/purple accent was never a
+chosen brand colour — inherited from the v1 tokens. Ken chose a green-leaning
+**teal**, the emerald–teal midpoint, after a palette exploration.
+
+- **Accent hue.** Light `--accent: #0B9C81` (the midpoint Ken liked). Dark:
+  a **softened** variant, `#39A88F` (candidate "C" nudged down — the brighter
+  teal read "too harsh" on the dark canvas).
+- **On-accent is BLACK, both modes** (`--accent-contrast: #0B0B0C`). Ken:
+  "bright buttons should have black text/markings, not just white." White on
+  `#0B9C81` is 3.45:1 (fails); black is 5.7:1 (AA). Dark accent black = 6.72:1.
+- **Fill vs text accent are SPLIT** (Ken chose this over one darker accent or
+  accepting an AA miss). The vibrant `--accent` is for FILLS (buttons,
+  checkbox/radio checked, toggles, the logo "L", progress). A separate,
+  darker **text-accent** (`#0F766E` light, 5.47:1 on white; the dark accent
+  already passes on dark surfaces) is for LINKS and accent TEXT, so link text
+  clears WCAG AA 4.5:1 which the vibrant fill colour does not. New token(s):
+  `--accent-text` (or equivalent) wired into `@theme` as a `text-accent`
+  utility; the fill utilities keep `--accent`.
+- **Logo "o"** stays neutral ink (single-accent brand system; `--text-primary`
+  pairing), unless revisited.
+- **Semantic colours harmonised.** Ken: status (pending/active/completed/
+  discarded), priority, and feedback (danger/success/warning) colours must be
+  ADAPTED to sit harmoniously with the teal scheme — matched luminosity/
+  saturation — NOT left as the independently-tuned indigo-era values. Hard
+  constraint: every harmonised colour must KEEP its WCAG AA contrast (the
+  file's existing per-token AA rationale is the floor, not to be regressed),
+  and the *completed* status green must stay visually distinct from the teal
+  brand accent so "done" does not read as "branded".
+
+**To revert.** Restore the indigo `--accent*` values (git history) and the
+independently-tuned semantic tokens; drop the `text-accent` split.
 
 ### A199 · REL-16 inline image render — a separate `?inline=1` serve path, raw bytes, `<img>` sandbox (implements K95)
 

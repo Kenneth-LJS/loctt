@@ -391,7 +391,7 @@ export function QueryBuilder({ tree, onChange, config }: QueryBuilderProps) {
         <span className="text-[0.7857rem] font-medium text-text-tertiary">Query</span>
         <code
           data-testid="query-builder-preview"
-          className="min-w-0 flex-1 overflow-x-auto whitespace-pre font-mono text-[0.8571rem] text-text-secondary"
+          className="min-w-0 flex-1 overflow-x-auto whitespace-pre text-[0.8571rem] text-text-secondary"
         >
           {preview}
         </code>

@@ -42,7 +42,19 @@ export type IconName =
   | "search"
   | "star"
   | "settings"
-  | "drag";
+  | "drag"
+  | "sun"
+  | "moon"
+  | "monitor"
+  | "eye"
+  | "eyeOff"
+  | "ban"
+  | "flag"
+  | "user"
+  | "atSign"
+  | "calendar"
+  | "alert"
+  | "subtasks";
 
 /** Path/element content per icon, drawn in a shared 16x16 stroked frame. */
 const PATHS: Record<IconName, ReactElement> = {
@@ -67,6 +79,18 @@ const PATHS: Record<IconName, ReactElement> = {
   star: <path d="M8 2.5l1.7 3.5 3.8.5-2.8 2.7.7 3.8L8 11.6 4.6 13.5l.7-3.8L2.5 7l3.8-.5z" />,
   settings: <><circle cx="8" cy="8" r="2" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4" /></>,
   drag: <><circle cx="6" cy="4" r="1" /><circle cx="10" cy="4" r="1" /><circle cx="6" cy="8" r="1" /><circle cx="10" cy="8" r="1" /><circle cx="6" cy="12" r="1" /><circle cx="10" cy="12" r="1" /></>,
+  sun: <><circle cx="8" cy="8" r="3" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4" /></>,
+  moon: <path d="M13 9.5A5.5 5.5 0 016.5 3a5.5 5.5 0 106.5 6.5z" />,
+  monitor: <><rect x="2" y="3" width="12" height="8" rx="1" /><path d="M6 13.5h4M8 11v2.5" /></>,
+  eye: <><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="2" /></>,
+  eyeOff: <><path d="M6.2 4.1A6 6 0 018 3.5c4 0 6.5 4.5 6.5 4.5a11 11 0 01-1.8 2.3" /><path d="M4.3 5.3A11 11 0 001.5 8s2.5 4.5 6.5 4.5a6 6 0 002.3-.45" /><path d="M6.6 6.6a2 2 0 002.8 2.8" /><path d="M2.5 2.5l11 11" /></>,
+  ban: <><circle cx="8" cy="8" r="5.5" /><path d="M4.1 4.1l7.8 7.8" /></>,
+  flag: <><path d="M4 14V2.5" /><path d="M4 3h7.5l-1.5 2.5L11.5 8H4" /></>,
+  user: <><circle cx="8" cy="5.5" r="2.5" /><path d="M3.5 13a4.5 4.5 0 019 0" /></>,
+  atSign: <><circle cx="8" cy="8" r="2.5" /><path d="M10.5 8v1.25a1.75 1.75 0 003.5 0V8A6 6 0 108 14a5.9 5.9 0 002.5-.55" /></>,
+  calendar: <><rect x="2.5" y="3.5" width="11" height="10" rx="1" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" /></>,
+  alert: <><path d="M8 2.5l6 11H2z" /><path d="M8 6.5v3.5M8 11.8v.2" /></>,
+  subtasks: <><path d="M4 2.5v8a2 2 0 002 2h2" /><rect x="8" y="4" width="5" height="3" rx="0.5" /><rect x="8" y="10" width="5" height="3" rx="0.5" /></>,
 };
 
 /** Icons drawn as filled shapes rather than strokes (dots, star). */

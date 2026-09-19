@@ -13,6 +13,7 @@ import {
 import { isOverdue, shortDate } from "../list/format.ts";
 import type { buildLookups } from "../list/lookups.ts";
 import { Chip } from "../ui/Chip.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import type { BoardCardBadges } from "./relationshipBadges.ts";
 
 /**
@@ -177,7 +178,10 @@ export function BoardCard({
                 }
               >
                 <Chip variant="neutral">
-                  <span className="text-danger-fg">⛔ Blocked</span>
+                  <span className="inline-flex items-center gap-1 text-danger-fg">
+                    <Icon name="ban" size={14} />
+                    Blocked
+                  </span>
                 </Chip>
               </span>
             )}
@@ -190,7 +194,12 @@ export function BoardCard({
                     : `Epic with ${String(badges.childCount)} children`
                 }
               >
-                <Chip variant="accent">◇ {badges.childCount}</Chip>
+                <Chip variant="accent">
+                  <span className="inline-flex items-center gap-1">
+                    <Icon name="subtasks" size={14} />
+                    {badges.childCount}
+                  </span>
+                </Chip>
               </span>
             )}
             {badges.isSubtask && (

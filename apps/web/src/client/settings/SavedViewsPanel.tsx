@@ -79,7 +79,7 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
       */}
       <code
         data-testid="view-query"
-        className="order-last min-w-0 w-full shrink truncate rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary sm:order-none sm:w-auto sm:max-w-80"
+        className="order-last min-w-0 w-full shrink truncate rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary sm:order-none sm:w-auto sm:max-w-80"
         title={view.query}
       >
         {view.query}
@@ -281,7 +281,7 @@ export function SavedViewsPanel() {
                             (broken)
                           </span>
                         </span>
-                        <code className="font-mono text-[0.8571rem] text-text-secondary">{b.query}</code>
+                        <code className="text-[0.8571rem] text-text-secondary">{b.query}</code>
                         <span className="text-[0.8571rem] text-danger-fg">
                           {b.error}
                           {b.position !== undefined ? ` (at position ${String(b.position)})` : ""}
