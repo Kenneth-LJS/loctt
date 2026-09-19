@@ -25,6 +25,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { Button } from "../ui/Button.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import type { BodyConflict } from "./useBodyAutosave.ts";
@@ -149,23 +150,21 @@ export function BodyConflictDialog({
         )}
 
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            data-testid="conflict-dismiss"
+          <Button
+            variant="ghost"
+            testId="conflict-dismiss"
             onClick={onDismiss}
-            className="rounded px-3 py-1 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
           >
             Cancel — save nothing
-          </button>
-          <button
-            type="button"
-            data-testid="conflict-apply"
+          </Button>
+          <Button
+            variant="primary"
+            testId="conflict-apply"
             disabled={preview === null}
             onClick={() => { if (preview !== null) onResolve(preview); }}
-            className="rounded bg-accent px-3 py-1 text-[0.9286rem] text-accent-contrast disabled:opacity-50"
           >
             Apply
-          </button>
+          </Button>
         </div>
       </div>
     </div>

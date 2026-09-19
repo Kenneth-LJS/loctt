@@ -9,6 +9,7 @@ import {
   useDeleteAttachment,
   useUploadAttachment,
 } from "../api/hooks/useAttachments.ts";
+import { Button } from "../ui/Button.tsx";
 import { displayMime, familyForMime, glyphFor } from "./icon.ts";
 
 /**
@@ -213,14 +214,15 @@ export function AttachmentsPanel({
               Attachments could not be read — {attachmentsError}
             </p>
             {onRetry !== undefined && (
-              <button
-                type="button"
-                data-testid="attachments-retry"
+              <Button
+                variant="secondary"
+                size="sm"
+                testId="attachments-retry"
                 onClick={onRetry}
-                className="mt-1 rounded border border-border-subtle px-1.5 py-0.5 text-[0.8571rem] text-text-secondary underline hover:bg-bg-muted"
+                className="mt-1"
               >
                 Retry
-              </button>
+              </Button>
             )}
           </div>
         ) : attachments.length === 0 ? (
@@ -377,17 +379,17 @@ export function AttachmentsPanel({
                       after an incomplete transfer cannot duplicate.
                     */}
                     {item.file !== undefined && (
-                      <button
-                        type="button"
-                        data-testid="attachment-retry-upload"
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        testId="attachment-retry-upload"
                         onClick={() => {
                           const f = item.file;
                           if (f !== undefined) void attempt(item.id, f, false);
                         }}
-                        className="rounded border border-border-subtle px-1.5 py-0.5 hover:bg-bg-muted"
                       >
                         Retry
-                      </button>
+                      </Button>
                     )}
                   </>
                 )}
@@ -405,30 +407,30 @@ export function AttachmentsPanel({
                     >
                       A file called {item.name} is already attached to this task.
                     </span>
-                    <button
-                      type="button"
-                      data-testid="attachment-replace"
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      testId="attachment-replace"
                       onClick={() => {
                         const f = item.file;
                         if (f !== undefined) void attempt(item.id, f, true);
                       }}
-                      className="rounded border border-border-subtle px-1.5 py-0.5 hover:bg-bg-muted"
                     >
                       Replace
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="attachment-cancel"
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      testId="attachment-cancel"
                       onClick={() => {
                         // Cancel is a no-op against disk, deliberately:
                         // the 409 means nothing was written, so there
                         // is nothing to undo. The row goes.
                         setQueue(prev => prev.filter(q => q.id !== item.id));
                       }}
-                      className="rounded border border-border-subtle px-1.5 py-0.5 hover:bg-bg-muted"
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </>
                 )}
               </li>
@@ -560,15 +562,16 @@ function AttachmentTile({
       <p className="text-[0.7857rem] text-text-tertiary">
         {formatBytes(attachment.size)} · {displayMime(attachment.mime)}
       </p>
-      <button
-        type="button"
-        data-testid="attachment-remove"
+      <Button
+        variant="secondary"
+        size="sm"
+        testId="attachment-remove"
         disabled={removing}
         onClick={onRemove}
-        className="self-start rounded border border-border-subtle px-1.5 py-0.5 text-[0.7857rem] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+        className="self-start"
       >
         Remove
-      </button>
+      </Button>
       {error !== undefined && (
         <p
           role="alert"

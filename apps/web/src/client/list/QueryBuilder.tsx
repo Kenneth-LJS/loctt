@@ -13,7 +13,9 @@ import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { Select } from "../ui/Select.tsx";
+import { TextField } from "../ui/TextField.tsx";
 
 /**
  * The visual query builder's FORM (K83, step 2) — a controlled renderer
@@ -484,15 +486,15 @@ function GroupNode({
                   />
                 )}
               </div>
-              <button
-                type="button"
-                data-testid="qb-remove"
+              <IconButton
+                size="xs"
+                testId="qb-remove"
                 aria-label="Remove condition"
                 onClick={() => { edit([...path, i], () => null); }}
-                className="mt-0.5 grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+                className="mt-0.5 shrink-0"
               >
                 <Icon name="close" size={14} />
-              </button>
+              </IconButton>
             </div>
           ))
         )}
@@ -739,8 +741,10 @@ function ValueControl({
 
     // Free multi-value: comma-separated text for the unconstrained kinds.
     return (
-      <input
+      <TextField
         type="text"
+        size="sm"
+        fullWidth={false}
         data-testid="qb-value"
         aria-label="Values (comma-separated)"
         value={selectedKeys.join(", ")}
@@ -749,7 +753,6 @@ function ValueControl({
           const parts = e.target.value.split(",").map(s => s.trim()).filter(s => s.length > 0);
           onChange({ type: "list", values: parts.map(p => scalarFromString(kind, p)) });
         }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
       />
     );
   }
@@ -845,26 +848,29 @@ function ValueControl({
 
   if (kind === "number") {
     return (
-      <input
+      <TextField
         type="number"
+        size="sm"
+        fullWidth={false}
         data-testid="qb-value"
         aria-label="Value"
         value={value.type === "number" ? String(value.value) : ""}
         onChange={e => { onChange(scalarFromString("number", e.target.value)); }}
-        className="w-24 rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
+        className="w-24"
       />
     );
   }
 
   // Free text (title/text/id/key + string custom fields), incl. `~`.
   return (
-    <input
+    <TextField
       type="text"
+      size="sm"
+      fullWidth={false}
       data-testid="qb-value"
       aria-label="Value"
       value={scalarToString(value)}
       onChange={e => { onChange({ type: "string", value: e.target.value }); }}
-      className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
     />
   );
 }
