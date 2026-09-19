@@ -381,3 +381,80 @@ only the timeline reading and writing that data.
 
 - The timeline stays at the zoom the user selected for this session.
 - If the preference could not be persisted, that is stated ("this zoom won't be remembered") rather than the view silently snapping back to the workspace default.
+
+## D. Redesign: filterable, grouped, and the unscheduled drawer
+
+These cases cover the timeline redesign: the chart owns the viewport, the
+unscheduled tasks live in a collapsible footer drawer, the shared list
+filter bar is mounted on the view, the filter scope carries across the
+List / Board / Timeline switch, and the full group-by set is reachable
+through a searchable picker. They extend — they do not replace — the
+Unscheduled and grouping cases in sections A and B (TML-5, TML-6, TML-7,
+TML-8, TML-29, TML-41).
+
+### TML-51 · M3 · major · P6 P9
+**The Unscheduled surface is a collapsible footer drawer, collapsed by default, whose header shows an honest count and a breakdown by problem kind.** A tracker with one fully-dated task and several unscheduled ones: some undated, one with a due date only, one whose date field is corrupt.
+
+- On load the drawer's header strip is visible below the chart, showing "Unscheduled" and a parenthesised total count that matches the number of unscheduled tasks.
+- The header also shows a breakdown by the reason each task is unscheduled — e.g. "N undated", "N due-only", "N corrupt" — and the corrupt/invalid piece is rendered in the danger colour, distinct from the merely-undated pieces.
+- The drawer is collapsed by default: the header toggle reports `aria-expanded="false"` and none of the unscheduled task rows are in the DOM.
+- The dated task still gets a normal bar in the chart — the drawer does not swallow scheduled work.
+- The header strip is hidden entirely (no unlabelled blank row) when there are no unscheduled tasks at all.
+
+### TML-52 · M3 · major · P8
+**Expanding the drawer reveals the unscheduled rows and their reason chips; each row opens the task.** From TML-51's collapsed drawer.
+
+- Clicking the header toggle flips it to `aria-expanded="true"` and mounts one row per unscheduled task, each listing the task key and title.
+- Each row carries a reason chip naming why it is unscheduled ("No start date …", corrupt, etc.); no bar is drawn in the chart for an unscheduled task.
+- Clicking an unscheduled row navigates to `/tasks/<key>`.
+- The collapsed/expanded state is a local display affordance — toggling it does not change the URL or the view's task scope.
+
+### TML-53 · M3 · major · P6 P9
+**The chart owns the viewport: many unscheduled tasks can no longer squeeze the chart to a strip.** A tracker with one dated task and 20+ unscheduled tasks.
+
+- The scrolling chart keeps a minimum height floor and remains the dominant region of the panel; it is not pushed down to a thin strip by the number of unscheduled tasks.
+- When the drawer is expanded, its body scrolls within a capped height (roughly 40% of the panel on desktop) rather than growing unbounded, so an expanded drawer with 200 rows still cannot crowd out the chart.
+- On a phone the expanded drawer opens as its own sheet rather than competing with the chart for the short viewport.
+
+### TML-54 · M3 · major · P6
+**When no task has both dates, the chart shows an explicit empty state inside its frame and the drawer auto-expands once.** A tracker where every task is missing a start date, a due date, or both.
+
+- The chart frame (date header and grid) still draws, with a centred notice explaining that none of these tasks has both dates so there is nothing to chart and that they are listed under Unscheduled.
+- The Unscheduled drawer opens automatically on first load so the tasks are visible without a click; the user may still collapse it afterwards and it stays collapsed.
+- This is distinct from the filter-matched-nothing empty state (TML-41), which names the active filter instead.
+
+### TML-55 · M3 · major · P8 P9
+**A sticky task-name gutter pins each row's key and title on the left while the chart scrolls horizontally.** A grouped or flat timeline with several dated rows.
+
+- A left gutter column renders one cell per laid-out row (key · title) plus a cell per band header, aligned with the rows in the chart body.
+- The gutter stays pinned over the chart's left edge during horizontal scroll, so the row a bar belongs to stays identifiable even when the bar's own in-bar title has scrolled out of view.
+- A gutter row is clickable through to the task detail, the same as the bar and the band label.
+
+### TML-56 · M3 · major · P2 P10
+**The shared list filter bar is mounted on the timeline, and filtering narrows which bars are charted.** Two dated tasks in different statuses (or with different assignees), opened at `/timeline`.
+
+- The same filter bar the list uses is present on the timeline (`from="/timeline"`), including saved-view selection.
+- Applying a filter that matches only one of the tasks leaves only that task's bar (and the total) — the filter narrows the charted set, it does not merely add a chip.
+- The filter is reflected in the URL so the filtered timeline is shareable, and the server is what narrowed the result (the API returns the filtered set), not the client hiding rows from a full response.
+
+### TML-57 · M3 · major · P2 P10
+**Switching between List, Board and Timeline carries the filter scope and drops each view's private display params.** From a filtered, project-scoped list.
+
+- The view switcher links to Board and Timeline keep the scope params (`q`, `project`, `status`, `assignee`, `milestone`, `sprint`, `priority`, `task_type`, `label`, `archived`, `vf`, `field.*`).
+- The same switch drops the view-private display params, so each view opens at its own default: the list's `page`/`sort`/`dir` and the timeline's `zoom`/`grouping`/`arrows` do not ride across.
+- A project (or saved-filter) click made while on the Board or Timeline stays on that view rather than jumping to the list.
+
+### TML-58 · M3 · major · P3 P10
+**The full group-by set is reachable through a searchable picker, including a single-value enum custom field.** A workspace with enough single-value enum custom fields that the picker's list crosses the search threshold; two dated tasks carry different values of one such field ("Area").
+
+- The group-by picker offers the eight builtins — none/project/milestone/sprint/assignee/status/priority/type — plus every single-value enum custom field as `field.<key>`, labelled by the field's display label.
+- Once the list is long enough the picker shows a search box; typing the field's label surfaces it, and selecting it sets `grouping=field.area` in the URL and on the trigger.
+- Bands read by the value labels from `workflow.yaml`, never the stored keys, and the total task count is unchanged from any other grouping (TML-7's invariant holds — a custom-field grouping is single-value so no task lands in two bands).
+- Labels and multi-value enum custom fields are not offered (they would place one task in many bands); a search for "custom" surfaces the custom fields and not the builtins.
+
+### TML-59 · M3 · major · P3 P7
+**A grouping that names a custom field no longer eligible degrades to flat (or the next resolvable layer) with a notice naming the dropped key.** A saved view or URL sets `grouping=field.area` while `area` has been deleted, or changed to multi-value / non-enum.
+
+- The timeline does not crash and does not draw a single mislabelled band for the dangling key; it falls back to the next resolvable grouping in the chain (URL → view → workspace default → flat), reaching flat only when every layer is unresolvable.
+- A visible notice names the dropped grouping key verbatim and states that it is no longer a single-value enum field and what is being shown instead.
+- The picker still names the currently-set value rather than showing empty, marking a dangling one as no longer available.

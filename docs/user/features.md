@@ -199,6 +199,30 @@ parameter on `list_tasks`. **UI** — create, save, and manage views, with
 a visual query builder. Hand-editing `queries.yaml` works on any
 interface.
 
+## Views
+
+The web UI presents tasks three ways — a list, a board, and a timeline —
+and they share one filter scope. The same filter bar sits on all three,
+so a query, a project scope, or a saved view carries across when you
+switch between them; each view keeps its own display settings (the list's
+sort and page, the board's columns, the timeline's zoom, grouping, and
+arrows).
+
+The **timeline** is a Gantt-style chart. Bars run from each task's start
+date to its due date, and the chart fills the panel at day, week, or
+month zoom. It is filterable and project-scopable through the shared
+filter bar, and it groups rows into labelled bands by none, project,
+milestone, sprint, assignee, status, priority, type, or any single-value
+enum custom field — chosen from a searchable group-by picker. Weekends
+and holidays are shaded from `calendar.yaml`, dependency arrows are drawn
+for the relationship named in `workflow.timeline.dependency_relationship`,
+and you can drag a bar to reschedule it or resize it to change one date.
+Tasks missing a start or due date, or carrying a bad date, collect in an
+**Unscheduled** drawer below the chart. The drawer stays collapsed with a
+header that counts the unscheduled tasks and breaks them down by reason
+(undated, due-only, corrupt); it expands on demand, and opens on its own
+when no task has both dates so there is nothing to chart.
+
 ## Sorting and pagination
 
 Sort by any field and page through large result sets on every interface.

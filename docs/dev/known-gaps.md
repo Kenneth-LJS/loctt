@@ -357,14 +357,10 @@ still blocked. Open items:
   phone (`TaskDetail.tsx` grid order — a cheap `order-first
   lg:order-none`); the List Export button is clipped off-screen and the
   DSL panel wraps one word per line (needs `min-width:0` + overflow on
-  the advanced surface); the Timeline chart disappears entirely with data
-  at 390; the sidebar collapses to a rail of emoji/dots with no tooltips;
+  the advanced surface); the sidebar collapses to a rail of emoji/dots with no tooltips;
   the mobile drawer covers its own toggle with no scrim/focus-trap/close
   and is not a `dialog`.
-- **Desktop major:** the Timeline chart does not fill the viewport —
-  Month zoom renders ~128px wide and titles truncate to 1–2 chars (only
-  Day zoom is usable), because "zoom = column width" clamps the range to
-  the data span instead of filling; the bulk-actions bar renders inline
+- **Desktop major:** the bulk-actions bar renders inline
   below a 25-row table (off-screen) rather than sticky; the query
   builder/DSL shows a parser error before any input and is unstyled.
 - **Icon migration missed surfaces (A208 was incomplete):** the header
@@ -376,6 +372,19 @@ still blocked. Open items:
   has four create patterns and two row-action patterns across sibling
   sections; tap targets below the WCAG 2.5.8 24px minimum (and 44px
   touch) on checkboxes, ×-removes, chips and metadata editors.
+
+**Closed by the timeline redesign (2026-09-20).** Two of the above are no
+longer open: the Timeline chart vanishing with data at 390 (mobile
+blocker) and the chart not filling the viewport / Month zoom rendering
+~128px wide (desktop major). The chart now owns the viewport with a
+minimum-height floor, the unscheduled tasks moved into a collapsible
+footer drawer that can no longer squeeze it, and `fillRange` widens the
+date range to fill the panel at every zoom. Covered by TML-53/TML-54 and
+`TimelineChart.test.tsx` ("owns the viewport"). No timeline-specific
+mobile blocker remains: the drawer's phone surface is the shared `Sheet`
+(`role="dialog" aria-modal`, focus-trap, inert background, Escape /
+backdrop close). The "mobile drawer covers its own toggle" blocker above
+is the app-shell navigation drawer, a separate component.
 
 ## Cannot be satisfied yet (unsatisfiable-case roster)
 
