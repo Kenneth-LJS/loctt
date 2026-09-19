@@ -12,6 +12,7 @@ import {
   useUpdateUser,
   useUploadAvatar,
 } from "../api/hooks/useUserMutations.ts";
+import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
@@ -452,11 +453,100 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
   );
 }
 
+/**
+ * The Edit / Archive / Delete action group for one user row, shared by the
+ * table (>= sm) and the mobile card (< sm). The three buttons live in a
+ * flex row with `whitespace-nowrap` so they stay together on one line and
+ * never wrap mid-word or stack raggedly (Ken's report). The self-user note
+ * sits below, width-capped, so it wraps to a tidy block instead of a tall
+ * single-word column.
+ */
+function UserRowActions({
+  user,
+  isSelf,
+  align = "end",
+  onEdit,
+  onArchive,
+  onDelete,
+}: {
+  readonly user: UserProfile;
+  readonly isSelf: boolean;
+  /** Table right-aligns the actions; the card left-aligns them. */
+  readonly align?: "start" | "end";
+  readonly onEdit: () => void;
+  readonly onArchive: () => void;
+  readonly onDelete: () => void;
+}) {
+  return (
+    <div className={align === "end" ? "text-right" : "text-left"}>
+      <div className={[
+        "flex items-center gap-1 whitespace-nowrap",
+        align === "end" ? "justify-end" : "justify-start",
+      ].join(" ")}>
+        {/* PRU-47: the row is read-only; identity fields are edited in a
+            per-row Edit dialog. */}
+        <button
+          type="button"
+          data-testid={`user-edit-${user.id}`}
+          onClick={onEdit}
+          className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
+        >
+          Edit
+        </button>
+        {/* PRU-26: archiving yourself is disabled, not error-on-click, and
+            the reason is on the control. */}
+        <button
+          type="button"
+          data-testid={`user-archive-${user.id}`}
+          disabled={isSelf}
+          title={isSelf
+            ? "You cannot archive the user you are acting as. Switch to another user first."
+            : undefined}
+          onClick={onArchive}
+          className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+        >
+          {user.archived === true ? "Unarchive" : "Archive"}
+        </button>
+        {/* PRU-42: delete is the permanent path, offered beside archive.
+            Disabled for the active user for the same reason archive is —
+            core refuses to delete whoever you are acting as. */}
+        <button
+          type="button"
+          data-testid={`user-delete-${user.id}`}
+          disabled={isSelf}
+          title={isSelf
+            ? "You cannot delete the user you are acting as. Switch to another user first."
+            : undefined}
+          onClick={onDelete}
+          className="h-8 rounded-md px-2 text-[0.9286rem] text-danger-fg hover:bg-bg-muted disabled:opacity-50"
+        >
+          Delete
+        </button>
+      </div>
+      {isSelf && (
+        <p
+          data-testid={`user-archive-blocked-${user.id}`}
+          className={[
+            "mt-1 max-w-[16rem] text-[0.7857rem] text-text-tertiary",
+            align === "end" ? "ml-auto" : "",
+          ].join(" ")}
+        >
+          You cannot archive the user you are acting as. Switch users first.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function UsersPanel() {
   const users = useUsers();
   const current = useCurrentUser();
   const archive = useArchiveUser();
   const del = useDeleteUser();
+  // Below `sm` the four-column table (avatar/name/email/3 actions) does not
+  // fit — the actions wrapped raggedly and detached from their row (Ken's
+  // report). Render a stacked card per user instead.
+  const isNarrow = useIsNarrow();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<UserProfile | null>(null);
   const [editing, setEditing] = useState<UserProfile | null>(null);
@@ -486,6 +576,7 @@ export function UsersPanel() {
         Identities that can be assigned work and attributed activity.
       </p>
 
+      {!isNarrow && (
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
@@ -526,69 +617,71 @@ export function UsersPanel() {
                   )}
                 </td>
                 <td className="py-2 pr-3 text-[0.9286rem] text-text-secondary">{u.email ?? ""}</td>
-                <td className="py-2 text-right">
-                  {/* PRU-47: the row is read-only; identity fields are
-                      edited in a per-row Edit dialog. */}
-                  <button
-                    type="button"
-                    data-testid={`user-edit-${u.id}`}
-                    onClick={() => {
-                      setEditing(u);
-                    }}
-                    className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
-                  >
-                    Edit
-                  </button>
-                  {/* PRU-26: archiving yourself is disabled, not
-                      error-on-click, and the reason is on the control. */}
-                  <button
-                    type="button"
-                    data-testid={`user-archive-${u.id}`}
-                    disabled={isSelf}
-                    title={isSelf
-                      ? "You cannot archive the user you are acting as. Switch to another user first."
-                      : undefined}
-                    onClick={() => {
-                      archive.mutate({ id: u.id, archived: u.archived !== true });
-                    }}
-                    className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
-                  >
-                    {u.archived === true ? "Unarchive" : "Archive"}
-                  </button>
-                  {/* PRU-42: delete is the permanent path, offered
-                      beside archive. Disabled for the active user for
-                      the same reason archive is — core refuses to
-                      delete whoever you are acting as. */}
-                  <button
-                    type="button"
-                    data-testid={`user-delete-${u.id}`}
-                    disabled={isSelf}
-                    title={isSelf
-                      ? "You cannot delete the user you are acting as. Switch to another user first."
-                      : undefined}
-                    onClick={() => {
-                      del.reset();
-                      setDeleting(u);
-                    }}
-                    className="ml-1 h-8 rounded-md px-2 text-[0.9286rem] text-danger-fg hover:bg-bg-muted disabled:opacity-50"
-                  >
-                    Delete
-                  </button>
-                  {isSelf && (
-                    <p
-                      data-testid={`user-archive-blocked-${u.id}`}
-                      className="text-[0.7857rem] text-text-tertiary"
-                    >
-                      You cannot archive the user you are acting as. Switch
-                      users first.
-                    </p>
-                  )}
+                <td className="py-2 align-top">
+                  <UserRowActions
+                    user={u}
+                    isSelf={isSelf}
+                    onEdit={() => { setEditing(u); }}
+                    onArchive={() => { archive.mutate({ id: u.id, archived: u.archived !== true }); }}
+                    onDelete={() => { del.reset(); setDeleting(u); }}
+                  />
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      )}
+
+      {/* Mobile (< sm): a stacked card per user. The table's four columns
+          did not fit and the actions wrapped raggedly, detaching from
+          their row (Ken's report). Same data + the shared UserRowActions,
+          only the layout differs. */}
+      {isNarrow && (
+        <ul className="flex flex-col gap-2" data-testid="user-cards">
+          {items.map(u => {
+            const isSelf = u.id === currentId;
+            const qual = qualifier(u, items);
+            return (
+              <li
+                key={u.id}
+                data-testid={`user-card-${u.id}`}
+                data-self={isSelf ? "true" : "false"}
+                className="rounded-lg border border-border-default p-3"
+              >
+                <div className="flex items-center gap-2">
+                  <AvatarCell user={u} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[0.9286rem] text-text-primary">
+                      {u.name}
+                      {u.archived === true && (
+                        <span className="ml-1 text-text-tertiary">(archived)</span>
+                      )}
+                      {qual !== undefined && (
+                        <span className="ml-1 text-[0.7857rem] text-text-tertiary">{qual}</span>
+                      )}
+                    </div>
+                    {u.email !== undefined && u.email !== "" && (
+                      <div className="truncate text-[0.8571rem] text-text-secondary">{u.email}</div>
+                    )}
+                  </div>
+                  <AvatarUpload user={u} />
+                </div>
+                <div className="mt-2 border-t border-border-subtle pt-2">
+                  <UserRowActions
+                    user={u}
+                    isSelf={isSelf}
+                    align="start"
+                    onEdit={() => { setEditing(u); }}
+                    onArchive={() => { archive.mutate({ id: u.id, archived: u.archived !== true }); }}
+                    onDelete={() => { del.reset(); setDeleting(u); }}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       <div className="mt-4">
         <button

@@ -469,6 +469,7 @@ function ProjectRow({
         <span data-testid={`project-refcount-${project.id}`}>{taskCount}</span>
       </td>
       <td className="py-2 text-right align-top">
+        <div className="flex flex-wrap items-center justify-end gap-1">
         {!editing && (
           <Button
             size="sm"
@@ -527,6 +528,7 @@ function ProjectRow({
         >
           Delete
         </Button>
+        </div>
         {/* B2 bug 3: a failed Make-default or Archive must be visible —
             both mutations used to fail silently, leaving the marker and
             the on-disk state disagreeing with what the user saw. */}
@@ -595,11 +597,7 @@ export function ProjectsPanel() {
     <div className="p-8" data-testid="settings-projects">
       <h1 className="mb-1 text-lg font-semibold">Projects</h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Each project has its own key prefix and counter. Defined in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">
-          .loctt/config/projects.yaml
-        </code>
-        .
+        Each project has its own key prefix and counter.
       </p>
 
       {/* PRU-46 / K16: an interrupted rename is *already finished* by
