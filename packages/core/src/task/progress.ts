@@ -17,6 +17,21 @@ import { loadAllTasksDetailed, type UnreadableTask } from "./load-all.js";
 export interface Progress {
   /** Tasks in a `completed`-category status. */
   readonly done: number;
+  /**
+   * Tasks in an `active`-category status.
+   *
+   * Reported so a surface can draw a three-segment bar — done / active /
+   * the rest — rather than only done-vs-not. Category-based, never a
+   * status key: a tracker may have several `active`-category statuses and
+   * may rename them freely, so any rule written against a literal key
+   * would count the wrong thing.
+   *
+   * Like {@link done}, `active` is a subset of {@link total} and never
+   * includes discarded tasks. The un-started remainder a bar's third
+   * segment fills is `total - done - active` (all non-negative, since
+   * each of the three category buckets is disjoint).
+   */
+  readonly active: number;
   /** Tasks counted toward the goal: everything except discarded. */
   readonly total: number;
   /** Excluded from `total`, reported so the UI can explain the number. */
@@ -29,6 +44,73 @@ export interface Progress {
    * milestone as a full bar would be a lie.
    */
   readonly fraction: number;
+}
+
+/**
+ * Tallies category buckets from a sequence of status keys.
+ *
+ * The shared core of {@link computeProgress}: a status key resolves to
+ * its category via the config, and `done`/`active`/`discarded` count the
+ * `completed`/`active`/`discarded` buckets. A key that is missing or
+ * unknown to the config counts toward `total` but toward none of the
+ * three named buckets — unrecognised is neither finished, in flight, nor
+ * abandoned.
+ *
+ * Exposed so a surface holding already-resolved status keys (a task
+ * detail's child edges, say) computes the same numbers the same way,
+ * rather than re-deriving the category rule per surface. `discarded` is
+ * returned rather than folded away so the caller applies the same
+ * exclusion — `total = count - discarded` — that {@link computeProgress}
+ * does.
+ */
+export function tallyStatusCategories(
+  statuses: Iterable<string | undefined>,
+  workflow: WorkflowConfig,
+): { readonly done: number; readonly active: number; readonly discarded: number; readonly count: number } {
+  const category = new Map(workflow.statuses.map(s => [s.key, s.category]));
+  let done = 0;
+  let active = 0;
+  let discarded = 0;
+  let count = 0;
+
+  for (const status of statuses) {
+    count += 1;
+    const cat = status === undefined ? undefined : category.get(status);
+    if (cat === "discarded") discarded += 1;
+    else if (cat === "completed") done += 1;
+    else if (cat === "active") active += 1;
+  }
+
+  return { done, active, discarded, count };
+}
+
+/** Assembles a {@link Progress} from a category tally. */
+function progressFromTally(
+  tally: { readonly done: number; readonly active: number; readonly discarded: number; readonly count: number },
+): Progress {
+  const total = tally.count - tally.discarded;
+  return {
+    done: tally.done,
+    active: tally.active,
+    total,
+    discarded: tally.discarded,
+    fraction: total > 0 ? tally.done / total : 0,
+  };
+}
+
+/**
+ * Progress over a set of already-resolved status keys.
+ *
+ * The same computation as {@link computeProgress}, for a caller that has
+ * status keys rather than `Task` objects in hand — a task detail's tree
+ * children, resolved from their edges. Keeps the exclusion rule and the
+ * category mapping in one place across all three surfaces.
+ */
+export function computeProgressFromStatuses(
+  statuses: Iterable<string | undefined>,
+  workflow: WorkflowConfig,
+): Progress {
+  return progressFromTally(tallyStatusCategories(statuses, workflow));
 }
 
 /**
@@ -46,24 +128,10 @@ export function computeProgress(
   tasks: readonly Task[],
   workflow: WorkflowConfig,
 ): Progress {
-  const category = new Map(workflow.statuses.map(s => [s.key, s.category]));
-  let done = 0;
-  let discarded = 0;
-
-  for (const t of tasks) {
-    const status = t.frontmatter.status;
-    const cat = status === undefined ? undefined : category.get(status);
-    if (cat === "discarded") discarded += 1;
-    else if (cat === "completed") done += 1;
-  }
-
-  const total = tasks.length - discarded;
-  return {
-    done,
-    total,
-    discarded,
-    fraction: total > 0 ? done / total : 0,
-  };
+  return computeProgressFromStatuses(
+    tasks.map(t => t.frontmatter.status),
+    workflow,
+  );
 }
 
 export interface MilestoneProgressOptions {

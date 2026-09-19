@@ -76,7 +76,7 @@ describe("milestoneProgress", () => {
     // milestone without checking.
     const wf = await loadWorkflowConfig(locttDir);
     const p = await milestoneProgress(locttDir, ["empty"], wf);
-    expect(p["empty"]).toEqual({ done: 0, total: 0, discarded: 0, fraction: 0 });
+    expect(p["empty"]).toEqual({ done: 0, active: 0, total: 0, discarded: 0, fraction: 0 });
   });
 
   it("ignores tasks belonging to another milestone", async () => {

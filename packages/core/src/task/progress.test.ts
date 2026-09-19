@@ -1,7 +1,7 @@
 import type { Task, WorkflowConfig } from "@loctt/contracts";
 import { describe, expect, it } from "vitest";
 
-import { computeProgress } from "./progress.js";
+import { computeProgress, computeProgressFromStatuses } from "./progress.js";
 
 /**
  * The load-bearing rules, per flow-milestones-labels.md:
@@ -75,7 +75,7 @@ describe("computeProgress", () => {
     // "Nothing to do" and "everything done" are different states;
     // rendering an empty milestone as a full bar would be a lie.
     const p = computeProgress([], workflow);
-    expect(p).toEqual({ done: 0, total: 0, discarded: 0, fraction: 0 });
+    expect(p).toEqual({ done: 0, active: 0, total: 0, discarded: 0, fraction: 0 });
   });
 
   it("is 0% when every task is discarded", () => {
@@ -104,6 +104,85 @@ describe("computeProgress", () => {
     expect(p.fraction).toBe(0.5);
   });
 
+  it("counts active-category tasks separately from done and the rest (L4)", () => {
+    // The three-segment bar needs done / active / rest. `active` is the
+    // count of active-category statuses — not a status key, so a renamed
+    // `doing` still lands in the bucket. This asserts the middle segment:
+    // deleting the `active` branch in `tallyStatusCategories` folds these
+    // into neither done nor active and turns this red.
+    const p = computeProgress(
+      [t("shipped"), t("doing"), t("doing"), t("backlog")],
+      workflow,
+    );
+    expect(p.done).toBe(1);
+    expect(p.active).toBe(2);
+    expect(p.total).toBe(4);
+    // The un-started remainder the third segment fills.
+    expect(p.total - p.done - p.active).toBe(1);
+  });
+
+  it("excludes discarded tasks from active as well as from total", () => {
+    // `active` is a subset of `total`, which already excludes discarded —
+    // an abandoned task is never in flight.
+    const p = computeProgress([t("doing"), t("abandoned")], workflow);
+    expect(p.active).toBe(1);
+    expect(p.total).toBe(1);
+    expect(p.discarded).toBe(1);
+  });
+
+  it("reports zero active when nothing is in flight", () => {
+    const p = computeProgress([t("shipped"), t("backlog")], workflow);
+    expect(p.active).toBe(0);
+  });
+
+  it("survives a renamed active-category status", () => {
+    // Category, never the key `doing`.
+    const renamed = {
+      ...workflow,
+      statuses: [
+        { key: "icebox", label: "Icebox", category: "pending", default: true },
+        { key: "cooking", label: "Cooking", category: "active" },
+        { key: "landed", label: "Landed", category: "completed" },
+      ],
+    } as unknown as WorkflowConfig;
+    const p = computeProgress([t("cooking"), t("landed"), t("icebox")], renamed);
+    expect(p.active).toBe(1);
+    expect(p.done).toBe(1);
+    expect(p.total).toBe(3);
+  });
+});
+
+describe("computeProgressFromStatuses", () => {
+  it("computes the same numbers as computeProgress from bare status keys", () => {
+    // The surface helper (CLI/MCP/web child meter) resolves status keys,
+    // not Task objects, and must land on the identical categorisation and
+    // discarded-exclusion. Red-proof: swapping the `completed`/`active`
+    // branches, or dropping the discarded exclusion, breaks this.
+    const statuses = ["shipped", "doing", "doing", "abandoned", "backlog", undefined];
+    const p = computeProgressFromStatuses(statuses, workflow);
+    expect(p.done).toBe(1);
+    expect(p.active).toBe(2);
+    expect(p.total).toBe(5); // 6 minus the one discarded
+    expect(p.discarded).toBe(1);
+    expect(p.fraction).toBeCloseTo(1 / 5);
+  });
+
+  it("agrees with computeProgress task-for-task", () => {
+    const tasks = [t("shipped"), t("doing"), t("abandoned"), t("backlog"), t()];
+    const fromTasks = computeProgress(tasks, workflow);
+    const fromStatuses = computeProgressFromStatuses(
+      tasks.map(x => x.frontmatter.status),
+      workflow,
+    );
+    expect(fromStatuses).toEqual(fromTasks);
+  });
+
+  it("is empty (not complete) for no statuses", () => {
+    expect(computeProgressFromStatuses([], workflow)).toEqual({
+      done: 0, active: 0, total: 0, discarded: 0, fraction: 0,
+    });
+  });
+
   it("survives a workflow that renamed every status", () => {
     // A tracker may rename or delete `done` entirely; only categories
     // are stable.
@@ -114,7 +193,7 @@ describe("computeProgress", () => {
         { key: "landed", label: "Landed", category: "completed" },
       ],
     } as unknown as WorkflowConfig;
-    const p = computeProgress([t("landed"), t("icebox")], renamed);
+    const p = computeProgressFromStatuses(["landed", "icebox"], renamed);
     expect(p.done).toBe(1);
     expect(p.total).toBe(2);
   });

@@ -11,12 +11,15 @@
  * atomic.
  */
 
+import type { WorkflowConfig } from "@loctt/contracts";
+import { effectiveInverseKey, isSymmetricRelationship } from "@loctt/contracts";
 import {
   bodyToken,
   buildListContext,
   buildShowModel,
   bulkMoveTasksToProject,
   bulkSetFields,
+  computeProgressFromStatuses,
   createTask,
   DEFAULT_LIST_LIMIT,
   deleteTask,
@@ -66,10 +69,26 @@ function optionalString(
   return typeof v === "string" && v !== "" ? { [key]: v } : {};
 }
 
+/**
+ * The type key of the *child* side of the `graph: "tree"` axis — the
+ * side a parent holds to point at its children (`child` by default,
+ * whatever `inverse` renames it to). `undefined` when there is no tree
+ * axis, or when it is symmetric. Config-driven, matching the CLI `show`
+ * helper and the web panel — never a literal `"child"`.
+ */
+function treeChildSideKey(
+  workflow: WorkflowConfig | undefined,
+): string | undefined {
+  const treeDef = workflow?.relationships.find(r => r.graph === "tree");
+  if (treeDef === undefined) return undefined;
+  if (isSymmetricRelationship(treeDef)) return undefined;
+  return effectiveInverseKey(treeDef);
+}
+
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "get_task",
-    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. When the body is included the result carries `body_token` — pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit.",
+    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. When the body is included the result carries `body_token` — pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit. A task with direct children on the tree axis carries a `children` roll-up ({done, active, total, discarded}) — category-based, with discarded children excluded from `total`, matching milestone/sprint progress.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
       include_body: z.boolean().optional().describe("Whether to include the markdown body (default true)"),
@@ -141,6 +160,28 @@ export const TOOLS: readonly ToolDef[] = [
           error: h.error,
           repair: h.repair,
         }));
+      }
+      // L4: a done/active/todo roll-up of this task's direct children, on
+      // the child side of the tree axis (the inverse of `parent` — the
+      // forward side points at ancestors). Config-driven and category-
+      // based, mirroring the web meter and CLI `show`; discarded children
+      // are excluded from `total` exactly as milestones do. Omitted when
+      // there is no tree axis or no children, so an agent that sees
+      // `children` can trust it means something.
+      const childSideKey = treeChildSideKey(workflowConfig);
+      if (childSideKey !== undefined && workflowConfig !== undefined) {
+        const childStatuses = model.relationships
+          .filter(r => r.type === childSideKey)
+          .map(r => r.resolvedStatus);
+        if (childStatuses.length > 0) {
+          const p = computeProgressFromStatuses(childStatuses, workflowConfig);
+          result["children"] = {
+            done: p.done,
+            active: p.active,
+            total: p.total,
+            discarded: p.discarded,
+          };
+        }
       }
       if (includeBody) {
         result["body"] = model.task.body;

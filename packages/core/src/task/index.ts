@@ -93,10 +93,12 @@ export { bulkMoveTasksToProject, MoveTaskError,moveTaskToProject } from "./move.
 export type { MilestoneProgressOptions, Progress, ProgressReport } from "./progress.js";
 export {
   computeProgress,
+  computeProgressFromStatuses,
   milestoneProgress,
   milestoneProgressDetailed,
   sprintProgress,
   sprintProgressDetailed,
+  tallyStatusCategories,
 } from "./progress.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./relationships.js";
 export { linkTask, RelationshipError,unlinkTask } from "./relationships.js";

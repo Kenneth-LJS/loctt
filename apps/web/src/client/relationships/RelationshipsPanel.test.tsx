@@ -107,6 +107,97 @@ function renderPanel(): void {
   render(<RouterProvider router={router as never} />);
 }
 
+// --- L4: child-progress meter fixtures ------------------------------
+
+/** A tree axis (parent/child) plus statuses across the categories. */
+const TREE_WORKFLOW = {
+  statuses: [
+    { key: "backlog", label: "Backlog", category: "pending", default: true },
+    { key: "doing", label: "Doing", category: "active" },
+    { key: "done", label: "Done", category: "completed" },
+    { key: "dropped", label: "Dropped", category: "discarded" },
+  ],
+  priorities: [],
+  task_types: [],
+  relationships: [
+    {
+      key: "parent",
+      label: "Parent",
+      inverse: "child",
+      inverse_label: "Child",
+      graph: "tree",
+    },
+  ],
+  custom_fields: [],
+} as unknown as WorkflowConfig;
+
+/** statusOf resolving TREE_WORKFLOW's status keys to their StatusDef. */
+function treeStatusOf(key: string | undefined) {
+  return TREE_WORKFLOW.statuses.find(s => s.key === key);
+}
+
+/** A `child` edge from the root to a target with a given status. */
+function childEdge(target: string, status: string): ResolvedRelationshipResponse {
+  return {
+    type: "child",
+    target,
+    resolvedKey: target.toUpperCase(),
+    resolvedTitle: `Title ${target}`,
+    resolvedStatus: status,
+    missing: false,
+  };
+}
+
+/** A `parent` edge (the forward side — no meter). */
+function parentEdge(target: string, status: string): ResolvedRelationshipResponse {
+  return {
+    type: "parent",
+    target,
+    resolvedKey: target.toUpperCase(),
+    resolvedTitle: `Title ${target}`,
+    resolvedStatus: status,
+    missing: false,
+  };
+}
+
+function renderTreePanel(opts: {
+  relationships: readonly ResolvedRelationshipResponse[];
+  workflow?: WorkflowConfig | undefined;
+  statusOf?: (key: string | undefined) => (typeof TREE_WORKFLOW.statuses)[number] | undefined;
+}): void {
+  const stored = opts.relationships.map(r => ({ type: r.type, target: r.target }));
+  const workflow = "workflow" in opts ? opts.workflow : TREE_WORKFLOW;
+  const rootRoute = createRootRoute();
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/",
+    component: () => (
+      <RelationshipsPanel
+        taskRef="T-1"
+        taskId="id-root"
+        taskKey="T-1"
+        taskTitle="Root"
+        taskKeyHistory={[]}
+        relationships={opts.relationships}
+        stored={stored}
+        workflow={workflow}
+        statusOf={opts.statusOf ?? treeStatusOf}
+        taskIndex={new Map()}
+      />
+    ),
+  });
+  const taskRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/tasks/$key",
+    component: () => <div>task</div>,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute, taskRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  render(<RouterProvider router={router as never} />);
+}
+
 /** The rendered `data-target` order of the blocks group's rows. */
 function renderedOrder(): string[] {
   return Array.from(
@@ -200,5 +291,90 @@ describe("RelationshipsPanel keyboard reorder (REL-15)", () => {
     // Moved to the end, so anchored after C.
     expect(vars.after).toBe("T-C");
     expect(vars.before).toBeUndefined();
+  });
+});
+
+describe("L4 child-progress meter", () => {
+  it("renders a done/active/todo meter over the child group's depth-0 rows", async () => {
+    // 2 done, 1 active, 1 todo (backlog), 1 discarded → 4 total
+    // (discarded excluded, like milestones). done 2/4, active 1/4.
+    // Red-proof: if the discarded child were NOT excluded, the readout
+    // would show 2 / 5, not 2 / 4.
+    renderTreePanel({
+      relationships: [
+        childEdge("c1", "done"),
+        childEdge("c2", "done"),
+        childEdge("c3", "doing"),
+        childEdge("c4", "backlog"),
+        childEdge("c5", "dropped"),
+      ],
+    });
+    const meter = await screen.findByTestId("child-progress");
+    expect(meter).toBeTruthy();
+    // Announced as child progress, not "Milestone progress".
+    const bar = screen.getByTestId("child-progress-bar");
+    expect(bar.getAttribute("aria-label")).toBe("Child progress");
+    // done / total, discarded excluded from the total (5 children, 4
+    // counted).
+    expect(screen.getByTestId("child-progress-readout").textContent).toContain("2 / 4");
+    // The three-segment fill is present.
+    expect(screen.getByTestId("child-progress-bar-fill")).toBeTruthy();
+    expect(screen.getByTestId("child-progress-bar-active")).toBeTruthy();
+    // done 2/4 = 50%, active 1/4 = 25%.
+    expect(screen.getByTestId("child-progress-bar-fill").getAttribute("style"))
+      .toContain("width: 50%");
+    expect(screen.getByTestId("child-progress-bar-active").getAttribute("style"))
+      .toContain("width: 25%");
+  });
+
+  it("does NOT render the meter on the parent (forward) side of the tree axis", async () => {
+    // The parent group points at ancestors — a progress meter there is
+    // meaningless. Red-proof: rendering on any tree group (not just the
+    // child side) would show a meter here.
+    renderTreePanel({
+      relationships: [parentEdge("p1", "doing")],
+    });
+    // The parent group renders (proof the panel mounted)...
+    expect(await screen.findByTestId("relationship-group")).toBeTruthy();
+    // ...but no child-progress meter.
+    expect(screen.queryByTestId("child-progress")).toBeNull();
+  });
+
+  it("does not render the meter for a non-tree group", async () => {
+    // A `blocks` (acyclic) group is not the tree axis.
+    renderTreePanel({
+      relationships: [
+        {
+          type: "blocks",
+          target: "b1",
+          resolvedKey: "T-B1",
+          resolvedTitle: "Blocked",
+          resolvedStatus: "doing",
+          missing: false,
+        },
+      ],
+      workflow: {
+        ...TREE_WORKFLOW,
+        relationships: [
+          { key: "blocks", label: "Blocks", inverse: "is_blocked_by", inverse_label: "Is blocked by", graph: "acyclic" },
+        ],
+      } as unknown as WorkflowConfig,
+    });
+    expect(await screen.findByTestId("relationship-group")).toBeTruthy();
+    expect(screen.queryByTestId("child-progress")).toBeNull();
+  });
+
+  it("withholds the meter until the workflow config has loaded", async () => {
+    // Without the config, statusOf classifies nothing and every child
+    // would read as todo — a misleading 0 / N. The meter waits. The
+    // group still renders (an unknown-type group with the raw key), so
+    // the panel mounts — proof the null below is not just an unmounted
+    // panel.
+    renderTreePanel({
+      relationships: [childEdge("c1", "done")],
+      workflow: undefined,
+    });
+    expect(await screen.findByTestId("relationship-group")).toBeTruthy();
+    expect(screen.queryByTestId("child-progress")).toBeNull();
   });
 });
