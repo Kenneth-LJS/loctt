@@ -109,12 +109,12 @@ export function Header({
 
       <div className="flex shrink-0 items-center gap-2 pr-1 text-[1rem] font-semibold text-text-primary sm:pr-2">
         <span className="grid h-[22px] w-[22px] place-items-center rounded-sm bg-accent text-[0.8571rem] font-bold text-accent-contrast">
-          T
+          L
         </span>
         {/* The wordmark is the first thing to go: the logo already
             identifies the app, and the controls to its right are the
             ones the user needs to reach. */}
-        <span className="hidden sm:inline">TaskTracker</span>
+        <span className="hidden sm:inline">LocTT</span>
       </div>
 
       <div className="flex-1" />
