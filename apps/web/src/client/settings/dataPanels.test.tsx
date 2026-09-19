@@ -290,6 +290,133 @@ describe("LabelsPanel", () => {
   });
 });
 
+/**
+ * @verifies K100
+ *
+ * Point-of-use editing (K100): Labels / Milestones edit through a single
+ * self-contained dialog the Settings panel ALSO renders (the sidebar opens
+ * the same one). These turn on: the panel's Edit opens the extracted
+ * dialog prefilled, and Save issues the PUT through the dialog's own hook.
+ *
+ * These previously asserted the panel's *inline row form* (a
+ * `label-name-input` rendered in the row, with an in-row Save). That form
+ * was replaced by the shared `LabelEditDialog` / `MilestoneEditDialog`
+ * this ticket extracted; the tests were updated to open the dialog and
+ * assert the same fields + the same PUT.
+ */
+describe("K100 point-of-use edit dialogs", () => {
+  const labels = {
+    items: [{ id: "L1", name: "bug", color: "#ff0000", taskCount: 3 }],
+    total: 1,
+  };
+  const milestones = {
+    items: [{ id: "M1", name: "v1", target_date: "2026-03-31", taskCount: 2 }],
+    total: 2,
+  };
+
+  it("LabelsPanel Edit opens the shared dialog prefilled and saves via PUT", async () => {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> =>
+      Promise.resolve(
+        String(url).includes("/api/labels/")
+          ? jsonResponse({ id: "L1", name: "defect", color: "#00ff00" })
+          : jsonResponse(labels),
+      ));
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    openRowAction(screen.getByTestId("label-row-L1"), "label-edit");
+
+    // The SAME dialog component the sidebar renders.
+    await screen.findByTestId("label-edit-dialog");
+    const name = screen.getByTestId<HTMLInputElement>("label-name-input");
+    const color = screen.getByTestId<HTMLInputElement>("label-color-input");
+    expect(name.value).toBe("bug");
+    expect(color.value).toBe("#ff0000");
+
+    fireEvent.change(name, { target: { value: "defect" } });
+    fireEvent.change(color, { target: { value: "#00ff00" } });
+    fireEvent.click(screen.getByTestId("label-save"));
+
+    await waitFor(() => {
+      const put = (fetchMock.mock.calls as readonly (readonly unknown[])[]).find((c) => {
+        const init = c[1] as RequestInit | undefined;
+        return String(c[0]).includes("/api/labels/L1")
+          && String(init?.method).toUpperCase() === "PUT";
+      });
+      expect(put).toBeDefined();
+      const raw = (put?.[1] as RequestInit).body;
+      const body = JSON.parse(typeof raw === "string" ? raw : "") as unknown;
+      expect(body).toEqual({ name: "defect", color: "#00ff00" });
+    });
+  });
+
+  it("MilestonesPanel Edit opens the shared dialog prefilled and saves via PUT", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "M1", name: "v1.1", target_date: "2026-06-30" }));
+      }
+      return Promise.resolve(jsonResponse(milestones));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    openRowAction(screen.getByTestId("milestone-row-M1"), "milestone-edit");
+
+    await screen.findByTestId("milestone-edit-dialog");
+    const name = screen.getByTestId<HTMLInputElement>("milestone-name-input");
+    const date = screen.getByTestId<HTMLInputElement>("milestone-date-input");
+    expect(name.value).toBe("v1");
+    expect(date.value).toBe("2026-03-31");
+
+    fireEvent.change(name, { target: { value: "v1.1" } });
+    fireEvent.change(date, { target: { value: "2026-06-30" } });
+    fireEvent.click(screen.getByTestId("milestone-save"));
+
+    await waitFor(() => {
+      const put = (fetchMock.mock.calls as readonly (readonly unknown[])[]).find((c) => {
+        const init = c[1] as RequestInit | undefined;
+        return String(c[0]).includes("/api/milestones/M1")
+          && String(init?.method).toUpperCase() === "PUT";
+      });
+      expect(put).toBeDefined();
+      const raw = (put?.[1] as RequestInit).body;
+      const body = JSON.parse(typeof raw === "string" ? raw : "") as unknown;
+      expect(body).toEqual({ name: "v1.1", target_date: "2026-06-30" });
+    });
+  });
+
+  it("MilestoneEditDialog sends target_date: null when the date is cleared (MSL-14)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "M1", name: "v1" }));
+      }
+      return Promise.resolve(jsonResponse(milestones));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    openRowAction(screen.getByTestId("milestone-row-M1"), "milestone-edit");
+    await screen.findByTestId("milestone-edit-dialog");
+    fireEvent.change(screen.getByTestId("milestone-date-input"), { target: { value: "" } });
+    fireEvent.click(screen.getByTestId("milestone-save"));
+
+    // MSL-14: a cleared date is null (drops the key), never "" or an epoch.
+    await waitFor(() => {
+      const put = (fetchMock.mock.calls as readonly (readonly unknown[])[]).find((c) => {
+        const init = c[1] as RequestInit | undefined;
+        return String(c[0]).includes("/api/milestones/M1")
+          && String(init?.method).toUpperCase() === "PUT";
+      });
+      expect(put).toBeDefined();
+      const raw = (put?.[1] as RequestInit).body;
+      const body = JSON.parse(typeof raw === "string" ? raw : "") as { target_date: unknown };
+      expect(body.target_date).toBeNull();
+    });
+  });
+});
+
 describe("MilestonesPanel", () => {
   const twoMilestones = {
     items: [

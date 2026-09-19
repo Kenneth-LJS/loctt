@@ -7,12 +7,12 @@ import {
   useCountedMilestones,
   useCreateMilestone,
   useDeleteMilestone,
-  useUpdateMilestone,
 } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import { MilestoneEditDialog } from "./MilestoneEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
 
@@ -32,24 +32,22 @@ import { RowActions } from "./RowActions.tsx";
  * fail `IsoDate` validation, and `0`/epoch would be a real date.
  */
 
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 function MilestoneRow({ milestone, count, all }: {
   readonly milestone: MilestoneDef & { readonly taskCount?: number };
   readonly count: number;
   readonly all: readonly MilestoneDef[];
 }) {
-  const update = useUpdateMilestone();
   const archive = useArchiveMilestone();
   const del = useDeleteMilestone();
+  // K100: editing now runs through the shared MilestoneEditDialog (which
+  // the sidebar and the /milestones view also open), rather than an inline
+  // row form. The dialog re-seeds from the current milestone on every
+  // open, so the B2 bug-5 stale-draft trap is handled by mounting it fresh
+  // (`editing && <MilestoneEditDialog … />`) — not by resetting state here.
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(milestone.name);
-  const [date, setDate] = useState(milestone.target_date ?? "");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const archived = milestone.archived === true;
-  const dateOk = date === "" || ISO_DATE_RE.test(date);
-  const nameOk = name.trim().length > 0;
 
   return (
     <li
@@ -57,148 +55,76 @@ function MilestoneRow({ milestone, count, all }: {
       data-milestone-archived={archived ? "true" : "false"}
       className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
     >
-      {editing
-        ? (
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <div className="flex gap-2">
-                <TextField
-                  aria-label="Milestone name"
-                  data-testid="milestone-name-input"
-                  value={name}
-                  onChange={e => { setName(e.target.value); }}
-                  className="min-w-0 flex-1"
-                />
-                <input
-                  type="date"
-                  aria-label="Target date"
-                  data-testid="milestone-date-input"
-                  value={date}
-                  onChange={e => { setDate(e.target.value); }}
-                  className="w-40 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
-                />
-              </div>
-              {!dateOk && (
-                <p role="alert" className="text-[0.8571rem] text-danger-fg">
-                  Target date must be an ISO date like <code>2026-03-31</code>.
-                </p>
-              )}
-              {update.isError && (
-                <p role="alert" className="text-[0.8571rem] text-danger-fg">
-                  {update.error instanceof ApiError ? update.error.message : "Could not save."}
-                </p>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  testId="milestone-save"
-                  disabled={!dateOk || !nameOk || update.isPending}
-                  onClick={() => {
-                    update.mutate(
-                      {
-                        id: milestone.id,
-                        name: name.trim(),
-                        // MSL-14: null clears the key entirely. "" would
-                        // be rejected by IsoDate, and any epoch default
-                        // would be a real date the user never chose.
-                        target_date: date === "" ? null : date,
-                      },
-                      { onSuccess: () => { setEditing(false); } },
-                    );
-                  }}
-                >
-                  Save
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setName(milestone.name);
-                    setDate(milestone.target_date ?? "");
-                    setEditing(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )
-        : (
-            <>
-              <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
-                {milestone.name}
-                {/*
-                  MSL-11 (management surface): an archived milestone is
-                  still shown here and marked, not hidden, so the row
-                  stays reachable to unarchive it. (MSL-25's claim — that
-                  an archived milestone still resolves on tasks and by URL
-                  and is revealed in the /milestones view — lives on that
-                  view, not this panel.)
-                */}
-                {archived && (
-                  <span data-testid="milestone-archived-marker" className="ml-2 text-text-tertiary">
-                    (archived)
-                  </span>
-                )}
-              </span>
-              {/*
-                MSL-14 / MSL-16: an undated milestone says so explicitly.
-                Never blank, never a bare dash, never today.
-              */}
-              <span
-                data-testid="milestone-date"
-                data-milestone-date={milestone.target_date ?? "none"}
-                className="w-40 shrink-0 text-[0.8571rem] text-text-secondary"
-              >
-                {milestone.target_date ?? "No target date"}
-              </span>
-              <span
-                data-testid="milestone-refcount"
-                data-milestone-refcount={String(count)}
-                className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
-              >
-                {String(count)} task{count === 1 ? "" : "s"}
-              </span>
-              <RowActions
-                label={`Actions for milestone ${milestone.name}`}
-                actions={[
-                  {
-                    label: "Edit",
-                    testId: "milestone-edit",
-                    onSelect: () => {
-                      // B2 bug 5: re-seed name/date from the CURRENT props on
-                      // Edit-open. Seeded once at mount, a stale draft would
-                      // be written back on Save after an external rename,
-                      // silently reverting it.
-                      setName(milestone.name);
-                      setDate(milestone.target_date ?? "");
-                      update.reset();
-                      setEditing(true);
-                    },
-                  },
-                  {
-                    label: archived ? "Unarchive" : "Archive",
-                    testId: "milestone-archive-toggle",
-                    disabled: archive.isPending,
-                    onSelect: () => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); },
-                  },
-                  { label: "Delete", testId: "milestone-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
-                ]}
-              />
-              {/* B2 bug 3: an archive/unarchive that fails must say so —
-                  the toggle used to swallow the error and read as done
-                  while nothing changed on disk. */}
-              {archive.isError && (
-                <p
-                  role="alert"
-                  data-testid="milestone-archive-error"
-                  className="basis-full text-[0.8571rem] text-danger-fg"
-                >
-                  {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
-                </p>
-              )}
-            </>
-          )}
+      <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
+        {milestone.name}
+        {/*
+          MSL-11 (management surface): an archived milestone is
+          still shown here and marked, not hidden, so the row
+          stays reachable to unarchive it. (MSL-25's claim — that
+          an archived milestone still resolves on tasks and by URL
+          and is revealed in the /milestones view — lives on that
+          view, not this panel.)
+        */}
+        {archived && (
+          <span data-testid="milestone-archived-marker" className="ml-2 text-text-tertiary">
+            (archived)
+          </span>
+        )}
+      </span>
+      {/*
+        MSL-14 / MSL-16: an undated milestone says so explicitly.
+        Never blank, never a bare dash, never today.
+      */}
+      <span
+        data-testid="milestone-date"
+        data-milestone-date={milestone.target_date ?? "none"}
+        className="w-40 shrink-0 text-[0.8571rem] text-text-secondary"
+      >
+        {milestone.target_date ?? "No target date"}
+      </span>
+      <span
+        data-testid="milestone-refcount"
+        data-milestone-refcount={String(count)}
+        className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
+      >
+        {String(count)} task{count === 1 ? "" : "s"}
+      </span>
+      <RowActions
+        label={`Actions for milestone ${milestone.name}`}
+        actions={[
+          {
+            label: "Edit…",
+            testId: "milestone-edit",
+            onSelect: () => { setEditing(true); },
+          },
+          {
+            label: archived ? "Unarchive" : "Archive",
+            testId: "milestone-archive-toggle",
+            disabled: archive.isPending,
+            onSelect: () => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); },
+          },
+          { label: "Delete", testId: "milestone-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
+        ]}
+      />
+      {/* B2 bug 3: an archive/unarchive that fails must say so —
+          the toggle used to swallow the error and read as done
+          while nothing changed on disk. */}
+      {archive.isError && (
+        <p
+          role="alert"
+          data-testid="milestone-archive-error"
+          className="basis-full text-[0.8571rem] text-danger-fg"
+        >
+          {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
+        </p>
+      )}
+
+      {editing && (
+        <MilestoneEditDialog
+          existing={milestone}
+          onClose={() => { setEditing(false); }}
+        />
+      )}
 
       {confirmingDelete && (
         /*
