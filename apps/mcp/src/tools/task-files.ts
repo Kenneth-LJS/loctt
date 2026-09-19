@@ -21,11 +21,6 @@ import {
   AttachmentExistsError,
   AttachmentNotFoundError,
   detachFile,
-  GitHistoryRewrittenError,
-  GitReconcileNeededError,
-  GitRemoteSchemaNewerError,
-  GitSyncFirstError,
-  GitWorktreeMissingError,
   loadSyncState,
   lookupTask,
   publish,
@@ -67,19 +62,19 @@ async function autoCommitAttachment(
         : {}),
     };
   } catch (err) {
-    // A publish that refuses (reconcile/divergence/worktree/schema) leaves
-    // the attachment on disk. Report why the auto-commit did not happen
-    // rather than failing the attach.
-    if (
-      err instanceof GitReconcileNeededError
-      || err instanceof GitSyncFirstError
-      || err instanceof GitHistoryRewrittenError
-      || err instanceof GitRemoteSchemaNewerError
-      || err instanceof GitWorktreeMissingError
-    ) {
-      return { committed: false, note: `attachment stored but not committed: ${err.message}` };
-    }
-    throw err;
+    // The attach ALREADY landed on disk (and in history) before this
+    // point; auto-commit is strictly best-effort, so ANY failure from
+    // publish() is reported as "stored but not committed" and never
+    // re-thrown — re-throwing would misreport a successful attach as a
+    // failure. publish() can refuse for many reasons beyond the git-sync
+    // conflict family (GitSyncError subtypes): a PreflightError on an
+    // unreadable task, a reconcile-interrupted sentinel, a rekey-needed
+    // gate, or an unexpected I/O error. Enumerating subtypes (as an
+    // earlier version did) silently let PreflightError / the others
+    // escape and fail the attach — a review-caught regression. Catch-all
+    // is both correct and simpler here.
+    const message = err instanceof Error ? err.message : String(err);
+    return { committed: false, note: `attachment stored but not committed: ${message}` };
   }
 }
 
