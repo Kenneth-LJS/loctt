@@ -137,9 +137,23 @@ so it is not read twice. `IconButton` requires an `aria-label`.
 
 Use these rather than hand-rolled markup.
 
-- **`Button`** — variants `primary` / `secondary` / `ghost` / `danger`,
-  sizes `sm`/`md`. The default control; bakes in cursor/hover/active/focus.
-- **`IconButton`** — icon-only button; **requires `aria-label`**.
+- **`Button`** — variants `primary` / `secondary` / `ghost` / `danger` /
+  `danger-outline` / `warn-outline`, sizes `sm`/`md`. The default control;
+  bakes in cursor/hover/active/focus. The `*-outline` variants are a
+  tone-tinted **outline** (tone border + tone text over a transparent
+  surface, subtle tone wash on hover) — for the alert-banner retry/dismiss
+  buttons, where `secondary` (neutral border) and `danger` (solid fill)
+  both read wrong. Modelled as named variants, not a `tone` prop, so they
+  stay one lookup in the shared `BUTTON_VARIANT` map. Tokens only:
+  `border-danger-fg/40 text-danger-fg hover:bg-danger-fg/10`
+  (and the `warn-fg` equivalents).
+- **`IconButton`** — icon-only button; **requires `aria-label`**. Sizes
+  `xs` (24px, tiny inline remove buttons e.g. a query-builder condition
+  ✕) / `sm` (28px) / `md` (32px, default) / `touch` (44px, the WCAG 2.5.5
+  tap-target minimum — use for standalone controls like the settings
+  RowActions kebab instead of hand-rolling `h-11 w-11`). The glyph stays
+  visually centred at its normal size in every footprint; `touch`'s extra
+  area is invisible hit-slop.
 - **`ToolbarButton`** — the toolbar pill height/spacing.
 - **`Menu` / `MenuItem`** — overflow/kebab menus. The trigger receives
   `toggle`/`open` (not `onClick`).
@@ -175,7 +189,12 @@ Use these rather than hand-rolled markup.
   (Ken: "I don't want to see native checkboxes or dropdowns"); the
   `editor/` package and `OptionPicker` (a custom listbox) are the
   exceptions. Native `type="date"` / `type="color"` are OS pickers and
-  stay.
+  stay. `TextField` is **full-width by default**; pass `fullWidth={false}`
+  for a fixed-width input (query-builder value inputs, the `w-32` estimate
+  field) so the caller's own width class in `className` wins — needed
+  because `cn` is a plain join, not `tailwind-merge`, so `w-full` cannot
+  otherwise be overridden. `fullWidth={false}` also releases the
+  `leadingIcon` wrapper's width.
 - **`brand/LogoMark`** — the mark as two token-filled paths ("L" =
   `--accent`, "o" = `--text-primary`), so it follows the theme. Decorative
   (`aria-hidden`) beside the wordmark; pass `label` when it stands alone.

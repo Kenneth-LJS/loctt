@@ -55,6 +55,27 @@ describe("Button", () => {
     expect(cls).not.toContain("text-white");
   });
 
+  it("renders the danger-outline variant as a tinted outline, not a solid fill", () => {
+    render(<Button variant="danger-outline">Retry</Button>);
+    const cls = screen.getByRole("button", { name: "Retry" }).className;
+    // Tone-tinted border + text over a transparent surface…
+    expect(cls).toContain("border-danger-fg/40");
+    expect(cls).toContain("text-danger-fg");
+    expect(cls).toContain("hover:bg-danger-fg/10");
+    // …and NOT the solid danger fill, which is what distinguishes it from
+    // the `danger` variant.
+    expect(cls).not.toContain("bg-danger-fg text-accent-contrast");
+    expect(cls).not.toContain("text-white");
+  });
+
+  it("renders the warn-outline variant with the warn tone tokens", () => {
+    render(<Button variant="warn-outline">Reconcile</Button>);
+    const cls = screen.getByRole("button", { name: "Reconcile" }).className;
+    expect(cls).toContain("border-warn-fg/40");
+    expect(cls).toContain("text-warn-fg");
+    expect(cls).toContain("hover:bg-warn-fg/10");
+  });
+
   it("secondary/ghost carry hover + active state classes", () => {
     const { rerender } = render(<Button variant="secondary">S</Button>);
     let cls = screen.getByRole("button").className;
@@ -150,6 +171,54 @@ describe("IconButton", () => {
     expect(screen.getByRole("button").className).toContain(
       "hover:bg-bg-muted",
     );
+  });
+
+  it("renders each size at its own square footprint", () => {
+    const { rerender } = render(
+      <IconButton aria-label="Remove" size="xs">
+        {"✕"}
+      </IconButton>,
+    );
+    let cls = screen.getByRole("button").className;
+    expect(cls).toContain("h-6");
+    expect(cls).toContain("w-6");
+
+    rerender(
+      <IconButton aria-label="Remove" size="sm">
+        {"✕"}
+      </IconButton>,
+    );
+    cls = screen.getByRole("button").className;
+    expect(cls).toContain("h-7");
+    expect(cls).toContain("w-7");
+
+    rerender(
+      <IconButton aria-label="Remove" size="md">
+        {"✕"}
+      </IconButton>,
+    );
+    cls = screen.getByRole("button").className;
+    expect(cls).toContain("h-8");
+    expect(cls).toContain("w-8");
+  });
+
+  it("renders the touch size as a 44px WCAG 2.5.5 tap target", () => {
+    render(
+      <IconButton aria-label="More" size="touch">
+        {"⋯"}
+      </IconButton>,
+    );
+    const cls = screen.getByRole("button").className;
+    // h-11 w-11 = 44px = the 2.5.5 minimum.
+    expect(cls).toContain("h-11");
+    expect(cls).toContain("w-11");
+  });
+
+  it("defaults to the md size (backwards-compatible) when size is omitted", () => {
+    render(<IconButton aria-label="More">{"⋯"}</IconButton>);
+    const cls = screen.getByRole("button").className;
+    expect(cls).toContain("h-8");
+    expect(cls).toContain("w-8");
   });
 
   it("forwards testId", () => {

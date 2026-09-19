@@ -27,7 +27,13 @@ import { cn } from "./cn.ts";
  * reaches the DOM. Integration/e2e/vitest all select by it, so this is
  * load-bearing.
  */
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "ghost"
+  | "danger"
+  | "danger-outline"
+  | "warn-outline";
 export type ButtonSize = "sm" | "md";
 
 export interface ButtonProps
@@ -54,6 +60,16 @@ export const BUTTON_SIZE: Record<ButtonSize, string> = {
  * white in light and near-black in dark, so it stays legible on the
  * accent/danger fill in both themes (6.29:1 / 6.60:1 on accent, 5.53:1 /
  * 8.56:1 on danger — all AA).
+ *
+ * The `*-outline` variants are the tinted-outline look the alert banners
+ * needed (retry/dismiss): a tone-coloured border and text over a
+ * transparent surface, with a subtle tone-tinted hover — distinct from
+ * `secondary` (neutral border) and `danger` (solid fill). Modelled as
+ * named variants rather than a separate `tone` prop so they compose with
+ * the existing `Record<ButtonVariant, string>` map exactly like every
+ * other variant (and stay one lookup, not a variant×tone matrix). Tokens
+ * only: `border-{tone}-fg` at 40% for a soft edge, `text-{tone}-fg`, and
+ * a 10% tone wash on hover.
  */
 export const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   primary:
@@ -64,6 +80,10 @@ export const BUTTON_VARIANT: Record<ButtonVariant, string> = {
     "text-text-secondary hover:bg-bg-muted hover:text-text-primary active:bg-bg-muted-hover",
   danger:
     "bg-danger-fg text-accent-contrast hover:opacity-90 active:opacity-90",
+  "danger-outline":
+    "border border-danger-fg/40 text-danger-fg hover:bg-danger-fg/10 active:bg-danger-fg/20",
+  "warn-outline":
+    "border border-warn-fg/40 text-warn-fg hover:bg-warn-fg/10 active:bg-warn-fg/20",
 };
 
 /**
