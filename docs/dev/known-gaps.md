@@ -3853,3 +3853,33 @@ status-pill wrap, responsive mobile layout, and filter-chip id humanization
 sprints, #7 board keyboard, #11 create feedback, "mobile sidebar rail")
 were shared-context artifacts or already-built. Lesson recorded: give each
 UI review agent an ISOLATED browser context, or the findings are unreliable.
+
+## Responsive pass complete — 2026-09-19 (PM-plan GROUPS A/B/C)
+
+A PM-agent-led responsive plan (audit → decide patterns → fix → review) was
+executed. The naive-wrapping problem Ken flagged ("instead of cramming
+filters into one row that warps, tap to open a dialog") is addressed with
+mobile-native patterns, not wrap-tuning. All committed on
+branch ui/ux-polish-and-timeline-panel, full web suite green (1701).
+
+Design system (see PM patterns): below `sm` use stacked cards for tables,
+a kebab (⋯) overflow menu for row actions, a bottom Sheet for occasional
+control clusters (filters), and column-stack reflow for read-only rows.
+One new primitive: ui/Sheet.tsx (bottom + full variants, reuses Modal's
+focus-trap/inert). A shared settings/RowActions.tsx kebab. A shared
+shell/useIsNarrow.ts hook (renders different DOM below a breakpoint).
+
+- GROUP A (row actions → kebab): Labels, Milestones, Sprints, Relationships,
+  Saved views. Projects left on grouped-flex (audit rated it only mild).
+- GROUP B (sheets): List filter facets → "Filters" button + bottom sheet
+  (badged active count; chip row stays; same search-param writes; live
+  apply). Settings 24-link nav → picker button + sheet below md. Deferred
+  minor: Advanced DSL editor in the full Sheet variant (#12).
+- GROUP C (reflow): Diagnostics check rows, Keyboard context sub-line,
+  Timeline unscheduled row. Calendar add-holiday left as-is (didn't
+  reproduce; no overflow).
+
+Earlier in the same pass: List → cards, Users → cards, status-pill nowrap,
+row-divider gap, dropdown affordance, filter-chip id humanization, storage-
+layer copy cleanup, General section removed. A reviewer agent verified the
+fixes on a 390px viewport.
