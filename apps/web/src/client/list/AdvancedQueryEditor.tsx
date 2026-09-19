@@ -144,7 +144,7 @@ export function AdvancedQueryEditor({
         aria-describedby={invalid ? `${errorId}-error` : undefined}
         // VUE-23: the box scrolls rather than clipping; no maxLength,
         // so a long query cannot be truncated on the way in.
-        className="w-full resize-y overflow-auto whitespace-pre-wrap break-all rounded-md border border-border-default bg-bg-surface px-2.5 py-2 text-[0.8571rem] text-text-primary focus:border-accent"
+        className="w-full resize-y overflow-auto whitespace-pre-wrap break-all rounded-md border border-border-default bg-bg-surface px-2.5 py-2 text-[0.8571rem] text-text-primary"
       />
 
       {/*

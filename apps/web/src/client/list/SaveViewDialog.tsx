@@ -49,7 +49,7 @@ export function SaveViewDialog({
               if (e.key === "Enter") submit();
             }}
             placeholder="e.g. My open bugs"
-            className="h-8 rounded-md border border-border-default bg-bg-surface px-2.5 text-[0.9286rem] text-text-primary focus:border-accent"
+            className="h-8 rounded-md border border-border-default bg-bg-surface px-2.5 text-[0.9286rem] text-text-primary"
           />
         </label>
 
