@@ -7,10 +7,12 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
 import { timelineSearchSchema } from "../router/timelineSearch.ts";
+import { ToastProvider } from "../ui/Toast.tsx";
 import { TimelineView } from "./TimelineView.tsx";
 
 /**
@@ -86,7 +88,7 @@ function stubFetch() {
   });
 }
 
-function mountTimeline() {
+function mountTimeline(initialSearch = "") {
   stubFetch();
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const rootRoute = createRootRoute();
@@ -94,7 +96,15 @@ function mountTimeline() {
     getParentRoute: () => rootRoute,
     path: "/timeline",
     validateSearch: timelineSearchSchema,
-    component: TimelineView,
+    // Wrapped in the app-wide create provider (as the shell does), so
+    // the empty state's "+ Add task" resolves to the real modal.
+    component: () => (
+      <ToastProvider>
+        <CreateTaskProvider>
+          <TimelineView />
+        </CreateTaskProvider>
+      </ToastProvider>
+    ),
   });
   const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -103,7 +113,7 @@ function mountTimeline() {
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([timelineRoute, settingsRoute]),
-    history: createMemoryHistory({ initialEntries: ["/timeline"] }),
+    history: createMemoryHistory({ initialEntries: [`/timeline${initialSearch}`] }),
   });
   render(
     <QueryClientProvider client={qc}>
@@ -130,5 +140,32 @@ describe("the timeline config banners", () => {
     mountTimeline();
     const link = await screen.findByTestId("timeline-calendar-error-settings-link");
     expect(link.getAttribute("href")).toBe("/settings/calendar#field-timezone");
+  });
+});
+
+/**
+ * First-run: the timeline's empty state teaches + acts. A genuinely
+ * empty tracker (no tasks, no filters) offers "+ Add task" — the same
+ * create entry point the board and list use. A filtered-empty timeline
+ * does not: creating a task would not answer "your filter matched
+ * nothing".
+ */
+describe("the timeline empty state (first-run)", () => {
+  it("offers a create button that opens the modal when the tracker is truly empty", async () => {
+    mountTimeline();
+    const add = await screen.findByTestId("timeline-empty-add-task");
+    expect(screen.getByText(/No tasks yet/)).toBeTruthy();
+    expect(screen.queryByTestId("create-task-modal")).toBeNull();
+    fireEvent.click(add);
+    expect(await screen.findByTestId("create-task-modal")).toBeTruthy();
+  });
+
+  it("does NOT offer a create button on a filtered-empty timeline", async () => {
+    mountTimeline("?status=done");
+    // The empty frame still renders (the feed is empty), but it names
+    // the active filter rather than inviting a first task.
+    await screen.findByTestId("timeline-empty");
+    expect(screen.getByText(/No tasks match this view/)).toBeTruthy();
+    expect(screen.queryByTestId("timeline-empty-add-task")).toBeNull();
   });
 });
