@@ -61,7 +61,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "saved-views", label: "Saved views", group: "Data", built: true },
 
   { id: "calendar", label: "Calendar", group: "Tracker", built: true },
-  { id: "board-columns", label: "Board columns", group: "Tracker", built: false },
+  { id: "board-columns", label: "Board columns", group: "Tracker", built: true },
   { id: "timeline", label: "Timeline defaults", group: "Tracker", built: true },
   { id: "sync", label: "Sync", group: "Tracker", built: true },
   { id: "backup", label: "Backup & restore", group: "Tracker", built: true },
