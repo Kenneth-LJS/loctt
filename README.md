@@ -233,7 +233,7 @@ loctt unarchive T-1
 Delete is permanent:
 
 ```bash
-loctt delete T-1 --force
+loctt delete T-1 --yes
 ```
 
 ### History
@@ -269,7 +269,7 @@ Everything is customizable in `.loctt/config/workflow.yaml`: statuses, prioritie
 - [Features](docs/user/features.md) — what LocTT does, and which interfaces support each capability
 - [CLI reference](docs/user/cli/reference.md)
 - [MCP reference](docs/user/mcp/reference.md)
-- [Web UI spec](docs/user/ui/features.md) — the target UI; only the list view ships today
+- [Web UI guide](docs/user/ui/features.md)
 
 **Cross-cutting:**
 - [Configuration](docs/user/common/configuration.md)
@@ -288,10 +288,10 @@ Everything is customizable in `.loctt/config/workflow.yaml`: statuses, prioritie
 - [Build loop](docs/dev/build-loop.md) — how a web-UI ticket gets built and verified
 - [Known gaps](docs/dev/known-gaps.md) — understood defects not yet fixed
 
-**Acceptance criteria** — 931 cases describing observable behaviour, one
-file per flow. They are the specification the web UI is built against:
-- [UI test cases](docs/dev/ui-test-cases/) — 18 flow docs, plus the P1–P10 principles in its [README](docs/dev/ui-test-cases/README.md)
-- [CLI & MCP test cases](docs/dev/surface-test-cases/) — 10 flow docs, gaps only
+**Acceptance criteria** — cases describing observable behaviour, one file
+per flow. They are the specification each surface is built against:
+- [UI test cases](docs/dev/ui-test-cases/) — plus the P1–P10 principles in its [README](docs/dev/ui-test-cases/README.md)
+- [CLI & MCP test cases](docs/dev/surface-test-cases/)
 - [`case-index.json`](docs/dev/case-index.json) — the machine-readable index; see [tools/README.md](tools/README.md) for the coverage gate
 
 ## Security & data model

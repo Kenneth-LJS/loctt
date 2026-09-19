@@ -1,21 +1,27 @@
-# Design decisions
+# Decision log
 
-Locked decisions for LocTT, extracted from the v1 UI planning docs before
-those were retired. Keys (`D1`, `Q4`, `CW-3`, …) are preserved so existing
-cross-references keep resolving.
+An append-only record of design decisions for LocTT: what was decided, why,
+and — for reversible ones — how to undo it. Entries carry keys (`D1`, `Q4`,
+`A208`, `K98`, …) that the rest of the docs and the code cross-reference.
 
-**What's here and what isn't.** Decisions whose outcome is visible in the
-code are *not* repeated — the code is the record, and duplicating it here
-would just create another thing to drift. What survives is the material
-that leaves no trace:
+**This is a log, not reference documentation.** How LocTT works *now* lives
+in the code and in the reference docs (`architecture.md`, `schema-reference.md`,
+`design-system.md`, `docs/user/**`). This file is the "why we chose X, and
+how to reverse it" that leaves no trace in the code otherwise. It is
+deliberately historical; do not flatten it to present-tense. New decisions
+append; superseded ones stay, marked superseded, so an old call is not
+re-applied by mistake.
 
-1. **Deliberately not built** — the "we decided against X" calls. Nothing
-   in the codebase distinguishes these from oversights, so without this
-   list someone eventually "fixes" them.
-2. **Decided but unbuilt and unticketed** — real decisions that fell out
-   of the plan. These need converting to tickets or dropping on purpose.
-3. **Superseded** — where the shipped behaviour diverged from the locked
-   decision. Recorded so the old decision isn't re-applied.
+What earns an entry — the material that would otherwise be lost:
+
+1. **Deliberately not built** — the "we decided against X" calls, so nobody
+   later "fixes" a considered omission.
+2. **Decided but unbuilt** — real decisions still awaiting a ticket or a
+   deliberate drop.
+3. **Superseded** — where shipped behaviour diverged from an earlier
+   decision, kept so the old one is not re-applied.
+4. **Reversible agent/human calls** — each with a **To revert** path, so a
+   decision made to keep moving can be walked back cleanly.
 
 ---
 

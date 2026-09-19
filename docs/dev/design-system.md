@@ -94,7 +94,10 @@ Families (names, not values — values live in `tokens.css`):
   status colour comes from its workflow **category**, so a renamed status
   keeps a consistent colour and the four categories read the same across
   list/board/detail.
-- **Semantic:** `danger-*`, `success-*`, `warning-*`.
+- **Semantic (paired fg/bg):** `danger-*`, `success-*` (utilities backed
+  by `--feedback-danger-*` / `--feedback-success-*` in `tokens.css`).
+  There is no `warning-*` colour token — the ⚠ marker is a text glyph
+  (`ICON.warning`), and status uses the four category tokens above.
 
 Contrast is worked to WCAG AA in both themes (A11Y-39/40); when adding a
 token, check it against the surfaces it lands on.
@@ -120,7 +123,7 @@ link/copy/edit/trash/archive/plus/download/refresh/check/search/settings/
 drag, etc. **Do not** use ASCII/emoji as affordances (`▾ ✕ ⋯ ↑ ↓`, `👁`,
 `⛔`).
 
-Kept as literal text (`ui/icons.ts` `ICON`, not SVG): the **★** saved/
+Kept as literal text (`ui/icons.ts` `ICON`, not SVG): the **⭑** saved/
 favourite marker (Ken: intentional) and the **⚠** status marker. Keyboard-
 key labels and prose arrows also stay literal.
 

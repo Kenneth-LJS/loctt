@@ -75,7 +75,7 @@ Path helpers live in `packages/core/src/paths/index.ts`. Every config file has a
 
 ### Migration framework
 
-Migrations are registered in `packages/core/src/schema/migrations.ts` as edges in a directed graph. Each `Migration` has a `from`, a `to` (usually `from + 1` but skip-paths are allowed), and an idempotent `apply(locttDir)`. `findMigrationPath` runs BFS to find the shortest path between two versions and tiebreaks by minimizing the number of edges marked `deprecated`, so a future "skip the buggy v7" fast-path can coexist with the original step-by-step edges and the framework will prefer the non-deprecated route when both are equally short.
+Migrations are registered in `packages/core/src/schema/migrations.ts` as edges in a directed graph. Each `Migration` has a `from`, a `to` (usually `from + 1`, but skip-paths are allowed), and an idempotent `apply(locttDir)`. `findMigrationPath` runs BFS to find the shortest path between two versions and tiebreaks by minimizing the number of edges marked `deprecated`. This lets a skip-path fast-route (e.g. one that jumps over a buggy intermediate version) coexist with the original step-by-step edges: when two routes are equally short, the framework prefers the one with fewer deprecated edges.
 
 `migrateToCurrent` takes the migration lock, snapshots the entire `.loctt/` to a sibling `.loctt.backup-v<from>-<ts>-<rand>/`, then runs each step in order — writing the sentinel before applying, calling `apply`, stamping `.schema-version`, and clearing the sentinel. A crash anywhere in that loop leaves the sentinel behind so the next boot refuses to start until the user investigates.
 
@@ -124,18 +124,19 @@ Tasks belong to **exactly one project** via `TaskFrontmatter.project`. They nest
 
 A tracker hosts one or more projects. Each `ProjectDef` has:
 
-- `key` (slug, immutable internal identifier)
-- `label` (human display name)
-- `prefix` (e.g. `BACKEND-`, `WEB-`; immutable, must be globally unique)
+- `id` (ULID, immutable internal identifier; never shown to users). Tasks reference their project by this id — `TaskFrontmatter.project` holds it.
+- `name` (human display name; editable, not unique)
+- `slug` (stable URL-safe handle that URLs carry and the CLI/MCP accept; generated from the name at creation and fixed thereafter. Optional — trackers created before slugs existed have none and resolve by id)
+- `prefix` (e.g. `BACKEND-`, `WEB-`; must be globally unique; changed only via `loctt project set-prefix`, which renames every task in the project)
 - `archived` (soft-delete flag)
 
-Per-project key counters live in `state.yaml` under `keys.<project-key>`. Allocation is a simple `prefix + next_number` increment guarded by `withStateLock`.
+Per-project key counters live in `state.yaml` under `keys.<project-id>`. Allocation is a simple `prefix + next_number` increment guarded by `withStateLock`.
 
-`resolveProjectKey` walks the resolution order: **explicit > user default > workspace default (`projects.yaml#default`) > unique single project > error**. A user default that no longer matches any project is silently ignored — resolution falls through to the workspace default rather than erroring, so deleting a project doesn't break callers whose stored preference now references it. Per-user defaults aren't visible to core (they live in `users/<id>/settings.yaml`); callers pass them as `userDefault`.
+`resolveProjectId` walks the resolution order: **explicit > per-user default > workspace default (`projects.yaml#default`) > unique single active project > error**. A user default that no longer matches any project is silently ignored, and a workspace default that names a project that no longer exists (a "ghost" default) is ignored too — resolution falls through rather than erroring, so a stale stored preference doesn't break callers. Per-user defaults aren't visible to core (they live in `users/<id>/settings.yaml`); callers pass them as `userDefault`, and `resolveActiveProjectId` is the wrapper that reads the active user's setting and applies the full chain.
 
 ### Retired key counters
 
-When a project is hard-deleted, its counter is moved to `state.retired_keys.<key>` rather than discarded. Re-creating a project with the same key restores the counter from there, so re-numbered tasks never collide with surviving references in `key_history` or external links.
+When a project is hard-deleted, its counter is moved to `state.retired_keys.<project-id>` rather than discarded. Creating a new project whose `prefix` matches a retired counter reclaims that counter (`createProject`, PRU-18): the new project resumes numbering at the retired high-water mark and the retired entry is removed, so re-numbered tasks never collide with surviving references in `key_history` or external links.
 
 ### Archive vs delete
 
@@ -224,14 +225,13 @@ synced commit, and acts only on differences it can attribute. A file
 present locally but absent on the branch is "created locally", not
 "deleted remotely", so it survives.
 
-That asymmetry is load-bearing. Sync was previously a blind
-last-writer-wins mirror in both directions, which produced four
-reproduced data-loss paths — discarded field edits, unrecoverably deleted
-offline tasks, and an overwritten `.schema-version` that bricked the
-tracker. `planSync` exists to make those unrepresentable; see
-[invariants.md](invariants.md) before changing it.
+That asymmetry is load-bearing: a blind last-writer-wins mirror in both
+directions would discard field edits, unrecoverably delete offline tasks,
+and overwrite `.schema-version`. `planSync` makes those cases
+unrepresentable; see [invariants.md](invariants.md) before changing it.
 
 `reconcile.ts`'s content-level merges are wired for relationships and key
 history. `rekeyCollisions` — for two clones independently allocating the
-same key — is implemented and unit-tested but has no production caller
-yet; key collisions across clones remain an open case.
+same key — is implemented and unit-tested but has no production caller;
+key collisions across clones are an open case (see
+[known-gaps.md](known-gaps.md)).

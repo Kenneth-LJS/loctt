@@ -22,7 +22,7 @@ three surfaces over one shared core: a CLI, an MCP server, and a web UI.
 - **Configurable workflow** — statuses, priorities, task types and
   relationship kinds are defined in `workflow.yaml`; custom fields can be
   scoped to task types.
-- **Degrade, don't crash (P-11)** — a corrupt field is surfaced and kept,
+- **Degrade, don't crash** — a corrupt field is surfaced and kept,
   never silently dropped or allowed to take down a read; `loctt doctor`
   reports integrity findings.
 
