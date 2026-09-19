@@ -54,7 +54,20 @@ export type IconName =
   | "atSign"
   | "calendar"
   | "alert"
-  | "subtasks";
+  | "subtasks"
+  | "bold"
+  | "italic"
+  | "strikethrough"
+  | "code"
+  | "codeBlock"
+  | "list"
+  | "listNumbered"
+  | "quote"
+  | "superscript"
+  | "subscript"
+  | "undo"
+  | "redo"
+  | "sourceCode";
 
 /** Path/element content per icon, drawn in a shared 16x16 stroked frame. */
 const PATHS: Record<IconName, ReactElement> = {
@@ -91,10 +104,26 @@ const PATHS: Record<IconName, ReactElement> = {
   calendar: <><rect x="2.5" y="3.5" width="11" height="10" rx="1" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" /></>,
   alert: <><path d="M8 2.5l6 11H2z" /><path d="M8 6.5v3.5M8 11.8v.2" /></>,
   subtasks: <><path d="M4 2.5v8a2 2 0 002 2h2" /><rect x="8" y="4" width="5" height="3" rx="0.5" /><rect x="8" y="10" width="5" height="3" rx="0.5" /></>,
+  // Formatting-toolbar glyphs (Phase-0 editor polish). Drawn in the
+  // same stroked 16-unit frame as the rest so they sit beside the app's
+  // text at the toolbar's icon size.
+  bold: <path d="M5 3h4a2.5 2.5 0 010 5H5zM5 8h4.5a2.5 2.5 0 010 5H5z" />,
+  italic: <path d="M10.5 3h-3M8.5 13h-3M9.5 3L6.5 13" />,
+  strikethrough: <><path d="M3 8h10" /><path d="M11 5a3 3 0 00-3-1.5C6 3.5 5 4.4 5 5.6c0 1 .7 1.6 2 2M5 10.5c.4 1.3 1.6 2 3 2 1.8 0 3-.9 3-2.2" /></>,
+  code: <path d="M6 5L3 8l3 3M10 5l3 3-3 3" />,
+  codeBlock: <><rect x="2.5" y="3" width="11" height="10" rx="1" /><path d="M6.5 6.5L5 8l1.5 1.5M9.5 6.5L11 8l-1.5 1.5" /></>,
+  list: <><path d="M6 4.5h7M6 8h7M6 11.5h7" /><circle cx="3.3" cy="4.5" r="0.6" /><circle cx="3.3" cy="8" r="0.6" /><circle cx="3.3" cy="11.5" r="0.6" /></>,
+  listNumbered: <><path d="M6.5 4.5h6.5M6.5 8h6.5M6.5 11.5h6.5" /><path d="M2.6 3.2h.8v2.6M2.4 11h1.4M2.4 11c.9 0 1.4-1.3 0-1.6" /></>,
+  quote: <><path d="M4 4.5h3.5v3.5A3 3 0 014 11" /><path d="M9 4.5h3.5v3.5A3 3 0 019 11" /></>,
+  superscript: <><path d="M3 5l5 6M8 5l-5 6" /><path d="M11 3.5c1.5-.8 2.5 0 2.5.8 0 .9-1.2 1.2-2.5 2.2h2.7" /></>,
+  subscript: <><path d="M3 4l5 6M8 4l-5 6" /><path d="M11 10.5c1.5-.8 2.5 0 2.5.8 0 .9-1.2 1.2-2.5 2.2h2.7" /></>,
+  undo: <><path d="M4 8h6.5a3 3 0 010 6H7" /><path d="M6 5.5L3.5 8 6 10.5" /></>,
+  redo: <><path d="M12 8H5.5a3 3 0 000 6H9" /><path d="M10 5.5L12.5 8 10 10.5" /></>,
+  sourceCode: <path d="M6 4L2.5 8 6 12M10 4l3.5 4L10 12" />,
 };
 
 /** Icons drawn as filled shapes rather than strokes (dots, star). */
-const FILLED = new Set<IconName>(["more", "star", "drag"]);
+const FILLED = new Set<IconName>(["more", "star", "drag", "bold"]);
 
 export function Icon({
   name,

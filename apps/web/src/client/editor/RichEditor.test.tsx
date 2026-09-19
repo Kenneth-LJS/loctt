@@ -144,6 +144,34 @@ describe("RichEditor rendering", () => {
       .toBe("Formatting");
   });
 
+  // hideToolbar: the description body owns a single always-visible
+  // toolbar (with the mode toggle), so RichEditor must render none of its
+  // own and instead hand the editor instance up via onEditorReady.
+  it("hideToolbar: renders no internal toolbar and publishes the editor", async () => {
+    let published: unknown = "unset";
+    render(
+      <RichEditor
+        markdown="hello"
+        onDocChange={noop}
+        onBlur={noop}
+        mentionCandidates={[]}
+        hideToolbar
+        onEditorReady={e => { published = e; }}
+      />,
+    );
+    const surface = screen.getByTestId("rich-editor");
+    // Even once focused, no toolbar is rendered here (the parent owns it).
+    await act(async () => {
+      surface.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      await new Promise(r => setTimeout(r, 20));
+    });
+    expect(screen.queryByRole("toolbar", { name: "Formatting" })).toBeNull();
+    expect(screen.queryByTestId("fmt-bold")).toBeNull();
+    // The editor instance was handed up so the parent toolbar can drive it.
+    expect(published).not.toBe("unset");
+    expect(published).not.toBeNull();
+  });
+
   // @verifies TSK-67
   it("puts the caller's test-id on the surface, defaulting to rich-editor", () => {
     const { rerender } = render(

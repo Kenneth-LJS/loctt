@@ -72,13 +72,29 @@ describe("BodyRenderedView — K33 read state", () => {
     );
   });
 
+  it("aligns the read text flush-left with the section (cancels the hover-box inset)", () => {
+    renderView("Body text.");
+    // The hover-editable box keeps its `px-3` inset, but `-mx-3` cancels it
+    // so the text is flush-left with the DESCRIPTION label at rest. Red-
+    // proof: without `-mx-3` the container only carried `px-3`, indenting
+    // the text ~12px — the misalignment Ken reported.
+    const box = screen.getByTestId("body-rendered");
+    expect(box.className).toContain("-mx-3");
+    expect(box.className).toContain("px-3");
+  });
+
   // @verifies TSK-69
-  it("TSK-69: clicking the rendered text enters edit", () => {
+  it("TSK-69: clicking the rendered text enters edit, passing the click point", () => {
     const onEnterEdit = vi.fn();
     renderView("Plain paragraph of text.", onEnterEdit);
 
-    fireEvent.click(screen.getByText("Plain paragraph of text."));
+    // The click's viewport coordinates are forwarded so the editor can
+    // place the caret where the user clicked (`posAtCoords`) rather than
+    // at position 0. Red-proof: the previous `onEnterEdit()` call passed
+    // nothing, so asserting the coordinate object fails against it.
+    fireEvent.click(screen.getByText("Plain paragraph of text."), { clientX: 42, clientY: 99 });
     expect(onEnterEdit).toHaveBeenCalledTimes(1);
+    expect(onEnterEdit).toHaveBeenCalledWith({ x: 42, y: 99 });
   });
 
   // @verifies TSK-69

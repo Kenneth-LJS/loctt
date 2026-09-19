@@ -46,8 +46,13 @@ export interface BodyRenderedViewProps {
   readonly placeholder: string;
   /** Resolves `@user:<id>` to a display name for the read view. */
   readonly mentionCandidates: readonly MentionCandidate[];
-  /** Clicking the body text (not a link or image) enters edit (TSK-69). */
-  readonly onEnterEdit: () => void;
+  /**
+   * Clicking the body text (not a link or image) enters edit (TSK-69).
+   * The click's viewport coordinates are passed through so the editor can
+   * land the caret where the user clicked (`posAtCoords`) rather than at
+   * position 0.
+   */
+  readonly onEnterEdit: (coords?: { readonly x: number; readonly y: number }) => void;
 }
 
 /**
@@ -75,7 +80,9 @@ export function BodyRenderedView({
     const target = e.target as HTMLElement | null;
     if (target?.closest("a") ?? false) return;
     if (target?.closest("img") ?? false) return;
-    onEnterEdit();
+    // TSK-69: carry the click point so the editor can place the caret
+    // where the user clicked rather than at position 0.
+    onEnterEdit({ x: e.clientX, y: e.clientY });
   }, [onEnterEdit]);
 
   return (
@@ -99,7 +106,13 @@ export function BodyRenderedView({
           e.preventDefault();
           onEnterEdit();
         }}
-        className="prose-body min-h-[8rem] cursor-text rounded border border-transparent px-3 py-2 text-[0.9286rem] text-text-primary hover:border-border-subtle"
+        // `-mx-3` cancels the `px-3` horizontally: the body text sits
+        // FLUSH-LEFT with the "DESCRIPTION" section label at rest (aligned
+        // with RELATED/ATTACHMENTS content), while the transparent
+        // hover-editable box still extends its 12px inset into the negative
+        // margin — so the hover-to-reveal affordance is unchanged but no
+        // longer indents the text.
+        className="prose-body -mx-3 min-h-[8rem] cursor-text rounded border border-transparent px-3 py-2 text-[0.9286rem] text-text-primary hover:border-border-subtle"
       >
         {isEmpty
           ? (

@@ -13,7 +13,22 @@ machine-state traps) live in `lessons.md`, not here.
 
 ## Code defects
 
-### REL-15 · Escape does not cancel a keyboard relationship reorder
+### REL-15 · Escape does not cancel a keyboard relationship reorder — FIXED
+
+**Fixed** (2026-09-19). `FlatGroup` now uses a pickup buffer: arrow keys
+move the picked-up row *visually only* (a local `{origin, current}`
+state that overrides the rendered order), the rerank is committed as a
+single `onMove(origin, current)` on drop (Enter/Space), and Escape drops
+the buffer to restore the origin with no write. Covered by
+`RelationshipsPanel.test.tsx` (arrows buffer without writing; Escape
+restores + zero rerank calls; Enter commits exactly one) — all three
+red-proven against the old write-per-arrow code — and the `tests/ui`
+REL-15 spec was extended with the Escape case (asserts position 1 and
+zero `/rerank` requests). The `moveUp`/`moveDown` e2e helpers were
+updated to press Enter to commit (they previously waited for a write per
+arrow).
+
+Original report follows.
 
 `apps/web/src/client/relationships/RelationshipsPanel.tsx`. Two problems
 make REL-15's third bullet ("Escape restores the original position
@@ -39,7 +54,23 @@ The existing REL-15 test (`tests/ui/flow-relationships.spec.ts`) is not
 vacuous, just partial: it never presses Escape, so it covers bullets 1
 and 2 and needs extending, not replacing.
 
-### REL-33 · A stale-page rerank is not refused (deliberate decline)
+### REL-33 · A stale-page rerank is not refused — FIXED
+
+**Fixed** (2026-09-19). `reorderRelationship` now resolves the
+relationship definition from workflow config (loading it itself when the
+caller does not pass `workflowConfig`, as `reorderBoardRank` already
+does) and throws a `ReorderError` naming the kind when the definition is
+absent or not `ranked`. The guard therefore fires on every surface — the
+web route maps `ReorderError` to a 400, and CLI `rerank` / MCP inherit
+the same refusal — without the server route (owned elsewhere) needing to
+thread the config through. Covered by two tests in `reorder.test.ts`
+("refuses a rerank when the kind is no longer ranked", red-proven by
+disabling the ranked guard; "refuses … not declared in workflow.yaml").
+The existing `tests/ui` REL-33 spec (handles disappear, ranks preserved)
+is unaffected. There was no literal `test.fixme` in the tree for the
+core refusal; a proper red-proven test was added instead.
+
+Original report follows.
 
 REL-33's second bullet — "a drag against a stale page is refused with a
 message that the kind is no longer ranked" — needs a check that exists at
@@ -64,7 +95,19 @@ absent or not `ranked`. The web route already maps `ReorderError` to a
 400. The spec is `test.fixme` — it runs, expects to fail, and starts
 passing loudly when core is fixed.
 
-### `createTask` hard-codes the tree relationship key, and `parent` is dead plumbing
+### `createTask` hard-codes the tree relationship key, and `parent` is dead plumbing — FIXED
+
+**Fixed** (2026-09-19). (1) `create.ts` now resolves the tree axis with
+`workflowConfig?.relationships.find(r => r.graph === "tree")?.key`,
+falling back to `"parent"` only when no config is supplied. (2) `--parent`
+is exposed on CLI `create` and `parent` on the MCP `create_task` tool.
+Covered by `create.test.ts` (uses the config's renamed tree key, not a
+hard-coded `parent` — red-proven; and the no-config fallback) and by two
+CLI/MCP parity cases in `tests/integration/cli/create-field-parity.test.ts`.
+CLI and MCP reference docs updated. The web create route/modal are owned
+by other agents and were not touched.
+
+Original report follows.
 
 Two related gaps found in the Jira-comparison review:
 
@@ -108,6 +151,14 @@ but it is the class core already fixed for its own producer.
 **Fix:** replace the server's private `dslAtom` with an import of core's
 (the browser-bundle constraint that kept them separate does not apply
 server-side), giving one tokenizer-checked quoter across all producers.
+
+**Core side done** (2026-09-19). Core's `dslAtom`
+(`packages/core/src/query/serialize.ts`) was confirmed correct (it
+delegates to `isBareSafe`, a tokenizer round-trip check) and is now
+**exported** from `@loctt/core` (via `query/index.ts` and the package
+index), so the server can `import { dslAtom } from "@loctt/core"`.
+Replacing the server's private copy with that import is a server-file
+change owned by another agent and was not made here.
 
 ### An attachment name that differs only by case aliases on macOS
 
@@ -163,6 +214,41 @@ shape would be building for a failure that cannot occur, so this is left
 as documented-partial rather than a speculative per-milestone endpoint.
 Revisit only if a real per-milestone computation is ever introduced.
 
+### A211 · Value pickers over growable sets still on native `Select`/radio/pill controls
+
+A211 standardised the searchable picker (`ui/Combobox`) and migrated the
+task meta fields, the labels editor and the query builder's value
+controls. These sites still pick from a set the user can grow with a
+control that does not search, and were left because Playwright specs
+(outside the ticket's run scope) drive them with `selectOption` /
+`.check()` / direct pill clicks:
+
+- `settings/UsersPanel.tsx` (`user-edit-timezone-<id>`) and
+  `settings/CalendarPanel.tsx` (`calendar-timezone`) — ~400 IANA zones in
+  a native `Select`. The clearest remaining offender.
+- `settings/PreferencesPanel.tsx` (`default-project-select`),
+  `settings/DeleteProjectDialog.tsx` (`project-delete-remap`),
+  `task/MoveTaskDialog.tsx` ("Destination project") — projects.
+- `settings/ReconcilePanel.tsx` (`git-reconcile-pick-value`) — enum
+  values of the conflicting field (`flow-git-reconcile.spec.ts` asserts
+  `tagName === "SELECT"`).
+- `settings/UserDeleteDialog.tsx` (`user-delete-remap-<id>`) — one radio
+  per other user; `settings/RemapDeleteDialog.tsx` (`remap-to-<key>`) —
+  one radio per alternative entry.
+- `create/CreateTaskModal.tsx` multi custom enum — one toggle pill per
+  value (`create-field-<key>-<v>`); the detail panel's `MultiEnum` uses
+  OptionPicker and so already searches past 12.
+- `list/FilterDropdown.tsx` — searchable already (≥12), but on the
+  `Menu`/`menuitemcheckbox` model rather than `Combobox`; its option
+  lists are the 1000-capped sidebar fetches, not `?q=`.
+- `list/QueryBuilder.tsx` entity values — client-filtered over the same
+  capped lists; K90 parity needs `searchUsers`/`searchLabels`/… threaded
+  into `BuilderConfig`.
+
+**To fix:** swap each for `Combobox` (`ComboboxButton` trigger, keep the
+testid on the trigger) and update the named specs from `selectOption` to
+click-trigger → click-option.
+
 ## Security / hardening (agent-facing surface + local server)
 
 The threat model is an agent driving MCP (possibly auto-approved,
@@ -184,40 +270,40 @@ stated "confine into the repo" boundary (A205), not a bypass.
 (`confineToRoot: locttDir`) if in-repo-but-outside-`.loctt/` secrets are
 in scope for the threat model.
 
-### The local server has no Host/Origin validation (DNS-rebinding)
+### ~~The local server has no Host/Origin validation (DNS-rebinding)~~ — FIXED 2026-09-19
 
-Binding 127.0.0.1 defeats direct off-machine access (verified: the LAN IP
-refuses) but **not** DNS rebinding. `requireCsrfHeader` only guards
-non-GET methods, and `handleRequest` never validates the `Host` or
-`Origin` header (confirmed by inspection: no Host allowlist anywhere in
-`apps/web/src/server/server.ts`). A public page the user visits could
-rebind its hostname to 127.0.0.1 and issue **GET** requests to
-`/api/tasks`, `/api/config`, `/api/doctor`, etc.; because the page is now
-same-origin with the rebound host, SOP no longer protects the response
-and the CORS default-deny does not help. Result: an off-machine page
-reads the whole tracker as long as the port is known and open.
+`handleRequest` now validates the `Host` header on **every** request
+(GET included) before any routing or data access, via `requireAllowedHost`
+in `apps/web/src/server/server.ts`. The allowlist is the loopback names
+the server legitimately serves — `127.0.0.1`, `localhost`, `[::1]`, each
+with an optional `:port` (the port is not pinned; only the hostname is the
+rebinding lever). Anything else returns **403** before touching data, so a
+DNS-rebound hostile page — which carries its own hostname in `Host` — is
+refused. There is no configurable bind host (`main.ts` always binds
+127.0.0.1; only the port varies), so no external host is legitimate.
+Red-proven test in `server.host-guard.test.ts`: with the guard removed a
+foreign-`Host` GET routes to `/api/info` and returns 200; with it, 403,
+while loopback-host GETs stay 200.
 
-**Not yet reproduced end-to-end** (rebinding needs a controlled DNS
-record); the code path is confirmed by inspection. **Mitigation to
-decide + test:** validate `Host` against `127.0.0.1` / `localhost[:port]`
-on every request before routing (a few lines), with a red-proven test
-that a GET carrying a foreign `Host` header returns 403. Lower severity
-(needs the user to visit a hostile page); deferred to Ken.
+### ~~The multipart upload route has no direct hostile-filename tests~~ — FIXED 2026-09-19
 
-### The multipart upload route has no direct hostile-filename tests
+Direct route-level tests added in `server.attachments.test.ts` ("hostile
+filenames") for `..`, `../../etc/passwd`, backslash, absolute-path, empty,
+and truncated-multipart names. Confirmed the route degrades safely (no
+code change needed — **not a path escape**): `..` and empty are rejected
+400 with nothing written; `../../etc/passwd` and backslash names are
+stored under a safe basename (`passwd`, `evil`) inside the task's
+`attachments/` dir. The tests assert the invariant directly: every
+hostile name is either rejected with no attachment written, or stored
+under a plain basename that never escapes `.loctt/`.
 
-The path-confinement testers exercised core `attachFile` directly, not
-the HTTP route. Probing the route empirically shows it degrades safely —
-`basename('..')` → `'..'` makes the temp path a directory that
-`attachFile` rejects; backslash names stay inside the per-request mkdtemp
-dir; the final stored name goes through `assertSafeBasename`. **Not a
-path escape.** Should-add (not must-fix): direct route tests for `..`,
-backslash, empty, and truncated multipart names.
+### ~~No size cap on the markdown render path~~ — N/A (client-side render)
 
-### No size cap on the markdown render path
-
-The markdown renderer is O(n) with no size cap, so a multi-MB body could
-jank (not crash) the view. Minor; note only.
+Checked 2026-09-19: the markdown render path is **client-side** (React
+elements built in `apps/web/src/client`, no server render — the server
+only notes it as XSS-safe-by-construction at `server.ts` ~L1297). There
+is nothing to cap server-side, so no server change was made. If a cap is
+wanted it belongs in the client renderer, out of the server's scope.
 
 ## Editor / description surface (2026-09-19 review)
 
@@ -324,3 +410,27 @@ follow-up write.
 ERR-32 asks that no routine failure lands in a developer-facing error
 channel — a codebase audit of error vocabulary, not a behaviour a single
 spec can assert. It is tracked as audit work, not as a coverable case.
+
+### Toolbar redesign (A210) — e2e specs assert the OLD toolbar structure
+
+The list-toolbar redesign (A210) removed the leading `advanced-query-toggle`
+pill (advanced querying now lives at the end of the "+ Add filter" menu,
+testid `advanced-open`) and made the visible-filter set configurable (only
+Project/Status/Priority/Assignee show by default; the rest are added via the
+picker). The unit/component suite (`src/client/list`) was updated to match
+and is green.
+
+The Playwright e2e specs were NOT updated — they are outside this ticket's
+edit scope (client `list/**` + `ui/**` only):
+
+- `tests/ui/flow-list.spec.ts` — drives `page.getByTestId("advanced-query-toggle")`
+  (removed) in several places (~line 4529, ~5898-5991), and assumes facets
+  like Reporter/Milestone/Type are always-present pills.
+- `tests/ui/flow-settings-projects-users.spec.ts` — references facet pills
+  that are no longer in the default visible set.
+
+**To fix (follow-up):** reach Advanced via the Add-filter menu
+(`add-filter` → `advanced-open`); add non-default facets via the picker
+(`add-filter` → `add-filter-<id>`) before asserting on them. Export/Refresh
+locators are unchanged (aria-labels kept). Until then these specs fail
+against the redesigned UI.

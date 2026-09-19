@@ -34,7 +34,7 @@
  * re-serialization. The prop contract to `TaskDetail` is unchanged.
  */
 
-import type { JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BodyConflictDialog } from "./BodyConflictDialog.tsx";
@@ -44,6 +44,7 @@ import { MarkdownEditor } from "./MarkdownEditor.tsx";
 import type { MentionCandidate } from "./MentionMenu.tsx";
 import { RichEditor } from "./RichEditor.tsx";
 import { SaveIndicator } from "./SaveIndicator.tsx";
+import { Toolbar } from "./Toolbar.tsx";
 import { useBodyAutosave } from "./useBodyAutosave.ts";
 
 const PLACEHOLDER = "Describe this task…";
@@ -68,6 +69,14 @@ export function BodyEditor({
 }: BodyEditorProps): React.JSX.Element {
   /** K33: rendered read state by default; a click enters edit. */
   const [editing, setEditing] = useState(false);
+  /**
+   * The click point that entered edit (TSK-69), handed to the editor so
+   * the caret lands where the user clicked rather than at position 0.
+   * Cleared whenever we return to the read view so a later keyboard entry
+   * does not reuse a stale coordinate.
+   */
+  const [enterCoords, setEnterCoords] =
+    useState<{ readonly x: number; readonly y: number } | undefined>(undefined);
 
   if (!editing) {
     return (
@@ -75,7 +84,7 @@ export function BodyEditor({
         body={body}
         placeholder={PLACEHOLDER}
         mentionCandidates={mentionCandidates}
-        onEnterEdit={() => { setEditing(true); }}
+        onEnterEdit={coords => { setEnterCoords(coords); setEditing(true); }}
       />
     );
   }
@@ -87,8 +96,9 @@ export function BodyEditor({
       bodyToken={bodyToken}
       lossyConstructs={lossyConstructs}
       mentionCandidates={mentionCandidates}
+      {...(enterCoords !== undefined ? { enterCoords } : {})}
       {...(onSaved !== undefined ? { onSaved } : {})}
-      onLeave={() => { setEditing(false); }}
+      onLeave={() => { setEnterCoords(undefined); setEditing(false); }}
     />
   );
 }
@@ -96,6 +106,8 @@ export function BodyEditor({
 interface EditSurfaceProps extends BodyEditorProps {
   /** Return to the rendered read view (TSK-71). */
   readonly onLeave: () => void;
+  /** The click point that entered edit (TSK-69). */
+  readonly enterCoords?: { readonly x: number; readonly y: number };
 }
 
 /**
@@ -106,7 +118,7 @@ interface EditSurfaceProps extends BodyEditorProps {
  * effect) when the user leaves.
  */
 function BodyEditSurface({
-  taskRef, body, bodyToken, lossyConstructs, mentionCandidates, onSaved, onLeave,
+  taskRef, body, bodyToken, lossyConstructs, mentionCandidates, onSaved, onLeave, enterCoords,
 }: EditSurfaceProps): React.JSX.Element {
   /**
    * B5's guardrail. Footnotes and unregistered raw HTML have no TipTap
@@ -237,14 +249,34 @@ function BodyEditSurface({
     return () => { window.removeEventListener("keydown", onKey); };
   }, [flush, requestLeave, autosave.conflict]);
 
+  /**
+   * The live TipTap editor, surfaced by `RichEditor` so the single
+   * always-visible toolbar (below) can drive it. Null in raw mode and
+   * before the rich editor mounts.
+   */
+  const [richEditor, setRichEditor] = useState<Editor | null>(null);
+
   // Focus the active surface as soon as the editor mounts (TSK-69: the
   // click that entered edit leaves the editor focused, ready to type).
   const wrapperRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const surface = wrapperRef.current?.querySelector<HTMLElement>(
-      mode === "rich" ? '[data-testid="rich-editor"]' : '[data-testid="markdown-editor"]',
-    );
-    surface?.focus();
+    if (mode === "rich") {
+      // The rich surface focuses itself (RichEditor's caret-at-coords
+      // effect places the caret where the user clicked, TSK-69), so
+      // nothing to do here.
+      return;
+    }
+    // Raw mode: the host `<div data-testid="markdown-editor">` is not
+    // itself focusable — focus CodeMirror's editable `.cm-content`
+    // instead, which is what accepts typing. Deferred to the next frame
+    // so the view has mounted its content element.
+    const id = requestAnimationFrame(() => {
+      const cm = wrapperRef.current?.querySelector<HTMLElement>(
+        '[data-testid="markdown-editor"] .cm-content',
+      );
+      cm?.focus();
+    });
+    return () => { cancelAnimationFrame(id); };
     // Focus only on entering edit / switching surface, never on every
     // keystroke.
   }, [mode]);
@@ -270,30 +302,34 @@ function BodyEditSurface({
   }, [autosave.conflict, requestLeave]);
 
   return (
-    <div data-testid="body-editor" ref={wrapperRef} onBlur={onWrapperBlur}>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div role="group" aria-label="Editing mode" className="flex gap-1">
-          <button
-            type="button"
-            data-testid="mode-rich"
-            aria-pressed={mode === "rich"}
-            disabled={forcedRaw}
-            onClick={() => { setMode("rich"); }}
-            className={modeClass(mode === "rich", forcedRaw)}
-          >
-            Rich
-          </button>
-          <button
-            type="button"
-            data-testid="mode-raw"
-            aria-pressed={mode === "raw"}
-            onClick={() => { setMode("raw"); }}
-            className={modeClass(mode === "raw", false)}
-          >
-            Markdown
-          </button>
+    <div
+      data-testid="body-editor"
+      ref={wrapperRef}
+      onBlur={onWrapperBlur}
+      // `-mx-3` mirrors the read view (BodyRenderedView): the framed edit
+      // box extends 12px into the section gutter on both sides so the
+      // editor's own px-3 content padding lands the text flush-left with
+      // the section label — entering edit does not shift the body text
+      // horizontally.
+      className="-mx-3 rounded border border-border-subtle"
+    >
+      {/* One always-visible toolbar in edit mode (K33): formatting on the
+          left (rich mode only — the buttons disable in raw), the compact
+          Rich/Markdown toggle at the right. Its height is reserved so
+          entering edit does not shift the text down. The SaveIndicator
+          sits beside it. */}
+      <div className="flex items-stretch">
+        <div className="min-w-0 flex-1">
+          <Toolbar
+            editor={mode === "rich" ? richEditor : null}
+            mode={mode}
+            onModeChange={setMode}
+            forcedRaw={forcedRaw}
+          />
         </div>
-        <SaveIndicator state={autosave.state} onRetry={() => { void autosave.retry(); }} />
+        <div className="flex shrink-0 items-center border-b border-border-subtle px-2">
+          <SaveIndicator state={autosave.state} onRetry={() => { void autosave.retry(); }} />
+        </div>
       </div>
 
       {forcedRaw && (
@@ -320,6 +356,12 @@ function BodyEditSurface({
           onDocChange={onRichDoc}
           onBlur={() => { void flush(); }}
           mentionCandidates={mentionCandidates}
+          // BodyEditor owns the single always-visible toolbar (with the
+          // mode toggle), so RichEditor renders none of its own (K33).
+          hideToolbar
+          onEditorReady={setRichEditor}
+          // TSK-69: land the caret where the user clicked to enter edit.
+          {...(enterCoords !== undefined ? { focusCoords: enterCoords } : {})}
         />
       ) : (
         <MarkdownEditor
@@ -327,7 +369,7 @@ function BodyEditSurface({
           onChange={onRawChange}
           ariaLabel="Description (markdown source)"
           placeholder={PLACEHOLDER}
-          className="rounded border border-border-subtle px-3 py-2"
+          className="px-3 py-2"
         />
       )}
 
@@ -340,16 +382,5 @@ function BodyEditSurface({
         />
       )}
     </div>
-  );
-}
-
-function modeClass(active: boolean, disabled: boolean): string {
-  return (
-    "rounded px-2 py-1 text-[0.8571rem] "
-    + (disabled
-      ? "cursor-not-allowed text-text-tertiary"
-      : active
-        ? "bg-accent-muted text-text-primary"
-        : "text-text-secondary hover:bg-bg-muted")
   );
 }
