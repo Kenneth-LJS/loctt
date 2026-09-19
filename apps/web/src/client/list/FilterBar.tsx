@@ -9,30 +9,61 @@ import {
   useSprints,
   useUsers,
 } from "../api/hooks/sidebarData.ts";
-import { useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
+import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import type { ListSearch } from "../router/listSearch.ts";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { Radio } from "../ui/Radio.tsx";
 import { Sheet } from "../ui/Sheet.tsx";
-import { ToolbarButton } from "../ui/ToolbarButton.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { AdvancedQuerySurface } from "./AdvancedQuerySurface.tsx";
+import { ExportMenu } from "./ExportMenu.tsx";
 import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
+import { RefreshButton } from "./RefreshButton.tsx";
 import { SaveViewDialog } from "./SaveViewDialog.tsx";
+import {
+  addableFilters,
+  buildFilterCatalog,
+  type FilterCatalogEntry,
+  type FilterId,
+  resolveVisibleFilters,
+  userVisibleFiltersOf,
+  withUserVisibleFilters,
+} from "./visibleFilters.ts";
 
 /**
- * The list view's filter bar (M1.3). Renders a dropdown per facet
- * (Project, Status, Priority, Type, Assignee, Label, Milestone, Sprint,
- * plus any workflow custom fields), the active filters as removable
- * chips, a "Show archived" toggle, and "Save as view".
+ * The list view's filter bar (M1.3, redesigned per Ken's toolbar review
+ * + K97). It owns the WHOLE toolbar row:
+ *
+ *  - **Left band — filters.** The *resolved visible-filter set* (K97),
+ *    not every facet: a FilterDropdown per visible built-in/custom-enum
+ *    field, then a subtle "+ Add filter" affordance that opens a picker
+ *    of every remaining filter. Below `sm` this band collapses into a
+ *    single "Filters" button + bottom Sheet.
+ *  - **Right band — view actions.** A clean, aligned cluster pinned to
+ *    the top-right: Refresh (demoted to icon-only — the view
+ *    auto-refreshes), Export, and Save as view. These used to float in
+ *    ListView's flex gutter, vertically centred in dead space and
+ *    jumping as the chip row appeared; owning them here keeps them on the
+ *    same baseline as the filters at one consistent control height.
+ *  - **Chip row.** The active filters as removable chips + "Clear all",
+ *    below the toolbar.
+ *
+ * Advanced querying is folded into the filter system: there is no leading
+ * "Advanced" pill. The builder is reached from the END of the Add-filter
+ * menu ("Advanced query…") — one level in, not first — and opens the
+ * visual {@link AdvancedQuerySurface} (builder-first; raw DSL is a
+ * secondary toggle inside it).
  *
  * The URL is the single source of truth: every control reads its state
  * from the typed search params and writes back through `navigate`, so
- * back/forward and bookmarking work for free. Changing any filter
- * resets `page` so you don't land on an out-of-range page.
+ * back/forward and bookmarking work for free. Changing any filter resets
+ * `page`.
  */
 
 /** Filter facets backed by a fixed URL param + a data source. */
@@ -75,12 +106,27 @@ export interface FilterBarProps {
   readonly hiddenFacets?: readonly FacetKey[];
   /** Hidden where a saved view would not reproduce the scope. */
   readonly showSaveView?: boolean;
+  /**
+   * View actions, rendered in the toolbar's top-right cluster. Passed in
+   * by ListView (they need the tasks feed's fetch state + the export
+   * query string) rather than re-derived here, so the bar owns the
+   * *layout* of the cluster without owning the data. Omitted on the
+   * sprint detail, which has its own header actions.
+   */
+  readonly onRefresh?: (() => void) | undefined;
+  readonly refreshBusy?: boolean | undefined;
+  readonly exportTotal?: number | undefined;
+  readonly exportQueryString?: string | undefined;
 }
 
 export function FilterBar({
   from = "/list",
   hiddenFacets = [],
   showSaveView = true,
+  onRefresh,
+  refreshBusy = false,
+  exportTotal,
+  exportQueryString,
 }: FilterBarProps = {}) {
   const search = useSearch({ from });
   const navigate = useNavigate({ from });
@@ -119,6 +165,8 @@ export function FilterBar({
   const milestones = useMilestones();
   const sprints = useSprints();
   const workflow = useWorkflow();
+  const userSettings = useUserSettings();
+  const settingsMutation = useUserSettingsMutation();
 
   const [saveOpen, setSaveOpen] = useState(false);
   // Below sm the facet band collapses into a single "Filters" button that
@@ -126,6 +174,8 @@ export function FilterBar({
   // into a column ate most of the screen before any task showed.
   const isNarrow = useIsNarrow();
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  // The "Add filter" picker Sheet on mobile (the desktop one is a Menu).
+  const [addSheetOpen, setAddSheetOpen] = useState(false);
 
   const options = useMemo(
     () =>
@@ -181,6 +231,88 @@ export function FilterBar({
 
   const customFilters = readCustomFilters(search);
 
+  // ── Configurable visible-filter set (K97) ──────────────────────────
+  //
+  // The catalog is every filter the workspace can show; the resolved set
+  // is what the toolbar actually renders. Resolution chain:
+  //   active view's set (URL `vf`) → per-user default → built-in default.
+  // `vf` is a comma-separated FilterId list carried in the URL (source of
+  // truth, .passthrough()) — a saved view stores it in its params like
+  // any other filter, and it stays transient for a bare /list unless the
+  // user saves it into a view or promotes it to their default.
+  const catalog = useMemo(
+    () =>
+      buildFilterCatalog(
+        (Object.keys(FACET_LABELS) as FacetKey[]).map(id => ({ id, label: FACET_LABELS[id] })),
+        workflow.data,
+      ),
+    [workflow.data],
+  );
+
+  const viewSet = readVisibleFilterParam(search);
+  const userSet = userVisibleFiltersOf(userSettings.data?.settings);
+  // Both sets are derived from their source each render (a fresh array
+  // identity every time), so the memo keys on their stable string forms —
+  // extracted to locals so the dependency array stays statically checkable.
+  const viewSetKey = viewSet?.join(",");
+  const userSetKey = userSet?.join(",");
+  const visibleFilters = useMemo(
+    () =>
+      resolveVisibleFilters({
+        viewSet,
+        userSet,
+        catalog,
+        hidden: hiddenFacets,
+      }),
+    // viewSet/userSet are keyed by their serialized forms (viewSetKey/
+    // userSetKey); depending on the arrays directly would defeat the memo
+    // (a new identity every render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [viewSetKey, userSetKey, catalog, hiddenFacets],
+  );
+
+  const addable = addableFilters(catalog, visibleFilters, hiddenFacets);
+
+  // Adding/removing a visible filter writes the resolved set into `vf`,
+  // making the transient toolbar state explicit in the URL. Removing a
+  // filter also clears any active value on it, so hiding a filter never
+  // leaves an invisible, still-applied constraint (which would be an
+  // un-removable filter with no chip to reverse it — the exact "filtered
+  // for no visible reason" trap LST-53 fixed for `q=`).
+  const setVisible = (next: readonly FilterId[]): void => {
+    void navigate({
+      search: prev => ({ ...prev, vf: next.length > 0 ? next.join(",") : undefined }),
+    });
+  };
+
+  const addFilter = (id: FilterId): void => {
+    setVisible([...visibleFilters, id]);
+    setAddSheetOpen(false);
+  };
+
+  const removeFilter = (id: FilterId): void => {
+    void navigate({
+      search: prev => {
+        const next: Record<string, unknown> = { ...prev };
+        const kept = visibleFilters.filter(v => v !== id);
+        next.vf = kept.length > 0 ? kept.join(",") : undefined;
+        // Clear the removed filter's active value(s) too.
+        next[id] = undefined;
+        next.page = undefined;
+        return next;
+      },
+    });
+  };
+
+  // K97: promote the current visible set to the per-user default for the
+  // bare /list, via an explicit action in the Add-filter menu. Merges into
+  // the whole settings doc (PUT replaces it) exactly as the board's column
+  // visibility does.
+  const saveAsDefault = (): void => {
+    const current = userSettings.data?.settings ?? ({} as NonNullable<typeof userSettings.data>["settings"]);
+    settingsMutation.mutate(withUserVisibleFilters(current, visibleFilters));
+  };
+
   const activeChips = buildChips(search, options, customFields, loadedFacets, workflow.isSuccess)
     // A chip for a hidden facet would carry a ✕ that removes the very
     // scope the route is defined by.
@@ -228,6 +360,8 @@ export function FilterBar({
 
   const hasActive = activeChips.length > 0 || hasQuery;
 
+  const openAdvanced = (): void => { setDraft(query); setAdvanced(true); setAddSheetOpen(false); };
+
   if (advanced) {
     return (
       <AdvancedQuerySurface
@@ -264,12 +398,14 @@ export function FilterBar({
   // free-text query) — the badge on the mobile "Filters" button.
   const activeFacetCount = activeChips.length;
 
-  // The facet dropdowns + custom-field facets, extracted so they render
-  // identically inline (desktop) and inside the mobile filter Sheet — both
-  // call the same setFilter/navigate writes, so state never forks.
-  const facetControls = (
-    <>
-      {FACET_KEYS.filter(key => !hiddenFacets.includes(key)).map(key => (
+  // One dropdown for a resolved-visible filter id, be it a built-in facet
+  // or a `field.<key>` custom enum. Extracted so it renders identically
+  // inline (desktop) and inside the mobile filter Sheet — both call the
+  // same setFilter/navigate writes, so state never forks.
+  const renderFilterControl = (id: FilterId) => {
+    if (!id.startsWith("field.")) {
+      const key = id as FacetKey;
+      return (
         <FilterDropdown
           key={key}
           label={FACET_LABELS[key]}
@@ -277,6 +413,7 @@ export function FilterBar({
           unavailable={failedFacets.has(key)}
           selected={facetOf(key)}
           onChange={next => setFilter(key, next)}
+          onRemove={() => { removeFilter(key); }}
           // LST-40/MSL-7: labels are set-valued, so 2+ selected can mean
           // "has all of these" or "has any". Offer the choice inline
           // once it matters; other facets are scalar and OR is the only
@@ -296,24 +433,29 @@ export function FilterBar({
               ) }
             : {})}
         />
-      ))}
+      );
+    }
+    const cfKey = id.slice("field.".length);
+    const cf = customFields.find(c => c.key === cfKey);
+    if (cf === undefined || cf.type !== "enum" || !cf.values || cf.values.length === 0) return null;
+    return (
+      <FilterDropdown
+        key={cf.key}
+        label={cf.label}
+        options={cf.values.map(v => ({ value: v.key, label: v.label }))}
+        selected={customFilters[cf.key] ?? []}
+        onChange={next => setFilter(`field.${cf.key}`, next)}
+        onRemove={() => { removeFilter(`field.${cf.key}`); }}
+      />
+    );
+  };
 
-      {customFields.map(cf =>
-        cf.type === "enum" && cf.values && cf.values.length > 0 ? (
-          <FilterDropdown
-            key={cf.key}
-            label={cf.label}
-            options={cf.values.map(v => ({ value: v.key, label: v.label }))}
-            selected={customFilters[cf.key] ?? []}
-            onChange={next => setFilter(`field.${cf.key}`, next)}
-          />
-        ) : null,
-      )}
-    </>
+  const facetControls = (
+    <>{visibleFilters.map(renderFilterControl)}</>
   );
 
   const showArchivedControl = (
-    <label className="inline-flex cursor-pointer items-center gap-1.5 text-[0.9286rem] text-text-secondary">
+    <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 text-[0.9286rem] text-text-secondary">
       <Checkbox
         checked={search.archived === true}
         onChange={e =>
@@ -326,40 +468,66 @@ export function FilterBar({
     </label>
   );
 
+  // The desktop "+ Add filter" affordance: a Menu listing every addable
+  // filter (grouped built-in / custom, searchable when long), with the
+  // "Advanced query…" escape hatch and "Save as default" at the end.
+  const addFilterMenu = (
+    <Menu
+      align="start"
+      aria-label="Add filter"
+      trigger={({ toggle, ...aria }) => (
+        <Button
+          variant="ghost"
+          size="md"
+          testId="add-filter"
+          onClick={toggle}
+          {...aria}
+        >
+          <Icon name="plus" size={14} />
+          Add filter
+        </Button>
+      )}
+    >
+      {({ close }) => (
+        <AddFilterPanel
+          addable={addable}
+          onAdd={id => { addFilter(id); close(); }}
+          onOpenAdvanced={() => { openAdvanced(); close(); }}
+          onSaveDefault={from === "/list" ? () => { saveAsDefault(); close(); } : undefined}
+        />
+      )}
+    </Menu>
+  );
+
   return (
     <div className="flex flex-col gap-2">
-      {/* Toolbar, regrouped into three bands (K-2/K-3/S-3/S-4): the
-          facets, the Advanced mode-toggle, then the actions. `flex-wrap`
-          + `min-w-0` lets the bands reflow and condense on a narrow
-          viewport rather than overflowing (S-11 mobile / UX-16 collapse):
-          the facet band wraps first, and the action band stays pinned
-          right until there is no room, then drops below. */}
+      {/* Toolbar: a single row split into two bands — filters (left),
+          view actions (right). `flex-wrap` + `min-w-0` lets the filter
+          band wrap while the action cluster stays pinned right until
+          there is no room, then drops below. One control height (h-8)
+          across every band. */}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {/* Band 1 — Advanced mode-toggle. A ToolbarButton (B1) so it
-            shares the one pill height/style with the facets and shows the
-            active look while the advanced editor is the mode in use. */}
-        <ToolbarButton
-          testId="advanced-query-toggle"
-          size="sm"
-          active={hasQuery}
-          onClick={() => { setDraft(query); setAdvanced(true); }}
-        >
-          Advanced
-        </ToolbarButton>
-
-        {/* Band 2 — facets. Inline at >= sm; collapsed into a "Filters"
-            button + bottom sheet below sm (GROUP B). The same controls are
-            rendered in both places (facetControls), so they write the same
-            search params either way. */}
-        {!isNarrow && facetControls}
+        {/* Left band — filters. Inline at >= sm; collapsed into a
+            "Filters" button + bottom sheet below sm (GROUP B). The same
+            controls render in both, so they write the same search params
+            either way. */}
+        {!isNarrow && (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {facetControls}
+            {/* The Add-filter affordance leads nothing: it sits at the
+                END of the filter row, subtle (ghost), one level in. */}
+            {addFilterMenu}
+          </div>
+        )}
 
         {isNarrow && (
           <button
             type="button"
             data-testid="filters-open"
             onClick={() => { setFilterSheetOpen(true); }}
-            className="inline-flex h-11 items-center gap-2 rounded-md border border-border-default px-3 text-[0.9286rem] text-text-primary hover:bg-bg-muted"
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-border-default px-3 text-[0.9286rem] text-text-primary hover:bg-bg-muted"
           >
+            <Icon name="search" size={14} className="text-text-tertiary" />
             Filters
             {activeFacetCount > 0 && (
               <span
@@ -374,16 +542,25 @@ export function FilterBar({
 
         <div className="flex-1" />
 
-        {/* Band 3 — actions. Show archived + Save-as-view stay inline at
-            >= sm; on mobile they move into the filter sheet. */}
-        {!isNarrow && showArchivedControl}
-
-        {!isNarrow && showSaveView && (
-          <Button size="md" onClick={() => setSaveOpen(true)}>
-            <span aria-hidden="true">{ICON.star}</span>
-            Save as view
-          </Button>
-        )}
+        {/* Right band — view actions cluster. A single aligned group so
+            Refresh/Export/Save-as-view share the toolbar baseline instead
+            of floating in ListView's flex gutter. Show-archived rides
+            here at desktop width; on mobile it moves into the sheet. */}
+        <div className="flex items-center gap-2" data-testid="view-actions">
+          {!isNarrow && showArchivedControl}
+          {onRefresh !== undefined && (
+            <RefreshButton onRefresh={onRefresh} busy={refreshBusy} iconOnly />
+          )}
+          {exportTotal !== undefined && exportQueryString !== undefined && (
+            <ExportMenu total={exportTotal} queryString={exportQueryString} />
+          )}
+          {showSaveView && (
+            <Button size="md" variant="primary" onClick={() => setSaveOpen(true)}>
+              <span aria-hidden="true">{ICON.star}</span>
+              Save as view
+            </Button>
+          )}
+        </div>
       </div>
 
       {isNarrow && filterSheetOpen && (
@@ -413,6 +590,20 @@ export function FilterBar({
               sheet updates as on desktop. */}
           <div className="flex flex-col gap-2 [&_button]:w-full">
             {facetControls}
+            {addable.length > 0 && (
+              <Button
+                variant="ghost"
+                size="md"
+                testId="add-filter-mobile"
+                onClick={() => { setAddSheetOpen(true); }}
+              >
+                <Icon name="plus" size={14} />
+                Add filter
+              </Button>
+            )}
+            <Button variant="ghost" size="md" testId="advanced-open-mobile" onClick={openAdvanced}>
+              Advanced query…
+            </Button>
             <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-[0.9286rem] text-text-secondary">
               <Checkbox
                 checked={search.archived === true}
@@ -431,6 +622,24 @@ export function FilterBar({
               </Button>
             )}
           </div>
+        </Sheet>
+      )}
+
+      {/* The Add-filter picker as a Sheet on mobile — the same content the
+          desktop Menu shows, reusing the sanctioned mobile overlay (K97:
+          unify popover-on-desktop / Sheet-on-mobile). */}
+      {isNarrow && addSheetOpen && (
+        <Sheet
+          title="Add filter"
+          testId="add-filter-sheet"
+          onClose={() => { setAddSheetOpen(false); }}
+        >
+          <AddFilterPanel
+            addable={addable}
+            onAdd={addFilter}
+            onOpenAdvanced={openAdvanced}
+            onSaveDefault={from === "/list" ? saveAsDefault : undefined}
+          />
         </Sheet>
       )}
 
@@ -523,6 +732,108 @@ export function FilterBar({
       {saveOpen ? <SaveViewDialog search={search} onClose={() => setSaveOpen(false)} /> : null}
     </div>
   );
+}
+
+/**
+ * The Add-filter picker's body, shared by the desktop Menu panel and the
+ * mobile Sheet (K97: one pattern, two shells). Lists every addable filter
+ * grouped built-in / custom, searchable when long, then the "Advanced
+ * query…" escape hatch and (on /list) "Save as default".
+ */
+function AddFilterPanel({
+  addable,
+  onAdd,
+  onOpenAdvanced,
+  onSaveDefault,
+}: {
+  readonly addable: readonly FilterCatalogEntry[];
+  readonly onAdd: (id: FilterId) => void;
+  readonly onOpenAdvanced: () => void;
+  readonly onSaveDefault?: (() => void) | undefined;
+}) {
+  const [filter, setFilter] = useState("");
+  // Search once the list is long enough to scan-hunt (same threshold feel
+  // as FilterDropdown's typeahead).
+  const searchable = addable.length >= 8;
+  const q = filter.trim().toLowerCase();
+  const shown = searchable && q !== ""
+    ? addable.filter(e => e.label.toLowerCase().includes(q))
+    : addable;
+
+  const builtins = shown.filter(e => e.group === "builtin");
+  const customs = shown.filter(e => e.group === "custom");
+
+  const section = (title: string, entries: readonly FilterCatalogEntry[]) =>
+    entries.length === 0 ? null : (
+      <div className="py-1">
+        <p className="px-3 py-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">{title}</p>
+        {entries.map(e => (
+          <MenuItem key={e.id} testId={`add-filter-${e.id}`} onSelect={() => { onAdd(e.id); }}>
+            {e.label}
+          </MenuItem>
+        ))}
+      </div>
+    );
+
+  return (
+    <div data-testid="add-filter-panel" className="min-w-[220px]">
+      {searchable && (
+        <div className="border-b border-border-subtle p-1.5">
+          <TextField
+            type="search"
+            size="sm"
+            aria-label="Search filters"
+            placeholder="Search filters…"
+            value={filter}
+            onChange={e => { setFilter(e.target.value); }}
+          />
+        </div>
+      )}
+
+      {addable.length === 0 ? (
+        <p className="px-3 py-2 text-[0.8571rem] italic text-text-tertiary">
+          Every filter is already shown.
+        </p>
+      ) : shown.length === 0 ? (
+        <p className="px-3 py-2 text-[0.8571rem] italic text-text-tertiary">No filters match.</p>
+      ) : (
+        <>
+          {section("Built-in", builtins)}
+          {section("Custom fields", customs)}
+        </>
+      )}
+
+      <div className="border-t border-border-subtle py-1">
+        <MenuItem testId="advanced-open" onSelect={onOpenAdvanced}>
+          <Icon name="settings" size={14} className="text-text-tertiary" />
+          Advanced query…
+        </MenuItem>
+        {onSaveDefault !== undefined && (
+          <MenuItem testId="save-default-filters" onSelect={onSaveDefault}>
+            <Icon name="star" size={14} className="text-text-tertiary" />
+            Save these as my default
+          </MenuItem>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Reads the `vf` visible-filter param (comma-separated FilterIds) from the
+ * URL. Returns `undefined` when absent so resolution falls through to the
+ * per-user default; an explicit empty value ("show nothing extra") is
+ * preserved as an empty array.
+ */
+function readVisibleFilterParam(search: Partial<ListSearch>): readonly FilterId[] | undefined {
+  const raw = (search as Record<string, unknown>).vf;
+  if (typeof raw === "string") {
+    return raw.split(",").map(s => s.trim()).filter(Boolean);
+  }
+  if (Array.isArray(raw)) {
+    return raw.filter((x): x is string => typeof x === "string");
+  }
+  return undefined;
 }
 
 /**

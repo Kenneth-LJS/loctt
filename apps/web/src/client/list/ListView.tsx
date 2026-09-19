@@ -41,12 +41,10 @@ import {
 } from "./cells.tsx";
 import { resolveColumns } from "./columns.ts";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog.tsx";
-import { ExportMenu } from "./ExportMenu.tsx";
 import { clearedSearch, FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
-import { RefreshButton } from "./RefreshButton.tsx";
 import { useSelection } from "./useSelection.ts";
 
 /**
@@ -609,14 +607,19 @@ export function ListView() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
-      <div className="flex items-center justify-between gap-3">
-        <FilterBar />
-        <RefreshButton
-          busy={tasks.isFetching}
-          onRefresh={() => { void tasks.refetch(); }}
-        />
-        <ExportMenu total={total} queryString={buildQueryString(params)} />
-      </div>
+      {/* FilterBar owns the whole toolbar row now — the filters (left) AND
+          the view-action cluster (Refresh/Export/Save, top-right). Refresh
+          + Export used to be rendered here as siblings in a `justify-between`
+          flex, which vertically centred them in the bar's dead space and
+          made them jump as the chip row appeared/disappeared (Ken's "refresh
+          in the middle of nowhere"). They are passed in as props so the bar
+          controls their layout without re-deriving the tasks feed. */}
+      <FilterBar
+        onRefresh={() => { void tasks.refetch(); }}
+        refreshBusy={tasks.isFetching}
+        exportTotal={total}
+        exportQueryString={buildQueryString(params)}
+      />
       {queryWarnings.length > 0 && (
         <div
           role="status"

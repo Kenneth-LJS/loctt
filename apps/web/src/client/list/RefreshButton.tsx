@@ -22,9 +22,20 @@ import { Icon } from "../ui/Icon.tsx";
 export function RefreshButton({
   onRefresh,
   busy,
+  iconOnly = false,
 }: {
   readonly onRefresh: () => void;
   readonly busy: boolean;
+  /**
+   * Icon-only, for the toolbar's view-action cluster (Ken's review: the
+   * view auto-refreshes, so manual refresh is DEMOTED to a subtle
+   * icon-only control rather than a full pill floating in dead space —
+   * kept for the "I just changed that in the terminal" case, XS-3, but no
+   * longer competing for attention with the filters). The `aria-label`
+   * still carries "Refresh" so the XS-3 locator and screen readers are
+   * unaffected; the text label is what drops.
+   */
+  readonly iconOnly?: boolean;
 }) {
   const seconds = Math.round(STALENESS_WINDOW_MS / 1000);
   return (
@@ -40,10 +51,11 @@ export function RefreshButton({
       disabled={busy}
       aria-busy={busy}
       aria-label="Refresh"
+      className={iconOnly ? "px-2" : undefined}
       title={`Refresh now. This view also refreshes on its own at least every ${seconds} seconds, and whenever you return to the tab.`}
     >
       <Icon name="refresh" size={14} className={busy ? "animate-spin" : undefined} />
-      {busy ? "Refreshing…" : "Refresh"}
+      {iconOnly ? null : busy ? "Refreshing…" : "Refresh"}
     </Button>
   );
 }
