@@ -31,6 +31,7 @@ export type ButtonVariant =
   | "primary"
   | "secondary"
   | "ghost"
+  | "ghost-danger"
   | "danger"
   | "danger-outline"
   | "warn-outline";
@@ -78,6 +79,13 @@ export const BUTTON_VARIANT: Record<ButtonVariant, string> = {
     "border border-border-default bg-bg-surface text-text-secondary hover:bg-bg-muted hover:text-text-primary active:bg-bg-muted-hover",
   ghost:
     "text-text-secondary hover:bg-bg-muted hover:text-text-primary active:bg-bg-muted-hover",
+  // A ghost look (transparent surface, muted text at rest) whose hover
+  // reddens to the danger tone instead of neutral — the row-action Delete
+  // pattern (CommentItem) that neither `ghost` (hovers to text-primary)
+  // nor `danger`/`danger-outline` (filled/bordered) covers. Tokens only:
+  // a 10% danger-tone wash on hover, `text-danger-fg` on hover/active.
+  "ghost-danger":
+    "text-text-secondary hover:bg-danger-fg/10 hover:text-danger-fg active:bg-danger-fg/20 active:text-danger-fg",
   danger:
     "bg-danger-fg text-accent-contrast hover:opacity-90 active:opacity-90",
   "danger-outline":

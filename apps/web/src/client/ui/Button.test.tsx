@@ -76,6 +76,19 @@ describe("Button", () => {
     expect(cls).toContain("hover:bg-warn-fg/10");
   });
 
+  it("renders the ghost-danger variant as a ghost surface that reddens on hover, not a filled danger", () => {
+    render(<Button variant="ghost-danger">Delete</Button>);
+    const cls = screen.getByRole("button", { name: "Delete" }).className;
+    // Ghost at rest (muted text, no fill) reddening to the danger tone on hover…
+    expect(cls).toContain("text-text-secondary");
+    expect(cls).toContain("hover:text-danger-fg");
+    expect(cls).toContain("hover:bg-danger-fg/10");
+    // …and NOT the solid danger fill, which is what distinguishes it from
+    // the `danger` variant.
+    expect(cls).not.toContain("bg-danger-fg text-accent-contrast");
+    expect(cls).not.toContain("text-white");
+  });
+
   it("secondary/ghost carry hover + active state classes", () => {
     const { rerender } = render(<Button variant="secondary">S</Button>);
     let cls = screen.getByRole("button").className;
