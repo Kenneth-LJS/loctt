@@ -177,7 +177,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "get_workflow_config",
-    description: "Get the workflow configuration.",
+    description: "Returns the full workflow configuration as JSON: the valid statuses, priorities, task types, relationship types, and custom-field definitions, each with its stored `key` and human label. Call this FIRST — before creating or editing any task — to discover the valid keys for enum-valued fields, because stored values are config keys, not the human labels. Read-only, no parameters.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const config = await loadWorkflowConfig(locttDir);

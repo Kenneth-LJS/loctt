@@ -4,6 +4,11 @@ LocTT's MCP server provides structured tools for AI agents to manage tasks via t
 
 ## Agent Guidelines
 
+A compact version of these guidelines is sent as the MCP server's
+`instructions` on connect, so a client that surfaces server instructions
+gives the agent the load-bearing rules before its first tool call. The
+full list below is the reference.
+
 - **Always use structured tools.** Never edit `task.md` frontmatter or any `.loctt/` config file directly via raw filesystem writes. The body of a task is editable only via `replace_task_body` and `append_task_body`.
 - **Use `get_workflow_config` and the `*_list` tools to discover valid values.** Statuses, priorities, task types, relationship types, projects, labels, milestones, sprints, and users all live in config — read them before writing.
 - **`delete_*` tools are hard-only and irreversible.** Every `delete_*` tool (`delete_task`, `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_user`) requires `confirm: true`. For the reversible (soft) variant, use the matching `archive_*` tool; `unarchive_*` brings them back.
@@ -300,7 +305,12 @@ Clear the archived flag on a view, restoring it to default lists.
 
 ### `get_workflow_config`
 
-Returns the workflow configuration as JSON. No parameters.
+Returns the full workflow configuration as JSON — the valid statuses,
+priorities, task types, relationship types, and custom-field definitions,
+each with its stored `key` and human label. No parameters. Call this
+**first**, before creating or editing a task, to discover the valid keys
+for enum-valued fields: stored values are config keys, not the human
+labels.
 
 ### `update_task`
 
