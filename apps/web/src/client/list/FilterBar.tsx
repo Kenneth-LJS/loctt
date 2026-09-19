@@ -14,6 +14,7 @@ import type { ListSearch } from "../router/listSearch.ts";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
 import { Sheet } from "../ui/Sheet.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
@@ -451,7 +452,7 @@ export function FilterBar({
                 onClick={clearQuery}
                 className="ml-0.5 cursor-pointer text-accent/70 hover:text-accent"
               >
-                {ICON.close}
+                <Icon name="close" size={12} />
               </button>
             </span>
           ) : null}
@@ -475,7 +476,7 @@ export function FilterBar({
                 }}
                 className={`ml-0.5 cursor-pointer ${extraClass}`}
               >
-                {ICON.close}
+                <Icon name="close" size={12} />
               </button>
             );
             // LST-33: a dangling reference reads as "gone", not as a

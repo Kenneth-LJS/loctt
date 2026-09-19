@@ -18,6 +18,7 @@ import {
 } from "../api/hooks/useGit.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -496,7 +497,7 @@ function TaskGroup({ group, decisions, collapsed, onToggle, onChoose }: {
         onClick={onToggle}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.9286rem] font-medium text-text-primary"
       >
-        <span aria-hidden="true">{collapsed ? ICON.caretRight : ICON.caretDown}</span>
+        <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={14} />
         <code className="font-mono text-[0.8571rem]">{group.taskKey}</code>
         <span className="truncate text-text-secondary">{group.taskTitle}</span>
         <span className="ml-auto text-[0.8571rem] text-text-tertiary">

@@ -5,8 +5,8 @@ import { useState } from "react";
 import { StatusBadge } from "../list/cells.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { ICON } from "../ui/icons.ts";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import type { RelationshipRow as Row } from "./group.ts";
 
@@ -207,7 +207,7 @@ export function RelationshipRowView({
                 disabled={removing}
                 onClick={t.toggle}
               >
-                <span aria-hidden="true">{ICON.more}</span>
+                <Icon name="more" />
               </IconButton>
             )}
           >

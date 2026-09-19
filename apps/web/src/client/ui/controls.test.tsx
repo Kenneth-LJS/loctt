@@ -86,14 +86,16 @@ describe("Select", () => {
   });
 
   it("renders a themed chevron overlay (not the native OS arrow)", () => {
-    render(
+    const { container } = render(
       <Select aria-label="S">
         <option>A</option>
       </Select>,
     );
-    // The caret is an overlaid element so it follows the theme token; a
+    // The caret is an overlaid SVG icon so it follows the theme token; a
     // bare <select> would rely on the OS arrow that ignores dark mode.
-    expect(screen.getByText(ICON.caretDown)).toBeTruthy();
+    // (Migrated from the ICON.caretDown glyph to the <Icon> component.)
+    const chevron = container.querySelector("svg.absolute");
+    expect(chevron).not.toBeNull();
   });
 
   it("re-declares a focus ring (appearance-none removed the UA one)", () => {
