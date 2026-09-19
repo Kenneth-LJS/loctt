@@ -1511,3 +1511,99 @@ describe("Sidebar mobile overlay (R2)", () => {
     expect(backdrop.style.top).toBe("3rem");
   });
 });
+
+/**
+ * @verifies K100
+ *
+ * Point-of-use editing (K100): the Labels / Milestones / Projects sidebar
+ * rows carry a kebab, a SIBLING of the row `<Link>` (a `<button>` inside an
+ * `<a>` is invalid HTML), that opens the SAME shared edit dialog the
+ * Settings panel renders. Sprints get no dialog — their overview becomes
+ * reachable via an "All sprints" row (editing stays on the detail page).
+ */
+describe("Sidebar point-of-use editing (K100)", () => {
+  /** Open a data-row's kebab by its accessible label, then a MenuItem. */
+  function openRowKebab(ariaLabelPrefix: string): void {
+    const kebab = document.querySelector<HTMLButtonElement>(
+      `[aria-label='${ariaLabelPrefix}']`,
+    );
+    if (kebab === null) throw new Error(`no kebab ${ariaLabelPrefix}`);
+    fireEvent.click(kebab);
+  }
+  function clickMenuItem(testId: string): void {
+    const item = document.querySelector<HTMLButtonElement>(`[data-testid='${testId}']`);
+    if (item === null) throw new Error(`no menu item ${testId}`);
+    fireEvent.click(item);
+  }
+
+  it("opens the shared LabelEditDialog, prefilled, from a label row kebab", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("frontend");
+
+    openRowKebab('Actions for label "frontend"');
+    clickMenuItem("sidebar-label-edit");
+
+    // The SAME component the panel renders (its testid), seeded from the row.
+    await screen.findByTestId("label-edit-dialog");
+    const name = screen.getByTestId<HTMLInputElement>("label-name-input");
+    expect(name.value).toBe("frontend");
+    const color = screen.getByTestId<HTMLInputElement>("label-color-input");
+    expect(color.value).toBe("#1e6fcb");
+  });
+
+  it("opens the shared MilestoneEditDialog, prefilled, from a milestone row kebab", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("v1.0");
+
+    openRowKebab('Actions for milestone "v1.0"');
+    clickMenuItem("sidebar-milestone-edit");
+
+    await screen.findByTestId("milestone-edit-dialog");
+    const name = screen.getByTestId<HTMLInputElement>("milestone-name-input");
+    expect(name.value).toBe("v1.0");
+  });
+
+  it("opens the shared ProjectEditDialog, prefilled, from a project row kebab", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("Web");
+
+    openRowKebab('Actions for project "Web"');
+    clickMenuItem("sidebar-project-edit");
+
+    await screen.findByTestId("project-edit-dialog-p_web");
+    const name = screen.getByTestId<HTMLInputElement>("project-name-input-p_web");
+    expect(name.value).toBe("Web");
+  });
+
+  it("keeps the row's kebab a sibling of the Link, not a descendant of it", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("frontend");
+    const kebab = document.querySelector<HTMLButtonElement>(
+      `[aria-label='Actions for label "frontend"']`,
+    );
+    expect(kebab).not.toBeNull();
+    // No enclosing anchor: a button in an anchor is invalid HTML.
+    expect(kebab?.closest("a")).toBeNull();
+  });
+
+  it("offers a Manage deep link and Archive on the label kebab", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("frontend");
+    openRowKebab('Actions for label "frontend"');
+    expect(document.querySelector("[data-testid='sidebar-label-archive']")).not.toBeNull();
+    expect(document.querySelector("[data-testid='sidebar-label-manage']")).not.toBeNull();
+  });
+
+  it("adds an 'All sprints' row linking to /sprints", async () => {
+    await renderSidebarAt("/list");
+    const link = await screen.findByTestId("sidebar-sprints-link");
+    expect(link.getAttribute("href")).toBe("/sprints");
+    expect(link.textContent).toMatch(/All sprints/);
+  });
+
+  it("adds a '+ New project' row deep-linking to Settings", async () => {
+    await renderSidebarAt("/list");
+    const link = await screen.findByTestId("sidebar-new-project");
+    expect(link.getAttribute("href")).toContain("/settings/projects");
+  });
+});

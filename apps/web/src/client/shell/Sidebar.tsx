@@ -1,6 +1,6 @@
-import type { SavedQuery, SidebarGroupId, TrackerInfoResponse, UserSettings } from "@loctt/contracts";
+import type { LabelDef, MilestoneDef, ProjectDef, SavedQuery, SidebarGroupId, TrackerInfoResponse, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -13,11 +13,16 @@ import {
   useViews,
 } from "../api/hooks/sidebarData.ts";
 import { useBuiltinCounts } from "../api/hooks/useBuiltinCounts.ts";
+import { useArchiveLabel, useArchiveMilestone } from "../api/hooks/useDataMutations.ts";
 import { useDeleteView } from "../api/hooks/useDeleteView.ts";
+import { useArchiveProject, useSetDefaultProject } from "../api/hooks/useProjectMutations.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
 import { DeleteViewDialog } from "../settings/DeleteViewDialog.tsx";
+import { LabelEditDialog } from "../settings/LabelEditDialog.tsx";
+import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
+import { ProjectEditDialog } from "../settings/ProjectEditDialog.tsx";
 import { RowActions } from "../settings/RowActions.tsx";
 import { DEFAULT_SECTION } from "../settings/sections.ts";
 import { readSidebarGroups, resolveSidebarOrder } from "../settings/sidebarGroups.ts";
@@ -671,6 +676,12 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
   // the list is scoped to until a project is actually clicked.
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(false);
+  // K100: the same ProjectEditDialog the Settings panel renders, opened
+  // from a row's kebab. Only the id is held; the current ProjectDef is
+  // looked up from live data at render, so an external rename is reflected.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingProject = items.find(p => p.id === editingId) ?? null;
+  const taskCounts = projects.data?.task_counts ?? {};
 
   // The searchable affordance appears only past the threshold, and
   // never while the sidebar is collapsed to icons (there is no room to
@@ -757,9 +768,8 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
 
       {visible.map(p => {
         const active = activeProjects.includes(p.id);
-        return (
+        const row = (
           <Link
-            key={p.id}
             to={viewTo}
             // Selecting a project is a single-facet jump (clears other
             // filters, like the built-ins); clicking the already-active
@@ -774,7 +784,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
                 : { ...clearSort(clearFilters(prev)), project: [p.id] }
             }
             title={p.name}
-            className="no-underline"
+            className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
             <ItemShell active={active} collapsed={collapsed} title={p.name}>
               {/* ProjectDef has no per-project color yet; the mockup
@@ -792,6 +802,28 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
               ) : null}
             </ItemShell>
           </Link>
+        );
+        // Collapsed rail: icon-only, no room for a kebab (matches the
+        // saved-filter rows).
+        if (collapsed) return <div key={p.id}>{row}</div>;
+        // K100: the kebab is a SIBLING of the <Link> (a <button> inside an
+        // <a> is invalid HTML), matching the saved-filter row pattern. Edit
+        // opens the shared ProjectEditDialog; Make default / Archive are
+        // handled inside that same dialog, so the kebab need only open it —
+        // plus a "Manage projects…" deep link so Settings stays discoverable.
+        return (
+          <div
+            key={p.id}
+            className="flex items-center rounded-md hover:bg-bg-muted"
+            data-project-row={p.id}
+          >
+            {row}
+            <ProjectRowActions
+              project={p}
+              isDefault={p.id === defaultProjectId}
+              onEdit={() => { setEditingId(p.id); }}
+            />
+          </div>
         );
       })}
 
@@ -814,7 +846,86 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
           {expanded ? "Show fewer" : `+${hiddenCount} more`}
         </button>
       ) : null}
+
+      {/* "+ New project": creating a project uses the panel-local
+          CreateProjectForm (slug/prefix uniqueness checks, not extracted
+          into a shared self-contained component), so per K100 this is a
+          DEEP LINK to Settings rather than a forked inline create. */}
+      {!collapsed && !failed ? (
+        <Link
+          to="/settings/$section"
+          params={{ section: "projects" }}
+          data-testid="sidebar-new-project"
+          title="New project"
+          className="no-underline"
+        >
+          <ItemShell collapsed={collapsed} title="New project">
+            <span className="w-4 shrink-0 text-center text-accent">+</span>
+            <span className="truncate text-accent">New project</span>
+          </ItemShell>
+        </Link>
+      ) : null}
+
+      {/* K100: the shared editor, mounted fresh on open so it seeds from
+          the current project. Make default / Archive live inside it. */}
+      {editingProject !== null ? (
+        <ProjectEditDialog
+          project={editingProject}
+          taskCount={taskCounts[editingProject.id] ?? 0}
+          others={items.filter(o => o.id !== editingProject.id)}
+          isDefault={editingProject.id === defaultProjectId}
+          onClose={() => { setEditingId(null); }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * A project row's kebab (K100). A sibling of the row `<Link>` — a
+ * `<button>` inside an `<a>` is invalid HTML — carrying Edit (opens the
+ * shared `ProjectEditDialog`, where Make default / Archive also live) and
+ * a "Manage projects…" deep link so Settings stays discoverable.
+ */
+function ProjectRowActions({
+  project,
+  isDefault,
+  onEdit,
+}: {
+  readonly project: ProjectDef;
+  readonly isDefault: boolean;
+  readonly onEdit: () => void;
+}) {
+  const navigate = useNavigate();
+  const archive = useArchiveProject();
+  const setDefault = useSetDefaultProject();
+  const archived = project.archived === true;
+  return (
+    <RowActions
+      size="sm"
+      label={`Actions for project "${project.name}"`}
+      actions={[
+        { label: "Edit…", testId: "sidebar-project-edit", onSelect: onEdit },
+        {
+          label: isDefault ? "Default (current)" : "Make default",
+          testId: "sidebar-project-set-default",
+          disabled: isDefault || archived || setDefault.isPending,
+          title: archived ? "An archived project cannot be the default." : undefined,
+          onSelect: () => { setDefault.reset(); setDefault.mutate({ id: project.id }); },
+        },
+        {
+          label: archived ? "Unarchive" : "Archive",
+          testId: "sidebar-project-archive",
+          disabled: archive.isPending,
+          onSelect: () => { archive.reset(); archive.mutate({ id: project.id, archived: !archived }); },
+        },
+        {
+          label: "Manage projects…",
+          testId: "sidebar-project-manage",
+          onSelect: () => { void navigate({ to: "/settings/$section", params: { section: "projects" } }); },
+        },
+      ]}
+    />
   );
 }
 
@@ -1193,6 +1304,11 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
   const milestones = useMilestones();
   const items = (milestones.data?.items ?? []).filter(m => m.archived !== true);
   const failed = hasFailed(milestones);
+  // K100: the same MilestoneEditDialog the Settings panel and the
+  // /milestones view render. Only the id is held; the current
+  // MilestoneDef is looked up from live data, so an external edit shows.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingMilestone = items.find(m => m.id === editingId) ?? null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Milestones</GroupLabel>
@@ -1215,23 +1331,82 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
       {!failed && hasAnswered(milestones) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No milestones yet</GroupEmpty>
       ) : null}
-      {items.map(m => (
-        <Link
-          key={m.id}
-          to="/list"
-          search={prev => ({ ...clearSort(prev), milestone: [m.id] })}
-          title={m.name}
-          className="no-underline"
-        >
-          <ItemShell collapsed={collapsed} title={m.name}>
-            <span className="flex w-4 shrink-0 justify-center text-text-tertiary">
-              <Icon name="flag" size={14} />
-            </span>
-            {!collapsed ? <span className="truncate">{m.name}</span> : null}
-          </ItemShell>
-        </Link>
-      ))}
+      {items.map(m => {
+        const row = (
+          <Link
+            to="/list"
+            search={prev => ({ ...clearSort(prev), milestone: [m.id] })}
+            title={m.name}
+            className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
+          >
+            <ItemShell collapsed={collapsed} title={m.name}>
+              <span className="flex w-4 shrink-0 justify-center text-text-tertiary">
+                <Icon name="flag" size={14} />
+              </span>
+              {!collapsed ? <span className="truncate">{m.name}</span> : null}
+            </ItemShell>
+          </Link>
+        );
+        if (collapsed) return <div key={m.id}>{row}</div>;
+        return (
+          <div
+            key={m.id}
+            className="flex items-center rounded-md hover:bg-bg-muted"
+            data-milestone-row={m.id}
+          >
+            {row}
+            <MilestoneRowActions milestone={m} onEdit={() => { setEditingId(m.id); }} />
+          </div>
+        );
+      })}
+
+      {/* K100: the shared editor, mounted fresh on open so it seeds from
+          the current milestone. */}
+      {editingMilestone !== null ? (
+        <MilestoneEditDialog
+          existing={editingMilestone}
+          onClose={() => { setEditingId(null); }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * A milestone row's kebab (K100). Sibling of the row `<Link>`. Edit opens
+ * the shared `MilestoneEditDialog`; Archive is a clean single mutation;
+ * "Manage milestones…" deep-links to Settings (delete lives there, behind
+ * the remap picker, which is panel-owned and not extracted).
+ */
+function MilestoneRowActions({
+  milestone,
+  onEdit,
+}: {
+  readonly milestone: MilestoneDef;
+  readonly onEdit: () => void;
+}) {
+  const navigate = useNavigate();
+  const archive = useArchiveMilestone();
+  const archived = milestone.archived === true;
+  return (
+    <RowActions
+      size="sm"
+      label={`Actions for milestone "${milestone.name}"`}
+      actions={[
+        { label: "Edit…", testId: "sidebar-milestone-edit", onSelect: onEdit },
+        {
+          label: archived ? "Unarchive" : "Archive",
+          testId: "sidebar-milestone-archive",
+          disabled: archive.isPending,
+          onSelect: () => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); },
+        },
+        {
+          label: "Manage milestones…",
+          testId: "sidebar-milestone-manage",
+          onSelect: () => { void navigate({ to: "/settings/$section", params: { section: "milestones" } }); },
+        },
+      ]}
+    />
   );
 }
 
@@ -1245,6 +1420,21 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Sprints</GroupLabel>
+      {/* The /sprints overview (all sprints, including completed ones) was
+          reachable only by URL — the group's rows filter the list to one
+          sprint. Mirrors "All milestones": a top row into the overview
+          surface. Sprint editing stays on the /sprints/:id detail page
+          (K100), which the overview links to. */}
+      {!collapsed && (
+        <Link to="/sprints" data-testid="sidebar-sprints-link" className="no-underline">
+          <ItemShell collapsed={collapsed} title="All sprints">
+            <span className="flex w-4 shrink-0 justify-center text-text-tertiary">
+              <Icon name="flag" size={14} />
+            </span>
+            <span className="truncate">All sprints</span>
+          </ItemShell>
+        </Link>
+      )}
       {failed && (
         <GroupError collapsed={collapsed} error={sprints.error} onRetry={() => { void sprints.refetch(); }} />
       )}
@@ -1283,6 +1473,10 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
   const labels = useLabels();
   const items = (labels.data?.items ?? []).filter(l => l.archived !== true);
   const failed = hasFailed(labels);
+  // K100: the same LabelEditDialog the Settings panel renders. Only the
+  // id is held; the current LabelDef is looked up from live data.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingLabel = items.find(l => l.id === editingId) ?? null;
   return (
     <div className="flex flex-col gap-0.5">
       <GroupLabel collapsed={collapsed}>Labels</GroupLabel>
@@ -1292,21 +1486,80 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
       {!failed && hasAnswered(labels) && items.length === 0 ? (
         <GroupEmpty collapsed={collapsed}>No labels yet</GroupEmpty>
       ) : null}
-      {items.map(l => (
-        <Link
-          key={l.id}
-          to="/list"
-          search={prev => ({ ...clearSort(prev), labels: [l.id] })}
-          title={l.name}
-          className="no-underline"
-        >
-          <ItemShell collapsed={collapsed} title={l.name}>
-            <ColorDot color={l.color} />
-            {!collapsed ? <span className="truncate">{l.name}</span> : null}
-          </ItemShell>
-        </Link>
-      ))}
+      {items.map(l => {
+        const row = (
+          <Link
+            to="/list"
+            search={prev => ({ ...clearSort(prev), labels: [l.id] })}
+            title={l.name}
+            className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
+          >
+            <ItemShell collapsed={collapsed} title={l.name}>
+              <ColorDot color={l.color} />
+              {!collapsed ? <span className="truncate">{l.name}</span> : null}
+            </ItemShell>
+          </Link>
+        );
+        if (collapsed) return <div key={l.id}>{row}</div>;
+        return (
+          <div
+            key={l.id}
+            className="flex items-center rounded-md hover:bg-bg-muted"
+            data-label-row={l.id}
+          >
+            {row}
+            <LabelRowActions label={l} onEdit={() => { setEditingId(l.id); }} />
+          </div>
+        );
+      })}
+
+      {/* K100: the shared editor, mounted fresh on open so it seeds from
+          the current label. */}
+      {editingLabel !== null ? (
+        <LabelEditDialog
+          existing={editingLabel}
+          onClose={() => { setEditingId(null); }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * A label row's kebab (K100). Sibling of the row `<Link>`. Edit opens the
+ * shared `LabelEditDialog`; Archive is a clean single mutation; a full
+ * Delete needs the remap picker (`RemapDeleteDialog`, panel-owned, not
+ * extracted), so it is reached through the "Manage labels…" deep link.
+ */
+function LabelRowActions({
+  label,
+  onEdit,
+}: {
+  readonly label: LabelDef;
+  readonly onEdit: () => void;
+}) {
+  const navigate = useNavigate();
+  const archive = useArchiveLabel();
+  const archived = label.archived === true;
+  return (
+    <RowActions
+      size="sm"
+      label={`Actions for label "${label.name}"`}
+      actions={[
+        { label: "Edit…", testId: "sidebar-label-edit", onSelect: onEdit },
+        {
+          label: archived ? "Unarchive" : "Archive",
+          testId: "sidebar-label-archive",
+          disabled: archive.isPending,
+          onSelect: () => { archive.mutate({ id: label.id, archived: !archived }); },
+        },
+        {
+          label: "Manage labels…",
+          testId: "sidebar-label-manage",
+          onSelect: () => { void navigate({ to: "/settings/$section", params: { section: "labels" } }); },
+        },
+      ]}
+    />
   );
 }
 

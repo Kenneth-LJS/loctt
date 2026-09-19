@@ -7,12 +7,12 @@ import {
   useArchiveLabel,
   useCountedLabels,
   useDeleteLabel,
-  useUpdateLabel,
 } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import { LabelEditDialog } from "./LabelEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
 
@@ -50,17 +50,15 @@ function LabelRow({ label, count, allLabels }: {
   readonly count: number;
   readonly allLabels: readonly LabelDef[];
 }) {
-  const update = useUpdateLabel();
   const archive = useArchiveLabel();
   const del = useDeleteLabel();
+  // K100: editing now runs through the shared LabelEditDialog (which the
+  // sidebar also opens), rather than an inline row form. The panel only
+  // decides whether the dialog is open.
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(label.name);
-  const [color, setColor] = useState(label.color ?? "");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const archived = label.archived === true;
-  const colorOk = isValidColor(color);
-  const nameOk = name.trim().length > 0;
 
   return (
     <li
@@ -76,113 +74,51 @@ function LabelRow({ label, count, allLabels }: {
         style={{ backgroundColor: label.color ?? "transparent" }}
       />
 
-      {editing
-        ? (
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <div className="flex gap-2">
-                <TextField
-                  aria-label="Label name"
-                  data-testid="label-name-input"
-                  value={name}
-                  onChange={e => { setName(e.target.value); }}
-                  className="min-w-0 flex-1"
-                />
-                <TextField
-                  aria-label="Label colour"
-                  data-testid="label-color-input"
-                  value={color}
-                  placeholder="#aabbcc"
-                  onChange={e => { setColor(e.target.value); }}
-                  className="w-28"
-                />
-              </div>
-              {/*
-                MSL-37: rejected at the input, naming the expected
-                format, with Save blocked — nothing partially-written
-                reaches labels.yaml.
-              */}
-              {!colorOk && (
-                <p role="alert" data-testid="label-color-invalid" className="text-[0.8571rem] text-danger-fg">
-                  Colour must be a 6-digit hex value like{" "}
-                  <code>#aabbcc</code>. Leave it empty for no colour.
-                </p>
-              )}
-              {update.isError && (
-                <p role="alert" className="text-[0.8571rem] text-danger-fg">
-                  {update.error instanceof ApiError ? update.error.message : "Could not save."}
-                </p>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  testId="label-save"
-                  disabled={!colorOk || !nameOk || update.isPending}
-                  onClick={() => {
-                    update.mutate(
-                      { id: label.id, name: name.trim(), color: color === "" ? null : color },
-                      { onSuccess: () => { setEditing(false); } },
-                    );
-                  }}
-                >
-                  Save
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setName(label.name);
-                    setColor(label.color ?? "");
-                    setEditing(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )
-        : (
-            <>
-              <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
-                {label.name}
-                {/*
-                  MSL-10: an archived label is still shown wherever it is
-                  referenced, marked rather than hidden.
-                */}
-                {archived && (
-                  <span data-testid="label-archived-marker" className="ml-2 text-text-tertiary">
-                    (archived)
-                  </span>
-                )}
-              </span>
+      <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
+        {label.name}
+        {/*
+          MSL-10: an archived label is still shown wherever it is
+          referenced, marked rather than hidden.
+        */}
+        {archived && (
+          <span data-testid="label-archived-marker" className="ml-2 text-text-tertiary">
+            (archived)
+          </span>
+        )}
+      </span>
 
-              {/*
-                MSL-11: zero is rendered as 0, never as a blank — a blank
-                cell reads as "unknown", which is a different claim.
-              */}
-              <span
-                data-testid="label-refcount"
-                data-label-refcount={String(count)}
-                className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
-              >
-                {String(count)} task{count === 1 ? "" : "s"}
-              </span>
+      {/*
+        MSL-11: zero is rendered as 0, never as a blank — a blank
+        cell reads as "unknown", which is a different claim.
+      */}
+      <span
+        data-testid="label-refcount"
+        data-label-refcount={String(count)}
+        className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
+      >
+        {String(count)} task{count === 1 ? "" : "s"}
+      </span>
 
-              <RowActions
-                label={`Actions for label ${label.name}`}
-                actions={[
-                  { label: "Edit", testId: "label-edit", onSelect: () => { setEditing(true); } },
-                  {
-                    label: archived ? "Unarchive" : "Archive",
-                    testId: "label-archive-toggle",
-                    disabled: archive.isPending,
-                    onSelect: () => { archive.mutate({ id: label.id, archived: !archived }); },
-                  },
-                  { label: "Delete", testId: "label-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
-                ]}
-              />
-            </>
-          )}
+      <RowActions
+        label={`Actions for label ${label.name}`}
+        actions={[
+          { label: "Edit…", testId: "label-edit", onSelect: () => { setEditing(true); } },
+          {
+            label: archived ? "Unarchive" : "Archive",
+            testId: "label-archive-toggle",
+            disabled: archive.isPending,
+            onSelect: () => { archive.mutate({ id: label.id, archived: !archived }); },
+          },
+          { label: "Delete", testId: "label-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
+        ]}
+      />
+
+      {editing && (
+        <LabelEditDialog
+          existing={label}
+          onClose={() => { setEditing(false); }}
+        />
+      )}
 
       {confirmingDelete && (
         /*

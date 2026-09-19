@@ -13588,6 +13588,64 @@ chosen brand colour — inherited from the v1 tokens. Ken chose a green-leaning
 **To revert.** Restore the indigo `--accent*` values (git history) and the
 independently-tuned semantic tokens; drop the `text-accent` split.
 
+### K100 · Point-of-use config: edit-in-place ONLY through a shared component the Settings panel also renders; deep-link otherwise
+
+**Ken's ruling (2026-09-20).** Config is being surfaced from where entities are
+used (sidebar rows, board columns, entity headers, pickers) because it was
+stranded in Settings. Two PM/UI analyses (advocate + skeptic) converged on a
+rule that is about **component ownership**, not about where the UI opens — and
+Ken adopted it:
+
+> An entity may be edited from a point of use **only** through a single
+> self-contained editor component (one that owns its own mutation, validation,
+> and error-anchoring) that the **Settings panel itself also renders**. If the
+> Settings panel's editor is not yet that shared component, the point-of-use
+> affordance is a **deep link** to `/settings/<section>#row-<id>` and stays a
+> link until the editor is extracted. Every in-place editor also carries a
+> "Manage all <noun>…" deep link so Settings stays discoverable and the two
+> surfaces are visibly the same thing.
+
+This is the which-layer rule applied to UI: in-place is a *reward for
+extraction*, not a licence to fork. "Safe" is checkable in review — is the
+Settings panel rendering the same component? If not, it's a link.
+
+**Why (the crux the skeptic found):** in-place is drift-free only when the
+editor already owns its mutation+validation (`ViewFormDialog` does — reuse is
+one import). Where the *panel* owns the write (workflow enums: whole-collection
+PUT with SET-28 stale-baseline refusal, SET-34 rollback, priority renumber,
+remap — `EnumCollectionPanel`), a second in-place editor is a second
+implementation = drift. This already happened on-branch: the saved-view Delete
+forked (sidebar drops the pin + suppresses the vanished-notice; the Settings
+panel does neither) — fix that as part of adopting the rule.
+
+**Per-entity assignment:**
+- **Saved views** — in-place (shipped); *close the drift*: make `SavedViewsPanel`
+  use `DeleteViewDialog` + pin-drop + `dismiss()` like the sidebar, and retire
+  `list/SaveViewDialog` in favour of `ViewFormDialog` seeded with the built DSL.
+- **Sprints** — in-place **via the `/sprints/:id` detail page** (its header IS
+  the editor). Sprint chips/rows anywhere DEEP-LINK to it. Do **not** build a
+  separate sprint dialog (avoids changing the detail interaction + its e2e).
+  First parity fix: hoist the duplicated `STATES`/`STATE_LABEL`/`ISO_DATE_RE`
+  from `SprintsPanel` and `SprintMetaHeader` into one module.
+- **Labels, Milestones, Projects** — deep-link **now**; convert to in-place
+  once their inline row-form is **extracted** to a shared dialog the panel also
+  renders (then it becomes in-place by the rule).
+- **Workflow enums / custom fields / relationships / board columns** —
+  **deep-link** (whole-collection or whole-document writes; hoisting not worth
+  it, and K1's edit-gate argues against 1-click config edits from views).
+- **Whole-surface config** (git-sync, calendar, keyboard, preferences, backup,
+  reconcile, diagnostics, card layout, timeline defaults) — **deep-link**,
+  labelled as navigation ("Configure…"), never "Edit".
+
+**Groundwork regardless (cheap, all panels):** add `id="row-<id>"` to every
+settings row so `#row-<id>` anchors land; when a hash names an archived row,
+auto-enable that panel's "Show archived". Defer `?edit=<id>` until a panel needs
+it.
+
+**To revert.** Remove the point-of-use `onSelect`/link; the shared dialogs and
+extracted modules stay (the panels still use them). This is a standard, not a
+one-off — new point-of-use config must follow it.
+
 ### A199 · REL-16 inline image render — a separate `?inline=1` serve path, raw bytes, `<img>` sandbox (implements K95)
 
 **Ticket:** REL-16 bullet 1 · **Date:** 2026-09-17 · **Implements:** K95.
@@ -14498,3 +14556,185 @@ added (`@verifies A211`: a 15-label set grows a box that filters).
 `QueryBuilder.tsx` and `FilterDropdown.tsx` from `41d133c`, delete
 `ui/Combobox.tsx` + its test, and re-apply the four QueryBuilder test
 edits in reverse.
+
+### A212 · The child-progress meter (L4) renders on the tree axis's *child* side only, and web recomputes it client-side
+
+**Ticket:** L4 · **Date:** 2026-09-20 · **Commit:** (uncommitted)
+
+**The situation.** L4 adds a Jira-style done/active/todo meter on a
+parent task's group of children. Core's `Progress` gained `active`
+(category-based, discarded still excluded), and the meter had to appear
+on the task detail's Relationships panel, on `loctt show`, and on MCP
+`get_task`. Two calls were undersettled by the ticket.
+
+**What had to be decided.** (a) Which tree group gets the meter — a
+`graph: "tree"` def produces *two* sides (`parent` forward, `child`
+inverse), both rendered as trees; and (b) where the web meter's numbers
+come from, given core's `progress.ts` is a Node module (it reads the
+corpus) that cannot cross into the browser bundle.
+
+**Options considered.**
+
+1. **Meter on every tree group** vs **child side only.** Rendering on
+   both would put a progress bar on the "Parent" group, which points at
+   ancestors — a meter over "my parents" is meaningless, and usually
+   there is exactly one. Cost of child-only: a tiny config lookup
+   (`treeChildSideKey` = the tree def's `effectiveInverseKey`).
+2. **Web reads a server progress endpoint** vs **web recomputes from the
+   rows it already holds.** The panel's depth-0 rows already carry
+   `resolvedStatus`; classifying them via `statusOf(...)?.category` needs
+   no new request. A server round-trip would add a fetch for numbers the
+   client can derive, and would still restate the category rule
+   somewhere.
+
+**Decided.** (a) The meter renders only on the group whose key is the
+tree axis's child side (`treeChildSideKey`), and never when that axis is
+symmetric. (b) Web computes the child counts client-side from the rows'
+`resolvedStatus`, mirroring how `milestones/model.ts` already restates
+the presentation half of `Progress` on the client.
+
+**Why.** (a) A meter over ancestors is noise; the child side is the only
+one that summarises "how far along is the work under this task". (b) This
+is the established pattern in this package — the milestone readout does
+the identical thing — and it keeps the exclusion/category rule applied
+from one shared shape (`progressState`) rather than adding a surface. The
+authoritative computation still lives in core (`computeProgressFromStatuses`),
+which CLI and MCP call directly, satisfying the parity rule; the web copy
+is the presentation layer, not a second source of truth.
+
+**To revert.** Remove `active`/`tallyStatusCategories`/
+`computeProgressFromStatuses` from `packages/core/src/task/progress.ts`
+(+ index exports) and their tests; drop `activeFill` and the `active?`
+field from `apps/web/src/client/milestones/model.ts`; drop the `label`/
+`segmented` props and the segmented branch from `ProgressReadout.tsx`
+(delete `ProgressReadout.test.tsx`); remove `treeChildSideKey` from
+`relationships/group.ts` and the `ChildProgressMeter` +
+`child-progress` render from `RelationshipsPanel.tsx` (+ its tests);
+remove the `children` block from MCP `get_task` and the "Child progress"
+line from CLI `show` (`apps/{mcp,cli}/src/**/task-crud.ts`), their helper
+`treeChildSideKey`, the reference-doc paragraphs, and
+`tests/integration/cli/child-progress-parity.test.ts`.
+
+
+### A213 · The full timeline group-by set, via a surface-neutral searchable picker; `field.<key>` may dangle
+
+**Ticket:** UI/UX polish — timeline group-by · **Date:** 2026-09-20 · **Commit:** (this branch, uncommitted)
+
+**The situation.** `TimelineGroupingSchema` was a closed 5-enum
+(`none`/`milestone`/`assignee`/`status`/`sprint`), rendered by a native
+`<select>` in the toolbar and Settings. Ken approved the FULL group-by
+set and that the picker scale like the K97 filter work (A211's
+`Combobox`), reusable for board/list later. A PM/UI spec settled it: a
+single-select searchable `Combobox`, no offered-set config (eligibility
+derived), custom-enum fields groupable as `field.<key>`.
+
+**What had to be decided.** (1) Which fields are groupable, and how a
+custom-field grouping is stored. (2) Where the catalog lives. (3) What
+happens to a stored grouping whose custom field is deleted or changed to
+multi/non-enum.
+
+**Options considered.**
+ - *Groupable set:* only builtins (rejected — Ken wanted custom fields)
+   vs builtins + all custom enums (rejected — a multi/label field puts a
+   task in N bands, breaking TML-7's identical-row-count invariant) vs
+   builtins + **single-value** enum fields (chosen).
+ - *Catalog home:* under `timeline/` (rejected — a group-by is not a
+   timeline concept; the board already groups and the list will, so
+   scoping it to one surface is the drift CLAUDE.md names) vs a new
+   surface-neutral `apps/web/src/client/grouping/` (chosen).
+ - *Dangling `field.<key>`:* validate-and-reject at schema parse
+   (rejected — a hand-edited config would fail to load) vs preserve on
+   write and resolve at read time (chosen, mirroring
+   `dependency_relationship` / A31).
+
+**Decided.** `TimelineGrouping = Builtin | field.${string}`, where
+Builtin is the eight `none`/`project`/`milestone`/`sprint`/`assignee`/
+`status`/`priority`/`task_type`. Eligibility (single-value enum with
+values) is derived by `buildGroupingCatalog(workflow)`. `resolveGrouping`
+rejects an unresolvable value and DEFERS to the next precedence layer
+(url → view → workspace → `none`), naming the first rejected value in a
+`dangling` field the view surfaces as a one-line notice. The grouping
+control is `GroupByPicker`, a thin wrapper over `Combobox` single-select,
+mounted by both the toolbar and Settings.
+
+**Why.** TML-7's invariant is the hard constraint — every task lands in
+exactly one band under every grouping — which is why labels and
+multi-value enums are excluded. Surface-neutrality follows CLAUDE.md's
+core/surface-parity rule applied at the web layer. Dangling-preserve
+follows A31: silently pruning a reference destroys the evidence of a
+typo, and a notice cannot name a key that was erased.
+
+**Board/list reuse (open — for a future decision).** The catalog and
+`GroupByPicker` are deliberately surface-neutral, but `BoardGroupingSchema`
+(in `packages/contracts/src/query.ts`, used by
+`SavedViewDisplaySchema.group_by`) is still a separate enum. When the
+board adopts the picker, `BoardGroupingSchema` and `TimelineGroupingSchema`
+should be unified (a shared groupable-value schema), and
+`buildGroupingCatalog` given a per-surface capability filter so the board
+offers only what it can render. Not done here — flagged for its own
+ticket so the timeline change stays scoped.
+
+**To revert.** Restore the closed enum in
+`packages/contracts/src/workflow.ts` (`TimelineGroupingSchema` +
+`TimelineGrouping` type) and revert the schema-reference.md
+`default_grouping` row/notes; delete `apps/web/src/client/grouping/`
+(catalog + `GroupByPicker` + tests); restore the native `<select>`
+group-by in `apps/web/src/client/timeline/TimelineView.tsx` and
+`apps/web/src/client/settings/TimelinePanel.tsx`; revert the four new
+bucketers (`byProject`/`byPriority`/`byTaskType`/`byCustomField`) and the
+`field.`-dispatch in `apps/web/src/client/timeline/rows.ts`; revert
+`resolveGrouping` to the single-arg `resolve(...)` in
+`apps/web/src/client/timeline/settings.ts`; revert the lenient
+`groupingParam` in `apps/web/src/client/router/timelineSearch.ts` (and
+delete its test); undo the two additive `Combobox` touches (`dataValue`
+on `ComboboxButton`, `clear.testId`); and revert the e2e rewrites in
+`tests/ui/flow-timeline.spec.ts` (the `expectGrouping`/`chooseGrouping`
+helpers, the custom-field case, and the `setCustomEnumFields`/
+`setTaskField` helpers).
+
+### A214 · K100 point-of-use edit dialogs for Labels/Milestones/Projects; "All sprints" row; create/delete stay deep-links
+
+**Ticket:** K100 UI lane · **Date:** 2026-09-20 · **Commit:** (uncommitted)
+
+**The situation.** K100 makes point-of-use editing legal *only* through a
+single self-contained editor the Settings panel also renders. Labels /
+Milestones / Projects edited via **inline row forms** (not components), so
+the price was extraction. Three shared dialogs now exist —
+`LabelEditDialog`, `MilestoneEditDialog`, `ProjectEditDialog` — each owning
+its fields, validation and mutation; the panels render them (their inline
+edit branches deleted) and the sidebar rows open the *same* ones.
+
+**What had to be decided (calls the ticket left open).**
+
+1. **Sidebar "+ New project" and label/milestone Delete.** K100 only
+   extracted the *edit* forms. Project creation (`CreateProjectForm`:
+   slug/prefix uniqueness) and label/milestone delete (`RemapDeleteDialog`:
+   remap picker + last-project guard) are **panel-owned, not extracted**.
+   Per K100 an un-extracted affordance is a **deep link**, not a fork —
+   so "+ New project" links to `/settings/projects`, and the sidebar
+   label/milestone kebabs offer Archive (a clean single mutation) + a
+   "Manage …" deep link that carries the destructive delete.
+2. **Project make-default / archive placement.** The brief said the
+   dialog is "name + make-default + archive". Those are non-field actions;
+   they live *inside* `ProjectEditDialog` (a bordered action row), not on
+   the panel row kebab (which is now just Edit… / Delete). The panel tests
+   that clicked them from the row kebab were updated to open the dialog.
+3. **Stale-draft handling.** Each dialog is mounted fresh on open
+   (`editing && <Dialog …>`), so `useState(existing.*)` seeds from the
+   current entity — the B2 bug-5 stale-draft trap is closed by mounting,
+   replacing the per-row `reset()`-on-Edit-open dance.
+
+**Deferred.** `MilestoneDetail`'s header edit is untouched (a later pass,
+per the brief). Sprints get **no** dialog (K100: sprint edit stays on the
+`/sprints/:id` detail page); this lane only made the `/sprints` overview
+reachable via an "All sprints" sidebar row and left the sprint rows'
+filter-link behaviour intact.
+
+**To revert.** Delete `apps/web/src/client/settings/{LabelEditDialog,
+MilestoneEditDialog,ProjectEditDialog}.tsx`; restore the inline edit
+branches in `{Labels,Milestones,Projects}Panel.tsx` from git; remove the
+`*RowActions` kebabs, the dialog wiring, the "All sprints" and
+"+ New project" rows from `shell/Sidebar.tsx`; revert the K100 test blocks
+in `dataPanels.test.tsx`, `ProjectsPanel.test.tsx`, and `Sidebar.test.tsx`.
+The shared dialogs are the standard's payoff — this is a standard (K100),
+not a one-off; new point-of-use config must follow it.

@@ -20,6 +20,22 @@ async function openProjectMenu(projectId: string): Promise<void> {
 }
 
 /**
+ * K100: the row's edit affordances (name, prefix, Make default, Archive)
+ * now live inside the shared `ProjectEditDialog`, which the sidebar also
+ * renders — not inline in the row. Open the row kebab, click Edit…, and
+ * the dialog with those controls is mounted. The tests below that used to
+ * find `project-set-default-*` / `project-archive-*` / `project-name-*` as
+ * row-kebab items or inline row markup now find them in the dialog; the
+ * change is the K100 extraction, so those tests were updated to open the
+ * dialog first (they previously asserted the in-row/in-kebab form).
+ */
+async function openProjectEdit(projectId: string): Promise<void> {
+  await openProjectMenu(projectId);
+  fireEvent.click(screen.getByTestId(`project-edit-${projectId}`));
+  await screen.findByTestId(`project-edit-dialog-${projectId}`);
+}
+
+/**
  * @verifies PRU-6, PRU-44, PRU-45, PRU-48
  *
  * B2 edit-model: a project row is read-by-default. The name is no longer
@@ -185,28 +201,28 @@ describe("ProjectsPanel edit-model (PRU-6)", () => {
 });
 
 describe("ProjectsPanel set-default (PRU-48)", () => {
-  it("marks the current default and makes its button inert", async () => {
+  it("marks the current default and makes its Make-default control inert", async () => {
     stubHappyPath();
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    // p-api is the default in PROJECTS.
+    // p-api is the default in PROJECTS — the marker is in the read-only row.
     await screen.findByTestId("project-default-marker-p-api");
     expect(screen.queryByTestId("project-default-marker-p-web")).toBeNull();
-    // The default's action is inert (a dimmed, non-selectable menu item)
-    // and labelled so marker and control can't disagree. In the kebab it's
-    // a MenuItem: dimmed via opacity, not a `disabled` <button> attribute.
-    await openProjectMenu("p-api");
-    const apiItem = screen.getByTestId("project-set-default-p-api");
-    expect(apiItem.className).toContain("opacity-50");
-    expect(apiItem.textContent).toMatch(/Default \(current\)/);
+    // K100: Make default now lives inside the edit dialog. For the current
+    // default it is a disabled <button> labelled so marker and control
+    // can't disagree.
+    await openProjectEdit("p-api");
+    const apiBtn = screen.getByTestId<HTMLButtonElement>("project-set-default-p-api");
+    expect(apiBtn.disabled).toBe(true);
+    expect(apiBtn.textContent).toMatch(/Default \(current\)/);
   });
 
   it("PUTs { default: true } for a non-default project", async () => {
     stubHappyPath();
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    await screen.findByTestId("project-row-p-web");
-    await openProjectMenu("p-web");
+    // K100: Make default is inside the edit dialog now.
+    await openProjectEdit("p-web");
     const webBtn = screen.getByTestId("project-set-default-p-web");
     expect(webBtn.textContent).toMatch(/Make default/);
     fireEvent.click(webBtn);
@@ -236,7 +252,8 @@ describe("ProjectsPanel silent-write surfacing (B2 bug 3)", () => {
     });
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    await openProjectMenu("p-web");
+    // K100: Make default is inside the edit dialog now.
+    await openProjectEdit("p-web");
     fireEvent.click(screen.getByTestId("project-set-default-p-web"));
 
     const err = await screen.findByTestId("project-set-default-error-p-web");
@@ -256,7 +273,8 @@ describe("ProjectsPanel silent-write surfacing (B2 bug 3)", () => {
     });
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    await openProjectMenu("p-web");
+    // K100: Archive is inside the edit dialog now.
+    await openProjectEdit("p-web");
     fireEvent.click(screen.getByTestId("project-archive-p-web"));
 
     const err = await screen.findByTestId("project-archive-error-p-web");
@@ -293,19 +311,21 @@ describe("ProjectsPanel stale name draft (B2 bug 5)", () => {
     });
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    // Force the external rename to land: set-default invalidates projects,
-    // so the row re-renders with the new name text.
-    await openProjectMenu("p-web");
+    // Force the external rename to land: set-default (now inside the edit
+    // dialog) invalidates projects, so the row re-renders with the new name
+    // text. Close the dialog afterwards.
+    await openProjectEdit("p-web");
     fireEvent.click(screen.getByTestId("project-set-default-p-web"));
     await waitFor(() => {
       expect(screen.getByTestId("project-name-p-web").textContent).toBe("Web Renamed");
     });
+    fireEvent.click(screen.getByTestId("project-edit-cancel-p-web"));
 
-    // The regression: Edit seeded its draft from the mount value ("Web")
-    // and never reset it, so Save would write the stale name back. After
-    // the fix, opening Edit shows the CURRENT name.
-    await openProjectMenu("p-web");
-    fireEvent.click(screen.getByTestId("project-edit-p-web"));
+    // K100: the dialog mounts fresh on open and seeds `useState(project.name)`
+    // from the CURRENT prop, so re-opening Edit shows the renamed value — the
+    // B2 bug-5 stale-draft trap (draft seeded once and never reset) cannot
+    // recur. This previously asserted the inline row form's input value.
+    await openProjectEdit("p-web");
     const input = screen.getByTestId<HTMLInputElement>("project-name-input-p-web");
     expect(input.value).toBe("Web Renamed");
   });
