@@ -646,8 +646,17 @@ export function ListView() {
             from the filters below.
           </p>
           <p className="mt-1">
-            Fix the file (or run <code className="font-mono">loctt doctor</code>),
-            then refresh. The rest of the list loaded normally.
+            <Link
+              to="/settings/$section"
+              params={{ section: "diagnostics" }}
+              data-testid="workflow-config-broken-diagnostics-link"
+              className="underline hover:opacity-80"
+            >
+              Open Diagnostics
+            </Link>
+            {" "}to see the problem, or fix the file (or run{" "}
+            <code className="font-mono">loctt doctor</code>), then refresh. The
+            rest of the list loaded normally.
           </p>
           <ul className="mt-1 list-none space-y-0.5 p-0" data-testid="workflow-config-broken-list">
             {brokenWorkflowEntries.map(e => (
