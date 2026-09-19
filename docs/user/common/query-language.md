@@ -271,7 +271,7 @@ queries:
 
   - id: 01JCQ8ZKD6G8J0L2N4Q6S8U0W2
     name: blocked
-    query: archived != true and status = blocked
+    query: archived != true and has_link("is_blocked_by")
     sort:
       - field: priority
         direction: desc

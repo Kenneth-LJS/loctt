@@ -14158,3 +14158,45 @@ migrated call sites to their `ICON.*` glyphs / raw glyphs (git history has
 each); restore the removed `ICON` imports; revert the Select control test's
 chevron assertion to the glyph-text form. The ★/⚠ glyphs in `icons.ts`
 were never removed.
+
+### A209 · Broken `blocked` default saved view — repoint to `has_link("is_blocked_by")`
+
+**Ticket:** ui/ux-polish-and-timeline-panel · **Date:** 2026-09-19
+
+**The situation.** `defaultQueriesYaml()` (`packages/core/src/init/defaults.ts`)
+seeded a saved view `blocked` with query `archived != true and status =
+blocked`. The default workflow has no `blocked` status (backlog/in_progress/
+done/wont_do), so *every* new tracker shipped a broken pinned view: the CLI
+warned "unknown status value 'blocked'", the UI sidebar pinned `⭑ blocked`
+and it silently returned nothing. A first-run investigation agent found it;
+it fails for 100% of new users on every surface.
+
+**Decided.** Repoint the seed to `archived != true and
+has_link("is_blocked_by")`. That is the view's actual intent — tasks that
+ARE blocked by another — expressed against the seeded `blocks` / inverse
+`is_blocked_by` relationship. Verified: `linkTask` persists the inverse
+`is_blocked_by` edge on the blocked task, `evaluateHasLink` matches on the
+task's own stored relationships, and `validateQuery` accepts inverse keys
+(`relationshipTypeKeys` returns both `blocks` and `is_blocked_by`).
+
+**Why not the alternatives.** Dropping the view loses a useful default;
+adding a `blocked` *status* conflates workflow state with a relationship
+(a task can be blocked in any status) and would need a category + migration.
+The link predicate is the semantically correct, migration-free fix.
+
+**Known limitation (documented, not fixed).** The view lists a task as
+blocked even when its blocker is already done/wont_do; the DSL has no
+"edge whose target has status X" predicate, so this is the closest
+expressible approximation.
+
+**Guard.** New init test "seeds queries that validate against the seeded
+workflow" (`init.test.ts`) runs `validateQuery(..., { workflow })` on every
+seeded query against the seeded workflow — shown to go red on the old
+`status = blocked` seed. The prior `parseQueriesConfig`-only test checked
+syntax, never enum/relationship validity against the workflow, which is how
+this shipped. Docs updated: `query-language.md`, `schema-reference.md` (both
+reproduced the old query verbatim).
+
+**To revert.** Restore `defaults.ts` line to `status = blocked`; remove the
+init guard test and revert the two doc lines. (Reverting reintroduces the
+bug — noted only for completeness.)
