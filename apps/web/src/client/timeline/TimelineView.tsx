@@ -760,8 +760,14 @@ function UnscheduledLane(props: {
               type="button"
               data-testid={`timeline-unscheduled-row-${r.task.key}`}
               onClick={() => { props.onOpenTask(r.task.key); }}
-              className="flex w-full items-center gap-2 px-3 py-1 text-left text-[0.8571rem] hover:bg-bg-canvas"
-              style={{ height: ROW_H }}
+              // Below sm the reason chip ("No start date — due …") would
+              // crush the title to a few px on one fixed-height line
+              // (UX eval #9). Allow the row to wrap the chip onto a second
+              // line on a phone, and use min-height (not a fixed height)
+              // so the wrapped row is not clipped. At >= sm it is the
+              // original single fixed-height row.
+              className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-1 text-left text-[0.8571rem] hover:bg-bg-canvas sm:flex-nowrap"
+              style={{ minHeight: ROW_H }}
             >
               <span className="font-mono text-text-secondary">{r.task.key}</span>
               {/* K26: a corrupt title is absent from frontmatter, so
@@ -769,7 +775,7 @@ function UnscheduledLane(props: {
                   span — the task must never look untitled-and-nameless.
                   The key is already shown alongside, but titling with it
                   keeps the row honest when title is the corrupt field. */}
-              <span className="truncate">{r.task.title ?? r.task.key}</span>
+              <span className="min-w-0 flex-1 truncate">{r.task.title ?? r.task.key}</span>
               {/* TML-19 ("hovering explains the missing date"), TML-20
                   and TML-48 ("the message names the task and the
                   offending field value"). Rendered as text, not only as
