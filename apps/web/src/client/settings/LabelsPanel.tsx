@@ -12,6 +12,7 @@ import {
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
+import { RowActions } from "./RowActions.tsx";
 
 /**
  * Settings → Data → Labels (MSL-8..MSL-12, MSL-31, MSL-32, MSL-34,
@@ -165,31 +166,19 @@ function LabelRow({ label, count, allLabels }: {
                 {String(count)} task{count === 1 ? "" : "s"}
               </span>
 
-              <button
-                type="button"
-                data-testid="label-edit"
-                onClick={() => { setEditing(true); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                data-testid="label-archive-toggle"
-                disabled={archive.isPending}
-                onClick={() => { archive.mutate({ id: label.id, archived: !archived }); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-              >
-                {archived ? "Unarchive" : "Archive"}
-              </button>
-              <button
-                type="button"
-                data-testid="label-delete"
-                onClick={() => { setConfirmingDelete(true); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-              >
-                Delete
-              </button>
+              <RowActions
+                label={`Actions for label ${label.name}`}
+                actions={[
+                  { label: "Edit", testId: "label-edit", onSelect: () => { setEditing(true); } },
+                  {
+                    label: archived ? "Unarchive" : "Archive",
+                    testId: "label-archive-toggle",
+                    disabled: archive.isPending,
+                    onSelect: () => { archive.mutate({ id: label.id, archived: !archived }); },
+                  },
+                  { label: "Delete", testId: "label-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
+                ]}
+              />
             </>
           )}
 
