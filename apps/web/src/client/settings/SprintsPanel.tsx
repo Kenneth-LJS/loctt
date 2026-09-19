@@ -6,6 +6,7 @@ import { ApiError } from "../api/client.ts";
 import { useArchiveSprint, useCountedSprints, useCreateSprint, useDeleteSprint } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { Select } from "../ui/Select.tsx";
@@ -270,8 +271,7 @@ export function SprintsPanel() {
       {archivedItems.length > 0 && (
         <div className="mt-5">
           <label className="flex items-center gap-2 text-[0.8571rem] text-text-secondary">
-            <input
-              type="checkbox"
+            <Checkbox
               data-testid="sprints-show-archived"
               checked={showArchived}
               onChange={e => { setShowArchived(e.target.checked); }}

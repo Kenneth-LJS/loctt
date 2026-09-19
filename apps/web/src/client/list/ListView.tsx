@@ -26,6 +26,7 @@ import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import type { EstimationShape } from "../task/estimation.ts";
 import { estimationShape } from "../task/estimation.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
@@ -752,22 +753,18 @@ export function ListView() {
           <thead>
             <tr>
               <th scope="col" className="sticky top-0 w-9 border-b border-border-default bg-bg-canvas px-3 py-2 dark:bg-bg-surface">
-                <input
-                  type="checkbox"
+                <Checkbox
                   aria-label="Select all on this page"
                   checked={allOnPageSelected}
-                  ref={el => {
-                    // Indeterminate is not an attribute — it only
-                    // exists as a DOM property. BLK-3 requires the
-                    // header to be *checked*, not indeterminate, once
-                    // every visible row is selected.
-                    if (el) el.indeterminate = someOnPageSelected && !allOnPageSelected;
-                  }}
+                  // BLK-3 requires the header to be *checked*, not
+                  // indeterminate, once every visible row is selected;
+                  // the primitive owns the DOM-property plumbing.
+                  indeterminate={someOnPageSelected && !allOnPageSelected}
                   onChange={() => {
                     if (allOnPageSelected) selection.clear();
                     else selection.selectAll(items.map(t => t.id));
                   }}
-                  className="cursor-pointer align-middle accent-accent"
+                  className="align-middle"
                 />
               </th>
               {columns.map(col => {
@@ -928,8 +925,7 @@ export function ListView() {
                   ].join(" ")}
                 >
                   <td className="align-middle">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       aria-label={`Select ${task.key}`}
                       checked={selection.isSelected(task.id)}
                       // The checkbox is the one hit area in the row that
@@ -938,7 +934,7 @@ export function ListView() {
                       // change without a row click at all.
                       onClick={e => e.stopPropagation()}
                       onChange={() => selection.toggle(task.id)}
-                      className="cursor-pointer align-middle accent-accent"
+                      className="align-middle"
                     />
                   </td>
                   {columns.map(col => {
@@ -994,13 +990,12 @@ export function ListView() {
               ].join(" ")}
             >
               <div className="flex items-start gap-2">
-                <input
-                  type="checkbox"
+                <Checkbox
                   aria-label={`Select ${task.key}`}
                   checked={selection.isSelected(task.id)}
                   onClick={e => e.stopPropagation()}
                   onChange={() => selection.toggle(task.id)}
-                  className="mt-0.5 shrink-0 cursor-pointer accent-accent"
+                  className="mt-0.5 shrink-0"
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 text-[0.7857rem] text-text-tertiary">

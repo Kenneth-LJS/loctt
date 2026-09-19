@@ -9,6 +9,9 @@ import { builderTreeToQuery } from "@loctt/core/query/builderTree.js";
 import type { ComparisonOp, QueryValue } from "@loctt/core/query/parser.js";
 import { useMemo } from "react";
 
+import { Checkbox } from "../ui/Checkbox.tsx";
+import { Select } from "../ui/Select.tsx";
+
 /**
  * The visual query builder's FORM (K83, step 2) — a controlled renderer
  * over a {@link BuilderTree}. The PARENT owns the tree state and the
@@ -615,12 +618,12 @@ function LeafRow({
   return (
     <div className="flex flex-wrap items-center gap-1.5 rounded bg-bg-surface/60 px-1 py-0.5">
       {/* Field picker */}
-      <select
+      <Select
+        size="sm"
         data-testid="qb-field"
         aria-label="Field"
         value={node.field}
         onChange={e => { onFieldChange(e.target.value); }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
       >
         {/* An out-of-config field still needs to show as the current
             selection rather than silently snapping to the first option. */}
@@ -630,20 +633,20 @@ function LeafRow({
         {fields.map(f => (
           <option key={f.field} value={f.field}>{f.label}</option>
         ))}
-      </select>
+      </Select>
 
       {/* Operator picker — filtered to the field kind's renderable ops. */}
-      <select
+      <Select
+        size="sm"
         data-testid="qb-op"
         aria-label="Operator"
         value={node.op}
         onChange={e => { onOpChange(e.target.value as ComparisonOp); }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
       >
         {ops.map(op => (
           <option key={op} value={op}>{OP_LABELS[op]}</option>
         ))}
-      </select>
+      </Select>
 
       {/* Value control — omitted entirely for presence ops. */}
       {!isPostfix(node.op) && (
@@ -700,8 +703,7 @@ function ValueControl({
         <span data-testid="qb-value" className="inline-flex flex-wrap items-center gap-1.5">
           {constrained.map(opt => (
             <label key={opt.value} className="inline-flex items-center gap-1 text-[0.8571rem] text-text-secondary">
-              <input
-                type="checkbox"
+              <Checkbox
                 data-testid={`qb-value-opt-${opt.value}`}
                 checked={selectedKeys.includes(opt.value)}
                 onChange={e => { toggle(opt.value, e.target.checked); }}
@@ -735,7 +737,8 @@ function ValueControl({
   if (constrained !== undefined) {
     const current = value.type === "current_user" ? "@currentUser" : scalarToString(value);
     return (
-      <select
+      <Select
+        size="sm"
         data-testid="qb-value"
         aria-label="Value"
         value={current}
@@ -744,7 +747,6 @@ function ValueControl({
           if (v === "@currentUser") { onChange({ type: "current_user" }); return; }
           onChange(scalarFromString(kind, v));
         }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
       >
         <option value="">—</option>
         {/* K80: user fields offer the querying user as a live value. */}
@@ -759,22 +761,22 @@ function ValueControl({
           !constrained.some(o => o.value === current) && (
             <option value={current}>{current} (not in config)</option>
           )}
-      </select>
+      </Select>
     );
   }
 
   if (kind === "boolean") {
     return (
-      <select
+      <Select
+        size="sm"
         data-testid="qb-value"
         aria-label="Value"
         value={value.type === "boolean" ? String(value.value) : "false"}
         onChange={e => { onChange({ type: "boolean", value: e.target.value === "true" }); }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
       >
         <option value="true">true</option>
         <option value="false">false</option>
-      </select>
+      </Select>
     );
   }
 
@@ -791,8 +793,7 @@ function ValueControl({
           className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary disabled:opacity-50"
         />
         <label className="inline-flex items-center gap-1 text-[0.8571rem] text-text-secondary">
-          <input
-            type="checkbox"
+          <Checkbox
             data-testid="qb-value-today"
             checked={isToday}
             onChange={e => {

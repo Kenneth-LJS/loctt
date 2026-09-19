@@ -8,6 +8,8 @@ import type {
   DeleteProjectVars,
 } from "../api/hooks/useProjectMutations.ts";
 import { Modal } from "../ui/Modal.tsx";
+import { Radio } from "../ui/Radio.tsx";
+import { Select } from "../ui/Select.tsx";
 
 /**
  * PRU-17, PRU-33, PRU-34.
@@ -85,8 +87,7 @@ export function DeleteProjectDialog({
           <fieldset className="grid gap-2 text-[0.9286rem]">
             <legend className="sr-only">What happens to those tasks</legend>
             <label className="flex items-center gap-2">
-              <input
-                type="radio"
+              <Radio
                 name="project-delete-disposition"
                 data-testid="project-delete-choice-remap"
                 checked={disposition === "remap"}
@@ -97,22 +98,20 @@ export function DeleteProjectDialog({
             {disposition === "remap" && (
               <label className="ml-6 grid gap-1">
                 <span className="sr-only">Move those tasks to</span>
-                <select
+                <Select
                   data-testid="project-delete-remap"
                   value={remapTo}
                   onChange={e => { setRemapTo(e.target.value); }}
-                  className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
                 >
                   <option value="">Choose a project…</option>
                   {others.map(p => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
-                </select>
+                </Select>
               </label>
             )}
             <label className="flex items-center gap-2">
-              <input
-                type="radio"
+              <Radio
                 name="project-delete-disposition"
                 data-testid="project-delete-choice-clear"
                 checked={disposition === "clear"}

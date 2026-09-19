@@ -150,7 +150,17 @@ Use these rather than hand-rolled markup.
   switcher). Same focus-trap/inert/Esc/backdrop as Modal.
 - **`Select`, `TextField`, `Checkbox`, `Radio`, `Toggle`, `Chip`,
   `Callout`, `Toast`, `UserAvatar`, `ErrorState`, `LoadingState`,
-  `Announcer`** — use rather than re-implement.
+  `Announcer`** — use rather than re-implement. No raw `<select>`,
+  `<input type="checkbox">` or `<input type="radio">` outside `ui/`
+  (Ken: "I don't want to see native checkboxes or dropdowns"); the
+  `editor/` package and `OptionPicker` (a custom listbox) are the
+  exceptions. Native `type="date"` / `type="color"` are OS pickers and
+  stay.
+- **`brand/LogoMark`** — the mark as two token-filled paths ("L" =
+  `--accent`, "o" = `--text-primary`), so it follows the theme. Decorative
+  (`aria-hidden`) beside the wordmark; pass `label` when it stands alone.
+  The favicon in `index.html` is the same mark with the token *values*
+  baked in — update it if those tokens change.
 
 ---
 

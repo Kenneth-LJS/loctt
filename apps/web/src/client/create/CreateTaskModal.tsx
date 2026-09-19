@@ -29,6 +29,7 @@ import type { OptionSearch, PickerOption } from "../task/editors/OptionPicker.ts
 import { OptionPicker } from "../task/editors/OptionPicker.tsx";
 import { estimationShape } from "../task/estimation.ts";
 import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useToasts } from "../ui/Toast.tsx";
@@ -727,8 +728,7 @@ export function CreateTaskModal({
 
         <div className="flex items-center justify-between gap-3 border-t border-border-subtle px-4 py-3">
           <label className="flex items-center gap-2 text-[0.8571rem] text-text-secondary">
-            <input
-              type="checkbox"
+            <Checkbox
               data-testid="create-another"
               checked={createAnother}
               onChange={e => { setCreateAnother(e.target.checked); }}
@@ -1296,8 +1296,7 @@ function CreateCustomField({
   if (def.type === "boolean") {
     return (
       <label className="flex items-center gap-2 text-[0.8571rem] text-text-secondary">
-        <input
-          type="checkbox"
+        <Checkbox
           data-testid={testid}
           checked={value === true}
           onChange={e => { onChange(e.target.checked ? true : undefined); }}
