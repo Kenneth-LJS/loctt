@@ -1,4 +1,4 @@
-import { Mark, mergeAttributes, Node } from "@tiptap/core";
+import { Extension, Mark, mergeAttributes, Node } from "@tiptap/core";
 import {
   Table,
   TableCell,
@@ -133,6 +133,45 @@ export const AttachmentEmbed = Node.create({
 });
 
 /**
+ * Persist the GFM task-list `checked` attribute on list items.
+ *
+ * `markdown.ts` parses `- [x] done` into a `listItem` whose `attrs.checked`
+ * is `true`/`false`, and `toMarkdown` reads that attr back to write `[x]`/
+ * `[ ]`. But StarterKit's `listItem` declares no `checked` attribute, so
+ * ProseMirror's schema drops it on the first rich edit — every checkbox
+ * state is silently erased and the item re-serializes as a plain bullet.
+ *
+ * `addGlobalAttributes` adds `checked` to the existing `listItem` node
+ * (rather than replacing the node) so the attribute round-trips through an
+ * edit. It renders as `data-checked` and parses back from it. `default:
+ * null` means an ordinary (non-task) bullet carries no attr and still
+ * serializes as a plain `-`, so only real task items get `[ ]`/`[x]`.
+ */
+export const TaskItemAttr = Extension.create({
+  name: "taskItemAttr",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["listItem"],
+        attributes: {
+          checked: {
+            default: null,
+            parseHTML: (el: HTMLElement) => {
+              const v = el.getAttribute("data-checked");
+              return v === null ? null : v === "true";
+            },
+            renderHTML: (attrs: { checked?: boolean | null }) =>
+              attrs.checked === null || attrs.checked === undefined
+                ? {}
+                : { "data-checked": String(attrs.checked) },
+          },
+        },
+      },
+    ];
+  },
+});
+
+/**
  * GFM pipe-table support (TSK-66).
  *
  * A GFM pipe table in the body must become a real, editable table node —
@@ -165,5 +204,6 @@ export const LOCTT_EXTENSIONS = [
   BlockMath,
   Mention,
   AttachmentEmbed,
+  TaskItemAttr,
   ...TABLE_EXTENSIONS,
 ] as const;

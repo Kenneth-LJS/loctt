@@ -16,10 +16,11 @@
  *   `SaveIndicator`, autosave, and `BodyConflictDialog`. The raw/rich
  *   toggle lives HERE, inside edit mode, only.
  *
- * Leaving edit (TSK-71): a blur flushes the idle autosave and returns
- * to the rendered view; Escape cancels and returns to rendered showing
- * the last-saved content. A FAILED save keeps the editor open in its
- * unsaved state (TSK-48) rather than dropping back to a stale render.
+ * Leaving edit (TSK-71, K96): a blur, Escape, or Cmd/Ctrl+Enter flushes
+ * the pending edit and returns to the rendered view KEEPING the text —
+ * there is no discard gesture (K96). A FAILED save keeps the editor open
+ * in its unsaved state (TSK-48) rather than dropping back to a stale
+ * render.
  *
  * This SUPERSEDES TSK-64 (toolbar-collapses-until-focus): the whole
  * surface is read-only until entered, so there is no toolbar to
@@ -127,7 +128,7 @@ function BodyEditSurface({
     ...(onSaved !== undefined ? { onSaved } : {}),
   });
 
-  const { edit, flush, cancel } = autosave;
+  const { edit, flush } = autosave;
 
   // A fresh body from the server (task switch, or an adopted refetch)
   // reseeds the buffer. Guarded on it actually differing so a
@@ -199,37 +200,42 @@ function BodyEditSurface({
   }, [flush]);
 
   /**
-   * Ctrl/Cmd+S forces an immediate save (kept from before). Escape
-   * cancels the edit and returns to the rendered read view showing the
-   * last-saved content (TSK-71). Escape does not flush: it is a cancel,
-   * and the rendered view shows the last-saved body.
+   * Keyboard exits (K96, Ken 2026-09-19). The editor autosaves and there
+   * is no "discard my edits" gesture: Escape, Cmd/Ctrl+Enter, and
+   * Cmd/Ctrl+S all EXIT KEEPING the text — they flush the pending edit and
+   * return to the rendered read view once the save settles. This replaces
+   * the old Escape-cancels-to-last-save behaviour, which reverted to the
+   * last autosave and so silently discarded everything typed in the idle
+   * window since (the data-loss bug the editor review found). `cancel()` is
+   * no longer used here.
+   *
+   * Escape must not steal the key from an overlay that owns it: when the
+   * mention menu or the conflict dialog is open, Escape belongs to that
+   * overlay (it closes the menu / dismisses the dialog). Those overlays
+   * stop propagation when they handle it, but we also guard here so a
+   * capture-phase ordering difference can never turn "close the menu" into
+   * "leave the editor".
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        void flush();
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        // Cancel (TSK-71): discard the in-editor edit and return to the
-        // rendered view showing the LAST-SAVED content. `cancel()` reverts
-        // the autosave hook's buffer to the saved baseline and clears the
-        // pending idle timer, so the editor's unmount-flush finds nothing
-        // dirty and does NOT silently write the edit we are cancelling
-        // (the Escape-writes bug the fix-review found). We also revert the
-        // local mirror buffer so a re-enter shows the saved body, not the
-        // discarded text.
-        cancel();
-        bufferRef.current.reset(body);
-        setText(body);
-        onLeave();
-      }
+      const save = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s";
+      const cmdEnter = (e.metaKey || e.ctrlKey) && e.key === "Enter";
+      const esc = e.key === "Escape";
+      if (!save && !cmdEnter && !esc) return;
+
+      // An open overlay owns Escape; leave the editor alone.
+      if (esc && autosave.conflict !== null) return;
+      if (esc && wrapperRef.current?.querySelector('[data-testid="mention-menu"]')) return;
+
+      e.preventDefault();
+      // Cmd/Ctrl+S is a plain force-save that stays in the editor; Escape
+      // and Cmd/Ctrl+Enter flush and leave, keeping the text.
+      if (save) { void flush(); return; }
+      requestLeave();
     };
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); };
-  }, [flush, cancel, body, onLeave]);
+  }, [flush, requestLeave, autosave.conflict]);
 
   // Focus the active surface as soon as the editor mounts (TSK-69: the
   // click that entered edit leaves the editor focused, ready to type).

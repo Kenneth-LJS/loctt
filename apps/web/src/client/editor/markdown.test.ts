@@ -149,6 +149,31 @@ describe("fromMarkdown", () => {
   });
 
   // @verifies TSK-17
+  it("does not treat intra-word underscores as emphasis", () => {
+    // The prose-corruption bug: `_` inside a word (identifiers, paths) was
+    // read as emphasis and re-serialized with `*`, so `my_var_name` became
+    // `my*var*name` on the first rich edit. CommonMark: underscore
+    // emphasis only opens/closes at word boundaries. `*` is intentionally
+    // unaffected (CommonMark allows intra-word `*`).
+    for (const src of ["my_var_name", "snake_case_thing", "a_b_c_d", "path/to_file_name"]) {
+      const doc = fromMarkdown(src);
+      const inline = doc.content?.[0]?.content ?? [];
+      // No emphasis mark anywhere, and the text survives whole.
+      expect(inline.some(n => n.marks?.some(m => m.type === "italic" || m.type === "bold"))).toBe(false);
+      expect(toMarkdown(doc).trimEnd()).toBe(src);
+    }
+  });
+
+  // @verifies TSK-17
+  it("still recognises real underscore emphasis at word boundaries", () => {
+    // The fix must not kill legitimate `_em_` / `__bold__`.
+    const em = fromMarkdown("a _word_ here");
+    expect((em.content?.[0]?.content ?? []).some(n => n.marks?.some(m => m.type === "italic"))).toBe(true);
+    const bold = fromMarkdown("a __word__ here");
+    expect((bold.content?.[0]?.content ?? []).some(n => n.marks?.some(m => m.type === "bold"))).toBe(true);
+  });
+
+  // @verifies TSK-17
   it("does not read markup inside a code span", () => {
     const doc = fromMarkdown("`**not bold**`\n");
     const inline = doc.content?.[0]?.content ?? [];

@@ -388,10 +388,18 @@ function inlineNodes(text: string): JSONContent[] {
       "!\\[([^\\]]*)\\]\\(([^)]+)\\)", // 4,5 image/attachment embed
       "\\[([^\\]]+)\\]\\(([^)]+)\\)", // 6,7 link
       "\\*\\*([\\s\\S]+?)\\*\\*", // 8 bold
-      "__([\\s\\S]+?)__", // 9 bold
+      // 9 bold, 12 italic — underscore emphasis only at word boundaries.
+      // CommonMark: an underscore *inside* a word does not open or close
+      // emphasis, so `snake_case`, `my_var_name` and `a_b_c` stay literal
+      // instead of being read as emphasis and re-serialized with `*`
+      // (the prose-corruption bug). The `(?<!\w)`/`(?!\w)` guards require a
+      // non-word char (or string edge) on the outer side of each
+      // delimiter. `*` emphasis (8, 11) is intentionally NOT guarded —
+      // CommonMark allows intra-word `*`.
+      "(?<!\\w)__([\\s\\S]+?)__(?!\\w)", // 9 bold
       "~~([\\s\\S]+?)~~", // 10 strike
       "\\*([\\s\\S]+?)\\*", // 11 italic
-      "_([\\s\\S]+?)_", // 12 italic
+      "(?<!\\w)_([\\s\\S]+?)_(?!\\w)", // 12 italic
       "\\$([^$\\n]+?)\\$", // 13 inline math
       "\\^([^^\\s]+)\\^", // 14 superscript
       "~([^~\\s]+)~", // 15 subscript

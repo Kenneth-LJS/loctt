@@ -152,6 +152,11 @@ export function useMentionState(
         const pick = matches[highlighted];
         if (pick) { e.preventDefault(); choose(pick); }
       } else if (e.key === "Escape") {
+        // Escape closes the menu and nothing else: stop it reaching the
+        // BodyEditor's own Escape handler, which would otherwise leave the
+        // editor entirely (K96 exit) on the same keypress.
+        e.preventDefault();
+        e.stopPropagation();
         setQuery(null);
       }
     };
