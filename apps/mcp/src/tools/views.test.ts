@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { initLoctt } from "@loctt/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { executeTool } from "../index.js";
+import { executeTool, getTools } from "../index.js";
 
 /**
  * @verifies K30 F2 — saved-view management on MCP.
@@ -132,5 +132,25 @@ describe("MCP saved-view management", () => {
     const res = await executeTool(root, "edit_view", { view: "nope", name: "x" });
     expect(res.isError).toBe(true);
     expect(res.content[0]?.text ?? "").toMatch(/unknown view/i);
+  });
+});
+
+/**
+ * First-run / new-user UX: get_workflow_config is the tool a cold agent
+ * should call before writing any enum-valued field, so its description
+ * must tell it what it returns and that it discovers valid values —
+ * not the bare "Get the workflow configuration." it once carried.
+ */
+describe("get_workflow_config description", () => {
+  it("tells the agent it discovers valid values before writing", () => {
+    const tool = getTools().find(t => t.name === "get_workflow_config");
+    expect(tool).toBeDefined();
+    const desc = tool?.description ?? "";
+    expect(desc.toLowerCase()).toContain("valid");
+    // Names the field families whose keys it hands back.
+    expect(desc).toMatch(/status/i);
+    expect(desc).toMatch(/priorit/i);
+    // Says to call it first / before writing.
+    expect(desc.toLowerCase()).toMatch(/first|before/);
   });
 });

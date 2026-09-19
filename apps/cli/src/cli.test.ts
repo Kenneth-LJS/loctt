@@ -59,6 +59,45 @@ describe("CLI commands", () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Initialized"));
   });
 
+  const initOutput = (): string =>
+    consoleSpy.mock.calls.map(c => String(c[0] ?? "")).join("\n");
+
+  it("init prints a Next steps block guiding a first-time user", async () => {
+    process.argv = ["node", "loctt", "init"];
+    await main();
+    const out = initOutput();
+    expect(out).toContain("Next steps:");
+    // The three orientations a cold user needs.
+    expect(out).toContain("loctt create");
+    expect(out).toContain("loctt ui");
+    expect(out).toContain(".loctt/docs/");
+  });
+
+  it("init --no-docs omits the docs line from Next steps", async () => {
+    process.argv = ["node", "loctt", "init", "--no-docs"];
+    await main();
+    const out = initOutput();
+    expect(out).toContain("Next steps:");
+    expect(out).not.toContain(".loctt/docs/");
+  });
+
+  it("init --quiet prints neither the summary nor the Next steps block", async () => {
+    process.argv = ["node", "loctt", "init", "--quiet"];
+    await main();
+    expect(consoleSpy).not.toHaveBeenCalled();
+  });
+
+  it("init --json prints a machine-readable summary and no Next steps block", async () => {
+    process.argv = ["node", "loctt", "init", "--json"];
+    await main();
+    const out = initOutput();
+    expect(out).not.toContain("Next steps:");
+    const parsed = JSON.parse(out) as { created: string[]; locttDir: string; repaired: boolean };
+    expect(parsed.repaired).toBe(false);
+    expect(Array.isArray(parsed.created)).toBe(true);
+    expect(parsed.locttDir).toContain(".loctt");
+  });
+
   it("info shows tracker state", async () => {
     await initLoctt(root);
     process.argv = ["node", "loctt", "info"];

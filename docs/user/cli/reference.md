@@ -52,7 +52,7 @@ working directory. Does not require an existing tracker.
 
 ```
 loctt init [--prefix <prefix>] [--project-label <label>]
-           [--timezone <iana-tz>] [--no-docs]
+           [--timezone <iana-tz>] [--no-docs] [--json] [--quiet]
 ```
 
 | Flag | Description |
@@ -61,6 +61,13 @@ loctt init [--prefix <prefix>] [--project-label <label>]
 | `--project-label <label>` | Name of the starting project (default: `Tasks`) |
 | `--timezone <iana-tz>` | Workspace timezone written to `calendar.yaml` (default: this machine's zone) |
 | `--no-docs` | Skip generating helper docs in `.loctt/docs/` |
+| `--json` | Emit a machine-readable summary (`{repaired, locttDir, created, stateRebuilt}`) instead of prose; no "Next steps" block |
+| `--quiet` | Suppress the summary and the "Next steps" block; errors still print |
+
+On success `init` prints a short **Next steps** block — how to create a
+task, how to open the web UI, and where the helper docs live — to orient
+a first-time user. It is omitted in `--json` and `--quiet` mode, and the
+docs line is omitted when `--no-docs` was passed.
 
 Example:
 
