@@ -58,7 +58,10 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
     <li
       data-testid={`view-row-${view.id}`}
       data-view-archived={archived ? "true" : "false"}
-      className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
+      // flex-wrap so on a narrow pane the query drops to its own line
+      // instead of a fixed-width chip pushing the actions off-screen
+      // (reviewer FAIL). At >= sm it stays a single inline row.
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-subtle py-2 last:border-0"
     >
       <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
         {view.name}
@@ -70,11 +73,13 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
       </span>
       {/*
         VUE-26: the query is shown exactly as the file holds it, so a
-        view the CLI wrote is visibly the same view.
+        view the CLI wrote is visibly the same view. Order-last on mobile
+        so it wraps to a full-width line below the name+actions; capped on
+        desktop. `min-w-0` lets it truncate rather than force the row wide.
       */}
       <code
         data-testid="view-query"
-        className="w-80 shrink-0 truncate rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
+        className="order-last min-w-0 w-full shrink truncate rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary sm:order-none sm:w-auto sm:max-w-80"
         title={view.query}
       >
         {view.query}

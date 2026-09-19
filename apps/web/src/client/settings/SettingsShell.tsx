@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
+import { Icon } from "../ui/Icon.tsx";
 import { Sheet } from "../ui/Sheet.tsx";
 import { BackupPanel } from "./BackupPanel.tsx";
 import { BoardColumnsPanel } from "./BoardColumnsPanel.tsx";
@@ -100,7 +101,7 @@ function SectionNav({ active }: { readonly active: string }) {
             className="flex w-full items-center justify-between rounded-md border border-border-default px-3 py-2 text-[0.9286rem] text-text-primary hover:bg-bg-muted"
           >
             <span><span className="text-text-tertiary">Settings — </span>{current?.label ?? active}</span>
-            <span aria-hidden="true" className="text-text-tertiary">▾</span>
+            <Icon name="chevronDown" className="text-text-tertiary" />
           </button>
         </nav>
         {pickerOpen && (

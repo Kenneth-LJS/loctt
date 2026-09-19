@@ -7,6 +7,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectsPanel } from "./ProjectsPanel.tsx";
 
 /**
+ * Row actions now live behind a per-row kebab overflow menu (responsive:
+ * inline buttons clipped/overflowed the row on a narrow pane). Open the
+ * row's kebab, then return the action MenuItem for `actionTestId` (which
+ * the caller clicks or inspects).
+ */
+async function openProjectMenu(projectId: string): Promise<void> {
+  const row = await screen.findByTestId(`project-row-${projectId}`);
+  const kebab = row.querySelector<HTMLButtonElement>("[aria-label^='Actions for project']");
+  if (kebab === null) throw new Error(`no actions kebab on project row ${projectId}`);
+  fireEvent.click(kebab);
+}
+
+/**
  * @verifies PRU-6, PRU-44, PRU-45, PRU-48
  *
  * B2 edit-model: a project row is read-by-default. The name is no longer
@@ -108,7 +121,8 @@ function stubHappyPath(): void {
 
 /** Enter the Web row's edit form and return its prefix input. */
 async function openWebEditPrefix(): Promise<HTMLInputElement> {
-  fireEvent.click(await screen.findByTestId("project-edit-p-web"));
+  await openProjectMenu("p-web");
+    fireEvent.click(screen.getByTestId("project-edit-p-web"));
   return screen.findByTestId<HTMLInputElement>("project-prefix-p-web");
 }
 
@@ -127,6 +141,7 @@ describe("ProjectsPanel edit-model (PRU-6)", () => {
     expect(screen.queryByTestId("project-name-input-p-web")).toBeNull();
     expect(screen.queryByTestId("project-prefix-p-web")).toBeNull();
 
+    await openProjectMenu("p-web");
     fireEvent.click(screen.getByTestId("project-edit-p-web"));
     expect(screen.getByTestId("project-name-input-p-web")).toBeTruthy();
     // The prefix control is now reachable — inside the edit form only.
@@ -137,7 +152,8 @@ describe("ProjectsPanel edit-model (PRU-6)", () => {
     stubHappyPath();
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    fireEvent.click(await screen.findByTestId("project-edit-p-web"));
+    await openProjectMenu("p-web");
+    fireEvent.click(screen.getByTestId("project-edit-p-web"));
     const input = screen.getByTestId("project-name-input-p-web");
     fireEvent.change(input, { target: { value: "Web App" } });
 
@@ -156,7 +172,8 @@ describe("ProjectsPanel edit-model (PRU-6)", () => {
     stubHappyPath();
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    fireEvent.click(await screen.findByTestId("project-edit-p-web"));
+    await openProjectMenu("p-web");
+    fireEvent.click(screen.getByTestId("project-edit-p-web"));
     fireEvent.change(screen.getByTestId("project-name-input-p-web"), { target: { value: "Nope" } });
     fireEvent.click(screen.getByTestId("project-edit-cancel-p-web"));
 
@@ -175,17 +192,23 @@ describe("ProjectsPanel set-default (PRU-48)", () => {
     // p-api is the default in PROJECTS.
     await screen.findByTestId("project-default-marker-p-api");
     expect(screen.queryByTestId("project-default-marker-p-web")).toBeNull();
-    const apiBtn = screen.getByTestId<HTMLButtonElement>("project-set-default-p-api");
-    expect(apiBtn.disabled).toBe(true);
-    expect(apiBtn.textContent).toMatch(/^Default$/);
+    // The default's action is inert (a dimmed, non-selectable menu item)
+    // and labelled so marker and control can't disagree. In the kebab it's
+    // a MenuItem: dimmed via opacity, not a `disabled` <button> attribute.
+    await openProjectMenu("p-api");
+    const apiItem = screen.getByTestId("project-set-default-p-api");
+    expect(apiItem.className).toContain("opacity-50");
+    expect(apiItem.textContent).toMatch(/Default \(current\)/);
   });
 
   it("PUTs { default: true } for a non-default project", async () => {
     stubHappyPath();
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    const webBtn = await screen.findByTestId<HTMLButtonElement>("project-set-default-p-web");
-    expect(webBtn.disabled).toBe(false);
+    await screen.findByTestId("project-row-p-web");
+    await openProjectMenu("p-web");
+    const webBtn = screen.getByTestId("project-set-default-p-web");
+    expect(webBtn.textContent).toMatch(/Make default/);
     fireEvent.click(webBtn);
 
     // PRU-48: the marker moves by a plain project PUT carrying default:true.
@@ -213,7 +236,8 @@ describe("ProjectsPanel silent-write surfacing (B2 bug 3)", () => {
     });
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    fireEvent.click(await screen.findByTestId("project-set-default-p-web"));
+    await openProjectMenu("p-web");
+    fireEvent.click(screen.getByTestId("project-set-default-p-web"));
 
     const err = await screen.findByTestId("project-set-default-error-p-web");
     expect(err.textContent).toContain("Default write failed.");
@@ -232,7 +256,8 @@ describe("ProjectsPanel silent-write surfacing (B2 bug 3)", () => {
     });
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    fireEvent.click(await screen.findByTestId("project-archive-p-web"));
+    await openProjectMenu("p-web");
+    fireEvent.click(screen.getByTestId("project-archive-p-web"));
 
     const err = await screen.findByTestId("project-archive-error-p-web");
     expect(err.textContent).toContain("Archive write failed.");
@@ -270,7 +295,8 @@ describe("ProjectsPanel stale name draft (B2 bug 5)", () => {
 
     // Force the external rename to land: set-default invalidates projects,
     // so the row re-renders with the new name text.
-    fireEvent.click(await screen.findByTestId("project-set-default-p-web"));
+    await openProjectMenu("p-web");
+    fireEvent.click(screen.getByTestId("project-set-default-p-web"));
     await waitFor(() => {
       expect(screen.getByTestId("project-name-p-web").textContent).toBe("Web Renamed");
     });
@@ -278,6 +304,7 @@ describe("ProjectsPanel stale name draft (B2 bug 5)", () => {
     // The regression: Edit seeded its draft from the mount value ("Web")
     // and never reset it, so Save would write the stale name back. After
     // the fix, opening Edit shows the CURRENT name.
+    await openProjectMenu("p-web");
     fireEvent.click(screen.getByTestId("project-edit-p-web"));
     const input = screen.getByTestId<HTMLInputElement>("project-name-input-p-web");
     expect(input.value).toBe("Web Renamed");

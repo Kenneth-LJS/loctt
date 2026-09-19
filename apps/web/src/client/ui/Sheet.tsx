@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef } from "react";
 
+import { Icon } from "./Icon.tsx";
 import { useInertBackground } from "./Modal.tsx";
 import { useFocusTrap } from "./useFocusTrap.ts";
 
@@ -83,7 +84,7 @@ export function Sheet({
             onClick={onClose}
             className="grid h-9 w-9 place-items-center rounded-md text-text-secondary hover:bg-bg-muted"
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { Icon } from "../ui/Icon.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import { GLOBAL_SHORTCUTS, type ShortcutSpec } from "./shortcuts.ts";
@@ -77,7 +78,7 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
             aria-label="Close keyboard shortcuts"
             className="shrink-0 rounded px-1 text-text-tertiary hover:text-text-primary"
           >
-            {"×"}
+            <Icon name="close" />
           </button>
         </div>
 

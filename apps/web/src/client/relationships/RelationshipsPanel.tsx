@@ -12,6 +12,7 @@ import {
   useRerankRelationship,
   useUnlinkTask,
 } from "../api/hooks/useRelationships.ts";
+import { Icon } from "../ui/Icon.tsx";
 import type { RelationshipGroup, RelationshipRow } from "./group.ts";
 import { groupRelationships } from "./group.ts";
 import { LinkPicker } from "./LinkPicker.tsx";
@@ -238,7 +239,7 @@ export function RelationshipsPanel({
                   }}
                   className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary hover:bg-bg-muted"
                 >
-                  <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
+                  <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={14} />
                   {/* REL-1: the configured label, never the raw key —
                       except for an unknown type, where the raw key is
                       the only honest thing to show (REL-25, XS-25). */}

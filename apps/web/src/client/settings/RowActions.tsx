@@ -1,4 +1,4 @@
-import { ICON } from "../ui/icons.ts";
+import { Icon } from "../ui/Icon.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 
 /**
@@ -56,9 +56,9 @@ export function RowActions({
           aria-expanded={t["aria-expanded"]}
           aria-label={label}
           onClick={t.toggle}
-          className="grid h-11 w-11 place-items-center rounded-md text-[1.1rem] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+          className="grid h-11 w-11 place-items-center rounded-md text-text-secondary hover:bg-bg-muted disabled:opacity-50"
         >
-          {ICON.more}
+          <Icon name="more" />
         </button>
       )}
     >
