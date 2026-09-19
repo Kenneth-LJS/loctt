@@ -659,11 +659,25 @@ export function FilterBar({
             // from); "Clear all" below wipes everything.
             <span
               data-testid="query-chip"
-              title={humanized}
               className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
             >
-              <span className="text-accent/70">Query:</span>
-              <span className="max-w-[24ch] truncate">{queryPreview}</span>
+              {/* The query text is a BUTTON that opens the advanced editor
+                  pre-loaded with this query — so a query filter is editable
+                  from where it's shown, not only removable (Ken). The full
+                  query is on the title so a truncated preview can be read on
+                  hover; the visible text is the truncated, id-humanized
+                  preview. */}
+              <button
+                type="button"
+                data-testid="query-chip-edit"
+                title={`Edit query: ${humanized}`}
+                aria-label={`Edit query: ${humanized}`}
+                onClick={openAdvanced}
+                className="inline-flex cursor-pointer items-center gap-1 hover:underline"
+              >
+                <span className="text-accent/70">Query:</span>
+                <span className="max-w-[24ch] truncate">{queryPreview}</span>
+              </button>
               <button
                 type="button"
                 aria-label="Remove query filter"
