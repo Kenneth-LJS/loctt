@@ -920,10 +920,16 @@ export function ListView() {
                     "[&>td]:px-3 [&>td]:py-2.5 [&>th]:px-3 [&>th]:py-2.5",
                     "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0 last:[&>th]:border-b-0",
                     task.archived ? "opacity-50" : "",
-                    // Background *and* a left border, not colour alone
+                    // The 2px selected-marker border is ALWAYS present on the
+                    // first cell — transparent when unselected — so toggling
+                    // selection only changes its COLOUR, never adds width.
+                    // Adding the border on select shifted every row a few px
+                    // sideways (Ken's report); reserving the space fixes it.
+                    "[&>td:first-child]:border-l-2 [&>td:first-child]:border-l-transparent",
+                    // Background *and* the left border, not colour alone
                     // (BLK-1) — the checked box is the third signal.
                     selection.isSelected(task.id)
-                      ? "[&>td]:bg-accent/10 [&>th]:bg-accent/10 [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-accent"
+                      ? "[&>td]:bg-accent/10 [&>th]:bg-accent/10 [&>td:first-child]:!border-l-accent"
                       : "",
                   ].join(" ")}
                 >
