@@ -446,7 +446,7 @@ export function FilterBar({
               className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
             >
               <span className="text-accent/70">Query:</span>
-              <span className="max-w-[24ch] truncate font-mono">{queryPreview}</span>
+              <span className="max-w-[24ch] truncate">{queryPreview}</span>
               <button
                 type="button"
                 aria-label="Remove query filter"

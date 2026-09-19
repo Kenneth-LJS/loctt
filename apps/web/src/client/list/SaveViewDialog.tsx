@@ -55,7 +55,7 @@ export function SaveViewDialog({
 
         <label className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
           Query (from current filters)
-          <code className="block max-h-24 overflow-y-auto whitespace-pre-wrap rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-2 font-mono text-[0.8571rem] text-text-secondary">
+          <code className="block max-h-24 overflow-y-auto whitespace-pre-wrap rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-2 text-[0.8571rem] text-text-secondary">
             {query}
           </code>
         </label>

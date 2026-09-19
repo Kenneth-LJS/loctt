@@ -9,6 +9,7 @@ import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { useTheme } from "../theme/useTheme.ts";
 import { avatarPalette, initials } from "../ui/avatar.ts";
 import { LogoMark } from "../ui/brand/LogoMark.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { IntegrityBadge } from "./IntegrityBadge.tsx";
@@ -315,9 +316,9 @@ function HeaderSearch() {
 function ThemeToggle() {
   const { preference, setPreference } = useTheme();
   const options = [
-    { value: "light", label: "Light", glyph: "\u2600" },
-    { value: "dark", label: "Dark", glyph: "\u263e" },
-    { value: "system", label: "System", glyph: "\u25d1" },
+    { value: "light", label: "Light", icon: "sun" },
+    { value: "dark", label: "Dark", icon: "moon" },
+    { value: "system", label: "System", icon: "monitor" },
   ] as const;
   return (
     <div className="inline-flex h-8 shrink-0 items-center rounded-md bg-bg-muted p-0.5" aria-label="Theme">
@@ -330,13 +331,13 @@ function ThemeToggle() {
           aria-label={o.label}
           onClick={() => setPreference(o.value)}
           className={[
-            "h-7 rounded-[4px] px-2.5 text-[0.9286rem]",
+            "inline-flex h-7 items-center justify-center rounded-[4px] px-2.5",
             preference === o.value
               ? "bg-bg-surface text-text-primary shadow-raised"
               : "text-text-secondary",
           ].join(" ")}
         >
-          {o.glyph}
+          <Icon name={o.icon} size={16} />
         </button>
       ))}
     </div>

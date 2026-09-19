@@ -796,7 +796,9 @@ function SavedFiltersGroup({
               className="opacity-50"
             >
               <ItemShell collapsed={collapsed} title={f.label}>
-                <span className="w-4 shrink-0 text-center">{f.icon}</span>
+                <span className="flex w-4 shrink-0 justify-center">
+                  <Icon name={f.icon} size={14} />
+                </span>
                 {!collapsed ? <span className="truncate">{f.label}</span> : null}
               </ItemShell>
             </div>
@@ -811,7 +813,9 @@ function SavedFiltersGroup({
             className="no-underline"
           >
             <ItemShell collapsed={collapsed} title={f.label}>
-              <span className="w-4 shrink-0 text-center">{f.icon}</span>
+              <span className="flex w-4 shrink-0 justify-center">
+                <Icon name={f.icon} size={14} />
+              </span>
               {!collapsed ? (
                 <>
                   <span className="truncate">{f.label}</span>
@@ -953,7 +957,9 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
       {!collapsed && (
         <Link to="/milestones" data-testid="sidebar-milestones-link" className="no-underline">
           <ItemShell collapsed={collapsed} title="All milestones">
-            <span className="w-4 shrink-0 text-center text-text-tertiary">◈</span>
+            <span className="flex w-4 shrink-0 justify-center text-text-tertiary">
+              <Icon name="flag" size={14} />
+            </span>
             <span className="truncate">All milestones</span>
           </ItemShell>
         </Link>
@@ -973,7 +979,9 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
           className="no-underline"
         >
           <ItemShell collapsed={collapsed} title={m.name}>
-            <span className="w-4 shrink-0 text-center text-text-tertiary">◇</span>
+            <span className="flex w-4 shrink-0 justify-center text-text-tertiary">
+              <Icon name="flag" size={14} />
+            </span>
             {!collapsed ? <span className="truncate">{m.name}</span> : null}
           </ItemShell>
         </Link>

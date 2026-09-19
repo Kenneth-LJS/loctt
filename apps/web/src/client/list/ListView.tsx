@@ -680,7 +680,7 @@ export function ListView() {
               ? <> (at position <span data-testid="broken-view-position">{brokenView.position}</span>)</>
               : null}
           </p>
-          <p className="mt-1 font-mono text-[0.7857rem] text-text-secondary">{brokenView.query}</p>
+          <p className="mt-1 text-[0.7857rem] text-text-secondary">{brokenView.query}</p>
           <button
             type="button"
             data-testid="broken-view-fix"
