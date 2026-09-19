@@ -174,6 +174,104 @@ describe("attachments", () => {
       ).rejects.toBeInstanceOf(AttachmentSourceError);
     });
 
+    describe("source confinement (F1, confineToRoot)", () => {
+      // The tracker root is `root`; sources under sourceDir (root/sources)
+      // are INSIDE it, so an ordinary attach still works. An absolute path
+      // elsewhere on disk, a `../` escape, or a symlink whose real target
+      // is outside must be refused before any read.
+
+      it("accepts a source inside the tracker root", async () => {
+        const src = await makeSource("inside.txt", "ok");
+        const result = await attachFile({
+          locttDir,
+          taskId,
+          sourcePath: src,
+          confineToRoot: root,
+        });
+        expect(result.name).toBe("inside.txt");
+      });
+
+      it("refuses an absolute source outside the tracker root", async () => {
+        // A concrete outside path: a file in a sibling temp dir.
+        const outsideDir = await mkdtemp(join(tmpdir(), "loctt-outside-"));
+        const outside = join(outsideDir, "secret.txt");
+        await writeFile(outside, "sensitive", "utf-8");
+        try {
+          const err = await attachFile({
+            locttDir,
+            taskId,
+            sourcePath: outside,
+            confineToRoot: root,
+          }).catch((e: unknown) => e) as Error;
+          expect(err).toBeInstanceOf(AttachmentSourceError);
+          expect(err.message).toMatch(/outside the tracker/);
+          // Actionable: names the tracker root to stage into.
+          expect(err.message).toContain(root);
+          // Nothing landed.
+          const listed = await readdir(getAttachmentsDir(locttDir, taskId)).catch(() => []);
+          expect(listed).toEqual([]);
+        } finally {
+          await rm(outsideDir, { recursive: true, force: true });
+        }
+      });
+
+      it("refuses a ../ escape even when confineToRoot is set", async () => {
+        // sourceDir is root/sources; climbing two levels leaves root.
+        const outsideDir = await mkdtemp(join(tmpdir(), "loctt-escape-"));
+        const outside = join(outsideDir, "leak.txt");
+        await writeFile(outside, "x", "utf-8");
+        // A path that lexically escapes: root/sources/../../<basename>.
+        const escaping = join(sourceDir, "..", "..", "leak.txt");
+        try {
+          const err = await attachFile({
+            locttDir,
+            taskId,
+            sourcePath: escaping,
+            confineToRoot: root,
+          }).catch((e: unknown) => e) as Error;
+          expect(err).toBeInstanceOf(AttachmentSourceError);
+          expect(err.message).toMatch(/outside the tracker/);
+        } finally {
+          await rm(outsideDir, { recursive: true, force: true });
+        }
+      });
+
+      it("refuses a source reached through an intermediate symlink pointing outside", async () => {
+        // root/sources/link -> /outside-dir. A file "through" that link is
+        // lexically inside root but its real path is outside; the realpath
+        // layer must catch it.
+        const outsideDir = await mkdtemp(join(tmpdir(), "loctt-symdir-"));
+        await writeFile(join(outsideDir, "target.txt"), "leak", "utf-8");
+        const link = join(sourceDir, "linkdir");
+        await symlink(outsideDir, link);
+        const through = join(link, "target.txt");
+        try {
+          const err = await attachFile({
+            locttDir,
+            taskId,
+            sourcePath: through,
+            confineToRoot: root,
+          }).catch((e: unknown) => e) as Error;
+          expect(err).toBeInstanceOf(AttachmentSourceError);
+          expect(err.message).toMatch(/outside the tracker/);
+        } finally {
+          await rm(outsideDir, { recursive: true, force: true });
+        }
+      });
+
+      it("still stores an arbitrary absolute path when confineToRoot is NOT set (CLI/human path unchanged)", async () => {
+        const outsideDir = await mkdtemp(join(tmpdir(), "loctt-cli-"));
+        const outside = join(outsideDir, "downloaded.txt");
+        await writeFile(outside, "from downloads", "utf-8");
+        try {
+          const result = await attachFile({ locttDir, taskId, sourcePath: outside });
+          expect(result.name).toBe("downloaded.txt");
+        } finally {
+          await rm(outsideDir, { recursive: true, force: true });
+        }
+      });
+    });
+
     it("creates attachments/ lazily", async () => {
       const before = getAttachmentsDir(locttDir, taskId);
       await expect(stat(before)).rejects.toThrow();

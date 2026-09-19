@@ -80,6 +80,53 @@ function findKeyDef(key: string): ConfigKeyDef {
   return def;
 }
 
+/**
+ * Rejects a `git.branch` value that git itself would refuse, or that could
+ * be read as an option rather than a ref (F4, defense-in-depth). LocTT
+ * always spawns git via `spawnSync("git", argv)` (no shell) and prefixes
+ * the branch as `refs/heads/<b>` in most call sites, so this is a second
+ * line, not the only one — but a name that fails git ref-format rules, or
+ * begins with `-`, has no business being stored. The rules mirror
+ * `git check-ref-format` for a single component: no space or control
+ * chars, none of ` ~ ^ : ? * [ \`, no `..`, no leading/trailing `/` or
+ * `.`, no `.lock` suffix, no `@{`, and not a lone `@`.
+ */
+function validateGitBranch(value: string): void {
+  const bad = (reason: string): never => {
+    throw new ConfigRouterError(`'git.branch' is not a valid branch name (${reason}): '${value}'`);
+  };
+  if (value.startsWith("-")) bad("must not start with '-' (could be read as a git option)");
+  // Control chars (0x00-0x1f, 0x7f), space, and git's forbidden set.
+   
+  const forbidden = /[\x00-\x1f\x7f ~^:?*[\\]/;
+  if (forbidden.test(value)) bad("contains a space, control, or forbidden character (~ ^ : ? * [ \\)");
+  if (value.includes("..")) bad("must not contain '..'");
+  if (value.includes("@{")) bad("must not contain '@{'");
+  if (value === "@") bad("must not be a lone '@'");
+  if (value.startsWith("/") || value.endsWith("/")) bad("must not start or end with '/'");
+  if (value.startsWith(".") || value.endsWith(".")) bad("must not start or end with '.'");
+  if (value.endsWith(".lock")) bad("must not end with '.lock'");
+  if (value.split("/").some(seg => seg === "" || seg.startsWith(".") || seg.endsWith(".lock"))) {
+    bad("has an empty or invalid path component");
+  }
+}
+
+/**
+ * Rejects a `git.remote` value that could be read as an option or that is
+ * not a plain remote name (F4, defense-in-depth). A remote is always
+ * `remoteExists()`-checked before use, so an unknown name is already inert
+ * — but a leading `-` (option injection) or a `/` / `:` (a URL or refspec
+ * masquerading as a name) should never be stored.
+ */
+function validateGitRemote(value: string): void {
+  const bad = (reason: string): never => {
+    throw new ConfigRouterError(`'git.remote' is not a valid remote name (${reason}): '${value}'`);
+  };
+  if (value.startsWith("-")) bad("must not start with '-' (could be read as a git option)");
+  if (value.includes("/")) bad("must not contain '/'");
+  if (value.includes(":")) bad("must not contain ':'");
+}
+
 export function parseConfigValue(def: ConfigKeyDef, raw: string): string | boolean {
   if (def.type === "boolean") {
     const v = raw.trim().toLowerCase();
@@ -91,6 +138,10 @@ export function parseConfigValue(def: ConfigKeyDef, raw: string): string | boole
   if (!trimmed) {
     throw new ConfigRouterError(`'${def.key}' must be a non-empty string`);
   }
+  // F4: validate the git ref/remote names before they can be stored and
+  // later handed to git argv.
+  if (def.key === "git.branch") validateGitBranch(trimmed);
+  if (def.key === "git.remote") validateGitRemote(trimmed);
   return trimmed;
 }
 

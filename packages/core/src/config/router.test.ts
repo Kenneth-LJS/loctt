@@ -13,6 +13,7 @@ import {
   ConfigRouterError,
   getConfigValue,
   listConfigKeys,
+  parseConfigValue,
   setConfigValue,
   unsetConfigValue,
 } from "./router.js";
@@ -168,5 +169,51 @@ describe("config router", () => {
     await setConfigValue({ locttDir, root }, "git.auto_push", "false");
     await unsetConfigValue({ locttDir, root }, "git.auto_push");
     expect(await getConfigValue(locttDir, "git.auto_push")).toBe(true);
+  });
+
+  // F4: git.branch / git.remote validation (defense-in-depth against a
+  // name that git would read as an option or a refspec). Tested directly
+  // against parseConfigValue (pure) plus one setConfigValue path.
+  describe("git.branch / git.remote validation (F4)", () => {
+    const branchDef = { key: "git.branch", type: "string" as const, description: "" };
+    const remoteDef = { key: "git.remote", type: "string" as const, description: "" };
+
+    it("rejects a git.branch starting with '-' (option injection)", () => {
+      expect(() => parseConfigValue(branchDef, "--evil")).toThrow(ConfigRouterError);
+      expect(() => parseConfigValue(branchDef, "-x")).toThrow(/must not start with '-'/);
+    });
+
+    it("rejects git.branch names that fail git ref-format rules", () => {
+      for (const bad of ["a..b", "foo bar", "has~tilde", "has:colon", "ends/", "/starts", "x.lock", "@", "with@{token"]) {
+        expect(() => parseConfigValue(branchDef, bad), bad).toThrow(ConfigRouterError);
+      }
+    });
+
+    it("accepts ordinary git.branch names", () => {
+      for (const ok of ["loctt", "loctt-data", "team/board", "release_1"]) {
+        expect(parseConfigValue(branchDef, ok), ok).toBe(ok);
+      }
+    });
+
+    it("rejects a git.remote starting with '-' or containing '/' or ':'", () => {
+      expect(() => parseConfigValue(remoteDef, "-x")).toThrow(/must not start with '-'/);
+      expect(() => parseConfigValue(remoteDef, "a/b")).toThrow(/must not contain '\/'/);
+      expect(() => parseConfigValue(remoteDef, "git@host:repo")).toThrow(/must not contain/);
+    });
+
+    it("accepts ordinary git.remote names", () => {
+      for (const ok of ["origin", "upstream", "fork2"]) {
+        expect(parseConfigValue(remoteDef, ok), ok).toBe(ok);
+      }
+    });
+
+    it("setConfigValue refuses a bad branch name end-to-end", async () => {
+      await enableGit(locttDir, root);
+      await expect(
+        setConfigValue({ locttDir, root }, "git.branch", "--evil"),
+      ).rejects.toThrow(ConfigRouterError);
+      // Unchanged on disk.
+      expect(await getConfigValue(locttDir, "git.branch")).toBe("loctt");
+    });
   });
 });

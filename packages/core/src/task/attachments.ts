@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, rm, stat, unlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, realpath, rm, stat, unlink } from "node:fs/promises";
 import { basename, isAbsolute, resolve } from "node:path";
 
 import type { HistoryEntry } from "@loctt/contracts";
@@ -7,6 +7,7 @@ import {
   assertSafeBasename,
   getAttachmentPath,
   getAttachmentsDir,
+  isPathContained,
 } from "../paths/index.js";
 import { appendHistory } from "./history.js";
 
@@ -23,6 +24,19 @@ export interface AttachOptions {
   readonly taskId: string;
   /** Absolute (or process-cwd-relative) path of the source file to copy in. */
   readonly sourcePath: string;
+  /**
+   * When set, confine the SOURCE path to inside this directory (the
+   * tracker root): a source that resolves outside it — an absolute path
+   * elsewhere, a `../` escape, or a symlink whose real target is outside
+   * — is rejected before any read (F1). The agent (MCP) surface passes
+   * the tracker root here so an auto-approved agent cannot copy
+   * `~/.ssh/id_rsa` into `.loctt/` and have git-backed mode push it off
+   * the machine. Left unset, the source may be any readable path
+   * (unchanged behaviour) — the human CLI does not confine, because a
+   * person running `loctt attach` choosing a file in ~/Downloads is a
+   * deliberate act, not a steered one. See decisions.md § 8.
+   */
+  readonly confineToRoot?: string;
   /** When true, overwrite an existing attachment with the same basename. */
   readonly force?: boolean;
   /**
@@ -85,6 +99,10 @@ export class AttachmentSourceError extends Error {
  *   separators, no `..`, no null bytes, no leading dot.
  * - Symlinks are rejected outright; callers must pass the path to the
  *   target file directly.
+ * - When `confineToRoot` is set, the source must resolve to inside that
+ *   directory (the tracker root); a path outside it is rejected before
+ *   any read (F1). The MCP/agent surface sets this; the human CLI does
+ *   not (see the option's doc and decisions.md § 8).
  * - Files larger than `maxBytes` (default
  *   {@link DEFAULT_MAX_ATTACHMENT_BYTES}) are rejected before any copy.
  * - If the destination already exists and `force` is not true, throws
@@ -99,6 +117,39 @@ export async function attachFile(opts: AttachOptions): Promise<AttachResult> {
   const absSource = isAbsolute(sourcePath)
     ? sourcePath
     : resolve(process.cwd(), sourcePath);
+
+  // F1: confine the source into the tracker root when the caller asks
+  // (the MCP/agent surface does). Two layers:
+  //  - a lexical check on the resolved path, which catches an absolute
+  //    path elsewhere or a `../` escape even for a source that does not
+  //    exist yet; and
+  //  - a real-path check that resolves every symlink in the chain, which
+  //    catches a source reached through an intermediate-directory symlink
+  //    that points outside (the top-level symlink guard below only sees a
+  //    source that is *itself* a link). realpath needs the file to exist;
+  //    a missing source falls through to the lstat below, which raises the
+  //    existing "source file does not exist" message.
+  if (opts.confineToRoot !== undefined) {
+    const root = opts.confineToRoot;
+    const outside = (): never => {
+      throw new AttachmentSourceError(
+        `source path is outside the tracker and cannot be attached over MCP: `
+        + `${absSource}. Stage the file inside the tracker first (under `
+        + `${resolve(root)}), then attach it by its path there.`,
+      );
+    };
+    if (!isPathContained(root, absSource)) outside();
+    try {
+      const realSource = await realpath(absSource);
+      const realRoot = await realpath(root).catch(() => resolve(root));
+      if (!isPathContained(realRoot, realSource)) outside();
+    } catch (err) {
+      // A missing source (ENOENT) is left to the lstat below so the
+      // "does not exist" message is the one the caller sees; only a real
+      // containment failure throws here.
+      if (err instanceof AttachmentSourceError) throw err;
+    }
+  }
 
   // Reject symlinks outright. We don't want to silently copy the target
   // contents under the link's basename — that's misleading. The caller
