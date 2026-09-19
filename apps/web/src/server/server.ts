@@ -1468,6 +1468,63 @@ async function tryServeStatic(
  * without a CORS preflight, and since we set no Access-Control-Allow-*
  * headers, the preflight will be denied — blocking cross-site requests.
  */
+/**
+ * DNS-rebinding guard. The server binds 127.0.0.1, which stops direct
+ * off-machine access but NOT DNS rebinding: a hostile public page can
+ * rebind its own hostname to 127.0.0.1 and then issue same-origin
+ * requests — including plain GETs, which `requireCsrfHeader` does not
+ * guard — to read the whole tracker. The defence is to reject any
+ * request whose `Host` header is not one of the loopback names this
+ * server legitimately answers to. A rebound request carries the
+ * attacker's hostname in `Host`, so it never matches.
+ *
+ * Allowed hosts: `127.0.0.1`, `localhost`, `[::1]` (IPv6 loopback),
+ * each with an optional `:port`. The server has no configurable bind
+ * host — `main.ts` always binds 127.0.0.1 and only the port varies —
+ * so no external host is legitimate. We do NOT pin the port: the caller
+ * may reach us through a different port than we think we're on (0-port
+ * test binds, a port-forward), and the port carries no security
+ * property here — the hostname is the rebinding lever, not the port.
+ *
+ * A missing `Host` (HTTP/1.0 without one, or a raw socket) is rejected:
+ * a legitimate browser always sends it.
+ */
+function hostIsAllowed(hostHeader: string | undefined): boolean {
+  if (hostHeader === undefined || hostHeader === "") return false;
+  // Strip an optional `:port`. IPv6 literals are bracketed
+  // (`[::1]:port`), so only split on the last colon when it is not
+  // inside brackets.
+  let host = hostHeader.trim();
+  if (host.startsWith("[")) {
+    // `[::1]` or `[::1]:port` — take what's inside the brackets.
+    const end = host.indexOf("]");
+    if (end === -1) return false;
+    host = host.slice(1, end);
+  } else {
+    const colon = host.lastIndexOf(":");
+    if (colon !== -1) host = host.slice(0, colon);
+  }
+  const name = host.toLowerCase();
+  return name === "127.0.0.1" || name === "localhost" || name === "::1";
+}
+
+function requireAllowedHost(
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+): boolean {
+  if (hostIsAllowed(req.headers.host)) return true;
+  // Rejected before any handler ran, so nothing was read or written.
+  // The header value is machinery, not user copy (ERR-16), so the
+  // offending host goes in `detail`.
+  error(res, "That request was addressed to a host this server does not serve, so it was refused.", 403, {
+    code: "validation_failed",
+    data_state: "not_saved",
+    recovery: { kind: "none" },
+    detail: `Disallowed Host header: ${req.headers.host ?? "(none)"}`,
+  });
+  return false;
+}
+
 function requireCsrfHeader(
   req: import("node:http").IncomingMessage,
   res: import("node:http").ServerResponse,
@@ -5692,6 +5749,11 @@ export function createWebApp(options: WebAppOptions) {
     // plenty — these are log-correlation tokens for an operator
     // grepping recent output, not identifiers persisted anywhere.
     const reqId = randomBytes(4).toString("hex");
+
+    // DNS-rebinding guard runs first, on EVERY request (GET included),
+    // before any routing or data access. A rebound hostile page carries
+    // its own hostname in `Host` and is refused here with a 403.
+    if (!requireAllowedHost(req, res)) return;
 
     if (!requireCsrfHeader(req, res)) return;
 
