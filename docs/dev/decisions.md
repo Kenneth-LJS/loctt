@@ -13948,3 +13948,175 @@ about what "inside the tracker" means.
   `packages/core/src/paths/paths.test.ts`, the F1/auto-commit cases in
   `tests/integration/mcp/attach-file.test.ts`, and
   `tests/integration/mcp/backup-restore-confirm.test.ts`.
+
+### A206 · Publish-hardening batch: web CSP/security headers, dep-vuln bumps, web dep classification, per-package LICENSE/README
+
+**Ticket:** fix/publish-hardening · **Date:** 2026-09-19 · **Commit:** (this one)
+
+**The situation.** Pre-publish audit across the four remaining domains
+(supply-chain/packaging, outbound-behaviour, UI hardening, re-review).
+Outbound trace and secret-history scan came back clean (no telemetry;
+127.0.0.1-bind only; nothing sensitive in tree or history). A UI-hardening
+audit confirmed the markdown render path is XSS-safe **by construction**
+(builds React elements, no `dangerouslySetInnerHTML` anywhere in the
+client; link/image schemes allowlisted by `isSafeHref`). The audit's one
+real defense-in-depth gap: **no Content-Security-Policy / framing headers**
+on the served HTML. Supply-chain found four items (SC1–SC4 in
+`known-gaps.md`, 2026-09-19).
+
+**What had to be decided (agent calls within a clear mandate).**
+1. CSP `script-src` mechanism given a mandatory blocking inline theme
+   script (SHL-29) that cannot be externalised.
+2. How strict `style-src` and `img-src` can be.
+3. How to fix web's bundled-yet-declared `@loctt/*` deps (SC3).
+
+**Decided.**
+1. **`script-src 'self'` + a SHA-256 hash of every inline `<script>`,
+   derived at serve time from the actual `index.html`** (cached per path),
+   never a hardcoded constant. The CSP therefore tracks the theme script
+   automatically — change the script and the allowed hash changes with it.
+   Applied to the HTML document response only; static assets get `nosniff`
+   but no CSP.
+2. **`style-src 'self' 'unsafe-inline'`** (required — CodeMirror/TipTap
+   inject un-nonced `<style>` and element `style=` at runtime; no nonce
+   facet is configured) and **`img-src 'self' data: https: http:`**
+   (required — external images render inline by Ken's A180 ruling). Full
+   policy also sets `object-src 'none'`, `base-uri 'none'`,
+   `frame-ancestors 'none'`, `font-src 'self'`, `connect-src 'self'`, plus
+   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+   `Referrer-Policy: no-referrer`.
+3. **Move `@loctt/core`/`@loctt/contracts` to `devDependencies`** in
+   `apps/web/package.json` (they are `noExternal`-bundled by tsup, exactly
+   as cli/mcp already treat them). Leaving them as runtime deps set to
+   `"*"` broke `npm install @loctt/web` (private pkgs, absent from the
+   registry). The tiptap bump also exposed a **latent missing direct dep**,
+   `@tiptap/extension-link` (imported by `RichEditor.tsx`, previously
+   resolved only by hoisting) — now declared.
+
+**Also in this batch (mandated, not judgement calls):** SC1 `sharp`
+`^0.35.3`→`^0.35.4` (cli+mcp; GHSA-rgj7-g3m4-5g8c, libheif, HIGH). SC2
+`@tiptap/*` `^3.30.1`→`^3.31.3` (web; GHSA-j95f-988m-3j2f ReDoS + GHSA-
+cp6q-959q-f8rh `__proto__`→DOM-attr — both on the agent-authored-markdown
+path). SC4 per-package LICENSE (copied from root MIT) + README for
+cli/mcp/web. `npm audit --omit=dev` → **0 vulnerabilities** after.
+Remaining audit hits are all dev-toolchain (vite/vitest/esbuild/etc.),
+never shipped — recorded in `known-gaps.md`, deliberately not chased
+(a dev-tree `audit fix` risks a vite/vitest major that could destabilise
+the build for zero ship-surface gain).
+
+**Why.** The render path is already safe, so the CSP is a second wall,
+not the first — but it also caps the SC2 tiptap advisory and the
+inline-SVG risk (UI-audit finding 3) if the render path ever regresses.
+Serve-time hash derivation avoids the classic CSP failure mode (a
+hardcoded hash that silently white-pages the app when the inline script
+changes). style-src/img-src loosenings are each load-bearing and named,
+not lazy — locking them down would break the editor and contradict A180.
+SC3 is "reuse, don't diverge": web now matches how cli/mcp already treat
+core/contracts. Verified end-to-end: real built server emits the CSP with
+the correct theme-script hash; the app boots and the editor mounts with
+zero console/CSP-violation errors.
+
+**To revert.**
+- CSP: delete `htmlSecurityHeaders` + `htmlSecurityHeaderCache` and the
+  `if (contentType.startsWith("text/html"))` header block in
+  `tryServeStatic` (`apps/web/src/server/server.ts`); drop the
+  `createHash`/`readFile` imports added at the top. Remove
+  `apps/web/src/server/server.csp.test.ts`.
+- Dep bumps: restore `sharp` `^0.35.3` (apps/cli, apps/mcp) and `@tiptap/*`
+  `^3.30.1` (apps/web); remove the `@tiptap/extension-link` dep (only safe
+  if hoisting is relied on again — not recommended); move `@loctt/core`/
+  `@loctt/contracts` back to `dependencies` in `apps/web/package.json`
+  (this re-breaks external install — do not, absent a registry publish of
+  core/contracts). Re-run `npm install`.
+- LICENSE/README: delete the per-package `LICENSE` and `README.md` under
+  apps/cli, apps/mcp, apps/web.
+
+### A207 · Publish-hardening fan-out fixes: MCP bundle split, @loctt devDep removal, CLI ajv externalization, SVG-attachment sandbox CSP, img-src blob:/form-action, fast-uri override
+
+**Ticket:** fix/publish-hardening · **Date:** 2026-09-19 · **Commit:** (this one)
+
+**The situation.** An adversarial agent fan-out (5 testers, one completeness
+critic — each trying to BREAK the A206 hardening, not confirm it) found real
+defects that the first audit + install-less pack check missed. The lesson: a
+clean `npm pack` file list and `npm audit --omit=dev = 0` are necessary but
+NOT sufficient — you must actually install the tarball and RUN the entrypoint.
+
+**Defects found + fixed (all verified end-to-end from a clean consumer
+install, not from a bundle grep).**
+1. **MCP tarball dead on arrival (must-fix).** `apps/mcp/tsup.config.ts`
+   was the only tsup config missing `splitting: false`, so esbuild
+   code-split `dist/index.js` into ~9 `./chunk-*.js` the `files` allowlist
+   did not ship → `ERR_MODULE_NOT_FOUND` on first import. Fix: add
+   `splitting: false` (matching cli/web); removed accumulated stale chunks
+   (`clean:false` had let them pile up).
+2. **@loctt/* devDeps on published packages (should-fix).** cli/mcp/web all
+   listed `@loctt/*: "*"` in devDependencies; npm retains devDeps in the
+   packed manifest, so `npm install` INSIDE an extracted tarball (or a clone
+   `npm ci`) 404s on the unpublishable workspace pkgs. (The primary
+   `npm install @loctt/x` consumer path was NOT broken — npm skips a
+   dependency's devDeps — so the fan-out's "external install fails" framing
+   was overstated; verified. Still real hygiene + a real failure mode.)
+   Fix: remove `@loctt/*` from all three published packages' devDeps. Safe
+   because the workspace symlinks (root `workspaces` glob) + tsc project
+   references (by path) + tsup esbuild aliases (by path) make the build
+   resolve them WITHOUT the dep declaration — proven by a full build after
+   removal.
+3. **CLI `loctt mcp` crashes: "Dynamic require of ajv is not supported"
+   (must-fix, agent-facing).** The CLI bundles the MCP SDK, which uses ajv
+   to validate tool schemas; ajv's codegen emits CommonJS
+   `require("ajv/dist/runtime/*")`, and inlined into the CLI's ESM output
+   those throw at runtime the moment a schema compiles (i.e. on the first
+   MCP tool interaction). Declaring ajv as a dep was NOT enough — the
+   inlined `require` can't run in ESM at all. Fix: mark `ajv` +
+   `ajv-formats` `external` in the CLI tsup config (same treatment as
+   yaml/busboy/proper-lockfile/sharp — CJS deps with dynamic require) AND
+   declare both as CLI runtime deps. Verified: installed `loctt mcp` now
+   initializes and lists 91 tools with no ajv error.
+4. **SVG attachment stored-XSS (must-fix, agent surface).** `attach_file`
+   accepts an arbitrary `.svg`; the inline-serve path
+   (`?inline=1`, server.ts ~5375) served it as `image/svg+xml` relying on
+   `nosniff` — which does NOT stop a top-level navigation from executing an
+   SVG's inline `<script>` (the old code comment AND the A199/UI3 rationale
+   claimed it did; both were factually wrong). A human navigating to the
+   attachment URL would run attacker script in the app origin. Fix: add
+   `Content-Security-Policy: sandbox; default-src 'none'; style-src
+   'unsafe-inline'; img-src 'self' data:` to the inline-attachment response
+   — `sandbox` (no allow-scripts) neutralises top-level script execution
+   while `<img>` embedding (K95 tiles) is unaffected (an image's own CSP
+   does not govern how another page embeds it). Corrected the green test
+   `server.attachments.test.ts` that asserted the buggy nosniff rationale
+   (a bug-asserting test per CLAUDE.md) and red-proved the new sandbox
+   assertion. `attachFile` still does not reject SVG at upload — the
+   sandbox CSP is the chosen mitigation (defense at serve, not a content
+   ban); revisit if Ken wants SVG rejected outright.
+5. **CSP img-src omitted blob: (should-fix, self-inflicted by A206).**
+   Avatar preview/crop render `<img>` from `URL.createObjectURL` blob URLs;
+   the A206 CSP would have blocked the avatar feature under enforcement.
+   Fix: `img-src 'self' data: blob: https: http:`. Test asserts blob:.
+6. **CSP form-action (nice, fan-out gap #4).** Added `form-action 'self'`
+   to close an injected-`<form>` cross-origin POST vector.
+7. **fast-uri HIGH advisory pulled into prod by ajv (must-fix).** Adding
+   ajv@8 surfaced `fast-uri@3.1.5` (GHSA-5jgf-p345-68v8 + 3 SSRF/host-
+   confusion) in the prod tree. Fix: root `overrides: {"fast-uri":
+   "^3.1.8"}` (advisory range ends at 3.1.5; 3.1.8 is the current 3.x, so a
+   fresh consumer resolves it anyway — the override just pins our lockfile).
+   `npm audit --omit=dev` back to 0.
+
+**What the fan-out could NOT break (verified holds):** markdown XSS (43
+crafted payloads through the real renderers, zero execution); F1–F4 agent
+confinement + confirm gates + git-ref validation (every escape refused);
+outbound/privacy (127.0.0.1-only proven at runtime via the LAN IP refusing
+connections; no telemetry). The F1 attach caveat (confinement boundary is
+the project ROOT, not `.loctt/`, so in-root secrets beside `.loctt` are
+attachable) is a correct SCOPE statement, recorded should-fix — awaiting
+Ken's call on whether the safe zone should narrow to `.loctt/`. DNS-rebinding
+(no Host/Origin check) and the untested multipart route are recorded in
+known-gaps; the multipart route was probed and degrades safely (temp file in
+a per-request mkdtemp dir, final name via `assertSafeBasename`).
+
+**To revert.** Remove `splitting:false` from mcp tsup (re-breaks MCP pack);
+restore `@loctt/*` devDeps (re-adds the `npm ci` 404); drop ajv/ajv-formats
+from cli deps + external (re-breaks `loctt mcp`); delete the inline-
+attachment `Content-Security-Policy` line (re-opens SVG XSS) and revert
+`server.attachments.test.ts`; drop `blob:`/`form-action` from the doc CSP;
+remove the `fast-uri` override.

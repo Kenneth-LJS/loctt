@@ -230,16 +230,27 @@ describe("web server attachments", () => {
     });
 
     // @verifies REL-16
-    it("serves an SVG inline as image/svg+xml with nosniff (safe under <img>; nosniff blocks doc navigation)", async () => {
+    it("serves an SVG inline as image/svg+xml under a sandbox CSP that stops top-level script execution", async () => {
       const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>';
       await upload("vector.svg", svg);
       const res = await fetch(`${base}/api/tasks/${key}/attachments/vector.svg?inline=1`);
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toBe("image/svg+xml");
-      // nosniff: a *navigation* to this URL cannot execute the SVG as a
-      // top-level document. The <img> render relies on the image
-      // sandbox, but the header guards the navigation case.
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      // This is the assertion that actually matters and that the OLD test
+      // was missing: nosniff does NOT stop a top-level navigation to an
+      // image/svg+xml document from running its inline <script> (the old
+      // test title claimed it did — it was asserting the bug). attach_file
+      // (the MCP/agent surface) accepts an arbitrary .svg, so a human who
+      // navigates to this inline URL would execute attacker script in the
+      // app origin. The real guard is a restrictive CSP on the response:
+      // `sandbox` with no allow-scripts neutralises script execution even
+      // for a top-level SVG, while `<img>` embedding is unaffected. See
+      // known-gaps.md (SVG inline serve) / decisions.md A206.
+      const csp = res.headers.get("content-security-policy");
+      expect(csp).toBeTruthy();
+      expect(csp).toContain("sandbox");
+      expect(csp).not.toMatch(/sandbox[^;]*allow-scripts/);
     });
 
     // @verifies REL-16

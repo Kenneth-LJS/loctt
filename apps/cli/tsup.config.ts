@@ -21,7 +21,14 @@ export default defineConfig({
   // sharp ships a native .node binding loaded via dynamic require;
   // can't be bundled. Must be installed as a runtime dep on the
   // host that runs the CLI.
-  external: ["yaml", "ulid", "busboy", "proper-lockfile", "sharp"],
+  // ajv (pulled in by the bundled MCP SDK for tool-schema validation)
+  // generates validators containing CommonJS require("ajv/dist/runtime/*")
+  // calls. Inlined into ESM output those become "Dynamic require of ajv
+  // is not supported" at runtime the moment `loctt mcp` compiles a schema.
+  // Keep ajv + ajv-formats external so they load as normal Node modules;
+  // both are declared runtime deps of the CLI. (Found by the
+  // publish-hardening fan-out — end-to-end, not from the bundle grep alone.)
+  external: ["yaml", "ulid", "busboy", "proper-lockfile", "sharp", "ajv", "ajv-formats"],
   noExternal: ["@loctt/core", "@loctt/contracts", "@loctt/mcp", "@loctt/web", "@modelcontextprotocol/sdk"],
   esbuildOptions(options) {
     options.alias = {
