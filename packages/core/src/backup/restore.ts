@@ -25,7 +25,7 @@
  */
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import type { LocttState, Task } from "@loctt/contracts";
 import { ulid } from "ulid";
@@ -52,6 +52,7 @@ import {
   getTaskFilePath,
   getTasksDir,
   getUserDir,
+  isPathContained,
 } from "../paths/index.js";
 import { CURRENT_SCHEMA_VERSION, SchemaTooNewError } from "../schema/version.js";
 import { rebuildKeyIndex } from "../state/key-index.js";
@@ -120,11 +121,10 @@ function assertContainedPath(locttDir: string, relPath: string, what: string): v
   if (relPath.includes("\0")) {
     throw new RestoreRefusedError(`${what} path contains a null byte — refusing the restore`);
   }
-  const resolved = resolve(locttDir, relPath);
-  const rel = relative(locttDir, resolved);
-  // `rel` starting with `..` (or being absolute) means the target
-  // escaped the tracker dir.
-  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  // `isPathContained` is the shared lexical containment check (resolve
+  // both sides, reject when the relative path climbs out or is absolute).
+  // Same rule the attach source guard uses, so the two cannot disagree.
+  if (!isPathContained(locttDir, resolve(locttDir, relPath))) {
     throw new RestoreRefusedError(
       `${what} path "${relPath}" escapes the tracker directory — refusing the restore`,
     );

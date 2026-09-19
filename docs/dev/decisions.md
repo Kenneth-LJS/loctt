@@ -13866,3 +13866,85 @@ to red). (2) Restore the `["field","value"]` key-set assertions (returns
 XS-7/TSK-34 to red against the shipped GIT-19 body). (3) Remove
 `branch_adopt_needed` from the `error()` whitelist and delete the new
 git-errors test (returns GIT-25 to red — the adopt control disappears again).
+
+
+### A205 · MCP path-hardening: attach-source confinement (agent surface only), backup/restore confirm gate, git ref/remote validation
+
+**Ticket:** fix/mcp-path-hardening · **Date:** 2026-09-19 · **Commit:** (this one)
+
+**The situation.** The AI/MCP hardening review (`known-gaps.md`,
+2026-09-19) found verified path-escape issues on the agent surface: F1
+`attach_file` read any absolute path (→ `~/.ssh/id_rsa` copied into
+`.loctt/` and pushed off-machine by git-backed mode); F2 `backup.output`
+/ `restore.files` crossed the tracker boundary with no confinement and no
+confirm; F3 non-dry-run restore (esp. `overwrite`) had no confirm gate;
+F4 `git.branch`/`git.remote` were unvalidated before reaching git argv.
+Ken ruled the fixes: F1 confine the attach SOURCE into the repo + auto-
+commit when git is on; F2/F3 do NOT confine backup/restore paths (they
+are an import/export boundary by design) but add a `confirm` gate; F4
+validate the ref/remote names (defense-in-depth). Ken's rulings settle
+the *what*; three sub-calls within them were the agent's.
+
+**What had to be decided.**
+1. Confine the attach source on the CLI too, or only on MCP?
+2. Which backup/restore operations require `confirm` (backup? dry-run
+   restore? bare restore?)?
+3. What mechanism is the attach "auto-commit"?
+
+**Options considered.**
+1. **CLI + MCP confinement** — uniform, but breaks the legitimate human
+   workflow of `loctt attach T-1 ~/Downloads/spec.pdf`; the F1 threat
+   model is explicitly *an agent driving MCP*, not a person at a
+   terminal. vs **MCP-only** — the human CLI keeps arbitrary paths; the
+   confinement lives in core `attachFile` behind an optional
+   `confineToRoot` param that only MCP passes.
+2. **Confirm on every backup/restore including dry-run** — safest but
+   makes the "predict first" dry-run (which the docs point users to) need
+   a confirm it doesn't earn (it writes nothing). vs **confirm on
+   boundary-crossing writes only** — backup (always writes a file out),
+   and any non-dry-run restore (reads an arbitrary file + writes into the
+   tracker); dry-run stays open.
+3. **A new single-file commit path** vs **reuse `publish()`** — LocTT's
+   git-backed mode has no "commit one file to the working tree" concept;
+   it mirrors `.loctt/` to the `loctt` branch via `publish()`. A new path
+   would duplicate that, risky and large.
+
+**Decided.** (1) MCP-only confinement via core `attachFile({confineToRoot})`;
+the CLI does not confine. (2) `confirm: true` required for `backup` and
+for any non-dry-run `restore`; `dry_run` restore stays confirm-free. (3)
+Auto-commit reuses `publish()`, gated on `git.enabled` and best-effort
+(a publish that refuses — reconcile/divergence/worktree/schema — reports
+`commit_note` and never fails the attach that already landed on disk).
+
+**Why.** (1) The threat model is the agent surface; confining the human
+CLI would be authoring a scope Ken did not ask for and breaking a real
+workflow — the option's cost put in front of the choice. (2) A dry-run
+writes nothing and cannot cross the boundary, so gating it buys no safety
+and costs the recommended safe-first flow (P-2). (3) "Reuse, don't
+reinvent" (`lessons.md` § Scope/reuse); a second commit path is exactly
+the drift the repo warns against. The shared containment check
+(`isPathContained` in `paths/index.ts`) is used by both `attachFile` and
+restore's `assertContainedPath`, so the two surfaces cannot disagree
+about what "inside the tracker" means.
+
+**To revert.**
+- F1: delete `confineToRoot` from `AttachOptions` and its guard block in
+  `packages/core/src/task/attachments.ts`; drop `confineToRoot: root`
+  from `apps/mcp/src/tools/task-files.ts`. To confine the CLI too
+  instead, pass `confineToRoot: root` from
+  `apps/cli/src/commands/task-files.ts`.
+- Auto-commit: delete `autoCommitAttachment` and its call in
+  `apps/mcp/src/tools/task-files.ts`.
+- F2/F3: remove the `requireConfirm` calls + `confirm` schema fields in
+  `apps/mcp/src/tools/backup.ts`. To also gate dry-run, drop the
+  `if (!isDryRun)` wrapper.
+- F4: delete `validateGitBranch`/`validateGitRemote` and their calls in
+  `packages/core/src/config/router.ts`.
+- Shared helper: `isPathContained` in `packages/core/src/paths/index.ts`
+  (restore's `assertContainedPath` would revert to its inline
+  resolve/relative check).
+- Tests: the new blocks in `packages/core/src/task/attachments.test.ts`,
+  `packages/core/src/config/router.test.ts`,
+  `packages/core/src/paths/paths.test.ts`, the F1/auto-commit cases in
+  `tests/integration/mcp/attach-file.test.ts`, and
+  `tests/integration/mcp/backup-restore-confirm.test.ts`.

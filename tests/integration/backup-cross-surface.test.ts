@@ -66,6 +66,9 @@ describe("cross-surface backup", () => {
       const res = await client.callTool("restore", {
         files: [join(src, "backup.jsonl")],
         mode: "bare",
+        // A real (non-dry-run) restore now requires confirm (F2/F3, A205).
+        // This test predated the gate; before it, restore ran without one.
+        confirm: true,
       });
       expect(res.isError ?? false).toBe(false);
       const report = parseMcpJson(res.content[0]?.text);
@@ -91,7 +94,8 @@ describe("cross-surface backup", () => {
     try {
       const created = await client.callTool("create_task", { title: "Written over MCP" });
       expect(created.isError ?? false).toBe(false);
-      const res = await client.callTool("backup", { output: "mcp-backup.jsonl" });
+      // backup now requires confirm (F2, A205); this test predated the gate.
+      const res = await client.callTool("backup", { output: "mcp-backup.jsonl", confirm: true });
       expect(res.isError ?? false).toBe(false);
       const report = parseMcpJson(res.content[0]?.text);
       reportedTasks = report["tasks"];
