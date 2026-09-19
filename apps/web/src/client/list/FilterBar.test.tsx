@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listSearchSchema } from "../router/listSearch.ts";
@@ -284,6 +284,65 @@ describe("FilterBar", () => {
     fireEvent.click(option);
     const checked = await screen.findByRole("menuitemcheckbox", { name: "In progress" });
     await vi.waitFor(() => expect(checked.getAttribute("aria-checked")).toBe("true"));
+  });
+});
+
+/**
+ * Mobile (< sm): the facet band collapses into a single "Filters" button
+ * that opens a bottom sheet holding the same facet dropdowns (GROUP B).
+ * useIsNarrow reads innerWidth when matchMedia is absent (jsdom), so
+ * setting innerWidth drives the narrow layout.
+ */
+describe("FilterBar — mobile filter sheet", () => {
+  async function mountNarrow(initialSearch = "") {
+    stubFetch();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: FilterBar,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: [`/list${initialSearch}`] }),
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    await screen.findByTestId("filters-open");
+    return router;
+  }
+
+  it("shows a Filters button (not inline facets) and opens a sheet with the facets", async () => {
+    const original = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      await mountNarrow();
+      // The facet pills are NOT inline on a phone…
+      expect(screen.queryByRole("button", { name: "Filter Status" })).toBeNull();
+      // …the Filters button is. Open it.
+      fireEvent.click(screen.getByTestId("filters-open"));
+      const sheet = await screen.findByTestId("filters-sheet");
+      // The same facet controls live inside the sheet.
+      expect(within(sheet).getByRole("button", { name: "Filter Status" })).toBeTruthy();
+      expect(within(sheet).getByRole("button", { name: "Filter Priority" })).toBeTruthy();
+      // Sheet footer offers Clear all + Done.
+      expect(within(sheet).getByTestId("filters-sheet-clear")).toBeTruthy();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
+  });
+
+  it("badges the Filters button with the active facet count", async () => {
+    const original = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      await mountNarrow("?status=in_progress");
+      expect((await screen.findByTestId("filters-active-count")).textContent).toBe("1");
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
   });
 });
 
