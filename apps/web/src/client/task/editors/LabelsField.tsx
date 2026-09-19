@@ -1,10 +1,16 @@
 import type { LabelDef } from "@loctt/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
+import { Combobox, type ComboboxOption } from "../../ui/Combobox.tsx";
 import { Icon } from "../../ui/Icon.tsx";
 
 /**
  * The multi-tag label editor, with inline creation (TSK-11).
+ *
+ * The picker itself is the shared searchable `Combobox` in multi mode
+ * (A211): server-side search (K90), keyboard model and Escape handling
+ * are the primitive's. What is specific to labels lives here — the pill
+ * row, the "+ Label" trigger, and the create offer in the list's footer.
  *
  * ## The two-step write, and why the order matters
  *
@@ -66,157 +72,138 @@ export function LabelsField({
   readonly createError?: string | undefined;
   readonly onDismissCreateError?: (() => void) | undefined;
 }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
-  // K90: server search results for the current (debounced) query. `null`
-  // means "not yet loaded for this query" — distinct from an empty array,
-  // which is a real "no matches" and is what gates the create offer.
-  const [results, setResults] = useState<readonly LabelDef[] | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const addRef = useRef<HTMLButtonElement>(null);
+  // The server's LAST answer, unfiltered — archived labels included — for
+  // the "does this name already exist" check that gates the create offer.
+  // The candidates the list shows are the archived-filtered subset; the
+  // exact-name check must see everything the server knows, or an archived
+  // "bug" would let a second "bug" be created.
+  const [raw, setRaw] = useState<readonly LabelDef[]>([]);
+  const seq = useRef(0);
 
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
-
-  // K90: debounce the query and fetch matches from the server. A blank
-  // query still fetches (the initial "browse" view shows the first page
-  // of labels). `searchLabels` is called with the trimmed query; the
-  // response replaces `results` unless a newer query superseded it.
-  const trimmedQuery = query.trim();
-  useEffect(() => {
-    if (!open) return undefined;
-    let cancelled = false;
-    setResults(null);
-    const t = setTimeout(() => {
-      void searchLabels(trimmedQuery).then(rows => {
-        if (!cancelled) setResults(rows);
-      }).catch(() => {
-        // A failed search leaves `results` null → no candidates, and the
-        // create offer stays suppressed (we cannot prove the name is
-        // free), which is the safe direction.
-        if (!cancelled) setResults([]);
-      });
-    }, 200);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [open, trimmedQuery, searchLabels]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setOpen(false);
-        setQuery("");
-        addRef.current?.focus();
-      }
-    };
-    const onDown = (e: MouseEvent): void => {
-      if (wrapRef.current?.contains(e.target as Node) !== true) {
-        setOpen(false);
-        setQuery("");
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    document.addEventListener("mousedown", onDown);
-    return () => {
-      document.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("mousedown", onDown);
-    };
-  }, [open]);
+  const onQuery = useCallback(async (q: string): Promise<readonly ComboboxOption[]> => {
+    const mine = ++seq.current;
+    const rows = await searchLabels(q);
+    // A superseded query's answer must not become the exact-name basis.
+    if (mine === seq.current) setRaw(rows);
+    return rows
+      .filter(l => l.archived !== true)
+      .map(l => ({
+        key: l.id,
+        label: l.name,
+        color: l.color ?? "var(--color-text-tertiary)",
+      }));
+  }, [searchLabels]);
+  const search = { onQuery, placeholder: "Find or create…" };
 
   const byId = new Map(all.map(l => [l.id, l]));
-  const attachedSet = new Set(attached);
-  const trimmed = trimmedQuery;
-  // Candidates come from the SERVER (K90), not a filtered `all`: archived
-  // and already-attached labels are dropped here. `results === null`
-  // (still loading) shows no candidates yet.
-  const candidates = (results ?? []).filter(
-    l => !attachedSet.has(l.id) && l.archived !== true,
-  );
-  // The create offer is gated on the SERVER's answer, never a truncated
-  // array. Case-insensitive, because "Bug" and "bug" are the same label
-  // to a user. `results === null` means we have not heard back yet, so
-  // we cannot prove the name is free — suppress the offer until we know
-  // (this is what stops the duplicate-create hazard NEW-7/NEW-25 name:
-  // a name whose match fell outside the old 1000-item window).
-  const exact =
-    results !== null && results.some(l => l.name.toLowerCase() === trimmed.toLowerCase());
-  const canCreate = trimmed !== "" && results !== null && !exact;
 
-  /**
-   * Attaches one label and closes the picker.
-   *
-   * Closing is not cosmetic: `+ Label` is a *toggle*, so a picker left
-   * open turns the user's next click on it into a close rather than an
-   * open. Attaching two labels in a row then takes three clicks and
-   * looks broken on the second.
-   *
-   * Focus goes back to the trigger for the same reason Escape returns
-   * it (TSK-41, P8): the panel that had focus is gone, and dropping it
-   * on the body strands a keyboard user.
-   */
   const attach = (id: string): void => {
     onChange([...attached, id]);
-    setQuery("");
-    setOpen(false);
-    addRef.current?.focus();
   };
 
-  const create = async (): Promise<void> => {
-    if (!canCreate || busy) return;
+  const nameTaken = (name: string): boolean =>
+    raw.some(l => l.name.toLowerCase() === name.toLowerCase());
+
+  const create = async (name: string, close: (returnFocus: boolean) => void): Promise<void> => {
+    if (name === "" || nameTaken(name) || busy) return;
     setBusy(true);
     try {
-      const id = await onCreate(trimmed);
+      const id = await onCreate(name);
       // Undefined means the create failed. The caller has surfaced
       // why; attaching anything here would be the phantom pill.
-      if (id !== undefined) attach(id);
+      if (id !== undefined) {
+        attach(id);
+        close(true);
+      }
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div ref={wrapRef} className="relative">
-      <div data-testid="meta-labels" className="flex flex-wrap gap-1">
-        {attached.map(id => {
-          const def = byId.get(id);
-          return (
-            <span
-              key={id}
-              data-testid="label-pill"
-              className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[0.7857rem]"
-              style={pillStyle(def?.color)}
+    <div>
+      <Combobox
+        mode="multi"
+        label="Labels"
+        options={[]}
+        selected={attached}
+        hideSelected
+        // `+ Label` is a toggle, so a picker left open turns the next click
+        // into a close; attaching two labels in a row would then take
+        // three clicks and look broken on the second. Close after each
+        // pick, focus back on the trigger (TSK-41, P8).
+        closeOnSelect
+        onToggle={(id, on) => { if (on) attach(id); }}
+        search={search}
+        searchLabel="Find or create a label"
+        searchTestId="meta-label-input"
+        listTestId="meta-label-options"
+        align="end"
+        panelClassName="w-[220px] min-w-0"
+        // The create offer is gated on the SERVER's answer, never a
+        // truncated array. Case-insensitive, because "Bug" and "bug" are
+        // the same label to a user. Until the answer is in we cannot prove
+        // the name is free, so the offer stays suppressed (this is what
+        // stops the duplicate-create hazard NEW-7/NEW-25 name).
+        noMatchesText={q => (q !== "" && !nameTaken(q))
+          ? null
+          : (q === "" ? "Every label is attached." : "Already attached.")}
+        footer={({ query, loaded, close }) =>
+          query !== "" && loaded && !nameTaken(query) ? (
+            <button
+              type="button"
+              data-testid="meta-create-label"
+              disabled={busy}
+              onClick={() => { void create(query, close); }}
+              className="w-full px-3 py-1.5 text-left text-body text-text-primary hover:bg-bg-muted disabled:opacity-60"
             >
-              <span className="truncate">
-                {def?.name ?? "unresolved — not in the current config"}
-              </span>
-              <button
-                type="button"
-                aria-label={`Remove label ${def?.name ?? id}`}
-                onClick={() => { onChange(attached.filter(x => x !== id)); }}
-                className="shrink-0 opacity-60 hover:opacity-100"
-              >
-                <Icon name="close" size={12} />
-              </button>
-            </span>
-          );
-        })}
-        <button
-          ref={addRef}
-          type="button"
-          data-testid="meta-add-label"
-          aria-label="Add a label"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          onClick={() => { setOpen(o => !o); }}
-          className="rounded-full border border-dashed border-border-subtle px-2 py-0.5 text-[0.7857rem] text-text-tertiary hover:text-text-primary"
-        >
-          + Label
-        </button>
-      </div>
+              Create label “{query}”
+            </button>
+          ) : null}
+        // Enter with nothing to pick creates (the old "Enter attaches the
+        // first match, else creates" — the first match is the active
+        // option now, so Enter picks it before this is reached).
+        onSubmitQuery={(q, close) => { void create(q, close); }}
+        trigger={({ ref, toggle, ...aria }) => (
+          <div data-testid="meta-labels" className="flex flex-wrap gap-1">
+            {attached.map(id => {
+              const def = byId.get(id);
+              return (
+                <span
+                  key={id}
+                  data-testid="label-pill"
+                  className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[0.7857rem]"
+                  style={pillStyle(def?.color)}
+                >
+                  <span className="truncate">
+                    {def?.name ?? "unresolved — not in the current config"}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove label ${def?.name ?? id}`}
+                    onClick={() => { onChange(attached.filter(x => x !== id)); }}
+                    className="shrink-0 opacity-60 hover:opacity-100"
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                </span>
+              );
+            })}
+            <button
+              ref={ref}
+              type="button"
+              data-testid="meta-add-label"
+              aria-label="Add a label"
+              {...aria}
+              onClick={toggle}
+              className="rounded-full border border-dashed border-border-subtle px-2 py-0.5 text-[0.7857rem] text-text-tertiary hover:text-text-primary"
+            >
+              + Label
+            </button>
+          </div>
+        )}
+      />
 
       {createError !== undefined && (
         <p role="alert" data-testid="meta-label-error" className="mt-1 text-[0.7857rem] text-danger-fg">
@@ -227,69 +214,6 @@ export function LabelsField({
             </button>
           )}
         </p>
-      )}
-
-      {open && (
-        <div
-          role="listbox"
-          aria-label="Labels"
-          data-testid="meta-label-options"
-          className="absolute right-0 z-20 mt-1 max-h-64 w-[220px] overflow-auto rounded-md border border-border-subtle bg-bg-surface p-1 shadow-lg"
-        >
-          <input
-            ref={inputRef}
-            type="text"
-            aria-label="Find or create a label"
-            data-testid="meta-label-input"
-            value={query}
-            onChange={e => { setQuery(e.target.value); }}
-            onKeyDown={e => {
-              if (e.key !== "Enter") return;
-              e.preventDefault();
-              const first = candidates[0];
-              if (first !== undefined) attach(first.id);
-              else void create();
-            }}
-            placeholder="Find or create…"
-            className="mb-1 w-full rounded border border-border-subtle bg-bg-canvas px-1.5 py-1 text-[0.8571rem] text-text-primary"
-          />
-          {candidates.map(l => (
-            <button
-              key={l.id}
-              type="button"
-              role="option"
-              aria-selected={false}
-              onClick={() => { attach(l.id); }}
-              className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[0.8571rem] text-text-primary hover:bg-bg-muted"
-            >
-              <span
-                aria-hidden="true"
-                className="inline-block h-2 w-2 shrink-0 rounded-full"
-                style={{ backgroundColor: l.color ?? "var(--color-text-tertiary)" }}
-              />
-              <span className="truncate">{l.name}</span>
-            </button>
-          ))}
-          {canCreate && (
-            <button
-              type="button"
-              data-testid="meta-create-label"
-              disabled={busy}
-              onClick={() => { void create(); }}
-              className="w-full rounded px-2 py-1 text-left text-[0.8571rem] text-text-primary hover:bg-bg-muted disabled:opacity-60"
-            >
-              Create label “{trimmed}”
-            </button>
-          )}
-          {results === null && (
-            <p className="px-2 py-1 text-[0.8571rem] text-text-tertiary">Searching…</p>
-          )}
-          {results !== null && candidates.length === 0 && !canCreate && (
-            <p className="px-2 py-1 text-[0.8571rem] text-text-tertiary">
-              {trimmed === "" ? "Every label is attached." : "Already attached."}
-            </p>
-          )}
-        </div>
       )}
     </div>
   );

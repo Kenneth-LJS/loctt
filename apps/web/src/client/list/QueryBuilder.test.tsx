@@ -77,6 +77,17 @@ function optionValues(select: HTMLElement): string[] {
     .map(o => (o as HTMLOptionElement).value);
 }
 
+/**
+ * Picks a value in the Nth constrained value picker — a `Combobox`
+ * (A211), not a `<select>`: click the trigger, then the named option in
+ * its listbox. The list closes on a single pick, stays open for multi.
+ */
+function pickValue(i: number, optionName: string): void {
+  fireEvent.click(nth("qb-value", i));
+  const list = screen.getByTestId("qb-value-options");
+  fireEvent.click(within(list).getByRole("option", { name: optionName }));
+}
+
 describe("QueryBuilder", () => {
   it("builds a two-condition AND query with the right q", () => {
     const b = renderBuilder();
@@ -85,10 +96,10 @@ describe("QueryBuilder", () => {
     fireEvent.click(screen.getByTestId("qb-add-condition"));
     fireEvent.click(screen.getByTestId("qb-add-condition"));
 
-    // Row 0: status = done (enum dropdown).
+    // Row 0: status = done (enum picker).
     fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
     fireEvent.change(nth("qb-op", 0), { target: { value: "=" } });
-    fireEvent.change(nth("qb-value", 0), { target: { value: "done" } });
+    pickValue(0, "Done");
 
     // Row 1: title ~ "log in" — a value with a space, which dslAtom
     // quotes (a bare word would round-trip unquoted).
@@ -104,9 +115,9 @@ describe("QueryBuilder", () => {
     fireEvent.click(screen.getByTestId("qb-add-condition"));
     fireEvent.click(screen.getByTestId("qb-add-condition"));
     fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
-    fireEvent.change(nth("qb-value", 0), { target: { value: "todo" } });
+    pickValue(0, "To do");
     fireEvent.change(nth("qb-field", 1), { target: { value: "status" } });
-    fireEvent.change(nth("qb-value", 1), { target: { value: "done" } });
+    pickValue(1, "Done");
 
     expect(b.q()).toBe("status = todo and status = done");
 
@@ -138,14 +149,44 @@ describe("QueryBuilder", () => {
     fireEvent.click(screen.getByTestId("qb-add-condition"));
     fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
 
-    // The value control is a <select> offering only the two configured
-    // statuses (plus the blank placeholder) — not a free text input.
+    // The value control is a Combobox trigger (A211 — the old test pinned
+    // a native <select>, the control this replaced) offering only the two
+    // configured statuses — not a free text input.
     const valueEl = nth("qb-value", 0);
-    expect(valueEl.tagName).toBe("SELECT");
-    expect(optionValues(valueEl).filter(v => v.length > 0)).toEqual(["todo", "done"]);
+    expect(valueEl.tagName).toBe("BUTTON");
+    expect(valueEl.getAttribute("aria-haspopup")).toBe("listbox");
+    fireEvent.click(valueEl);
+    const list = screen.getByTestId("qb-value-options");
+    expect(within(list).getAllByRole("option").map(o => o.textContent)).toEqual(["To do", "Done"]);
+    // Two options is a small fixed set: no search box (the A211 rule).
+    expect(within(list.parentElement as HTMLElement).queryByRole("combobox")).toBeNull();
 
-    fireEvent.change(valueEl, { target: { value: "done" } });
+    fireEvent.click(within(list).getByRole("option", { name: "Done" }));
     expect(b.q()).toBe("status = done");
+  });
+
+  // @verifies A211
+  it("grows a search box once a constrained value set passes the threshold, and it filters", () => {
+    const many: BuilderConfig = buildBuilderConfig({
+      workflow: { statuses: [], priorities: [], task_types: [], custom_fields: [] } as never,
+      projects: [],
+      users: [],
+      labels: Array.from({ length: 15 }, (_, i) => ({ value: `l-${String(i)}`, label: `label-${String(i).padStart(2, "0")}` })),
+      milestones: [],
+      sprints: [],
+    });
+    const b = renderBuilder(EMPTY, many);
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+    fireEvent.change(nth("qb-field", 0), { target: { value: "labels" } });
+
+    fireEvent.click(nth("qb-value", 0));
+    const search = screen.getByRole("combobox", { name: /search value/i });
+    fireEvent.change(search, { target: { value: "label-07" } });
+    const list = screen.getByTestId("qb-value-options");
+    expect(within(list).getAllByRole("option").map(o => o.textContent)).toEqual(["label-07"]);
+
+    fireEvent.click(within(list).getByRole("option", { name: "label-07" }));
+    expect(b.q()).toBe("labels = l-7");
   });
 
   it("hides the value control for `is empty`", () => {
@@ -210,14 +251,25 @@ describe("QueryBuilder", () => {
     expect(ops).not.toContain("<");
   });
 
-  it("builds an `in (…)` list from constrained checkboxes", () => {
+  it("builds an `in (…)` list from a constrained multi-select picker", () => {
     const b = renderBuilder();
     fireEvent.click(screen.getByTestId("qb-add-condition"));
     fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
     fireEvent.change(nth("qb-op", 0), { target: { value: "in" } });
 
+    // A multi Combobox, not a checkbox wall (A211 — the old test clicked
+    // bare checkboxes, the control this replaced): open once, pick twice;
+    // the list stays open between picks.
+    fireEvent.click(nth("qb-value", 0));
     fireEvent.click(screen.getByTestId("qb-value-opt-todo"));
     fireEvent.click(screen.getByTestId("qb-value-opt-done"));
     expect(b.q()).toBe("status in (todo, done)");
+    expect(screen.getByTestId("qb-value-opt-done").getAttribute("aria-selected")).toBe("true");
+    // The trigger summarises the picks.
+    expect(nth("qb-value", 0).textContent).toContain("To do, Done");
+
+    // Picking again un-picks.
+    fireEvent.click(screen.getByTestId("qb-value-opt-todo"));
+    expect(b.q()).toBe("status in (done)");
   });
 });
