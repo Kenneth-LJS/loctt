@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
-import { ICON } from "../ui/icons.ts";
+import { Icon } from "../ui/Icon.tsx";
 
 /**
  * Export menu (BLK-14, 15, 16).
@@ -129,7 +129,13 @@ export function ExportMenu({
         disabled={total === 0}
         onClick={() => { setOpen(o => !o); }}
       >
-        {pending ? "Preparing…" : <>Export <span aria-hidden="true">{ICON.caretDown}</span></>}
+        {pending ? "Preparing…" : (
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="download" size={14} />
+            Export
+            <Icon name="chevronDown" size={12} />
+          </span>
+        )}
       </Button>
 
       {open && (
