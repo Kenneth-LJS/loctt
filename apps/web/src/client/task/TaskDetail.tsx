@@ -527,6 +527,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="copy" size={14} />
                     Copy key
                   </MenuItem>
                   <MenuItem

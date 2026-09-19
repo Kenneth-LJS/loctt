@@ -181,11 +181,23 @@
     <div class="group">
       <h2>Curvature</h2>
 
-      <label class="chk"><input type="checkbox" id="link"> link all three to “outer”</label>
+      <label class="chk"><input type="checkbox" id="link"> derive heel / notch / counter from “outer”</label>
 
       <div class="ctl">
         <div class="row"><label for="rOuter">outer corners</label><span class="val" id="v-rOuter"></span></div>
         <input type="range" id="rOuter" min="0" max="0.5" step="0.001" value="0.1">
+      </div>
+
+      <div class="ctl" id="w-rHeel">
+        <div class="row"><label for="rHeel">heel (bottom-left)</label><span class="val" id="v-rHeel"></span></div>
+        <input type="range" id="rHeel" min="0" max="0.5" step="0.001" value="0.14">
+        <div class="hint">Where the two legs meet on the outside. Carries more visual weight than the free corners, so it usually wants a larger radius.</div>
+      </div>
+
+      <div class="ctl" id="w-rBite">
+        <div class="row"><label for="rBite">bite corner</label><span class="val" id="v-rBite"></span></div>
+        <input type="range" id="rBite" min="0" max="0.5" step="0.001" value="0.05">
+        <div class="hint">Where the bite meets the right edge. Hemmed in by the bevel, so its ceiling is low — it had been sharing “outer” and dragging that slider down.</div>
       </div>
 
       <div class="ctl" id="w-rNotch">
@@ -295,18 +307,18 @@ const R2 = Math.SQRT2;
    will clamp it into a circle. */
 const DEFAULTS = {
   corner: 0.62, gap: 0.10, inset: 0.07, bevel: 0.35,
-  rOuter: 0.10, rNotch: 0.05, rSmall: 0.04, rTip: 0.02,
+  rOuter: 0.10, rHeel: 0.14, rBite: 0.05, rNotch: 0.05, rSmall: 0.04, rTip: 0.02,
   link: false, size: 100, prec: 2, guides: true, grid: true
 };
 
 const PRESETS = {
-  "Balanced":  { corner:.62, gap:.10, inset:.07, bevel:.35, rOuter:.10, rNotch:.05, rSmall:.04, rTip:.02 },
-  "Crisp L":   { corner:.62, gap:.10, inset:.07, bevel:0,   rOuter:.08, rNotch:.04, rSmall:.03, rTip:.01 },
-  "Full slice":{ corner:.62, gap:.10, inset:.07, bevel:1,   rOuter:.10, rNotch:.04, rSmall:.04, rTip:.03 },
-  "Sharp":     { corner:.60, gap:.10, inset:.07, bevel:.35, rOuter:0,   rNotch:0,   rSmall:0,   rTip:0   },
-  "Soft":      { corner:.66, gap:.11, inset:.08, bevel:.4,  rOuter:.22, rNotch:.09, rSmall:.09, rTip:.04 },
-  "Thick arm": { corner:.48, gap:.09, inset:.06, bevel:.3,  rOuter:.09, rNotch:.05, rSmall:.04, rTip:.02 },
-  "Dot":       { corner:.62, gap:.10, inset:.07, bevel:.35, rOuter:.14, rNotch:.06, rSmall:.5,  rTip:.03 }
+  "Balanced":  { corner:.62, gap:.10, inset:.07, bevel:.35, rOuter:.10, rHeel:.14, rBite:.14, rNotch:.05, rSmall:.04, rTip:.02 },
+  "Crisp L":   { corner:.62, gap:.10, inset:.07, bevel:0,   rOuter:.08, rHeel:.11, rBite:.11, rNotch:.04, rSmall:.03, rTip:.01 },
+  "Full slice":{ corner:.62, gap:.10, inset:.07, bevel:1,   rOuter:.10, rHeel:.14, rBite:.14, rNotch:.04, rSmall:.04, rTip:.03 },
+  "Sharp":     { corner:.60, gap:.10, inset:.07, bevel:.35, rOuter:0, rHeel:0, rBite:0,   rNotch:0,   rSmall:0,   rTip:0   },
+  "Soft":      { corner:.66, gap:.11, inset:.08, bevel:.4,  rOuter:.22, rHeel:.30, rBite:.30, rNotch:.09, rSmall:.09, rTip:.04 },
+  "Thick arm": { corner:.48, gap:.09, inset:.06, bevel:.3,  rOuter:.09, rHeel:.13, rBite:.13, rNotch:.05, rSmall:.04, rTip:.02 },
+  "Dot":       { corner:.62, gap:.10, inset:.07, bevel:.35, rOuter:.14, rHeel:.19, rBite:.19, rNotch:.06, rSmall:.5,  rTip:.03 }
 };
 
 const S = { ...DEFAULTS };
@@ -479,14 +491,18 @@ function geometry(s) {
   ));
   const bevel = Math.max(0, Math.min(bevelMax, s.bevel));
 
+  // Corner roles are NOT interchangeable. The bottom-left is the L's
+  // HEEL -- the outside of the angle where both legs meet -- and reads
+  // much heavier than the free outer corners at the same radius, so it
+  // gets its own control (rHeel) rather than borrowing rOuter.
   let outerPts, outerR;
   if (c <= 1e-6) {
     outerPts = [[0,0],[1,0],[1,1],[0,1]];
-    outerR   = [s.rOuter, s.rOuter, s.rOuter, s.rOuter];
+    outerR   = [s.rOuter, s.rOuter, s.rOuter, s.rHeel];
   } else if (bevel <= 1e-6) {
     // crisp L, six vertices
     outerPts = [[0,0], [armX,0], [armX,armY], [1,armY], [1,1], [0,1]];
-    outerR   = [s.rOuter, s.rTip, s.rNotch, s.rTip, s.rOuter, s.rOuter];
+    outerR   = [s.rOuter, s.rTip, s.rNotch, s.rBite, s.rOuter, s.rHeel];
   } else {
     // Vertical leg tip: cut from (armX - bV, 0) down to (armX, bV), so the
     // top of the leg is sheared back on a slope-1 line.
@@ -509,9 +525,9 @@ function geometry(s) {
       s.rOuter,                  // TL
       s.rTip, s.rTip,            // vertical-leg bevel corners
       s.rNotch,                  // inner crook (concave)
-      s.rOuter,                  // convex corner where the bite meets the right edge
+      s.rBite,                   // convex corner where the bite meets the right edge
       s.rTip, s.rTip,            // horizontal-leg bevel corners
-      s.rOuter                   // BL
+      s.rHeel                    // BL -- the L's heel
     ];
   }
 
@@ -557,10 +573,12 @@ function maxRadiusAt(pts, i) {
  * carry it. One source of truth.
  */
 function radiusLimits(s) {
-  const MARK = { rOuter: 1, rNotch: 2, rSmall: 3, rTip: 4 };
+  // Distinct markers -- two sliders sharing one would merge their caps,
+  // letting the tighter corner drag the other slider's ceiling down.
+  const MARK = { rOuter: 1, rNotch: 2, rSmall: 3, rTip: 4, rHeel: 5, rBite: 6 };
   const probe = geometry({ ...s, ...MARK });
-  const lim = { rOuter: Infinity, rNotch: Infinity, rSmall: Infinity, rTip: Infinity };
-  const byMark = { 1:"rOuter", 2:"rNotch", 3:"rSmall", 4:"rTip" };
+  const lim = { rOuter: Infinity, rHeel: Infinity, rBite: Infinity, rNotch: Infinity, rSmall: Infinity, rTip: Infinity };
+  const byMark = { 1:"rOuter", 2:"rNotch", 3:"rSmall", 4:"rTip", 5:"rHeel", 6:"rBite" };
 
   probe.outerR.forEach((mark, i) => {
     const key = byMark[mark];
@@ -679,24 +697,30 @@ function scalePath(d, k) {
 
 /* ---------- wiring ---------- */
 
-const RANGES = ["corner","bevel","gap","inset","rOuter","rNotch","rSmall","rTip","size","prec"];
-const RADII  = ["rOuter","rNotch","rSmall","rTip"];
+const RANGES = ["corner","bevel","gap","inset","rOuter","rHeel","rBite","rNotch","rSmall","rTip","size","prec"];
+const RADII  = ["rOuter","rHeel","rBite","rNotch","rSmall","rTip"];
 
 function syncInputs() {
   for (const k of RANGES) $(k).value = S[k];
   $("link").checked = S.link;
+  $("w-rHeel").classList.toggle("disabled", S.link);
+  $("w-rBite").classList.toggle("disabled", S.link);
   $("w-rNotch").classList.toggle("disabled", S.link);
   $("w-rSmall").classList.toggle("disabled", S.link);
   $("t-guides").classList.toggle("on", S.guides);
   $("t-grid").classList.toggle("on", S.grid);
 }
 
+/* Ratios that keep the corners reading as one family: the heel carries
+   the most weight so it takes the largest radius, the concave notch the
+   least (a concave corner looks softer than a convex one at equal r). */
 function applyLink() {
   if (!S.link) return;
+  S.rHeel  = S.rOuter * 1.4;
+  S.rBite  = S.rOuter * 0.5;
   S.rNotch = S.rOuter * 0.5;
   S.rSmall = S.rOuter * 0.6;
-  $("rNotch").value = S.rNotch;
-  $("rSmall").value = S.rSmall;
+  for (const k of ["rHeel","rBite","rNotch","rSmall"]) $(k).value = S[k];
 }
 
 for (const k of RANGES) {

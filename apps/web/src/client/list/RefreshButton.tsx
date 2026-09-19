@@ -1,5 +1,6 @@
 import { STALENESS_WINDOW_MS } from "../api/queryClient.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 
 /**
  * Manual refresh for the current view (XS-3).
@@ -41,9 +42,7 @@ export function RefreshButton({
       aria-label="Refresh"
       title={`Refresh now. This view also refreshes on its own at least every ${seconds} seconds, and whenever you return to the tab.`}
     >
-      <span aria-hidden="true" className={busy ? "inline-block animate-spin" : undefined}>
-        ⟳
-      </span>
+      <Icon name="refresh" size={14} className={busy ? "animate-spin" : undefined} />
       {busy ? "Refreshing…" : "Refresh"}
     </Button>
   );
