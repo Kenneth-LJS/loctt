@@ -16,6 +16,7 @@ import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
+import { Radio } from "../ui/Radio.tsx";
 import { Sheet } from "../ui/Sheet.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 import { AdvancedQuerySurface } from "./AdvancedQuerySurface.tsx";
@@ -724,8 +725,7 @@ function LabelsMatchToggle({
       <span className="text-text-tertiary">Match</span>
       {(["any", "all"] as const).map(mode => (
         <label key={mode} className="inline-flex items-center gap-1">
-          <input
-            type="radio"
+          <Radio
             name="labels-match"
             data-testid={`labels-match-${mode}`}
             checked={value === mode}

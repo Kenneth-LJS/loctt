@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -171,8 +172,7 @@ export function RelationshipEditDialog({
         </label>
 
         <label className="flex items-center gap-2 text-text-secondary">
-          <input
-            type="checkbox"
+          <Checkbox
             data-testid="relationships-entry-symmetric"
             checked={symmetric}
             onChange={e => { setSymmetric(e.target.checked); }}
@@ -231,8 +231,7 @@ export function RelationshipEditDialog({
         </label>
 
         <label className="flex items-center gap-2 text-text-secondary">
-          <input
-            type="checkbox"
+          <Checkbox
             data-testid="relationships-entry-ranked"
             checked={ranked}
             onChange={e => { setRanked(e.target.checked); }}

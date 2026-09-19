@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -192,8 +193,7 @@ export function EntryEditDialog({
 
         {isStatus && (
           <label className="flex items-center gap-2 text-text-secondary">
-            <input
-              type="checkbox"
+            <Checkbox
               data-testid={`${collection}-entry-default`}
               checked={makeDefault}
               onChange={e => { setMakeDefault(e.target.checked); }}

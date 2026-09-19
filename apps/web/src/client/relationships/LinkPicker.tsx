@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { useTaskSearch } from "../api/hooks/useTaskSearch.ts";
 import { StatusBadge } from "../list/cells.tsx";
+import { Select } from "../ui/Select.tsx";
 import type { LinkKindOption } from "./group.ts";
 import { linkKindOptions } from "./group.ts";
 
@@ -113,17 +114,17 @@ export function LinkPicker({
         >
           Kind
         </label>
-        <select
+        <Select
+          size="sm"
           id="link-kind"
           data-testid="link-kind"
           value={kind}
           onChange={e => { setKind(e.target.value); }}
-          className="rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem] text-text-primary"
         >
           {options.map(o => (
             <option key={o.key} value={o.key}>{o.label}</option>
           ))}
-        </select>
+        </Select>
       </div>
 
       <label htmlFor="link-target" className="sr-only">

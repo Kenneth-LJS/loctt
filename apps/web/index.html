@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LocTT</title>
     <!--
+      The brand mark (ui/brand/LogoMark.tsx) as the tab icon. A favicon
+      cannot read CSS tokens, so the two fills are the token *values*:
+      "L" = --accent, "o" = --text-primary, with the dark pair behind a
+      prefers-color-scheme query (SVG favicons honour it in Chromium and
+      Firefox; Safari falls back to the light pair). Keep in step with
+      styles/tokens.css if those tokens change.
+    -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cstyle%3E.l%7Bfill:%234F46E5%7D.o%7Bfill:%230F172A%7D@media(prefers-color-scheme:dark)%7B.l%7Bfill:%23818CF8%7D.o%7Bfill:%23F4F4F3%7D%7D%3C/style%3E%3Cpath class='l' d='M0 5.568A5.568 5.568 0 0 1 5.568 0L13.056 0A6.592 6.592 0 0 1 17.728 1.92L22.4 6.592A6.592 6.592 0 0 1 24.32 11.264L24.32 27.712A11.968 11.968 0 0 0 36.288 39.68L52.736 39.68A6.592 6.592 0 0 1 57.408 41.6L62.08 46.272A6.592 6.592 0 0 1 64 50.944L64 58.432A5.568 5.568 0 0 1 58.432 64L5.568 64A5.568 5.568 0 0 1 0 58.432Z'/%3E%3Cpath class='o' d='M30.72 10.048A5.568 5.568 0 0 1 36.288 4.48L53.952 4.48A5.568 5.568 0 0 1 59.52 10.048L59.52 27.712A5.568 5.568 0 0 1 53.952 33.28L36.288 33.28A5.568 5.568 0 0 1 30.72 27.712Z'/%3E%3C/svg%3E" />
+    <!--
       SHL-29: the theme has to be on the element before the first
       paint. `applyInitialTheme()` in main.tsx runs before React
       mounts, but a module script is deferred — the browser has

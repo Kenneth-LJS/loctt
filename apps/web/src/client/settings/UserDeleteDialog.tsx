@@ -10,6 +10,7 @@ import type {
 import { useUserReferences } from "../api/hooks/useUserMutations.ts";
 import { DELETE_CONFIRM_WORD } from "../list/DeleteConfirmDialog.tsx";
 import { Modal } from "../ui/Modal.tsx";
+import { Radio } from "../ui/Radio.tsx";
 
 /**
  * PRU-42: deleting a user who is still referenced on tasks.
@@ -122,8 +123,7 @@ export function UserDeleteDialog({
             </legend>
             {others.map(o => (
               <label key={o.id} className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
-                <input
-                  type="radio"
+                <Radio
                   name="user-delete-resolution"
                   data-testid={`user-delete-remap-${o.id}`}
                   checked={resolution?.kind === "remap" && resolution.to === o.id}
@@ -135,8 +135,7 @@ export function UserDeleteDialog({
               </label>
             ))}
             <label className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
-              <input
-                type="radio"
+              <Radio
                 name="user-delete-resolution"
                 data-testid="user-delete-unassign"
                 checked={resolution?.kind === "unassign"}

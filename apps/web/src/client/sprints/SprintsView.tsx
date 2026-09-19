@@ -20,6 +20,7 @@ import { useBoardDrag } from "../board/useBoardDrag.ts";
 import { buildLookups } from "../list/lookups.ts";
 import type { Progress, Readout } from "../milestones/model.ts";
 import { progressState } from "../milestones/model.ts";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import type { CollapseOverrides } from "./collapse.ts";
@@ -327,8 +328,7 @@ export function SprintsView() {
           // A checkbox so the state is announced; nothing here writes to
           // sprints.yaml (unarchiving is a Settings action).
           <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
-            <input
-              type="checkbox"
+            <Checkbox
               data-testid="sprints-show-archived"
               checked={showArchived}
               onChange={e => { setShowArchived(e.target.checked); }}

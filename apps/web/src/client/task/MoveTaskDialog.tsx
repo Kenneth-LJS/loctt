@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { Select } from "../ui/Select.tsx";
 
 /**
  * Move one task to another project.
@@ -19,8 +20,7 @@ import { Dialog, DialogActions } from "../ui/Dialog.tsx";
  * K71: routed through `Dialog` (over `Modal`) for the focus trap, inert
  * background and focus restoration it previously hand-rolled its overlay
  * without; the raw action `<button>`s are now `Button` (design-review
- * §B2). The destination `<select>` stays raw for now — migrating it to
- * `ui/Select` is design-review §B4, a separate item.
+ * §B2) and the destination picker is `ui/Select` (§B4).
  */
 export function MoveTaskDialog({
   taskKey,
@@ -74,11 +74,11 @@ export function MoveTaskDialog({
     >
       <label className="block text-[0.8571rem] font-medium text-text-secondary">
         Destination project
-        <select
+        <Select
           value={selected}
           onChange={e => { setSelected(e.target.value); }}
           aria-label="Destination project"
-          className="mt-1 w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 text-[0.9286rem] text-text-primary"
+          className="mt-1 w-full"
         >
           <option value="">Choose a project…</option>
           {choices.map(p => (
@@ -87,7 +87,7 @@ export function MoveTaskDialog({
               {p.id === currentProject ? " (current)" : ""}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       {error !== undefined && (
