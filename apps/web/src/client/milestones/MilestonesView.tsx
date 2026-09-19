@@ -236,14 +236,14 @@ export function MilestonesView() {
             </strong>{" "}
             {orphans.data.tasks.length === 1 ? "task names" : "tasks name"} a
             milestone that{" "}
-            <code className="font-mono">milestones.yaml</code> does not define,
+            <code>milestones.yaml</code> does not define,
             so {orphans.data.tasks.length === 1 ? "it is" : "they are"} counted
             toward no milestone below:{" "}
             {orphans.data.ids.map(id => (
               <code
                 key={id}
                 data-testid="milestones-orphan-id"
-                className="mr-1 font-mono"
+                className="mr-1"
               >
                 {id}
               </code>

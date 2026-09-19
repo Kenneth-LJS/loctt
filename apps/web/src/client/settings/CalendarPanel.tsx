@@ -147,7 +147,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
               className="text-[0.7857rem] text-danger-fg"
             >
               <p>
-                <code className="font-mono">{draft.timezone}</code> is the
+                <code>{draft.timezone}</code> is the
                 value stored in .loctt/config/calendar.yaml, and this
                 browser cannot resolve it — it may have been renamed or
                 removed from the IANA database.
@@ -244,7 +244,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
                           invalid={isInvalid}
                           aria-label={`Holiday date, row ${String(i + 1)}`}
                           onChange={e => { setHoliday(i, { ...h, date: e.target.value }); }}
-                          className="w-32 font-mono"
+                          className="w-32"
                         />
                       </td>
                       <td className="p-1">
@@ -316,11 +316,11 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
         {/* SET-25: the panel states which fields move with the zone. */}
         <p data-testid="calendar-timezone-note" className="text-[0.8571rem] text-text-tertiary">
           Changing the timezone rewrites nothing already stored. Task{" "}
-          <code className="font-mono">due_date</code> and{" "}
-          <code className="font-mono">start_date</code> are date-only and
+          <code>due_date</code> and{" "}
+          <code>start_date</code> are date-only and
           are unaffected; only datetimes such as{" "}
-          <code className="font-mono">created_at</code> and{" "}
-          <code className="font-mono">updated_at</code> change how they
+          <code>created_at</code> and{" "}
+          <code>updated_at</code> change how they
           are displayed. Reverting the zone restores the previous display
           exactly.
         </p>

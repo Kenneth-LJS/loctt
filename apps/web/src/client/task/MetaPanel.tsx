@@ -480,10 +480,10 @@ function Footer({
           {/* Named as previous so they are not mistaken for the live
               key, and phrased so a user whose bookmark changed can see
               why (XS-46's second bullet). */}
-          Previously {history.map(k => <code key={k} className="font-mono">{k}</code>)
+          Previously {history.map(k => <code key={k}>{k}</code>)
             .reduce<React.ReactNode[]>((acc, node, i) => i === 0 ? [node] : [...acc, ", ", node], [])}
           {" — now "}
-          <code className="font-mono">{fm.key}</code>. Old links still resolve.
+          <code>{fm.key}</code>. Old links still resolve.
         </p>
       )}
     </div>
@@ -687,7 +687,7 @@ function CorruptFieldNotice({
         <span className="font-medium">{label}</span>{" "}
         <span aria-hidden="true">⚠</span>{" "}
         corrupt:{" "}
-        <span data-testid={`meta-corrupt-raw-${slug}`} className="font-mono break-all">
+        <span data-testid={`meta-corrupt-raw-${slug}`} className="break-all">
           {health.rawText}
         </span>
         <span className="sr-only"> (corrupt value — {health.error})</span>
@@ -752,9 +752,9 @@ function UnrecognisedGroup({
               className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 text-[0.9286rem]"
             >
               <div className="min-w-0">
-                <code className="font-mono text-text-secondary">{h.field}</code>
+                <code className="text-text-secondary">{h.field}</code>
                 {": "}
-                <span className="font-mono break-all text-text-primary">{h.rawText}</span>
+                <span className="break-all text-text-primary">{h.rawText}</span>
               </div>
               <Button
                 variant="ghost"

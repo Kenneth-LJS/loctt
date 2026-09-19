@@ -77,7 +77,7 @@ function MilestoneRow({ milestone, count, all }: {
               </div>
               {!dateOk && (
                 <p role="alert" className="text-[0.8571rem] text-danger-fg">
-                  Target date must be an ISO date like <code className="font-mono">2026-03-31</code>.
+                  Target date must be an ISO date like <code>2026-03-31</code>.
                 </p>
               )}
               {update.isError && (

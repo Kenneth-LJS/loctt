@@ -111,12 +111,12 @@ export function BurndownChart(props: Props) {
           data-testid="burndown-enum-fallback"
           className="mb-2 rounded border border-border-subtle bg-bg-muted px-2 py-1.5 text-[0.8571rem] text-text-secondary"
         >
-          Estimation is set to <code className="font-mono">custom_enum</code>, whose
+          Estimation is set to <code>custom_enum</code>, whose
           values cannot be added up. This chart is counting <strong>tasks</strong>,
           not effort. To burn down effort instead, add a{" "}
-          <code className="font-mono">weights</code> map under{" "}
-          <code className="font-mono">estimation</code> in{" "}
-          <code className="font-mono">workflow.yaml</code>.
+          <code>weights</code> map under{" "}
+          <code>estimation</code> in{" "}
+          <code>workflow.yaml</code>.
         </p>
       )}
 

@@ -72,7 +72,7 @@ export function AdvisoryFsBanner({
       <span className="opacity-90">
         POSIX advisory locks are not reliable there, so concurrent writes
         from two machines can corrupt the tracker&rsquo;s state. Path:{" "}
-        <code className="font-mono" data-testid="fs-advisory-path">{cwd}</code>.
+        <code data-testid="fs-advisory-path">{cwd}</code>.
         For reliable locking, move the tracker to a local disk.{" "}
         Detection is best-effort — see Diagnostics.
       </span>

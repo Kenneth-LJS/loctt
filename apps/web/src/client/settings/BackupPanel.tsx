@@ -118,7 +118,7 @@ export function BackupPanel() {
         <h2 className="mb-1 text-[1rem] font-semibold text-text-primary">Export</h2>
         <p className="mb-3 text-[0.9286rem] text-text-secondary">
           Downloads the whole-tracker backup as a single{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">.jsonl</code> file.
+          <code className="rounded bg-bg-muted px-1 py-0.5">.jsonl</code> file.
           History is included. Machine-local files (user settings and
           recents) are deliberately excluded.
         </p>
@@ -191,7 +191,7 @@ export function BackupPanel() {
             <p className="mb-2 text-text-primary">
               Overwrite replaces every task this backup carries and can
               lose work in this tracker. Type{" "}
-              <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">OVERWRITE</code>{" "}
+              <code className="rounded bg-bg-muted px-1 py-0.5">OVERWRITE</code>{" "}
               to enable it.
             </p>
             <TextField
@@ -200,7 +200,7 @@ export function BackupPanel() {
               value={confirmText}
               onChange={(e) => { setConfirmText(e.target.value); }}
               aria-label="Type OVERWRITE to confirm"
-              className="w-40 font-mono"
+              className="w-40"
             />
           </div>
         )}

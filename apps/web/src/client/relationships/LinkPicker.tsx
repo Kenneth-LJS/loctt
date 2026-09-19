@@ -163,7 +163,7 @@ export function LinkPicker({
                 onClick={() => { choose(hit); }}
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[0.9286rem] hover:bg-bg-muted"
               >
-                <span className="shrink-0 font-mono text-[0.8571rem] text-text-secondary">
+                <span className="shrink-0 text-[0.8571rem] text-text-secondary">
                   {hit.key}
                 </span>
                 {/* REL-8's fourth bullet: key + title + status, so two

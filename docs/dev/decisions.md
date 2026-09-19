@@ -13448,6 +13448,92 @@ file corrupted after storage renders "as if the image wasn't there", i.e.
 the type icon, not a broken-image icon) still holds and the `<img>`
 `onerror` path provides it. Not agent-revertible.
 
+### K96 · Body/comment editor exit gesture — autosave stays, Esc/Cmd+Enter/"Done" all exit-keeping; "cancel" is dropped
+
+**Ken's ruling (2026-09-19).** A description-editor review found the exit
+gesture self-contradictory: Esc is labelled "cancel" but `cancel()` reverts
+only to the last *autosave* (`useBodyAutosave.ts:304`), so after 1.5s idle
+Esc discards nothing while claiming to. Presented with (A) keep autosave,
+make Esc/Cmd+Enter/"Done" all exit **keeping** the text and drop "cancel"
+as a concept (keeps the K2 conflict machinery intact), vs (B) real
+Save/Cancel with local buffering and autosave demoted to draft-only, Ken
+chose **(A)**.
+
+- The edit surface gains a visible **Done** control; **Esc**, **Cmd/Ctrl+
+  Enter**, blur, and Done all flush-and-exit keeping the text. There is no
+  "discard my edits" gesture in the editor (undo covers within-session
+  reverts; the conflict dialog still governs concurrent external writes).
+- TSK-71's "Escape cancels" wording is **superseded** by "Escape exits
+  keeping your text". The autosave + conflict-token machinery (K2, TSK-48,
+  XS-12) is unchanged — this only removes the false "cancel-to-last-save"
+  path. Supersedes the K33 note that left the gesture open.
+- This closes the review's data-loss finding where Esc while the conflict
+  dialog / mention menu is open discarded unsaved "mine" text: with no
+  discard path, those Esc presses must scope to the dialog/menu only.
+
+Agent-revertible only back to the pre-ruling ambiguity, which was a bug;
+effectively locked.
+
+### K97 · Configurable list filters scope: per-view, with a per-user default and a built-in fallback
+
+**Ken's ruling (2026-09-19).** As custom enum fields grow, `FilterBar`
+renders a `FilterDropdown` per field on top of the 9 built-ins — 15-25+
+permanent pills, no show/hide config. The redesign makes the *visible-filter
+set* configurable; Ken ruled the scope is **per-view, with a per-user
+default and a built-in fallback** (the PM's recommendation), not per-user-
+only or global.
+
+- **A saved view owns its visible-filter set** — it already encodes q= +
+  facet params in the URL / `queries.yaml`; "which filters this view shows"
+  belongs with it.
+- **The bare `/list` (no view)** uses a **per-user default** visible-filter
+  set (stored per-user like `board_hidden_columns` / list column visibility),
+  falling back to a **built-in default** (the primary built-ins:
+  Project/Status/Priority/Assignee) when the user has set none.
+- Resolution chain: **active view's set → per-user default → built-in
+  default.** Adding a filter via the desktop "all filters" dialog / mobile
+  sheet is transient for an ad-hoc `/list` unless saved into a view (or set
+  as the per-user default via an explicit action).
+- Migration: existing trackers/views with no stored set fall through to the
+  built-in default — no data migration needed; the feature is additive.
+
+To revert: this is Ken's scope call for the unbuilt redesign; an agent may
+refine storage details but not change the primary scope without a new ruling.
+
+### K98 · Monospace is for code blocks/DSL and CLI commands ONLY — strip it everywhere else
+
+**Ken's ruling (2026-09-19).** `font-mono` had spread across the UI as a
+"make this text look different" device — on task keys, user IDs, project
+slugs/prefixes, file paths, config keys quoted in prose, confirm-word inputs,
+and hex colour fields (~150 sites). Ken: "i'd really rather have zero: only
+code blocks and cli commands."
+
+**Keep monospace ONLY for:**
+- **A. Code blocks / DSL** — fenced code and inline code in task/comment
+  bodies (`.prose-body code`/`pre`), the query DSL editor, the saved-view
+  query preview, and the `weights`/`custom_enum`-style *code fences*.
+- **B. CLI commands** — literal shell commands shown in help/error prose
+  (`loctt doctor`, `loctt restore`, `git worktree remove …`).
+
+**Strip `font-mono` from (they become normal text — quotes/emphasis/`text-
+secondary` may substitute where a boundary cue is wanted):**
+- **C. File / config paths** — `.loctt/config/workflow.yaml`, `sprints.yaml`.
+- **D. Config keys / values quoted in prose** — `due_date`, `boards:`,
+  a relationship/status key mid-sentence.
+- **E. Task keys / IDs / slugs / prefixes shown AS DATA** — the key on a
+  board card / list row / picker, a ULID, a project slug/prefix in settings,
+  a swept-pin id. (This was the abuse Ken first spotted.)
+- **F. Confirm-word inputs** — the `OVERWRITE`/`DELETE`/task-key confirm
+  field and the word shown to type.
+- **G. Hex colour input** — the `#aabbcc` label-colour field.
+
+A `<code>` element may stay as an element (semantics/quoting) but loses the
+`font-mono` class unless it is A or B. The `--font-mono` token stays (A/B
+still use it, and `.prose-body` code uses it).
+
+**To revert.** Re-add `font-mono` to the stripped sites (git history has
+each). This is a taste ruling by Ken, not a correctness one.
+
 ### A199 · REL-16 inline image render — a separate `?inline=1` serve path, raw bytes, `<img>` sandbox (implements K95)
 
 **Ticket:** REL-16 bullet 1 · **Date:** 2026-09-17 · **Implements:** K95.

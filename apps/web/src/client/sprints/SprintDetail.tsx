@@ -101,9 +101,9 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
             No sprint matches this link
           </h1>
           <p className="mb-1 text-[0.9286rem] text-text-secondary">
-            Nothing in <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">sprints.yaml</code>{" "}
+            Nothing in <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">sprints.yaml</code>{" "}
             has the id{" "}
-            <code data-testid="sprint-not-found-key" className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+            <code data-testid="sprint-not-found-key" className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               {sprintId}
             </code>
             .
@@ -252,7 +252,7 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
             <tbody>
               {items.map(t => (
                 <tr key={t.id} data-testid={`sprint-task-${t.key}`} data-task-key={t.key}>
-                  <td className="border-b border-border-subtle py-1.5 pr-2 font-mono text-[0.8571rem]">
+                  <td className="border-b border-border-subtle py-1.5 pr-2 text-[0.8571rem]">
                     <Link to="/tasks/$key" params={{ key: t.key }} className="text-accent no-underline hover:underline">
                       {t.key}
                     </Link>

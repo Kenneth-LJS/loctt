@@ -153,7 +153,7 @@ function BrokenValue({ health }: { health: WireHealth }) {
       {/* The raw stored value — the only remaining handle on what the
           task actually holds. `rawText` is core-rendered so all three
           surfaces print the same string. */}
-      <span className="font-mono">{health.rawText}</span>
+      <span>{health.rawText}</span>
       <span className="sr-only"> (broken)</span>
     </span>
   );
@@ -224,7 +224,7 @@ export function AssigneeCell({ user, raw, health }: { user: UserProfile | undefi
         title={`No user matches ${raw}`}
         className="text-[0.8571rem] italic text-text-tertiary"
       >
-        <code className="font-mono not-italic">{short}</code> (deleted user)
+        <code className="not-italic">{short}</code> (deleted user)
       </span>
     );
   }

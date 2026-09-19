@@ -450,7 +450,7 @@ export function TaskDetail({
                   is live (TSK-2). */}
               <span
                 data-testid="task-key-chip"
-                className="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-[0.8571rem] font-medium text-text-secondary"
+                className="rounded bg-bg-muted px-1.5 py-0.5 text-[0.8571rem] font-medium text-text-secondary"
               >
                 {fm.key}
               </span>
@@ -484,7 +484,7 @@ export function TaskDetail({
                 {rekeyedWhileOpen === true
                   ? "This task was renumbered while you had it open. It used to be "
                   : "You followed "}
-                <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.7857rem]">
+                <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem]">
                   {retiredKey}
                 </code>
                 {rekeyedWhileOpen === true

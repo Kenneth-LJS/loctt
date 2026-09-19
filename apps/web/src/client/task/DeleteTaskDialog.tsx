@@ -99,14 +99,14 @@ export function DeleteTaskDialog({
         </p>
 
         <label className="mt-4 block text-[0.8571rem] font-medium text-text-secondary">
-          Type <code className="font-mono text-text-primary">{taskKey}</code> to confirm
+          Type <code className="text-text-primary">{taskKey}</code> to confirm
           <TextField
             ref={inputRef}
             type="text"
             value={typed}
             onChange={e => { setTyped(e.target.value); }}
             aria-label={`Type ${taskKey} to confirm`}
-            className="mt-1 font-mono"
+            className="mt-1"
           />
         </label>
 

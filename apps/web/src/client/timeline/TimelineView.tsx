@@ -538,7 +538,7 @@ export function TimelineView() {
           {" "}missing from this timeline and from the counts below. Check the file.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
-              <li key={u.id} className="font-mono text-[0.7857rem]">
+              <li key={u.id} className="text-[0.7857rem]">
                 {u.path}: {u.reason}
               </li>
             ))}
@@ -611,7 +611,7 @@ export function TimelineView() {
                   data-testid="timeline-drag-label"
                   data-start={drag.start}
                   data-due={drag.due}
-                  className="pointer-events-none fixed z-50 rounded border border-border-default bg-bg-canvas px-1.5 py-0.5 font-mono text-[0.7857rem] shadow"
+                  className="pointer-events-none fixed z-50 rounded border border-border-default bg-bg-canvas px-1.5 py-0.5 text-[0.7857rem] shadow"
                   style={{ left: drag.x + 12, top: drag.y + 12 }}
                 >
                   {drag.edge === "start"
@@ -769,7 +769,7 @@ function UnscheduledLane(props: {
               className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-1 text-left text-[0.8571rem] hover:bg-bg-canvas sm:flex-nowrap"
               style={{ minHeight: ROW_H }}
             >
-              <span className="font-mono text-text-secondary">{r.task.key}</span>
+              <span className="text-text-secondary">{r.task.key}</span>
               {/* K26: a corrupt title is absent from frontmatter, so
                   fall back to the key rather than rendering an empty
                   span — the task must never look untitled-and-nameless.

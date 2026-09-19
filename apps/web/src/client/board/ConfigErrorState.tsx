@@ -48,21 +48,21 @@ export function ConfigErrorState({
 
         {/* Names the file and the offending keys — the whole point of
             the case. This is core's message, unedited. */}
-        <p className="mt-2 font-mono text-[0.8571rem] text-danger-fg" data-testid="board-config-error-message">
+        <p className="mt-2 text-[0.8571rem] text-danger-fg" data-testid="board-config-error-message">
           {message}
         </p>
 
         <p className="mt-3 text-[0.9286rem] text-text-secondary">
           Every column on a board must claim a status no other column
           claims, so a card has exactly one place to be. While{" "}
-          <code className="font-mono">.loctt/config/workflow.yaml</code>{" "}
+          <code>.loctt/config/workflow.yaml</code>{" "}
           says otherwise, nothing can be read from it — the board, the
           list and the CLI all refuse it alike.
         </p>
 
         <div className="mt-3 text-[0.9286rem] text-text-secondary">
           To fix it, edit{" "}
-          <code className="font-mono">.loctt/config/workflow.yaml</code> and
+          <code>.loctt/config/workflow.yaml</code> and
           either:
           <ul className="ml-5 mt-1 list-disc space-y-1">
             <li>
@@ -70,7 +70,7 @@ export function ConfigErrorState({
               named above, so each status appears once; or
             </li>
             <li>
-              delete the whole <code className="font-mono">boards:</code>{" "}
+              delete the whole <code>boards:</code>{" "}
               block, which returns the board to one column per status.
             </li>
           </ul>

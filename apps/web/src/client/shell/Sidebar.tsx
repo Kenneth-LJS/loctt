@@ -474,7 +474,7 @@ function GroupError({
             {showDetail ? "Hide details" : "Show details"}
           </button>
           {showDetail && (
-            <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[0.7857rem] text-text-tertiary">
+            <pre className="mt-1 whitespace-pre-wrap break-words text-[0.7857rem] text-text-tertiary">
               {envelope.detail}
             </pre>
           )}
@@ -1085,7 +1085,7 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
             className="no-underline"
           >
             <ItemShell collapsed={collapsed} title={t.title}>
-              <span className="shrink-0 font-mono text-[0.7143rem] text-text-tertiary">{t.key}</span>
+              <span className="shrink-0 text-[0.7143rem] text-text-tertiary">{t.key}</span>
               <span className="truncate">{t.title}</span>
             </ItemShell>
           </Link>

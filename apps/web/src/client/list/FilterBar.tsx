@@ -492,7 +492,7 @@ export function FilterBar({
                   className="inline-flex items-center gap-1 rounded bg-warn-bg px-2 py-0.5 text-[0.8571rem] text-warn-fg"
                 >
                   <span className="opacity-80">{chip.facetLabel}:</span>
-                  <code className="font-mono">{chip.value.slice(-6)}</code>
+                  <code>{chip.value.slice(-6)}</code>
                   <span className="italic">(no longer exists)</span>
                   {removeButton("text-warn-fg/70 hover:text-warn-fg")}
                 </span>

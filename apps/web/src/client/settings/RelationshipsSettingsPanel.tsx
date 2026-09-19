@@ -252,7 +252,7 @@ function RelationshipRow({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{rel.label}</span>
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary">
+        <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary">
           {rel.key}
         </code>
 
@@ -306,7 +306,7 @@ function RelationshipRow({
       ) : (
         <p data-testid={`relationship-inverse-note-${rel.key}`} className="text-[0.8571rem] text-text-tertiary">
           Inverse:{" "}
-          <code className="font-mono">{rel.inverse ?? "—"}</code>
+          <code>{rel.inverse ?? "—"}</code>
           {rel.inverse_label !== undefined && <> ({rel.inverse_label})</>}
         </p>
       )}

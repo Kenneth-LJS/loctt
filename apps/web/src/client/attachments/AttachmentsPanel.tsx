@@ -349,7 +349,7 @@ export function AttachmentsPanel({
                 data-state={item.state}
                 className="flex flex-wrap items-center gap-2 text-[0.8571rem]"
               >
-                <span className="font-mono">{item.name}</span>
+                <span>{item.name}</span>
                 {item.state === "pending" && (
                   <span className="text-text-tertiary">Uploading…</span>
                 )}

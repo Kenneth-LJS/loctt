@@ -264,8 +264,8 @@ export function RelationshipsPanel({
               {group.unknown && !isCollapsed && (
                 <p className="mb-1 px-1 text-[0.8571rem] text-text-tertiary">
                   No relationship named{" "}
-                  <code className="font-mono text-[0.7857rem]">{group.key}</code> is
-                  declared in <code className="font-mono text-[0.7857rem]">workflow.yaml</code>.
+                  <code className="text-[0.7857rem]">{group.key}</code> is
+                  declared in <code className="text-[0.7857rem]">workflow.yaml</code>.
                   Add it there, correct the type on the task, or remove the
                   link below.
                 </p>

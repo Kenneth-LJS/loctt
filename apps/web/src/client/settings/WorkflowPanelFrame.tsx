@@ -139,7 +139,7 @@ export function WorkflowPanelFrame({
                   data-testid={`workflow-broken-${e.sub}-${String(e.index)}`}
                   className="text-[0.8571rem] text-text-secondary"
                 >
-                  <code className="rounded bg-bg-surface px-1 py-0.5 font-mono">
+                  <code className="rounded bg-bg-surface px-1 py-0.5">
                     {e.sub}[{e.index}]
                   </code>{" "}
                   {e.error}

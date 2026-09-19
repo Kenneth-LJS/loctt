@@ -119,13 +119,13 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
           </h1>
           <p className="mb-1 text-[0.9286rem] text-text-secondary">
             Nothing in{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               milestones.yaml
             </code>{" "}
             has the id{" "}
             <code
               data-testid="milestone-not-found-id"
-              className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]"
+              className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]"
             >
               {milestoneId}
             </code>
@@ -275,7 +275,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
                   data-testid="milestone-task-row"
                   className="border-b border-border-subtle/60"
                 >
-                  <td className="py-1.5 pr-2 font-mono text-[0.8571rem]">
+                  <td className="py-1.5 pr-2 text-[0.8571rem]">
                     <Link
                       to="/tasks/$key"
                       params={{ key: t.key }}
