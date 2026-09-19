@@ -20,6 +20,7 @@ import {
   computeRange,
   dateToX,
   DAY_WIDTH,
+  fillRange,
   rangeWidth,
 } from "./geometry.ts";
 import {
@@ -120,14 +121,43 @@ export function TimelineView() {
     [items, grouping, workflow.data, milestones.data, sprints.data, users.data],
   );
 
+  /**
+   * The width of the chart panel, measured so the range can be widened to
+   * fill it (see `range` below). Starts at 0 (unmeasured) — `fillRange` is
+   * then a no-op — and is updated by a ResizeObserver on the outer
+   * container. Measuring the outer container rather than the scroll body
+   * avoids a feedback loop: the body's own width is what we are about to
+   * set from this value.
+   */
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [panelWidth, setPanelWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (el === null) return;
+    const read = (): void => { setPanelWidth(el.clientWidth); };
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => { ro.disconnect(); };
+  }, []);
+
   const range = useMemo(() => {
     const dates: string[] = [];
     for (const t of items) {
       if (t.start_date !== undefined) dates.push(t.start_date);
       if (t.due_date !== undefined) dates.push(t.due_date);
     }
-    return computeRange(dates, today);
-  }, [items, today]);
+    const dataRange = computeRange(dates, today);
+    // Fill the panel: a short dated span otherwise draws a chart a few
+    // hundred px wide that floats in an empty panel (and disappears at a
+    // phone width). The measured value is the outer container's client
+    // width; the chart body sits inside the container's `p-4` padding
+    // (16px each side) and its own 1px border each side, so subtract that
+    // to target the drawable inner width. `fillRange` only ever *widens*,
+    // so a span already wider than the panel scrolls as before.
+    return fillRange(dataRange, zoom, Math.max(0, panelWidth - 34));
+  }, [items, today, zoom, panelWidth]);
 
   const layout = useMemo(() => buildLayout(model), [model]);
 
@@ -428,7 +458,7 @@ export function TimelineView() {
   const activeFilters = describeFilters(search);
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4" data-testid="timeline">
+    <div ref={panelRef} className="flex h-full flex-col gap-3 p-4" data-testid="timeline">
       <Toolbar
         zoom={zoom}
         grouping={grouping}

@@ -23,7 +23,9 @@ import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 import { Chip } from "../ui/Chip.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
+import { useInertBackground } from "../ui/Modal.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import { requestSidebarCollapse } from "./useSidebarCollapse.ts";
 import { useVanishedViews } from "./useVanishedViews.ts";
 
@@ -104,32 +106,10 @@ export function Sidebar({
     requestSidebarCollapse();
   }, [pathname]);
 
-  return (
+  // The scrolling groups + footer, shared by the in-grid column and the
+  // mobile overlay drawer.
+  const body = (
     <>
-      {/* R2 backdrop: only while the overlay is open. A tap anywhere off
-          the panel dismisses it (tap-away), and it dims the content
-          behind so the drawer reads as a temporary layer. */}
-      {overlay ? (
-        <div
-          data-testid="sidebar-overlay-backdrop"
-          aria-hidden="true"
-          onClick={() => { requestSidebarCollapse(); }}
-          className="fixed inset-0 z-30 bg-black/40"
-        />
-      ) : null}
-      <aside
-        className={[
-          "row-start-2 flex min-h-0 flex-col border-r border-border-subtle bg-bg-surface py-3",
-          "transition-[width] duration-150 ease-out",
-          collapsed ? "w-14 px-2" : "w-60 px-2",
-          // While overlaying, float the expanded panel above the main
-          // pane (fixed, full-height, z above the backdrop) instead of
-          // widening the grid column.
-          overlay ? "fixed bottom-0 left-0 top-0 z-40 shadow-lg" : "",
-        ].join(" ")}
-        data-collapsed={collapsed}
-        data-overlay={overlay ? "true" : undefined}
-      >
       {/* The groups scroll; the footer does not.
           SHL-11 requires the workspace label and Settings to stay
           pinned "and not scroll away with the groups", and SHL-20/21
@@ -154,6 +134,101 @@ export function Sidebar({
         />
       </div>
       <Footer collapsed={collapsed} info={info} />
+    </>
+  );
+
+  // R2 (mobile): the expanded sidebar is a proper modal drawer, not a
+  // bare floating <aside>. It is a `role="dialog"` with a scrim, a close
+  // button, a focus trap and Escape-to-close (reusing the same a11y
+  // machinery Modal/Sheet use), and it starts BELOW the header so it does
+  // not cover the hamburger that opened it.
+  if (overlay) {
+    return <MobileSidebarDrawer onClose={() => { requestSidebarCollapse(); }}>{body}</MobileSidebarDrawer>;
+  }
+
+  return (
+    <aside
+      className={[
+        "row-start-2 flex min-h-0 flex-col border-r border-border-subtle bg-bg-surface py-3",
+        "transition-[width] duration-150 ease-out",
+        collapsed ? "w-14 px-2" : "w-60 px-2",
+      ].join(" ")}
+      data-collapsed={collapsed}
+    >
+      {body}
+    </aside>
+  );
+}
+
+/** Below this the header is 48px tall (see AppShell's grid rows). */
+const HEADER_H = "3rem";
+
+/**
+ * The mobile sidebar drawer (R2), as a proper modal dialog.
+ *
+ * Fixes the live-review blockers: it is a `role="dialog" aria-modal`, has
+ * a scrim behind it and a close button, traps focus and restores it on
+ * close (`useFocusTrap`), marks the background inert (`useInertBackground`),
+ * closes on Escape, and — crucially — starts below the 48px header so it
+ * never covers the hamburger toggle that opens and closes it (the toggle
+ * stays tappable to dismiss the drawer).
+ */
+function MobileSidebarDrawer({
+  onClose,
+  children,
+}: {
+  readonly onClose: () => void;
+  readonly children: ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef);
+  useInertBackground(panelRef);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  return (
+    <>
+      {/* Scrim: below the header (so the hamburger stays reachable) and a
+          tap-away dismiss target that dims the content behind. */}
+      <div
+        data-testid="sidebar-overlay-backdrop"
+        aria-hidden="true"
+        onClick={onClose}
+        className="fixed inset-0 z-30 bg-black/40"
+        style={{ top: HEADER_H }}
+      />
+      <aside
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation"
+        tabIndex={-1}
+        data-collapsed={false}
+        data-overlay="true"
+        className="fixed bottom-0 left-0 z-40 flex w-60 max-w-[85vw] min-h-0 flex-col border-r border-border-subtle bg-bg-surface px-2 pb-3 pt-2 shadow-lg"
+        style={{ top: HEADER_H }}
+      >
+        <div className="mb-1 flex shrink-0 items-center justify-between">
+          <span className="px-1.5 text-[0.7857rem] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
+            Navigation
+          </span>
+          <button
+            type="button"
+            aria-label="Close navigation"
+            data-testid="sidebar-overlay-close"
+            onClick={onClose}
+            className="grid h-8 w-8 place-items-center rounded-md text-text-secondary hover:bg-bg-muted hover:text-text-primary"
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+        {children}
       </aside>
     </>
   );

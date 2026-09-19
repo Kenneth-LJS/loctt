@@ -194,6 +194,28 @@ export function rangeWidth(range: DateRange, zoom: TimelineZoom): number {
   return (daysBetween(range.start, range.end) + 1) * DAY_WIDTH[zoom];
 }
 
+/**
+ * Widen a range so the chart fills at least `minWidth` pixels.
+ *
+ * "Zoom = column width" means a short dated span draws a narrow chart —
+ * at month zoom (4px/day) a three-week span is ~100px, which floated in
+ * an empty panel and, at a phone width, effectively vanished (the review
+ * blocker). This extends the range's *end* by whole days until the drawn
+ * width reaches `minWidth`, so the grid, header and shading fill the
+ * viewport rather than clamping to the data span. Extending the end (the
+ * future) rather than the start keeps the initial today-centred scroll
+ * (TML-16) landing in the same place. A `minWidth` of 0 (unmeasured) is a
+ * no-op, so nothing changes until the container has been measured.
+ */
+export function fillRange(range: DateRange, zoom: TimelineZoom, minWidth: number): DateRange {
+  if (minWidth <= 0) return range;
+  const px = DAY_WIDTH[zoom];
+  const have = rangeWidth(range, zoom);
+  if (have >= minWidth) return range;
+  const missingDays = Math.ceil((minWidth - have) / px);
+  return { start: range.start, end: addDays(range.end, missingDays) };
+}
+
 /** Every day in `range`, inclusive, as `YYYY-MM-DD`. */
 export function eachDay(range: DateRange): readonly string[] {
   const start = parseDay(range.start);

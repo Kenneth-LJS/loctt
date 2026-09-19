@@ -202,4 +202,39 @@ describe("BodyEditor — K33 two-state orchestration", () => {
     expect(screen.getByTestId("markdown-editor")).toBeTruthy();
     expect(screen.queryByTestId("rich-editor")).toBeNull();
   });
+
+  it("aligns the edit surface flush-left too, so entering edit does not shift the text horizontally", () => {
+    renderEditor();
+    fireEvent.click(screen.getByText("Some body text."));
+    // The framed edit box mirrors the read view's `-mx-3` so its own px-3
+    // content padding lands the text flush-left with the section label —
+    // no horizontal jump between read and edit. Red-proof: without `-mx-3`
+    // the framed box's border + padding indents the edit text past the
+    // (now flush-left) read text.
+    const box = screen.getByTestId("body-editor");
+    expect(box.className).toContain("-mx-3");
+  });
+
+  // @verifies K33
+  // The description toolbar is no longer focus-gated: entering edit shows
+  // it immediately (formatting buttons + the mode toggle), so the user
+  // does not have to focus the surface to see the controls. Red-proof: the
+  // old behaviour rendered no toolbar/format buttons until focus, so
+  // asserting them present right after entering edit fails against it.
+  it("K33: the toolbar (with the mode toggle) is shown at once on entering edit, not focus-gated", () => {
+    renderEditor();
+    fireEvent.click(screen.getByText("Some body text."));
+    // The single always-visible toolbar and the mode toggle are present
+    // the instant edit is entered — there is no focus gate any more. (The
+    // formatting buttons populate once the real rich editor publishes its
+    // instance to the toolbar; that path is covered by Toolbar.test and
+    // RichEditor.test, where a real editor exists. RichEditor is mocked
+    // here, so only the shell + toggle are asserted.)
+    // Red-proof: entering edit here renders the toolbar without any focus
+    // event; the pre-K33 gate showed no toolbar until focus.
+    expect(screen.getByRole("toolbar", { name: "Formatting" })).toBeTruthy();
+    expect(screen.getByTestId("mode-rich")).toBeTruthy();
+    expect(screen.getByTestId("mode-raw")).toBeTruthy();
+  });
+
 });

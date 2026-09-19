@@ -613,7 +613,13 @@ export function TaskDetail({
           the title pushes the grid wider than the pane (TSK-24). */}
       <div className="flex-1 overflow-auto">
         <div className="grid grid-cols-1 gap-6 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="min-w-0 space-y-6">
+          {/* On a single column (mobile) the meta panel is ordered FIRST so
+              Status / Priority / Assignee / Due sit directly under the
+              title, above the description and comments — the most-used
+              fields are otherwise unreachable at the bottom of the page.
+              At `lg` the grid is two columns and source order (content
+              left, meta right) is restored with `lg:order-none`. */}
+          <div className="order-2 min-w-0 space-y-6 lg:order-none">
             <Section title="Description">
               {/* M2.3. Keyed by the task so navigating A → B builds a
                   fresh editor rather than re-seeding one that still
@@ -724,6 +730,11 @@ export function TaskDetail({
             </div>
           </div>
 
+          {/* Ordered FIRST on mobile (see the content column's note) so it
+              sits under the title; `lg:order-none` restores the right-hand
+              column at two-up. The wrapper is the grid item; the panel's
+              own width comes from the 280px track. */}
+          <div className="order-1 min-w-0 lg:order-none">
           <MetaPanel
             frontmatter={fm}
             {...(task.data.health !== undefined ? { health: task.data.health } : {})}
@@ -756,6 +767,7 @@ export function TaskDetail({
               : {})}
             onDismissFieldError={() => { setFieldError(null); }}
           />
+          </div>
         </div>
       </div>
 

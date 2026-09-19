@@ -11,6 +11,7 @@ import {
   dayWindow,
   eachDay,
   eachDayInWindow,
+  fillRange,
   formatDay,
   headerCells,
   headerCellsInWindow,
@@ -205,6 +206,33 @@ describe("computeRange / rangeWidth / eachDay", () => {
     const range = { start: "2026-03-01", end: "2026-03-07" };
     expect(eachDay(range)).toHaveLength(7);
     expect(rangeWidth(range, "day")).toBe(7 * DAY_WIDTH.day);
+  });
+});
+
+describe("fillRange — the chart fills its panel", () => {
+  // The mobile blocker: at month zoom (4px/day) a short dated span draws a
+  // chart a few hundred px wide that floats in an empty panel and, at a
+  // phone width, effectively vanishes. `fillRange` widens the range's END
+  // until the drawn width reaches the panel's, so the grid fills it.
+  it("widens the range end so the drawn width reaches the target", () => {
+    const range = { start: "2026-03-01", end: "2026-03-07" }; // 7 days
+    // At month zoom that is 7 * 4 = 28px. Fill a 400px panel.
+    const filled = fillRange(range, "month", 400);
+    expect(filled.start).toBe(range.start); // start is untouched (TML-16 scroll)
+    expect(rangeWidth(filled, "month")).toBeGreaterThanOrEqual(400);
+    // And it did not over-fill by more than one column.
+    expect(rangeWidth(filled, "month")).toBeLessThan(400 + DAY_WIDTH.month);
+  });
+
+  it("does not shrink a span already wider than the panel", () => {
+    const range = { start: "2026-01-01", end: "2026-12-31" };
+    // At day zoom this is far wider than 400px — fillRange must be a no-op.
+    expect(fillRange(range, "day", 400)).toEqual(range);
+  });
+
+  it("is a no-op when the panel is unmeasured (0)", () => {
+    const range = { start: "2026-03-01", end: "2026-03-07" };
+    expect(fillRange(range, "month", 0)).toEqual(range);
   });
 });
 

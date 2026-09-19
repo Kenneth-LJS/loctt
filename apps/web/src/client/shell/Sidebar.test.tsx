@@ -1107,4 +1107,69 @@ describe("Sidebar mobile overlay (R2)", () => {
       window.removeEventListener("loctt:sidebar-collapse", onCollapse);
     }
   });
+
+  // The mobile drawer is now a proper modal dialog (B3 review blocker):
+  // role="dialog" + aria-modal, a close button, Escape-to-close, and a
+  // focus trap — not a bare floating <aside>.
+  it("the drawer is a role=dialog with aria-modal", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    const aside = document.querySelector("aside") as HTMLElement;
+    // Red-proof: the pre-fix overlay <aside> had neither attribute, so a
+    // dialog role/modal flag would fail against it.
+    expect(aside.getAttribute("role")).toBe("dialog");
+    expect(aside.getAttribute("aria-modal")).toBe("true");
+    expect(aside.getAttribute("aria-label")).toBe("Navigation");
+  });
+
+  it("has a close button that requests a dismiss", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    let dismissed = false;
+    const onCollapse = (): void => { dismissed = true; };
+    window.addEventListener("loctt:sidebar-collapse", onCollapse);
+    try {
+      fireEvent.click(screen.getByTestId("sidebar-overlay-close"));
+      expect(dismissed).toBe(true);
+    } finally {
+      window.removeEventListener("loctt:sidebar-collapse", onCollapse);
+    }
+  });
+
+  it("Escape requests a dismiss", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    let dismissed = false;
+    const onCollapse = (): void => { dismissed = true; };
+    window.addEventListener("loctt:sidebar-collapse", onCollapse);
+    try {
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(dismissed).toBe(true);
+    } finally {
+      window.removeEventListener("loctt:sidebar-collapse", onCollapse);
+    }
+  });
+
+  it("traps focus: it moves focus into the drawer on open", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    const aside = document.querySelector("aside") as HTMLElement;
+    // useFocusTrap lands focus inside the panel on mount (its first tab
+    // stop or the panel itself) — never left on document.body, from which
+    // the next Tab would restart at the top of the page behind the drawer.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(aside.contains(document.activeElement)).toBe(true);
+  });
+
+  it("does not cover the header: the drawer starts below it", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    // The drawer (and its scrim) start at the 48px header height so the
+    // hamburger that opens/closes it stays reachable — it must not be
+    // pinned to `top-0`.
+    const aside = document.querySelector("aside") as HTMLElement;
+    expect(aside.style.top).toBe("3rem");
+    const backdrop = screen.getByTestId("sidebar-overlay-backdrop");
+    expect(backdrop.style.top).toBe("3rem");
+  });
 });
