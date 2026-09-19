@@ -15,6 +15,7 @@ import {
 import { useBuiltinCounts } from "../api/hooks/useBuiltinCounts.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
+import { DEFAULT_SECTION } from "../settings/sections.ts";
 import { readSidebarGroups, resolveSidebarOrder } from "../settings/sidebarGroups.ts";
 import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
@@ -1098,7 +1099,6 @@ function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResp
     <div className="flex shrink-0 flex-col gap-1 border-t border-border-subtle pt-2">
       {!collapsed ? (
         <div className="px-2.5 text-[0.7857rem] text-text-tertiary">
-          <div className="truncate font-mono" title={info.cwd}>{info.cwd}</div>
           {/* The count is omitted rather than shown as zero when the
               tracker could not be read. `TrackerInfoResponse.taskCount`
               is a number, so the placeholder the shell falls back to
@@ -1107,20 +1107,22 @@ function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResp
               not a missing value. ERR-1's rule, at footer scale: a
               server that is down and a tracker that is empty must not
               look alike.
-              `cwd === ""` is that placeholder's signature. */}
-          <div className="mt-0.5">
+              `cwd === ""` is that placeholder's signature.
+              The tracker path and the `next` allocator key were removed
+              (Ken's report): the path is developer chrome and the next-
+              to-be-issued key is internal bookkeeping a user never uses. */}
+          <div>
             {info.cwd === "" ? (
               <span className="italic">task count unavailable</span>
             ) : (
               <>
                 {info.taskCount} task{info.taskCount === 1 ? "" : "s"}
-                {info.nextKey ? ` · next ${info.nextKey}` : ""}
               </>
             )}
           </div>
         </div>
       ) : null}
-      <Link to="/settings/$section" params={{ section: "general" }} title="Settings" className="no-underline">
+      <Link to="/settings/$section" params={{ section: DEFAULT_SECTION }} title="Settings" className="no-underline">
         <ItemShell collapsed={collapsed} title="Settings">
           <SettingsIcon />
           {!collapsed ? <span>Settings</span> : null}

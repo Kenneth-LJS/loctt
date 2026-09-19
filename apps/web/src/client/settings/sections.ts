@@ -40,7 +40,11 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
 ];
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
-  { id: "general", label: "General", group: "Workspace", built: false },
+  // "General" was removed: every setting a workspace-level "General" panel
+  // would hold already has a home (timezone → Calendar, default project →
+  // Projects, theme → My preferences), so it would be an empty section, and
+  // landing a bare /settings on an unbuilt stub was a dead end (Ken's call
+  // + UX eval 2026-09-19). Settings now lands on Projects.
   { id: "projects", label: "Projects", group: "Workspace", built: true },
   { id: "users", label: "Users", group: "Workspace", built: true },
 
@@ -58,7 +62,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 
   { id: "calendar", label: "Calendar", group: "Tracker", built: true },
   { id: "board-columns", label: "Board columns", group: "Tracker", built: false },
-  { id: "timeline", label: "Timeline defaults", group: "Tracker", built: false },
+  { id: "timeline", label: "Timeline defaults", group: "Tracker", built: true },
   { id: "sync", label: "Sync", group: "Tracker", built: true },
   { id: "backup", label: "Backup & restore", group: "Tracker", built: true },
   { id: "diagnostics", label: "Diagnostics", group: "Tracker", built: true },
@@ -70,8 +74,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "keyboard", label: "Keyboard", group: "Personal", built: true },
 ];
 
-/** The section a bare `/settings` lands on (SET-1). */
-export const DEFAULT_SECTION = "general";
+/** The section a bare `/settings` lands on (SET-1). Projects, since
+ * "General" was removed — a bare /settings must land on a real panel. */
+export const DEFAULT_SECTION = "projects";
 
 export function findSection(id: string): SettingsSection | undefined {
   return SETTINGS_SECTIONS.find(s => s.id === id);

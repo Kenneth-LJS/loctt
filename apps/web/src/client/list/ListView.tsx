@@ -906,13 +906,21 @@ export function ListView() {
                     // paint themselves — so on hover the whole row lifts,
                     // the ID/label cells included, and each chip stays
                     // legible instead of dissolving into the hover.
-                    "cursor-pointer [&>td]:border-b [&>td]:border-border-default [&>td]:px-3 [&>td]:py-2.5",
-                    "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0",
+                    //
+                    // The border-bottom + cell padding must ALSO target the
+                    // row-header `<th>` (the key column). A `[&>td]`-only rule
+                    // left that one cell with no bottom border, so the row
+                    // divider had a visible break across the key column — it
+                    // read as a gap in the line, not a continuous rule
+                    // (Ken's report). Cover both `td` and `th`.
+                    "cursor-pointer [&>td]:border-b [&>th]:border-b [&>td]:border-border-default [&>th]:border-border-default",
+                    "[&>td]:px-3 [&>td]:py-2.5 [&>th]:px-3 [&>th]:py-2.5",
+                    "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0 last:[&>th]:border-b-0",
                     task.archived ? "opacity-50" : "",
                     // Background *and* a left border, not colour alone
                     // (BLK-1) — the checked box is the third signal.
                     selection.isSelected(task.id)
-                      ? "[&>td]:bg-accent/10 [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-accent"
+                      ? "[&>td]:bg-accent/10 [&>th]:bg-accent/10 [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-accent"
                       : "",
                   ].join(" ")}
                 >

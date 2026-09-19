@@ -174,12 +174,7 @@ export function WorkflowPanelFrame({
         usage: usage.data,
       })}
       <p data-testid="workflow-config-path" className="mt-6 text-[0.7857rem] text-text-tertiary">
-        Reflects{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">
-          {usage.data?.path ?? ".loctt/config/workflow.yaml"}
-        </code>
-        . Editing that file directly and refreshing shows the change —
-        this panel is a lens, not a cache.
+        Changes made outside the app appear here after you refresh.
       </p>
     </div>
   );

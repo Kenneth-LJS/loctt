@@ -89,9 +89,9 @@ function RelationshipsEditor({
             && entryChangedOnDisk(opts.staleBaseline, fresh.relationships)
           ) {
             throw new ConcurrentWorkflowEditError(
-              `.loctt/config/workflow.yaml changed on disk while this dialog was `
+              `These settings changed outside the app while this dialog was `
               + `open — the relationship "${opts.staleBaseline.key}" is not what it `
-              + `was. Reload the panel to see the current file, then re-apply your `
+              + `was. Reload the panel, then re-apply your `
               + `change. Your edit was not saved.`,
             );
           }
@@ -147,7 +147,7 @@ function RelationshipsEditor({
           className="mb-3 rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[0.9286rem]"
         >
           <p className="font-medium text-danger-fg">
-            The change was not saved to .loctt/config/workflow.yaml.
+            Your change wasn’t saved.
           </p>
           <p className="mt-1 text-text-secondary">{saveError}</p>
         </div>

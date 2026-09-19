@@ -45,10 +45,19 @@ interface RestoreReport {
   readonly badLines: readonly { line: number; file: string; reason: string }[];
 }
 
+// Human-readable label for each restore mode. The raw mode value
+// (bare/merge/overwrite) is API/CLI vocabulary and is not shown as the
+// primary label — a user should read what the mode DOES (Ken's report).
+const MODE_LABEL: Record<RestoreMode, string> = {
+  bare: "Into an empty tracker only",
+  merge: "Add missing tasks only",
+  overwrite: "Replace matching tasks",
+};
+
 const MODE_HELP: Record<RestoreMode, string> = {
   bare: "Only writes into an empty tracker; refuses one that already has tasks.",
-  merge: "Adds only ids that are missing here; never edits a task that is present.",
-  overwrite: "Replaces any task the backup carries. Displaced bodies are kept in the task's folder.",
+  merge: "Adds only tasks that are missing here; never edits a task that is present.",
+  overwrite: "Replaces any task the backup carries. Existing descriptions are preserved.",
 };
 
 export function BackupPanel() {
@@ -165,7 +174,7 @@ export function BackupPanel() {
                 className="mt-0.5"
               />
               <span>
-                <span className="font-medium text-text-primary">{m}</span>
+                <span className="font-medium text-text-primary">{MODE_LABEL[m]}</span>
                 {" — "}
                 {MODE_HELP[m]}
               </span>
@@ -241,20 +250,20 @@ export function BackupPanel() {
             </ul>
             {report.reallocatedKeys.length > 0 && (
               <p className="mt-1">
-                {report.reallocatedKeys.length} key
-                {report.reallocatedKeys.length === 1 ? "" : "s"} reallocated on collision.
+                {report.reallocatedKeys.length} task
+                {report.reallocatedKeys.length === 1 ? " was" : "s were"} given a new key to avoid a clash.
               </p>
             )}
             {report.displacedBodies.length > 0 && (
               <p className="mt-1">
-                {report.displacedBodies.length} displaced
-                {report.displacedBodies.length === 1 ? " body was" : " bodies were"} kept in the task folder.
+                {report.displacedBodies.length} existing task
+                {report.displacedBodies.length === 1 ? " description was" : " descriptions were"} preserved.
               </p>
             )}
             {report.badLines.length > 0 && (
               <p className="mt-1 text-danger-fg">
-                {report.badLines.length} malformed line
-                {report.badLines.length === 1 ? "" : "s"} were skipped.
+                {report.badLines.length} unreadable line
+                {report.badLines.length === 1 ? " was" : "s were"} skipped.
               </p>
             )}
           </div>

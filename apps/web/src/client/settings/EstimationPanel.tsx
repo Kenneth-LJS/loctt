@@ -171,7 +171,7 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
 
       {save.isError && (
         <p role="alert" data-testid="workflow-save-error" className="text-[0.8571rem] text-danger-fg">
-          Not saved to .loctt/config/workflow.yaml: {saveError}
+          Your change wasn’t saved: {saveError}
         </p>
       )}
       {save.isSuccess && !save.isPending && (

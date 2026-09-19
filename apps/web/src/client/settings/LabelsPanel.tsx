@@ -430,10 +430,7 @@ export function LabelsPanel() {
         Labels
       </h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
-          .loctt/config/labels.yaml
-        </code>. Task counts exclude archived tasks.
+        Task counts exclude archived tasks.
       </p>
 
       <CreateLabelForm existing={items} />

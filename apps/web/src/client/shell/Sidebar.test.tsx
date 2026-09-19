@@ -443,10 +443,15 @@ describe("Sidebar recents (SHL-10)", () => {
  * distinguishable, and pins a Settings link beside it.
  */
 describe("Sidebar footer (SHL-11)", () => {
-  it("shows the workspace label and a Settings link", async () => {
+  it("shows the task count and a Settings link", async () => {
     await renderSidebarAt("/list");
 
-    expect(await screen.findByText("~/PDev/loctt")).toBeTruthy();
+    // The footer no longer shows the tracker filesystem path or the
+    // internal `next` allocator key (Ken's report — developer chrome).
+    // The task count remains as the one useful footer datum.
+    expect(await screen.findByText(/\b7 tasks\b/)).toBeTruthy();
+    expect(screen.queryByText("~/PDev/loctt")).toBeNull();
+    expect(screen.queryByText(/next WEB-8/)).toBeNull();
     const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
     expect(settings.getAttribute("href")).toContain("/settings/");
   });
@@ -487,15 +492,13 @@ describe("Sidebar truncation and scale", () => {
   /**
    * @verifies SHL-19
    *
-   * The workspace label truncates in place and keeps the Settings link
-   * visible beside it.
+   * The footer shows the task count (no tracker path any more) and keeps
+   * the Settings link visible beside it.
    */
-  it("truncates a long workspace path without displacing Settings", async () => {
+  it("keeps the footer count and the Settings link together", async () => {
     await renderSidebarAt("/list");
 
-    const cwd = await screen.findByText("~/PDev/loctt");
-    expect(cwd.className).toContain("truncate");
-    expect(cwd.getAttribute("title")).toBe("~/PDev/loctt");
+    expect(await screen.findByText(/\b7 tasks\b/)).toBeTruthy();
     expect(screen.getByText("Settings").closest("a")).not.toBeNull();
   });
 
@@ -526,7 +529,7 @@ describe("Sidebar truncation and scale", () => {
     expect(scroller?.contains(screen.getByText("label-39"))).toBe(true);
     expect(scroller?.contains(screen.getByText("Recent task 20"))).toBe(true);
     // ...and the footer is not.
-    const footer = screen.getByText("~/PDev/loctt");
+    const footer = screen.getByText(/\b7 tasks\b/);
     expect(scroller?.contains(footer)).toBe(false);
     expect(scroller?.contains(screen.getByText("Settings"))).toBe(false);
   });
@@ -733,24 +736,23 @@ describe("Sidebar count badges that never arrive", () => {
  * this case describes. The footer has to absorb it without widening
  * the column or pushing Settings out.
  */
-describe("Sidebar footer with a very long workspace label", () => {
-  it("truncates in place and keeps Settings reachable", async () => {
-    // ~200 characters, of the shape `displayPath` actually emits.
-    CWD = `~/${"deeply-nested-project-directory".repeat(3)}/${"another-long-segment-name".repeat(3)}`;
-    expect(CWD.length).toBeGreaterThan(150);
+describe("Sidebar footer", () => {
+  // The tracker filesystem path was removed from the footer (Ken's
+  // report — developer chrome), so the former "truncate a very long
+  // workspace path" test no longer has a subject. What still matters is
+  // that the footer's Settings link stays reachable and out of the
+  // scrolling region regardless of how much sits above it.
+  it("keeps Settings reachable and outside the scroll region", async () => {
+    RECENTS = Array.from({ length: 20 }, (_, i) => ({
+      key: `WEB-${i + 1}`,
+      title: `Recent task ${i + 1}`,
+    }));
 
     await renderSidebarAt("/list");
+    await screen.findByText("Recent task 20");
 
-    const label = await screen.findByText(CWD);
-    // Truncated by CSS rather than wrapped: one line, ellipsis.
-    expect(label.className).toContain("truncate");
-    // The full label is available on hover.
-    expect(label.getAttribute("title")).toBe(CWD);
-
-    // Settings is beside it, not pushed out of the footer.
     const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
     expect(settings.getAttribute("href")).toContain("/settings/");
-    // And it is outside the scrolling region, so it cannot scroll away.
     const scroller = document.querySelector('[data-sidebar-scroll="true"]');
     expect(scroller?.contains(settings)).toBe(false);
   });

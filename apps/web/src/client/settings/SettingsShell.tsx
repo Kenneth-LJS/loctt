@@ -24,6 +24,7 @@ import {
 import { SidebarGroupsPanel } from "./SidebarGroupsPanel.tsx";
 import { SidebarPinsPanel } from "./SidebarPinsPanel.tsx";
 import { SprintsPanel } from "./SprintsPanel.tsx";
+import { TimelinePanel } from "./TimelinePanel.tsx";
 import { UsersPanel } from "./UsersPanel.tsx";
 
 /**
@@ -152,6 +153,7 @@ function Panel({ section }: { readonly section: SettingsSection }) {
   if (section.id === "milestones") return <MilestonesPanel />;
   if (section.id === "sprints") return <SprintsPanel />;
   if (section.id === "saved-views") return <SavedViewsPanel />;
+  if (section.id === "timeline") return <TimelinePanel />;
   if (section.id === "sync") return <GitSyncPanel />;
   if (section.id === "backup") return <BackupPanel />;
   if (section.id === "diagnostics") return <DiagnosticsPanel />;

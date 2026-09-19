@@ -338,8 +338,8 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
         {save.isError && (
           <p role="alert" data-testid="calendar-save-error" className="text-[0.8571rem] text-danger-fg">
             {tooLarge
-              ? `The calendar was too large to send: ${String(draft.holidays.length)} holidays exceeded the request size limit. The configuration already on disk is still in effect — trim the list and save again.`
-              : `Not saved to .loctt/config/calendar.yaml: ${saveError ?? "unknown error"}`}
+              ? `The calendar was too large to send: ${String(draft.holidays.length)} holidays exceeded the request size limit. Your existing calendar is still in effect — trim the list and save again.`
+              : `Your change wasn’t saved: ${saveError ?? "unknown error"}`}
           </p>
         )}
         {save.isSuccess && !save.isPending && (
