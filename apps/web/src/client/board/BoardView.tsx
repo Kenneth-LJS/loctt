@@ -1,5 +1,5 @@
 import type { CardLayoutField } from "@loctt/contracts";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -16,6 +16,8 @@ import { buildLookups } from "../list/lookups.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { BoardCard } from "./BoardCard.tsx";
 import { resolveCardLayout, resolveColumnCardLayout } from "./cardLayout.ts";
 import { hiddenColumnsOf, withHiddenColumns } from "./chipSettings.ts";
@@ -402,14 +404,21 @@ export function BoardView() {
             column still rendered for a status `workflow.yaml` no
             longer declares would carry a create control, which is what
             broke BRD-42. */}
-        <Button
-          variant="secondary"
-          size="sm"
-          testId="board-add-task"
-          onClick={() => { createTask.open(); }}
-        >
-          + Add task
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            testId="board-add-task"
+            onClick={() => { createTask.open(); }}
+          >
+            + Add task
+          </Button>
+          {/* K100: board config is discoverable from the board. Both are
+              whole-surface editors (columns = whole-document draft, card
+              layout = whole-surface pref), so both are DEEP LINKS,
+              labelled as navigation — never in-place edits from a view. */}
+          <BoardOptionsMenu />
+        </div>
       </div>
 
       {/* BRD-40: a tracker with zero tasks gets ONE board-level empty
@@ -468,6 +477,7 @@ export function BoardView() {
               drag={drag}
               onCardPointerDown={onPointerDown}
               onKeyboardMove={moveByKeyboard}
+              onHide={toggleColumn}
             />
           ))}
           {/* BRD-16: one column must not stretch into a full-width
@@ -556,7 +566,171 @@ function ColumnDriftBanner({ columns }: { readonly columns: readonly BoardColumn
           that <code>workflow.yaml</code> no longer defines.
         </div>
       ))}
+      {/* K100: the banner names the fault; it must also lead to the fix.
+          "Board columns" deep-links to the panel that owns the write
+          (whole-document editor → link, not in-place). */}
+      <div className="mt-1">
+        <Link
+          to="/settings/$section"
+          params={{ section: "board-columns" }}
+          data-testid="board-column-drift-link"
+          className="font-medium text-warn-fg underline underline-offset-2 hover:no-underline"
+        >
+          Board columns
+        </Link>
+        {" "}in Settings →
+      </div>
     </div>
+  );
+}
+
+/**
+ * Shared styling for a `<Link>` that sits inside a `Menu` panel and
+ * reads as a menu row (the Header's user menu does the same). Carries
+ * `role="menuitem"` so the menu's roving arrow-key focus (which queries
+ * that role) includes the deep links, not only the buttons.
+ */
+const MENU_LINK_CLASS =
+  "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary";
+
+/**
+ * The per-column header menu (BRD-52, K100).
+ *
+ * One in-place action and two deep links, exactly as K100 assigns:
+ *
+ *  - **Hide column** — in-place. Column visibility is a per-user view
+ *    pref (`board_hidden_columns`), the same write the chips bar makes,
+ *    so it belongs at the point of use and is not a config edit.
+ *  - **Set WIP limit…** / **Edit board columns…** — deep links to
+ *    `/settings/board-columns`. Board columns are edited as a whole
+ *    document (`BoardColumnsPanel` holds a draft of every column), so by
+ *    K100 the point-of-use affordance is a link, labelled as navigation,
+ *    not a forked in-place editor. The WIP item adds a `#column-<id>`
+ *    hash so it can land on the row once the panel wires row anchors
+ *    (a separate agent adds `id="column-<key>"`); until then it lands on
+ *    the section, which is harmless.
+ */
+function ColumnHeaderMenu({
+  column,
+  onHide,
+}: {
+  readonly column: BoardColumn;
+  readonly onHide: (id: string) => void;
+}) {
+  const name =
+    column.disambiguator === undefined
+      ? column.label
+      : `${column.label} (${column.disambiguator})`;
+  return (
+    <Menu
+      aria-label={`${column.label} column options`}
+      align="end"
+      trigger={({ toggle, ...aria }) => (
+        <IconButton
+          {...aria}
+          size="sm"
+          aria-label={`${name} column options`}
+          data-testid={`board-column-menu-${column.id}`}
+          onClick={toggle}
+        >
+          <Icon name="more" size={16} />
+        </IconButton>
+      )}
+    >
+      {({ close }) => (
+        <>
+          <MenuItem
+            testId={`board-column-hide-${column.id}`}
+            onSelect={() => {
+              onHide(column.id);
+              close();
+            }}
+          >
+            <Icon name="eyeOff" size={14} />
+            Hide column
+          </MenuItem>
+          <Link
+            to="/settings/$section"
+            params={{ section: "board-columns" }}
+            hash={`column-${column.id}`}
+            role="menuitem"
+            onClick={close}
+            data-testid={`board-column-wip-${column.id}`}
+            className={MENU_LINK_CLASS}
+          >
+            <Icon name="settings" size={14} />
+            Set WIP limit…
+          </Link>
+          <Link
+            to="/settings/$section"
+            params={{ section: "board-columns" }}
+            role="menuitem"
+            onClick={close}
+            data-testid={`board-column-edit-${column.id}`}
+            className={MENU_LINK_CLASS}
+          >
+            <Icon name="settings" size={14} />
+            Edit board columns…
+          </Link>
+        </>
+      )}
+    </Menu>
+  );
+}
+
+/**
+ * The board toolbar overflow (K100).
+ *
+ * Deep links to the two whole-surface config editors that shape the
+ * board — the columns and the card layout — so board config is
+ * reachable from the board, not only from Settings. Both are links
+ * (whole-document / whole-surface writes), labelled as navigation.
+ */
+function BoardOptionsMenu() {
+  return (
+    <Menu
+      aria-label="Board options"
+      align="end"
+      trigger={({ toggle, ...aria }) => (
+        <IconButton
+          {...aria}
+          size="sm"
+          variant="secondary"
+          aria-label="Board options"
+          data-testid="board-options-menu"
+          onClick={toggle}
+        >
+          <Icon name="more" size={16} />
+        </IconButton>
+      )}
+    >
+      {({ close }) => (
+        <>
+          <Link
+            to="/settings/$section"
+            params={{ section: "board-columns" }}
+            role="menuitem"
+            onClick={close}
+            data-testid="board-options-columns"
+            className={MENU_LINK_CLASS}
+          >
+            <Icon name="settings" size={14} />
+            Customize columns…
+          </Link>
+          <Link
+            to="/settings/$section"
+            params={{ section: "card-layout" }}
+            role="menuitem"
+            onClick={close}
+            data-testid="board-options-card-layout"
+            className={MENU_LINK_CLASS}
+          >
+            <Icon name="settings" size={14} />
+            Card layout…
+          </Link>
+        </>
+      )}
+    </Menu>
   );
 }
 
@@ -645,6 +819,7 @@ function Column({
   drag,
   onCardPointerDown,
   onKeyboardMove,
+  onHide,
 }: {
   readonly column: BoardColumn;
   readonly tasks: readonly TaskListRow[];
@@ -657,6 +832,10 @@ function Column({
   readonly today: string;
   readonly onOpen: (key: string) => void;
   readonly onFilterLabel: (id: string) => void;
+  // BRD-52 (K100): the per-user Hide action, the same write the chips
+  // bar makes — this stays in-place because column visibility is a
+  // per-user view pref, not workflow.yaml config.
+  readonly onHide: (id: string) => void;
   readonly drag: DragState | null;
   readonly onCardPointerDown: (
     e: React.PointerEvent,
@@ -769,32 +948,43 @@ function Column({
             Not `aria-hidden`: this is the accessible carrier, so it
             needs a name of its own rather than sitting decoratively
             beside text that never says "over". */}
-        {over && (
+        {/* The right cluster: the WIP glyph, the count, and the config
+            menu, kept together at the trailing edge so adding the menu
+            does not spread the three apart under `justify-between`. */}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {over && (
+            <span
+              role="img"
+              aria-label={`Over WIP limit: ${String(tasks.length)} of ${String(column.wip ?? 0)}`}
+              data-testid={`board-wip-warning-${column.id}`}
+              className="shrink-0 text-[0.7857rem] text-danger-fg"
+            >
+              ⚠
+            </span>
+          )}
           <span
-            role="img"
-            aria-label={`Over WIP limit: ${String(tasks.length)} of ${String(column.wip ?? 0)}`}
-            data-testid={`board-wip-warning-${column.id}`}
-            className="ml-auto mr-1 shrink-0 text-[0.7857rem] text-danger-fg"
+            data-testid={`board-count-${column.id}`}
+            className={[
+              "shrink-0 rounded px-1.5 py-0.5 text-[0.7857rem] tabular-nums",
+              over
+                ? "bg-danger-fg/10 font-semibold text-danger-fg"
+                : atCap
+                  ? "bg-warn-fg/10 font-semibold text-warn-fg"
+                  : "text-text-tertiary",
+            ].join(" ")}
+            data-wip-state={over ? "over" : atCap ? "at-cap" : "under"}
           >
-            ⚠
+            {/* BRD-6: a capped column shows both numbers; an uncapped
+                one shows a plain count and never an over-cap state. */}
+            {loading ? "–" : column.wip === undefined ? tasks.length : `${tasks.length} / ${column.wip}`}
           </span>
-        )}
-        <span
-          data-testid={`board-count-${column.id}`}
-          className={[
-            "shrink-0 rounded px-1.5 py-0.5 text-[0.7857rem] tabular-nums",
-            over
-              ? "bg-danger-fg/10 font-semibold text-danger-fg"
-              : atCap
-                ? "bg-warn-fg/10 font-semibold text-warn-fg"
-                : "text-text-tertiary",
-          ].join(" ")}
-          data-wip-state={over ? "over" : atCap ? "at-cap" : "under"}
-        >
-          {/* BRD-6: a capped column shows both numbers; an uncapped
-              one shows a plain count and never an over-cap state. */}
-          {loading ? "–" : column.wip === undefined ? tasks.length : `${tasks.length} / ${column.wip}`}
-        </span>
+          {/* BRD-52 (K100): point-of-use config for the column, from the
+              header where the column is. Hide is the per-user view pref
+              (in-place, same write as the chips); WIP + edit are DEEP
+              LINKS to Settings because board columns are a whole-document
+              editor the panel owns (K100 → link, not in-place). */}
+          <ColumnHeaderMenu column={column} onHide={onHide} />
+        </div>
       </header>
 
       {column.kind === "orphan" && (
