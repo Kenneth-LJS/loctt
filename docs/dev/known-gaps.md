@@ -3810,3 +3810,21 @@ the multi-agent run (all Playwright agents on one context/server).
 - **Board reorder mouse-only; no move-success toast (REAL).** Keyboard DnD
   pattern + a success toast.
 - **Create-from-Board: no feedback, new card off-screen (REAL, small).**
+
+## UX backlog progress — 2026-09-19 (continued)
+
+- **#6 filter chips show raw DSL/ULIDs — RESOLVED.** The `q=` query chip now
+  resolves quoted entity ids (users/labels/milestones/sprints) to display
+  names in the preview + hover title; the underlying query and the Advanced
+  editor keep the ids. Red-proven test.
+- **#11 create-from-Board has no feedback — NOT REAL (already implemented).**
+  Verified live: creating from the board shows a toast "Created DEMO-N —
+  <title>" with an "Open" action (NEW-12). The only unimplemented sub-part
+  is scroll-to-the-new-card, which the toast's "Open" makes unnecessary;
+  not worth the risk. No change.
+- **Status-pill nowrap — RESOLVED** (committed).
+- **Responsive mobile card layout — RESOLVED** (committed).
+
+**Still open (larger features):** sprint overview page (/sprints index +
+detail), board keyboard drag-and-drop (+ the move already toasts elsewhere;
+board reorder is the mouse-only part).
