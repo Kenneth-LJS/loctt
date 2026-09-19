@@ -130,9 +130,13 @@ describe("PreferencesPanel", () => {
     SETTINGS = { default_project: "archive_me" };
     renderPanel();
 
-    const select = await screen.findByTestId("default-project-select");
+    // The default-project picker is now a searchable Combobox (A211), not
+    // a native <select>; this once drove it via fireEvent.change on the
+    // <select> element — the pre-migration control. Open the trigger and
+    // click the option instead.
     const { fireEvent } = await import("@testing-library/react");
-    fireEvent.change(select, { target: { value: "p_backend" } });
+    fireEvent.click(await screen.findByTestId("default-project-select"));
+    fireEvent.click(await screen.findByTestId("default-project-option-p_backend"));
 
     await waitFor(() => { expect(PUTS.length).toBe(1); });
     expect(PUTS[0]?.["default_project"]).toBe("p_backend");

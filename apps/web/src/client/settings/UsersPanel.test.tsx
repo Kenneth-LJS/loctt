@@ -124,9 +124,15 @@ describe("UsersPanel Edit dialog (PRU-47)", () => {
     fireEvent.change(screen.getByTestId("user-edit-email-u-alice"), {
       target: { value: "new@example.com" },
     });
-    fireEvent.change(screen.getByTestId("user-edit-timezone-u-alice"), {
-      target: { value: "America/New_York" },
+    // The timezone picker is now a searchable Combobox (A211), not a
+    // native <select>: open the trigger, filter, and click the option.
+    fireEvent.click(screen.getByTestId("user-edit-timezone-u-alice"));
+    fireEvent.change(await screen.findByTestId("user-edit-timezone-search-u-alice"), {
+      target: { value: "New_York" },
     });
+    fireEvent.click(
+      await screen.findByTestId("user-edit-timezone-option-u-alice-America/New_York"),
+    );
 
     fireEvent.click(screen.getByTestId("user-edit-save-u-alice"));
 
@@ -249,17 +255,67 @@ describe("UsersPanel Edit dialog (PRU-47)", () => {
 
   /** @verifies PRU-47 */
   it("no longer offers a '(none)' timezone option that cannot clear the zone (B2 bug 2)", async () => {
+    // The picker is now a Combobox (A211); this once read `select.options`
+    // off the native <select> — the pre-migration control. It now opens
+    // the list and asserts the same thing: no "(none)"/clear row exists,
+    // because the Combobox is built without a `clear` prop (a clear would
+    // report a zone-clear that core does not perform).
     stubHappyPath();
     render(<UsersPanel />, { wrapper: wrapper() });
 
     await openAliceEditDialog();
-    const select = screen.getByTestId<HTMLSelectElement>("user-edit-timezone-u-alice");
-    const optionValues = [...select.options].map(o => o.value);
-    const optionLabels = [...select.options].map(o => o.textContent ?? "");
-    // The lying "(none)" clear option is gone.
-    expect(optionLabels).not.toContain("(none)");
-    // Alice has a real zone, so there is no empty-value option at all.
-    expect(optionValues).not.toContain("");
+    // The trigger shows the stored zone.
+    expect(
+      screen.getByTestId("user-edit-timezone-u-alice").getAttribute("data-value"),
+    ).toBe("UTC");
+    fireEvent.click(screen.getByTestId("user-edit-timezone-u-alice"));
+    const list = await screen.findByTestId("user-edit-timezone-list-u-alice");
+    // No lying "(none)"/clear row: every rendered option is a real zone.
+    const optionLabels = [...list.querySelectorAll('[role="option"]')].map(
+      o => o.textContent ?? "",
+    );
+    expect(optionLabels.some(l => /\(none\)/i.test(l))).toBe(false);
+    expect(optionLabels.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * @verifies PRU-47
+   *
+   * A211: the ~400-zone list is unusable without search, so the whole
+   * point of the migration is that typing narrows it. Red proof: with the
+   * pre-migration native <select> there was no search box (no
+   * `user-edit-timezone-search-*` testid) and no filtering, so the query
+   * and the "London gone" assertion both fail.
+   */
+  it("filters the timezone list as the search box is typed into (A211)", async () => {
+    stubHappyPath();
+    render(<UsersPanel />, { wrapper: wrapper() });
+
+    await openAliceEditDialog();
+    fireEvent.click(screen.getByTestId("user-edit-timezone-u-alice"));
+
+    // The full list is long enough that the search box is shown at all.
+    const list = await screen.findByTestId("user-edit-timezone-list-u-alice");
+    const countBefore = list.querySelectorAll('[role="option"]').length;
+    expect(countBefore).toBeGreaterThan(50);
+
+    fireEvent.change(await screen.findByTestId("user-edit-timezone-search-u-alice"), {
+      target: { value: "New_York" },
+    });
+
+    await waitFor(() => {
+      const labels = [
+        ...list.querySelectorAll('[role="option"]'),
+      ].map(o => o.textContent ?? "");
+      // The list collapses to the matches (plus the pinned current value,
+      // "UTC", which the Combobox keeps present so a selection never
+      // vanishes) — far fewer than the full list.
+      expect(labels.length).toBeLessThan(countBefore);
+      // The matching zone is present…
+      expect(labels.some(l => /america\/new_york/i.test(l))).toBe(true);
+      // …and an unrelated, unselected zone is filtered out.
+      expect(labels.some(l => /london/i.test(l))).toBe(false);
+    });
   });
 
   /** @verifies PRU-47 */

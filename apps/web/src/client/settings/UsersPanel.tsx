@@ -15,11 +15,11 @@ import {
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { Modal } from "../ui/Modal.tsx";
-import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { AvatarCropper } from "./AvatarCropper.tsx";
@@ -332,31 +332,40 @@ function EditUserDialog({
             </p>
           )}
         </label>
-        <label className="grid gap-1 text-[0.9286rem]">
+        <div className="grid gap-1 text-[0.9286rem]">
           <span className="text-text-secondary">Timezone</span>
-          <Select
-            data-testid={`user-edit-timezone-${user.id}`}
-            value={timezone}
-            aria-invalid={!tzOk}
-            onChange={e => { setTimezone(e.target.value); }}
-          >
-            {/* B2 bug 2: no "(none)" option. It cannot clear the zone
-                (core keeps the old one), so offering it reported a save
-                that never happened. A blank-zone user sees a disabled
-                placeholder and must pick a real zone. */}
-            {!tzOk && (
-              <option value="" disabled>Select a timezone…</option>
+          {/* A211: ~400 IANA zones — a searchable Combobox, not a native
+              <select>. The search box appears on its own once the list
+              crosses the threshold. B2 bug 2: no "(none)" clear row — it
+              cannot clear the zone (core keeps the old one), so a
+              blank-zone user must pick a real zone before Save. */}
+          <Combobox
+            label="Timezone"
+            options={zoneOptions.map((z): ComboboxOption => ({ key: z, label: z }))}
+            value={tzOk ? timezone : undefined}
+            onSelect={z => { setTimezone(z); }}
+            listTestId={`user-edit-timezone-list-${user.id}`}
+            optionTestId={o => `user-edit-timezone-option-${user.id}-${o.key}`}
+            searchTestId={`user-edit-timezone-search-${user.id}`}
+            trigger={p => (
+              <ComboboxButton
+                {...p}
+                testId={`user-edit-timezone-${user.id}`}
+                dataValue={timezone}
+                aria-label="Timezone"
+                placeholder="Select a timezone…"
+                className="w-full"
+              >
+                {tzOk ? timezone : ""}
+              </ComboboxButton>
             )}
-            {zoneOptions.map(z => (
-              <option key={z} value={z}>{z}</option>
-            ))}
-          </Select>
+          />
           {!tzOk && (
             <p role="alert" data-testid={`user-edit-timezone-problem-${user.id}`} className="text-[0.7857rem] text-danger-fg">
               Pick a timezone.
             </p>
           )}
-        </label>
+        </div>
         {update.isError && (
           <Callout
             tone="danger"
@@ -381,6 +390,13 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
     Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
   const create = useCreateUser();
+
+  // The runtime's resolved zone must be selectable even if this browser's
+  // list omits it; offer it first when so (mirrors EditUserDialog).
+  const zones = supportedTimezones();
+  const zoneOptions = timezone.length > 0 && !zones.includes(timezone)
+    ? [timezone, ...zones]
+    : zones;
 
   const emailOk = looksLikeEmail(email);
   const blocked = name.trim().length === 0 || !emailOk || create.isPending;
@@ -409,14 +425,32 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
           </p>
         )}
       </label>
-      <label className="grid gap-1 text-[0.9286rem]">
+      <div className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Timezone</span>
-        <TextField
-          data-testid="user-create-timezone"
-          value={timezone}
-          onChange={e => { setTimezone(e.target.value); }}
+        {/* A211: ~400 IANA zones — a searchable Combobox rather than a
+            free-text field, so a valid zone id is picked, not typed. */}
+        <Combobox
+          label="Timezone"
+          options={zoneOptions.map((z): ComboboxOption => ({ key: z, label: z }))}
+          value={timezone.length > 0 ? timezone : undefined}
+          onSelect={z => { setTimezone(z); }}
+          listTestId="user-create-timezone-list"
+          optionTestId={o => `user-create-timezone-option-${o.key}`}
+          searchTestId="user-create-timezone-search"
+          trigger={p => (
+            <ComboboxButton
+              {...p}
+              testId="user-create-timezone"
+              dataValue={timezone}
+              aria-label="Timezone"
+              placeholder="Select a timezone…"
+              className="w-full"
+            >
+              {timezone}
+            </ComboboxButton>
+          )}
         />
-      </label>
+      </div>
       {create.isError && (
         <p role="alert" data-testid="user-create-error" className="text-[0.8571rem] text-danger-fg">
           {create.error instanceof ApiError

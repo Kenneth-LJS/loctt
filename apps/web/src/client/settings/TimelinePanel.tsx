@@ -118,7 +118,7 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
         </span>
       </label>
 
-      <label className="grid gap-1">
+      <label id="field-dependency_relationship" className="grid gap-1">
         <span className="text-text-secondary">
           Dependency relationship
           <span className="ml-1 text-text-tertiary">— which link drives the arrows</span>
