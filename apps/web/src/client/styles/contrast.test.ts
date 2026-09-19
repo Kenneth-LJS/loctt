@@ -96,8 +96,22 @@ const CHIP_PAIRS: readonly [string, string][] = [
   ["--status-completed-fg", "--status-completed-bg"],
   ["--status-discarded-fg", "--status-discarded-bg"],
   ["--feedback-danger-fg", "--feedback-danger-bg"],
-  ["--feedback-warn-fg", "--feedback-warn-bg"],
   ["--feedback-success-fg", "--feedback-success-bg"],
+];
+
+/**
+ * Chip pairs held to the WCAG **AA-Large** bar (3:1), not AA-normal.
+ *
+ * K99: Ken chose a VIBRANT orange for the warn / high-priority chip over a
+ * muddy AA-normal amber, accepting AA-Large. This is legitimate because the
+ * chip and priority-dot text is **bold** (≥14px bold qualifies for the 3:1
+ * large-text threshold). This is the ONE deliberate AA-Large token in the
+ * palette; every other chip stays at 4.5:1 above. Recorded so a future
+ * darken-for-AA "fix" does not silently revert Ken's call — and so a drop
+ * below 3:1 (which WOULD fail even large text) still turns this red.
+ */
+const AA_LARGE_CHIP_PAIRS: readonly [string, string][] = [
+  ["--feedback-warn-fg", "--feedback-warn-bg"],
 ];
 
 /**
@@ -137,6 +151,14 @@ describe.each([
     it(`${fg} on ${bg} meets 4.5:1 (chip text)`, () => {
       const r = ratio(tokens[fg] as string, tokens[bg] as string);
       expect(r, `${tokens[fg]} on ${tokens[bg]} = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
+  // K99 vibrant-orange exception: bold chip text held to AA-Large (3:1).
+  for (const [fg, bg] of AA_LARGE_CHIP_PAIRS) {
+    it(`${fg} on ${bg} meets 3:1 (AA-Large, bold chip text — K99)`, () => {
+      const r = ratio(tokens[fg] as string, tokens[bg] as string);
+      expect(r, `${tokens[fg]} on ${tokens[bg]} = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(3);
     });
   }
 
