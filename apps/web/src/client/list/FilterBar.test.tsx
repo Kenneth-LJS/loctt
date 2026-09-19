@@ -241,6 +241,17 @@ describe("FilterBar", () => {
     await vi.waitFor(() => expect(search(router).q).toBeUndefined());
   });
 
+  // UX eval #6: a q= DSL carries raw entity ids; the chip resolves a
+  // quoted id to its display name for the preview (the underlying query
+  // keeps the id).
+  it("humanizes a user id in the query chip preview", async () => {
+    await mountFilterBar(`?q=${encodeURIComponent('assignee = "u_ken"')}`);
+    const chip = await screen.findByTestId("query-chip");
+    // Shows the name, not the raw id.
+    expect(chip.textContent).toContain("Ken Loh");
+    expect(chip.textContent).not.toContain("u_ken");
+  });
+
   // @verifies LST-53
   it("Clear all removes an active q= query too", async () => {
     const router = await mountFilterBar(

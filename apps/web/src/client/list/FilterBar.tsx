@@ -193,10 +193,29 @@ export function FilterBar({
     });
   };
 
+  // A `q=` DSL carries raw entity ids — `assignee = "01M2VY..."` — which
+  // mean nothing to a person reading the chip (UX eval #6). Resolve any
+  // quoted id in the query to its display name for the PREVIEW only; the
+  // real query (and the Advanced editor) keep the ids. Covers users
+  // (assignee/reporter/mentions), labels, milestones and sprints.
+  const idToName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const u of users.data?.items ?? []) m.set(u.id, u.name ?? u.id);
+    for (const l of labels.data?.items ?? []) m.set(l.id, l.name);
+    for (const ms of milestones.data?.items ?? []) m.set(ms.id, ms.name);
+    for (const sp of sprints.data?.items ?? []) m.set(sp.id, sp.name);
+    return m;
+  }, [users.data, labels.data, milestones.data, sprints.data]);
+
+  const humanized = query.replace(/"([^"]+)"/g, (whole, id: string) => {
+    const name = idToName.get(id);
+    return name !== undefined ? `"${name}"` : whole;
+  });
+
   // A truncated preview keeps the chip informative (which query is
   // running) without letting a long DSL expression blow out the row; the
   // full text is on the chip's title and in the Advanced editor.
-  const queryPreview = query.length > 32 ? `${query.slice(0, 31)}…` : query;
+  const queryPreview = humanized.length > 32 ? `${humanized.slice(0, 31)}…` : humanized;
 
   const hasActive = activeChips.length > 0 || hasQuery;
 
@@ -326,7 +345,7 @@ export function FilterBar({
             // from); "Clear all" below wipes everything.
             <span
               data-testid="query-chip"
-              title={query}
+              title={humanized}
               className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
             >
               <span className="text-accent/70">Query:</span>
