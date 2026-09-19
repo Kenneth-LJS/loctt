@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 
 import { Button } from "./Button.tsx";
 import { Dialog, DialogActions } from "./Dialog.tsx";
@@ -44,6 +44,14 @@ export interface ConfirmDialogProps {
   readonly confirmTestId?: string;
   /** testId for the cancel button (e.g. to assert it holds focus). */
   readonly cancelTestId?: string;
+  /**
+   * Explicit focus-restore target for when the control that opened this
+   * confirm will have unmounted by the time it closes — e.g. a kebab menu
+   * item on a row that is deleted, or the sidebar's saved-filter kebab,
+   * which the Menu removes on select. Falls through to `Dialog`/`Modal`
+   * into `useFocusTrap`'s `returnFocusTo`.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
 }
 
 export function ConfirmDialog({
@@ -58,12 +66,14 @@ export function ConfirmDialog({
   testId,
   confirmTestId,
   cancelTestId,
+  returnFocusTo,
 }: ConfirmDialogProps) {
   return (
     <Dialog
       title={title}
       onClose={onCancel}
       {...(testId !== undefined ? { testId } : {})}
+      {...(returnFocusTo !== undefined ? { returnFocusTo } : {})}
       actions={
         <DialogActions>
           <Button

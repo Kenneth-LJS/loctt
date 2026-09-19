@@ -1,9 +1,8 @@
 import type { SavedQuery, UserSettings } from "@loctt/contracts";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
-import { apiClient } from "../api/client.ts";
 import { useViews } from "../api/hooks/sidebarData.ts";
+import { useDeleteView } from "../api/hooks/useDeleteView.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
@@ -99,15 +98,8 @@ function PinsEditor({
   // pin is dropped in the same write path — `queries.yaml` loses the
   // view, and the sweep above removes the now-dangling pin on the
   // refetch the invalidation triggers.
-  const queryClient = useQueryClient();
   const [deleting, setDeleting] = useState<SavedQuery | null>(null);
-  const deleteView = useMutation({
-    mutationFn: (id: string) =>
-      apiClient.delete<{ deleted: string }>(`/api/views/${encodeURIComponent(id)}`),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["views"] });
-    },
-  });
+  const deleteView = useDeleteView();
 
   const byId = new Map(views.map(v => [v.id, v]));
   const pinned = sweep.kept;
@@ -253,7 +245,7 @@ function PinsEditor({
                 sidebar_pins: pinned.filter(p => p !== id),
               } as UserSettings);
             }
-            deleteView.mutate(id);
+            deleteView.mutate({ id });
           }}
         />
       ) : null}

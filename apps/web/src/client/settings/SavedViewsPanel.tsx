@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { apiClient,ApiError } from "../api/client.ts";
 import { useViews } from "../api/hooks/sidebarData.ts";
+import { useDeleteView } from "../api/hooks/useDeleteView.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
@@ -30,15 +31,6 @@ import { ViewFormDialog } from "./ViewFormDialog.tsx";
  * so the split is done here rather than server-side — the sidebar and
  * this panel want different subsets of the same document.
  */
-
-function useDeleteView() {
-  const qc = useQueryClient();
-  return useMutation<unknown, Error, { id: string; soft?: boolean }>({
-    mutationFn: ({ id, soft }) =>
-      apiClient.delete(`/api/views/${encodeURIComponent(id)}${soft === true ? "?soft=true" : ""}`),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["views"] }); },
-  });
-}
 
 function useUnarchiveView() {
   const qc = useQueryClient();

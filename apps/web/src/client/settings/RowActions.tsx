@@ -1,4 +1,5 @@
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 
 /**
@@ -38,28 +39,36 @@ export function RowActions({
   actions,
   label,
   align = "end",
+  size = "touch",
 }: {
   readonly actions: readonly RowAction[];
   /** Names what the menu acts on, e.g. `Actions for sprint "Sprint 12"`. */
   readonly label: string;
   readonly align?: "start" | "end";
+  /**
+   * Trigger footprint. `"touch"` (default) is the 44px WCAG 2.5.5 tap
+   * target the settings collection panels use; `"sm"` is the compact 28px
+   * kebab for dense rows like the sidebar's saved-filter list, where a
+   * 44px control would tower over an 8-tall row. Both map straight onto
+   * `IconButton`'s own sizes.
+   */
+  readonly size?: "sm" | "touch";
 }) {
   return (
     <Menu
       align={align}
       aria-label={label}
       trigger={t => (
-        <button
-          type="button"
+        <IconButton
           id={t.id}
           aria-haspopup={t["aria-haspopup"]}
           aria-expanded={t["aria-expanded"]}
           aria-label={label}
           onClick={t.toggle}
-          className="grid h-11 w-11 place-items-center rounded-md text-text-secondary hover:bg-bg-muted disabled:opacity-50"
+          size={size}
         >
           <Icon name="more" />
-        </button>
+        </IconButton>
       )}
     >
       {({ close }) => (
