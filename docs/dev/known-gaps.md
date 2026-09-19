@@ -3883,3 +3883,50 @@ Earlier in the same pass: List → cards, Users → cards, status-pill nowrap,
 row-divider gap, dropdown affordance, filter-chip id humanization, storage-
 layer copy cleanup, General section removed. A reviewer agent verified the
 fixes on a 390px viewport.
+
+## First-run / new-user UX investigation — 2026-09-19
+
+Evaluated a FRESH empty tracker across UI/CLI/MCP (agent). Bones are strong
+(sensible defaults, fully-documented CLI, excellent MCP tool descriptions),
+but nothing teaches at first contact and there's a shipped default bug.
+
+**BUG (FIXED 2026-09-19): `init` seeded a broken `blocked` saved view.**
+The default `queries.yaml` shipped a view `blocked` with query
+`archived != true and status = blocked`, but the default workflow has NO
+`blocked` status (statuses are backlog/in_progress/done/wont_do). Every new
+tracker got a broken pinned view: CLI `list --view blocked` warned "unknown
+status value 'blocked'"; the UI sidebar pinned `⭑ blocked` and it silently
+returned nothing. **Fixed:** repointed the seed to
+`archived != true and has_link("is_blocked_by")` — the view's actual intent
+(tasks that ARE blocked by another), evaluable against the seeded `blocks`/
+`is_blocked_by` relationship. Guarded by a new init test that runs
+`validateQuery(..., { workflow })` on every seeded query against the
+seeded workflow (init.test.ts "seeds queries that validate against the
+seeded workflow") — the old `parseQueriesConfig`-only test checked syntax,
+never enum/relationship validity against the workflow, which is how this
+shipped. (The `recent-open` seeded view was already fine.)
+
+**MCP (PARTIAL):**
+- No server `instructions` sent on connect (apps/cli/src/commands/mcp.ts:14
+  `new McpServer({name,version})` — no `instructions`). The reference.md
+  "Agent Guidelines" (use structured tools; call get_workflow_config/*_list
+  to learn valid values before writing; deletes irreversible) never reach a
+  cold agent. Highest-leverage MCP fix: pass an `instructions` string.
+- `get_workflow_config` — the tool agents should call first — has the
+  thinnest description ("Get the workflow configuration."). Expand it.
+
+**UI (PARTIAL):**
+- List empty state "No tasks yet. Create one to get started." is not a
+  button/link — a dead end (Board does it right with "+ Add task").
+- Timeline empty state has no create affordance and greets a newcomer with
+  advanced controls (Group by, Dependencies) over empty data.
+- No in-app onboarding/help/"?" and no explanation of view/sprint/
+  milestone/relationship — the vocabulary is assumed.
+
+**CLI (PASS, thin init):** --help is complete + create/list work from it;
+error messages instructive. But `init` output is terse ("Created 11 files")
+with no "next steps" (loctt create / loctt ui / docs location).
+
+Top 3 to improve first-run: (1) fix the broken `blocked` default view;
+(2) send MCP server `instructions`; (3) make UI empty states teach+act +
+"next steps" in CLI init.
