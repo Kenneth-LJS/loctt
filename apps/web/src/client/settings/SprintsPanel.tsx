@@ -196,10 +196,7 @@ export function SprintsPanel() {
         Sprints
       </h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
-          .loctt/config/sprints.yaml
-        </code>. Open a sprint to edit its dates, goal and state, and see its burndown.
+        Open a sprint to edit its dates, goal and state, and see its burndown.
       </p>
 
       {/* SPR-40: create a sprint. `state` offers exactly the three SPR-7

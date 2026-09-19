@@ -3715,3 +3715,61 @@ before routing — a few lines, defeats rebinding outright. Should be a
 recorded decision + a red-proven test (a GET with a foreign `Host` header
 must 403). This is the natural companion to the loopback-bind claim the
 privacy tester verified.
+
+## UX / design evaluation — 2026-09-19 (PM stories + executors + design assessors)
+
+A multi-agent UX eval (8 PM user-stories executed live + 4 design assessors:
+flow/visual/interaction/responsive) ran against the seeded demo tracker.
+Scores: flow 7, visual 7, interaction 7, **responsive 4**. The everyday
+loop (create/detail/board-drag/sprint-edit) is strong and praised;
+a11y and dark mode are genuinely good. Full raw report saved to the
+session scratchpad (ux-eval-report.json).
+
+**CORRECTION — the #1 "blocker" is NOT a product defect (verified false).**
+The eval reported open modals/pickers being torn down on background data
+change + cross-session route "teleport", blocking 5/8 stories. Verified by
+hand in a CLEAN single browser: opened the create-task modal, typed a
+title, fired the exact React-Query refetch signals (blur/focus/
+visibilitychange) — the modal stayed open and the typed text was fully
+intact. The teleport/teardown was an ORCHESTRATION artifact: all Playwright
+agents shared ONE browser context against one server, so they navigated
+each other's tabs and refetched each other's data. Lesson: isolate browser
+context per UI agent. Not a bug; do not "fix".
+
+**Real findings worth acting on (from the eval, de-duplicated):**
+- **Timeline empty on seed data (major, but partly seed).** Every seeded
+  task has a due date but no START date, so all fall under "Unscheduled".
+  Product angle worth considering: chart a due-only task as a milestone
+  point / default-duration bar so Timeline isn't barren out of the box.
+  Seed angle: give tasks start dates (fixed in the demo seed).
+- **Default Settings panel is the unbuilt "General" stub (major).** Being
+  addressed — build the 3 unbuilt panels (Timeline defaults, Board columns,
+  General) or change the default landing section.
+- **No sprint overview page / no active-sprint chip (major).** Sprint data
+  exists but there's no /sprints index or /sprints/<id> detail, and a
+  sprint-filtered list shows no sprint header (dates/goal/state).
+- **Responsive is desktop-only (major, score 4).** <640px: List table
+  should become stacked cards; sidebar should be an off-canvas overlay;
+  touch targets too small. No page-level horizontal scroll (good).
+- **Filter chips leak query jargon + raw ULIDs (major).** Active-filter
+  chips show operators and user ULIDs instead of "Assignee: Ken" / plain
+  language. (Same storage-layer-leak family as the copy cleanup batch.)
+- **Board reorder is mouse-only; no move-success confirmation (major).**
+  Add a keyboard drag pattern (mirroring the related-tasks reorder) + a
+  success toast.
+- **Escape on task detail navigates away to List (minor).** Escape should
+  close the topmost layer, and do nothing when nothing is open — not
+  route away.
+- **Status pill wraps to two lines in light mode / inconsistent across
+  themes (minor).** Unify the pill; min-width/truncate so a two-word
+  status doesn't wrap.
+- **Seed data can't demo marquee features (minor, seed-only).** No markdown
+  bodies with headings/lists/code, no multi-comment threads, no start
+  dates. Enrich the demo seed.
+- **Polish nits:** create-from-Board has no feedback + new card off-screen;
+  date-format inconsistency; native date inputs unstyled in the create
+  modal; a favicon 404. Low priority.
+
+These are recorded for prioritisation; none is a publish blocker on its own
+except taken collectively, and the responsive gap is the biggest single
+quality deficit.

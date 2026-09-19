@@ -181,16 +181,20 @@ function RekeyPreview({ plan, confirm, onConfirmed }: {
               <span data-testid="git-rekey-collided-key">{l.key}</span> collided —
               {" "}renumbering to <span data-testid="git-rekey-new-key">{l.newKey ?? "(unavailable)"}</span>
             </div>
+            {/* The internal task ids (ULIDs) were removed here — they
+                identify nothing to a person. The human key is already in
+                the header line above; the created dates are what let a
+                user recognise which task is which. (Ken's report.) */}
             <div className="mt-1 text-text-secondary">
-              Keeps the key: <code>{l.keeperId}</code> (created {fmt(l.keeperCreatedAt)})
+              The task created {fmt(l.keeperCreatedAt)} keeps the key.
             </div>
             <div className="text-text-secondary">
-              Renumbered: <code>{l.loserId}</code> (created {fmt(l.loserCreatedAt)})
+              The task created {fmt(l.loserCreatedAt)} is renumbered.
             </div>
             <div className="mt-1 text-text-tertiary">
               {l.tiebreak === "created_at"
-                ? "Decided by created_at — the earlier task keeps the key."
-                : "The created_at values tied; the lower ULID kept the key."}
+                ? "The earlier task keeps the key."
+                : "Both were created at the same time, so the tie was broken automatically."}
             </div>
           </li>
         ))}

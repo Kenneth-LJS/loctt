@@ -270,7 +270,7 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
   });
 
   /** @verifies SET-28 */
-  it("refuses an Edit-dialog Save when the file changed underneath, naming the file", async () => {
+  it("refuses an Edit-dialog Save when the settings changed underneath", async () => {
     // The pre-PUT re-read returns a document whose "doing" status was
     // hand-edited — the panel must refuse rather than clobber it.
     const handEdited: WorkflowConfig = {
@@ -286,11 +286,14 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "In progress" } });
     fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
 
-    // SET-28: the save is refused, the error names the file, and nothing
-    // was written (the throw happens in `apply`, before the PUT).
+    // SET-28: the save is refused and nothing was written (the throw
+    // happens in `apply`, before the PUT). The error tells the user the
+    // settings changed and to reload — it deliberately does NOT name the
+    // backing `.yaml` file any more (Ken's report: the GUI should not
+    // expose the storage layer for a routine concurrent-edit conflict).
     const err = await within(dialog).findByTestId("statuses-entry-error");
-    expect(err.textContent).toMatch(/workflow\.yaml/i);
     expect(err.textContent).toMatch(/reload|changed/i);
+    expect(err.textContent).not.toMatch(/\.yaml/i);
     expect(putBodies.length).toBe(0);
   });
 });
