@@ -1,4 +1,5 @@
 import type { WorkflowConfig } from "@loctt/contracts";
+import { effectiveInverseKey, isSymmetricRelationship } from "@loctt/contracts";
 import {
   appendTaskBody,
   bodyToken,
@@ -6,6 +7,7 @@ import {
   buildShowModel,
   bulkMoveTasksToProject,
   bulkSetFields,
+  computeProgressFromStatuses,
   createTask,
   deleteTask,
   duplicateTask,
@@ -382,6 +384,24 @@ async function buildHistoryDisplayContext(
   return ctx;
 }
 
+/**
+ * The type key of the *child* side of the `graph: "tree"` axis — the
+ * side a parent holds to point at its children (`child` by default,
+ * whatever `inverse` renames it to). `undefined` when there is no tree
+ * axis, or when it is symmetric (no distinct child direction).
+ *
+ * Config-driven, matching `create.ts`'s tree-axis resolution and the web
+ * panel's `treeChildSideKey` — never a literal `"child"`.
+ */
+function treeChildSideKey(
+  workflow: WorkflowConfig | undefined,
+): string | undefined {
+  const treeDef = workflow?.relationships.find(r => r.graph === "tree");
+  if (treeDef === undefined) return undefined;
+  if (isSymmetricRelationship(treeDef)) return undefined;
+  return effectiveInverseKey(treeDef);
+}
+
 export async function show(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_SHOW_FLAGS);
   const ref = args[1];
@@ -463,6 +483,26 @@ export async function show(args: string[], root: string): Promise<void> {
           .filter(Boolean).join("  ");
       }
       console.log(`  ${r.type} → ${display}${detail ? `  ${detail}` : ""}`);
+    }
+  }
+  // L4: a done/active/todo summary of this task's direct children, on the
+  // child side of the tree axis only (the inverse of `parent` — the
+  // forward side points at ancestors, where a progress meter is
+  // meaningless). Config-driven, mirroring the web meter and MCP
+  // `get_task`'s `children` block; discarded children are excluded from
+  // the total exactly as milestones do.
+  const childSideKey = treeChildSideKey(workflowConfig);
+  if (childSideKey !== undefined) {
+    const childStatuses = model.relationships
+      .filter(r => r.type === childSideKey)
+      .map(r => r.resolvedStatus);
+    if (childStatuses.length > 0 && workflowConfig !== undefined) {
+      const p = computeProgressFromStatuses(childStatuses, workflowConfig);
+      const discardedNote = p.discarded > 0 ? ` (${String(p.discarded)} discarded excluded)` : "";
+      console.log(
+        `Child progress: ${String(p.done)} done, ${String(p.active)} active `
+        + `/ ${String(p.total)}${discardedNote}`,
+      );
     }
   }
   // REL-49: an unreadable `attachments/` degrades **this section** and

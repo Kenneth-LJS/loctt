@@ -12,9 +12,11 @@ import {
   useRerankRelationship,
   useUnlinkTask,
 } from "../api/hooks/useRelationships.ts";
+import { progressState } from "../milestones/model.ts";
+import { ProgressReadout } from "../milestones/ProgressReadout.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import type { RelationshipGroup, RelationshipRow } from "./group.ts";
-import { groupRelationships } from "./group.ts";
+import { groupRelationships, treeChildSideKey } from "./group.ts";
 import { LinkPicker } from "./LinkPicker.tsx";
 import { RelationshipRowView } from "./RelationshipRow.tsx";
 import type { TaskIndex } from "./tree.ts";
@@ -76,6 +78,12 @@ export function RelationshipsPanel({
     () => groupRelationships(relationships, stored, workflow),
     [relationships, stored, workflow],
   );
+
+  // L4: the child-progress meter renders only on the tree group holding
+  // *children* (the tree axis's inverse side), never on the "Parent"
+  // group, which points at ancestors. Config-driven — see
+  // `treeChildSideKey`.
+  const childSideKey = useMemo(() => treeChildSideKey(workflow), [workflow]);
 
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | undefined>(undefined);
@@ -258,6 +266,21 @@ export function RelationshipsPanel({
                 )}
               </h3>
 
+              {/* L4: a done/active/todo meter over this task's direct
+                  children, on the child side of the tree axis only.
+                  Computed from the depth-0 rows' resolvedStatus — the
+                  data the panel already holds, so no new request — with
+                  the same discarded-exclusion milestones apply. Shown
+                  even when collapsed: a glance at "3 / 5" is the reason
+                  to keep a big subtree folded. */}
+              {group.tree && group.key === childSideKey && (
+                <ChildProgressMeter
+                  rows={group.rows}
+                  statusOf={statusOf}
+                  workflow={workflow}
+                />
+              )}
+
               {group.unknown && !isCollapsed && (
                 <p className="mb-1 px-1 text-[0.8571rem] text-text-tertiary">
                   No relationship named{" "}
@@ -414,6 +437,73 @@ export function RelationshipsPanel({
           {total} linked tasks across {groups.length} kinds
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * The L4 child-progress meter: a done / active / todo readout over a
+ * task's direct children (the depth-0 rows of the tree axis's child
+ * side).
+ *
+ * The categorisation is the same rule milestones apply, restated on the
+ * client because core's `computeProgress` is a Node module (it reads the
+ * corpus) and cannot cross into the browser bundle — the milestone
+ * readout does the same. Each row's `resolvedStatus` is mapped to its
+ * category via `statusOf`; `completed` counts as done, `active` as
+ * active, `discarded` is excluded from the total exactly as MSL-3
+ * requires. An unresolved or unknown status counts toward the total but
+ * toward neither segment — unrecognised is not finished.
+ *
+ * Renders nothing when there are no children to summarise (`progressState`
+ * would say "No tasks", which is noise on a group that, by existing, has
+ * at least one row — but the guard is kept for the all-discarded case,
+ * where the honest readout is an empty bar rather than a lie).
+ */
+function ChildProgressMeter({
+  rows,
+  statusOf,
+  workflow,
+}: {
+  readonly rows: readonly RelationshipRow[];
+  readonly statusOf: (key: string | undefined) => StatusDef | undefined;
+  readonly workflow: WorkflowConfig | undefined;
+}): React.JSX.Element | null {
+  const readout = useMemo(() => {
+    let done = 0;
+    let active = 0;
+    let discarded = 0;
+    for (const row of rows) {
+      const category = statusOf(row.resolvedStatus)?.category;
+      if (category === "discarded") discarded += 1;
+      else if (category === "completed") done += 1;
+      else if (category === "active") active += 1;
+    }
+    const total = rows.length - discarded;
+    return progressState({
+      done,
+      active,
+      total,
+      discarded,
+      fraction: total > 0 ? done / total : 0,
+    });
+  }, [rows, statusOf]);
+
+  // Until the workflow config loads, `statusOf` cannot classify anything,
+  // so every row would fall into "todo" and the bar would read a
+  // misleading 0 / N. Withhold the meter rather than assert a number we
+  // cannot yet compute.
+  if (workflow === undefined) return null;
+
+  return (
+    <div className="mb-1.5 px-1" data-testid="child-progress">
+      <ProgressReadout
+        readout={readout}
+        idPrefix="child-progress"
+        milestoneName="child tasks"
+        label="Child progress"
+        segmented
+      />
     </div>
   );
 }

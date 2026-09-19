@@ -728,6 +728,23 @@ loctt show <task>
 
 Example: `loctt show T-1`
 
+**Child progress.** When the task has direct children on the tree axis
+(the `parent`/`child` relationship, or whatever your `workflow.yaml`
+renames it to), `show` prints a one-line roll-up of their status:
+
+```
+Child progress: 3 done, 2 active / 6 (1 discarded excluded)
+```
+
+The counts are by status *category*, not by a specific status key: `done`
+counts children in a `completed`-category status, `active` those in an
+`active`-category status, and the denominator is every child except those
+in a `discarded`-category status — the same exclusion milestone and
+sprint progress use, so a child whose remaining work was abandoned does
+not hold the total below 100% forever. The parenthethesised note appears
+only when some children were excluded. The line is omitted when the task
+has no children.
+
 **If the task's file cannot be parsed**, `show` says so and names the
 file and the YAML line, rather than reporting the task as missing:
 

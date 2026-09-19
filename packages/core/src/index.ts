@@ -449,10 +449,12 @@ export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
 export {
   computeProgress,
+  computeProgressFromStatuses,
   milestoneProgress,
   milestoneProgressDetailed,
   sprintProgress,
   sprintProgressDetailed,
+  tallyStatusCategories,
 } from "./task/index.js";
 export { bodyToken, StaleBodyWriteError } from "./task/io.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts, UserSettings } from "./users/index.js";
