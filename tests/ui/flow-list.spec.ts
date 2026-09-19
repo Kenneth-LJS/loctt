@@ -11,8 +11,30 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { DEFAULT_EXPORT_COLUMNS } from "@loctt/core";
+import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/tracker.ts";
+
+// The list-toolbar redesign folded advanced querying INTO the filter
+// system: the leading "Advanced" pill (`advanced-query-toggle`) is gone.
+// It is now reached one level in — open the "+ Add filter" menu, then
+// pick the "Advanced query…" item (`advanced-open`). This mirrors the
+// FilterBar unit test's `openAdvanced` helper (FilterBar.test.tsx).
+const openAdvanced = async (page: Page): Promise<void> => {
+  await page.getByTestId("add-filter").click();
+  await page.getByTestId("advanced-open").click();
+};
+
+// A non-default facet (Reporter/Label/Milestone/Sprint or a custom
+// field) is no longer a permanent pill: the toolbar shows only the
+// resolved visible set (default: Project/Status/Priority/Assignee, per
+// K97/A210). Such a facet must be ADDED via the "+ Add filter" picker
+// before its "Filter <label>" pill exists. `facetId` is the FacetKey
+// (e.g. "reporter", "label"), matching `add-filter-<id>` in FilterBar.
+const addFacet = async (page: Page, facetId: string): Promise<void> => {
+  await page.getByTestId("add-filter").click();
+  await page.getByTestId(`add-filter-${facetId}`).click();
+};
 
 // Sixty rows, written straight to disk. `seed` spawns one
 // `loctt create` per task at ~250ms, so these specs each paid ~15s
@@ -4526,10 +4548,16 @@ test.describe("VUE — saving a view (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list`);
 
     // Reachable — the assertion whose absence let six blockers pass.
-    const toggle = page.getByTestId("advanced-query-toggle");
-    await expect(toggle).toBeVisible();
-    await toggle.click();
-    await expect(page.getByTestId("advanced-query-editor")).toBeVisible();
+    // The redesign folds advanced querying into the "+ Add filter" menu
+    // ("Advanced query…", `advanced-open`); there is no leading pill.
+    await openAdvanced(page);
+    const surface = page.getByTestId("advanced-query-surface");
+    await expect(surface).toBeVisible();
+    // An empty `q` opens the surface directly in TEXT mode (the raw DSL
+    // editor), by design (AdvancedQuerySurface: "no query yet" → text box
+    // with the visual builder one click away), so `dsl-input` is reachable
+    // without a mode switch. Assert the mode to keep the intent explicit.
+    await expect(surface).toHaveAttribute("data-mode", "text");
 
     // And it runs: a valid query narrows the list to the matching row.
     await page.getByTestId("dsl-input").fill("status = in_progress");
@@ -5079,6 +5107,9 @@ test.describe("MSL — clicking label pills (M1.3)", () => {
 
     // Open the Label dropdown; the All/Any toggle appears now that 2 are
     // selected. Switch to All (AND) → only the task with both labels.
+    // Label is not in the default visible set (K97/A210), so add it via
+    // "+ Add filter" before its pill exists.
+    await addFacet(page, "labels");
     await page.getByRole("button", { name: "Filter Label" }).click();
     await page.getByTestId("labels-match-all").check();
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
@@ -5333,6 +5364,8 @@ test.describe("MSL — many labels, and a dangling one (M1.3)", () => {
 
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    // Label is not in the default visible set (K97/A210); add it first.
+    await addFacet(page, "labels");
     await page.getByRole("button", { name: "Filter Label" }).click();
 
     // Searchable rather than a forty-item unfiltered list.
@@ -5895,7 +5928,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
     // Land on a `q` the builder cannot represent (a negation, K83-iii).
     await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("not status = done")}`);
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     const surface = page.getByTestId("advanced-query-surface");
     await expect(surface).toBeVisible();
     // K83-i: the TEXT box, never the visual builder that would misrepresent it.
@@ -5913,7 +5946,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
     await tracker.seed([{ title: "Alpha", fields: { priority: "high" } }]);
     await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("priority = high")}`);
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     const surface = page.getByTestId("advanced-query-surface");
     await expect(surface).toHaveAttribute("data-mode", "builder");
     await expect(page.getByTestId("query-builder")).toBeVisible();
@@ -5937,7 +5970,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
       `${tracker.baseURL}/list?status=in_progress&q=${encodeURIComponent("title ~ foo")}`,
     );
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     await expect(page.getByTestId("query-builder")).toBeVisible();
 
     // Edit the free-text value foo → Alpha, apply.
@@ -5962,7 +5995,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
       `${tracker.baseURL}/list?status=in_progress&q=${encodeURIComponent("title ~ foo")}`,
     );
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     await expect(page.getByTestId("query-builder")).toBeVisible();
 
     // Remove the sole condition, then apply the now-empty builder.
@@ -5988,7 +6021,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
     const original = 'status = "true"';
     await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(original)}`);
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     await expect(page.getByTestId("query-builder")).toBeVisible();
     await page.getByTestId("qb-apply").click();
 

@@ -1383,7 +1383,10 @@ test.describe("PRU-25 — a hard-deleted user still referenced as reporter", () 
     // via the picker below; first, the filter facet.
 
     // The Reporter filter offers only existing users; the dangling ULID
-    // is not an option.
+    // is not an option. Reporter is not in the default visible filter set
+    // (K97/A210), so add it via "+ Add filter" before its pill exists.
+    await page.getByTestId("add-filter").click();
+    await page.getByTestId("add-filter-reporter").click();
     await page.getByRole("button", { name: "Filter Reporter" }).click();
     await expect(page.getByRole("menuitemcheckbox", { name: "Erin" })).toBeVisible();
     // Dave's profile is gone, so he is not offered; his ULID never is.
