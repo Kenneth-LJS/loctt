@@ -160,6 +160,69 @@ the whole fan-out; they gate publish regardless of the security items.
 
 ---
 
+## UI/UX review checklist (distilled from Ken's catches, 2026-09-20)
+
+Automated review + gates passed while these shipped; **Ken caught them by eye.**
+Codified here so a UI-review pass (human or agent) runs them every time — these
+are the classes of defect our tests and lint do NOT catch. Run against the
+LIVE app in BOTH light and dark, desktop and mobile.
+
+**Layout stability**
+- [ ] No content SHIFT on state change. Selecting a row, focusing a field,
+      hovering — anything that adds a border/bar/badge must RESERVE that space
+      when absent (transparent border, not `border: none` → `border: Npx`).
+      (Caught: list row shifted a few px sideways when its select-marker
+      border appeared.)
+- [ ] Entering an edit mode / expanding a toolbar must not shift the text
+      under the cursor (reserve toolbar height; align edit and read states).
+
+**Focus & rings**
+- [ ] ONE focus indicator per control. A per-input `focus:border-accent` stacked
+      under the global `:focus-visible` outline = a double ring. Inputs rely on
+      the single global ring (the `TextField` standard); don't add a second.
+
+**Typography**
+- [ ] Monospace ONLY for code blocks and CLI commands (K98). Not for task
+      keys/IDs/slugs, paths, config keys in prose, query text, confirm words,
+      hex — and remember a bare `<code>` renders mono via the UA default, so
+      the base reset must neutralise it.
+- [ ] Read-state text is flush-left aligned with its section label — a hover-
+      box `px-*` inset must be cancelled (`-mx-*`) so at-rest text isn't
+      indented.
+
+**Colour (needs a live human eyeball — contrast math alone is not enough)**
+- [ ] On-accent text colour is contrast-correct: white on a dark accent, black
+      on a bright one — pick per the fill, don't default to white.
+- [ ] Dark-mode accents aren't dull; bright accents aren't harsh; a "vibrant"
+      colour on a light bg may be unreachable at AA-normal (document AA-Large
+      exceptions, K99). Verify semantic colours are HARMONISED to the scheme,
+      not independently tuned, and "done"-green stays distinct from a teal
+      brand accent.
+
+**Component consistency (the root cause of most of the above)**
+- [ ] Two surfaces that do the same job use the SAME component, not two
+      divergent copies. (Caught: description vs comment editor had forked
+      toolbars. Fix = extract one shared component, config via props.)
+- [ ] Value pickers over a growable set use the searchable `Combobox`, never a
+      native `<select>` or a checkbox wall (they don't scale).
+- [ ] Affordances are SVG `<Icon>` with tooltips, not text-label pills or
+      ASCII/emoji. Toolbars work on mobile (overflow menu, not wrap).
+- [ ] Prefer the `ui/` primitives over raw `<button>`/`<input>`/dialog markup
+      (component-library adoption — see design-review.md).
+
+**Scale & scoping (ask these of every list/board/timeline view)**
+- [ ] Does it scope to the selected project consistently with the other views?
+- [ ] Can the user filter it (reuse the shared filter system, don't fork)?
+- [ ] Can the user group by the fields that matter (not a hard-coded one)?
+- [ ] Does an unbounded set (facets as custom fields grow; unscheduled tasks;
+      long option lists) degrade gracefully, or does it dominate/overflow?
+
+**Docs (open-source hygiene)**
+- [ ] Reference/user docs read present-tense "what it IS" — no history
+      narration ("originally / v1 did X / previously"), no stale claims, no
+      internal ticket keys meaningless to an outsider. Verify claims against
+      code. (decisions.md/known-gaps.md are the exception — they're logs.)
+
 ## Remaining before publish (Ken's call)
 - Merge `fix/publish-hardening` (agent may, per standing authorisation).
 - Optional if going public: H3 CONTRIBUTING.md / CODE_OF_CONDUCT.md / issue
