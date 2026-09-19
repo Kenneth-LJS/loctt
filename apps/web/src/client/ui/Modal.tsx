@@ -20,13 +20,26 @@ export function Modal({
   title,
   onClose,
   children,
+  returnFocusTo,
 }: {
   readonly title: string;
   readonly onClose: () => void;
   readonly children: ReactNode;
+  /**
+   * Explicit focus-restore target for the case A11Y-15 names: the
+   * control that opened the modal will have unmounted by the time it
+   * closes (e.g. a kebab menu item, or a whole row that was deleted).
+   * Threaded straight into `useFocusTrap`'s own `returnFocusTo`. Omit and
+   * focus returns to whatever was focused at open — correct when the
+   * trigger survives.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(panelRef);
+  useFocusTrap(
+    panelRef,
+    returnFocusTo !== undefined ? { returnFocusTo: returnFocusTo.current } : {},
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {

@@ -1,4 +1,4 @@
-import type { SidebarGroupId, TrackerInfoResponse } from "@loctt/contracts";
+import type { SavedQuery, SidebarGroupId, TrackerInfoResponse, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -13,8 +13,12 @@ import {
   useViews,
 } from "../api/hooks/sidebarData.ts";
 import { useBuiltinCounts } from "../api/hooks/useBuiltinCounts.ts";
+import { useDeleteView } from "../api/hooks/useDeleteView.ts";
+import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
+import { DeleteViewDialog } from "../settings/DeleteViewDialog.tsx";
+import { RowActions } from "../settings/RowActions.tsx";
 import { DEFAULT_SECTION } from "../settings/sections.ts";
 import { readSidebarGroups, resolveSidebarOrder } from "../settings/sidebarGroups.ts";
 import { readSidebarPins } from "../settings/sidebarPins.ts";
@@ -187,7 +191,16 @@ function MobileSidebarDrawer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // A nested modal (the Edit / Delete dialog opened from a saved-filter
+      // row's kebab) is itself a `role="dialog" aria-modal` and closes on
+      // its own document-level Escape handler. Without this guard, one
+      // Escape in that dialog would be seen by both handlers and tear down
+      // the whole drawer along with the dialog. Let the inner modal have
+      // the keystroke; the drawer only closes on an Escape with nothing
+      // stacked over it.
+      if (panelRef.current?.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); };
@@ -839,14 +852,30 @@ function SavedFiltersGroup({
       const def = filterById.get(f.id);
       return def === undefined ? [] : [def];
     });
-  // The create-view dialog (VUE-40): the "+ New filter" entry point.
-  // Opens `ViewFormDialog` in create mode — the same dialog the Saved-
-  // views settings panel uses, with the reused AdvancedQueryEditor — so
-  // the user can type a query. The old wiring opened `SaveViewDialog`
-  // with `search={}`, whose read-only DSL was always `archived != true`,
-  // silently making every sidebar-created view "all open tasks".
-  const [creating, setCreating] = useState(false);
-  const allViews = views.data?.queries ?? [];
+  const saveSettings = useUserSettingsMutation();
+  const del = useDeleteView();
+  // The saved-filter dialog state, mirroring `SavedViewsPanel`'s
+  // discriminated union: `null` closed, or one of create / edit / delete.
+  // A single state (rather than a bare `creating` boolean) lets the same
+  // group host Edit… and Delete… launched from a row's kebab as well as
+  // the "+ New filter…" create.
+  //
+  // Edit accepts a `SavedQuery` or the `{id,name,query}` picked from a
+  // `BrokenSavedQuery` (VUE-22's fix path) — the two are not assignable to
+  // one another, so the edit target is stored as the minimal shape
+  // `ViewFormDialog` actually reads.
+  type EditTarget = Pick<SavedQuery, "id" | "name" | "query">;
+  const [dialog, setDialog] = useState<
+    | { mode: "create" }
+    | { mode: "edit"; view: EditTarget }
+    | { mode: "delete"; view: EditTarget }
+    | null
+  >(null);
+  // VUE-25: archived views are hidden from the sidebar (they stay runnable
+  // by id, and are managed from Settings → Saved views). Every other group
+  // filters `archived !== true`; this one did not, so an archived view
+  // still appeared here — the confirmed defect the spec calls out.
+  const allViews = (views.data?.queries ?? []).filter(v => v.archived !== true);
   const userViews = orderByPins(allViews, pins);
   // VUE-22: views present in queries.yaml whose query no longer parses.
   // Listed, marked broken, still clickable — the list route answers a
@@ -865,6 +894,50 @@ function SavedFiltersGroup({
   const { vanished, dismiss } = useVanishedViews(
     views.isSuccess ? [...views.data.queries, ...(views.data.broken ?? [])] : undefined,
   );
+
+  // Where focus returns after a kebab-launched dialog closes: the kebab
+  // itself unmounts while the dialog is open (Menu closes on select), so
+  // it cannot be the restore target. The "New filter…" button is the
+  // stable anchor at the foot of the group.
+  const newFilterRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * Deleting a user's own saved view, hard.
+   *
+   * Two things happen before the DELETE, both to avoid telling the user
+   * about a change they just made:
+   *  - `dismiss(view.id)` so `useVanishedViews` does not, on the refetch,
+   *    announce "«name» was removed from queries.yaml" for this deliberate
+   *    deletion (SHL-32 is for a view that vanished *without* the user's
+   *    action here);
+   *  - if the view is pinned, drop the pin in the same settings write, the
+   *    same pattern `SidebarPinsPanel` uses — leaving it to the pins sweep
+   *    would surface a "removed because it no longer exists" notice for a
+   *    deletion already confirmed.
+   */
+  const confirmDelete = (view: EditTarget): void => {
+    dismiss(view.id);
+    if (pins.includes(view.id) && settings.data !== undefined) {
+      saveSettings.mutate({
+        ...settings.data.settings,
+        sidebar_pins: pins.filter(p => p !== view.id),
+      } as UserSettings);
+    }
+    del.mutate({ id: view.id });
+    setDialog(null);
+  };
+
+  /** Pin the view to the top, or unpin it, via a merged settings write. */
+  const togglePin = (view: EditTarget): void => {
+    if (settings.data === undefined) return;
+    const next = pins.includes(view.id)
+      ? pins.filter(p => p !== view.id)
+      : [...pins, view.id];
+    saveSettings.mutate({
+      ...settings.data.settings,
+      sidebar_pins: next,
+    } as UserSettings);
+  };
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -929,50 +1002,105 @@ function SavedFiltersGroup({
         );
       })}
 
-      {userViews.map(v => (
-        <Link
-          key={v.id}
-          to="/list"
-          search={prev => ({ ...clearSort(prev), view: v.id })}
-          title={v.name}
-          className="no-underline"
-        >
-          <ItemShell collapsed={collapsed} title={v.name}>
-            <span className="w-4 shrink-0 text-center text-text-tertiary">{ICON.star}</span>
-            {!collapsed ? <span className="truncate">{v.name}</span> : null}
-          </ItemShell>
-        </Link>
-      ))}
+      {userViews.map(v => {
+        const row = (
+          <Link
+            to="/list"
+            search={prev => ({ ...clearSort(prev), view: v.id })}
+            title={v.name}
+            className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
+          >
+            <ItemShell collapsed={collapsed} title={v.name}>
+              <span className="w-4 shrink-0 text-center text-text-tertiary">{ICON.star}</span>
+              {!collapsed ? <span className="truncate">{v.name}</span> : null}
+            </ItemShell>
+          </Link>
+        );
+        // Collapsed rail: icon-only, no room for a kebab (matches the
+        // built-ins, which also shed their trailing affordance when
+        // collapsed).
+        if (collapsed) return <div key={v.id}>{row}</div>;
+        // The kebab is a SIBLING of the <Link>, not a child: a <button>
+        // inside an <a> is invalid HTML. The wrapper carries the row's
+        // hover so the whole row (link + kebab) lights up together.
+        return (
+          <div
+            key={v.id}
+            className="flex items-center rounded-md hover:bg-bg-muted"
+            data-view-row={v.id}
+          >
+            {row}
+            <RowActions
+              size="sm"
+              label={`Actions for saved filter "${v.name}"`}
+              actions={[
+                { label: "Edit…", testId: "view-edit", onSelect: () => { setDialog({ mode: "edit", view: v }); } },
+                {
+                  label: pins.includes(v.id) ? "Unpin" : "Pin to top",
+                  testId: "view-pin",
+                  onSelect: () => { togglePin(v); },
+                },
+                { label: "Delete…", testId: "view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: v }); } },
+              ]}
+            />
+          </div>
+        );
+      })}
 
-      {brokenViews.map(v => (
+      {brokenViews.map(v => {
         // VUE-22: still a link — clicking shows the parse error with its
         // position and opens the editor pre-populated, "rather than an
         // empty list". Marked broken so it is not mistaken for a healthy
         // view, and titled with the parser's message for a quick read.
-        <Link
-          key={v.id}
-          to="/list"
-          search={prev => ({ ...clearSort(prev), view: v.id })}
-          title={`${v.name} — broken: ${v.error}`}
-          className="no-underline"
-          data-broken-view={v.id}
-        >
-          <ItemShell collapsed={collapsed} title={v.name}>
-            <span
-              aria-hidden="true"
-              className="w-4 shrink-0 text-center text-danger-fg"
-            >
-              ⚠
-            </span>
-            {!collapsed ? (
-              <span className="flex min-w-0 flex-1 items-center gap-1">
-                <span className="truncate text-text-secondary">{v.name}</span>
-                <span className="shrink-0 text-[0.7857rem] text-text-tertiary">(broken)</span>
+        const row = (
+          <Link
+            to="/list"
+            search={prev => ({ ...clearSort(prev), view: v.id })}
+            title={`${v.name} — broken: ${v.error}`}
+            className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
+            data-broken-view={v.id}
+          >
+            <ItemShell collapsed={collapsed} title={v.name}>
+              <span
+                aria-hidden="true"
+                className="w-4 shrink-0 text-center text-danger-fg"
+              >
+                ⚠
               </span>
-            ) : null}
-          </ItemShell>
-        </Link>
-      ))}
+              {!collapsed ? (
+                <span className="flex min-w-0 flex-1 items-center gap-1">
+                  <span className="truncate text-text-secondary">{v.name}</span>
+                  <span className="shrink-0 text-[0.7857rem] text-text-tertiary">(broken)</span>
+                </span>
+              ) : null}
+            </ItemShell>
+          </Link>
+        );
+        if (collapsed) return <div key={v.id}>{row}</div>;
+        return (
+          <div
+            key={v.id}
+            className="flex items-center rounded-md hover:bg-bg-muted"
+            data-broken-view-row={v.id}
+          >
+            {row}
+            <RowActions
+              size="sm"
+              label={`Actions for saved filter "${v.name}"`}
+              actions={[
+                // VUE-22's fix path: Edit… opens the editor pre-populated
+                // from the BrokenSavedQuery. Its raw `{id,name,query}` is
+                // not a SavedQuery (a broken entry has no `sort`/`display`
+                // and cannot be one), so only those three fields are passed.
+                { label: "Edit…", testId: "broken-view-edit", onSelect: () => { setDialog({ mode: "edit", view: { id: v.id, name: v.name, query: v.query } }); } },
+                // No Pin: a broken view is being fixed, not promoted. Delete
+                // removes it from queries.yaml like any other.
+                { label: "Delete…", testId: "broken-view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: { id: v.id, name: v.name, query: v.query } }); } },
+              ]}
+            />
+          </div>
+        );
+      })}
 
       {!collapsed && vanished.map(v => (
         // Not `role="alert"`: this is an explanation, not an error
@@ -1000,9 +1128,10 @@ function SavedFiltersGroup({
 
       {!collapsed ? (
         <button
+          ref={newFilterRef}
           type="button"
           data-testid="sidebar-new-filter"
-          onClick={() => { setCreating(true); }}
+          onClick={() => { setDialog({ mode: "create" }); }}
           title="Create a saved view"
           className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left text-[0.9286rem] font-medium text-accent hover:bg-bg-muted"
         >
@@ -1011,11 +1140,29 @@ function SavedFiltersGroup({
         </button>
       ) : null}
 
-      {creating ? (
+      {/* The create / edit / delete dialogs live INSIDE the group (not
+          hoisted to a provider): Modal renders inline, so for the mobile
+          drawer's focus trap and DOM containment to hold, the dialog must
+          stay within the drawer's subtree. Create + edit share
+          ViewFormDialog (existing ⇒ edit, VUE-40/VUE-41); delete routes
+          through DeleteViewDialog. */}
+      {dialog?.mode === "create" ? (
         // Create mode: empty name + query with the advanced query editor,
         // so a view created from the sidebar carries a typed query (VUE-40)
         // rather than the fixed `archived != true` of the old dialog.
-        <ViewFormDialog onClose={() => { setCreating(false); }} />
+        <ViewFormDialog onClose={() => { setDialog(null); }} />
+      ) : null}
+      {dialog?.mode === "edit" ? (
+        <ViewFormDialog existing={dialog.view} onClose={() => { setDialog(null); }} />
+      ) : null}
+      {dialog?.mode === "delete" ? (
+        <DeleteViewDialog
+          name={dialog.view.name}
+          pinned={pins.includes(dialog.view.id)}
+          returnFocusTo={newFilterRef}
+          onCancel={() => { setDialog(null); }}
+          onConfirm={() => { confirmDelete(dialog.view); }}
+        />
       ) : null}
     </div>
   );

@@ -70,9 +70,19 @@ let FAIL_VIEWS = false;
 let SETTINGS: Record<string, unknown> = {};
 
 /** Saved views returned by /api/views, per-test (SHL-32). */
-let VIEWS: { id: string; name: string; query: string }[] = [
+let VIEWS: { id: string; name: string; query: string; archived?: boolean }[] = [
   { id: "v_mine", name: "My open bugs", query: "x" },
 ];
+
+/** Broken saved views returned by /api/views, per-test (VUE-22). */
+let BROKEN_VIEWS: {
+  id: string;
+  name: string;
+  query: string;
+  error: string;
+  index: number;
+  rawText: string;
+}[] = [];
 
 const INFO: TrackerInfoResponse = {
   exists: true,
@@ -105,7 +115,9 @@ function routeFetch(path: string): unknown {
     };
   }
   if (path.startsWith("/api/views")) {
-    return { queries: VIEWS };
+    return BROKEN_VIEWS.length > 0
+      ? { queries: VIEWS, broken: BROKEN_VIEWS }
+      : { queries: VIEWS };
   }
   if (path.startsWith("/api/milestones")) {
     if (EMPTY_CONFIG) return { items: [], total: 0, offset: 0, limit: 100 };
@@ -269,6 +281,7 @@ afterEach(() => {
   WORKFLOW_STATUSES = [];
   CWD = "~/PDev/loctt";
   VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+  BROKEN_VIEWS = [];
   SETTINGS = {};
   FAIL_VIEWS = false;
   window.localStorage.clear();
@@ -963,6 +976,208 @@ describe("Sidebar groups customization (SHL-45)", () => {
     expect(posts[0]?.body).toEqual({ name: "My typed view", query: "status:open AND type:bug" });
     // Never the SaveViewDialog default derived from an empty search.
     expect(JSON.stringify(posts[0]?.body)).not.toContain("archived != true");
+  });
+});
+
+/**
+ * Edit / Pin / Delete a saved filter from the sidebar row (Ken's gap).
+ *
+ * The user-view rows were bare `<Link>`s — the edit/rename/delete
+ * affordance existed only in Settings → Saved views. These cover the
+ * kebab the rows now carry: present on a user view, absent on a built-in;
+ * Edit opens the prefilled dialog and issues one PUT; Delete confirms,
+ * DELETEs, and does NOT fire the "was removed" vanished-view notice for
+ * the user's own deletion; Pin/Unpin issues one merged user-settings PUT;
+ * and a broken row offers Edit but not Pin.
+ */
+describe("Sidebar saved-filter row actions", () => {
+  /** Captures write requests so a test can assert method + URL + body. */
+  function captureWrites(): { calls: { method: string; url: string; body: unknown }[] } {
+    const calls: { method: string; url: string; body: unknown }[] = [];
+    const realFetch = globalThis.fetch;
+    // Once a view is DELETEd, its GET must reflect the removal, so the
+    // refetch the invalidation triggers sees it gone (the condition that
+    // trips useVanishedViews).
+    const deletedIds = new Set<string>();
+    const json = (b: unknown, status = 200): Response =>
+      new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? "GET";
+      if (method !== "GET") {
+        const raw = init?.body;
+        calls.push({ method, url, body: typeof raw === "string" ? JSON.parse(raw) : undefined });
+        if (url.includes("/api/query/validate")) return Promise.resolve(json({ valid: true }));
+        if (url.includes("/api/views/") && method === "PUT") {
+          return Promise.resolve(json({ id: "v_mine", name: "n", query: "q" }));
+        }
+        if (url.includes("/api/views/") && method === "DELETE") {
+          const id = decodeURIComponent(url.split("/api/views/")[1]?.split("?")[0] ?? "");
+          deletedIds.add(id);
+          return Promise.resolve(json({ deleted: id }));
+        }
+        if (url.includes("/api/user-settings")) return Promise.resolve(json({ user: "u_ken", settings: {} }));
+        return Promise.resolve(json({}));
+      }
+      // GET /api/views reflects deletions so a refetch shows the view gone.
+      if (/\/api\/views(\?|$)/.test(url) && deletedIds.size > 0) {
+        return Promise.resolve(json({ queries: VIEWS.filter(v => !deletedIds.has(v.id)) }));
+      }
+      return realFetch(input, init);
+    });
+    return { calls };
+  }
+
+  it("shows a kebab on a user-view row and none on a built-in", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    // The user view carries the kebab.
+    expect(
+      screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }),
+    ).toBeTruthy();
+    // A built-in ("Assigned to me") does not.
+    expect(
+      screen.queryByRole("button", { name: /Actions for saved filter "Assigned to me"/ }),
+    ).toBeNull();
+  });
+
+  it("Edit opens the prefilled dialog and issues one PUT /api/views/:id", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-edit"));
+    await screen.findByTestId("view-edit-dialog");
+    // Prefilled from the row's view.
+    expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("My open bugs");
+
+    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
+    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "status:open" } });
+    fireEvent.click(screen.getByTestId("view-form-save"));
+
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/views/v_mine"));
+      expect(puts.length).toBe(1);
+      expect(puts[0]?.body).toEqual({ name: "Renamed", query: "status:open" });
+    });
+  });
+
+  it("Delete confirms and issues one DELETE /api/views/:id", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    await screen.findByTestId("delete-view-dialog");
+    fireEvent.click(screen.getByTestId("delete-view-confirm"));
+
+    await waitFor(() => {
+      const dels = calls.filter(c => c.method === "DELETE" && c.url.includes("/api/views/v_mine"));
+      expect(dels.length).toBe(1);
+    });
+  });
+
+  it("Delete does not fire the vanished-view notice for the user's own deletion", async () => {
+    // The GET drops the view once it is deleted, so on the invalidation's
+    // refetch it is genuinely gone — exactly the condition that trips
+    // useVanishedViews. confirmDelete calls dismiss(view.id) BEFORE the
+    // mutate, which is what suppresses "«name» was removed from
+    // queries.yaml" for the user's own action.
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    await screen.findByTestId("delete-view-dialog");
+    fireEvent.click(screen.getByTestId("delete-view-confirm"));
+
+    // The DELETE fires and the refetch shows the view gone (the row
+    // disappears), which is the exact condition useVanishedViews watches.
+    await waitFor(() => {
+      expect(calls.some(c => c.method === "DELETE" && c.url.includes("/api/views/v_mine"))).toBe(true);
+    });
+    await waitFor(() => { expect(screen.queryByText("My open bugs")).toBeNull(); });
+    // Because confirmDelete dismissed the view before the mutate, no
+    // "was removed from queries.yaml" notice appears for the user's own
+    // deletion.
+    expect(screen.queryByText(/was removed from queries\.yaml/)).toBeNull();
+  });
+
+  it("Pin issues one merged PUT /api/user-settings carrying the pin", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    // Not yet pinned → the item reads "Pin to top".
+    fireEvent.click(screen.getByTestId("view-pin"));
+
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/user-settings"));
+      expect(puts.length).toBe(1);
+      expect(puts[0]?.body).toMatchObject({ sidebar_pins: ["v_mine"] });
+    });
+  });
+
+  it("Unpin drops the pin in a merged PUT when the view is already pinned", async () => {
+    SETTINGS = { sidebar_pins: ["v_mine"] };
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    // Already pinned → the toggle reads "Unpin".
+    fireEvent.click(screen.getByText("Unpin"));
+
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/user-settings"));
+      expect(puts.length).toBe(1);
+      expect(puts[0]?.body).toMatchObject({ sidebar_pins: [] });
+    });
+  });
+
+  it("a broken-view row offers Edit but not Pin", async () => {
+    BROKEN_VIEWS = [
+      { id: "v_bad", name: "Bad view", query: "not a query", error: "parse error", index: 1, rawText: "id: v_bad" },
+    ];
+    await renderSidebarAt("/list");
+    await screen.findByText("Bad view");
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
+    // Edit (VUE-22 fix path) and Delete are offered; Pin is not.
+    expect(screen.getByTestId("broken-view-edit")).toBeTruthy();
+    expect(screen.getByTestId("broken-view-delete")).toBeTruthy();
+    expect(screen.queryByText(/^Pin/)).toBeNull();
+    expect(screen.queryByText("Unpin")).toBeNull();
+  });
+
+  it("Edit on a broken row opens the dialog prefilled from the broken entry", async () => {
+    BROKEN_VIEWS = [
+      { id: "v_bad", name: "Bad view", query: "broken dsl", error: "parse error", index: 1, rawText: "id: v_bad" },
+    ];
+    await renderSidebarAt("/list");
+    await screen.findByText("Bad view");
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
+    fireEvent.click(screen.getByTestId("broken-view-edit"));
+    await screen.findByTestId("view-edit-dialog");
+    expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("Bad view");
+    expect(screen.getByTestId<HTMLTextAreaElement>("dsl-input").value).toBe("broken dsl");
+  });
+
+  it("hides an archived view from the sidebar", async () => {
+    // @verifies VUE-25 (sidebar half) — archived views stay in queries.yaml
+    // but must not appear in the sidebar, like every other group.
+    VIEWS = [
+      { id: "v_mine", name: "My open bugs", query: "x" },
+      { id: "v_old", name: "Archived thing", query: "y", archived: true },
+    ];
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    expect(screen.queryByText("Archived thing")).toBeNull();
   });
 });
 

@@ -116,6 +116,56 @@ describe("SavedViewsPanel — create (VUE-40)", () => {
   });
 });
 
+describe("SavedViewsPanel — delete / archive (VUE-38)", () => {
+  // @verifies VUE-38
+  // The shared useDeleteView hook (lifted from a module-local copy) backs
+  // both Delete (hard) and Archive (soft). This asserts the panel still
+  // issues the right requests through it, so a broken lift is caught here.
+  it("Delete issues a DELETE /api/views/:id after confirming", async () => {
+    fetchMock.mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.includes("/api/query/validate")) return Promise.resolve(jsonResponse({ valid: true }));
+      if (u.includes("/api/views/") && (init as RequestInit | undefined)?.method === "DELETE") {
+        return Promise.resolve(jsonResponse({ deleted: "v1" }));
+      }
+      return Promise.resolve(jsonResponse(ONE_VIEW));
+    });
+
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("saved-views-list");
+
+    fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    // Inline confirm appears, then the destructive confirm issues the DELETE.
+    fireEvent.click(screen.getByTestId("view-delete-confirm"));
+
+    await waitFor(() => {
+      const dels = fetchMock.mock.calls.filter(
+        c => (c[1] as RequestInit | undefined)?.method === "DELETE" && String(c[0]).includes("/api/views/v1"),
+      );
+      expect(dels.length).toBe(1);
+      // A hard delete carries no ?soft flag.
+      expect(String(dels[0]?.[0])).not.toContain("soft=true");
+    });
+  });
+
+  // @verifies VUE-25
+  it("Archive issues a soft DELETE (?soft=true)", async () => {
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("saved-views-list");
+
+    fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
+    fireEvent.click(screen.getByTestId("view-archive"));
+
+    await waitFor(() => {
+      const softDeletes = fetchMock.mock.calls.filter(
+        c => (c[1] as RequestInit | undefined)?.method === "DELETE" && String(c[0]).includes("soft=true"),
+      );
+      expect(softDeletes.length).toBe(1);
+    });
+  });
+});
+
 describe("SavedViewsPanel — edit (VUE-41)", () => {
   // @verifies VUE-41
   it("opens an edit dialog prefilled with the view and PUTs to /api/views/:id", async () => {

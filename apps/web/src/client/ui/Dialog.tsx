@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { cn } from "./cn.ts";
 import { Modal } from "./Modal.tsx";
@@ -37,6 +37,8 @@ export interface DialogProps {
   /** Optional description under the title. */
   readonly description?: ReactNode;
   readonly testId?: string;
+  /** Explicit focus-restore target when the trigger will be gone on close. */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
 }
 
 export function Dialog({
@@ -46,9 +48,14 @@ export function Dialog({
   actions,
   description,
   testId,
+  returnFocusTo,
 }: DialogProps) {
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal
+      title={title}
+      onClose={onClose}
+      {...(returnFocusTo !== undefined ? { returnFocusTo } : {})}
+    >
       <div {...(testId !== undefined ? { "data-testid": testId } : {})}>
         {description !== undefined && description !== null ? (
           <p className="mb-3 text-body text-text-secondary">{description}</p>
