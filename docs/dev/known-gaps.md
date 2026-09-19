@@ -3930,3 +3930,140 @@ with no "next steps" (loctt create / loctt ui / docs location).
 Top 3 to improve first-run: (1) fix the broken `blocked` default view;
 (2) send MCP server `instructions`; (3) make UI empty states teach+act +
 "next steps" in CLI init.
+
+## Jira-UI comparison findings — 2026-09-19 (parity gaps + one a11y bug)
+
+A PM/UI agent compared LocTT's task-detail against Jira's issue detail
+(source-verified, not assumed). LocTT's architecture already matches Jira's
+(two-column, right-hand `MetaPanel` key/value editors, activity tabs,
+grouped/collapsible relationships, progress meter for milestones/sprints).
+Three concrete defects surfaced along the way (all verified against source):
+
+- **`createTask` hard-codes the tree relationship key `"parent"`**
+  (`packages/core/src/task/create.ts:113`) instead of resolving the
+  `graph: "tree"` relationship from `workflow.yaml`. Invisible only because
+  the shipped default tree axis is *named* `parent`; wrong for a renamed
+  tree axis. P3 (config-driven-not-hardcoded) violation. Fix:
+  `workflow.relationships.find(r => r.graph === "tree")?.key`.
+- **`CreateTaskRequest.parent` is dead plumbing on every surface.** Core
+  accepts `parent` (`packages/contracts/src/service.ts:17`,
+  `create.ts:110-114`) but NO surface exposes it: CLI `create` passes 12
+  options and not `parent` (`apps/cli/src/commands/task-crud.ts:140-160`);
+  MCP `task-crud` create has no `parent` param; the web create route/modal
+  never send it. The `unarchiveView` core/surface-parity shape (lessons.md).
+  A create-pre-linked "+ New child" needs this plumbed through all three.
+- **`ProgressReadout` hard-codes `aria-label="Milestone progress"`**
+  (`apps/web/src/client/milestones/ProgressReadout.tsx:76`). NOT a live bug:
+  verified both current callers are milestone surfaces (`MilestoneDetail.tsx`,
+  `MilestonesView.tsx`) — `SprintDetail` does not use it, contra the agent's
+  claim. But the label must become a `label` prop (default "Milestone
+  progress") BEFORE the Jira-L4 work adds a tree-child-progress caller, or
+  that caller will announce "Milestone progress". Fold into L4, not a
+  standalone change.
+
+### "High priority" built-in filter returned low/medium — DEMO DATA, not a code bug (2026-09-19)
+
+A UI-review agent saw the sidebar "High priority" filter resolve to
+`priority in (low, medium)` and flagged it a blocker. Investigated:
+`highPriorityKeys` (`apps/web/src/client/sidebar/builtinFilters.ts:78-86`)
+ranks by `value` descending and is CORRECT per the contract (seed comment
+`defaults.ts:38-40`: higher `value` = higher priority; the sort comparator
+`list.ts:553-559` uses raw value, so "highest first" = `direction: desc`).
+The DEMO tracker `/tmp/loctt-uxdemo` had INVERTED values (critical:1 … low:4),
+so ranking desc picked low/medium. Fixed the demo tracker's workflow.yaml to
+canonical (critical:4 … low:1); shipped seed was always correct. No code
+change. (Possible hardening, deferred: `highPriorityKeys` trusts `value`
+direction blindly — but inverting `value` breaks sorting app-wide, not just
+this filter, so validating direction belongs in config `doctor`, not here.)
+
+### Full live-UI review (2026-09-19) — desktop close, mobile NOT publish-ready
+
+An agent drove every surface at 1440 + 390. Verdict: desktop solid (real
+semantic layer, dark theme, focus-visible, good empty/error copy); mobile
+has multiple blockers. Highest-impact, grouped:
+
+- **Mobile blockers:** task-detail metadata panel renders at the BOTTOM
+  (below comments) — Status/Assignee unreachable on a phone (`TaskDetail.tsx`
+  grid order, cheap fix `order-first lg:order-none`); List Export button
+  clipped off-screen + DSL panel wraps one-word-per-line (`FilterBar`/advanced
+  surface `min-width:0` + overflow); Timeline chart DISAPPEARS entirely with
+  data at 390; sidebar collapses to a rail of emoji/dots with no tooltips;
+  mobile drawer covers its own toggle, no scrim/focus-trap/close, not a
+  `dialog`.
+- **Desktop blockers/major:** Timeline chart does not fill viewport — Month
+  zoom renders ~128px wide, titles truncate to 1-2 chars (only Day zoom
+  usable) — "zoom = column width" clamps range to data span instead of
+  filling; bulk-actions bar renders inline below a 25-row table (off-screen),
+  not sticky; Refresh/Export absolutely-positioned float in the toolbar
+  gutter and jump as toolbar height changes (the redesign already targets
+  this); query builder/DSL show parser errors ("unknown status value ''
+  at position 0") BEFORE any input, builder is `width:max-content` (unstyled,
+  ghost cell), three separate mode-switch verbs for one choice.
+- **Icon-migration MISSED surfaces** (A208 was incomplete): header theme
+  switcher (`☀ ☾ ◑` ASCII), sidebar saved-filter icons (`👤 ✎ @ 📅 ! ▲`
+  emoji/punct), board `👁` visibility chips + `⛔ Blocked` badge (red clashes
+  with Critical-priority red), all nine `+ text` prefixes, query-builder `×`.
+  Keep ★ (ruled) and ⚠.
+- **Consistency debt:** six control heights in one viewport; Settings has
+  FOUR different create patterns + TWO row-action patterns across sibling
+  sections (Statuses uses inline Edit/Delete, everything else kebab); tap
+  targets 12-24px (below WCAG 2.5.8 24px, and 44px touch) on checkboxes,
+  ×-removes, chips, metadata editors.
+- **Preserve (good):** aria-label discipline, semantic table/dl/tablist,
+  breadcrumb landmark, focus-visible ring + skip link, AA contrast, assignee
+  search with archived-user footnote, working-day hint, mobile Settings
+  section-switcher select.
+
+### Description/body editor review (2026-09-19) — root cause found + data-loss bugs
+
+The "still shitty" editor's root cause: **`.prose-body` is referenced in
+three files and DEFINED NOWHERE** — verified: `renderMarkdown.tsx:65`,
+`RichEditor.tsx:101`, `BodyRenderedView.tsx:102` all use the class; no
+`.prose-body` rule in `styles/index.css` and no Tailwind config/typography
+plugin exists. Tailwind preflight strips h1-h6/ul/pre/blockquote/table and
+nothing restores them, so the rich editor collapses to flat 14px text the
+instant you click to edit, and read-view headings have no size scale (all
+render ~13px bold). Fixing this one stylesheet is the biggest perceived-
+quality win. **Phase 0 (no rulings needed, ~1 day):** define `.prose-body`
+once, apply to all three surfaces, match font-size read↔edit; toolbar →
+`<Icon>` (still text-label pills post-A208) with undo/redo, always-shown,
+mode-toggle moved right; caret at click point (`posAtCoords`, currently
+focuses pos 0); raw-mode focus fix (focuses CodeMirror host div, not
+`.cm-content`).
+
+**Data-loss / corruption bugs (verified from source + Node round-trips):**
+- Escape while the conflict dialog OR mention menu is open cancels the whole
+  edit and discards unsaved "mine" text (`BodyEditor.tsx:207-232` window-level
+  listener; dialog/menu don't stopPropagation). Repro-able; TSK-48/XS-12
+  protect exactly this.
+- Task-list checkboxes (`- [x]`) stripped on any rich edit: no TaskList/
+  TaskItem extension registered, StarterKit listItem drops the `checked`
+  attr (confirmed via `getSchema`), serializer writes `- done`.
+- Parser rewrites prose on save: `my_var_name`→`my*var*name`, `5 * 3 * 2`→
+  italic, `\*escaped\*`→italic (no CommonMark flanking rules / no escape
+  handling, `markdown.ts:378-440`). A dev tool — snake_case is everywhere.
+- Nested/ordered lists flattened + renumbered on rich edit (`markdown.ts`
+  parser never produces nesting; `start` attr lost).
+- Failed-save + in-app navigation loses text: unmount flush only fires with a
+  pending idle timer; `hasUnsavedWork` has no consumer (`useBodyAutosave.ts`).
+- Rendered description is `role="button"` wrapping links (invalid nested
+  interactives; content invisible to SR) — a11y, contra AA posture.
+
+**Needs Ken's ruling (do NOT build yet):** the exit gesture — (A) keep
+autosave, Esc/Cmd+Enter/"Done" = exit-keeping, drop "cancel" semantics
+(agent's rec, keeps K2 conflict machinery); or (B) real Save/Cancel with
+local buffering, autosave→draft-only. K33 marks this agent-level/revertible.
+Also the a11y restructure (content region + explicit Edit button) → a
+decisions.md §8 entry. Full plans (Phase 0-3) in session transcript.
+
+Top Jira-inspired *enhancements* (not defects), ranked by the agent, for
+the UI-polish backlog — editable title in place (GUI cannot rename a task
+today though core/CLI/MCP can — another parity hole), "Add …" empty-state
+copy on editable `MetaPanel` rows (currently "—", same glyph as read-only
+absence), "Assign to me" quick action + avatars in the picker, a
+done/active/todo progress meter on tree-child group headers (needs core
+`Progress.active`), and inline status pills on related/milestone/sprint
+rows for in-page triage. Explicitly NOT to copy: watchers/share (no
+notifications, Q21), automation rules (no engine), Team/Goals/Component
+(no such concepts), work-log (no time tracking, Q27), multi-user quick-reply
+chips. Full report in session transcript 2026-09-19.
