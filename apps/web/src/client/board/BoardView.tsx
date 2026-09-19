@@ -326,25 +326,27 @@ export function BoardView() {
             <strong>{moveError.key}</strong> was not moved — the change was not
             saved. {moveError.message}
           </span>
-          <button
-            type="button"
-            data-testid="board-move-retry"
+          <Button
+            variant="danger-outline"
+            size="sm"
+            testId="board-move-retry"
             onClick={() => {
               const req = lastMove.current;
               if (req !== null) runMove(req);
             }}
-            className="shrink-0 rounded border border-danger-fg/40 px-2 py-0.5 hover:bg-danger-fg/10"
+            className="shrink-0"
           >
             Retry
-          </button>
-          <button
-            type="button"
-            data-testid="board-move-reload"
+          </Button>
+          <Button
+            variant="danger-outline"
+            size="sm"
+            testId="board-move-reload"
             onClick={() => { window.location.reload(); }}
-            className="shrink-0 rounded border border-danger-fg/40 px-2 py-0.5 hover:bg-danger-fg/10"
+            className="shrink-0"
           >
             Reload
-          </button>
+          </Button>
         </div>
       )}
 
