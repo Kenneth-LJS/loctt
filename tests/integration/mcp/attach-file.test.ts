@@ -183,6 +183,58 @@ describe("MCP attach_file (stdio)", () => {
     });
   });
 
+  // Regression (review-caught): auto-commit is best-effort. When git is on
+  // but publish() refuses — here because a reconcile sentinel is present, so
+  // publish throws GitReconcileInterruptedError — the attach has ALREADY
+  // landed and must be reported as committed:false + a note, NOT as a tool
+  // error. The earlier catch block enumerated only some git-sync subtypes
+  // (it listed GitReconcileNeededError but NOT GitReconcileInterruptedError,
+  // and not PreflightError) and re-threw the rest, turning a successful
+  // attach into a failure.
+  it("still succeeds (committed:false + note) when auto-commit is blocked (reconcile in progress)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      execaSync("git", ["init"], { cwd: root });
+      execaSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+      execaSync("git", ["config", "user.name", "test"], { cwd: root });
+      execaSync("git", ["commit", "--allow-empty", "-m", "init"], { cwd: root });
+      expect((await runCli(["git", "enable"], { cwd: root })).exitCode).toBe(0);
+      await runCli(["create", "attachable"], { cwd: root });
+
+      // A reconcile sentinel makes publish() throw GitReconcileInterruptedError
+      // (publish-sync.ts: readReconcileState !== undefined). This is a real
+      // "publish refuses" state that is NOT in the old catch allowlist.
+      await writeFile(
+        path.join(root, ".loctt", "local", "reconcile.yaml"),
+        "mode: sync\nbase_commit: deadbeef\nremote_commit: cafebabe\nstarted_at: 2026-01-01T00:00:00Z\n",
+        "utf8",
+      );
+
+      const srcDir = await mkdtemp(path.join(root, "src-"));
+      const sourcePath = path.join(srcDir, "bestreffort.txt");
+      await writeFile(sourcePath, "store me even if commit is blocked\n", "utf8");
+
+      const client = await startMcpClient(root);
+      try {
+        const result = await client.callTool("attach_file", {
+          ref: "T-1",
+          source_path: sourcePath,
+        });
+        // The attach is NOT an error, even though the commit was blocked.
+        expect(result.isError).toBeFalsy();
+        const parsed = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+        expect(parsed["committed"]).toBe(false);
+        expect(typeof parsed["commit_note"]).toBe("string");
+        expect(parsed["commit_note"] as string).toMatch(/not committed/i);
+      } finally {
+        await client.close();
+      }
+      // And the attachment genuinely landed on disk.
+      expect(await findAttachment(root, "bestreffort.txt")).not.toBeNull();
+
+      await rm(srcDir, { recursive: true, force: true });
+    });
+  });
+
   it("does NOT commit (or init git) when git-backed mode is off", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "uncommitted"], { cwd: root });
