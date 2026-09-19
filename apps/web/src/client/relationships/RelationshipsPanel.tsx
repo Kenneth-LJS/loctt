@@ -181,14 +181,11 @@ export function RelationshipsPanel({
        * disk" asks for. The message names the action, the row and the
        * group, and carries the server's own reason.
        *
-       * This is *not* REL-33's refusal. That case wants a drag against
-       * a kind switched to `ranked: false` to be refused by name, and
-       * no such guard exists: `reorderRelationship` never reads
-       * `ranked`, so the write is accepted (measured: 200, with a rank
-       * written). Recorded in `TEMP-RUN-WORKFLOW.md` § Cases that
-       * cannot be satisfied yet. When the guard lands in core it will
-       * arrive here as an ordinary `ReorderError` and render through
-       * this same branch.
+       * REL-33's refusal — a rerank against a kind switched to
+       * `ranked: false` — now arrives here as an ordinary `ReorderError`
+       * (core's `reorderRelationship` reads the `ranked` flag and the
+       * web route maps the error to a 400), rendering through this same
+       * branch.
        */
       onError: (err: Error) => {
         setErrorFor(
@@ -438,24 +435,59 @@ function FlatGroup({
   /** The row being dragged, by index. */
   const [dragging, setDragging] = useState<number | null>(null);
   /**
-   * The keyboard "picked up" row and where it started, so Escape can
-   * put it back (REL-15's third bullet) without a write ever leaving.
+   * A keyboard "pickup" in progress. REL-15's third bullet — "Escape
+   * restores the original position without a write ever leaving" —
+   * requires a buffer: arrow keys move the picked-up row *visually*
+   * only, and the rerank is committed once, on drop (Enter/Space). So
+   * this holds the row's origin index and its current visual position;
+   * while it is non-null the rendered order is `order` below, not
+   * `group.rows`. Escape drops it with no write; a commit calls
+   * `onMove(origin, current)` a single time.
+   *
+   * The previous code called `onMove` on every arrow press — each
+   * keystroke was a real rerank write — and Escape performed no
+   * restoring move at all, having already overwritten the origin it
+   * would have needed. Both are fixed here.
    */
-  const [grabbed, setGrabbed] = useState<number | null>(null);
+  const [pickup, setPickup] = useState<{ origin: number; current: number } | null>(null);
   /** The screen-reader announcement for a keyboard move (REL-15). */
   const [announcement, setAnnouncement] = useState("");
 
   const count = group.rows.length;
 
-  const keyboardMove = (from: number, delta: number): void => {
-    const to = from + delta;
-    if (to < 0 || to >= count) return;
-    setGrabbed(to);
-    setAnnouncement(
-      `${group.rows[from]?.resolvedKey ?? "Row"} moved to position `
-      + `${String(to + 1)} of ${String(count)}`,
-    );
-    onMove(from, to);
+  // While a pickup is live, render the rows in their in-flight visual
+  // order; otherwise render exactly what the file says. Reordering the
+  // buffer here (rather than writing) is what keeps arrow presses from
+  // leaving a write, and what lets Escape restore by simply dropping
+  // the buffer.
+  const displayRows = pickup === null
+    ? group.rows
+    : moveInArray(group.rows, pickup.origin, pickup.current);
+
+  /** Moves the picked-up row one step, visually only — no write. */
+  const keyboardStep = (delta: number): void => {
+    setPickup(prev => {
+      // First arrow: pick the row up at its current (rendered) index.
+      const active = prev;
+      if (active === null) return prev;
+      const to = active.current + delta;
+      if (to < 0 || to >= count) return active;
+      setAnnouncement(
+        `${group.rows[active.origin]?.resolvedKey ?? "Row"} moved to position `
+        + `${String(to + 1)} of ${String(count)}`,
+      );
+      return { origin: active.origin, current: to };
+    });
+  };
+
+  /** Commits the buffered move as a single rerank (Enter/Space). */
+  const commit = (): void => {
+    setPickup(prev => {
+      if (prev !== null && prev.current !== prev.origin) {
+        onMove(prev.origin, prev.current);
+      }
+      return null;
+    });
   };
 
   return (
@@ -466,7 +498,7 @@ function FlatGroup({
         {announcement}
       </span>
       <div className="space-y-0.5">
-        {group.rows.map((row, i) => (
+        {displayRows.map((row, i) => (
           <div
             key={`${row.type}:${row.target}`}
             draggable={group.ranked}
@@ -496,25 +528,33 @@ function FlatGroup({
                   aria-label={
                     `Reorder ${row.resolvedKey ?? row.target}, position `
                     + `${String(i + 1)} of ${String(count)}. `
-                    + `Arrow up and down to move, Escape to cancel.`
+                    + `Arrow up and down to move, Enter to drop, Escape to cancel.`
                   }
                   onKeyDown={e => {
                     if (e.key === "ArrowUp") {
                       e.preventDefault();
-                      if (grabbed === null) setGrabbed(i);
-                      keyboardMove(i, -1);
+                      // Lazily begin the pickup at this row's current
+                      // rendered index, then step it up.
+                      setPickup(prev => prev ?? { origin: i, current: i });
+                      keyboardStep(-1);
                     } else if (e.key === "ArrowDown") {
                       e.preventDefault();
-                      if (grabbed === null) setGrabbed(i);
-                      keyboardMove(i, 1);
-                    } else if (e.key === "Escape" && grabbed !== null) {
+                      setPickup(prev => prev ?? { origin: i, current: i });
+                      keyboardStep(1);
+                    } else if ((e.key === "Enter" || e.key === " ") && pickup !== null) {
+                      // Drop: commit the buffered move as one rerank.
                       e.preventDefault();
-                      // Back to where the pickup started. `grabbed`
-                      // tracks the current position and `i` is the row's
-                      // index in the *rendered* list, which the refetch
-                      // has already updated — so the restore is a move
-                      // from here back to the original index.
-                      setGrabbed(null);
+                      setAnnouncement(
+                        `${group.rows[pickup.origin]?.resolvedKey ?? "Row"} dropped at `
+                        + `position ${String(pickup.current + 1)} of ${String(count)}`,
+                      );
+                      commit();
+                    } else if (e.key === "Escape" && pickup !== null) {
+                      e.preventDefault();
+                      // Restore: dropping the buffer returns the row to
+                      // its origin with no write ever leaving (REL-15's
+                      // third bullet).
+                      setPickup(null);
                       setAnnouncement("Move cancelled");
                     }
                   }}
@@ -529,6 +569,20 @@ function FlatGroup({
       </div>
     </div>
   );
+}
+
+/**
+ * Returns a copy of `rows` with the element at `from` moved to `to`,
+ * shifting the rest. Used only for the in-flight keyboard pickup's
+ * visual order — it never touches disk.
+ */
+function moveInArray<T>(rows: readonly T[], from: number, to: number): readonly T[] {
+  if (from === to) return rows;
+  const next = [...rows];
+  const [moved] = next.splice(from, 1);
+  if (moved === undefined) return rows;
+  next.splice(to, 0, moved);
+  return next;
 }
 
 /** A `graph: tree` group: nested rows with visible depth (REL-5). */

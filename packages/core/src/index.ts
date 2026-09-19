@@ -290,6 +290,10 @@ export type { ListContext,ListOptions, ListTasksOptions } from "./query/index.js
 export type { ListTasksResult } from "./query/index.js";
 export type { ValidateQueryOptions } from "./query/index.js";
 export { tokenize, TokenizeError } from "./query/index.js";
+// The single tokenizer-checked DSL atom quoter. Exported so every
+// producer — including the web server, whose private copy under-quotes
+// grammar-colliding bare values — can share one round-trip-safe quoter.
+export { dslAtom } from "./query/index.js";
 export { QUERYABLE_FIELDS, QueryValidationError, validateQuery } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";

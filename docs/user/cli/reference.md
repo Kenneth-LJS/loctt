@@ -594,9 +594,16 @@ loctt create "Fix crash on logout" --project web --priority high --type bug
 
 Every field `createTask` accepts is settable at creation:
 `--assignee`, `--reporter`, `--due`, `--start`, `--estimate`,
-`--milestone`, `--sprint`, `--body`, and `--label` (repeatable). MCP's
-`create_task` takes the same set, so a task created either way carries
-the same fields without a follow-up `set`.
+`--milestone`, `--sprint`, `--body`, `--label` (repeatable), and
+`--parent`. MCP's `create_task` takes the same set, so a task created
+either way carries the same fields without a follow-up `set`.
+
+`--parent <key|id>` pre-links the new task under the tree relationship —
+the axis whose `graph: tree` in `workflow.yaml` (named `parent` in the
+shipped default). It is the one-step form of "create, then link": use it
+for a "+ New child". The edge is created under the *configured* tree
+key, not a literal `parent`, so a renamed tree axis still gets the right
+edge.
 
 A rejected value fails the create, names what was wrong, and writes
 nothing — no task directory, and no key consumed. Most rejections are

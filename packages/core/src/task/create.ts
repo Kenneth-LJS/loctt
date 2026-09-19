@@ -107,10 +107,23 @@ export async function createTask(params: CreateTaskParams): Promise<Task> {
   const resolvedMilestone = await resolveOpt("milestone", options.milestone);
   const resolvedSprint = await resolveOpt("sprint", options.sprint);
 
-  // Normalize parent option into a relationship edge
+  // Normalize the parent option into a relationship edge.
+  //
+  // The edge's type is the *configured* tree axis — the relationship
+  // whose `graph` is `"tree"` in workflow.yaml — not a hard-coded
+  // "parent". P3: config-driven, not literal. Hard-coding "parent" was
+  // invisible only because the shipped default tree axis happens to be
+  // named `parent`; a workspace that renamed its tree relationship would
+  // have got an edge under a type its own config never declares.
+  //
+  // Without workflow config there is nothing to resolve the axis from,
+  // so we fall back to "parent" — the shipped default's key — rather
+  // than dropping the caller's parent silently.
   const relationships: { type: string; target: string }[] = [];
   if (options.parent !== undefined) {
-    relationships.push({ type: "parent", target: options.parent });
+    const treeType = workflowConfig?.relationships.find(r => r.graph === "tree")?.key
+      ?? "parent";
+    relationships.push({ type: treeType, target: options.parent });
   }
 
   const frontmatter: TaskFrontmatter = {

@@ -6,6 +6,7 @@ export type { ListContext, ListOptions, ListTasksOptions, ListTasksResult } from
 export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, loadCommentMentions, queryReferencesCommentMentions, resolveCommentMentionsContext, resolveView } from "./list.js";
 export type { ComparisonOp,QueryNode, QueryValue } from "./parser.js";
 export { ParseError,parseQuery } from "./parser.js";
+export { dslAtom } from "./serialize.js";
 export type { Token, TokenType } from "./tokenizer.js";
 export { tokenize, TokenizeError } from "./tokenizer.js";
 export type { ValidateQueryOptions } from "./validate.js";

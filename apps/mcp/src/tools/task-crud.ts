@@ -383,6 +383,12 @@ export const TOOLS: readonly ToolDef[] = [
       milestone: z.string().optional().describe("Milestone id or name."),
       sprint: z.string().optional().describe("Sprint id or name."),
       labels: z.array(z.string()).optional(),
+      parent: z.string().optional().describe(
+        "Parent task key or id. Pre-links the new task under the "
+        + "configured tree relationship (the workflow's `graph: tree` "
+        + "axis), so a create can build a hierarchy without a follow-up "
+        + "link_tasks call.",
+      ),
     },
     handler: async ({ locttDir }, args) => {
       const { workflowConfig } = await loadOptionalConfigs(locttDir);
@@ -426,6 +432,7 @@ export const TOOLS: readonly ToolDef[] = [
             ...optionalString(args, "sprint"),
             ...(Array.isArray(args["labels"]) ? { labels: args["labels"] as string[] } : {}),
             ...(body !== undefined ? { body } : {}),
+            ...optionalString(args, "parent"),
           },
         });
         await saveState(locttDir, state);
