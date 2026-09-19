@@ -10,6 +10,7 @@ import { Button } from "../ui/Button.tsx";
 import { type RelationshipDialogResult,RelationshipEditDialog } from "./RelationshipEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
+import { RowActions } from "./RowActions.tsx";
 import { isSymmetric, reorder } from "./workflowEdits.ts";
 import { buildRelationship, collectionKeys, entryChangedOnDisk } from "./workflowForms.ts";
 import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
@@ -286,25 +287,13 @@ function RelationshipRow({
           {String(count)} task{count === 1 ? "" : "s"}
         </span>
 
-        <button
-          type="button"
-          data-testid={`relationships-edit-${rel.key}`}
-          disabled={disabled}
-          onClick={onEdit}
-          className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] disabled:opacity-40"
-        >
-          Edit
-        </button>
-
-        <button
-          type="button"
-          data-testid={`relationships-delete-${rel.key}`}
-          disabled={disabled}
-          onClick={onDelete}
-          className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg disabled:opacity-40"
-        >
-          Delete
-        </button>
+        <RowActions
+          label={`Actions for relationship ${rel.label}`}
+          actions={[
+            { label: "Edit", testId: `relationships-edit-${rel.key}`, disabled, onSelect: onEdit },
+            { label: "Delete", testId: `relationships-delete-${rel.key}`, danger: true, disabled, onSelect: onDelete },
+          ]}
+        />
       </div>
 
       {/* SET-5: the inverse read-out — "same as forward" when symmetric,

@@ -397,6 +397,8 @@ describe("RelationshipsSettingsPanel — edit preserves presentational fields", 
     render(<RelationshipsSettingsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("relationships-list");
 
+    // Row actions moved behind a kebab (responsive GROUP A): open it, then Edit.
+    fireEvent.click(screen.getByRole("button", { name: /Actions for relationship/ }));
     fireEvent.click(screen.getByTestId("relationships-edit-blocks"));
     const dialog = await screen.findByTestId("relationships-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("relationships-entry-label"), { target: { value: "Is blocking" } });
