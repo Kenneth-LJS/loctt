@@ -1,5 +1,5 @@
 import type { TimelineGrouping, TimelineZoom } from "@loctt/contracts";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -569,7 +569,16 @@ export function TimelineView() {
           <strong>workflow.yaml</strong>: <code>timeline.dependency_relationship</code>
           {" "}names <code data-testid="timeline-dependency-missing-key">{depStatus.key}</code>,
           {" "}which is not defined in <code>relationships</code>. No dependency
-          {" "}arrows can be drawn until that key is corrected.
+          {" "}arrows can be drawn until that key is corrected.{" "}
+          <Link
+            to="/settings/$section"
+            params={{ section: "timeline" }}
+            hash="field-dependency_relationship"
+            data-testid="timeline-dependency-config-settings-link"
+            className="underline hover:opacity-80"
+          >
+            Open Timeline settings
+          </Link>
         </div>
       )}
 
@@ -587,7 +596,16 @@ export function TimelineView() {
             {calendarError instanceof ApiError
               ? calendarError.envelope?.message ?? calendarError.message
               : String(calendarError)}
-          </span>
+          </span>{" "}
+          <Link
+            to="/settings/$section"
+            params={{ section: "calendar" }}
+            hash="field-timezone"
+            data-testid="timeline-calendar-error-settings-link"
+            className="underline hover:opacity-80"
+          >
+            Open Calendar settings
+          </Link>
         </div>
       )}
 

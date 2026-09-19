@@ -562,8 +562,16 @@ function GroupError({
       {isConfig ? (
         <>
           {" · "}
+          <Link
+            to="/settings/$section"
+            params={{ section: "diagnostics" }}
+            data-testid="group-error-diagnostics-link"
+            className="underline hover:text-text-primary"
+          >
+            Open Diagnostics
+          </Link>
           <span className="text-text-tertiary">
-            or run <code className="font-mono">loctt doctor</code>
+            {" "}or run <code className="font-mono">loctt doctor</code>
           </span>
         </>
       ) : null}
