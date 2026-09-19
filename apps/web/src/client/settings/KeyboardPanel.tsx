@@ -158,7 +158,7 @@ export function KeyboardPanel() {
                         {k === "/" ? (
                           <span className="mx-0.5 text-text-tertiary">or</span>
                         ) : (
-                          <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 font-mono text-[0.7857rem] text-text-primary">
+                          <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] text-text-primary">
                             {k === "Ctrl" ? mod : k}
                           </kbd>
                         )}

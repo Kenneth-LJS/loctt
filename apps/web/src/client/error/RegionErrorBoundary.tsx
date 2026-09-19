@@ -123,7 +123,7 @@ export function RegionErrorFallback({
         <p className="mb-2 text-[0.9286rem] text-text-secondary">
           Something in the app failed to draw — a bug on our side, not a
           problem with your data. Your tasks are files in{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">.loctt/</code>{" "}
+          <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">.loctt/</code>{" "}
           and a rendering fault cannot change them.
         </p>
         {writeInFlight ? (
@@ -161,7 +161,7 @@ export function RegionErrorFallback({
         </div>
         <details className="text-[0.8571rem] text-text-tertiary">
           <summary className="cursor-pointer select-none">Show details</summary>
-          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-bg-muted p-2 font-mono text-[0.7857rem]">
+          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-bg-muted p-2 text-[0.7857rem]">
             {details}
           </pre>
           <button

@@ -147,7 +147,7 @@ function PinsEditor({
             : "Pinned views were removed because they no longer exist in queries.yaml:"}
           <ul className="mt-1 mb-0 list-disc pl-5">
             {explained.map(id => (
-              <li key={id} data-swept-pin={id} className="font-mono">{id}</li>
+              <li key={id} data-swept-pin={id}>{id}</li>
             ))}
           </ul>
         </div>

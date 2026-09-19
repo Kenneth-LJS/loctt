@@ -91,7 +91,7 @@ function LabelRow({ label, count, allLabels }: {
                   value={color}
                   placeholder="#aabbcc"
                   onChange={e => { setColor(e.target.value); }}
-                  className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 font-mono text-[0.9286rem]"
+                  className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
                 />
               </div>
               {/*
@@ -102,7 +102,7 @@ function LabelRow({ label, count, allLabels }: {
               {!colorOk && (
                 <p role="alert" data-testid="label-color-invalid" className="text-[0.8571rem] text-danger-fg">
                   Colour must be a 6-digit hex value like{" "}
-                  <code className="font-mono">#aabbcc</code>. Leave it empty for no colour.
+                  <code>#aabbcc</code>. Leave it empty for no colour.
                 </p>
               )}
               {update.isError && (
@@ -268,7 +268,7 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
           value={color}
           placeholder="#aabbcc"
           onChange={e => { setColor(e.target.value); }}
-          className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 font-mono text-[0.9286rem]"
+          className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
         />
         <button
           type="submit"
@@ -282,7 +282,7 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
 
       {!colorOk && (
         <p role="alert" data-testid="label-create-color-invalid" className="text-[0.8571rem] text-danger-fg">
-          Colour must be a 6-digit hex value like <code className="font-mono">#aabbcc</code>.
+          Colour must be a 6-digit hex value like <code>#aabbcc</code>.
         </p>
       )}
 
@@ -350,7 +350,7 @@ function BrokenLabelRow({ entry, onRepair, repairing }: {
         </span>
         <p className="mt-0.5 text-[0.8571rem] text-text-secondary">
           Fix this entry in{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.7857rem]">
+          <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem]">
             .loctt/config/labels.yaml
           </code>{" "}
           and reload — LocTT will not rewrite it for you.
@@ -393,7 +393,7 @@ export function LabelsPanel() {
           />
           <p className="mt-2 text-[0.9286rem] text-text-secondary">
             This is a failure to read the file, not an empty label list. Fix{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               .loctt/config/labels.yaml
             </code>{" "}
             and reload.

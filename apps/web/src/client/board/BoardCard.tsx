@@ -264,7 +264,7 @@ function renderField({
           {task.project !== undefined && (
             <ProjectChip def={lookups.project(task.project)} raw={task.project} />
           )}
-          <span className="font-mono text-[0.7857rem] text-text-tertiary">{task.key}</span>
+          <span className="text-[0.7857rem] text-text-tertiary">{task.key}</span>
         </span>
       );
     // A field's value can be absent because the task simply has none

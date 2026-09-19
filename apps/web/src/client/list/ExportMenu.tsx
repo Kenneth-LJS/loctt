@@ -205,7 +205,7 @@ export function ExportMenu({
         <span role="status" data-export-skipped="true" className="ml-2 text-[0.8571rem] text-warn-fg">
           {skipped.length} task{skipped.length === 1 ? "" : "s"} could not be read and
           {" "}{skipped.length === 1 ? "is" : "are"} missing from the file:
-          {" "}<span className="font-mono">{skipped.join(", ")}</span>.
+          {" "}<span>{skipped.join(", ")}</span>.
           {" "}Run <code className="font-mono">loctt doctor</code> to see why.
         </span>
       )}

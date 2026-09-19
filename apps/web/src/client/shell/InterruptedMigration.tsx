@@ -36,7 +36,7 @@ export function InterruptedMigration({
         </h1>
         <p className="mb-3 text-[0.9286rem] text-text-secondary">
           LocTT found{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+          <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
             .schema-migration-in-progress
           </code>{" "}
           in this tracker. A previous migration crashed part-way, so the data
@@ -48,17 +48,17 @@ export function InterruptedMigration({
           {from !== undefined && to !== undefined ? (
             <>
               <dt className="text-text-tertiary">Migrating</dt>
-              <dd className="font-mono text-text-primary">
+              <dd className="text-text-primary">
                 v{from} → v{to}
               </dd>
             </>
           ) : null}
           <dt className="text-text-tertiary">Backup</dt>
-          <dd className="break-all font-mono text-text-primary">
+          <dd className="break-all text-text-primary">
             {backup ?? "not recorded — read the sentinel file below"}
           </dd>
           <dt className="text-text-tertiary">Sentinel</dt>
-          <dd className="break-all font-mono text-text-primary">{sentinelPath}</dd>
+          <dd className="break-all text-text-primary">{sentinelPath}</dd>
         </dl>
 
         <h2 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">
@@ -67,14 +67,14 @@ export function InterruptedMigration({
         <ol className="list-decimal space-y-1 pl-5 text-[0.9286rem] text-text-secondary">
           <li>
             Inspect the backup directory above. It holds{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               .loctt/
             </code>{" "}
             as it was before the migration started.
           </li>
           <li>
             Restore it over the current{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               .loctt/
             </code>{" "}
             if you want the tracker back the way it was.

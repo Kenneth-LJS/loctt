@@ -126,12 +126,12 @@ export function RelationshipRowView({
             {missingCorrupt ? (
               <>
                 Corrupt task — cannot be read; repair its file{" "}
-                <code className="font-mono text-[0.8571rem]">{row.target}</code>
+                <code className="text-[0.8571rem]">{row.target}</code>
               </>
             ) : (
               <>
                 Broken link — no task with id{" "}
-                <code className="font-mono text-[0.8571rem]">{row.target}</code>
+                <code className="text-[0.8571rem]">{row.target}</code>
               </>
             )}
           </span>
@@ -147,7 +147,7 @@ export function RelationshipRowView({
             title={row.resolvedTitle}
             className="flex min-w-0 flex-1 items-center gap-2 no-underline"
           >
-            <span className="shrink-0 font-mono text-[0.8571rem] text-text-secondary">
+            <span className="shrink-0 text-[0.8571rem] text-text-secondary">
               {row.resolvedKey ?? row.target}
             </span>
             <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">

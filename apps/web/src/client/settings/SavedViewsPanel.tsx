@@ -174,7 +174,7 @@ export function SavedViewsPanel() {
             <p className="mt-2 text-[0.9286rem] text-text-secondary">
               Your saved views have not been deleted — the file could not be
               parsed, so none of them could be loaded. Fix{" "}
-              <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+              <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                 .loctt/config/queries.yaml
               </code>{" "}
               and reload. Built-in filters are unaffected, since they do not
@@ -263,7 +263,7 @@ export function SavedViewsPanel() {
                   <p className="mb-2 text-[0.8571rem] text-text-secondary">
                     These views are still in the file, but their query no longer
                     parses. Fix them from the list view or by hand in{" "}
-                    <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+                    <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                       .loctt/config/queries.yaml
                     </code>.
                   </p>

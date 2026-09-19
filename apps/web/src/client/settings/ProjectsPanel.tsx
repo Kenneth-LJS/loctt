@@ -129,7 +129,7 @@ function CreateProjectForm({
           data-testid="project-create-prefix"
           value={prefix}
           onChange={e => { setPrefix(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[0.9286rem]"
+          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
         {problems.prefix !== undefined && (
           <p role="alert" data-testid="project-create-prefix-problem" className="text-[0.7857rem] text-danger-fg">
@@ -146,7 +146,7 @@ function CreateProjectForm({
           data-testid="project-create-slug"
           value={effectiveSlug}
           onChange={e => { setSlugTouched(true); setSlug(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[0.9286rem]"
+          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
         {problems.slug !== undefined && (
           <p role="alert" data-testid="project-create-slug-problem" className="text-[0.7857rem] text-danger-fg">
@@ -254,7 +254,7 @@ function PrefixEdit({
         value={draft}
         onChange={e => { setDraft(e.target.value); setPrefix.reset(); }}
         invalid={problem !== undefined}
-        className="w-24 font-mono"
+        className="w-24"
       />
       <Button
         size="sm"
@@ -308,7 +308,7 @@ function PrefixEdit({
         >
           <p className="text-[0.9286rem] text-text-secondary">
             Changing the prefix to{" "}
-            <code className="font-mono">{trimmed}</code> renames{" "}
+            <code>{trimmed}</code> renames{" "}
             {taskCount} {taskCount === 1 ? "task" : "tasks"} in this
             project. Their numbers are preserved, and their old keys will
             keep resolving.
@@ -447,11 +447,10 @@ function ProjectRow({
                 data-testid={`project-slug-${project.id}`}
                 title="A project's slug is fixed so existing links keep working."
                 value={project.slug ?? ""}
-                className="font-mono"
               />
             )
           : (
-              <span data-testid={`project-slug-${project.id}`} className="font-mono text-[0.9286rem] text-text-secondary">
+              <span data-testid={`project-slug-${project.id}`} className="text-[0.9286rem] text-text-secondary">
                 {project.slug ?? ""}
               </span>
             )}
@@ -460,7 +459,7 @@ function ProjectRow({
         {editing
           ? <PrefixEdit project={project} taskCount={taskCount} others={others} />
           : (
-              <span data-testid={`project-prefix-display-${project.id}`} className="font-mono text-[0.9286rem] text-text-secondary">
+              <span data-testid={`project-prefix-display-${project.id}`} className="text-[0.9286rem] text-text-secondary">
                 {project.prefix}
               </span>
             )}
@@ -604,8 +603,8 @@ export function ProjectsPanel() {
             A prefix rename that was interrupted has been completed
           </p>
           <p className="text-text-secondary">
-            <code className="font-mono">{completed.from}</code> →{" "}
-            <code className="font-mono">{completed.to}</code>,{" "}
+            <code>{completed.from}</code> →{" "}
+            <code>{completed.to}</code>,{" "}
             {completed.renamed}{" "}
             {completed.renamed === 1 ? "task" : "tasks"} renamed. Old keys
             still resolve.
@@ -628,7 +627,7 @@ export function ProjectsPanel() {
         >
           <p className="mb-1 font-medium">Your workspace default no longer exists</p>
           <p>
-            <code className="font-mono">
+            <code>
               {projects.data.default_drift.default}
             </code>{" "}
             is set as the default project but is not in the list below. New

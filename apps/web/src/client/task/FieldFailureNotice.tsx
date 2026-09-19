@@ -56,7 +56,7 @@ export function FieldFailureNotice({
       <p data-testid="meta-field-error-message">
         <span className="font-medium">{fieldLabel(failure.field)}</span>
         {" on "}
-        <span className="font-mono">{taskKey}</span>
+        <span>{taskKey}</span>
         {": "}
         {failure.message}
       </p>

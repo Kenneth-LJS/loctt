@@ -335,7 +335,7 @@ export function OptionPicker({
                   <span className="text-text-tertiary">{opt.suffix}</span>
                 )}
                 {opt.hint !== undefined && (
-                  <span className="font-mono text-[0.7857rem] text-text-tertiary">
+                  <span className="text-[0.7857rem] text-text-tertiary">
                     {opt.hint}
                   </span>
                 )}

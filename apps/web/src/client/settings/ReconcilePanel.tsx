@@ -297,8 +297,8 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
         A <strong data-testid="git-reconcile-op">{sentinel.mode}</strong> found changes made on
         both sides since the last sync. Resolve each field, then the {sentinel.mode} completes.
         Started {new Date(sentinel.started_at).toLocaleString()} · base{" "}
-        <code className="font-mono text-[0.8571rem]">{sentinel.base_commit.slice(0, 8)}</code> → remote{" "}
-        <code className="font-mono text-[0.8571rem]">{sentinel.remote_commit.slice(0, 8)}</code>.
+        <code className="text-[0.8571rem]">{sentinel.base_commit.slice(0, 8)}</code> → remote{" "}
+        <code className="text-[0.8571rem]">{sentinel.remote_commit.slice(0, 8)}</code>.
       </p>
 
       {/* GIT-5/GIT-17: auto-merged/converged fields are reported, not asked. */}
@@ -498,7 +498,7 @@ function TaskGroup({ group, decisions, collapsed, onToggle, onChoose }: {
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.9286rem] font-medium text-text-primary"
       >
         <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={14} />
-        <code className="font-mono text-[0.8571rem]">{group.taskKey}</code>
+        <code className="text-[0.8571rem]">{group.taskKey}</code>
         <span className="truncate text-text-secondary">{group.taskTitle}</span>
         <span className="ml-auto text-[0.8571rem] text-text-tertiary">
           {group.rows.length} field{group.rows.length === 1 ? "" : "s"}
@@ -640,7 +640,7 @@ export function DeleteVsEditRow({ row, choice, onChoose }: {
       className="rounded border border-warn-fg/40 p-3 text-[0.9286rem]"
     >
       <div className="mb-1 font-medium text-text-primary">
-        <code className="font-mono text-[0.8571rem]">{row.taskKey}</code>{" "}
+        <code className="text-[0.8571rem]">{row.taskKey}</code>{" "}
         <span className="text-text-secondary">{row.taskTitle}</span>
       </div>
       <p data-testid="git-reconcile-dve-desc" className="mb-2 text-[0.8571rem] text-text-secondary">

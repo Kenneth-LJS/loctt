@@ -197,7 +197,7 @@ export function CustomFieldEditDialog({
           ) : (
             <code
               data-testid="custom-field-dialog-key-readonly"
-              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
+              className="inline-block rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary"
             >
               {initial?.key}
             </code>

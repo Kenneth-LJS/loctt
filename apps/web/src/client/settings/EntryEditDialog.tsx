@@ -167,7 +167,7 @@ export function EntryEditDialog({
           ) : (
             <code
               data-testid={`${collection}-entry-key-readonly`}
-              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
+              className="inline-block rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary"
               title="A key is permanent: task files store it, so renaming it in place would orphan them."
             >
               {initial?.key}

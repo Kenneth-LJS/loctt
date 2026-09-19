@@ -634,7 +634,7 @@ export function ListView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg"
         >
           <p className="font-medium">
-            <code className="font-mono">.loctt/config/workflow.yaml</code> has an
+            <code>.loctt/config/workflow.yaml</code> has an
             entry that does not parse, so some statuses or fields may be missing
             from the filters below.
           </p>
@@ -654,7 +654,7 @@ export function ListView() {
                     Joined with a dot so the path reads `statuses[0].category`
                     — the field with enough path to find it (ERR-10 bullet 2)
                     and the expected values Zod carries (bullet 3). */}
-                <code className="rounded bg-bg-surface px-1 py-0.5 font-mono">
+                <code className="rounded bg-bg-surface px-1 py-0.5">
                   {e.sub}[{e.index}].
                 </code>{e.error}
               </li>
@@ -670,7 +670,7 @@ export function ListView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg"
         >
           <p className="font-medium">
-            The saved view <code className="font-mono">{brokenView.name}</code> could
+            The saved view <code>{brokenView.name}</code> could
             not be run: its query no longer parses.
           </p>
           <p className="mt-1">
@@ -704,9 +704,9 @@ export function ListView() {
           role="status"
           className="rounded-md border border-warn-fg/30 bg-warn-bg px-4 py-2 text-[0.8571rem] text-warn-fg"
         >
-          The saved view <code className="font-mono">{missingView}</code> no longer
+          The saved view <code>{missingView}</code> no longer
           exists, so this is showing every task instead. It was probably deleted
-          from <code className="font-mono">.loctt/config/queries.yaml</code>.{" "}
+          from <code>.loctt/config/queries.yaml</code>.{" "}
           <button
             type="button"
             onClick={() => { void navigate({ search: prev => ({ ...prev, view: undefined }) }); }}
@@ -724,7 +724,7 @@ export function ListView() {
           {" "}writes atomically, so a half-written file is not.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
-              <li key={u.id} className="font-mono text-[0.7857rem]">
+              <li key={u.id} className="text-[0.7857rem]">
                 {u.path}: {u.reason}
               </li>
             ))}
@@ -1168,7 +1168,7 @@ function Cell({
             // attribute, so focus stays on the equivalent row rather than
             // being dropped to document.body.
             data-task-key={task.key}
-            className="font-mono text-text-tertiary no-underline hover:text-accent"
+            className="text-text-tertiary no-underline hover:text-accent"
           >
             {task.key}
           </Link>
@@ -1267,7 +1267,7 @@ function Cell({
       return task.updated_at === undefined ? (
         <Dash />
       ) : (
-        <span className="whitespace-nowrap font-mono text-text-tertiary">
+        <span className="whitespace-nowrap text-text-tertiary">
           {relativeTime(task.updated_at, now)}
         </span>
       );

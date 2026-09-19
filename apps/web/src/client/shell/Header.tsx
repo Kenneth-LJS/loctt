@@ -283,7 +283,7 @@ function HeaderSearch() {
                   onClick={() => { goToTask(h.key); }}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
                 >
-                  <span className="shrink-0 font-mono text-[0.7143rem] text-text-tertiary">{h.key}</span>
+                  <span className="shrink-0 text-[0.7143rem] text-text-tertiary">{h.key}</span>
                   <span className="truncate">{h.title}</span>
                 </button>
               ))}

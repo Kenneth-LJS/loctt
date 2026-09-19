@@ -270,13 +270,13 @@ export function SprintsView() {
           <h2 className="text-[1.0714rem] font-semibold text-text-primary">
             The sprint configuration could not be read
           </h2>
-          <p className="mt-2 whitespace-pre-wrap font-mono text-[0.8571rem] text-danger-fg">
+          <p className="mt-2 whitespace-pre-wrap text-[0.8571rem] text-danger-fg">
             {sprintsConfigError.envelope?.message ?? sprintsConfigError.message}
           </p>
           <p className="mt-3 text-[0.9286rem] text-text-secondary">
             No sprints could be loaded — the whole file failed to parse, so
             this is not an empty tracker. Fix{" "}
-            <code className="font-mono">.loctt/config/sprints.yaml</code> and
+            <code>.loctt/config/sprints.yaml</code> and
             reload. LocTT will not repair the file for you.
           </p>
         </div>
@@ -412,7 +412,7 @@ export function SprintsView() {
               ? "1 sprint could not be read from sprints.yaml"
               : `${String(brokenSprints.length)} sprints could not be read from sprints.yaml`}
             {" "}— fix{" "}
-            <code className="font-mono">.loctt/config/sprints.yaml</code> and
+            <code>.loctt/config/sprints.yaml</code> and
             reload to restore {brokenSprints.length === 1 ? "it" : "them"}.
             LocTT will not repair the file for you.
           </p>
@@ -433,7 +433,7 @@ export function SprintsView() {
                     {b.id ?? `Sprint entry #${String(b.index + 1)}`}
                   </span>
                   <span className="text-text-tertiary"> (broken)</span>
-                  <span className="mt-0.5 block break-words font-mono text-[0.7857rem] text-danger-fg/90">
+                  <span className="mt-0.5 block break-words text-[0.7857rem] text-danger-fg/90">
                     {b.error}
                   </span>
                 </span>
@@ -728,7 +728,7 @@ function Column({
             {column.sprint !== undefined && (
               <span
                 data-testid={`sprint-window-${column.id}`}
-                className="block truncate font-mono text-[0.7143rem] text-text-tertiary"
+                className="block truncate text-[0.7143rem] text-text-tertiary"
               >
                 {column.sprint.start_date} → {column.sprint.end_date}
               </span>
@@ -855,8 +855,8 @@ function Column({
           className="border-b border-border-subtle px-3 py-2 text-[0.7857rem] text-text-secondary"
         >
           These tasks name a sprint that{" "}
-          <code className="font-mono">sprints.yaml</code> does not define:{" "}
-          <code className="font-mono" data-testid={`sprint-missing-id-${column.id}`}>
+          <code>sprints.yaml</code> does not define:{" "}
+          <code data-testid={`sprint-missing-id-${column.id}`}>
             {column.missingId}
           </code>
           .

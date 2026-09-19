@@ -79,7 +79,7 @@ export function RemapDeleteDialog({
         {inUse
           ? `${String(count)} task${count === 1 ? "" : "s"} currently ${count === 1 ? "uses" : "use"} `
           : `No tasks use `}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">{itemKey}</code>
+        <code className="rounded bg-bg-muted px-1 py-0.5">{itemKey}</code>
         {inUse ? "." : " — deleting it affects nothing."}
       </p>
 
@@ -99,7 +99,7 @@ export function RemapDeleteDialog({
               <span>
                 Move {count === 1 ? "it" : "them"} to{" "}
                 <strong className="font-medium">{alt.label}</strong>{" "}
-                <code className="font-mono text-text-tertiary">{alt.key}</code>
+                <code className="text-text-tertiary">{alt.key}</code>
               </span>
             </label>
           ))}
@@ -115,7 +115,7 @@ export function RemapDeleteDialog({
               <span data-testid="remap-clear-warning" className="text-warn-fg">
                 {count === 1 ? "That task" : `Those ${String(count)} tasks`} will have
                 no {noun} — the field is emptied. This is permanent; the {noun}{" "}
-                <code className="font-mono">{itemKey}</code> is not kept as a dangling
+                <code>{itemKey}</code> is not kept as a dangling
                 reference.
               </span>
             </span>

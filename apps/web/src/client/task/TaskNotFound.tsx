@@ -30,7 +30,7 @@ export function TaskNotFound({ taskKey }: { readonly taskKey: string }) {
       <div className="max-w-md text-center">
         <h1 className="mb-2 text-lg font-semibold text-text-primary">
           No task with the key{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[1.0714rem]">
+          <code className="rounded bg-bg-muted px-1 py-0.5 text-[1.0714rem]">
             {taskKey}
           </code>
         </h1>

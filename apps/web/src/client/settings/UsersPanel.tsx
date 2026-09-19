@@ -416,7 +416,7 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
           data-testid="user-create-timezone"
           value={timezone}
           onChange={e => { setTimezone(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[0.9286rem]"
+          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
       </label>
       {create.isError && (

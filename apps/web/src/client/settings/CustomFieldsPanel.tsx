@@ -305,7 +305,7 @@ function FieldRow({
         <span data-testid={`custom-field-label-${field.key}`} className="font-medium">
           {field.label}
         </span>
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary">
+        <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary">
           {field.key}
         </code>
         <span
@@ -364,7 +364,7 @@ function FieldRow({
               {(field.values ?? []).map(v => (
                 <tr key={v.key} data-testid={`custom-field-value-${field.key}-${v.key}`}>
                   <td className="py-0.5 pr-3">{v.label}</td>
-                  <td className="py-0.5 pr-3 font-mono text-text-secondary">{v.key}</td>
+                  <td className="py-0.5 pr-3 text-text-secondary">{v.key}</td>
                   <td className="py-0.5 pr-3">{v.value ?? "—"}</td>
                   <td
                     data-testid={`custom-field-value-refcount-${field.key}-${v.key}`}

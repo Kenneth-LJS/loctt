@@ -137,7 +137,7 @@ function UnknownSection({ requested }: { readonly requested: string }) {
     <div role="alert" data-testid="settings-unknown-section" className="p-8">
       <h1 className="mb-2 text-lg font-semibold text-text-primary">
         No settings section called{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[1.0714rem]">
+        <code className="rounded bg-bg-muted px-1 py-0.5 text-[1.0714rem]">
           {requested}
         </code>
       </h1>
@@ -172,7 +172,7 @@ function NotBuiltYet({ section }: { readonly section: SettingsSection }) {
       <p className="text-[0.9286rem] text-text-secondary">
         This panel is not built yet. Its settings can be changed by
         editing the files under{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">
+        <code className="rounded bg-bg-muted px-1 py-0.5">
           .loctt/config/
         </code>{" "}
         or with the <code className="font-mono">loctt</code> CLI.

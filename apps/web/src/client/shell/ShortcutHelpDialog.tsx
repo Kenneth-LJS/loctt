@@ -99,7 +99,7 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
                     {s.keys.map((k, i) => (
                       <span key={`${k}-${String(i)}`}>
                         {i > 0 ? <span className="mx-1 text-[0.7857rem] text-text-tertiary">then</span> : null}
-                        <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 font-mono text-[0.7857rem] text-text-primary">
+                        <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] text-text-primary">
                           {k}
                         </kbd>
                       </span>

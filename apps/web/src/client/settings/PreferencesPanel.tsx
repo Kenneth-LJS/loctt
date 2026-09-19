@@ -113,7 +113,7 @@ export function PreferencesPanel() {
         <h2 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">Theme</h2>
         <p className="mb-2 text-[0.8571rem] text-text-secondary">
           Stored against your user, so it follows you between browsers.
-          <span className="ml-1 font-mono">system</span> tracks your OS setting.
+          <span className="ml-1">system</span> tracks your OS setting.
         </p>
         <div role="radiogroup" aria-label="Theme" className="flex gap-2">
           {THEMES.map(t => (
@@ -151,7 +151,7 @@ export function PreferencesPanel() {
             className="mb-2 rounded-md border border-border-subtle bg-warn-bg px-2 py-1 text-[0.8571rem] text-warn-fg"
           >
             Your default project{" "}
-            <code className="font-mono">{personalDefault}</code> no longer
+            <code>{personalDefault}</code> no longer
             exists. New tasks fall through to the workspace default until you
             pick another.
           </p>

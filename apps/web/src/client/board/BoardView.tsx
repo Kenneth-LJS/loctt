@@ -356,7 +356,7 @@ export function BoardView() {
           {" "}missing from this board. Check the file.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
-              <li key={u.id} className="font-mono text-[0.7857rem]">
+              <li key={u.id} className="text-[0.7857rem]">
                 {u.path}: {u.reason}
               </li>
             ))}
@@ -536,8 +536,8 @@ function ColumnDriftBanner({ columns }: { readonly columns: readonly BoardColumn
         <div key={c.id}>
           Column <strong>{c.label}</strong> lists{" "}
           {c.missingStatuses?.length === 1 ? "a status" : "statuses"}{" "}
-          <code className="font-mono">{c.missingStatuses?.join(", ")}</code>{" "}
-          that <code className="font-mono">workflow.yaml</code> no longer defines.
+          <code>{c.missingStatuses?.join(", ")}</code>{" "}
+          that <code>workflow.yaml</code> no longer defines.
         </div>
       ))}
     </div>
@@ -731,7 +731,7 @@ function Column({
               happens the key is shown as a subtitle so the user can
               tell the two columns apart. */}
           {column.disambiguator !== undefined && (
-            <div className="truncate font-mono text-[0.7143rem] text-text-tertiary">
+            <div className="truncate text-[0.7143rem] text-text-tertiary">
               {column.disambiguator}
             </div>
           )}
@@ -785,8 +785,8 @@ function Column({
         <p className="border-b border-border-subtle px-3 py-2 text-[0.7857rem] text-text-tertiary">
           {/* BRD-18: names the orphan keys verbatim, so the user can
               find them in workflow.yaml. */}
-          These tasks carry a status <code className="font-mono">workflow.yaml</code>{" "}
-          no longer defines: <code className="font-mono">{column.statuses.join(", ")}</code>.
+          These tasks carry a status <code>workflow.yaml</code>{" "}
+          no longer defines: <code>{column.statuses.join(", ")}</code>.
         </p>
       )}
       {column.kind === "uncovered" && (
@@ -794,7 +794,7 @@ function Column({
           {/* BRD-24: the uncovered statuses' tasks are shown and
               counted rather than silently omitted. */}
           Statuses not listed in any configured column:{" "}
-          <code className="font-mono">{column.statuses.join(", ")}</code>.
+          <code>{column.statuses.join(", ")}</code>.
         </p>
       )}
 

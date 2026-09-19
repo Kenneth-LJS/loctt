@@ -40,7 +40,7 @@ export function DeleteViewDialog({
       body={
         <>
           The view <span className="font-medium text-text-primary">{name}</span>{" "}
-          is removed from <code className="font-mono">queries.yaml</code>.
+          is removed from <code>queries.yaml</code>.
           Tasks are not affected.
         </>
       }

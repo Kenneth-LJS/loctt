@@ -188,7 +188,7 @@ export function MentionMenu({ state }: { readonly state: MentionState }): React.
             {c.hint !== undefined && (
               <span
                 data-testid={`mention-hint-${c.id}`}
-                className="block font-mono text-[0.7857rem] text-text-tertiary"
+                className="block text-[0.7857rem] text-text-tertiary"
               >
                 {c.hint}
               </span>

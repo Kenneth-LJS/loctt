@@ -371,7 +371,7 @@ function RowFields({
       {/* The key, shown and never editable — see the header comment. */}
       <code
         data-testid={`${collection}-key-${row.key}`}
-        className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
+        className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary"
         title="A key is permanent: task files store it, so renaming it in place would orphan them."
       >
         {row.key}
@@ -389,7 +389,7 @@ function RowFields({
       {collection === "priorities" && (
         <span
           data-testid={`priorities-value-${row.key}`}
-          className="font-mono text-[0.8571rem] text-text-tertiary"
+          className="text-[0.8571rem] text-text-tertiary"
           title="Recomputed from position — lower sorts first."
         >
           value {String((row as PriorityDef).value ?? "—")}

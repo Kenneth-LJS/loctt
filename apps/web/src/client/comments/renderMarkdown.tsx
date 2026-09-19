@@ -232,7 +232,7 @@ function renderText(node: JSONContent): React.ReactNode {
               <span data-testid="comment-unsafe-link" className="text-text-secondary">
                 {out}
                 {" ("}
-                <span className="font-mono text-[0.8571rem]">{href}</span>
+                <span className="text-[0.8571rem]">{href}</span>
                 {" — link not followed)"}
               </span>
             );

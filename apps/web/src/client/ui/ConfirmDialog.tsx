@@ -143,7 +143,7 @@ export function TypedConfirmDialog({
         <>
           {body}
           <label className="mt-4 block text-label font-medium text-text-secondary">
-            Type <code className="font-mono text-text-primary">{requiredWord}</code> to confirm
+            Type <code className="text-text-primary">{requiredWord}</code> to confirm
             {typeHint !== undefined && typeHint !== null ? (
               <span className="ml-1 font-normal text-text-tertiary">{typeHint}</span>
             ) : null}
@@ -153,7 +153,7 @@ export function TypedConfirmDialog({
               value={typed}
               onChange={e => { setTyped(e.target.value); }}
               aria-label={`Type ${requiredWord} to confirm`}
-              className="mt-1 font-mono"
+              className="mt-1"
             />
           </label>
         </>

@@ -165,7 +165,7 @@ export function UserDeleteDialog({
 
         <label className="grid gap-1 text-[0.8571rem] font-medium text-text-secondary">
           <span>
-            Type <code className="font-mono text-text-primary">{DELETE_CONFIRM_WORD}</code> to confirm
+            Type <code className="text-text-primary">{DELETE_CONFIRM_WORD}</code> to confirm
           </span>
           <input
             type="text"
@@ -173,7 +173,7 @@ export function UserDeleteDialog({
             value={typed}
             onChange={e => { setTyped(e.target.value); }}
             aria-label={`Type ${DELETE_CONFIRM_WORD} to confirm`}
-            className="w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 font-mono text-[0.9286rem] text-text-primary"
+            className="w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 text-[0.9286rem] text-text-primary"
           />
         </label>
 

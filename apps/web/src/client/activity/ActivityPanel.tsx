@@ -495,7 +495,7 @@ function IncompleteNotice({ count }: { readonly count: number }): React.JSX.Elem
       {" "}
       {count === 1 ? "entry" : "entries"} in this task’s
       {" "}
-      <code className="font-mono text-[0.8571rem]">_history.yaml</code>
+      <code className="text-[0.8571rem]">_history.yaml</code>
       {" "}
       could not be read and {count === 1 ? "is" : "are"} not shown.
     </p>
