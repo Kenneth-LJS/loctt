@@ -44,7 +44,9 @@ export function StatusBadge({ def, raw, health }: { def: StatusDef | undefined; 
     <span
       title={orphaned ? `"${raw}" is not defined in workflow.yaml` : undefined}
       className={[
-        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.8571rem] font-medium",
+        // whitespace-nowrap: a two-word status ("In progress") must not
+        // wrap to two lines in a narrow column (Ken's report / UX eval #9).
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[0.8571rem] font-medium",
         orphaned
           ? "border border-dashed border-danger-fg/50 text-danger-fg"
           : cls || "bg-bg-muted text-text-secondary",
