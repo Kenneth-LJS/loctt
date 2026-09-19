@@ -137,16 +137,24 @@ so it is not read twice. `IconButton` requires an `aria-label`.
 
 Use these rather than hand-rolled markup.
 
-- **`Button`** — variants `primary` / `secondary` / `ghost` / `danger` /
-  `danger-outline` / `warn-outline`, sizes `sm`/`md`. The default control;
-  bakes in cursor/hover/active/focus. The `*-outline` variants are a
-  tone-tinted **outline** (tone border + tone text over a transparent
-  surface, subtle tone wash on hover) — for the alert-banner retry/dismiss
-  buttons, where `secondary` (neutral border) and `danger` (solid fill)
-  both read wrong. Modelled as named variants, not a `tone` prop, so they
-  stay one lookup in the shared `BUTTON_VARIANT` map. Tokens only:
-  `border-danger-fg/40 text-danger-fg hover:bg-danger-fg/10`
-  (and the `warn-fg` equivalents).
+- **`Button`** — variants `primary` / `secondary` / `ghost` /
+  `ghost-danger` / `danger` / `danger-outline` / `warn-outline`, sizes
+  `sm`/`md`. The default control; bakes in cursor/hover/active/focus. The
+  `*-outline` variants are a tone-tinted **outline** (tone border + tone
+  text over a transparent surface, subtle tone wash on hover) — for the
+  alert-banner retry/dismiss buttons, where `secondary` (neutral border)
+  and `danger` (solid fill) both read wrong. Modelled as named variants,
+  not a `tone` prop, so they stay one lookup in the shared `BUTTON_VARIANT`
+  map. Tokens only: `border-danger-fg/40 text-danger-fg hover:bg-danger-fg/10`
+  (and the `warn-fg` equivalents). **`ghost-danger`** is the ghost look
+  (transparent surface, `text-text-secondary` at rest) whose hover reddens
+  to the danger tone rather than neutral — the row-action Delete pattern
+  (e.g. `CommentItem`'s Copy link / Edit / Delete trio) that `ghost`
+  (hovers to `text-primary`) and `danger`/`danger-outline` (filled/bordered)
+  do not cover. Tokens only: `hover:bg-danger-fg/10 hover:text-danger-fg`
+  (plus the `active:` equivalents). Lives on `Button` only —
+  `IconButton`'s narrower variant union does not include it (its row-action
+  callers are icon+label text buttons, not icon-only).
 - **`IconButton`** — icon-only button; **requires `aria-label`**. Sizes
   `xs` (24px, tiny inline remove buttons e.g. a query-builder condition
   ✕) / `sm` (28px) / `md` (32px, default) / `touch` (44px, the WCAG 2.5.5
