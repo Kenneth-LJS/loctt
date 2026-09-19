@@ -96,8 +96,17 @@ const FACET_LABELS: Record<FacetKey, string> = {
  * implementations agreeing for now.
  */
 export interface FilterBarProps {
-  /** The route whose search params back the controls. */
-  readonly from?: "/list" | "/sprints/$key";
+  /**
+   * The route whose search params back the controls.
+   *
+   * `/board` and `/timeline` share the bar too (the cross-view scope
+   * fix, Ken 2026-09-20): their search schemas are supersets of the
+   * list's (BoardSearch === ListSearch; TimelineSearch extends it), so
+   * every read the bar makes type-checks against all four, and every
+   * write spreads `prev` so a view's private params (timeline
+   * zoom/grouping/arrows, list page/sort/dir) survive a filter change.
+   */
+  readonly from?: "/list" | "/sprints/$key" | "/board" | "/timeline";
   /**
    * Facets to leave out. The sprint detail hides `sprint`: the page
    * *is* a sprint scope, and a control that could change or clear it

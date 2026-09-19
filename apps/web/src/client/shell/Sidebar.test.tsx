@@ -1037,6 +1037,129 @@ describe("Sidebar strips the ambient sort from nav hrefs (LST-55)", () => {
 });
 
 /**
+ * The cross-view scope fix (Ken 2026-09-20): List/Board/Timeline share
+ * the filter scope. The view switcher must CARRY the filter keys and DROP
+ * the view-private display params when moving between views, and a project
+ * click made on the board/timeline must stay on that view rather than
+ * jumping to /list.
+ *
+ * These need the sibling view routes registered so TanStack can produce
+ * real hrefs for `to="/board"`/`to="/timeline"` and so the Sidebar can
+ * mount at those paths — the shared `renderSidebarAt` only knows `/list`.
+ * The `<Link>`s compute their href from the current search + pathname, so
+ * reading each href proves the behaviour without clicking through.
+ */
+describe("Sidebar cross-view filter scope (2026-09-20)", () => {
+  async function renderShellAt(pathname: string, search: Record<string, unknown> = {}) {
+    if (priorQc) {
+      await priorQc.cancelQueries();
+      priorQc.clear();
+    }
+    stubFetch();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    priorQc = qc;
+
+    const rootRoute = createRootRoute();
+    const sidebar = () => (
+      <Sidebar collapsed={false} info={info()} currentUserId="u_ken" today="2026-06-08" />
+    );
+    const routes = (["/list", "/board", "/timeline"] as const).map(path =>
+      createRoute({
+        getParentRoute: () => rootRoute,
+        path,
+        validateSearch: (s: Record<string, unknown>) => s,
+        component: sidebar,
+      }),
+    );
+    const router = createRouter({
+      routeTree: rootRoute.addChildren(routes),
+      history: createMemoryHistory({
+        initialEntries: [
+          `${pathname}?${new URLSearchParams(
+            Object.fromEntries(Object.entries(search).map(([k, v]) => [k, String(v)])),
+          ).toString()}`,
+        ],
+      }),
+    });
+
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Projects");
+  }
+
+  const hrefOf = (el: HTMLElement): string => el.closest("a")?.getAttribute("href") ?? "";
+
+  it("the view switcher carries filter keys to the sibling view", async () => {
+    await renderShellAt("/list", {
+      status: "in_progress",
+      project: "p_api",
+      labels: "l_fe",
+      archived: "true",
+    });
+    // The Board and Timeline switcher links keep the scope. (Decoded and
+    // matched by value, since this harness JSON-encodes array params
+    // rather than using the app's CSV serializer.)
+    for (const name of ["Board", "Timeline"]) {
+      const href = decodeURIComponent(hrefOf(await screen.findByText(name)));
+      expect(href, `${name} keeps status`).toContain("in_progress");
+      expect(href, `${name} keeps project`).toContain("p_api");
+      expect(href, `${name} keeps labels`).toContain("l_fe");
+      expect(href, `${name} keeps archived`).toContain("archived=true");
+    }
+  });
+
+  it("the view switcher drops view-private params (page/sort/dir/zoom/grouping/arrows)", async () => {
+    await renderShellAt("/timeline", {
+      status: "in_progress",
+      page: "3",
+      sort: "title",
+      dir: "desc",
+      zoom: "month",
+      grouping: "assignee",
+      arrows: "true",
+    });
+    // Switching to the List keeps the filter, drops the display state.
+    const href = decodeURIComponent(hrefOf(await screen.findByText("List")));
+    expect(href).toContain("in_progress");
+    for (const key of ["page=", "sort=", "dir=", "zoom=", "grouping=", "arrows="]) {
+      expect(href, `List drops ${key}`).not.toContain(key);
+    }
+  });
+
+  it("a project link on /board stays on /board and keeps display state", async () => {
+    await renderShellAt("/board", { status: "in_progress" });
+    // The project link (and All-projects) target /board, not /list.
+    const web = hrefOf(await screen.findByText("Web"));
+    expect(web.startsWith("/board")).toBe(true);
+    // The project scope rides along (this test harness JSON-encodes the
+    // array param rather than CSV; the point is the value is present and
+    // the destination is /board, not /list).
+    expect(decodeURIComponent(web)).toContain("p_web");
+    const all = hrefOf(await screen.findByText("All projects"));
+    expect(all.startsWith("/board")).toBe(true);
+  });
+
+  it("a project link on /list still targets /list", async () => {
+    await renderShellAt("/list");
+    const web = hrefOf(await screen.findByText("Web"));
+    expect(web.startsWith("/list")).toBe(true);
+  });
+
+  it("a milestone link stays on /list even from the board", async () => {
+    // Milestone/sprint/label/saved-view links are list-shaped and are NOT
+    // route-aware — they always target /list.
+    await renderShellAt("/board");
+    const milestone = hrefOf(await screen.findByText("v1.0"));
+    expect(milestone.startsWith("/list")).toBe(true);
+  });
+});
+
+/**
  * S-11 / S-8: the sidebar's decorative glyphs come from tokens and the
  * unified icon set, not hardcoded hex or an ad-hoc star.
  */

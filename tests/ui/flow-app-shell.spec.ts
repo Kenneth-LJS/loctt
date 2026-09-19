@@ -37,8 +37,15 @@ test.describe("SHL — routing and history", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Beta task")).toBeHidden();
 
+    // Switching views carries the filter scope across (cross-view scope
+    // fix, Ken 2026-09-20). This assertion previously expected
+    // `/timeline$` — that encoded the bug where the view switcher dropped
+    // every URL param, so a filter set on the list vanished the moment you
+    // moved to the board or timeline. Per the repo rule on editing a green
+    // test that asserted the bug: the switcher now preserves the scope, so
+    // the status filter rides along and the URL keeps `status=in_progress`.
     await page.getByRole("link", { name: "Timeline" }).click();
-    await expect(page).toHaveURL(/\/timeline$/);
+    await expect(page).toHaveURL(/\/timeline\?status=in_progress$/);
 
     // Three steps back, in reverse order, one navigation each.
     await page.goBack();

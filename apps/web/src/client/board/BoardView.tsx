@@ -11,6 +11,7 @@ import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { useCreateTask } from "../create/CreateTaskProvider.tsx";
+import { FilterBar } from "../list/FilterBar.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
@@ -294,6 +295,19 @@ export function BoardView() {
 
   return (
     <div className="flex h-full flex-col gap-3 p-4" data-testid="board">
+      {/* The shared filter bar (cross-view scope fix, Ken 2026-09-20):
+          the board reads the same URL filter vocabulary as the list
+          (BRD-1/BRD-14), so it mounts the same bar the list does. Refresh
+          re-runs the board's own feed; export is omitted (the board has no
+          export surface). Save-as-view is offered — a board scope is a
+          saved view like any other. */}
+      <FilterBar
+        from="/board"
+        showSaveView
+        onRefresh={() => { void tasks.refetch(); }}
+        refreshBusy={tasks.isFetching}
+      />
+
       {/* BRD-41/BRD-43/BRD-44: a drop that did not land names the
           task, says plainly that it was not saved, and offers a retry
           that re-issues the same move. The card itself is already back
