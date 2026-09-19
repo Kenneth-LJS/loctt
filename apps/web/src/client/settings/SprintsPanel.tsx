@@ -1,6 +1,6 @@
 import type { SprintDef } from "@loctt/contracts";
-import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useArchiveSprint, useCountedSprints, useCreateSprint, useDeleteSprint } from "../api/hooks/useDataMutations.ts";
@@ -56,6 +56,11 @@ function SprintRow({ sprint, all }: {
 
   return (
     <li
+      // K100 deep-link anchor (`/settings/sprints#row-<id>`) — see
+      // useScrollToHash. An archived sprint's row only mounts once the
+      // "Show archived" toggle is on, which the panel auto-enables when the
+      // hash names an archived sprint (see SprintsPanel below).
+      id={`row-${sprint.id}`}
       data-testid={`sprint-row-${sprint.id}`}
       data-sprint-state={sprint.state}
       data-sprint-archived={archived ? "true" : "false"}
@@ -145,6 +150,23 @@ export function SprintsPanel() {
   const [end, setEnd] = useState("");
   const [state, setState] = useState<(typeof STATES)[number]>("active");
   const [showArchived, setShowArchived] = useState(false);
+
+  // K100 archived-row anchor. A deep link to an archived sprint
+  // (`#row-<id>`) targets a row that only mounts once "Show archived" is
+  // on, so `useScrollToHash` would find nothing. When the hash names a
+  // sprint currently in the archived set, auto-enable the toggle so the
+  // anchor can resolve. Additive: only ever turns the toggle ON, only
+  // when a hash is present, so it never fights a user who toggled it off
+  // with no hash in play.
+  const hash = useRouterState({ select: s => s.location.hash });
+  const sprintItems = sprints.data?.items as readonly CountedSprint[] | undefined;
+  useEffect(() => {
+    if (hash === undefined || hash === "") return;
+    const id = hash.replace(/^#/, "").replace(/^row-/, "");
+    if (id === "") return;
+    const target = sprintItems?.find(s => s.id === id);
+    if (target?.archived === true) setShowArchived(true);
+  }, [hash, sprintItems]);
 
   if (sprints.isError) {
     return (

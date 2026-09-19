@@ -51,6 +51,9 @@ function MilestoneRow({ milestone, count, all }: {
 
   return (
     <li
+      // K100 deep-link anchor (`/settings/milestones#row-<id>`) — see
+      // useScrollToHash. Kept alongside the test id.
+      id={`row-${milestone.id}`}
       data-testid={`milestone-row-${milestone.id}`}
       data-milestone-archived={archived ? "true" : "false"}
       className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"

@@ -62,6 +62,9 @@ function LabelRow({ label, count, allLabels }: {
 
   return (
     <li
+      // K100 deep-link anchor (`/settings/labels#row-<id>`) — see
+      // useScrollToHash. Kept alongside the test id.
+      id={`row-${label.id}`}
       data-testid={`label-row-${label.id}`}
       data-label-archived={archived ? "true" : "false"}
       className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
@@ -274,6 +277,10 @@ function BrokenLabelRow({ entry, onRepair, repairing }: {
   const name = entry.id ?? `Label entry #${String(entry.index + 1)}`;
   return (
     <li
+      // K100 anchor: a deep link to a label lands here even when the
+      // entry is broken, so it resolves by the same `row-<id>` id (only
+      // when the loader could read an id).
+      {...(entry.id !== undefined ? { id: `row-${entry.id}` } : {})}
       data-testid={`label-broken-${entry.id ?? `index-${String(entry.index)}`}`}
       data-broken-label={entry.id ?? `index-${String(entry.index)}`}
       aria-disabled="true"

@@ -80,7 +80,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-function renderPanel() {
+function renderPanel(initialEntry = "/") {
   const qc = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -92,7 +92,7 @@ function renderPanel() {
   const sprintRoute = createRoute({ getParentRoute: () => rootRoute, path: "/sprints/$key", component: () => null });
   const router = createRouter({
     routeTree: rootRoute.addChildren([idxRoute, sprintRoute]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    history: createMemoryHistory({ initialEntries: [initialEntry] }),
   });
   render(
     <QueryClientProvider client={qc}>
@@ -243,5 +243,44 @@ describe("SprintsPanel — archive (SPR-40)", () => {
       String(c[0]).includes("/api/sprints/sp_arch/unarchive")
       && (c[1] as RequestInit | undefined)?.method === "POST",
     )).toBe(true); });
+  });
+});
+
+describe("SprintsPanel — deep-link row anchors (K100)", () => {
+  // @verifies K100
+  it("gives each sprint row a `row-<id>` DOM anchor for point-of-use deep links", async () => {
+    renderPanel();
+    const row = await screen.findByTestId("sprint-row-sp_active");
+    // The anchor `useScrollToHash` resolves by id — not just the test id.
+    expect(row.getAttribute("id")).toBe("row-sp_active");
+  });
+
+  // @verifies K100
+  it("auto-enables 'Show archived' when the hash names an archived sprint, so the anchor resolves", async () => {
+    // A deep link to an archived sprint. Its row is normally hidden until
+    // the toggle is on; the panel must flip the toggle so the target
+    // mounts and useScrollToHash can find it.
+    renderPanel("/#row-sp_arch");
+    await screen.findByTestId("sprints-list");
+
+    // The archived row is now present without the user touching the toggle.
+    const archivedRow = await screen.findByTestId("sprint-row-sp_arch");
+    expect(archivedRow.getAttribute("id")).toBe("row-sp_arch");
+    expect(archivedRow.getAttribute("data-sprint-archived")).toBe("true");
+    // And the toggle reflects the auto-enabled state.
+    const toggle = screen.getByTestId<HTMLInputElement>("sprints-show-archived");
+    expect(toggle.checked).toBe(true);
+  });
+
+  // @verifies K100
+  it("leaves 'Show archived' off when the hash names an ACTIVE sprint", async () => {
+    // Guard: the auto-reveal must fire only for archived targets, not any
+    // hash — an active-sprint deep link must not force the archived split open.
+    renderPanel("/#row-sp_active");
+    await screen.findByTestId("sprints-list");
+
+    expect(screen.queryByTestId("sprint-row-sp_arch")).toBeNull();
+    const toggle = screen.getByTestId<HTMLInputElement>("sprints-show-archived");
+    expect(toggle.checked).toBe(false);
   });
 });

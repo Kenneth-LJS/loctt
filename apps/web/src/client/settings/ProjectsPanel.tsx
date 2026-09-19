@@ -202,7 +202,7 @@ function ProjectRow({
   const archived = project.archived === true;
 
   return (
-    <tr data-testid={`project-row-${project.id}`} data-archived={archived ? "true" : "false"}>
+    <tr id={`row-${project.id}`} data-testid={`project-row-${project.id}`} data-archived={archived ? "true" : "false"}>
       <td className="py-2 pr-3 align-top">
         <div className="flex items-center gap-2">
           <span data-testid={`project-name-${project.id}`} className="text-[0.9286rem] text-text-primary">

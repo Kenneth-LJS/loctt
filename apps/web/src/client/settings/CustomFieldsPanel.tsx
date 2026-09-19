@@ -296,6 +296,11 @@ function FieldRow({
 
   return (
     <div
+      // K100 deep-link anchor. A custom field is a config field, so the
+      // anchor follows the `#field-<key>` convention (as CalendarPanel's
+      // `#field-timezone` does) rather than `#row-<id>` — see
+      // useScrollToHash.
+      id={`field-${field.key}`}
       data-testid={`custom-field-${field.key}`}
       data-field-type={field.type}
       data-field-multi={field.multi ? "true" : "false"}
