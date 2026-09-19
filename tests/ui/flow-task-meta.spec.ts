@@ -678,6 +678,10 @@ test.describe("TSK — meta panel pickers", () => {
     // it, which is what "immediately" means here.
     await page.getByTestId("meta-label-options").getByRole("option", { name: "regression" }).click();
     await page.goto(`${tracker.baseURL}/list`);
+    // Label is not in the default visible filter set (K97/A210); add it
+    // via "+ Add filter" before its pill exists.
+    await page.getByTestId("add-filter").click();
+    await page.getByTestId("add-filter-labels").click();
     await page.getByRole("button", { name: "Filter Label" }).click();
     // Both labels offered — the pre-existing one and the one created
     // from the task detail moments ago. The pre-existing one is the
@@ -1883,6 +1887,10 @@ test.describe("TSK-43 / TSK-55 — immutable key, and a failed inline label", ()
     // list read is honest, then check the filter.
     await page.unroute("**/api/labels");
     await page.goto(`${tracker.baseURL}/list`);
+    // Label is not in the default visible filter set (K97/A210); add it
+    // via "+ Add filter" before its pill exists.
+    await page.getByTestId("add-filter").click();
+    await page.getByTestId("add-filter-labels").click();
     await page.getByRole("button", { name: "Filter Label" }).click();
     await expect(page.getByRole("menuitemcheckbox", { name: "phantomlabel" }))
       .toHaveCount(0);

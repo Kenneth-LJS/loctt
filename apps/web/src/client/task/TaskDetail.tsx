@@ -17,6 +17,7 @@ import {
 } from "../api/hooks/sidebarData.ts";
 import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
+import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
 import { useSetField } from "../api/hooks/useSetField.ts";
 import { useTask } from "../api/hooks/useTask.ts";
 import { useTaskGraph } from "../api/hooks/useTaskGraph.ts";
@@ -35,6 +36,7 @@ import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { DeleteTaskDialog } from "./DeleteTaskDialog.tsx";
+import { EditableTitle } from "./EditableTitle.tsx";
 import type { FieldFailure } from "./fieldFailure.ts";
 import { buildLabelIndex, toFieldFailure } from "./fieldFailure.ts";
 import { MetaPanel } from "./MetaPanel.tsx";
@@ -100,6 +102,10 @@ export function TaskDetail({
   const sprints = useSprints();
   const calendar = useCalendar();
   const workflow = useWorkflow();
+  // L3: the active user, for MetaPanel's "Assign to me" quick action.
+  // `data === null` is the identity-unknown state (SHL-40) — no users
+  // registered or the read failed; the button is hidden there.
+  const currentUser = useCurrentUser();
   // The whole graph, for the relationships panel's tree render. Called
   // unconditionally with the other queries: hooks cannot sit below the
   // pending / error returns.
@@ -463,14 +469,23 @@ export function TaskDetail({
                 </span>
               )}
             </div>
-            {/* `title` makes the full string recoverable on hover even
-                when it wraps to a clamped height (TSK-24). */}
-            <h1
+            {/* L1: the title is editable in place, closing the GUI's
+                core/surface parity hole (core/CLI/MCP can all rename via
+                the `title` field). It writes through the same `writeField`
+                path the MetaPanel editors use, so a rejection renders the
+                shared FieldFailureNotice under the heading. `title` hover,
+                break-words, and the K26 key fallback all live in the
+                component. */}
+            <EditableTitle
               title={fm.title}
-              className="break-words text-[1.4286rem] font-semibold leading-tight text-text-primary"
-            >
-              {fm.title}
-            </h1>
+              taskKey={fm.key}
+              onCommit={t => { onSet("title", t); }}
+              {...(fieldError?.field === "title" ? { error: fieldError } : {})}
+              {...(fieldError?.field === "title" && fieldError.retry !== undefined
+                ? { onRetry: retryWith(fieldError.retry, writeField) }
+                : {})}
+              onDismiss={() => { setFieldError(null); }}
+            />
             {navigatedByRetired && (
               <p className="mt-1.5 text-[0.8571rem] text-text-tertiary">
                 {/* GIT-19: the "renumbered while you had it open" copy is
@@ -745,6 +760,8 @@ export function TaskDetail({
             milestones={milestones.data?.items ?? []}
             sprints={sprints.data?.items ?? []}
             calendar={calendar.data}
+            {...(currentUser.data != null ? { currentUser: currentUser.data } : {})}
+            identityUnknown={currentUser.data === null}
             onSet={onSet}
             onUnset={onUnset}
             onCreateLabel={onCreateLabel}
