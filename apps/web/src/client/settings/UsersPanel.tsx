@@ -203,17 +203,18 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
             The image was prepared but not saved: {serverMessage}. Your previous
             avatar is still in effect.
           </p>
-          <button
-            type="button"
-            data-testid={`user-avatar-retry-${user.id}`}
+          <Button
+            size="sm"
+            variant="secondary"
+            testId={`user-avatar-retry-${user.id}`}
             onClick={() => {
               // PRU-40: re-post the already-cropped file, no re-pick.
               if (prepared) upload.mutate({ id: user.id, file: prepared });
             }}
-            className="mt-1 h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-text-primary"
+            className="mt-1"
           >
             Retry
-          </button>
+          </Button>
         </div>
       )}
       {cropping !== undefined && (
@@ -389,20 +390,18 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
       {/* PRU-11: name, email, timezone — and no ID field. */}
       <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Display name</span>
-        <input
+        <TextField
           data-testid="user-create-name"
           value={name}
           onChange={e => { setName(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
       </label>
       <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Email</span>
-        <input
+        <TextField
           data-testid="user-create-email"
           value={email}
           onChange={e => { setEmail(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
         {!emailOk && (
           <p role="alert" data-testid="user-create-email-problem" className="text-[0.7857rem] text-danger-fg">
@@ -412,11 +411,10 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
       </label>
       <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Timezone</span>
-        <input
+        <TextField
           data-testid="user-create-timezone"
           value={timezone}
           onChange={e => { setTimezone(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
       </label>
       {create.isError && (
@@ -427,12 +425,12 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onDone} className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary">
+        <Button variant="ghost" onClick={onDone}>
           Cancel
-        </button>
-        <button
-          type="button"
-          data-testid="user-create-submit"
+        </Button>
+        <Button
+          variant="primary"
+          testId="user-create-submit"
           disabled={blocked}
           onClick={() => {
             create.mutate(
@@ -444,10 +442,9 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
               { onSuccess: onDone },
             );
           }}
-          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
         >
           {create.isPending ? "Creating…" : "Create user"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -485,43 +482,43 @@ function UserRowActions({
       ].join(" ")}>
         {/* PRU-47: the row is read-only; identity fields are edited in a
             per-row Edit dialog. */}
-        <button
-          type="button"
-          data-testid={`user-edit-${user.id}`}
+        <Button
+          variant="ghost"
+          testId={`user-edit-${user.id}`}
           onClick={onEdit}
-          className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
         >
           Edit
-        </button>
+        </Button>
         {/* PRU-26: archiving yourself is disabled, not error-on-click, and
             the reason is on the control. */}
-        <button
-          type="button"
-          data-testid={`user-archive-${user.id}`}
+        <Button
+          variant="ghost"
+          testId={`user-archive-${user.id}`}
           disabled={isSelf}
-          title={isSelf
-            ? "You cannot archive the user you are acting as. Switch to another user first."
-            : undefined}
+          {...(isSelf
+            ? { title: "You cannot archive the user you are acting as. Switch to another user first." }
+            : {})}
           onClick={onArchive}
-          className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
         >
           {user.archived === true ? "Unarchive" : "Archive"}
-        </button>
+        </Button>
         {/* PRU-42: delete is the permanent path, offered beside archive.
             Disabled for the active user for the same reason archive is —
-            core refuses to delete whoever you are acting as. */}
-        <button
-          type="button"
-          data-testid={`user-delete-${user.id}`}
+            core refuses to delete whoever you are acting as. A ghost
+            button with danger-token text (not a filled danger fill) keeps
+            it visually in-line with Edit/Archive as before. */}
+        <Button
+          variant="ghost"
+          testId={`user-delete-${user.id}`}
           disabled={isSelf}
-          title={isSelf
-            ? "You cannot delete the user you are acting as. Switch to another user first."
-            : undefined}
+          {...(isSelf
+            ? { title: "You cannot delete the user you are acting as. Switch to another user first." }
+            : {})}
           onClick={onDelete}
-          className="h-8 rounded-md px-2 text-[0.9286rem] text-danger-fg hover:bg-bg-muted disabled:opacity-50"
+          className="text-danger-fg"
         >
           Delete
-        </button>
+        </Button>
       </div>
       {isSelf && (
         <p
@@ -684,14 +681,13 @@ export function UsersPanel() {
       )}
 
       <div className="mt-4">
-        <button
-          type="button"
-          data-testid="user-create-open"
+        <Button
+          variant="primary"
+          testId="user-create-open"
           onClick={() => { setCreating(true); }}
-          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast"
         >
           New user
-        </button>
+        </Button>
       </div>
 
       {creating && (

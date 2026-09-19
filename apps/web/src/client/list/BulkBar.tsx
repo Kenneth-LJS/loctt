@@ -340,18 +340,18 @@ function BulkPicker({
 
   return (
     <div className="relative">
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
         aria-label={label}
         aria-expanded={open}
         aria-haspopup="menu"
         disabled={disabled || (emptyReason !== undefined && options.length === 0)}
-        title={options.length === 0 ? emptyReason : undefined}
+        {...(options.length === 0 && emptyReason !== undefined ? { title: emptyReason } : {})}
         onClick={() => { setOpen(o => !o); }}
-        className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2.5 py-1 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
         {label} <Icon name="chevronDown" size={12} />
-      </button>
+      </Button>
 
       {open && (
         <div

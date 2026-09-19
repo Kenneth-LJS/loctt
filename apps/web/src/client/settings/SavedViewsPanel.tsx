@@ -95,24 +95,24 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
         ? (
             <span className="flex shrink-0 items-center gap-2 text-[0.8571rem]">
               <span className="text-text-secondary">Delete permanently?</span>
-              <button
-                type="button"
-                data-testid="view-delete-confirm"
+              <Button
+                variant="secondary"
+                size="sm"
+                testId="view-delete-confirm"
                 disabled={del.isPending}
                 onClick={() => {
                   del.mutate({ id: view.id }, { onSuccess: () => { setConfirming(false); } });
                 }}
-                className="rounded border border-border-subtle px-2 py-1 disabled:opacity-50"
               >
                 Delete
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => { setConfirming(false); }}
-                className="rounded border border-border-subtle px-2 py-1"
               >
                 Cancel
-              </button>
+              </Button>
             </span>
           )
         : (

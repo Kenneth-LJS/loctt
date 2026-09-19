@@ -5,6 +5,7 @@ import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
@@ -293,15 +294,16 @@ export function CustomFieldEditDialog({
                     aria-label={`Value weight ${i + 1}`}
                     className="w-20"
                   />
-                  <button
-                    type="button"
-                    data-testid={`custom-field-dialog-value-remove-${i}`}
+                  <IconButton
+                    variant="secondary"
+                    size="sm"
+                    testId={`custom-field-dialog-value-remove-${i}`}
                     onClick={() => { setValues(prev => prev.filter((_, idx) => idx !== i)); }}
-                    className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg"
+                    className="text-danger-fg"
                     aria-label={`Remove value ${i + 1}`}
                   >
                     ✕
-                  </button>
+                  </IconButton>
                 </div>
               ))}
             </div>

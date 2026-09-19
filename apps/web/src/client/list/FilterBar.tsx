@@ -521,11 +521,10 @@ export function FilterBar({
         )}
 
         {isNarrow && (
-          <button
-            type="button"
-            data-testid="filters-open"
+          <Button
+            variant="secondary"
+            testId="filters-open"
             onClick={() => { setFilterSheetOpen(true); }}
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-border-default px-3 text-[0.9286rem] text-text-primary hover:bg-bg-muted"
           >
             <Icon name="search" size={14} className="text-text-tertiary" />
             Filters
@@ -537,7 +536,7 @@ export function FilterBar({
                 {activeFacetCount}
               </span>
             )}
-          </button>
+          </Button>
         )}
 
         <div className="flex-1" />
@@ -719,13 +718,9 @@ export function FilterBar({
               </span>
             );
           })}
-          <button
-            type="button"
-            onClick={clearAll}
-            className="cursor-pointer rounded px-1.5 py-0.5 text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
-          >
+          <Button variant="ghost" size="sm" onClick={clearAll}>
             Clear all
-          </button>
+          </Button>
         </div>
       ) : null}
 

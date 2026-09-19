@@ -32,6 +32,7 @@ import { AttachmentsPanel } from "../attachments/AttachmentsPanel.tsx";
 import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { RelationshipsPanel } from "../relationships/RelationshipsPanel.tsx";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
@@ -520,16 +521,15 @@ export function TaskDetail({
               aria-label={`Actions for ${fm.key}`}
               align="end"
               trigger={t => (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
                   onClick={t.toggle}
                   aria-haspopup={t["aria-haspopup"]}
                   aria-expanded={t["aria-expanded"]}
                   id={t.id}
-                  className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
                 >
                   More
-                </button>
+                </Button>
               )}
             >
               {({ close }) => (

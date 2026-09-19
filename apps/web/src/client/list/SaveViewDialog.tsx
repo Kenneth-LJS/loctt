@@ -2,7 +2,9 @@ import { useState } from "react";
 
 import { useCreateView } from "../api/hooks/useCreateView.ts";
 import type { ListSearch } from "../router/listSearch.ts";
+import { Button } from "../ui/Button.tsx";
 import { Modal } from "../ui/Modal.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { buildDslFromSearch } from "./buildDsl.ts";
 
 /**
@@ -41,7 +43,7 @@ export function SaveViewDialog({
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
           Name
-          <input
+          <TextField
             autoFocus
             value={name}
             onChange={e => setName(e.target.value)}
@@ -49,7 +51,6 @@ export function SaveViewDialog({
               if (e.key === "Enter") submit();
             }}
             placeholder="e.g. My open bugs"
-            className="h-8 rounded-md border border-border-default bg-bg-surface px-2.5 text-[0.9286rem] text-text-primary"
           />
         </label>
 
@@ -67,21 +68,16 @@ export function SaveViewDialog({
         ) : null}
 
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-8 rounded-md border border-border-default px-3 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
-          >
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="primary"
             onClick={submit}
             disabled={name.trim().length === 0 || createView.isPending}
-            className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {createView.isPending ? "Saving…" : "Save view"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

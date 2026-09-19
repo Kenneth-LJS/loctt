@@ -323,24 +323,25 @@ function FieldRow({
         </span>
 
         <span className="ml-auto flex gap-2">
-          <button
-            type="button"
-            data-testid={`custom-field-edit-${field.key}`}
+          <Button
+            variant="secondary"
+            size="sm"
+            testId={`custom-field-edit-${field.key}`}
             disabled={disabled}
             onClick={onEdit}
-            className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] disabled:opacity-40"
           >
             Edit
-          </button>
-          <button
-            type="button"
-            data-testid={`custom-field-delete-${field.key}`}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            testId={`custom-field-delete-${field.key}`}
             disabled={disabled}
             onClick={onDelete}
-            className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg disabled:opacity-40"
+            className="text-danger-fg"
           >
             Delete
-          </button>
+          </Button>
         </span>
       </div>
 
@@ -373,20 +374,19 @@ function FieldRow({
                     {String(counts[v.key] ?? 0)}
                   </td>
                   <td className="py-0.5">
-                    <button
-                      type="button"
-                      data-testid={`custom-field-value-delete-${field.key}-${v.key}`}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      testId={`custom-field-value-delete-${field.key}-${v.key}`}
                       disabled={disabled || (field.values ?? []).length <= 1}
                       onClick={() => { onDeleteValue(v); }}
-                      title={
-                        (field.values ?? []).length <= 1
-                          ? "An enum field must keep at least one value."
-                          : undefined
-                      }
-                      className="h-6 rounded border border-border-default px-1.5 text-[0.7857rem] text-danger-fg disabled:opacity-40"
+                      {...((field.values ?? []).length <= 1
+                        ? { title: "An enum field must keep at least one value." }
+                        : {})}
+                      className="text-danger-fg"
                     >
                       Delete
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}

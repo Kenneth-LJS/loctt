@@ -103,11 +103,10 @@ function CreateProjectForm({
     <div className="grid gap-3">
       <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Name</span>
-        <input
+        <TextField
           data-testid="project-create-name"
           value={name}
           onChange={e => { setName(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
         {problems.name !== undefined && (
           <p role="alert" data-testid="project-create-name-problem" className="text-[0.7857rem] text-danger-fg">
@@ -125,11 +124,10 @@ function CreateProjectForm({
             — changeable later only by renaming every task in the project
           </span>
         </span>
-        <input
+        <TextField
           data-testid="project-create-prefix"
           value={prefix}
           onChange={e => { setPrefix(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
         {problems.prefix !== undefined && (
           <p role="alert" data-testid="project-create-prefix-problem" className="text-[0.7857rem] text-danger-fg">
@@ -142,11 +140,10 @@ function CreateProjectForm({
         <span className="text-text-secondary">
           Slug <span className="text-text-tertiary">— used in links; fixed once created</span>
         </span>
-        <input
+        <TextField
           data-testid="project-create-slug"
           value={effectiveSlug}
           onChange={e => { setSlugTouched(true); setSlug(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
         {problems.slug !== undefined && (
           <p role="alert" data-testid="project-create-slug-problem" className="text-[0.7857rem] text-danger-fg">
@@ -166,18 +163,17 @@ function CreateProjectForm({
       )}
 
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onDone} className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary">
+        <Button variant="ghost" onClick={onDone}>
           Cancel
-        </button>
-        <button
-          type="button"
-          data-testid="project-create-submit"
+        </Button>
+        <Button
+          variant="primary"
+          testId="project-create-submit"
           disabled={blocked || create.isPending}
           onClick={submit}
-          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
         >
           {create.isPending ? "Creating…" : "Create project"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -663,14 +659,13 @@ export function ProjectsPanel() {
       </table>
 
       <div className="mt-4">
-        <button
-          type="button"
-          data-testid="project-create-open"
+        <Button
+          variant="primary"
+          testId="project-create-open"
           onClick={() => { setCreating(true); }}
-          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast"
         >
           New project
-        </button>
+        </Button>
       </div>
 
       {creating && (

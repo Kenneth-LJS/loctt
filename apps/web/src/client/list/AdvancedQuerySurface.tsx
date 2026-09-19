@@ -9,6 +9,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { useValidateQuery } from "../api/hooks/useValidateQuery.ts";
+import { Button } from "../ui/Button.tsx";
 import { AdvancedQueryEditor } from "./AdvancedQueryEditor.tsx";
 import {
   buildBuilderConfig,
@@ -251,14 +252,13 @@ function BuilderMode({
         <span className="text-[0.9286rem] font-medium text-text-secondary">
           Query builder
         </span>
-        <button
-          type="button"
-          data-testid="switch-to-text"
+        <Button
+          variant="secondary"
+          testId="switch-to-text"
           onClick={onSwitchToText}
-          className="inline-flex h-8 items-center rounded-md border border-border-default px-2.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
         >
           Edit as text
-        </button>
+        </Button>
       </div>
 
       <QueryBuilder tree={tree} onChange={onTreeChange} config={config} />
@@ -282,33 +282,27 @@ function BuilderMode({
       </div>
 
       <div className="flex items-center gap-2 border-t border-border-subtle pt-3">
-        <button
-          type="button"
-          data-testid="qb-apply"
+        <Button
+          variant="primary"
+          testId="qb-apply"
           // F5: an invalid live query must not be applicable — applying it
           // would write a `q` the list then rejects. `invalid` reflects the
           // last settled validation; an empty builder (liveQ = "") is not
           // "invalid" (it clears q, LST-41), so Apply stays enabled for it.
           // An incomplete builder is not yet applicable either.
           disabled={invalid || incomplete}
-          title={
-            incomplete
-              ? "Finish every condition before applying."
-              : invalid ? (scrubPosition(result.message) ?? "This query is not valid.") : undefined
-          }
+          {...(incomplete
+            ? { title: "Finish every condition before applying." }
+            : invalid
+              ? { title: scrubPosition(result.message) ?? "This query is not valid." }
+              : {})}
           onClick={() => { if (!invalid && !incomplete) onApply(liveQ); }}
-          className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-[0.8571rem] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           Apply
-        </button>
-        <button
-          type="button"
-          data-testid="qb-close"
-          onClick={onClose}
-          className="inline-flex h-8 items-center rounded-md border border-border-default px-3 text-[0.8571rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
-        >
+        </Button>
+        <Button variant="secondary" testId="qb-close" onClick={onClose}>
           Close
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -399,16 +393,16 @@ function TextMode({
           whenever the live text is not renderable — the visual builder
           must never open on a query it would misrepresent. */}
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          data-testid="switch-to-visual"
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="switch-to-visual"
           disabled={!renderable.ok}
-          title={renderable.ok ? undefined : renderable.reason}
+          {...(renderable.ok ? {} : { title: renderable.reason })}
           onClick={() => { if (renderable.ok) onSwitchToVisual(); }}
-          className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
         >
           Switch to visual
-        </button>
+        </Button>
         {!renderable.ok && (
           <span data-testid="switch-to-visual-reason" className="text-[0.8571rem] text-text-tertiary">
             The visual builder cannot show this query: {renderable.reason}.

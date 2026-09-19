@@ -22,6 +22,7 @@ import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 import { Chip } from "../ui/Chip.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { ICON } from "../ui/icons.ts";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -218,15 +219,13 @@ function MobileSidebarDrawer({
           <span className="px-1.5 text-[0.7857rem] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
             Navigation
           </span>
-          <button
-            type="button"
+          <IconButton
             aria-label="Close navigation"
-            data-testid="sidebar-overlay-close"
+            testId="sidebar-overlay-close"
             onClick={onClose}
-            className="grid h-8 w-8 place-items-center rounded-md text-text-secondary hover:bg-bg-muted hover:text-text-primary"
           >
             <Icon name="close" />
-          </button>
+          </IconButton>
         </div>
         {children}
       </aside>
