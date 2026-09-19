@@ -50,10 +50,18 @@ export function BodyConflictDialog({
   useInertBackground(panelRef);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onDismiss();
+      if (e.key === "Escape") {
+        // Escape dismisses the dialog and stops there — it must not also
+        // reach the BodyEditor's Escape handler and leave the editor,
+        // which would drop the user's unsaved "mine" text. Capture phase
+        // + stopPropagation so this wins over other document listeners.
+        e.preventDefault();
+        e.stopPropagation();
+        onDismiss();
+      }
     };
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); };
+    document.addEventListener("keydown", onKey, true);
+    return () => { document.removeEventListener("keydown", onKey, true); };
   }, [onDismiss]);
 
   /**

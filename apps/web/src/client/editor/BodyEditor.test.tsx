@@ -103,16 +103,54 @@ describe("BodyEditor — K33 two-state orchestration", () => {
   });
 
   // @verifies TSK-71
-  it("TSK-71: Escape cancels the edit and returns to the rendered view", () => {
+  // @verifies K96
+  // NOTE: this replaces the former "Escape cancels ... does not flush"
+  // assertion, which encoded the pre-K96 behaviour. Ken ruled (K96) the
+  // editor has no discard gesture: Escape FLUSHES and leaves keeping the
+  // text. The old test asserted the data-loss path (revert to last
+  // autosave), so it was asserting the bug.
+  it("K96: Escape flushes and returns to the rendered view, keeping the text", () => {
     renderEditor();
     fireEvent.click(screen.getByText("Some body text."));
     expect(screen.getByTestId("rich-editor")).toBeTruthy();
 
-    fireEvent.keyDown(window, { key: "Escape" });
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
 
-    // Back to rendered; Escape is a cancel, so it does not flush.
+    // Escape now flushes (keep-the-text) and, once the save settles clean,
+    // returns to the rendered view.
+    expect(flush).toHaveBeenCalled();
     expect(screen.getByTestId("body-rendered")).toBeTruthy();
     expect(screen.queryByTestId("rich-editor")).toBeNull();
+  });
+
+  // @verifies K96
+  it("K96: Cmd/Ctrl+Enter flushes and leaves, keeping the text", () => {
+    renderEditor();
+    fireEvent.click(screen.getByText("Some body text."));
+    act(() => {
+      fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    });
+    expect(flush).toHaveBeenCalled();
+    expect(screen.getByTestId("body-rendered")).toBeTruthy();
+  });
+
+  // @verifies K96
+  it("K96: Escape while the conflict dialog is open does NOT leave the editor", () => {
+    currentConflict = { remoteToken: "tok-2", remoteBody: "theirs" } as unknown as BodyAutosave["conflict"];
+    renderEditor();
+    fireEvent.click(screen.getByText("Some body text."));
+    expect(screen.getByTestId("rich-editor")).toBeTruthy();
+
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+
+    // The conflict owns Escape; the editor stays open and nothing is
+    // flushed out from under the unresolved conflict.
+    expect(screen.getByTestId("rich-editor")).toBeTruthy();
+    expect(screen.queryByTestId("body-rendered")).toBeNull();
     expect(flush).not.toHaveBeenCalled();
   });
 
