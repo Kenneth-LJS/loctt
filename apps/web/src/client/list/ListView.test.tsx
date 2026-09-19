@@ -10,8 +10,27 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
 import { listSearchSchema } from "../router/listSearch.ts";
+import { ToastProvider } from "../ui/Toast.tsx";
 import { ListView } from "./ListView.tsx";
+
+/**
+ * ListView calls `useCreateTask` (its empty state's "+ Add task" opens
+ * the shared modal), so every mount wraps it in the same provider stack
+ * the shell uses. ToastProvider is included so a test that actually
+ * opens the modal — which itself calls `useToasts` — has it available;
+ * for the tests that never open it, it is inert.
+ */
+function WrappedListView() {
+  return (
+    <ToastProvider>
+      <CreateTaskProvider>
+        <ListView />
+      </CreateTaskProvider>
+    </ToastProvider>
+  );
+}
 
 /**
  * ListView tests. Stub fetch with a small task page + config data,
@@ -103,7 +122,7 @@ async function mountList(initialSearch = "", settleText = "First task") {
     getParentRoute: () => rootRoute,
     path: "/list",
     validateSearch: listSearchSchema,
-    component: ListView,
+    component: WrappedListView,
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([listRoute]),
@@ -399,7 +418,7 @@ describe("ListView", () => {
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     const rootRoute = createRootRoute();
-    const listRoute = createRoute({ getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: ListView });
+    const listRoute = createRoute({ getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: WrappedListView });
     const router = createRouter({ routeTree: rootRoute.addChildren([listRoute]), history: createMemoryHistory({ initialEntries: ["/list"] }) });
     render(
       <QueryClientProvider client={qc}>
@@ -436,7 +455,7 @@ describe("ListView", () => {
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     const rootRoute = createRootRoute();
-    const listRoute = createRoute({ getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: ListView });
+    const listRoute = createRoute({ getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: WrappedListView });
     const router = createRouter({ routeTree: rootRoute.addChildren([listRoute]), history: createMemoryHistory({ initialEntries: ["/list?status=done"] }) });
     render(
       <QueryClientProvider client={qc}>
@@ -450,6 +469,58 @@ describe("ListView", () => {
     // a fix that requires editing a green test means that test was
     // asserting the bug.
     expect(await screen.findByText(/No tasks match these filters/)).toBeTruthy();
+  });
+
+  // First-run / ONB-8: the truly-empty list (no tasks AND no filters) is
+  // a newcomer's landing. It must be actionable — a create button that
+  // opens the same modal the board/header open — not a dead-end
+  // sentence. Wrapped in the app-wide CreateTaskProvider (as the shell
+  // does) so `useCreateTask` resolves to the real modal.
+  function mountEmptyList(initialSearch: string) {
+    vi.restoreAllMocks();
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      const body = path.startsWith("/api/tasks") ? { items: [], total: 0, offset: 0, limit: 50 } : routeFetch(path);
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: listSearchSchema,
+      component: WrappedListView,
+    });
+    const router = createRouter({ routeTree: rootRoute.addChildren([listRoute]), history: createMemoryHistory({ initialEntries: [`/list${initialSearch}`] }) });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("truly-empty list shows a create button that opens the modal (first-run)", async () => {
+    mountEmptyList("");
+    const add = await screen.findByTestId("list-empty-add-task");
+    expect(screen.getByText(/No tasks yet/)).toBeTruthy();
+    // No filter is active, so the Clear-filters affordance is absent —
+    // that belongs to a filtered-empty view, not a fresh tracker.
+    expect(screen.queryByText(/Clear filters/)).toBeNull();
+    // The button opens the shared create modal (same entry point the
+    // board's "+ Add task" uses).
+    expect(screen.queryByTestId("create-task-modal")).toBeNull();
+    fireEvent.click(add);
+    expect(await screen.findByTestId("create-task-modal")).toBeTruthy();
+  });
+
+  it("filtered-empty list shows Clear filters and NOT a create button", async () => {
+    mountEmptyList("?status=done");
+    expect(await screen.findByText(/No tasks match these filters/)).toBeTruthy();
+    expect(screen.getByText(/Clear filters/)).toBeTruthy();
+    // Creating a task would not bring back rows the filter hid, so the
+    // create CTA is deliberately absent here.
+    expect(screen.queryByTestId("list-empty-add-task")).toBeNull();
   });
 });
 
@@ -515,7 +586,7 @@ function mountPaged(
     getParentRoute: () => rootRoute,
     path: "/list",
     validateSearch: listSearchSchema,
-    component: ListView,
+    component: WrappedListView,
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([listRoute]),

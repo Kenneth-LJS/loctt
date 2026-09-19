@@ -21,6 +21,7 @@ import { useInfo } from "../api/hooks/useInfo.ts";
 import type { TaskListRow } from "../api/hooks/useTasks.ts";
 import { buildQueryString, DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { fieldView } from "../health/fieldHealth.ts";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import type { EstimationShape } from "../task/estimation.ts";
@@ -95,6 +96,14 @@ export function ListView() {
   const userSettings = useUserSettings();
 
   const { announce } = useAnnouncer();
+  // ONB-8 / first-run: the truly-empty list is the newcomer's landing.
+  // The board's "+ Add task" makes that state actionable; the same
+  // create entry point (the app-wide provider) turns the list's empty
+  // state from a dead-end sentence into a way in. Only offered when
+  // nothing is filtering — a filtered-empty view is answered by "Clear
+  // filters", where creating a task would not bring back the rows the
+  // filter hid.
+  const createTask = useCreateTask();
 
   // PRU-3: the project column is shown/hidden by how many projects the
   // URL scopes to — one project hides it (constant), all-projects shows
@@ -898,9 +907,17 @@ export function ListView() {
                       </button>
                     </>
                   ) : (
-                    <>
-                      No tasks yet. Create one to get started.
-                    </>
+                    <div className="flex flex-col items-center gap-3">
+                      <span>No tasks yet. Create your first one to get started.</span>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        testId="list-empty-add-task"
+                        onClick={() => { createTask.open(); }}
+                      >
+                        + Add task
+                      </Button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -995,7 +1012,21 @@ export function ListView() {
       <ul className="flex flex-col gap-2 sm:hidden" data-testid="task-cards">
         {items.length === 0 ? (
           <li className="rounded-md border border-border-subtle bg-bg-surface px-3 py-8 text-center text-text-tertiary">
-            {hasFilters ? "No tasks match these filters." : "No tasks yet. Create one to get started."}
+            {hasFilters ? (
+              "No tasks match these filters."
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <span>No tasks yet. Create your first one to get started.</span>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  testId="list-empty-add-task-card"
+                  onClick={() => { createTask.open(); }}
+                >
+                  + Add task
+                </Button>
+              </div>
+            )}
           </li>
         ) : (
           items.map(task => (

@@ -10,8 +10,18 @@ import {
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
 import { listSearchSchema } from "../router/listSearch.ts";
 import { ListView } from "./ListView.tsx";
+
+/** ListView calls `useCreateTask`; wrap it as the shell does. */
+function WrappedListView() {
+  return (
+    <CreateTaskProvider>
+      <ListView />
+    </CreateTaskProvider>
+  );
+}
 
 /**
  * Config-discoverability (audit P3, K100): the broken-workflow banner
@@ -62,7 +72,7 @@ async function mountList() {
     getParentRoute: () => rootRoute,
     path: "/list",
     validateSearch: listSearchSchema,
-    component: ListView,
+    component: WrappedListView,
   });
   const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,

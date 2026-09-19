@@ -10,6 +10,7 @@ import { useTaskDates } from "../api/hooks/useTaskDates.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { ConfigErrorState } from "../board/ConfigErrorState.tsx";
+import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { buildGroupingCatalog, type GroupEntry } from "../grouping/catalog.ts";
 import { GroupByPicker } from "../grouping/GroupByPicker.tsx";
 import { FilterBar } from "../list/FilterBar.tsx";
@@ -72,6 +73,14 @@ export function TimelineView() {
   const sprints = useSprints();
   const users = useUsers();
   const views = useViews();
+  // First-run: the timeline greets a newcomer with advanced controls
+  // over empty data. When the tracker is genuinely empty (no tasks at
+  // all, no filter hiding them), the empty state offers a way in — the
+  // same app-wide create entry point the board and list use. A
+  // filtered-empty timeline, or one whose tasks are merely undated
+  // (`noBars`, the unscheduled drawer's job), does NOT get this CTA:
+  // creating a task would not answer either state.
+  const createTask = useCreateTask();
 
   const pages = tasks.data?.pages ?? [];
   const items = useMemo(() => pages.flatMap(p => p.items), [pages]);
@@ -694,12 +703,27 @@ export function TimelineView() {
           className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-md border border-border-default text-[0.8571rem] text-text-secondary"
           data-testid="timeline-empty"
         >
-          <span>No tasks match this view.</span>
+          <span>
+            {activeFilters === null
+              ? "No tasks yet. Create your first one to see it on the timeline."
+              : "No tasks match this view."}
+          </span>
           <span data-testid="timeline-empty-filters">
             {activeFilters === null
-              ? "There are no tasks in this tracker yet."
+              ? "Give it a start and due date and it appears here as a bar."
               : `Active filter: ${activeFilters}`}
           </span>
+          {activeFilters === null && (
+            <Button
+              variant="primary"
+              size="sm"
+              testId="timeline-empty-add-task"
+              className="mt-2"
+              onClick={() => { createTask.open(); }}
+            >
+              + Add task
+            </Button>
+          )}
         </div>
       ) : (
         <>

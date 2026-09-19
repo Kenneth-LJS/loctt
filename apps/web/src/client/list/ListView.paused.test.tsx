@@ -33,9 +33,19 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createQueryClient } from "../api/queryClient.ts";
+import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
 import { listSearchSchema } from "../router/listSearch.ts";
 import { ServerUnreachableBanner } from "../shell/ServerUnreachableBanner.tsx";
 import { ListView } from "./ListView.tsx";
+
+/** ListView calls `useCreateTask`; wrap it as the shell does. */
+function WrappedListView() {
+  return (
+    <CreateTaskProvider>
+      <ListView />
+    </CreateTaskProvider>
+  );
+}
 
 function stubFetch(handler: (path: string) => Response | Promise<Response>) {
   vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
@@ -69,7 +79,7 @@ function mount(search = "") {
     getParentRoute: () => rootRoute,
     path: "/list",
     validateSearch: listSearchSchema,
-    component: ListView,
+    component: WrappedListView,
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([listRoute]),
@@ -323,7 +333,7 @@ describe("XS-56: the list never presents stale data as authoritative", () => {
       getParentRoute: () => rootRoute,
       path: "/list",
       validateSearch: listSearchSchema,
-      component: ListView,
+      component: WrappedListView,
     });
     const router = createRouter({
       routeTree: rootRoute.addChildren([listRoute]),
