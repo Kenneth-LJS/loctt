@@ -13,6 +13,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SprintsPanel } from "./SprintsPanel.tsx";
 
 /**
+ * Row actions (Burndown/Archive/Delete) live behind a per-row kebab
+ * overflow menu (responsive GROUP A). Open the row's kebab, then click the
+ * action MenuItem by testid.
+ */
+function openSprintAction(actionTestId: string): void {
+  const kebabs = screen.getAllByRole("button", { name: /Actions for sprint/ });
+  fireEvent.click(kebabs[0] as HTMLElement);
+  fireEvent.click(screen.getByTestId(actionTestId));
+}
+
+/**
  * SprintsPanel — SPR-40 create / delete from Settings.
  *
  * The panel was read-only; these turn on the *requests* it now issues to
@@ -146,7 +157,7 @@ describe("SprintsPanel — delete (SPR-40)", () => {
     await screen.findByTestId("sprints-list");
 
     // The active sprint's delete control (the archived one is hidden).
-    fireEvent.click(screen.getByTestId("sprint-delete"));
+    openSprintAction("sprint-delete");
     // Zero-ref sprint: a plain confirm, no remap picker.
     fireEvent.click(await screen.findByTestId("remap-confirm"));
 
@@ -196,7 +207,7 @@ describe("SprintsPanel — archive (SPR-40)", () => {
     expect(screen.getByTestId("sprint-row-sp_active").getAttribute("data-sprint-archived")).toBe("false");
 
     // The active row's Archive button (the archived row is hidden).
-    fireEvent.click(screen.getByTestId("sprint-archive-toggle"));
+    openSprintAction("sprint-archive-toggle");
 
     // The hook fired at the right route.
     await waitFor(() => { expect(fetchMock.mock.calls.some(c =>
@@ -219,11 +230,12 @@ describe("SprintsPanel — archive (SPR-40)", () => {
     // Reveal the archived sprint, whose button reads "Unarchive".
     fireEvent.click(screen.getByTestId("sprints-show-archived"));
 
+    // Open the archived row's kebab; its toggle reads "Unarchive".
     const archivedRow = screen.getByTestId("sprint-row-sp_arch");
-    const toggle = archivedRow.querySelector<HTMLButtonElement>(
-      "[data-testid='sprint-archive-toggle']",
-    );
-    if (toggle === null) throw new Error("no archive toggle on archived row");
+    const kebab = archivedRow.querySelector<HTMLButtonElement>("[aria-label^='Actions for sprint']");
+    if (kebab === null) throw new Error("no actions kebab on archived row");
+    fireEvent.click(kebab);
+    const toggle = screen.getByTestId("sprint-archive-toggle");
     expect(toggle.textContent).toContain("Unarchive");
     fireEvent.click(toggle);
 

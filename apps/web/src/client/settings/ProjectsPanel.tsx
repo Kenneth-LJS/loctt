@@ -20,6 +20,7 @@ import { Modal } from "../ui/Modal.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { DeleteProjectDialog } from "./DeleteProjectDialog.tsx";
 import { slugify, validateNewProject } from "./projectForm.ts";
+import { RowActions } from "./RowActions.tsx";
 
 /**
  * Settings → Projects (PRU-5, PRU-6, PRU-7, PRU-17, PRU-19, PRU-20,
@@ -469,64 +470,50 @@ function ProjectRow({
         <span data-testid={`project-refcount-${project.id}`}>{taskCount}</span>
       </td>
       <td className="py-2 text-right align-top">
-        {!editing && (
-          <Button
-            size="sm"
-            variant="ghost"
-            testId={`project-edit-${project.id}`}
-            onClick={() => {
-              // B2 bug 5: re-seed the draft from the CURRENT prop when
-              // opening Edit. `useState(project.name)` seeds once at
-              // mount, so after an external rename the stale draft would
-              // be written back on Save, silently reverting the rename.
-              setName(project.name);
-              update.reset();
-              setEditing(true);
-            }}
-          >
-            Edit
-          </Button>
-        )}
-        {/* PRU-48: set the workspace default. The current default's
-            button is inert and labelled, so the marker and the control
-            cannot disagree. Archived projects cannot be made default —
-            new tasks must not land in a hidden project. */}
-        <Button
-          size="sm"
-          variant="ghost"
-          testId={`project-set-default-${project.id}`}
-          disabled={isDefault || archived || setDefault.isPending}
-          title={archived
-            ? "An archived project cannot be the default."
-            : undefined}
-          onClick={() => { setDefault.reset(); setDefault.mutate({ id: project.id }); }}
-        >
-          {isDefault ? "Default" : "Make default"}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          testId={`project-archive-${project.id}`}
-          onClick={() => {
-            archive.reset();
-            archive.mutate({ id: project.id, archived: !archived });
-          }}
-        >
-          {archived ? "Unarchive" : "Archive"}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          testId={`project-delete-${project.id}`}
-          disabled={isOnlyProject}
-          title={isOnlyProject
-            ? "A tracker must have at least one project. Create the replacement first."
-            : undefined}
-          onClick={onDelete}
-          className="text-danger-fg hover:bg-danger-bg"
-        >
-          Delete
-        </Button>
+        {/* Row actions in a kebab (like every other settings panel) so the
+            button labels stop clipping mid-word / forcing an inner
+            horizontal scroll on a narrow pane (reviewer FAIL). While
+            editing, Edit is dropped (the inline edit form is open). */}
+        <RowActions
+          label={`Actions for project ${project.name}`}
+          actions={[
+            ...(!editing ? [{
+              label: "Edit",
+              testId: `project-edit-${project.id}`,
+              onSelect: () => {
+                // B2 bug 5: re-seed the draft from the CURRENT prop when
+                // opening Edit. `useState(project.name)` seeds once at
+                // mount, so after an external rename the stale draft would
+                // be written back on Save, silently reverting the rename.
+                setName(project.name);
+                update.reset();
+                setEditing(true);
+              },
+            }] : []),
+            {
+              label: isDefault ? "Default (current)" : "Make default",
+              testId: `project-set-default-${project.id}`,
+              disabled: isDefault || archived || setDefault.isPending,
+              title: archived ? "An archived project cannot be the default." : undefined,
+              onSelect: () => { setDefault.reset(); setDefault.mutate({ id: project.id }); },
+            },
+            {
+              label: archived ? "Unarchive" : "Archive",
+              testId: `project-archive-${project.id}`,
+              onSelect: () => { archive.reset(); archive.mutate({ id: project.id, archived: !archived }); },
+            },
+            {
+              label: "Delete",
+              testId: `project-delete-${project.id}`,
+              danger: true,
+              disabled: isOnlyProject,
+              title: isOnlyProject
+                ? "A tracker must have at least one project. Create the replacement first."
+                : undefined,
+              onSelect: onDelete,
+            },
+          ]}
+        />
         {/* B2 bug 3: a failed Make-default or Archive must be visible —
             both mutations used to fail silently, leaving the marker and
             the on-disk state disagreeing with what the user saw. */}
@@ -595,11 +582,7 @@ export function ProjectsPanel() {
     <div className="p-8" data-testid="settings-projects">
       <h1 className="mb-1 text-lg font-semibold">Projects</h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Each project has its own key prefix and counter. Defined in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">
-          .loctt/config/projects.yaml
-        </code>
-        .
+        Each project has its own key prefix and counter.
       </p>
 
       {/* PRU-46 / K16: an interrupted rename is *already finished* by

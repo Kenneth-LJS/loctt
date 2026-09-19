@@ -172,7 +172,7 @@ function describe(status: SchemaStatusResponse): {
         // user to take an irreversible-looking step on trust.
         detail:
           `The data directory is at schema v${status.on_disk}, but this build expects ` +
-          `v${status.current}. Run \`loctt migrate\` to update it — it takes a backup ` +
+          `v${status.current}. Use Migrate now below to update it — it takes a backup ` +
           "before changing anything. Writes are blocked until then.",
       };
     case "future":
@@ -198,7 +198,8 @@ function describe(status: SchemaStatusResponse): {
         detail:
           `Reading the tracker's schema version did not produce a result that could ` +
           `be interpreted: ${status.message} Your data is untouched — nothing has ` +
-          "been changed. Inspect `.loctt/.schema-version`, or run `loctt doctor`.",
+          "been changed. Open Settings → Diagnostics to run the health checks; if the " +
+          "schema file itself is corrupt, inspect `.loctt/.schema-version` by hand.",
       };
     case "missing":
       return {

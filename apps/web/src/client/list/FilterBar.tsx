@@ -11,9 +11,12 @@ import {
 } from "../api/hooks/sidebarData.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import type { ListSearch } from "../router/listSearch.ts";
+import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
+import { Sheet } from "../ui/Sheet.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 import { AdvancedQuerySurface } from "./AdvancedQuerySurface.tsx";
 import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
@@ -117,6 +120,11 @@ export function FilterBar({
   const workflow = useWorkflow();
 
   const [saveOpen, setSaveOpen] = useState(false);
+  // Below sm the facet band collapses into a single "Filters" button that
+  // opens a bottom sheet (responsive plan GROUP B) — 9+ facet pills wrapping
+  // into a column ate most of the screen before any task showed.
+  const isNarrow = useIsNarrow();
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 
   const options = useMemo(
     () =>
@@ -193,10 +201,29 @@ export function FilterBar({
     });
   };
 
+  // A `q=` DSL carries raw entity ids — `assignee = "01M2VY..."` — which
+  // mean nothing to a person reading the chip (UX eval #6). Resolve any
+  // quoted id in the query to its display name for the PREVIEW only; the
+  // real query (and the Advanced editor) keep the ids. Covers users
+  // (assignee/reporter/mentions), labels, milestones and sprints.
+  const idToName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const u of users.data?.items ?? []) m.set(u.id, u.name ?? u.id);
+    for (const l of labels.data?.items ?? []) m.set(l.id, l.name);
+    for (const ms of milestones.data?.items ?? []) m.set(ms.id, ms.name);
+    for (const sp of sprints.data?.items ?? []) m.set(sp.id, sp.name);
+    return m;
+  }, [users.data, labels.data, milestones.data, sprints.data]);
+
+  const humanized = query.replace(/"([^"]+)"/g, (whole, id: string) => {
+    const name = idToName.get(id);
+    return name !== undefined ? `"${name}"` : whole;
+  });
+
   // A truncated preview keeps the chip informative (which query is
   // running) without letting a long DSL expression blow out the row; the
   // full text is on the chip's title and in the Advanced editor.
-  const queryPreview = query.length > 32 ? `${query.slice(0, 31)}…` : query;
+  const queryPreview = humanized.length > 32 ? `${humanized.slice(0, 31)}…` : humanized;
 
   const hasActive = activeChips.length > 0 || hasQuery;
 
@@ -232,6 +259,72 @@ export function FilterBar({
     );
   }
 
+  // The number of active facet filters (the chip count, excluding the
+  // free-text query) — the badge on the mobile "Filters" button.
+  const activeFacetCount = activeChips.length;
+
+  // The facet dropdowns + custom-field facets, extracted so they render
+  // identically inline (desktop) and inside the mobile filter Sheet — both
+  // call the same setFilter/navigate writes, so state never forks.
+  const facetControls = (
+    <>
+      {FACET_KEYS.filter(key => !hiddenFacets.includes(key)).map(key => (
+        <FilterDropdown
+          key={key}
+          label={FACET_LABELS[key]}
+          options={options[key]}
+          unavailable={failedFacets.has(key)}
+          selected={facetOf(key)}
+          onChange={next => setFilter(key, next)}
+          // LST-40/MSL-7: labels are set-valued, so 2+ selected can mean
+          // "has all of these" or "has any". Offer the choice inline
+          // once it matters; other facets are scalar and OR is the only
+          // sensible reading.
+          {...(key === "labels" && facetOf("labels").length >= 2
+            ? { matchToggle: (
+                <LabelsMatchToggle
+                  value={search.labels_match ?? "any"}
+                  onChange={mode => void navigate({
+                    search: prev => ({
+                      ...prev,
+                      labels_match: mode === "all" ? "all" : undefined,
+                      page: undefined,
+                    }),
+                  })}
+                />
+              ) }
+            : {})}
+        />
+      ))}
+
+      {customFields.map(cf =>
+        cf.type === "enum" && cf.values && cf.values.length > 0 ? (
+          <FilterDropdown
+            key={cf.key}
+            label={cf.label}
+            options={cf.values.map(v => ({ value: v.key, label: v.label }))}
+            selected={customFilters[cf.key] ?? []}
+            onChange={next => setFilter(`field.${cf.key}`, next)}
+          />
+        ) : null,
+      )}
+    </>
+  );
+
+  const showArchivedControl = (
+    <label className="inline-flex cursor-pointer items-center gap-1.5 text-[0.9286rem] text-text-secondary">
+      <Checkbox
+        checked={search.archived === true}
+        onChange={e =>
+          void navigate({
+            search: prev => ({ ...prev, archived: e.target.checked ? true : undefined, page: undefined }),
+          })
+        }
+      />
+      Show archived
+    </label>
+  );
+
   return (
     <div className="flex flex-col gap-2">
       {/* Toolbar, regrouped into three bands (K-2/K-3/S-3/S-4): the
@@ -253,70 +346,92 @@ export function FilterBar({
           Advanced
         </ToolbarButton>
 
-        {/* Band 2 — facets. */}
-        {FACET_KEYS.filter(key => !hiddenFacets.includes(key)).map(key => (
-          <FilterDropdown
-            key={key}
-            label={FACET_LABELS[key]}
-            options={options[key]}
-            unavailable={failedFacets.has(key)}
-            selected={facetOf(key)}
-            onChange={next => setFilter(key, next)}
-            // LST-40/MSL-7: labels are set-valued, so 2+ selected can mean
-            // "has all of these" or "has any". Offer the choice inline
-            // once it matters; other facets are scalar and OR is the only
-            // sensible reading.
-            {...(key === "labels" && facetOf("labels").length >= 2
-              ? { matchToggle: (
-                  <LabelsMatchToggle
-                    value={search.labels_match ?? "any"}
-                    onChange={mode => void navigate({
-                      search: prev => ({
-                        ...prev,
-                        labels_match: mode === "all" ? "all" : undefined,
-                        page: undefined,
-                      }),
-                    })}
-                  />
-                ) }
-              : {})}
-          />
-        ))}
+        {/* Band 2 — facets. Inline at >= sm; collapsed into a "Filters"
+            button + bottom sheet below sm (GROUP B). The same controls are
+            rendered in both places (facetControls), so they write the same
+            search params either way. */}
+        {!isNarrow && facetControls}
 
-        {customFields.map(cf =>
-          cf.type === "enum" && cf.values && cf.values.length > 0 ? (
-            <FilterDropdown
-              key={cf.key}
-              label={cf.label}
-              options={cf.values.map(v => ({ value: v.key, label: v.label }))}
-              selected={customFilters[cf.key] ?? []}
-              onChange={next => setFilter(`field.${cf.key}`, next)}
-            />
-          ) : null,
+        {isNarrow && (
+          <button
+            type="button"
+            data-testid="filters-open"
+            onClick={() => { setFilterSheetOpen(true); }}
+            className="inline-flex h-11 items-center gap-2 rounded-md border border-border-default px-3 text-[0.9286rem] text-text-primary hover:bg-bg-muted"
+          >
+            Filters
+            {activeFacetCount > 0 && (
+              <span
+                data-testid="filters-active-count"
+                className="grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-[0.7857rem] font-medium text-accent-contrast"
+              >
+                {activeFacetCount}
+              </span>
+            )}
+          </button>
         )}
 
         <div className="flex-1" />
 
-        {/* Band 3 — actions. */}
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[0.9286rem] text-text-secondary">
-          <Checkbox
-            checked={search.archived === true}
-            onChange={e =>
-              void navigate({
-                search: prev => ({ ...prev, archived: e.target.checked ? true : undefined, page: undefined }),
-              })
-            }
-          />
-          Show archived
-        </label>
+        {/* Band 3 — actions. Show archived + Save-as-view stay inline at
+            >= sm; on mobile they move into the filter sheet. */}
+        {!isNarrow && showArchivedControl}
 
-        {showSaveView && (
+        {!isNarrow && showSaveView && (
           <Button size="md" onClick={() => setSaveOpen(true)}>
             <span aria-hidden="true">{ICON.star}</span>
             Save as view
           </Button>
         )}
       </div>
+
+      {isNarrow && filterSheetOpen && (
+        <Sheet
+          title="Filters"
+          testId="filters-sheet"
+          onClose={() => { setFilterSheetOpen(false); }}
+          footer={
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                data-testid="filters-sheet-clear"
+                disabled={!hasActive}
+                onClick={() => { void navigate({ search: () => ({}) }); }}
+                className="text-[0.9286rem] text-text-secondary underline-offset-2 hover:underline disabled:opacity-40"
+              >
+                Clear all
+              </button>
+              <Button size="md" onClick={() => { setFilterSheetOpen(false); }}>
+                Done
+              </Button>
+            </div>
+          }
+        >
+          {/* Same facet controls as desktop, stacked full-width. Changes
+              apply live (they write search params) — the list behind the
+              sheet updates as on desktop. */}
+          <div className="flex flex-col gap-2 [&_button]:w-full">
+            {facetControls}
+            <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-[0.9286rem] text-text-secondary">
+              <Checkbox
+                checked={search.archived === true}
+                onChange={e =>
+                  void navigate({
+                    search: prev => ({ ...prev, archived: e.target.checked ? true : undefined, page: undefined }),
+                  })
+                }
+              />
+              Show archived
+            </label>
+            {showSaveView && (
+              <Button size="md" onClick={() => { setFilterSheetOpen(false); setSaveOpen(true); }}>
+                <span aria-hidden="true">{ICON.star}</span>
+                Save as view
+              </Button>
+            )}
+          </div>
+        </Sheet>
+      )}
 
       {hasActive ? (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -326,7 +441,7 @@ export function FilterBar({
             // from); "Clear all" below wipes everything.
             <span
               data-testid="query-chip"
-              title={query}
+              title={humanized}
               className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
             >
               <span className="text-accent/70">Query:</span>
@@ -337,7 +452,7 @@ export function FilterBar({
                 onClick={clearQuery}
                 className="ml-0.5 cursor-pointer text-accent/70 hover:text-accent"
               >
-                {ICON.close}
+                <Icon name="close" size={12} />
               </button>
             </span>
           ) : null}
@@ -361,7 +476,7 @@ export function FilterBar({
                 }}
                 className={`ml-0.5 cursor-pointer ${extraClass}`}
               >
-                {ICON.close}
+                <Icon name="close" size={12} />
               </button>
             );
             // LST-33: a dangling reference reads as "gone", not as a

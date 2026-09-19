@@ -286,16 +286,22 @@ export function DiagnosticsPanel() {
                 data-testid={`diagnostics-check-${check.name.replace(/\s+/g, "-")}`}
                 data-check-status={check.status}
                 data-check-state="done"
-                className="flex gap-3 border-b border-border-subtle py-2 text-[0.9286rem] last:border-0"
+                className="flex flex-col gap-x-3 gap-y-0.5 border-b border-border-subtle py-2 text-[0.9286rem] last:border-0 sm:flex-row"
               >
-                <span
-                  className={`w-12 shrink-0 font-medium ${STATUS_CLASS[check.status]}`}
-                  data-testid="diagnostics-check-status"
-                >
-                  {STATUS_LABEL[check.status]}
+                {/* On a phone the status + name sit on the first line and
+                    the detail wraps under them; on >= sm the row is the
+                    original three columns. `break-words` stops a long
+                    detail string forcing horizontal scroll (UX eval #5). */}
+                <span className="flex gap-3 sm:contents">
+                  <span
+                    className={`w-12 shrink-0 font-medium ${STATUS_CLASS[check.status]}`}
+                    data-testid="diagnostics-check-status"
+                  >
+                    {STATUS_LABEL[check.status]}
+                  </span>
+                  <span className="text-text-primary sm:w-48 sm:shrink-0">{check.name}</span>
                 </span>
-                <span className="w-48 shrink-0 text-text-primary">{check.name}</span>
-                <span className="min-w-0 flex-1 text-text-secondary">
+                <span className="min-w-0 flex-1 break-words text-text-secondary">
                   <MessageWithCommands message={check.message} />
                 </span>
               </li>

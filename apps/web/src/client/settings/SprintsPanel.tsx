@@ -1,5 +1,5 @@
 import type { SprintDef } from "@loctt/contracts";
-import { Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -11,6 +11,7 @@ import { LoadingState } from "../ui/LoadingState.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
+import { RowActions } from "./RowActions.tsx";
 
 /**
  * Settings → Data → Sprints (SPR-40).
@@ -47,6 +48,7 @@ function SprintRow({ sprint, all }: {
 }) {
   const del = useDeleteSprint();
   const archive = useArchiveSprint();
+  const navigate = useNavigate();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const count = sprint.taskCount ?? 0;
   const archived = sprint.archived === true;
@@ -56,7 +58,7 @@ function SprintRow({ sprint, all }: {
       data-testid={`sprint-row-${sprint.id}`}
       data-sprint-state={sprint.state}
       data-sprint-archived={archived ? "true" : "false"}
-      className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-subtle py-2 last:border-0"
     >
       <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
         {sprint.name}
@@ -66,55 +68,39 @@ function SprintRow({ sprint, all }: {
           </span>
         )}
       </span>
-      <span className="w-24 shrink-0 text-[0.8571rem] text-text-secondary">
+      <span className="shrink-0 text-[0.8571rem] text-text-secondary">
         {STATE_LABEL[sprint.state] ?? sprint.state}
       </span>
-      <span className="w-48 shrink-0 text-[0.8571rem] text-text-secondary">
+      <span className="shrink-0 whitespace-nowrap text-[0.8571rem] text-text-secondary">
         {sprint.start_date} → {sprint.end_date}
       </span>
       <span
         data-testid="sprint-refcount"
         data-sprint-refcount={String(count)}
-        className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
+        className="shrink-0 whitespace-nowrap text-right text-[0.8571rem] text-text-secondary"
       >
         {String(count)} task{count === 1 ? "" : "s"}
       </span>
 
-      {/* Metadata editing (name/dates/goal/state) lives on the detail
-          route behind its Edit control (SPR-8). The list-level lifecycle
-          — archive/unarchive and delete — lives here (SPR-40). */}
-      <Link
-        to="/sprints/$key"
-        params={{ key: sprint.id }}
-        data-testid="sprint-burndown-link"
-        className="shrink-0 text-[0.8571rem] text-accent hover:underline"
-      >
-        Burndown
-      </Link>
-
-      {/* SPR-40: archive/unarchive is its own route (like labels, unlike
-          milestones) — see `useArchiveSprint`. An archived sprint keeps
-          its task assignments and drops out of the active split. */}
-      <Button
-        variant="secondary"
-        size="sm"
-        testId="sprint-archive-toggle"
-        disabled={archive.isPending}
-        onClick={() => { archive.mutate({ id: sprint.id, archived: !archived }); }}
-      >
-        {archived ? "Unarchive" : "Archive"}
-      </Button>
-
-      {/* B1 Button (danger) — matches the archive Button on the same row
-          rather than a hand-rolled bordered <button>. */}
-      <Button
-        variant="danger"
-        size="sm"
-        testId="sprint-delete"
-        onClick={() => { setConfirmingDelete(true); }}
-      >
-        Delete
-      </Button>
+      {/* Row lifecycle actions collapse into a kebab so they never
+          overflow the row on a narrow pane (responsive GROUP A). Burndown
+          (navigation), Archive/Unarchive, and Delete. Metadata editing
+          (name/dates/goal/state) still lives on the detail route (SPR-8). */}
+      <div className="shrink-0">
+        <RowActions
+          label={`Actions for sprint ${sprint.name}`}
+          actions={[
+            { label: "Open burndown", testId: "sprint-burndown-link", onSelect: () => { void navigate({ to: "/sprints/$key", params: { key: sprint.id } }); } },
+            {
+              label: archived ? "Unarchive" : "Archive",
+              testId: "sprint-archive-toggle",
+              disabled: archive.isPending,
+              onSelect: () => { archive.mutate({ id: sprint.id, archived: !archived }); },
+            },
+            { label: "Delete", testId: "sprint-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
+          ]}
+        />
+      </div>
 
       {confirmingDelete && (
         // SPR-40 / parity with `sprint delete`: a referenced sprint
@@ -196,10 +182,7 @@ export function SprintsPanel() {
         Sprints
       </h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
-          .loctt/config/sprints.yaml
-        </code>. Open a sprint to edit its dates, goal and state, and see its burndown.
+        Open a sprint to edit its dates, goal and state, and see its burndown.
       </p>
 
       {/* SPR-40: create a sprint. `state` offers exactly the three SPR-7

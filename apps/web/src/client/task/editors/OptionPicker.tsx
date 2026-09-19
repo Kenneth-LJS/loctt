@@ -211,8 +211,17 @@ export function OptionPicker({
         aria-invalid={errorId !== undefined}
         aria-describedby={errorId}
         onClick={() => { setOpen(o => !o); }}
-        className="-mx-1 w-full rounded px-1 py-0.5 text-left text-[0.9286rem] text-text-primary hover:bg-bg-muted"
+        // Affordance: these meta fields are editable dropdowns, but with
+        // only a hover-bg they read as static text at rest (Ken's report —
+        // "fields that are meant to be dropdowns don't look like dropdowns").
+        // `group` + cursor-pointer + a hover border/bg + an always-present
+        // chevron (aria-hidden; `aria-haspopup` already carries the
+        // semantics for AT) make it legible as a control without turning it
+        // into a heavy form <select>. The chevron sits at low opacity at
+        // rest and strengthens on hover/open.
+        className="group -mx-1 flex w-full items-center gap-1 rounded border border-transparent px-1 py-0.5 text-left text-[0.9286rem] text-text-primary hover:cursor-pointer hover:border-border-subtle hover:bg-bg-muted aria-expanded:border-border-subtle aria-expanded:bg-bg-muted"
       >
+        <span className="min-w-0 flex-1">
         {current !== undefined ? (
           <span className="inline-flex items-center gap-1.5">
             {current.color !== undefined && (
@@ -237,6 +246,19 @@ export function OptionPicker({
         ) : (
           <span className="text-text-tertiary">{emptyText}</span>
         )}
+        </span>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 12 12"
+          className="h-3 w-3 shrink-0 text-text-tertiary opacity-50 transition-[transform,opacity] group-hover:opacity-100 group-aria-expanded:rotate-180 group-aria-expanded:opacity-100"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M3 4.5 6 7.5 9 4.5" />
+        </svg>
       </button>
 
       {open && (

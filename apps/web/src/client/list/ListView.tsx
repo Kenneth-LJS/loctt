@@ -22,11 +22,12 @@ import type { TaskListRow } from "../api/hooks/useTasks.ts";
 import { buildQueryString, DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { fieldView } from "../health/fieldHealth.ts";
+import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import type { EstimationShape } from "../task/estimation.ts";
 import { estimationShape } from "../task/estimation.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
-import { ICON } from "../ui/icons.ts";
+import { Icon } from "../ui/Icon.tsx";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
 import {
   AssigneeCell,
@@ -73,6 +74,10 @@ const DEFAULT_SORT_DIR: Record<string, "asc" | "desc"> = {
 export function ListView() {
   const search = useSearch({ from: "/list" });
   const navigate = useNavigate({ from: "/list" });
+  // Below `sm`, render the stacked-card layout instead of the table
+  // (UX eval #3). Conditional render, not CSS toggle, so the task list is
+  // never in the DOM twice.
+  const isNarrow = useIsNarrow();
 
   const params = tasksParamsFromSearch(search);
   const tasks = useTasksFeed(params);
@@ -726,11 +731,14 @@ export function ListView() {
           </ul>
         </div>
       )}
-      {/* `overflow-x-auto`, not `hidden`: at a narrow viewport the
-          table is wider than its container, and clipping it made seven
-          of ten columns unreachable by any input — worse than the
-          honest overflow it replaced. `overflow-y-hidden` keeps the
-          rounded corners from being cut. */}
+      {/* The table is the desktop/tablet layout (>= sm). Below sm it is
+          replaced by a stacked-card list (rendered conditionally below) —
+          a 10-column table on a 375px phone was unusable (Title clipped,
+          most columns off-screen behind a horizontal scroll). UX eval #3.
+          Rendered only when NOT narrow so the two layouts never coexist in
+          the DOM. `overflow-x-auto` still lets a tablet scroll a wide
+          column set; `overflow-y-hidden` keeps the rounded corners. */}
+      {!isNarrow && (
       <div className="overflow-x-auto overflow-y-hidden rounded-md border border-border-subtle bg-bg-surface">
         {/* A11Y-26: the table has an accessible name describing what
             it lists, so a screen reader's table navigation announces
@@ -788,23 +796,18 @@ export function ListView() {
                             this column is the active sort, the arrow is
                             in the stronger secondary text colour and
                             points up (asc) / down (desc); an unsorted
-                            column shows a faint neutral caret hint. All
-                            three use the canonical icon glyphs (ICON) so
-                            the list stops mixing `▼` with the app-wide
-                            `▾` (icons.ts §sort). */}
-                        <span
-                          className={
-                            isSorted
-                              ? "text-[0.7143rem] text-text-secondary"
-                              : "text-[0.7143rem] text-text-tertiary"
+                            column shows a faint neutral caret hint. */}
+                        <Icon
+                          name={
+                            isSorted && sortDir === "asc"
+                              ? "chevronUp"
+                              : "chevronDown"
                           }
-                        >
-                          {isSorted
-                            ? sortDir === "asc"
-                              ? ICON.caretUp
-                              : ICON.caretDown
-                            : ICON.caretDown}
-                        </span>
+                          size={12}
+                          className={
+                            isSorted ? "text-text-secondary" : "text-text-tertiary"
+                          }
+                        />
                       </button>
                     ) : (
                       col.label
@@ -906,13 +909,21 @@ export function ListView() {
                     // paint themselves — so on hover the whole row lifts,
                     // the ID/label cells included, and each chip stays
                     // legible instead of dissolving into the hover.
-                    "cursor-pointer [&>td]:border-b [&>td]:border-border-default [&>td]:px-3 [&>td]:py-2.5",
-                    "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0",
+                    //
+                    // The border-bottom + cell padding must ALSO target the
+                    // row-header `<th>` (the key column). A `[&>td]`-only rule
+                    // left that one cell with no bottom border, so the row
+                    // divider had a visible break across the key column — it
+                    // read as a gap in the line, not a continuous rule
+                    // (Ken's report). Cover both `td` and `th`.
+                    "cursor-pointer [&>td]:border-b [&>th]:border-b [&>td]:border-border-default [&>th]:border-border-default",
+                    "[&>td]:px-3 [&>td]:py-2.5 [&>th]:px-3 [&>th]:py-2.5",
+                    "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0 last:[&>th]:border-b-0",
                     task.archived ? "opacity-50" : "",
                     // Background *and* a left border, not colour alone
                     // (BLK-1) — the checked box is the third signal.
                     selection.isSelected(task.id)
-                      ? "[&>td]:bg-accent/10 [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-accent"
+                      ? "[&>td]:bg-accent/10 [&>th]:bg-accent/10 [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-accent"
                       : "",
                   ].join(" ")}
                 >
@@ -954,6 +965,64 @@ export function ListView() {
           </tbody>
         </table>
       </div>
+      )}
+
+      {/* Mobile (< sm): a stacked card per task instead of the table.
+          Reuses the same `items`, `Cell` renderers and `selection` so the
+          data, sorting and multi-select all match the table exactly — only
+          the layout differs. UX eval #3 (responsive). Rendered ONLY below
+          `sm` (conditional, not CSS-hidden) so the task list is never in
+          the DOM twice — one accessible source, and no duplicate text for
+          a screen reader or a test's `getByText`. */}
+      {isNarrow && (
+      <ul className="flex flex-col gap-2 sm:hidden" data-testid="task-cards">
+        {items.length === 0 ? (
+          <li className="rounded-md border border-border-subtle bg-bg-surface px-3 py-8 text-center text-text-tertiary">
+            {hasFilters ? "No tasks match these filters." : "No tasks yet. Create one to get started."}
+          </li>
+        ) : (
+          items.map(task => (
+            <li
+              key={task.id}
+              data-testid={`task-card-${task.key}`}
+              aria-selected={selection.isSelected(task.id)}
+              onClick={() => void navigate({ to: "/tasks/$key", params: { key: task.key } })}
+              className={[
+                "cursor-pointer rounded-md border bg-bg-surface p-3",
+                selection.isSelected(task.id) ? "border-accent bg-accent/5" : "border-border-subtle",
+                task.archived ? "opacity-50" : "",
+              ].join(" ")}
+            >
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${task.key}`}
+                  checked={selection.isSelected(task.id)}
+                  onClick={e => e.stopPropagation()}
+                  onChange={() => selection.toggle(task.id)}
+                  className="mt-0.5 shrink-0 cursor-pointer accent-accent"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 text-[0.7857rem] text-text-tertiary">
+                    <Cell colId="key" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                    <Cell colId="project" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                  </div>
+                  <div className="mt-0.5 font-medium text-text-primary">
+                    <Cell colId="title" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8571rem]">
+                    <Cell colId="status" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                    <Cell colId="priority" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                    <Cell colId="assignee" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                    <Cell colId="due_date" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                  </div>
+                </div>
+              </div>
+            </li>
+          ))
+        )}
+      </ul>
+      )}
       {/* The outcome outlives the bar. A move clears the selection
           (BLK-18), which unmounts BulkBar — and with it the only place
           the result was shown, taking the new keys BLK-9 requires be
@@ -974,7 +1043,7 @@ export function ListView() {
             onClick={() => { setBulkResult(undefined); }}
             className="ml-auto rounded-md border border-border-subtle px-2 py-0.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted"
           >
-            ✕
+            <Icon name="close" size={14} />
           </button>
         </div>
       )}

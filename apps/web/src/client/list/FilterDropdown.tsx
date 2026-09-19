@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Menu } from "../ui/Menu.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
@@ -93,7 +94,7 @@ export function FilterDropdown({
         >
           {label}
           {count > 0 ? <span className="tabular-nums">· {count}</span> : null}
-          <span className="text-[0.7143rem] text-text-tertiary">▾</span>
+          <Icon name="chevronDown" size={12} className="text-text-tertiary" />
         </button>
       )}
     >

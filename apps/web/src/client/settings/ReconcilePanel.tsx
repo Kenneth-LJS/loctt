@@ -18,6 +18,7 @@ import {
 } from "../api/hooks/useGit.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -181,16 +182,20 @@ function RekeyPreview({ plan, confirm, onConfirmed }: {
               <span data-testid="git-rekey-collided-key">{l.key}</span> collided —
               {" "}renumbering to <span data-testid="git-rekey-new-key">{l.newKey ?? "(unavailable)"}</span>
             </div>
+            {/* The internal task ids (ULIDs) were removed here — they
+                identify nothing to a person. The human key is already in
+                the header line above; the created dates are what let a
+                user recognise which task is which. (Ken's report.) */}
             <div className="mt-1 text-text-secondary">
-              Keeps the key: <code>{l.keeperId}</code> (created {fmt(l.keeperCreatedAt)})
+              The task created {fmt(l.keeperCreatedAt)} keeps the key.
             </div>
             <div className="text-text-secondary">
-              Renumbered: <code>{l.loserId}</code> (created {fmt(l.loserCreatedAt)})
+              The task created {fmt(l.loserCreatedAt)} is renumbered.
             </div>
             <div className="mt-1 text-text-tertiary">
               {l.tiebreak === "created_at"
-                ? "Decided by created_at — the earlier task keeps the key."
-                : "The created_at values tied; the lower ULID kept the key."}
+                ? "The earlier task keeps the key."
+                : "Both were created at the same time, so the tie was broken automatically."}
             </div>
           </li>
         ))}
@@ -492,7 +497,7 @@ function TaskGroup({ group, decisions, collapsed, onToggle, onChoose }: {
         onClick={onToggle}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.9286rem] font-medium text-text-primary"
       >
-        <span aria-hidden="true">{collapsed ? ICON.caretRight : ICON.caretDown}</span>
+        <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={14} />
         <code className="font-mono text-[0.8571rem]">{group.taskKey}</code>
         <span className="truncate text-text-secondary">{group.taskTitle}</span>
         <span className="ml-auto text-[0.8571rem] text-text-tertiary">

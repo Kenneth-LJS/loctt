@@ -7,6 +7,7 @@ import { useViews } from "../api/hooks/sidebarData.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { RowActions } from "./RowActions.tsx";
 import { ViewFormDialog } from "./ViewFormDialog.tsx";
 
 /**
@@ -57,7 +58,10 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
     <li
       data-testid={`view-row-${view.id}`}
       data-view-archived={archived ? "true" : "false"}
-      className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
+      // flex-wrap so on a narrow pane the query drops to its own line
+      // instead of a fixed-width chip pushing the actions off-screen
+      // (reviewer FAIL). At >= sm it stays a single inline row.
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-subtle py-2 last:border-0"
     >
       <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
         {view.name}
@@ -69,11 +73,13 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
       </span>
       {/*
         VUE-26: the query is shown exactly as the file holds it, so a
-        view the CLI wrote is visibly the same view.
+        view the CLI wrote is visibly the same view. Order-last on mobile
+        so it wraps to a full-width line below the name+actions; capped on
+        desktop. `min-w-0` lets it truncate rather than force the row wide.
       */}
       <code
         data-testid="view-query"
-        className="w-80 shrink-0 truncate rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
+        className="order-last min-w-0 w-full shrink truncate rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary sm:order-none sm:w-auto sm:max-w-80"
         title={view.query}
       >
         {view.query}
@@ -82,41 +88,9 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
       {/* VUE-41: rename + edit-query, on active views. An archived view
           is restored first (its query still resolves by id), so the Edit
           control belongs on the active row. */}
-      {!archived && onEdit !== undefined && (
-        <Button
-          variant="secondary"
-          size="sm"
-          testId="view-edit"
-          onClick={() => { onEdit(view); }}
-        >
-          Edit
-        </Button>
-      )}
-
-      {archived
-        ? (
-            <button
-              type="button"
-              data-testid="view-unarchive"
-              disabled={unarchive.isPending}
-              onClick={() => { unarchive.mutate({ id: view.id }); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-            >
-              Unarchive
-            </button>
-          )
-        : (
-            <button
-              type="button"
-              data-testid="view-archive"
-              disabled={del.isPending}
-              onClick={() => { del.mutate({ id: view.id, soft: true }); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-            >
-              Archive
-            </button>
-          )}
-
+      {/* Row actions collapse into a kebab (responsive GROUP A) so the
+          view name + query chip + actions no longer overflow the row.
+          Edit only on an active row (an archived view is restored first). */}
       {confirming
         ? (
             <span className="flex shrink-0 items-center gap-2 text-[0.8571rem]">
@@ -142,14 +116,18 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
             </span>
           )
         : (
-            <button
-              type="button"
-              data-testid="view-delete"
-              onClick={() => { setConfirming(true); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-            >
-              Delete
-            </button>
+            <RowActions
+              label={`Actions for view ${view.name}`}
+              actions={[
+                ...(!archived && onEdit !== undefined
+                  ? [{ label: "Edit", testId: "view-edit", onSelect: () => { onEdit(view); } }]
+                  : []),
+                archived
+                  ? { label: "Unarchive", testId: "view-unarchive", disabled: unarchive.isPending, onSelect: () => { unarchive.mutate({ id: view.id }); } }
+                  : { label: "Archive", testId: "view-archive", disabled: del.isPending, onSelect: () => { del.mutate({ id: view.id, soft: true }); } },
+                { label: "Delete", testId: "view-delete", danger: true, onSelect: () => { setConfirming(true); } },
+              ]}
+            />
           )}
     </li>
   );
@@ -239,10 +217,7 @@ export function SavedViewsPanel() {
         </Button>
       </div>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
-          .loctt/config/queries.yaml
-        </code>. Archived views stay runnable by their URL but are hidden
+        Archived views stay runnable by their URL but are hidden
         from the sidebar.
       </p>
 

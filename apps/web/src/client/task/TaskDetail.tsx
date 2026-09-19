@@ -32,6 +32,7 @@ import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { RelationshipsPanel } from "../relationships/RelationshipsPanel.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { DeleteTaskDialog } from "./DeleteTaskDialog.tsx";
 import type { FieldFailure } from "./fieldFailure.ts";
@@ -540,6 +541,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="link" size={14} />
                     Copy link
                   </MenuItem>
                   <MenuItem
@@ -548,6 +550,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="plus" size={14} />
                     Duplicate
                   </MenuItem>
                   <MenuItem
@@ -557,6 +560,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="chevronRight" size={14} />
                     Move to project…
                   </MenuItem>
                   <MenuItem
@@ -568,6 +572,7 @@ export function TaskDetail({
                     {/* No dialog either way: archive is reversible, and
                         friction proportionate to consequence is the
                         whole distinction from delete (TSK-23). */}
+                    <Icon name={archived ? "unarchive" : "archive"} size={14} />
                     {archived ? "Unarchive" : "Archive"}
                   </MenuItem>
                   <MenuItem
@@ -578,6 +583,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="trash" size={14} />
                     Delete…
                   </MenuItem>
                 </>
