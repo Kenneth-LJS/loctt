@@ -9,6 +9,20 @@ import { LabelsPanel } from "./LabelsPanel.tsx";
 import { MilestonesPanel } from "./MilestonesPanel.tsx";
 
 /**
+ * Row actions (Edit/Archive/Delete) now live behind a per-row kebab
+ * overflow menu (responsive GROUP A: inline actions overflowed a narrow
+ * row). Open the row's kebab, then click the action MenuItem by testid.
+ */
+function openRowAction(row: HTMLElement, actionTestId: string): void {
+  const kebab = row.querySelector<HTMLButtonElement>("[aria-label^='Actions for']");
+  if (kebab === null) throw new Error("row has no actions kebab");
+  fireEvent.click(kebab);
+  const item = document.querySelector<HTMLButtonElement>(`[data-testid='${actionTestId}']`);
+  if (item === null) throw new Error(`no menu item ${actionTestId}`);
+  fireEvent.click(item);
+}
+
+/**
  * Settings → Data panel behaviour that turns on what the client sends
  * and what it renders, rather than on the server round-trip (which the
  * server tests cover against a real tracker).
@@ -184,11 +198,16 @@ describe("LabelsPanel", () => {
     render(<LabelsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("labels-list");
 
-    const deleteButton = screen
+    // The row's actions now live behind a kebab overflow menu (responsive
+    // GROUP A: inline Edit/Archive/Delete overflowed the row on a narrow
+    // pane). Open the menu, then choose Delete.
+    const kebab = screen
       .getByTestId("label-row-L1")
-      .querySelector<HTMLButtonElement>("[data-testid='label-delete']");
-    expect(deleteButton).not.toBeNull();
-    fireEvent.click(deleteButton as HTMLButtonElement);
+      .querySelector<HTMLButtonElement>("[aria-label^='Actions for label']");
+    expect(kebab).not.toBeNull();
+    fireEvent.click(kebab as HTMLButtonElement);
+    const deleteButton = await screen.findByTestId("label-delete");
+    fireEvent.click(deleteButton);
 
     // MSL-32: with references present and nothing chosen, the confirm
     // is disabled — the delete cannot be issued at all.
@@ -307,7 +326,7 @@ describe("MilestonesPanel", () => {
     // Archiving M1 sends the archived flag on the milestone PUT — the row
     // toggle only ever sent name/date before, so the flag had no caller.
     const activeRow = screen.getByTestId("milestone-row-M1");
-    fireEvent.click(activeRow.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+    openRowAction(activeRow, 'milestone-archive-toggle');
 
     await waitFor(() => {
       const put = fetchMock.mock.calls.find((c) => {
@@ -336,7 +355,10 @@ describe("MilestonesPanel", () => {
     await screen.findByTestId("milestones-list");
 
     const archivedRow = screen.getByTestId("milestone-row-M2");
-    const toggle = archivedRow.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement;
+    // Open the kebab to reveal the action, assert its label reads
+    // "Unarchive" (an archived milestone), then click it.
+    fireEvent.click(archivedRow.querySelector<HTMLButtonElement>("[aria-label^='Actions for']") as HTMLButtonElement);
+    const toggle = document.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement;
     expect(toggle.textContent).toMatch(/unarchive/i);
     fireEvent.click(toggle);
 
@@ -376,7 +398,7 @@ describe("MilestonesPanel silent-write + staleness (B2 bugs 3, 4, 5)", () => {
     await screen.findByTestId("milestones-list");
 
     const row = screen.getByTestId("milestone-row-M1");
-    fireEvent.click(row.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+    openRowAction(row, 'milestone-archive-toggle');
 
     const err = await screen.findByTestId("milestone-archive-error");
     expect(err.textContent).toContain("Archive write failed.");
@@ -408,7 +430,7 @@ describe("MilestonesPanel silent-write + staleness (B2 bugs 3, 4, 5)", () => {
     await screen.findByTestId("milestones-list");
 
     const row = screen.getByTestId("milestone-row-M1");
-    fireEvent.click(row.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+    openRowAction(row, 'milestone-archive-toggle');
 
     // After a successful archive, the milestones-progress key (the
     // /milestones view's query) must be invalidated — the exact fix for
@@ -447,14 +469,14 @@ describe("MilestonesPanel silent-write + staleness (B2 bugs 3, 4, 5)", () => {
     // Trigger the external rename to land: archiving M1 invalidates
     // ["milestones"], so the row re-renders with the new name.
     const row = screen.getByTestId("milestone-row-M1");
-    fireEvent.click(row.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+    openRowAction(row, 'milestone-archive-toggle');
     await waitFor(() => {
       expect(screen.getByTestId("milestone-row-M1").textContent).toContain("v1 renamed");
     });
 
     // Regression: the name draft was seeded once at mount ("v1") and not
     // reset on Edit-open, so Save would revert the external rename.
-    fireEvent.click(screen.getByTestId("milestone-row-M1").querySelector("[data-testid='milestone-edit']") as HTMLButtonElement);
+    openRowAction(screen.getByTestId("milestone-row-M1"), "milestone-edit");
     const input = screen.getByTestId<HTMLInputElement>("milestone-name-input");
     expect(input.value).toBe("v1 renamed");
   });

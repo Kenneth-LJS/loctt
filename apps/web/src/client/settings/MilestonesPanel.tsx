@@ -12,6 +12,7 @@ import {
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
+import { RowActions } from "./RowActions.tsx";
 
 /**
  * Settings → Data → Milestones (MSL-11, MSL-13, MSL-14).
@@ -156,40 +157,32 @@ function MilestoneRow({ milestone, count, all }: {
               >
                 {String(count)} task{count === 1 ? "" : "s"}
               </span>
-              <button
-                type="button"
-                data-testid="milestone-edit"
-                onClick={() => {
-                  // B2 bug 5: re-seed name/date from the CURRENT props on
-                  // Edit-open. Seeded once at mount, a stale draft would
-                  // be written back on Save after an external rename,
-                  // silently reverting it.
-                  setName(milestone.name);
-                  setDate(milestone.target_date ?? "");
-                  update.reset();
-                  setEditing(true);
-                }}
-                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                data-testid="milestone-archive-toggle"
-                disabled={archive.isPending}
-                onClick={() => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-              >
-                {archived ? "Unarchive" : "Archive"}
-              </button>
-              <button
-                type="button"
-                data-testid="milestone-delete"
-                onClick={() => { setConfirmingDelete(true); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-              >
-                Delete
-              </button>
+              <RowActions
+                label={`Actions for milestone ${milestone.name}`}
+                actions={[
+                  {
+                    label: "Edit",
+                    testId: "milestone-edit",
+                    onSelect: () => {
+                      // B2 bug 5: re-seed name/date from the CURRENT props on
+                      // Edit-open. Seeded once at mount, a stale draft would
+                      // be written back on Save after an external rename,
+                      // silently reverting it.
+                      setName(milestone.name);
+                      setDate(milestone.target_date ?? "");
+                      update.reset();
+                      setEditing(true);
+                    },
+                  },
+                  {
+                    label: archived ? "Unarchive" : "Archive",
+                    testId: "milestone-archive-toggle",
+                    disabled: archive.isPending,
+                    onSelect: () => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); },
+                  },
+                  { label: "Delete", testId: "milestone-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
+                ]}
+              />
               {/* B2 bug 3: an archive/unarchive that fails must say so —
                   the toggle used to swallow the error and read as done
                   while nothing changed on disk. */}
