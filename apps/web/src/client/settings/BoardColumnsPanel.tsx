@@ -5,6 +5,7 @@ import { ApiError } from "../api/client.ts";
 import { useSaveWorkflowCollection } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { reorder } from "./workflowEdits.ts";
@@ -212,7 +213,7 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
                   disabled={i === 0}
                   onClick={() => { move(i, i - 1); }}
                 >
-                  ↑
+                  <Icon name="arrowUp" />
                 </IconButton>
                 <IconButton
                   aria-label={`Move column ${i + 1} down`}
@@ -220,14 +221,14 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
                   disabled={i === draft.length - 1}
                   onClick={() => { move(i, i + 1); }}
                 >
-                  ↓
+                  <Icon name="arrowDown" />
                 </IconButton>
                 <IconButton
                   aria-label={`Remove column ${i + 1}`}
                   testId={`board-column-remove-${col.key}`}
                   onClick={() => { removeColumn(i); }}
                 >
-                  ✕
+                  <Icon name="close" />
                 </IconButton>
               </div>
 

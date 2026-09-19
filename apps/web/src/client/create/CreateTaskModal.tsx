@@ -29,6 +29,7 @@ import type { OptionSearch, PickerOption } from "../task/editors/OptionPicker.ts
 import { OptionPicker } from "../task/editors/OptionPicker.tsx";
 import { estimationShape } from "../task/estimation.ts";
 import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useToasts } from "../ui/Toast.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
@@ -439,7 +440,7 @@ export function CreateTaskModal({
             data-testid="create-close"
             className="grid h-7 w-7 place-items-center rounded text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
           >
-            {"×"}
+            <Icon name="close" />
           </button>
         </div>
 
