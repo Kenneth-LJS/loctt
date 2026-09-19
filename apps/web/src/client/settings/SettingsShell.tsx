@@ -1,5 +1,8 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 
+import { useIsNarrow } from "../shell/useIsNarrow.ts";
+import { Sheet } from "../ui/Sheet.tsx";
 import { BackupPanel } from "./BackupPanel.tsx";
 import { BoardColumnsPanel } from "./BoardColumnsPanel.tsx";
 import { CalendarPanel } from "./CalendarPanel.tsx";
@@ -38,19 +41,11 @@ import { UsersPanel } from "./UsersPanel.tsx";
  * panel that throws takes the pane, not the page.
  */
 
-function SectionNav({ active }: { readonly active: string }) {
+/** The grouped section links, shared by the md+ side rail and the mobile
+ *  picker sheet. `onNavigate` lets the sheet close itself on a pick. */
+function SectionLinks({ active, onNavigate }: { readonly active: string; readonly onNavigate?: () => void }) {
   return (
-    <nav
-      aria-label="Settings sections"
-      data-testid="settings-nav"
-      // R1 (responsive remainder): below `md` this is a full-width bar
-      // stacked above the pane (see the shell's `flex-col md:flex-row`),
-      // scrolling horizontally rather than stealing half a phone's width
-      // as a fixed rail. At `md`+ it is the fixed side rail it was, and it
-      // scrolls vertically so a long section list cannot overflow a short
-      // viewport. `shrink-0` only applies once it is a side rail.
-      className="w-full max-h-[40vh] overflow-y-auto border-b border-border-subtle bg-bg-surface p-3 md:w-56 md:max-h-none md:shrink-0 md:overflow-x-visible md:border-r md:border-b-0"
-    >
+    <>
       {SETTINGS_GROUPS.map(group => (
         <div key={group} className="mb-4 last:mb-0 md:last:mb-0">
           {/* Non-interactive heading (SET-2): it neither navigates nor
@@ -66,6 +61,7 @@ function SectionNav({ active }: { readonly active: string }) {
                   params={{ section: section.id }}
                   data-testid={`settings-nav-${section.id}`}
                   aria-current={section.id === active ? "page" : undefined}
+                  onClick={onNavigate}
                   className={
                     "block rounded-md px-2 py-1 text-[0.9286rem] no-underline "
                     + (section.id === active
@@ -80,6 +76,51 @@ function SectionNav({ active }: { readonly active: string }) {
           </ul>
         </div>
       ))}
+    </>
+  );
+}
+
+function SectionNav({ active }: { readonly active: string }) {
+  const isNarrow = useIsNarrow(768); // md
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Below md: a single picker button naming the current section, opening a
+  // sheet with the full grouped list — 24 links stacked above every panel
+  // pushed the content a full screen down (UX eval #6). At md+ the fixed
+  // side rail is unchanged.
+  if (isNarrow) {
+    const current = findSection(active);
+    return (
+      <>
+        <nav aria-label="Settings sections" data-testid="settings-nav" className="w-full border-b border-border-subtle bg-bg-surface p-3">
+          <button
+            type="button"
+            data-testid="settings-nav-picker"
+            onClick={() => { setPickerOpen(true); }}
+            className="flex w-full items-center justify-between rounded-md border border-border-default px-3 py-2 text-[0.9286rem] text-text-primary hover:bg-bg-muted"
+          >
+            <span><span className="text-text-tertiary">Settings — </span>{current?.label ?? active}</span>
+            <span aria-hidden="true" className="text-text-tertiary">▾</span>
+          </button>
+        </nav>
+        {pickerOpen && (
+          <Sheet title="Settings" testId="settings-nav-sheet" onClose={() => { setPickerOpen(false); }}>
+            <SectionLinks active={active} onNavigate={() => { setPickerOpen(false); }} />
+          </Sheet>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <nav
+      aria-label="Settings sections"
+      data-testid="settings-nav"
+      // At `md`+ the fixed side rail, scrolling vertically so a long
+      // section list cannot overflow a short viewport.
+      className="w-full max-h-none overflow-y-auto border-b border-border-subtle bg-bg-surface p-3 md:w-56 md:shrink-0 md:border-r md:border-b-0"
+    >
+      <SectionLinks active={active} />
     </nav>
   );
 }
