@@ -31,7 +31,7 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { Page } from "@playwright/test";
+import type { Page, Request } from "@playwright/test";
 
 import type { TrackerFixture } from "./fixtures/tracker.ts";
 import { expect, test } from "./fixtures/tracker.ts";
@@ -194,33 +194,27 @@ function handleFor(page: Page, type: string, targetId: string) {
 }
 
 /**
- * Moves one row up by `steps`, waiting for each write.
+ * Moves one row up by `steps`, then commits the move with one write.
  *
- * Re-resolves the handle every step, and re-focuses it: the panel
- * re-renders from the refetch after each move, so the element the
- * previous keypress went to is gone by the next one.
+ * **The keyboard reorder is now a pickup buffer (REL-15).** Arrow keys
+ * move the picked-up row *visually only* — no `/rerank` leaves — and the
+ * single write is committed on drop (Enter). This is what makes Escape a
+ * true cancel with no write, and what stops each keystroke being a real
+ * rerank. So this helper presses ArrowUp `steps` times against the same
+ * focused handle (the panel does not refetch mid-pickup, so the handle
+ * stays put), then presses Enter and waits for the one `/rerank` and the
+ * refetch it triggers.
  *
- * **Stops when the row is already first.** ArrowUp on row 0 is a no-op
- * in the panel — correctly — so it issues no request, and a helper that
- * pressed regardless would sit on `waitForResponse` until it timed out.
- * That is not a hypothetical: a mutation run failed here on a timeout
- * rather than on the assertion under test, which is a red for the
- * wrong reason and worthless as evidence.
+ * **Stops when the row is already first.** ArrowUp cannot move row 0 up,
+ * so a no-op pickup would produce no write and Enter would sit on
+ * `waitForResponse` until timeout. The guard returns before pressing.
  *
  * **The write's response is not the re-render.** The panel is not
  * optimistic: `onSettled` invalidates, a fresh `GET /api/tasks/:key`
- * runs, and only then do the rows move. A second step that read the
- * DOM in that gap saw the *old* order and pressed ArrowUp on the row's
- * old index — which re-sent the first move verbatim, a no-op on disk.
- * Measured 2026-09-02 in REL-32 under CPU load (4 of 15 runs): both of
- * tab A's POSTs were `{"before":"T-3"}` answering `rank: "v"`, the
- * second issued 1 ms before the refetch completed, and the final order
- * was `[b, a, c]` — tab A's second move lost, exactly the outcome the
- * case forbids, produced by the test rather than the app. So each step
- * waits for the rendered order to change before the next reads it.
- * Bounded and non-asserting: a refused write leaves the order as it
- * was, and that is for the caller's assertions to judge, not this
- * helper's.
+ * runs, and only then do the rows settle to disk order. So after the
+ * commit this waits for the rendered order to change (a real move) before
+ * returning. Bounded and non-asserting: a refused write leaves the order
+ * as it was, which is for the caller's assertions to judge.
  */
 async function moveUp(
   page: Page,
@@ -228,29 +222,26 @@ async function moveUp(
   targetId: string,
   steps: number,
 ): Promise<void> {
-  for (let i = 0; i < steps; i += 1) {
-    // The moves are sequential by nature: each one's anchor is the
-    // position the previous one produced.
-    const order = await renderedOrder(page, type);
-    if (order.indexOf(targetId) <= 0) return;
-    const handle = handleFor(page, type, targetId);
-    await handle.focus();
-    await settling(page, "/rerank", async () => { await handle.press("ArrowUp"); });
-    await renderedOrderChanged(page, type, order);
-  }
+  const order = await renderedOrder(page, type);
+  const start = order.indexOf(targetId);
+  if (start <= 0) return;
+  const effective = Math.min(steps, start);
+  const handle = handleFor(page, type, targetId);
+  await handle.focus();
+  // Buffer the pickup: each arrow reorders the row visually, no write.
+  for (let i = 0; i < effective; i += 1) await handle.press("ArrowUp");
+  // Drop: the single rerank write leaves here.
+  await settling(page, "/rerank", async () => { await handle.press("Enter"); });
+  await renderedOrderChanged(page, type, order);
 }
 
 /**
  * Moves one row down by `steps`, the mirror of `moveUp`.
  *
- * Stops when the row is already last: ArrowDown on the final row is a
- * no-op in the panel, issues no request, and pressing regardless would
- * sit on `waitForResponse` until timeout — the same read-the-DOM-before
- * -the-re-render trap `moveUp`'s docstring records, in the other
- * direction. Each step re-reads the rendered order, re-resolves and
- * re-focuses the handle (the refetch replaced the element the previous
- * press went to), and waits for the render to change before the next
- * step reads it.
+ * Same pickup-buffer model: ArrowDown moves the row visually, and the
+ * write is committed once on Enter. Stops when the row is already last
+ * (ArrowDown cannot move it, so the commit would be a no-op that hangs
+ * `waitForResponse`).
  */
 async function moveDown(
   page: Page,
@@ -258,15 +249,15 @@ async function moveDown(
   targetId: string,
   steps: number,
 ): Promise<void> {
-  for (let i = 0; i < steps; i += 1) {
-    const order = await renderedOrder(page, type);
-    const idx = order.indexOf(targetId);
-    if (idx === -1 || idx >= order.length - 1) return;
-    const handle = handleFor(page, type, targetId);
-    await handle.focus();
-    await settling(page, "/rerank", async () => { await handle.press("ArrowDown"); });
-    await renderedOrderChanged(page, type, order);
-  }
+  const order = await renderedOrder(page, type);
+  const idx = order.indexOf(targetId);
+  if (idx === -1 || idx >= order.length - 1) return;
+  const effective = Math.min(steps, order.length - 1 - idx);
+  const handle = handleFor(page, type, targetId);
+  await handle.focus();
+  for (let i = 0; i < effective; i += 1) await handle.press("ArrowDown");
+  await settling(page, "/rerank", async () => { await handle.press("Enter"); });
+  await renderedOrderChanged(page, type, order);
 }
 
 /**
@@ -976,6 +967,42 @@ test("REL-15: a ranked row is keyboard-movable and the move is announced", async
   // The far end agrees.
   const edges = await edgesOf(tracker.root, root ?? "");
   expect(edges.find(e => e.target === idB)?.rank).toBeDefined();
+
+  // REL-15's third bullet: Escape restores the original position without
+  // a write ever leaving. Order on disk right now is [B, A]. Pick B up,
+  // ArrowDown it (visually to the bottom), then Escape — the row must
+  // return to position 1 and NO rerank must be sent.
+  //
+  // A test that only asserted the "Move cancelled" announcement would
+  // pass against the old code, which wrote on every arrow and never
+  // restored. So this counts the /rerank requests and reads the file.
+  const orderBeforeEscape = await renderedOrder(page, "blocks");
+  expect(orderBeforeEscape).toEqual([idB, idA]);
+  const edgesBeforeEscape = await edgesOf(tracker.root, root ?? "");
+
+  let rerankCount = 0;
+  const countRerank = (req: Request): void => {
+    if (req.url().includes("/rerank") && req.method() === "POST") rerankCount += 1;
+  };
+  page.on("request", countRerank);
+  try {
+    const handle = handleFor(page, "blocks", idB);
+    await handle.focus();
+    await handle.press("ArrowDown"); // visual only — B drifts to the bottom
+    // Mid-pickup the row is rendered at the bottom, no write yet.
+    await expect(groupRows(page, "blocks").nth(1)).toHaveAttribute("data-target", idB);
+    await handle.press("Escape");
+    await expect(page.getByTestId("reorder-announcement")).toContainText("Move cancelled");
+    // Restored to position 1.
+    await expect(groupRows(page, "blocks").nth(0)).toHaveAttribute("data-target", idB);
+    // Give any stray request a beat to arrive, then assert none did.
+    await page.waitForTimeout(100);
+    expect(rerankCount).toBe(0);
+  } finally {
+    page.off("request", countRerank);
+  }
+  // The file is byte-for-byte what it was before the cancelled pickup.
+  expect(await edgesOf(tracker.root, root ?? "")).toEqual(edgesBeforeEscape);
 });
 
 /* ------------------------------------------------------------------ *

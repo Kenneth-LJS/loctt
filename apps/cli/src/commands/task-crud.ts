@@ -66,7 +66,7 @@ const TASK_CREATE_FLAGS: readonly string[] = [
   // the first four meant a create had to be followed by `set` calls for
   // the rest, and MCP accepted a different subset again (TSK-C5).
   "--assignee", "--reporter", "--due", "--start", "--estimate",
-  "--milestone", "--sprint", "--label", "--body",
+  "--milestone", "--sprint", "--label", "--body", "--parent",
 ];
 const TASK_LIST_FLAGS: readonly string[] = ["--limit", "--project", "--archived", "--query", "--view", "--sort", "--dir", "--offset"];
 const TASK_SHOW_FLAGS: readonly string[] = [];
@@ -133,6 +133,10 @@ export async function create(args: string[], root: string): Promise<void> {
   const milestone = getArg(args, "--milestone");
   const sprint = getArg(args, "--sprint");
   const body = getArg(args, "--body");
+  // Pre-link the new task under the configured tree axis (e.g. "+ New
+  // child"). Core resolves the actual relationship key from workflow.yaml
+  // — the value here is the parent target (a key or id).
+  const parent = getArg(args, "--parent");
 
   const archivedGuard = await loadArchivedGuardConfigs(locttDir);
   const task = await withStateLock(locttDir, async () => {
@@ -157,6 +161,7 @@ export async function create(args: string[], root: string): Promise<void> {
         ...(sprint !== undefined ? { sprint } : {}),
         ...(labels.length > 0 ? { labels } : {}),
         ...(body !== undefined ? { body } : {}),
+        ...(parent !== undefined ? { parent } : {}),
       },
     });
     await saveState(locttDir, state);

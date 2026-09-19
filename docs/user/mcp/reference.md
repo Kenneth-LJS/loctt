@@ -97,11 +97,18 @@ If none of these resolve to a unique project, the call fails with a project-reso
 | `sprint` | string | no | Sprint id or name |
 | `labels` | string[] | no | Label ids or names |
 | `body` | string | no | Initial markdown body |
+| `parent` | string | no | Parent task key or id. Pre-links the new task under the configured tree relationship (the `graph: tree` axis) |
 
 Every field `createTask` accepts is settable at creation, so a create
 need not be followed by `update_task` calls. `loctt create` takes the
 same set (as the equivalent flags), so a task created either way
 carries the same fields.
+
+`parent` builds a hierarchy in one call: the new task gets an edge under
+the workspace's tree relationship (named `parent` in the shipped
+default; whatever key carries `graph: tree` otherwise) pointing at the
+given task — no follow-up `link_tasks` needed. Use `link_tasks` for any
+non-tree relationship.
 
 Returns: `Created <KEY>: <title>`.
 
