@@ -1,8 +1,8 @@
 {
   "generated_from": "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
   "counts": {
-    "total": 1047,
-    "ui": 947,
+    "total": 1056,
+    "ui": 956,
     "surface": 100,
     "resolved": 4
   },
@@ -14160,6 +14160,157 @@
       "severity": "minor",
       "principles": [
         "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TML-51",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-timeline.md",
+      "line": 395,
+      "title": "The Unscheduled surface is a collapsible footer drawer, collapsed by default, whose header shows an honest count and a breakdown by problem kind.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P6",
+        "P9"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TML-52",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-timeline.md",
+      "line": 404,
+      "title": "Expanding the drawer reveals the unscheduled rows and their reason chips; each row opens the task.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TML-53",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-timeline.md",
+      "line": 412,
+      "title": "The chart owns the viewport: many unscheduled tasks can no longer squeeze the chart to a strip.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P6",
+        "P9"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TML-54",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-timeline.md",
+      "line": 419,
+      "title": "When no task has both dates, the chart shows an explicit empty state inside its frame and the drawer auto-expands once.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P6"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TML-55",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-timeline.md",
+      "line": 426,
+      "title": "A sticky task-name gutter pins each row's key and title on the left while the chart scrolls horizontally.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P8",
+        "P9"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TML-56",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-timeline.md",
+      "line": 433,
+      "title": "The shared list filter bar is mounted on the timeline, and filtering narrows which bars are charted.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P2",
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TML-57",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-timeline.md",
+      "line": 440,
+      "title": "Switching between List, Board and Timeline carries the filter scope and drops each view's private display params.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P2",
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TML-58",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-timeline.md",
+      "line": 447,
+      "title": "The full group-by set is reachable through a searchable picker, including a single-value enum custom field.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P3",
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "TML-59",
+      "tree": "ui",
+      "file": "docs/dev/ui-test-cases/flow-timeline.md",
+      "line": 455,
+      "title": "A grouping that names a custom field no longer eligible degrades to flat (or the next resolvable layer) with a notice naming the dropped key.",
+      "milestone": "M3",
+      "severity": "major",
+      "principles": [
+        "P3",
+        "P7"
       ],
       "surfaces": [
         "UI"
