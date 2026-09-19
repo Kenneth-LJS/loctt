@@ -455,7 +455,19 @@ function ViewSwitcher({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="flex flex-col gap-0.5">
       {VIEWS.map(v => (
-        <Link key={v.to} to={v.to} title={v.label} className="no-underline">
+        <Link
+          key={v.to}
+          to={v.to}
+          title={v.label}
+          className="no-underline"
+          // Cross-view scope fix (Ken 2026-09-20): switching views carries
+          // the filter scope (q/project/status/…/vf/field.*) so
+          // List↔Board↔Timeline show the same tasks, and drops the
+          // view-private display params (page/sort/dir/zoom/…) so each view
+          // opens at its own default. TanStack's `<Link>` default drops
+          // every param, which is what stripped the scope before.
+          search={carryFilters}
+        >
           <ItemShell active={pathname === v.to} collapsed={collapsed} title={v.label}>
             <span className="shrink-0">{v.icon}</span>
             {!collapsed ? <span>{v.label}</span> : null}
@@ -618,6 +630,14 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
   const activeProjects = useRouterState({
     select: s => (s.location.search as { project?: string[] }).project ?? [],
   });
+  // Cross-view scope fix (Ken 2026-09-20): a project click made from the
+  // board or timeline should stay on that view, not jump to /list.
+  // `clearFilters`/`clearSort` already leave the timeline's display state
+  // (zoom/grouping/arrows) untouched, so re-scoping the project keeps the
+  // rest of the view intact. Milestone/sprint/label/saved-view links stay
+  // hardcoded to /list — those are list-shaped destinations.
+  const pathname = useRouterState({ select: s => s.location.pathname });
+  const viewTo = isView(pathname) ? (pathname as "/list" | "/board" | "/timeline") : "/list";
   const items = (projects.data?.items ?? []).filter(p => p.archived !== true);
   const failed = hasFailed(projects);
   // SHL-5: mark where a new task would land for *this* user, falling
@@ -680,11 +700,12 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
 
       {!failed && items.length > 0 ? (
         <Link
-          to="/list"
+          to={viewTo}
           data-testid="project-all"
           // Clears the project facet (and only it — the other filters
           // are left alone, matching a project click). The ambient sort
-          // is dropped too (LST-55).
+          // is dropped too (LST-55). Route-aware `to` keeps a click made
+          // on the board/timeline on that view (cross-view scope fix).
           search={prev => {
             const { project: _drop, ...rest } = prev as { project?: unknown };
             return clearSort(rest);
@@ -726,11 +747,14 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
         return (
           <Link
             key={p.id}
-            to="/list"
+            to={viewTo}
             // Selecting a project is a single-facet jump (clears other
             // filters, like the built-ins); clicking the already-active
             // project clears it. Multi-project selection lives in the
-            // M1.3 filter bar, not the sidebar.
+            // M1.3 filter bar, not the sidebar. Route-aware `to` keeps a
+            // click made on the board/timeline on that view (cross-view
+            // scope fix); `clearFilters` leaves the timeline's display
+            // state alone, so only the project scope changes.
             search={prev =>
               active
                 ? clearSort(clearFilters(prev))
@@ -1259,6 +1283,49 @@ function clearFilters(prev: Record<string, unknown>): Record<string, unknown> {
     if (!(FILTER_KEYS as readonly string[]).includes(k)) out[k] = v;
   }
   return out;
+}
+
+/**
+ * The filter keys that DEFINE the scope and must survive a view switch,
+ * so List↔Board↔Timeline show the same set of tasks (the cross-view
+ * scope fix, Ken 2026-09-20). Sourced from {@link FILTER_KEYS} so the
+ * allow-list cannot drift from the built-in filters, plus the filter
+ * params that live outside it: `archived` (a toggle, not a built-in),
+ * `labels_match` (the label AND/OR mode), `vf` (the visible-filter set),
+ * and any `field.<key>` custom-enum filter. View-private display params
+ * (page/sort/dir/edit and the timeline's zoom/grouping/arrows) are
+ * dropped, so each view falls back to its own default for what it owns.
+ */
+const CARRY_FILTER_KEYS = [
+  ...FILTER_KEYS, "archived", "labels_match", "vf",
+] as const;
+
+/**
+ * Keep only the scope-defining filter params when switching between the
+ * List, Board and Timeline views — dropping every view-private display
+ * param (page/sort/dir/edit and the timeline's zoom/grouping/arrows).
+ *
+ * TanStack Router's `<Link>` default drops ALL search params, so a plain
+ * view-switcher link stripped the user's filters and project scope on
+ * every switch. This carries them across while leaving each view free to
+ * fall back to its own default for the display params it owns.
+ */
+function carryFilters(prev: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(prev)) {
+    if ((CARRY_FILTER_KEYS as readonly string[]).includes(k) || k.startsWith("field.")) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** The three main-pane views the filter scope carries between. */
+const VIEW_PATHS = ["/list", "/board", "/timeline"] as const;
+
+/** Is `pathname` one of the filter-bearing main-pane views? */
+function isView(pathname: string): boolean {
+  return (VIEW_PATHS as readonly string[]).includes(pathname);
 }
 
 /**
