@@ -7,6 +7,7 @@ import type {
   DeleteProjectResult,
   DeleteProjectVars,
 } from "../api/hooks/useProjectMutations.ts";
+import { Button } from "../ui/Button.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { Radio } from "../ui/Radio.tsx";
 import { Select } from "../ui/Select.tsx";
@@ -62,13 +63,9 @@ export function DeleteProjectDialog({
             : `Deleted "${project.name}".`}
         </p>
         <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast"
-          >
+          <Button variant="primary" onClick={onClose}>
             Done
-          </button>
+          </Button>
         </div>
       </Modal>
     );
@@ -139,17 +136,16 @@ export function DeleteProjectDialog({
         )}
 
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            data-testid="project-delete-cancel"
+          <Button
+            variant="ghost"
+            testId="project-delete-cancel"
             onClick={onClose}
-            className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary"
           >
             Cancel
-          </button>
-          <button
-            type="button"
-            data-testid="project-delete-confirm"
+          </Button>
+          <Button
+            variant="danger"
+            testId="project-delete-confirm"
             disabled={blocked}
             onClick={() => {
               mutation.mutate({
@@ -159,10 +155,9 @@ export function DeleteProjectDialog({
                   : remapTo !== "" ? { remapTo } : {}),
               });
             }}
-            className="h-8 rounded-md bg-danger-fg px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
           >
             {mutation.isPending ? "Deleting…" : "Delete project"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

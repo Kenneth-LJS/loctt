@@ -13,6 +13,7 @@ import { ApiError } from "../api/client.ts";
 import { useActivity } from "../api/hooks/useActivity.ts";
 import { CommentsPanel } from "../comments/CommentsPanel.tsx";
 import { buildUserIndex } from "../comments/users.ts";
+import { Button } from "../ui/Button.tsx";
 import { cn } from "../ui/cn.ts";
 import { ActivityEntry } from "./ActivityEntry.tsx";
 import { BulkRow } from "./BulkRow.tsx";
@@ -339,14 +340,14 @@ function ActivityFeed({
           Fix the file at the path above, then try again. Comments and
           the rest of this task are unaffected.
         </p>
-        <button
-          type="button"
-          data-testid="activity-retry"
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="activity-retry"
           onClick={() => { void activity.refetch(); }}
-          className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
         >
           Try again
-        </button>
+        </Button>
       </div>
     );
   }
@@ -458,19 +459,19 @@ function ActivityFeed({
       )}
 
       {activity.hasNextPage && (
-        <button
-          type="button"
-          data-testid="activity-load-more"
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="activity-load-more"
           disabled={activity.isFetchingNextPage}
           onClick={() => { void activity.fetchNextPage(); }}
-          className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[0.9286rem] text-text-secondary hover:bg-bg-muted disabled:opacity-60"
         >
           {activity.isFetchingNextPage
             ? "Loading…"
             : activity.isFetchNextPageError
               ? "Retry loading more"
               : `Load more (${String(total - entries.length)} remaining)`}
-        </button>
+        </Button>
       )}
     </div>
   );

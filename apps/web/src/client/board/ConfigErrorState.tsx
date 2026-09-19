@@ -1,4 +1,5 @@
 import type { ApiError } from "../api/client.ts";
+import { Button } from "../ui/Button.tsx";
 
 /**
  * BRD-45 — a `workflow.yaml` the loader refuses.
@@ -76,13 +77,9 @@ export function ConfigErrorState({
           </ul>
         </div>
 
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-4 rounded border border-border-default px-3 py-1.5 text-[0.9286rem] text-text-primary hover:bg-bg-muted"
-        >
+        <Button variant="secondary" size="sm" onClick={onRetry} className="mt-4">
           Reload the configuration
-        </button>
+        </Button>
       </div>
     </div>
   );

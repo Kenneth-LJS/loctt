@@ -31,7 +31,9 @@ import { estimationShape } from "../task/estimation.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { useToasts } from "../ui/Toast.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import {
@@ -434,15 +436,15 @@ export function CreateTaskModal({
           <h2 id={headingId} className="text-[1.0714rem] font-semibold text-text-primary">
             New task
           </h2>
-          <button
-            type="button"
+          <IconButton
+            variant="ghost"
+            size="sm"
             onClick={requestClose}
             aria-label="Close"
-            data-testid="create-close"
-            className="grid h-7 w-7 place-items-center rounded text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+            testId="create-close"
           >
             <Icon name="close" />
-          </button>
+          </IconButton>
         </div>
 
         {/* The form body scrolls; the header and footer stay put, so
@@ -479,25 +481,24 @@ export function CreateTaskModal({
           />
 
           <Field label="Title" htmlFor="create-title">
-            <input
+            <TextField
               id="create-title"
               ref={titleRef}
               data-testid="create-title"
               value={form.title}
               // A11Y-23: the error is associated with the input, not
-              // merely rendered next to it in red. `aria-invalid` is
-              // the programmatic mark the case's second bullet asks
-              // for, and `aria-describedby` is what makes a screen
-              // reader read the rule when focus enters the field —
+              // merely rendered next to it in red. `invalid` wires
+              // `aria-invalid` (the programmatic mark the case's second
+              // bullet asks for), and `aria-describedby` is what makes a
+              // screen reader read the rule when focus enters the field —
               // `role="alert"` alone only announces it once, at the
               // moment it appears, and says nothing on re-entry.
-              aria-invalid={showTitleRequired}
+              invalid={showTitleRequired}
               aria-describedby={showTitleRequired ? "create-title-required" : undefined}
               onChange={e => {
                 setForm(f => ({ ...f, title: e.target.value }));
                 if (e.target.value.trim() !== "") setShowTitleRequired(false);
               }}
-              className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
             />
             {showTitleRequired && (
               <p
@@ -1383,7 +1384,7 @@ function CreateCustomField({
   );
   return (
     <Field label={def.label} htmlFor={testid}>
-      <input
+      <TextField
         id={testid}
         type="text"
         data-testid={testid}
@@ -1401,7 +1402,6 @@ function CreateCustomField({
           // `null` and produce a different, less honest error.
           onChange(Number.isFinite(n) && raw.trim() !== "" ? n : raw);
         }}
-        className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
       />
       <FieldProblem problem={problem} testid={testid} />
     </Field>

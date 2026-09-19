@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { ApiError } from "../api/client.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { useWorkflowUsage } from "../api/hooks/useWorkflowMutations.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 
@@ -79,14 +80,14 @@ export function WorkflowPanelFrame({
               control, and it re-runs the query rather than reloading
               the page: the point of the case is that the *server* need
               not restart. */}
-          <button
-            type="button"
-            data-testid="workflow-reload"
+          <Button
+            variant="secondary"
+            testId="workflow-reload"
             onClick={() => { void workflow.refetch(); }}
-            className="mt-3 h-8 rounded-md border border-border-default px-3 text-[0.9286rem]"
+            className="mt-3"
           >
             Reload from disk
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -148,14 +149,14 @@ export function WorkflowPanelFrame({
             </ul>
           </div>
           {/* SET-33: a Reload re-parses from disk without a server restart. */}
-          <button
-            type="button"
-            data-testid="workflow-reload"
+          <Button
+            variant="secondary"
+            testId="workflow-reload"
             onClick={() => { void workflow.refetch(); }}
-            className="mt-3 h-8 rounded-md border border-border-default px-3 text-[0.9286rem]"
+            className="mt-3"
           >
             Reload from disk
-          </button>
+          </Button>
         </div>
       </div>
     );

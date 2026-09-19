@@ -414,26 +414,27 @@ function RowFields({
         {String(count)} task{count === 1 ? "" : "s"}
       </span>
 
-      <button
-        type="button"
-        data-testid={`${collection}-edit-${row.key}`}
+      <Button
+        variant="secondary"
+        size="sm"
+        testId={`${collection}-edit-${row.key}`}
         disabled={disabled}
         onClick={onEdit}
-        className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] disabled:opacity-40"
       >
         Edit
-      </button>
+      </Button>
 
-      <button
-        type="button"
-        data-testid={`${collection}-delete-${row.key}`}
+      <Button
+        variant="secondary"
+        size="sm"
+        testId={`${collection}-delete-${row.key}`}
         disabled={disabled || onlyRow}
         onClick={onDelete}
-        title={onlyRow ? `A tracker needs at least one ${NOUN[collection]}.` : undefined}
-        className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg disabled:opacity-40"
+        {...(onlyRow ? { title: `A tracker needs at least one ${NOUN[collection]}.` } : {})}
+        className="text-danger-fg"
       >
         Delete
-      </button>
+      </Button>
     </div>
   );
 }

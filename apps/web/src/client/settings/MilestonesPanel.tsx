@@ -9,8 +9,10 @@ import {
   useDeleteMilestone,
   useUpdateMilestone,
 } from "../api/hooks/useDataMutations.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
 
@@ -59,12 +61,12 @@ function MilestoneRow({ milestone, count, all }: {
         ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex gap-2">
-                <input
+                <TextField
                   aria-label="Milestone name"
                   data-testid="milestone-name-input"
                   value={name}
                   onChange={e => { setName(e.target.value); }}
-                  className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
+                  className="min-w-0 flex-1"
                 />
                 <input
                   type="date"
@@ -86,9 +88,10 @@ function MilestoneRow({ milestone, count, all }: {
                 </p>
               )}
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  data-testid="milestone-save"
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  testId="milestone-save"
                   disabled={!dateOk || !nameOk || update.isPending}
                   onClick={() => {
                     update.mutate(
@@ -103,21 +106,20 @@ function MilestoneRow({ milestone, count, all }: {
                       { onSuccess: () => { setEditing(false); } },
                     );
                   }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
                 >
                   Save
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => {
                     setName(milestone.name);
                     setDate(milestone.target_date ?? "");
                     setEditing(false);
                   }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           )
@@ -285,13 +287,13 @@ export function MilestonesPanel() {
           );
         }}
       >
-        <input
+        <TextField
           aria-label="New milestone name"
           data-testid="milestone-create-name"
           value={name}
           placeholder="New milestone"
           onChange={e => { setName(e.target.value); }}
-          className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
+          className="min-w-0 flex-1"
         />
         <input
           type="date"
@@ -301,14 +303,14 @@ export function MilestonesPanel() {
           onChange={e => { setDate(e.target.value); }}
           className="w-40 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
         />
-        <button
+        <Button
           type="submit"
-          data-testid="milestone-create-submit"
+          variant="secondary"
+          testId="milestone-create-submit"
           disabled={name.trim() === "" || create.isPending}
-          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1 text-[0.9286rem] disabled:opacity-50"
         >
           Create
-        </button>
+        </Button>
       </form>
 
       {create.isError && (

@@ -9,6 +9,7 @@ import { builderTreeToQuery } from "@loctt/core/query/builderTree.js";
 import type { ComparisonOp, QueryValue } from "@loctt/core/query/parser.js";
 import { useMemo } from "react";
 
+import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -498,24 +499,24 @@ function GroupNode({
       </div>
 
       <div className="flex items-center gap-2 pl-3">
-        <button
-          type="button"
-          data-testid="qb-add-condition"
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="qb-add-condition"
           onClick={addCondition}
-          className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-0.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
         >
           <Icon name="plus" size={12} />
           Condition
-        </button>
-        <button
-          type="button"
-          data-testid="qb-add-group"
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="qb-add-group"
           onClick={addGroup}
-          className="inline-flex items-center gap-1 rounded border border-border-subtle px-2 py-0.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
         >
           <Icon name="plus" size={12} />
           Group
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -545,7 +546,7 @@ function AndOrToggle({
           className={
             "px-2 py-0.5 " +
             (value === op
-              ? "bg-accent text-white"
+              ? "bg-accent text-accent-contrast"
               : "bg-bg-surface text-text-secondary hover:bg-bg-muted")
           }
         >

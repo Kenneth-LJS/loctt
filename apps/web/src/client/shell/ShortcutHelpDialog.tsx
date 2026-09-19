@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import { GLOBAL_SHORTCUTS, type ShortcutSpec } from "./shortcuts.ts";
@@ -70,16 +71,15 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
       >
         <div className="mb-3 flex items-start justify-between gap-3">
           <h2 className="text-[1.0714rem] font-semibold text-text-primary">Keyboard shortcuts</h2>
-          <button
+          <IconButton
             ref={closeRef}
-            type="button"
             onClick={onClose}
-            data-testid="shortcut-help-close"
+            testId="shortcut-help-close"
             aria-label="Close keyboard shortcuts"
-            className="shrink-0 rounded px-1 text-text-tertiary hover:text-text-primary"
+            className="shrink-0"
           >
             <Icon name="close" />
-          </button>
+          </IconButton>
         </div>
 
         {groupsOf(GLOBAL_SHORTCUTS).map(({ group, items }) => (

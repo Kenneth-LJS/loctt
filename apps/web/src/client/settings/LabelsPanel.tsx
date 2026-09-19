@@ -9,8 +9,10 @@ import {
   useDeleteLabel,
   useUpdateLabel,
 } from "../api/hooks/useDataMutations.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
 
@@ -78,20 +80,20 @@ function LabelRow({ label, count, allLabels }: {
         ? (
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex gap-2">
-                <input
+                <TextField
                   aria-label="Label name"
                   data-testid="label-name-input"
                   value={name}
                   onChange={e => { setName(e.target.value); }}
-                  className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
+                  className="min-w-0 flex-1"
                 />
-                <input
+                <TextField
                   aria-label="Label colour"
                   data-testid="label-color-input"
                   value={color}
                   placeholder="#aabbcc"
                   onChange={e => { setColor(e.target.value); }}
-                  className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
+                  className="w-28"
                 />
               </div>
               {/*
@@ -111,9 +113,10 @@ function LabelRow({ label, count, allLabels }: {
                 </p>
               )}
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  data-testid="label-save"
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  testId="label-save"
                   disabled={!colorOk || !nameOk || update.isPending}
                   onClick={() => {
                     update.mutate(
@@ -121,21 +124,20 @@ function LabelRow({ label, count, allLabels }: {
                       { onSuccess: () => { setEditing(false); } },
                     );
                   }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
                 >
                   Save
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => {
                     setName(label.name);
                     setColor(label.color ?? "");
                     setEditing(false);
                   }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           )
@@ -254,30 +256,30 @@ function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] 
       }}
     >
       <div className="flex gap-2">
-        <input
+        <TextField
           aria-label="New label name"
           data-testid="label-create-name"
           value={name}
           placeholder="New label"
           onChange={(e) => { setName(e.target.value); setAcknowledgedDuplicate(false); }}
-          className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
+          className="min-w-0 flex-1"
         />
-        <input
+        <TextField
           aria-label="New label colour"
           data-testid="label-create-color"
           value={color}
           placeholder="#aabbcc"
           onChange={e => { setColor(e.target.value); }}
-          className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
+          className="w-28"
         />
-        <button
+        <Button
           type="submit"
-          data-testid="label-create-submit"
+          variant="secondary"
+          testId="label-create-submit"
           disabled={trimmed === "" || !colorOk || create.isPending}
-          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1 text-[0.9286rem] disabled:opacity-50"
         >
           {needsAck ? "Create anyway" : "Create"}
-        </button>
+        </Button>
       </div>
 
       {!colorOk && (
@@ -356,15 +358,16 @@ function BrokenLabelRow({ entry, onRepair, repairing }: {
           and reload — LocTT will not rewrite it for you.
         </p>
       </div>
-      <button
-        type="button"
-        data-testid={`label-broken-repair-${entry.id ?? `index-${String(entry.index)}`}`}
+      <Button
+        variant="secondary"
+        size="sm"
+        testId={`label-broken-repair-${entry.id ?? `index-${String(entry.index)}`}`}
         disabled={repairing}
         onClick={onRepair}
-        className="shrink-0 rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-primary disabled:opacity-50"
+        className="shrink-0"
       >
         Repair
-      </button>
+      </Button>
     </li>
   );
 }

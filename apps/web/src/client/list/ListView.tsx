@@ -26,9 +26,11 @@ import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import type { EstimationShape } from "../task/estimation.ts";
 import { estimationShape } from "../task/estimation.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
+import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
 import {
   AssigneeCell,
@@ -487,9 +489,11 @@ export function ListView() {
    */
   const undoControl = undoableArchive.length > 0
     ? (
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           disabled={busy}
+          className="ml-2"
           onClick={() => {
             const refsToRestore = undoableArchive;
             void runBulk(
@@ -498,10 +502,9 @@ export function ListView() {
               true,
             );
           }}
-          className="ml-2 rounded-md border border-border-subtle px-2 py-0.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
         >
           Undo
-        </button>
+        </Button>
       )
     : undefined;
 
@@ -1041,14 +1044,15 @@ export function ListView() {
           className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border-divider bg-bg-surface px-4 py-2 shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
         >
           <BulkResult result={bulkResult} action={undoControl} />
-          <button
-            type="button"
+          <IconButton
+            variant="secondary"
+            size="sm"
             aria-label="Dismiss"
+            className="ml-auto"
             onClick={() => { setBulkResult(undefined); }}
-            className="ml-auto rounded-md border border-border-subtle px-2 py-0.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted"
           >
             <Icon name="close" size={14} />
-          </button>
+          </IconButton>
         </div>
       )}
       <BulkBar

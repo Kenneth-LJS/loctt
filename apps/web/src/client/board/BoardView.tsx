@@ -12,6 +12,7 @@ import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { buildLookups } from "../list/lookups.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { BoardCard } from "./BoardCard.tsx";
@@ -387,14 +388,14 @@ export function BoardView() {
             column still rendered for a status `workflow.yaml` no
             longer declares would carry a create control, which is what
             broke BRD-42. */}
-        <button
-          type="button"
-          data-testid="board-add-task"
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="board-add-task"
           onClick={() => { createTask.open(); }}
-          className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
         >
           + Add task
-        </button>
+        </Button>
       </div>
 
       {/* BRD-40: a tracker with zero tasks gets ONE board-level empty

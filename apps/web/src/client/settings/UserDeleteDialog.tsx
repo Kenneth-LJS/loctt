@@ -9,8 +9,10 @@ import type {
 } from "../api/hooks/useUserMutations.ts";
 import { useUserReferences } from "../api/hooks/useUserMutations.ts";
 import { DELETE_CONFIRM_WORD } from "../list/DeleteConfirmDialog.tsx";
+import { Button } from "../ui/Button.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { Radio } from "../ui/Radio.tsx";
+import { TextField } from "../ui/TextField.tsx";
 
 /**
  * PRU-42: deleting a user who is still referenced on tasks.
@@ -166,13 +168,12 @@ export function UserDeleteDialog({
           <span>
             Type <code className="text-text-primary">{DELETE_CONFIRM_WORD}</code> to confirm
           </span>
-          <input
+          <TextField
             type="text"
             data-testid="user-delete-confirm-input"
             value={typed}
             onChange={e => { setTyped(e.target.value); }}
             aria-label={`Type ${DELETE_CONFIRM_WORD} to confirm`}
-            className="w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 text-[0.9286rem] text-text-primary"
           />
         </label>
 
@@ -184,23 +185,21 @@ export function UserDeleteDialog({
         )}
 
         <div className="mt-1 flex justify-end gap-2">
-          <button
-            type="button"
-            data-testid="user-delete-cancel"
+          <Button
+            variant="ghost"
+            testId="user-delete-cancel"
             onClick={onClose}
-            className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
           >
             Cancel
-          </button>
-          <button
-            type="button"
-            data-testid="user-delete-confirm"
+          </Button>
+          <Button
+            variant="danger"
+            testId="user-delete-confirm"
             disabled={blocked}
             onClick={submit}
-            className="h-8 rounded-md bg-danger-fg px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:cursor-not-allowed disabled:opacity-50"
           >
             {mutation.isPending ? "Deleting…" : "Delete user"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

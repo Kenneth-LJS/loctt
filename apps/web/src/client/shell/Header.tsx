@@ -9,8 +9,11 @@ import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { useTheme } from "../theme/useTheme.ts";
 import { avatarPalette, initials } from "../ui/avatar.ts";
 import { LogoMark } from "../ui/brand/LogoMark.tsx";
+import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { IntegrityBadge } from "./IntegrityBadge.tsx";
 
@@ -91,8 +94,7 @@ export function Header({
     // width; the wordmark and the search stub (disabled until search
     // lands) drop below `sm`; the controls the user needs stay.
     <header className="col-span-2 flex h-12 min-w-0 items-center gap-2 border-b border-border-subtle bg-bg-surface px-3 sm:gap-3 sm:px-4">
-      <button
-        type="button"
+      <IconButton
         onClick={onToggleSidebar}
         disabled={!canToggleSidebar}
         title={canToggleSidebar ? undefined : "The sidebar stays collapsed at this width"}
@@ -104,10 +106,9 @@ export function Header({
         // button as a toggle that is "on", which reads backwards here
         // (the button is not pressed, the sidebar is open).
         aria-expanded={!sidebarCollapsed}
-        className="grid h-8 w-8 place-items-center rounded-md text-text-secondary hover:bg-bg-muted hover:text-text-primary"
       >
         <HamburgerIcon />
-      </button>
+      </IconButton>
 
       <div className="flex shrink-0 items-center gap-2 pr-1 text-[1rem] font-semibold text-text-primary sm:pr-2">
         <LogoMark size={22} />
@@ -132,20 +133,20 @@ export function Header({
       {/* NEW-1: one of the three entry points, and it goes through the
           same provider as the board's "+ Add task" and the `n`
           shortcut, so all three open the identical modal. */}
-      <button
-        type="button"
+      <Button
+        variant="primary"
         disabled={createBlocked !== undefined}
         title={createBlocked}
         onClick={() => { createTask.open(); }}
         aria-label="New task"
-        data-testid="header-new-task"
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[0.9286rem] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 sm:px-3"
+        testId="header-new-task"
+        className="shrink-0"
       >
         <PlusIcon />
         {/* The icon carries the meaning at narrow widths; the button
             keeps its accessible name via aria-label either way. */}
         <span className="hidden sm:inline">New task</span>
-      </button>
+      </Button>
 
       <UserMenu currentUser={currentUser} identityUnknown={identityUnknown} />
     </header>
@@ -235,7 +236,7 @@ function HeaderSearch() {
       ref={containerRef}
       className="relative hidden w-full min-w-0 max-w-[280px] sm:block"
     >
-      <input
+      <TextField
         ref={inputRef}
         type="search"
         value={value}
@@ -252,7 +253,7 @@ function HeaderSearch() {
           if (e.key === "Enter") { e.preventDefault(); goToList(); }
           else if (e.key === "Escape") { setOpen(false); }
         }}
-        className="h-8 w-full rounded-md border border-border-default bg-bg-surface px-3 text-[0.9286rem] text-text-primary placeholder:text-text-tertiary"
+        className="h-8"
       />
 
       {showDropdown ? (
