@@ -3459,3 +3459,259 @@ auto-approved, possibly steered by untrusted task content.
 `assertContainedPath` for backup/restore; allowlist-or-confirm for
 attach_file source); F3 confirm-gate overwrite; F4 validate ref/remote
 names. Must-fix (F1,F2) before publish.
+
+**STATUS 2026-09-19: F1–F4 all RESOLVED and merged (PR #3, `eba698f`).**
+
+## Publish-hardening audit — 2026-09-19 (supply-chain, packaging, outbound)
+
+Second-pass audit for release: the four remaining publish domains
+(supply-chain/packaging, outbound-behaviour, UI hardening, adversarial
+re-review). Findings below are the supply-chain/packaging/outbound set;
+UI-hardening findings are recorded separately once the UI audit lands.
+
+- **SC1 (HIGH, verified) — vulnerable `sharp@0.35.3`.** GHSA-rgj7-g3m4-5g8c
+  (libheif). Direct runtime dep of cli/mcp/web (`^0.35.3`). Fix: bump to
+  `^0.35.4` (patch; `npm audit fix` clears it). On the attachment/thumbnail
+  image path.
+- **SC2 (HIGH+MOD, verified) — vulnerable `@tiptap/*@3.30.1` cluster.**
+  GHSA-j95f-988m-3j2f (HIGH, quadratic ReDoS in markdown attribute parsing)
+  and GHSA-cp6q-959q-f8rh (MOD, `mergeAttributes()` `__proto__` →
+  inherited executable DOM attributes — proto-pollution/XSS). **Both sit on
+  the agent-authored-markdown render path** — the AI-injection threat model.
+  Fix needs a COORDINATED bump of every `@tiptap/*` to `^3.31.3` in
+  `apps/web/package.json` (table extensions pin `3.30.1` as a peer, so bare
+  `npm audit fix` produces peer conflicts). Not a lone `audit fix`.
+- **SC3 (MUST-FIX, verified) — `apps/web` lists `@loctt/core` and
+  `@loctt/contracts` as runtime `dependencies` set to `"*"`, but tsup
+  `noExternal` BUNDLES them in.** On `npm install @loctt/web`, npm resolves
+  `@loctt/core@*` from the registry, where it does not exist (both are
+  `private:true`) → **install fails for every consumer.** cli and mcp
+  correctly place these in `devDependencies`; web is the outlier. Fix: move
+  both to `devDependencies` in `apps/web/package.json`.
+- **SC4 (SHOULD-FIX, verified) — published packages ship no LICENSE and no
+  README.** Only the repo root has them; each `files` allowlist omits them
+  and no per-package copy exists. `npm pack --dry-run` for cli = 2 files
+  (dist + package.json). Public npm packages should carry LICENSE (MIT) +
+  a README. Fix: add per-package LICENSE + minimal README, or ensure the
+  allowlist/root files are included.
+
+- **Outbound-behaviour trace — CLEAN (no finding).** Server binds
+  `127.0.0.1` only (`apps/web/src/server/server.ts:5797`), never `0.0.0.0`.
+  All client `fetch` calls are relative `/api/...` or the localhost base;
+  the server-side `ApiClient` base is localhost. No telemetry / analytics /
+  update-check / crash-report / phone-home anywhere in source. The
+  local-first "nothing leaves the machine without opt-in" claim holds.
+- **Secret-history scan — CLEAN (no finding).** No `.env`/keys/credentials
+  in the working tree or in any historical git blob; no RSA-private-key or
+  AWS-key patterns across `git rev-list --all`.
+- **Pack contents — CLEAN.** No `.env`, `.loctt/`, fixtures, source, or
+  `.git` in any tarball; `files` allowlists are correct (SC4 aside).
+
+**Fix plan (this batch):** SC1 bump sharp `^0.35.4`; SC2 coordinated
+`@tiptap/*` → `^3.31.3`; SC3 move web's `@loctt/*` to devDependencies;
+SC4 add per-package LICENSE+README. Then `npm audit --omit=dev` clean,
+full gates green, rebuild + re-pack to confirm. Must-fix: SC1, SC2, SC3.
+
+**STATUS 2026-09-19: SC1–SC4 all RESOLVED (branch fix/publish-hardening,
+decisions.md A206).** `npm audit --omit=dev` → 0 vulnerabilities. LICENSE +
+README now ship in all three tarballs. web `@loctt/*` moved to
+devDependencies; the tiptap bump also exposed and fixed a latent missing
+direct dep (`@tiptap/extension-link`). Re-packed clean.
+
+- **DEV-TREE audit (not shipped, deliberately not chased).** `npm audit`
+  (full tree) still reports ~9 (2 high, 6 mod, 1 low) — ALL dev-toolchain:
+  vitest/@vitest/mocker (path traversal in mock redirect), browserslist
+  (OOM), esbuild (dev-server Windows file read), hono/fast-uri (vite dev
+  server SSRF/host-confusion), qs, humanfs, baseline-browser-mapping. None
+  is in any published tarball (all `devDependencies`; the client is built
+  ahead of publish). Chasing them risks a vite/vitest major bump that could
+  destabilise the build for zero ship-surface benefit. Re-audit `--omit=dev`
+  before each release; only address these if a dev-time exploit becomes
+  relevant (e.g. running the dev server on an untrusted network).
+
+## UI-hardening audit — 2026-09-19
+
+Full web-UI security + robustness audit (agent-authored content as an
+injection vector aimed at the human viewer; 127.0.0.1-bound server).
+
+- **Markdown XSS — NOT exploitable (verified, no finding).** The renderer
+  (`renderMarkdown.tsx`, `BodyRenderedView.tsx`) parses markdown to TipTap
+  JSON then builds **React elements** node-by-node — it is NOT a
+  markdown→HTML pass. Zero `dangerouslySetInnerHTML`/`innerHTML=`/
+  `insertAdjacentHTML` in `apps/web/src/client`. `fromMarkdown` has no
+  raw-HTML node, so `<script>`/`<img onerror>` fall through to escaped text
+  (mutation-tested: `window.PWNED` stays undefined). The only attr sinks
+  (link `href`, image `src`) are gated by `isSafeHref` — a scheme
+  ALLOWLIST that strips control chars and refuses `javascript:`/`data:`
+  (tested vs mixed-case `JaVaScRiPt:`). Titles/keys/labels/attachment
+  names flow through JSX text (React auto-escapes). Structural
+  neutralisation, not a sanitiser. **Do not touch this without re-proving.**
+- **UI1 (SHOULD-FIX) — no CSP / framing headers on the HTML — RESOLVED
+  (A206).** Added serve-time CSP (hash-pinned inline script), `X-Frame-
+  Options: DENY`, `nosniff`, `Referrer-Policy`. Verified end-to-end.
+- **UI2 (accepted, ruled) — external image `src` fetched on view.** Task
+  bodies render external images inline (Ken's A180, reopened) → a
+  `![](https://attacker/pixel.png)` leaks viewer IP + view-timing on open.
+  NOT a new defect — accepted tradeoff; A180 already notes a server-side
+  image proxy/cache as the future hardening. `data:`/`javascript:` srcs
+  correctly refused. CSP `img-src` deliberately permits http/https to
+  honour this ruling.
+- **UI3 (nice/verified) — uploaded SVG served inline as image/svg+xml.**
+  `server.ts:5266` serves with filename-derived type + `nosniff` +
+  symlink-refuse; only ever loaded via `<img>` (no script exec) and
+  `nosniff` blocks run-as-document. Safe under current UI; CSP also caps
+  it. No action.
+- **UI4 (nice/accepted) — enum field edits (status/priority/assignee) are
+  last-write-wins across two tabs.** `useSetField` sends `expectedId`
+  (rekey guard) but no value-precondition, so two tabs setting different
+  values → silent last-wins. Defensible for single-user local tooling.
+  CONTRAST (a strength): the BODY write IS guarded — `expectedToken` →
+  `StaleBodyWriteError` → 409 + both versions + `BodyConflictDialog`. Only
+  the low-churn enum fields are LWW. Documented as accepted; extend the
+  token precondition to field writes only if multi-tab enum conflicts prove
+  real.
+- **UI5 (nice/verified) — input robustness is sound.** `RegionErrorBoundary`
+  wraps each route + sidebar group (root deliberately unwrapped so the
+  shell survives a pane crash); markdown parser has anti-hang defenses for
+  CRLF/unconsumed lines and pads malformed table rows. A 10k-char title,
+  emoji/RTL/zero-width, or malformed body renders as text, cannot
+  white-page. Residual: no size cap on the O(n) render path — a multi-MB
+  body could jank (not crash) the view. Minor; note only.
+- **A11y / client hygiene (spot-check, no systemic defect).** axe-core in
+  `tests/ui/flow-accessibility.spec.ts`; `useFocusTrap` on Modal/Dialog;
+  `IconButton` requires `aria-label` (typed). No secrets in client bundle
+  (only `import.meta.env.DEV`). CSRF guard (`X-Loctt-Client` on non-GET) +
+  no `Access-Control-Allow-*` = solid same-origin posture.
+
+## Adversarial fan-out results — 2026-09-19 (decisions A207)
+
+Five adversarial testers + a completeness critic tried to BREAK the A206
+hardening. Install-and-run (not just pack-file-list) caught real defects.
+
+**RESOLVED (fixed + verified end-to-end from a clean consumer install):**
+- **MCP tarball ERR_MODULE_NOT_FOUND** — mcp tsup missing `splitting:false`;
+  fixed. **CLI `loctt mcp` "Dynamic require of ajv"** — ajv inlined into ESM;
+  fixed by externalizing ajv+ajv-formats. **SVG attachment stored-XSS** —
+  inline-serve now sends a `sandbox` CSP. **CSP img-src blob:** (avatar) and
+  **form-action** added. **fast-uri HIGH** pulled into prod by ajv — pinned
+  via root override. **@loctt/* devDeps** removed from published packages.
+  See decisions.md A207 for each.
+
+- **CORRECTION to A199 / UI3 (factual error).** The claim "`nosniff` blocks a
+  navigation to an image/svg+xml URL from executing it as a document" is
+  FALSE. `nosniff` only disables MIME sniffing; it does not stop a resource
+  whose declared type IS `image/svg+xml` from running inline `<script>` on
+  top-level navigation. The real guard is now the `sandbox` CSP on the
+  inline-serve response (A207). Any future reasoning that relies on nosniff
+  for script containment is wrong.
+
+**ACCEPTED / DEFERRED (recorded, not fixed this batch — need Ken or larger
+design):**
+- **F1 confinement boundary is the project ROOT, not `.loctt/`.**
+  `attach_file` confines the source to the tracker root (the project working
+  dir), so a steered agent can still attach a non-dotfile secret sitting
+  BESIDE `.loctt/` (e.g. `credentials.txt`, `config/prod.json`) and, under
+  git-backed mode, auto-commit it to the loctt branch. The F1 example
+  (`~/.ssh/id_rsa`, outside root) IS blocked. This is within A205's stated
+  "confine into the repo" boundary — a scope statement, not a bypass.
+  **Should-fix / Ken's call:** narrow the MCP safe zone to `.loctt/`
+  (`confineToRoot: locttDir`) if in-repo-but-outside-`.loctt/` secrets are
+  in scope for the threat model.
+- **DNS-rebinding: no Host/Origin validation on the local server.** Binding
+  127.0.0.1 defeats direct off-machine access (verified: LAN IP refuses) but
+  NOT DNS rebinding — a public page the user visits could rebind a hostname
+  to 127.0.0.1 and (GET is CSRF-exempt) read the whole tracker. Fix would add
+  a Host-header allowlist to every request. Known class for localhost servers;
+  deferred to Ken. Lower severity (needs the user to visit a hostile page).
+- **Multipart upload route not unit-tested for hostile filenames.** The
+  F1–F4 tester exercised core `attachFile` directly, not the HTTP route.
+  PROBED here empirically: `basename('..')`→`'..'` makes the temp path the
+  mkdtemp parent (a dir) → `attachFile` rejects "must be regular files";
+  backslash names stay inside the per-request mkdtemp dir; final stored name
+  goes through `assertSafeBasename`. **Degrades safely — not a path escape.**
+  Should-add: direct route tests for `..`, backslash, empty, truncated
+  multipart. Not a must-fix.
+- **No render-path size cap (UI5, restated).** A multi-MB body janks (not
+  crashes) the O(n) markdown render. Minor.
+
+## `nosniff` does NOT stop a navigated SVG attachment from executing (UI3 rationale is wrong)
+
+**Found 2026-09-19, completeness-critic pass over the verification fan-out.**
+Neither the XSS tester (scoped attachments to "React text") nor the CSP
+tester (checked assets get `nosniff` but never navigated to a malicious
+attachment) exercised this.
+
+`handleGetAttachment`'s `?inline=1` path (`apps/web/src/server/server.ts`
+~5375) serves an image-family attachment with `Content-Type` from
+`mimeForFilename` — which returns `image/svg+xml` for `.svg` — plus
+`X-Content-Type-Options: nosniff` and **no CSP** (CSP is added only by
+`tryServeStatic` for the HTML document, not on `/api/*`).
+
+UI3 (known-gaps above) and decisions A199 / lines ~13430 assert that
+`nosniff` "blocks run-as-document" / "a navigation to that URL cannot
+execute an SVG as a top-level document." **That premise is false.**
+`nosniff` only disables MIME *sniffing* — it stops the browser
+reinterpreting bytes as a type other than the one declared. When the
+declared type genuinely IS `image/svg+xml`, a top-level navigation to
+`/api/tasks/<ref>/attachments/evil.svg?inline=1` renders it as an SVG
+*document* and its inline `<script>` executes in the server's origin.
+The `<img>`-sandbox reasoning is correct for the *tile*, but the endpoint
+is directly navigable and carries no CSP, so the sandbox is not in play.
+
+**Why it is reachable and real:** the MCP agent surface can `attach_file`
+an arbitrary `.svg`; a human viewer who opens the attachment in a new tab
+(or is linked to it) runs the script same-origin — stored XSS with full
+API access (all task data, all mutations, since the page can then send
+`X-Loctt-Client`). The **avatar** path already rejects SVG by content
+sniff (`server.test.ts:550` "SVG avatars are not supported"), proving the
+team treats SVG as dangerous; the **attachment** path has no such
+rejection in `packages/core/src/task/attachments.ts`. Asymmetry, not
+absence of awareness.
+
+**The green test encodes the bug:** `server.attachments.test.ts:233`
+("serves an SVG inline as image/svg+xml ... safe under <img>; nosniff
+blocks doc navigation") asserts the very behaviour that is unsafe on the
+navigation path. Per CLAUDE.md, a fix here means that test was asserting
+the bug.
+
+**Options (Ken's call — this is a contract/behaviour change, so recorded,
+not fixed):** (a) refuse `.svg`/`image/svg+xml` on the inline serve path
+and fall through to octet-stream+attachment download (the download path
+is already safe via REL-38); (b) reject SVG attachments at upload in core
+(changes CLI+MCP accept behaviour); or (c) add `Content-Security-Policy:
+default-src 'none'; sandbox` to the inline serve response so a navigated
+SVG cannot script. Option (a) or (c) is the narrow fix; (c) also fixes the
+same class for any future inline type. Whichever is chosen must red-prove
+against a script-bearing-SVG navigation test, and the A199/UI3 rationale
+must be corrected.
+
+## Local server has no Host/Origin validation — DNS-rebinding read exfiltration untested
+
+**Found 2026-09-19, completeness-critic pass.** The outbound-privacy
+tester proved the server *binds* `127.0.0.1` only and is unreachable at
+the LAN IP — but "bound to loopback" does not defeat DNS rebinding, and
+no tester exercised that vector.
+
+`requireCsrfHeader` (`server.ts` ~1462) only guards non-GET methods; GET
+requests need no `X-Loctt-Client` header. `handleRequest` never validates
+the `Host` or `Origin` header (`new URL(req.url, "http://localhost:...")`
+ignores the inbound Host). A malicious public web page the user visits can
+rebind its own hostname to `127.0.0.1`, then issue **GET** requests to
+`http://<attacker-host>:<port>/api/tasks`, `/api/doctor`, `/api/integrity`,
+`/api/config`, etc. Because the page is now same-origin with the rebound
+host, the browser's SOP no longer protects the response, and the CORS
+default-deny (no `Access-Control-Allow-*`) does not help — SOP is bypassed
+by the rebind, not by CORS. Result: an off-machine page reads the user's
+entire tracker (all task content, config, user list) as long as the LocTT
+UI port is guessable/known and open.
+
+**Not yet reproduced end-to-end** (rebinding needs a controlled DNS
+record); the code path is confirmed by inspection: no Host allowlist, GET
+exempt from the CSRF header, expensive/read-all GET routes present.
+
+**Mitigation to test/decide:** validate `Host` against
+`127.0.0.1`/`localhost[:port]` (and reject others) on every request
+before routing — a few lines, defeats rebinding outright. Should be a
+recorded decision + a red-proven test (a GET with a foreign `Host` header
+must 403). This is the natural companion to the loopback-bind claim the
+privacy tester verified.
