@@ -3773,3 +3773,40 @@ context per UI agent. Not a bug; do not "fix".
 These are recorded for prioritisation; none is a publish blocker on its own
 except taken collectively, and the responsive gap is the biggest single
 quality deficit.
+
+## UX-eval verification pass — 2026-09-19 (which findings are real)
+
+Verified each UX-eval finding in a CLEAN single browser before acting.
+Several did not reproduce — they were shared-browser-context artifacts of
+the multi-agent run (all Playwright agents on one context/server).
+
+- **#1 modal teardown / route teleport — NOT REAL** (already recorded).
+- **#8 Escape on task detail routes to List — NOT REAL.** There is no
+  global Escape→list binding (shortcuts.ts has none; Escape is local to
+  modals only) and no Escape handler on TaskDetail. Verified: opened
+  DEMO-2, pressed Escape, stayed on the detail. Artifact.
+- **Sidebar "permanent icon rail on mobile" — MOSTLY NOT REAL.** The
+  off-canvas overlay is already built (NARROW_PX=900 → rail; hamburger
+  opens a fixed overlay + backdrop, dismiss on nav/tap — R2). The review
+  saw the collapsed rail and mislabelled it permanent.
+
+- **#9 status pill wraps in light mode — REAL, FIXED.** StatusBadge
+  (cells.tsx) lacked `whitespace-nowrap`; a two-word status wrapped in a
+  narrow column. Added nowrap.
+
+**Still genuinely open (real, larger features — not yet done):**
+- **Responsive: List table doesn't fit on phones (REAL, biggest gap).**
+  The table overflows (Title cut, columns off-screen) with only
+  horizontal scroll. A <640px stacked-card layout for ListView is the fix
+  and is a substantial dedicated build (ListView is large: selection,
+  sort, column config). Deferred to a focused effort.
+- **Filter chips show raw DSL/ULIDs for a `q=` query (REAL).** The
+  free-text query chip shows the raw DSL preview (incl. user ULIDs). Facet
+  chips are already human-readable; only the raw-`q` chip is affected.
+  Humanising arbitrary DSL (parse + substitute entity display names) is a
+  bounded feature, not a one-liner. Deferred.
+- **No sprint overview page (REAL).** No /sprints index or /sprints/<id>;
+  a sprint-filtered list has no sprint header. New route(s) + view.
+- **Board reorder mouse-only; no move-success toast (REAL).** Keyboard DnD
+  pattern + a success toast.
+- **Create-from-Board: no feedback, new card off-screen (REAL, small).**

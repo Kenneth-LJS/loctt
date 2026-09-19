@@ -140,6 +140,35 @@ describe("ListView", () => {
     expect(cells.getByText("frontend")).toBeTruthy(); // label name
   });
 
+  // Mobile (< sm) card layout (UX eval #3). The card list renders
+  // alongside the table (CSS decides which is visible); jsdom does not
+  // evaluate the breakpoint, so this asserts the cards exist in the DOM
+  // and carry the same per-task data as the table — key, title, status —
+  // and that each card is a link target. The `sm:hidden` / `hidden
+  // sm:block` split is what actually shows one or the other at runtime.
+  it("renders a stacked card per task for the mobile layout, mirroring the table data", async () => {
+    // Drive the narrow (< sm) layout: useIsNarrow reads innerWidth when
+    // matchMedia is unavailable (jsdom). At 375px the cards render and the
+    // table does not, so `getByText` stays unambiguous.
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      await mountList();
+      const cards = await screen.findByTestId("task-cards");
+      const firstCard = within(cards).getByTestId("task-card-WEB-1");
+      // Same fields as the table row: key, title, and the status label.
+      expect(within(firstCard).getByText("First task")).toBeTruthy();
+      expect(within(firstCard).getByText("WEB-1")).toBeTruthy();
+      expect(within(firstCard).getByText("In progress")).toBeTruthy();
+      // A per-card select checkbox, like the table row.
+      expect(within(firstCard).getByLabelText("Select WEB-1")).toBeTruthy();
+      // The table layout is NOT in the DOM at this width (single source).
+      expect(screen.queryByRole("table")).toBeNull();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+    }
+  });
+
   // K-15 (a UI-review item, not a numbered case — no @verifies tag): the
   // list row-hover fix. Guards against the regression Ken reported (the
   // ID/Project cells not highlighting on hover, and chip backgrounds
