@@ -122,6 +122,7 @@ describe("SavedViewsPanel — edit (VUE-41)", () => {
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("saved-views-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
     fireEvent.click(screen.getByTestId("view-edit"));
     await screen.findByTestId("advanced-query-editor");
 
@@ -155,6 +156,7 @@ describe("SavedViewsPanel — edit (VUE-41)", () => {
 
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("saved-views-list");
+    fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
     fireEvent.click(screen.getByTestId("view-edit"));
     await screen.findByTestId("advanced-query-editor");
     fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "xyz" } });

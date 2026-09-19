@@ -7,6 +7,7 @@ import { useViews } from "../api/hooks/sidebarData.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { RowActions } from "./RowActions.tsx";
 import { ViewFormDialog } from "./ViewFormDialog.tsx";
 
 /**
@@ -82,41 +83,9 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
       {/* VUE-41: rename + edit-query, on active views. An archived view
           is restored first (its query still resolves by id), so the Edit
           control belongs on the active row. */}
-      {!archived && onEdit !== undefined && (
-        <Button
-          variant="secondary"
-          size="sm"
-          testId="view-edit"
-          onClick={() => { onEdit(view); }}
-        >
-          Edit
-        </Button>
-      )}
-
-      {archived
-        ? (
-            <button
-              type="button"
-              data-testid="view-unarchive"
-              disabled={unarchive.isPending}
-              onClick={() => { unarchive.mutate({ id: view.id }); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-            >
-              Unarchive
-            </button>
-          )
-        : (
-            <button
-              type="button"
-              data-testid="view-archive"
-              disabled={del.isPending}
-              onClick={() => { del.mutate({ id: view.id, soft: true }); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-            >
-              Archive
-            </button>
-          )}
-
+      {/* Row actions collapse into a kebab (responsive GROUP A) so the
+          view name + query chip + actions no longer overflow the row.
+          Edit only on an active row (an archived view is restored first). */}
       {confirming
         ? (
             <span className="flex shrink-0 items-center gap-2 text-[0.8571rem]">
@@ -142,14 +111,18 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
             </span>
           )
         : (
-            <button
-              type="button"
-              data-testid="view-delete"
-              onClick={() => { setConfirming(true); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-            >
-              Delete
-            </button>
+            <RowActions
+              label={`Actions for view ${view.name}`}
+              actions={[
+                ...(!archived && onEdit !== undefined
+                  ? [{ label: "Edit", testId: "view-edit", onSelect: () => { onEdit(view); } }]
+                  : []),
+                archived
+                  ? { label: "Unarchive", testId: "view-unarchive", disabled: unarchive.isPending, onSelect: () => { unarchive.mutate({ id: view.id }); } }
+                  : { label: "Archive", testId: "view-archive", disabled: del.isPending, onSelect: () => { del.mutate({ id: view.id, soft: true }); } },
+                { label: "Delete", testId: "view-delete", danger: true, onSelect: () => { setConfirming(true); } },
+              ]}
+            />
           )}
     </li>
   );

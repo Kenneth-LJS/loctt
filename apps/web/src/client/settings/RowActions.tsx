@@ -23,8 +23,12 @@ export interface RowAction {
   readonly label: string;
   readonly onSelect: () => void;
   readonly disabled?: boolean;
-  /** Reason shown on hover when disabled. */
-  readonly title?: string;
+  /**
+   * Reason shown on hover when disabled. Accepts `undefined` explicitly so
+   * callers can pass a conditional `cond ? "reason" : undefined` inline
+   * under exactOptionalPropertyTypes.
+   */
+  readonly title?: string | undefined;
   /** Destructive styling (e.g. Delete). */
   readonly danger?: boolean;
   readonly testId?: string;
