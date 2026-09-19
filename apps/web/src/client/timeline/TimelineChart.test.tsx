@@ -188,6 +188,42 @@ describe("TimelineChart arrow hover-highlight (TML-32)", () => {
   });
 });
 
+describe("TimelineChart owns the viewport (redesign)", () => {
+  it("the scroll container carries a min-height floor so it cannot collapse to a strip", () => {
+    // Red-prove: the unscheduled drawer no longer renders below an
+    // unbounded lane, and the chart keeps a min-height floor. Remove
+    // `min-h-[240px]` and this goes red — which is exactly the squeeze
+    // (a chart shrunk to a strip while the lane ate the panel) the
+    // redesign fixes.
+    const tasks = Array.from({ length: 200 }, (_v, i) => task(i));
+    const { container } = renderChart(oneBandModel(tasks));
+    const scroll = container.querySelector('[data-testid="timeline-scroll"]');
+    expect(scroll).not.toBeNull();
+    expect(scroll?.className).toContain("min-h-[240px]");
+    expect(scroll?.className).toContain("flex-1");
+  });
+
+  it("renders the no-dated-tasks empty state inside the chart frame when noBars", () => {
+    // The frame (header) still draws; the notice is centred inside it.
+    const { container } = renderChart(oneBandModel([]), { noBars: true });
+    expect(container.querySelector('[data-testid="timeline-header"]')).not.toBeNull();
+    const notice = container.querySelector('[data-testid="timeline-no-dated-tasks"]');
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent).toContain("nothing to chart");
+  });
+
+  it("draws a sticky task-name gutter cell for each laid-out row", () => {
+    const tasks = Array.from({ length: 3 }, (_v, i) => task(i));
+    const { container } = renderChart(oneBandModel(tasks));
+    expect(container.querySelector('[data-testid="timeline-gutter"]')).not.toBeNull();
+    for (const t of tasks) {
+      expect(
+        container.querySelector(`[data-testid="timeline-gutter-row-${t.key}"]`),
+      ).not.toBeNull();
+    }
+  });
+});
+
 describe("TimelineChart sticky headers (TML-27)", () => {
   it("the band header is position:sticky, not absolute, so it stays visible while its band scrolls", () => {
     const tasks = Array.from({ length: 5 }, (_v, i) => task(i));

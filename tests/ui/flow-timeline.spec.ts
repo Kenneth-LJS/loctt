@@ -309,14 +309,19 @@ test.describe("TML — timeline view", () => {
 
     await page.goto(`${tracker.baseURL}/timeline`);
 
-    // All three undated shapes are in the lane, with an honest count.
+    // The drawer header is always visible with an honest count — even
+    // while collapsed (the redesign: the count-on-header stays; the rows
+    // live behind an expand).
     await expect(page.getByTestId("timeline-unscheduled")).toBeVisible();
     await expect(page.getByTestId("timeline-unscheduled-count")).toHaveText("(3)");
+    // The dated one DOES get a bar — positive control.
+    await expect(page.getByTestId(`timeline-bar-${both}`)).toBeVisible();
+
+    // Expand the drawer to reach the rows (collapsed-by-default redesign).
+    await page.getByTestId("timeline-unscheduled-toggle").click();
     // Listed by key and title, and no bar is drawn for them.
     await expect(page.getByTestId(`timeline-unscheduled-row-${onlyStart}`)).toContainText("Only start");
     await expect(page.getByTestId(`timeline-bar-${onlyStart}`)).toHaveCount(0);
-    // The dated one DOES get a bar — positive control.
-    await expect(page.getByTestId(`timeline-bar-${both}`)).toBeVisible();
 
     // Clicking an unscheduled row opens the task detail.
     await page.getByTestId(`timeline-unscheduled-row-${onlyDue}`).click();
@@ -514,7 +519,11 @@ test.describe("TML — timeline view", () => {
     await expect(page.getByTestId("timeline-arrows")).not.toBeChecked();
     await expect(page.getByTestId("timeline-arrow")).toHaveCount(0);
 
-    // Turning it on draws arrows with no refetch of task data.
+    // Turning it on draws arrows with no refetch of task data. Settle
+    // any in-flight/background loads first (the shared FilterBar issues
+    // its own sidebar queries on mount), so the counter attributes only
+    // the requests the *toggle* causes — the property under test.
+    await page.waitForLoadState("networkidle");
     let taskRequests = 0;
     page.on("request", r => {
       if (r.url().includes("/api/tasks")) taskRequests += 1;
@@ -658,6 +667,24 @@ async function barPoints(
   // bar into view first is what makes these gestures land.
   const el = page.getByTestId(`timeline-bar-${key}`);
   await el.scrollIntoViewIfNeeded();
+
+  // The redesign adds a sticky task-name gutter pinned over the chart
+  // body's left edge (z above the bars). A bar scrolled hard against the
+  // left edge lands *behind* the gutter, where a press hits the gutter
+  // instead of the bar. Nudge the horizontal scroll so the bar clears the
+  // gutter before measuring — this mirrors what a user does (scroll the
+  // bar into the open chart area) rather than pressing on a covered bar.
+  const gutter = page.getByTestId("timeline-gutter");
+  const gutterBox = await gutter.boundingBox();
+  const scroll = page.getByTestId("timeline-scroll");
+  for (let i = 0; i < 3; i += 1) {
+    const box0 = await el.boundingBox();
+    if (box0 === null || gutterBox === null) break;
+    const clearing = gutterBox.x + gutterBox.width + 12;
+    if (box0.x >= clearing) break;
+    await scroll.evaluate((node, dx) => { node.scrollLeft -= dx; }, clearing - box0.x + 8);
+  }
+
   const box = await el.boundingBox();
   if (box === null) throw new Error(`no bounding box for ${key}`);
   const y = box.y + box.height / 2;
@@ -1104,6 +1131,9 @@ test.describe("TML — timeline edge cases (section B)", () => {
     // visibly distinct from the two-date bar next to it.
     await expect(page.getByTestId(`timeline-bar-${only}`)).toHaveCount(0);
     await expect(page.getByTestId(`timeline-bar-${both}`)).toBeVisible();
+
+    // Expand the collapsed-by-default drawer to reach the row.
+    await page.getByTestId("timeline-unscheduled-toggle").click();
     await expect(page.getByTestId(`timeline-unscheduled-row-${only}`)).toBeVisible();
 
     // The reason is stated, not merely implied by the placement.
@@ -1125,6 +1155,8 @@ test.describe("TML — timeline edge cases (section B)", () => {
 
     await page.goto(`${tracker.baseURL}/timeline?zoom=day`);
     await expect(page.getByTestId(`timeline-bar-${only}`)).toHaveCount(0);
+    // Every task here is unscheduled, so the chart has no bars and the
+    // drawer auto-expands (TML-41) — no manual expand needed.
     const reason = page.getByTestId(`timeline-unscheduled-reason-${only}`);
     await expect(reason).toContainText("No start date");
     await expect(reason).toContainText("2026-03-06");
@@ -1714,6 +1746,8 @@ test.describe("TML — timeline error cases (section C)", () => {
      * date was object-fatal and surfaced only through the unreadable
      * notice — that is no longer how the loader behaves.)
      */
+    // Expand the collapsed-by-default drawer to reach the flagged row.
+    await page.getByTestId("timeline-unscheduled-toggle").click();
     const row = page.getByTestId(`timeline-unscheduled-row-${bad}`);
     await expect(row).toBeVisible();
     const reason = page.getByTestId(`timeline-unscheduled-reason-${bad}`);
