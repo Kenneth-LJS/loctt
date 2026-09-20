@@ -195,10 +195,8 @@ custom_fields:
 | `values` | for `enum` | Allowed values with `key`, `label`, optional `value` |
 | `task_types` | no | Scope the field to specific task types. Omit it and the field is global (shows for every type). Listed, and it appears only on tasks whose type is in the list. A value already stored in a field that is out of scope for the task's current type is kept and shown read-only — never hidden or auto-removed. |
 
-> `searchable` has **no default** — omitting it is a parse error. The
-> normative field-by-field spec is
-> [schema-reference.md](../../dev/schema-reference.md#custom-fields); this
-> page shows usage only.
+> `searchable` has **no default** — omitting it is a parse error, so you
+> always state whether a field is queryable.
 
 Custom field values are stored under `fields:` in task frontmatter, separate from built-in fields:
 

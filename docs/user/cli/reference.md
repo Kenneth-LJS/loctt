@@ -244,7 +244,8 @@ Moved WEB-9 → MOB-4
 
 ### `loctt delete <task>`
 
-Permanently delete a task. Destructive; it prompts for confirmation.
+Permanently delete a task. Destructive; it prompts for confirmation. To
+hide a task reversibly instead, use [`loctt archive`](#loctt-archive-task--loctt-unarchive-task).
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
@@ -592,6 +593,10 @@ Restore from one or more backup files.
 
 Without `--merge` or `--overwrite`, restore refuses to run against a
 non-empty tracker.
+
+`--overwrite` can replace current tasks, so **take a fresh
+[`loctt backup`](#loctt-backup-file) first** and preview with `--dry-run`
+before running it for real.
 
 ```bash
 loctt restore tracker-backup.jsonl --dry-run
