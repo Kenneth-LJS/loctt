@@ -8,6 +8,7 @@ import {
   useProjects,
   useSprints,
   useUsers,
+  useViews,
 } from "../api/hooks/sidebarData.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
@@ -173,6 +174,7 @@ export function FilterBar({
   const labels = useLabels();
   const milestones = useMilestones();
   const sprints = useSprints();
+  const views = useViews();
   const workflow = useWorkflow();
   const userSettings = useUserSettings();
   const settingsMutation = useUserSettingsMutation();
@@ -367,7 +369,45 @@ export function FilterBar({
   // full text is on the chip's title and in the Advanced editor.
   const queryPreview = humanized.length > 32 ? `${humanized.slice(0, 31)}…` : humanized;
 
-  const hasActive = activeChips.length > 0 || hasQuery;
+  // A valid saved view is active (`?view=<id>`) and its query is resolved
+  // SERVER-side, so the toolbar showed a filtered list with no facet chip
+  // and no query text — the same "filtered for no visible reason" trap
+  // LST-53 closed for `q=`, latent for saved views. Surface it as its own
+  // chip: named, editable, clearable. Resolution is client-side against
+  // the loaded `queries.yaml` (useViews); an id that does not resolve to a
+  // present, non-broken query renders NO chip — ListView's `missingView`
+  // and `brokenView` banners already own those two cases, and duplicating
+  // them here would double the message.
+  const activeViewId = typeof (search as { view?: unknown }).view === "string"
+    ? (search as { view: string }).view
+    : undefined;
+  const activeView = activeViewId === undefined
+    ? undefined
+    : (views.data?.queries ?? []).find(v => v.id === activeViewId);
+  const hasActiveView = activeView !== undefined;
+  // The view's query can be long; preview truncates to the same ~32-char
+  // budget as the q= chip, and the full text is on the chip's title/aria.
+  const viewQuery = activeView?.query ?? "";
+  const viewQueryPreview = viewQuery.length > 32 ? `${viewQuery.slice(0, 31)}…` : viewQuery;
+
+  // Editing a saved view converts it into an editable q= query and opens
+  // the advanced editor pre-populated — the exact mechanism ListView's
+  // broken-view "Fix this view in the editor" button uses (VUE-22), so the
+  // valid and broken paths land in the same place.
+  const editActiveView = (): void => {
+    void navigate({
+      search: prev => ({ ...prev, view: undefined, q: viewQuery, edit: true }),
+    });
+  };
+
+  // Clearing the active view returns to all tasks, mirroring `clearQuery`.
+  const clearActiveView = (): void => {
+    void navigate({
+      search: prev => ({ ...prev, view: undefined, page: undefined }),
+    });
+  };
+
+  const hasActive = activeChips.length > 0 || hasQuery || hasActiveView;
 
   const openAdvanced = (): void => { setDraft(query); setAdvanced(true); setAddSheetOpen(false); };
 
@@ -653,6 +693,41 @@ export function FilterBar({
 
       {hasActive ? (
         <div className="flex flex-wrap items-center gap-1.5">
+          {hasActiveView ? (
+            // The active saved view as a removable chip, styled like the
+            // q= query chip (LST-53) — accent-muted, NOT font-mono (K98:
+            // mono is code/CLI only). Its label is a BUTTON that opens the
+            // advanced editor pre-loaded with the view's resolved query, so
+            // a view is editable from where it's shown; the full query is
+            // on the title so the truncated preview can be read on hover.
+            <span
+              data-testid="active-view-chip"
+              className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
+            >
+              <button
+                type="button"
+                data-testid="active-view-chip-edit"
+                title={`Edit view "${activeView.name}": ${viewQuery}`}
+                aria-label={`Edit view ${activeView.name}`}
+                onClick={editActiveView}
+                className="inline-flex cursor-pointer items-center gap-1 hover:underline"
+              >
+                <span className="text-accent/70">View:</span>
+                <span>{activeView.name}</span>
+                {viewQuery !== "" ? (
+                  <span className="max-w-[24ch] truncate text-accent/70">{viewQueryPreview}</span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                aria-label="Clear active view"
+                onClick={clearActiveView}
+                className="ml-0.5 cursor-pointer text-accent/70 hover:text-accent"
+              >
+                <Icon name="close" size={12} />
+              </button>
+            </span>
+          ) : null}
           {hasQuery ? (
             // LST-53: the active free-text query as a removable chip. Its
             // ✕ clears just `q` (and the saved-view id it may have come

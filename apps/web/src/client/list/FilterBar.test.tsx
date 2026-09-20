@@ -30,6 +30,13 @@ function routeFetch(path: string): unknown {
   if (path.startsWith("/api/labels")) return { items: [], total: 0, offset: 0, limit: 100 };
   if (path.startsWith("/api/milestones")) return { items: [], total: 0, offset: 0, limit: 100 };
   if (path.startsWith("/api/sprints")) return { items: [], total: 0, offset: 0, limit: 100 };
+  if (path.startsWith("/api/views")) {
+    return {
+      queries: [
+        { id: "v_recent", name: "recent-open", query: "archived != true and status != done" },
+      ],
+    };
+  }
   if (path.startsWith("/api/workflow")) {
     return {
       statuses: [
@@ -287,6 +294,60 @@ describe("FilterBar", () => {
       expect(s.q).toBeUndefined();
       expect(s.status).toBeUndefined();
     });
+  });
+
+  // An active, VALID saved view (`?view=<id>`) is filtered server-side and
+  // used to leave the toolbar with no indication which view was applied —
+  // the same "filtered for no visible reason" trap LST-53 fixed for `q=`,
+  // latent for saved views. It now renders its own chip naming the view.
+  it("renders an active-view chip naming the view when ?view=<valid id> is set", async () => {
+    await mountFilterBar("?view=v_recent");
+    const chip = await screen.findByTestId("active-view-chip");
+    expect(chip.textContent).toContain("View:");
+    expect(chip.textContent).toContain("recent-open");
+    // The underlying query is on the edit button's title (it can be long),
+    // so a truncated preview can be read on hover.
+    const edit = screen.getByTestId("active-view-chip-edit");
+    expect(edit.getAttribute("title")).toContain("archived != true and status != done");
+    // "Clear all" lights up for an active view too.
+    expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy();
+  });
+
+  it("does not render an active-view chip for a bare /list", async () => {
+    await mountFilterBar();
+    expect(screen.queryByTestId("active-view-chip")).toBeNull();
+  });
+
+  it("does not render an active-view chip for a view id that does not resolve", async () => {
+    // ListView's `missingView` banner already covers an unknown view id;
+    // the chip must not duplicate it (nothing to name). Let the views query
+    // settle first (the stub serves one known view, v_recent) so the
+    // absence is a resolution miss on v_gone, not just an unfinished fetch —
+    // otherwise a bug that renders the first view for ANY id would slip past.
+    await mountFilterBar("?view=v_gone");
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.queryByTestId("active-view-chip")).toBeNull();
+  });
+
+  it("editing the active-view chip opens the advanced editor pre-populated with its query", async () => {
+    const router = await mountFilterBar("?view=v_recent");
+    fireEvent.click(await screen.findByTestId("active-view-chip-edit"));
+
+    // The edit affordance converts the view into an editable q= query
+    // (view dropped, edit requested) — the exact broken-view fix mechanism.
+    await vi.waitFor(() => {
+      const s = search(router);
+      expect(s.view).toBeUndefined();
+      expect(s.q).toBe("archived != true and status != done");
+    });
+    // …and lands in the advanced editor.
+    expect(await screen.findByTestId("advanced-query-surface")).toBeTruthy();
+  });
+
+  it("clearing the active-view chip returns to all tasks", async () => {
+    const router = await mountFilterBar("?view=v_recent");
+    fireEvent.click(await screen.findByRole("button", { name: "Clear active view" }));
+    await vi.waitFor(() => expect(search(router).view).toBeUndefined());
   });
 
   // @verifies LST-56
