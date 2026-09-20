@@ -11,31 +11,33 @@ Every command here is covered in full in the [CLI reference](cli/reference.md).
 loctt create "Fix login crash" --priority high --type bug
 ```
 ```
-Created WEB-1: Fix login crash
+Created T-1: Fix login crash
 ```
 
-The key (`WEB-1`) is how you refer to the task everywhere else.
+`T-1` is the task's **key** — how you refer to it in every other command.
+The `T` prefix comes from your project; `loctt init --prefix WEB` would
+number tasks `WEB-1`, `WEB-2`, and so on instead.
 
 ## 2. Give it shape
 
 Set fields as the work develops:
 
 ```bash
-loctt set WEB-1 status in_progress
-loctt set WEB-1 assignee "Jordan"
+loctt set T-1 status in_progress
+loctt set T-1 assignee "Jordan"
 ```
 ```
-Set status = in_progress on WEB-1
-Set assignee = Jordan on WEB-1
+Set status = in_progress on T-1
+Set assignee = Jordan on T-1
 ```
 
 Add a description to the body:
 
 ```bash
-loctt body WEB-1 --append "Root cause: unhandled null in the auth callback."
+loctt body T-1 --append "Root cause: unhandled null in the auth callback."
 ```
 ```
-Appended to body for WEB-1
+Appended to body for T-1
 ```
 
 ## 3. Find it again
@@ -46,7 +48,7 @@ List everything, or filter with a query:
 loctt list --query "status = in_progress" --sort priority --dir desc
 ```
 ```
-WEB-1  Fix login crash [in_progress]
+T-1  Fix login crash [in_progress]
 ```
 
 Save a filter you use often as a view, then run it by name:
@@ -68,9 +70,9 @@ loctt ui
 LocTT UI running at http://localhost:4321
 ```
 
-`WEB-1` is already there — with the status, assignee, and description you
+`T-1` is already there — with the status, assignee, and description you
 set from the command line. Edit it in the browser and the next `loctt show
-WEB-1` reflects the change.
+T-1` reflects the change.
 
 ## What's next
 

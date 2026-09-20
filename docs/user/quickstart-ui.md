@@ -43,8 +43,8 @@ Save a filter you reuse as a view with **Save as view**; it appears under
 
 Everything here is the same store the CLI and an agent use. A task you drag
 to a new column shows its new status in `loctt show`, and a task created
-from `loctt create` appears in this list without a refresh step beyond
-reloading the view.
+from `loctt create` shows up here when you reload the view (or click
+Refresh in the toolbar).
 
 ## What's next
 

@@ -51,10 +51,20 @@ holds your `.loctt/` tracker.
 **Cursor** — via Settings → MCP Servers, or `.cursor/mcp.json`, with the
 same shape.
 
+`cwd` must be the project directory that contains `.loctt/` — the same
+place you ran `loctt init`. That is how the server finds your tracker.
+
 That is the entire setup. On connect, the agent receives the tool schemas
 and a short set of instructions for using LocTT correctly — you do not
 configure any of that. Ask it to "list my tasks" to confirm it is wired
 up.
+
+**If the agent doesn't see LocTT's tools**, the usual cause is that the
+client can't find the `loctt` command: desktop apps often don't inherit
+your shell's `PATH`. Use the binary's full path instead — run
+`which loctt` to find it, then set `"command": "/full/path/to/loctt"`.
+Check the tracker itself is reachable by running `loctt mcp` in the
+project directory; it should start and wait (Ctrl-C to stop).
 
 ## 2. Ask the agent to create a task
 
