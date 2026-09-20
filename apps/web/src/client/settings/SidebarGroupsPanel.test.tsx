@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -52,9 +59,21 @@ function renderPanel() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  // A cross-link `<Link to="/settings/$section">` needs a router with that
+  // route registered, so the panel renders inside a memory router.
+  const rootRoute = createRootRoute({ component: () => <SidebarGroupsPanel /> });
+  const sectionRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/$section",
+    component: () => null,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([sectionRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
   return render(
     <QueryClientProvider client={client}>
-      <SidebarGroupsPanel />
+      <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
 }
@@ -106,5 +125,49 @@ describe("SidebarGroupsPanel", () => {
     // sidebar_groups is dropped; the unrelated setting survives.
     expect(last).not.toHaveProperty("sidebar_groups");
     expect(last?.["theme"]).toBe("dark");
+  });
+
+  /**
+   * Task 1 (A244): the two sidebar-config sections were a confusable pair.
+   * This panel cross-links to the sibling "Pinned views" section.
+   */
+  it("cross-links to the Pinned views section", async () => {
+    // @verifies A244 — the cross-link. Red-proof: deleting the <Link>, or
+    // pointing it at the wrong section, fails the href assertion.
+    renderPanel();
+    const link = await screen.findByTestId("sidebar-groups-see-pins");
+    expect(link.textContent).toMatch(/Pinned views/);
+    expect(link.getAttribute("href")).toContain("/settings/sidebar-pins");
+  });
+
+  it("omits its own heading when embedded, so the enclosing sheet titles it", async () => {
+    // @verifies A244 — the inline-config reuse (K100 in-place). The gear in
+    // the sidebar renders THIS panel inside a Sheet that supplies the
+    // title, so `embedded` drops the panel's <h1> to avoid two titles.
+    // Red-proof: rendering `embedded` still showing the <h1> fails this;
+    // the editor itself (the rows) must still be present.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const rootRoute = createRootRoute({ component: () => <SidebarGroupsPanel embedded /> });
+    const sectionRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/settings/$section",
+      component: () => null,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([sectionRoute]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    // The editor still renders (rows present)...
+    await screen.findByTestId("sidebar-groups-panel");
+    expect(screen.getByText("Projects")).toBeTruthy();
+    // ...but not its own heading. The panel-title testid is only on the <h1>.
+    expect(screen.queryByTestId("settings-panel-title")).toBeNull();
   });
 });

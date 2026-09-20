@@ -1756,3 +1756,139 @@ describe("Sidebar sprint row kebab (CONFIG-5, K100)", () => {
     expect(kebab?.closest("a")).toBeNull();
   });
 });
+
+/**
+ * @verifies A244 (K100 point-of-use)
+ *
+ * Task 2: the sidebar's own layout config is reachable INLINE from the
+ * sidebar, not only buried in Settings. A "Customize sidebar" affordance
+ * in the footer opens the SAME `SidebarGroupsPanel` the Settings section
+ * renders (K100 in-place tier — the panel is a self-contained editor that
+ * owns its mutation), inside a Sheet. It is discoverable, keyboard-
+ * reachable (a real <button>), writes the same `sidebar_groups` user
+ * setting through the same PUT (no second source of truth), and is kept
+ * out of the way on a narrow/overlay viewport.
+ */
+describe("Sidebar inline customize (A244, K100)", () => {
+  function setWidth(px: number): void {
+    Object.defineProperty(window, "innerWidth", { value: px, configurable: true, writable: true });
+  }
+  afterEach(() => { setWidth(1200); });
+
+  /**
+   * A self-contained render for the write test: a QueryClient with
+   * `staleTime: Infinity` so the settings query settles once and stays
+   * settled. The shared `renderSidebarAt` uses `gcTime: 0`, and the
+   * mutation's `onMutate` cancels the user-settings query — against a
+   * constantly-refetching query that cancel/refetch cycle starves the
+   * `waitFor` and the PUT never gets to run. A stable cache avoids it,
+   * and the PUT body is captured here from the first render.
+   */
+  async function renderWithPutCapture(): Promise<{ puts: Record<string, unknown>[] }> {
+    const puts: Record<string, unknown>[] = [];
+    if (priorQc) { await priorQc.cancelQueries(); priorQc.clear(); }
+    const current = globalThis.fetch as typeof globalThis.fetch & { mockRestore?: () => void };
+    current.mockRestore?.();
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const path = raw.replace(/^https?:\/\/[^/]+/, "");
+        if ((init?.method ?? "GET") === "PUT" && path.startsWith("/api/user-settings")) {
+          const b = init?.body;
+          const body = (typeof b === "string" ? JSON.parse(b) : {}) as Record<string, unknown>;
+          puts.push(body);
+          SETTINGS = body;
+          return Promise.resolve(new Response(JSON.stringify({ user: "u_ken", settings: body }), {
+            status: 200, headers: { "Content-Type": "application/json" },
+          }));
+        }
+        return Promise.resolve(new Response(JSON.stringify(routeFetch(path)), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      },
+    );
+    const qc = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: Infinity, staleTime: Infinity },
+        mutations: { retry: false },
+      },
+    });
+    priorQc = qc;
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: (s: Record<string, unknown>) => s,
+      component: () => (
+        <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: ["/list"] }),
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Projects");
+    return { puts };
+  }
+
+  it("shows a keyboard-reachable Customize sidebar button in the footer", async () => {
+    // Red-proof: removing the affordance from Footer fails this. It is a
+    // real <button> (focusable, Enter/Space-activatable) — not a div.
+    await renderSidebarAt("/list");
+    const btn = await screen.findByTestId("sidebar-customize");
+    expect(btn.tagName).toBe("BUTTON");
+    // Discoverable label, on the button itself or its accessible name.
+    expect(btn.getAttribute("aria-label") ?? btn.textContent ?? "").toMatch(/Customize sidebar/i);
+    // It sits in the pinned footer, not the scrolling groups region.
+    const scroller = document.querySelector('[data-sidebar-scroll="true"]');
+    expect(scroller?.contains(btn)).toBe(false);
+  });
+
+  it("opens the shared SidebarGroupsPanel in a sheet (not a fork)", async () => {
+    // Red-proof: if the affordance opened something other than the shared
+    // panel, `sidebar-groups-panel` (the panel's own testid) would be
+    // absent. Reusing the SAME component is the K100 in-place requirement.
+    await renderSidebarAt("/list");
+    fireEvent.click(await screen.findByTestId("sidebar-customize"));
+    await screen.findByTestId("sidebar-customize-sheet");
+    // The exact Settings panel is mounted inside the sheet.
+    expect(await screen.findByTestId("sidebar-groups-panel")).toBeTruthy();
+    // Embedded: the sheet supplies the title, so the panel drops its <h1>.
+    expect(screen.queryByTestId("settings-panel-title")).toBeNull();
+  });
+
+  it("writes the same sidebar_groups setting through the same PUT", async () => {
+    // Red-proof: this is the "no second source of truth" guard. The inline
+    // editor must hit PUT /api/user-settings with sidebar_groups, exactly
+    // as the Settings panel does — a fork writing elsewhere fails here.
+    const { puts } = await renderWithPutCapture();
+    fireEvent.click(await screen.findByTestId("sidebar-customize"));
+    await screen.findByTestId("sidebar-groups-panel");
+    // Hide a group from inside the sheet.
+    fireEvent.click(await screen.findByTestId("sidebar-group-toggle-labels"));
+    await waitFor(() => { expect(puts.length).toBeGreaterThan(0); });
+    const last = puts[puts.length - 1];
+    const groups = last?.["sidebar_groups"] as { hidden?: string[] } | undefined;
+    expect(groups?.hidden).toContain("labels");
+  });
+
+  it("hides the affordance on a narrow/overlay viewport", async () => {
+    // The sidebar is a temporary drawer when narrow; a nested config sheet
+    // over it is fiddly on a phone, so the affordance is withheld there
+    // (the setting stays reachable from Settings). Red-proof: rendering it
+    // in the overlay fails this.
+    setWidth(380);
+    await renderSidebarAt("/list");
+    // The overlay drawer is up...
+    expect(screen.getByTestId("sidebar-overlay-backdrop")).toBeTruthy();
+    // ...and the customize affordance is not offered inside it.
+    expect(screen.queryByTestId("sidebar-customize")).toBeNull();
+    // The Settings link is still present as the fallback route to config.
+    expect(screen.getByText("Settings").closest("a")).not.toBeNull();
+  });
+});

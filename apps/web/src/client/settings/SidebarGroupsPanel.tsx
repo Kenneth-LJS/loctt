@@ -1,5 +1,6 @@
 import type { SidebarItemId, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
+import { Link } from "@tanstack/react-router";
 
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
@@ -48,13 +49,22 @@ const LABELS: Record<SidebarItemId, string> = {
   "high-priority": "Filter · High priority",
 };
 
-export function SidebarGroupsPanel() {
+/**
+ * @param embedded When rendered inside the sidebar's own "Customize
+ *   sidebar" sheet (K100 in-place, A244), the enclosing Sheet already
+ *   supplies the heading — so the panel omits its own `<h1>` to avoid two
+ *   competing titles. The *same component* is reused either way: the
+ *   inline editor is not a fork, it is this panel in a different shell.
+ */
+export function SidebarGroupsPanel({ embedded = false }: { readonly embedded?: boolean } = {}) {
   const settings = useUserSettings();
 
   if (settings.isError) {
     return (
       <div>
-        <h1 className="mb-2 text-lg font-semibold text-text-primary">Sidebar groups</h1>
+        {!embedded ? (
+          <h1 className="mb-2 text-lg font-semibold text-text-primary">Sidebar groups</h1>
+        ) : null}
         <ErrorState
           error={settings.error}
           onRetry={() => { void settings.refetch(); }}
@@ -66,10 +76,10 @@ export function SidebarGroupsPanel() {
   if (settings.data === undefined) {
     return <LoadingState>Loading…</LoadingState>;
   }
-  return <GroupsEditor stored={settings.data.settings} />;
+  return <GroupsEditor stored={settings.data.settings} embedded={embedded} />;
 }
 
-function GroupsEditor({ stored }: { readonly stored: UserSettings }) {
+function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; readonly embedded: boolean }) {
   const save = useUserSettingsMutation();
   const groups = readSidebarGroups(stored);
 
@@ -114,12 +124,32 @@ function GroupsEditor({ stored }: { readonly stored: UserSettings }) {
 
   return (
     <div data-testid="sidebar-groups-panel">
-      <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
-        Sidebar groups
-      </h1>
-      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
-        Reorder the sidebar's groups and built-in filters, and hide the
-        ones you don't use. Saved against your user.
+      {!embedded ? (
+        <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
+          Sidebar groups
+        </h1>
+      ) : null}
+      <p className="mb-2 max-w-prose text-[0.8571rem] text-text-secondary">
+        Choose which built-in sidebar sections show (Projects, Milestones,
+        Sprints, Labels, Recently viewed, and the built-in filters), and the
+        order they appear in. Reorder by dragging; hide the ones you don't
+        use. Saved against your user.
+      </p>
+      {/* A244: cross-link to the sibling section. The two sidebar-config
+          sections are a confusable pair; each now points at the other so a
+          user who wants the *other* thing (pinning a saved view) is sent
+          there rather than left guessing. */}
+      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-tertiary">
+        Looking to pin a saved view to the sidebar?{" "}
+        <Link
+          to="/settings/$section"
+          params={{ section: "sidebar-pins" }}
+          data-testid="sidebar-groups-see-pins"
+          className="text-accent hover:underline"
+        >
+          See Pinned views
+        </Link>
+        .
       </p>
 
       <ReorderableRows

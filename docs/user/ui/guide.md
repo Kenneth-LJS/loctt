@@ -190,7 +190,7 @@ user menu. A bare `/settings` opens Projects. The groups:
   WIP limits), Timeline defaults, Calendar (timezone, working days,
   holidays).
 - **Personal** — My preferences (theme, default project), Card layout,
-  Sidebar pins, Sidebar groups, Keyboard.
+  Pinned views, Sidebar groups, Keyboard.
 - **System** — Users, Sync (git-backed mode), Backup & restore,
   Diagnostics.
 

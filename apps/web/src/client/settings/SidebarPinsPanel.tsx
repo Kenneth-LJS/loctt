@@ -1,4 +1,5 @@
 import type { SavedQuery, UserSettings } from "@loctt/contracts";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { useViews } from "../api/hooks/sidebarData.ts";
@@ -47,7 +48,7 @@ export function SidebarPinsPanel() {
   if (settings.isError || views.isError) {
     return (
       <div>
-        <h1 className="mb-2 text-lg font-semibold text-text-primary">Sidebar pins</h1>
+        <h1 className="mb-2 text-lg font-semibold text-text-primary">Pinned views</h1>
         <ErrorState
           error={settings.error ?? views.error}
           onRetry={() => {
@@ -119,10 +120,25 @@ function PinsEditor({
 
   return (
     <div data-testid="sidebar-pins-panel">
-      <h1 className="mb-1 text-lg font-semibold text-text-primary">Sidebar pins</h1>
-      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
-        Saved views pinned to the sidebar, in the order they appear there.
-        Saved against your user.
+      <h1 className="mb-1 text-lg font-semibold text-text-primary">Pinned views</h1>
+      <p className="mb-2 max-w-prose text-[0.8571rem] text-text-secondary">
+        Pin your own saved views to the top of the sidebar's Saved filters
+        group, in the order they appear there. Saved against your user.
+      </p>
+      {/* A244: cross-link to the sibling section. See the matching note in
+          SidebarGroupsPanel — this points at the *groups* editor for the
+          user who wants to reorder or hide the built-in sections instead. */}
+      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-tertiary">
+        Looking to reorder or hide the sidebar's built-in sections?{" "}
+        <Link
+          to="/settings/$section"
+          params={{ section: "sidebar-groups" }}
+          data-testid="sidebar-pins-see-groups"
+          className="text-accent hover:underline"
+        >
+          See Sidebar groups
+        </Link>
+        .
       </p>
 
       {explained.length > 0 ? (
