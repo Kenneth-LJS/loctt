@@ -206,6 +206,46 @@ describe("fromMarkdown", () => {
     expect(firstCellText).toBe("Name");
   });
 
+  // @verifies TSK-17
+  it("does not render asterisks in arithmetic/prose as emphasis", () => {
+    // `5 * 3 * 2` had no flanking guard: it parsed to italic ` 3 ` and
+    // RENDERED italic where the user typed asterisks. The space+digit
+    // flanking guard keeps whitespace-flanked and digit-adjacent `*`
+    // literal. Delete the guard (revert to `\*([\s\S]+?)\*`) and this goes
+    // red — an italic mark appears and the text fragments.
+    for (const src of ["5 * 3 * 2", "a * b * c", "3*4*5"]) {
+      const doc = fromMarkdown(src);
+      const inline = doc.content?.[0]?.content ?? [];
+      expect(inline.some(n => n.marks?.some(m => m.type === "italic"))).toBe(false);
+      const text = inline.map(n => n.text ?? "").join("");
+      expect(text).toBe(src);
+    }
+  });
+
+  // @verifies TSK-17
+  it("still recognises a real asterisk italic and bold", () => {
+    // The flanking guard must not kill legitimate `*italic*` / `**bold**`.
+    const em = fromMarkdown("a *word* here");
+    expect((em.content?.[0]?.content ?? []).some(n => n.marks?.some(m => m.type === "italic"))).toBe(true);
+    const bold = fromMarkdown("a **word** here");
+    expect((bold.content?.[0]?.content ?? []).some(n => n.marks?.some(m => m.type === "bold"))).toBe(true);
+  });
+
+  // @verifies TSK-17
+  it("honours a backslash escape: \\*escaped\\* renders as literal *escaped*", () => {
+    // Escapes were not honored anywhere: `\*escaped\*` parsed to a literal
+    // `\` plus italic `escaped\`. The escape pass must consume `\*` as one
+    // literal `*` with no emphasis mark, and the interaction with emphasis
+    // must be correct (the escaped `*` is never seen as a delimiter).
+    const doc = fromMarkdown("\\*escaped\\*");
+    const inline = doc.content?.[0]?.content ?? [];
+    expect(inline.some(n => n.marks?.some(m => m.type === "italic"))).toBe(false);
+    const text = inline.map(n => n.text ?? "").join("");
+    expect(text).toBe("*escaped*");
+    // No stray backslash survived into the rendered text.
+    expect(text.includes("\\")).toBe(false);
+  });
+
   // @verifies TSK-66
   it("does not treat a lone piped line without a delimiter as a table", () => {
     // A paragraph that merely contains pipes is not a table; forcing it
@@ -294,6 +334,48 @@ describe("toMarkdown — the edited path", () => {
     const family = "\u{1F468}‍\u{1F469}‍\u{1F467}";
     const source = `Family ${family} intact\n`;
     expect(toMarkdown(fromMarkdown(source))).toBe(source);
+  });
+
+  // @verifies TSK-17
+  it("round-trips an escaped asterisk back to its escaped form", () => {
+    // The escaped `*` must re-serialize as `\*` — otherwise it would come
+    // back as a bare `*` and the next parse would read it as an emphasis
+    // delimiter. Break the mdEscape branch in toMarkdown and this goes red.
+    const source = "\\*escaped\\*\n";
+    expect(toMarkdown(fromMarkdown(source))).toBe(source);
+  });
+
+  // @verifies TSK-17
+  it("preserves an ordered list's start ordinal instead of renumbering", () => {
+    // The bug: toMarkdown always emitted `${idx+1}.`, so `3.`/`4.` came
+    // back as `1.`/`2.` on a rich edit. The parser now carries `start` and
+    // the serializer counts up from it. Revert either half and this reds.
+    const source = "3. a\n4. b\n";
+    const doc = fromMarkdown(source);
+    const list = (doc.content ?? [])[0];
+    expect(list?.type).toBe("orderedList");
+    expect(list?.attrs?.["start"]).toBe(3);
+    expect(toMarkdown(doc)).toBe(source);
+  });
+
+  // @verifies TSK-17
+  it("parses and round-trips a nested list, indentation preserved", () => {
+    // The bug: the flat parser matched one level only, so `- outer\n  -
+    // nested` flattened to two sibling items. The parser now nests by
+    // indent and the serializer re-indents at depth. Revert the nesting
+    // and the nested list becomes a second top-level item — red.
+    const source = "- outer\n  - nested\n";
+    const doc = fromMarkdown(source);
+    const outer = (doc.content ?? [])[0];
+    expect(outer?.type).toBe("bulletList");
+    // One top-level item, whose content holds a paragraph AND a nested list.
+    const items = outer?.content ?? [];
+    expect(items.length).toBe(1);
+    const nested = (items[0]?.content ?? []).find(
+      c => c.type === "bulletList" || c.type === "orderedList",
+    );
+    expect(nested?.type).toBe("bulletList");
+    expect(toMarkdown(doc)).toBe(source);
   });
 
   // @verifies TSK-66

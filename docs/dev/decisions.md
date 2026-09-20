@@ -16044,3 +16044,292 @@ narrow/overlay). Each new assertion was shown red by breaking the behaviour.
 the `embedded` prop from `SidebarGroupsPanel`; drop the two cross-link `<p>`s;
 revert the `sidebar-pins` label to "Sidebar pins" (ids never changed, so no
 URL/route churn). The panels and their mutation are otherwise untouched.
+
+### A245 · Editor markdown parser: nested/ordered lists, asterisk flanking, and backslash escapes now render faithfully
+
+**Ticket:** body-editor parser render defects (known-gaps #2, #3) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** TSK-17 (rich↔raw faithfulness)
+
+**The situation.** Three RENDER defects in `apps/web/src/client/editor/markdown.ts`
+(the markdown⇄TipTap bridge). These are display faithfulness bugs, **not**
+byte-preservation bugs — `RichBuffer` still returns original bytes on the
+unedited path, and for the asterisk case `toMarkdown` already re-emitted `*`,
+so the stored bytes round-tripped fine. The bug was what the *rich tab
+rendered* (and, for lists, what a genuine rich edit then serialized):
+
+1. *Lists flattened + renumbered.* List parsing matched one flat level only,
+   never emitting nesting, and `orderedList` carried no `start`; `toMarkdown`
+   always emitted `${idx+1}.`. So `- outer\n  - nested` rendered all-flat and
+   `3.\n4.` renumbered to `1.\n2.` on a rich edit.
+2. *Asterisk emphasis mis-rendered.* `*` emphasis had no flanking guard, so
+   `5 * 3 * 2` parsed to italic ` 3 ` and RENDERED italic where the user wrote
+   arithmetic. (The underscore half — intra-word `_` — was already guarded.)
+3. *Backslash escapes ignored.* `\*escaped\*` parsed to a literal `\` plus
+   italic `escaped\`; escapes were honored nowhere.
+
+**What was decided (recorded, revertible).**
+
+1. *Nested lists by indent + `start`.* A new `parseList` recurses on
+   deeper-indented item runs to build nested `bulletList`/`orderedList` nodes,
+   and records an ordered list's first ordinal as a `start` attr (only when
+   ≠ 1, to avoid perturbing the common case). `toMarkdown` counts markers up
+   from `start` and emits nested lists on their own following lines at
+   `depth+1`, splitting an item's leaf paragraphs from its nested sub-lists so
+   the marker sits on the leaf line and the nested list re-indents beneath it.
+
+2. *Asterisk flanking: a scoped space+digit guard, NOT full CommonMark.* The
+   `*` italic alternative is now
+   `(?<!\d)\*(?=\S)([\s\S]+?)(?<=\S)\*(?!\d)`: the opener must be followed by a
+   non-space and not preceded by a digit, the closer preceded by a non-space
+   and not followed by a digit. This keeps whitespace-flanked (` * `) and
+   digit-adjacent (`5*3`) asterisks literal while still matching
+   `*real italic*`/`**bold**`. **Deliberately scoped out:** full CommonMark
+   left/right-flanking with the punctuation rules — e.g. `*(foo)*` or emphasis
+   that opens next to punctuation is not specially handled, and CommonMark
+   would actually treat `5*3` as emphasis whereas we (per the defect report)
+   keep it literal. The scoped guard is what the defect needs; the full
+   run-length delimiter algorithm is not worth porting into this regex-based
+   inline parser.
+
+3. *Backslash escapes as a first-in-order inline alternative + `mdEscape` mark.*
+   A `\\([!-/:-@\[-`{-~])` alternative is matched **first**, so an escaped
+   delimiter is consumed as one literal char before any emphasis/code opener
+   can see it (this is what makes the escape↔emphasis interaction correct — an
+   escaped `\*` is never a delimiter). The bare char is emitted with an
+   `mdEscape` mark; `inlineText` re-escapes an `mdEscape` run (`\x`) so the
+   round-trip is stable (a bare `*` would otherwise re-parse as emphasis).
+   Escape set is CommonMark's ASCII-punctuation range. **Scoped out:** an
+   escaped char that is the *sole* content of an emphasis span keeps its
+   `mdEscape` handling and drops the emphasis wrapper — a corner not worth the
+   complexity.
+
+**Tests (red-proven), in `markdown.test.ts`.** Ordered-list `start` preserved
+(`3./4.` not `1./2.`, asserts both the `start` attr and the round-trip);
+nested list parses to a nested structure and round-trips with indentation;
+`5 * 3 * 2` / `a * b * c` / `3*4*5` render with no italic mark and text intact,
+paired with a positive `*word*`/`**word**` still-works test; `\*escaped\*`
+renders as literal `*escaped*` (no italic, no stray backslash) and round-trips
+back to `\*escaped\*`. Each was shown red: renumber revert, nested-recursion
+disabled, flanking guard reverted to `\*([\s\S]+?)\*`, and escape branch
+disabled — each turned exactly its test(s) red.
+
+**To revert.** Restore the old flat list block (single-level `while` loop,
+`${idx+1}.` in `toMarkdown`) and delete `parseList`/`LIST_ITEM_RE`/`indentOf`;
+revert alternative 12 to `\*([\s\S]+?)\*`; remove the `\\(...)` alternative,
+its `m[1]` branch, the `mdEscape` handling in `inlineText`, and renumber the
+inline capture groups back (code span `\2`→`\1`, etc.).
+
+### A246 · Body editor: in-app navigation flushes the buffer and keeps the text (extends K96 to the in-app-nav exit)
+
+**Ticket:** body-editor data-loss (known-gaps #4: "failed save + in-app navigation loses text") · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** K96 ("every exit keeps the text"), TSK-40 / TSK-48 / ERR-12
+
+**The situation.** K96 settled the exit model — autosave stays and every
+exit (blur, Esc, Cmd/Ctrl+Enter, Done) keeps the text; there is no
+discard. But one exit was still silently losing text: an **in-app
+navigation** (a TanStack Router route change, e.g. clicking a `<Link>`
+away from the task) while the body editor was dirty. Two paths in
+`useBodyAutosave.ts` were verified from source:
+
+1. *Unmount flush was timer-gated.* The unmount effect only re-flushed
+   when `timerRef.current !== null` (a pending idle timer). A dirty buffer
+   with **no** timer — the `failed` state after a refused write, or a write
+   in flight that then fails — was dropped on unmount. That is exactly the
+   text the user most needs kept.
+2. *`hasUnsavedWork` had no in-app consumer.* It was computed and wired to
+   `beforeunload` (tab close / reload) only. A client-side route change
+   never fires `beforeunload`, so nothing guarded the in-app-nav exit.
+
+**What was decided (recorded, revertible).** This is **not** a new save
+model and **not** a "cancel" — it extends K96's "every exit keeps the
+text" to the in-app-nav exit.
+
+1. *Unmount flush attempts whenever there is work to lose.* The gate is now
+   "buffer dirty (`bufferRef.current !== savedRef.current`) OR state
+   `failed`", not "a timer is pending". A `stateRef` (render-synced, like
+   `conflictRef`) lets the unmount cleanup read the latest state.
+2. *A router blocker (`useUnsavedGuard`, new, `apps/web/src/client/router/`).*
+   It wraps TanStack Router's own `useBlocker` — **no existing blocker/
+   usePrompt was in the repo to reuse** (grepped router/ and settings/;
+   settings forms have no such guard). While the editor has unsaved work,
+   an in-app navigation is intercepted; the hook flushes (`flushForNav`,
+   new on the hook) and lets the navigation proceed **only** if the flush
+   left the editor clean. A refused write (or an open conflict) blocks the
+   navigation and keeps `BodyEditSurface` mounted, so its existing
+   `SaveIndicator` / `BodyConflictDialog` stay on screen — mirroring what
+   `beforeunload` does for tab close. `flushForNav` reports safety off the
+   synchronous refs (`savedRef`/`conflictRef`), never the render-synced
+   `state`, which can lag one microtask behind a successful write.
+3. *No double prompt.* The blocker sets `enableBeforeUnload: false`;
+   `useBodyAutosave` already installs `beforeunload`, so the browser prompt
+   is not duplicated.
+
+**Tests (red-proven).** `useBodyAutosave.test.ts` (A246 block): unmount
+with a dirty **failed** buffer and no pending timer re-attempts the flush
+carrying the text (red against the timer-gated guard — no second write); a
+clean editor writes nothing on unmount; `flushForNav` returns `false` on a
+refused write and `true` once it lands (red when forced to return `true`).
+`useUnsavedGuard.test.tsx` drives a real memory router: navigation is
+blocked when the flush reports unsafe (red when the guard never blocks),
+proceeds when clean, and is not intercepted at all when there is no unsaved
+work.
+
+**To revert.** Restore the unmount effect's timer-gated body (`if
+(timerRef.current !== null) { …; if (dirty) flush }`) and drop the
+`stateRef`; remove `flushForNav` from the hook and its interface; delete
+`useUnsavedGuard.ts`/`.test.tsx` and its call in `BodyEditor.tsx`. K96 and
+the `beforeunload` guard are untouched by a revert.
+
+### A247 · Body read view is a content region + explicit Edit button, not a `role="button"` wrapping links/images (WCAG 4.1.2)
+
+**Ticket:** body-editor a11y (known-gaps #5: "rendered description is `role="button"` wrapping links") · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** WCAG 4.1.2 (Name, Role, Value — no nested interactive content); Ken's ruling (see known-gaps "the a11y restructure … also wants a decisions.md §8 entry")
+
+**The situation.** The K33 read view (`BodyRenderedView.tsx`) rendered the
+task description inside a `<div role="button" tabIndex={0}>` so a click
+anywhere entered edit (TSK-69). But the rendered markdown itself contains
+interactive nodes — links (`<a>`) and clickable images (`<img>` →
+lightbox). A `role="button"` wrapping interactive descendants is nested
+interactive content: a screen reader announces one button and cannot reach
+the links inside it, an a11y regression against the AA posture.
+
+**What was decided (Ken's ruling; the restructure the known-gaps entry
+called for).** Restructure the read view to a plain **content region** plus
+an **explicit Edit affordance**:
+
+1. *Content region.* The rendered-markdown container drops `role="button"`,
+   `tabIndex`, and the click/keydown-to-edit handlers. It is now a plain
+   `<div aria-label="Description">`, so the `<a>` and `<img>` inside it are
+   reachable and behave natively (links follow, images open the lightbox).
+2. *Explicit Edit button.* A keyboard-accessible `<Button variant=
+   "secondary" size="sm" aria-label="Edit description">Edit</Button>`
+   (testid `body-edit`) enters edit mode — mirroring the K100 header Edit on
+   milestone/sprint detail rather than inventing a new pattern.
+3. *Empty state still invites editing.* An empty body renders the
+   placeholder as a real `<button>` (no interactive descendants to nest, so
+   a valid control), so a click/Enter/Space on it enters edit.
+4. *TSK-69 superseded.* "Click the text anywhere to edit" (and the
+   caret-at-click coordinate plumbing: `enterCoords`/`focusCoords`, now
+   removed from `BodyEditor`) is replaced by the Edit button as the
+   enter-edit affordance. Entering edit still works by pointer and
+   keyboard; `BodyEditor`/`BodyEditSurface` and the editor itself are
+   otherwise unchanged.
+
+**Tests (red-proven), `BodyRenderedView.test.tsx` + `BodyEditor.test.tsx`.**
+The rendered container is not `role="button"` and has no `tabindex` (red
+when the role/tabIndex is re-added); a link inside the description is a
+reachable, focusable anchor with no `role="button"` ancestor (same
+red-proof); an explicit `body-edit` button exists and enters edit via
+click and keyboard (red when no such button exists); the empty placeholder
+is a button that enters edit on click. The former TSK-69 "click the text /
+Enter-Space on the region enters edit" assertions are **replaced** — they
+encoded the superseded click-anywhere model.
+
+**To revert.** Restore `role="button" tabIndex={0}` + the `onContainerClick`
+/`onKeyDown` enter-edit handlers on the `body-rendered` container, drop the
+Edit `<Button>` and the placeholder-as-button, and restore `onEnterEdit`'s
+coords parameter with `enterCoords`/`focusCoords` threading through
+`BodyEditor`.
+
+### A250 · Interactive tap targets meet WCAG 2.5.8 (24px), meta-panel control heights normalized
+
+**Ticket:** UI-chrome defect #15 (tap targets below 24px; meta control heights 17–50px) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** WCAG 2.5.8 AA (Target Size Minimum, 24px)
+
+**The situation.** A live audit at 390px found interactive controls under the
+24px 2.5.8 floor and inconsistent meta-panel control heights:
+
+1. The list row/select-all `Checkbox` painted a 16px (`h-4 w-4`) box with no
+   enlarged hit area — a native input is clickable only where it sits, so the
+   effective target was 16px.
+2. The label ✕-remove (`LabelsField.tsx`) and multi-select custom-field
+   ✕-remove (`CustomFields.tsx`) rendered a bare `Icon size={12}` in a
+   `<button>` with no min hit area — ~12px targets.
+3. The meta panel's single-line editors (`OptionPicker` / `TextField` /
+   `DateField` triggers in `task/editors/`) used `py-0.5` with no height
+   floor, so heights varied 17–50px in one viewport.
+
+**What was decided (recorded, revertible).**
+
+1. *Checkbox — enlarge the target in the shared primitive.* `ui/Checkbox.tsx`
+   now wraps the 16px painted box in a `<label>` sized `h-6 w-6` (24px). A
+   click anywhere in the label toggles the input via the label's native
+   behaviour, so the effective target is 24px while the box stays visually
+   16px. **No paint moved off the input** — all its
+   `checked`/`disabled`/`focus-visible`/`border-control` classes are
+   unchanged, so the existing Checkbox tests (which assert those classes on
+   the input) still hold. The caller's `onClick` (the list row's
+   `e.stopPropagation()`) is attached to the label, not the input, so a click
+   on the 24px slop is also guarded before it bubbles to the row. Every call
+   site (list row, select-all header, board card) inherits the larger target
+   with no change. **Considered and rejected:** moving the paint to a sibling
+   span with `peer-checked:*` and making the input a transparent 24px
+   overlay — it works but forces churn on several correct primitive tests for
+   no visual gain, so the label-wrap (which touches nothing on the input) was
+   chosen.
+
+2. *✕-remove buttons — per-site 24px hit slop, glyph unchanged.* The two chip
+   ✕ buttons keep `Icon size={12}` but gain
+   `grid min-h-6 min-w-6 place-items-center` plus negative margins
+   (`-my-1 -mr-1`) so the 24px clickable square does not inflate the chip's
+   visual height. Fixed per-site (not in a shared primitive) because these are
+   raw inline `<button>`s in the chip renderers, not `IconButton` instances.
+
+3. *`IconButton` `xs` size left as-is.* `xs` is `h-6 w-6` = exactly 24px, so
+   it already meets 2.5.8; no floor change was needed. The list's ✕ close uses
+   `size="sm"` (28px). No `IconButton` change.
+
+4. *Meta editors — one control-height floor.* The `OptionPicker`, `TextField`
+   and `DateField` triggers/inputs in `task/editors/` gained `min-h-7` (28px,
+   the app's standard small control height from `ui/Select`/`ui/TextField`
+   `sm`), with `flex items-center` on the button displays. This is a floor,
+   not a cap: chip-based fields (Labels, multi-enum) still grow with content,
+   which is expected. These editors are also used by `CreateTaskModal`; the
+   uniform height is an improvement there too, not a regression.
+
+**Tests (red-proven).** `ui/Checkbox.test.tsx` — the 16px box sits in a
+`h-6 w-6` label; a click on the label slop toggles; the caller `onClick`
+reaches the label. `task/MetaPanel.test.tsx` — label ✕ and multi-enum ✕ carry
+`min-h-6`/`min-w-6` (glyph stays 12px); the Status trigger carries `min-h-7`.
+Each was shown red by restoring the pre-fix classes.
+
+**To revert.** In `ui/Checkbox.tsx` restore the `relative inline-flex` span
+wrapper (drop the `<label>` + inner 16px span + the `onClick`-to-label
+routing). In `LabelsField.tsx`/`CustomFields.tsx` restore the bare
+`shrink-0 opacity-60 …` / `opacity-60 …` classNames on the ✕ buttons. In the
+three `task/editors/` files drop the `min-h-7` (and the `flex … items-center`
+added to the two display buttons).
+
+### A251 · Narrow viewports: drawer-only nav, no persistent icon rail (implements Ken's #9 call)
+
+**Ticket:** UI-chrome defect #9 (phones default to a persistent icon/dot rail) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** R2 (mobile sidebar), Ken 2026-09-20
+
+**The situation.** Below `NARROW_PX` (900px), the collapsed sidebar rendered a
+persistent `w-14` in-grid icon rail (dots + tooltips). Ken's call: on narrow
+viewports there should be **no** persistent rail — the sidebar is hidden and
+the header hamburger's drawer is the sole nav. The drawer overlay (with its
+scrim, focus-trap and Escape) already existed for the narrow+expanded state;
+only the narrow+collapsed default still showed the rail.
+
+**What was decided (recorded, revertible).** In `shell/Sidebar.tsx`, after the
+`overlay` (narrow + expanded ⇒ drawer) branch, a narrow viewport now returns
+`null` for the in-grid render — so the collapsed narrow state renders nothing
+at all. The `AppShell` grid column is `auto`, so a null sidebar collapses the
+track to 0 width without disturbing the main pane. The hamburger
+(`useSidebarCollapse.toggle`) flips the transient `mobileOpen` → the sidebar
+re-renders as the existing drawer overlay. **Desktop is unchanged:** the wide
+path still renders the expanded in-grid column, the collapsed `w-14` rail, and
+the resize handle exactly as before. The breakpoint is unchanged (900px, the
+`NARROW_PX` in the sidebar's local `useIsNarrow`, mirroring the hook's).
+
+**Tests (red-proven).** `shell/Sidebar.test.tsx` (new "Sidebar narrow rail
+suppression (#9)" block): at 380px + collapsed, NO in-grid `<aside>` renders
+(and no backdrop); at 1200px + collapsed the `w-14` in-grid rail still renders
+(desktop unchanged); at 380px + expanded the drawer overlay
+(`role="dialog"`, `data-overlay`, backdrop) still opens. The drawer-only
+assertion was shown red by removing the `if (narrow) return null;` guard (the
+old `w-14` rail then rendered).
+
+**Note.** The optional Playwright 390px check was not run (no server booted in
+this lane); the unit test asserts the DOM equivalent — no in-grid `<aside>` at
+narrow width, i.e. no dot-rail.
+
+**To revert.** Remove the `if (narrow) { return null; }` guard in
+`Sidebar.tsx` (between the `overlay` branch and the in-grid `<aside>` return);
+the narrow+collapsed state then falls through to the `w-14` rail again.

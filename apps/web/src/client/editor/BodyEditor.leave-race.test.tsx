@@ -94,6 +94,14 @@ vi.mock("./BodyConflictDialog.tsx", () => ({
   BodyConflictDialog: () => <div data-testid="body-conflict-dialog" />,
 }));
 
+// The router nav-guard (A246) needs a RouterProvider this bare render
+// lacks; this test is about the blur-leave race, not in-app navigation,
+// so mock the guard to a no-op. (Its own behaviour is covered by
+// useUnsavedGuard/useBodyAutosave tests.)
+vi.mock("../router/useUnsavedGuard.ts", () => ({
+  useUnsavedGuard: (): void => {},
+}));
+
 const { BodyEditor } = await import("./BodyEditor.tsx");
 
 beforeEach(() => { installDeferredFetch(); });
@@ -123,7 +131,7 @@ function markdownValue(): string {
 }
 
 async function enterEditAndType(): Promise<void> {
-  fireEvent.click(screen.getByText("Some body text."));
+  fireEvent.click(screen.getByTestId("body-edit"));
   fireEvent.click(screen.getByTestId("mode-raw"));
   const textarea = screen.getByTestId("markdown-editor");
   textarea.focus();

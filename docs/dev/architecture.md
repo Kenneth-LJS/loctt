@@ -197,6 +197,43 @@ When a reorder produces a rank longer than `REBALANCE_LENGTH_THRESHOLD` (24 char
 
 All three apps call `requireSupportedSchema` at startup and individual command boundaries.
 
+## Core / surface parity
+
+Core exists so two surfaces answer the same question the same way. The
+rules that keep that true:
+
+- **A capability in core is not done until every surface — CLI, MCP, web
+  — can reach it, and the reference docs describe it.** A built-but-uncalled
+  export is dead code with a good address. Grep
+  `packages/core/src/index.ts` for callers before building anything — the
+  thing may already exist.
+- **The test for "does this belong in core":** would two surfaces have to
+  answer the same question? If yes, it is core and all three get it.
+- **Only a test that drives the real binary catches a surface-local
+  bug** — core tests call core directly and cannot see it. `loctt backup
+  <file>` once read its positional as the subcommand and wrote a file
+  literally named `backup` while every core test passed; only the
+  cross-surface integration test saw it.
+- **Fix at the correct layer: if two surfaces tell the same half-truth,
+  the bug is in core.** A Diagnostics panel made a command copyable only
+  when it matched `loctt <command>` while core's warning lacked the
+  `loctt ` prefix; the fix went in core, not the panel's regex, because
+  the CLI told the same half-truth.
+- **A field correct on the wire that nothing renders looks like a fix and
+  is not — verify the client reads it.** A server serializing an
+  `attachmentsError` / `warnings` array the client reads nowhere shows
+  "no attachments" / zero rows with no reason.
+
+### Task create is atomic
+
+Task creation is a single all-or-nothing operation: the web create modal
+makes one `POST /api/tasks` carrying every field, and core writes the
+task, its relationships and its labels together. There is no multi-step
+create flow that can be interrupted after the task is written but before a
+follow-up link/label write lands, so no partial-create state can arise on
+any surface. (A future create flow that gains a distinct follow-up write
+would reopen this.)
+
 ## Git Integration
 
 Git-backed mode is optional; LocTT works fine without it, purely local by

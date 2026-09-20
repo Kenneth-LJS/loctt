@@ -1,10 +1,25 @@
 /**
- * The task description's READ state (K33, TSK-68/69/70).
+ * The task description's READ state (K33, TSK-68/70; A247).
  *
  * K33 (Ken, 2026-09-09) makes the task description read-then-edit,
  * Jira-style: it renders as read-only formatted output by default and
- * only becomes the live `BodyEditor` when the reader clicks into it.
- * This component is that default read state.
+ * only becomes the live `BodyEditor` when the reader enters edit. This
+ * component is that default read state.
+ *
+ * ## A247 — the read view is a content region, not a button
+ *
+ * The original K33 read view wrapped the rendered markdown in a
+ * `<div role="button" tabIndex={0}>` so a click anywhere entered edit
+ * (TSK-69). But the rendered markdown itself contains interactive nodes —
+ * links (`<a>`) and clickable images — and a `role="button"` wrapping
+ * interactive descendants is nested interactive content (WCAG 4.1.2): a
+ * screen reader announces one button and cannot reach the links inside
+ * it. Ken ruled (A247) the read view is restructured to a plain CONTENT
+ * REGION (no `role`/`tabIndex`, links and images reachable and behaving
+ * natively) plus an EXPLICIT, keyboard-accessible "Edit" button that
+ * enters edit mode. This supersedes TSK-69's "click the text anywhere to
+ * edit" — the enter-edit affordance is now the Edit button (and, for an
+ * empty body, the placeholder), not the whole text region.
  *
  * ## Reuse of the comment renderer
  *
@@ -34,9 +49,10 @@
 
 import type { JSONContent } from "@tiptap/core";
 import type { JSX } from "react";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { isSafeHref } from "../comments/renderMarkdown.tsx";
+import { Button } from "../ui/Button.tsx";
 import { fromMarkdown } from "./markdown.ts";
 import type { MentionCandidate } from "./MentionMenu.tsx";
 
@@ -47,18 +63,21 @@ export interface BodyRenderedViewProps {
   /** Resolves `@user:<id>` to a display name for the read view. */
   readonly mentionCandidates: readonly MentionCandidate[];
   /**
-   * Clicking the body text (not a link or image) enters edit (TSK-69).
-   * The click's viewport coordinates are passed through so the editor can
-   * land the caret where the user clicked (`posAtCoords`) rather than at
-   * position 0.
+   * Enters edit mode (A247). Called by the explicit "Edit" button and,
+   * for an empty body, by clicking the placeholder. No caret coordinates
+   * are passed: the read view is no longer a click-to-place-caret target
+   * (TSK-69 superseded), so the editor opens with the caret at its
+   * default position.
    */
-  readonly onEnterEdit: (coords?: { readonly x: number; readonly y: number }) => void;
+  readonly onEnterEdit: () => void;
 }
 
 /**
- * The read state. A click anywhere on the text enters edit (TSK-69),
- * except a click on a link (opens its URL) or an image (opens the
- * lightbox) — TSK-70.
+ * The read state (A247): a plain content region rendering the markdown —
+ * links and images are real, reachable, natively-behaving elements — with
+ * an explicit, keyboard-accessible "Edit" button that enters edit mode. A
+ * click on a link opens its URL and a click on an image opens the
+ * lightbox (TSK-70); neither the region nor those elements enter edit.
  */
 export function BodyRenderedView({
   body, placeholder, mentionCandidates, onEnterEdit,
@@ -68,57 +87,52 @@ export function BodyRenderedView({
   const names = new Map(mentionCandidates.map(c => [c.id, c.name] as const));
   const isEmpty = body.trim() === "";
 
-  /**
-   * TSK-70's click exceptions live here, at the container, rather than
-   * on each element: a click whose target is (or is inside) a link or
-   * an image must NOT enter edit. Links carry their own `onClick`
-   * (open in a new tab) and images open the lightbox; both
-   * `stopPropagation`, so a click that reaches this handler is a click
-   * on plain text — which enters edit.
-   */
-  const onContainerClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement | null;
-    if (target?.closest("a") ?? false) return;
-    if (target?.closest("img") ?? false) return;
-    // TSK-69: carry the click point so the editor can place the caret
-    // where the user clicked rather than at position 0.
-    onEnterEdit({ x: e.clientX, y: e.clientY });
-  }, [onEnterEdit]);
-
   return (
     <div data-testid="body-editor">
+      {/* The explicit Edit affordance (A247). A real, keyboard-focusable
+          button — the enter-edit gesture that used to live on the whole
+          text region, now a discrete control that does not swallow the
+          links and images inside the description. Mirrors the K100
+          header Edit on milestone/sprint detail: a labelled secondary
+          Button that flips read → edit. */}
+      <div className="mb-1 flex justify-end">
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="body-edit"
+          aria-label="Edit description"
+          onClick={onEnterEdit}
+        >
+          Edit
+        </Button>
+      </div>
+
+      {/* A247: a CONTENT REGION, not a `role="button"`. No `role`,
+          `tabIndex`, or click-to-edit handler wraps the rendered markdown,
+          so the `<a>` and `<img>` nodes inside it are reachable and behave
+          natively (no nested interactive content — WCAG 4.1.2).
+          `-mx-3`/`px-3` still align the body text flush-left with the
+          "DESCRIPTION" section label; the transparent border keeps the
+          resting frame the edit surface mirrors. */}
       <div
         data-testid="body-rendered"
-        role="button"
-        tabIndex={0}
-        aria-label="Description — click to edit"
-        onClick={onContainerClick}
-        // Keyboard parity with the click exceptions (TSK-70): Enter/Space
-        // enters edit — UNLESS the focused element is a link or image, in
-        // which case the keypress must activate THAT (follow the link /
-        // open the lightbox), not enter edit. Without this guard a keyboard
-        // user could never follow a link in the description: Enter on a
-        // focused `<a>` was swallowed into edit mode.
-        onKeyDown={e => {
-          if (e.key !== "Enter" && e.key !== " ") return;
-          const target = e.target as HTMLElement | null;
-          if ((target?.closest("a") ?? false) || (target?.closest("img") ?? false)) return;
-          e.preventDefault();
-          onEnterEdit();
-        }}
-        // `-mx-3` cancels the `px-3` horizontally: the body text sits
-        // FLUSH-LEFT with the "DESCRIPTION" section label at rest (aligned
-        // with RELATED/ATTACHMENTS content), while the transparent
-        // hover-editable box still extends its 12px inset into the negative
-        // margin — so the hover-to-reveal affordance is unchanged but no
-        // longer indents the text.
-        className="prose-body -mx-3 min-h-[8rem] cursor-text rounded border border-transparent px-3 py-2 text-[0.9286rem] text-text-primary hover:border-border-subtle"
+        aria-label="Description"
+        className="prose-body -mx-3 min-h-[8rem] rounded border border-transparent px-3 py-2 text-[0.9286rem] text-text-primary"
       >
         {isEmpty
           ? (
-              <p data-testid="body-rendered-placeholder" className="text-text-tertiary">
+              // The empty state still invites editing: the placeholder is a
+              // real button (no interactive descendants to nest, so this is
+              // a valid control), so a click or Enter/Space on it enters
+              // edit — but the region around real content is never a button.
+              <button
+                type="button"
+                data-testid="body-rendered-placeholder"
+                onClick={onEnterEdit}
+                className="cursor-text text-left text-text-tertiary"
+              >
                 {placeholder}
-              </p>
+              </button>
             )
           : renderNodes(fromMarkdown(body).content ?? [], names, setLightboxSrc, "d")}
       </div>
@@ -221,9 +235,9 @@ function renderNode(
             // Withhold the referrer from external hosts. (Does not prevent
             // the load — see the note above.)
             referrerPolicy="no-referrer"
-            // The click opens the lightbox and never enters edit
-            // (TSK-70). `stopPropagation` keeps it from bubbling to the
-            // container's edit handler.
+            // The click opens the lightbox (TSK-70). `stopPropagation` is
+            // harmless now the region is no longer a button (A247) but kept
+            // so the image never triggers an ancestor click handler.
             onClick={e => { e.stopPropagation(); openLightbox(src); }}
             className="my-1.5 max-h-64 cursor-zoom-in rounded border border-border-subtle"
           />
@@ -330,9 +344,9 @@ function renderText(node: JSONContent): React.ReactNode {
                 href={href}
                 rel="noreferrer noopener"
                 target="_blank"
-                // Opening the link is a read action, never an edit
-                // (TSK-70). `stopPropagation` keeps the container's edit
-                // handler from also firing.
+                // Opening the link is a read action (TSK-70). The region is
+                // no longer a button (A247), so following the link is now
+                // the plain native anchor behaviour.
                 onClick={e => { e.stopPropagation(); }}
                 className="text-accent underline"
               >

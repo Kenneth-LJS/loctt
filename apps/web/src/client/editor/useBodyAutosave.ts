@@ -70,6 +70,14 @@ export interface BodyAutosave {
   readonly flush: () => Promise<void>;
   /** Retry after a failure, without needing another keystroke. */
   readonly retry: () => Promise<void>;
+  /**
+   * Flush for an in-app navigation (A246) and report whether the editor
+   * is now safe to unmount. Resolves `true` when the buffer is clean
+   * (the write landed, or there was nothing to write) and `false` when
+   * the write was refused or a conflict is open — in which case the
+   * caller must keep the editor mounted so the failure stays visible.
+   */
+  readonly flushForNav: () => Promise<boolean>;
   /** Resolve a conflict by writing this exact text over `theirs`. */
   readonly resolve: (text: string) => Promise<void>;
   /** Dismiss the conflict surface *without* writing (XS-12). */
@@ -91,6 +99,18 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
 
   const [state, setState] = useState<SaveState>({ kind: "saved" });
   const [conflict, setConflictState] = useState<BodyConflict | null>(null);
+
+  /**
+   * Mirror of `state` the unmount effect can read synchronously (A246).
+   *
+   * The unmount cleanup runs with the closure captured at mount, so it
+   * cannot read the latest `state` through the state variable — it would
+   * see `saved`. A `failed` write leaves no idle timer, so the only way
+   * the cleanup can tell "this teardown is losing a failed save" is a
+   * ref updated on every render, the same trick `conflictRef` uses.
+   */
+  const stateRef = useRef<SaveState>(state);
+  stateRef.current = state;
 
   /**
    * Mirror of `conflict` that `flush` can read synchronously (A59).
@@ -294,6 +314,28 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
   }, []);
 
   /**
+   * A246: flush for an in-app navigation, then report — synchronously,
+   * off the refs — whether the editor is now clean enough to unmount.
+   *
+   * The render-time `hasUnsavedWork` cannot answer this: it is stale
+   * inside the async navigation closure that awaits the flush. The truth
+   * as of this instant lives in the refs `write` mutates SYNCHRONOUSLY:
+   * a successful write sets `savedRef` to the text (so the buffer is no
+   * longer dirty), while a refused write leaves `savedRef` untouched
+   * (still dirty) and a conflict sets `conflictRef`. So "safe to leave"
+   * is exactly "the buffer matches disk and no conflict is open". The
+   * `state` variable is deliberately NOT consulted here — its ref is
+   * only render-synced, so it can still read `failed` in the microtask
+   * gap right after a successful write sets `state` to `saved`.
+   */
+  const flushForNav = useCallback(async (): Promise<boolean> => {
+    await flushRef.current();
+    const dirty = bufferRef.current !== savedRef.current;
+    const conflicted = conflictRef.current !== null;
+    return !dirty && !conflicted;
+  }, []);
+
+  /**
    * Escape / cancel (K33): discard the in-editor text and drop any
    * pending idle timer, reverting to the last-saved baseline WITHOUT
    * writing. Setting `bufferRef` back to `savedRef` is what makes the
@@ -342,12 +384,25 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
 
   // Flush a pending edit on unmount — navigating away between tasks
   // (TSK-40's "flushed or the user is warned, not silently discarded").
+  //
+  // A246 (extends K96's "every exit keeps the text" to in-app nav): the
+  // flush must attempt whenever there is work to lose, NOT only when an
+  // idle timer is still pending. The old timer-gated guard silently
+  // dropped a dirty buffer that had no timer — the `failed` state (its
+  // write was refused, so no timer is armed) and a write that was in
+  // flight and then failed. Both are exactly the text the user most
+  // needs kept. So the trigger is "the buffer differs from what is on
+  // disk, or the last write failed", which is `hasUnsavedWork` minus the
+  // conflict case (a conflict is governed by BodyConflictDialog and the
+  // A59 flush-suppression, so a blind flush here would be swallowed
+  // anyway).
   useEffect(() => () => {
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
-      if (bufferRef.current !== savedRef.current) void flushRef.current();
     }
+    const dirty = bufferRef.current !== savedRef.current;
+    if (dirty || stateRef.current.kind === "failed") void flushRef.current();
   }, []);
 
   const hasUnsavedWork =
@@ -356,7 +411,9 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
   /**
    * TSK-48's fourth bullet and ERR-12: leaving with unsaved text warns.
    * `beforeunload` covers reload and tab close; in-app navigation is
-   * covered by the unmount flush above.
+   * covered by the unmount flush above and the router guard
+   * (`useUnsavedGuard`, wired in `BodyEditSurface`) that blocks the route
+   * change on a failed flush so the failure UI stays on screen (A246).
    */
   useEffect(() => {
     if (!hasUnsavedWork) return undefined;
@@ -366,7 +423,7 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
   }, [hasUnsavedWork]);
 
   return {
-    state, conflict, edit, flush, retry, resolve, dismissConflict, cancel, hasUnsavedWork,
+    state, conflict, edit, flush, retry, flushForNav, resolve, dismissConflict, cancel, hasUnsavedWork,
   };
 }
 

@@ -1538,6 +1538,90 @@ describe("Sidebar mobile overlay (R2)", () => {
 });
 
 /**
+ * #9 (Ken 2026-09-20): on a NARROW viewport there is no persistent in-grid
+ * icon rail. The collapsed narrow state renders nothing at all — the header
+ * hamburger opens the drawer overlay, which is the sole nav. Desktop keeps
+ * the collapsed rail. `renderSidebarWith` mounts at an explicit `collapsed`
+ * so both the narrow-collapsed (drawer-only) and wide-collapsed (rail)
+ * branches can be exercised; it does not await "Projects" because a
+ * collapsed sidebar hides the group labels (and the narrow-collapsed case
+ * renders nothing).
+ */
+describe("Sidebar narrow rail suppression (#9)", () => {
+  function setWidth(px: number): void {
+    Object.defineProperty(window, "innerWidth", { value: px, configurable: true, writable: true });
+  }
+  afterEach(() => { setWidth(1200); });
+
+  async function renderSidebarWith(collapsed: boolean): Promise<void> {
+    if (priorQc) {
+      await priorQc.cancelQueries();
+      priorQc.clear();
+    }
+    stubFetch();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    priorQc = qc;
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: (s: Record<string, unknown>) => s,
+      component: () => (
+        <Sidebar collapsed={collapsed} currentUserId="u_ken" today="2026-06-08" />
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: ["/list"] }),
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    // Give the router a tick to resolve; do not depend on group text
+    // (hidden while collapsed, absent when narrow-collapsed renders null).
+    await waitFor(() => {
+      expect(router.state.status).toBe("idle");
+    });
+  }
+
+  it("renders NO in-grid sidebar element when narrow + collapsed (drawer-only)", async () => {
+    // Red-proof: before the fix, narrow + collapsed rendered a persistent
+    // `w-14` icon rail <aside>, so this <aside> query returned an element.
+    setWidth(380);
+    await renderSidebarWith(true);
+    expect(document.querySelector("aside")).toBeNull();
+    // And no backdrop either — the drawer is closed, nothing floats.
+    expect(screen.queryByTestId("sidebar-overlay-backdrop")).toBeNull();
+  });
+
+  it("still renders the collapsed icon RAIL on a wide viewport (desktop unchanged)", async () => {
+    setWidth(1200);
+    await renderSidebarWith(true);
+    const aside = document.querySelector("aside") as HTMLElement;
+    // Red-proof against a fix that hides the rail everywhere: the wide
+    // collapsed column must remain, at its fixed rail width, in-grid.
+    expect(aside).not.toBeNull();
+    expect(aside.getAttribute("data-overlay")).toBeNull();
+    expect(aside.className).toContain("w-14");
+  });
+
+  it("narrow + expanded still opens the drawer overlay (hamburger path intact)", async () => {
+    // The hamburger flips collapsed→false; at narrow width that is the
+    // overlay drawer, not an in-grid rail.
+    setWidth(380);
+    await renderSidebarWith(false);
+    const aside = document.querySelector("aside") as HTMLElement;
+    expect(aside.getAttribute("data-overlay")).toBe("true");
+    expect(aside.getAttribute("role")).toBe("dialog");
+    expect(screen.getByTestId("sidebar-overlay-backdrop")).toBeTruthy();
+  });
+});
+
+/**
  * @verifies K100
  *
  * Point-of-use editing (K100): the Labels / Milestones / Projects sidebar

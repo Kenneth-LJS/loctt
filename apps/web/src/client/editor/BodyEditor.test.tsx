@@ -5,14 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BodyAutosave, SaveState } from "./useBodyAutosave.ts";
 
 /**
- * The K33 two-state orchestration in `BodyEditor` (TSK-68/69/71/48).
+ * The K33 two-state orchestration in `BodyEditor` (TSK-68/71/48; A247).
  *
- * `BodyEditor`'s job is the state machine: rendered by default, click
- * to enter edit, blur/Escape to leave, and STAY in edit on a failed
- * save. The heavy children (`RichEditor`, `MarkdownEditor`, the
- * autosave hook that hits the network) are mocked so this test asserts
- * the orchestration and nothing else — the real editor and the real
- * save flow are exercised by the e2e spec and their own unit tests.
+ * `BodyEditor`'s job is the state machine: rendered by default, an
+ * explicit Edit button (A247) to enter edit, blur/Escape to leave, and
+ * STAY in edit on a failed save. The heavy children (`RichEditor`,
+ * `MarkdownEditor`, the autosave hook that hits the network) are mocked
+ * so this test asserts the orchestration and nothing else — the real
+ * editor and the real save flow are exercised by the e2e spec and their
+ * own unit tests. The router nav-guard (A246) is mocked too: it needs a
+ * RouterProvider this bare render does not have, and its behaviour is
+ * covered by `useUnsavedGuard`/`useBodyAutosave`'s own tests.
  */
 
 // A mutable handle the mocked hook returns, so a test can drive the
@@ -29,11 +32,18 @@ vi.mock("./useBodyAutosave.ts", () => ({
     edit: vi.fn(),
     flush,
     retry: vi.fn(async () => {}),
+    flushForNav: vi.fn(() => Promise.resolve(true)),
     resolve: vi.fn(async () => {}),
     dismissConflict: vi.fn(),
     cancel,
     hasUnsavedWork: false,
   }),
+}));
+
+// The router nav-guard (A246) needs a RouterProvider this bare render
+// lacks; its own tests cover it. Mock it to a no-op here.
+vi.mock("../router/useUnsavedGuard.ts", () => ({
+  useUnsavedGuard: (): void => {},
 }));
 
 // The rich surface: a focusable element carrying the id BodyEditor
@@ -89,10 +99,10 @@ describe("BodyEditor — K33 two-state orchestration", () => {
     expect(screen.getByTestId("body-editor")).toBeTruthy();
   });
 
-  // @verifies TSK-69
-  it("TSK-69: clicking the rendered text mounts the editor with the mode toggle", () => {
+  // @verifies A247
+  it("A247: clicking the Edit button mounts the editor with the mode toggle", () => {
     renderEditor();
-    fireEvent.click(screen.getByText("Some body text."));
+    fireEvent.click(screen.getByTestId("body-edit"));
 
     // The editor and the raw/rich toggle appear — and only here.
     expect(screen.getByTestId("rich-editor")).toBeTruthy();
@@ -111,7 +121,7 @@ describe("BodyEditor — K33 two-state orchestration", () => {
   // autosave), so it was asserting the bug.
   it("K96: Escape flushes and returns to the rendered view, keeping the text", () => {
     renderEditor();
-    fireEvent.click(screen.getByText("Some body text."));
+    fireEvent.click(screen.getByTestId("body-edit"));
     expect(screen.getByTestId("rich-editor")).toBeTruthy();
 
     act(() => {
@@ -128,7 +138,7 @@ describe("BodyEditor — K33 two-state orchestration", () => {
   // @verifies K96
   it("K96: Cmd/Ctrl+Enter flushes and leaves, keeping the text", () => {
     renderEditor();
-    fireEvent.click(screen.getByText("Some body text."));
+    fireEvent.click(screen.getByTestId("body-edit"));
     act(() => {
       fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     });
@@ -140,7 +150,7 @@ describe("BodyEditor — K33 two-state orchestration", () => {
   it("K96: Escape while the conflict dialog is open does NOT leave the editor", () => {
     currentConflict = { remoteToken: "tok-2", remoteBody: "theirs" } as unknown as BodyAutosave["conflict"];
     renderEditor();
-    fireEvent.click(screen.getByText("Some body text."));
+    fireEvent.click(screen.getByTestId("body-edit"));
     expect(screen.getByTestId("rich-editor")).toBeTruthy();
 
     act(() => {
@@ -157,7 +167,7 @@ describe("BodyEditor — K33 two-state orchestration", () => {
   // @verifies TSK-71
   it("TSK-71: blurring out of the editor flushes and returns to the rendered view", () => {
     renderEditor();
-    fireEvent.click(screen.getByText("Some body text."));
+    fireEvent.click(screen.getByTestId("body-edit"));
     const surface = screen.getByTestId("rich-editor");
     surface.focus();
 
@@ -177,7 +187,7 @@ describe("BodyEditor — K33 two-state orchestration", () => {
   it("TSK-48: a failed save keeps the editor open on the unsaved text, not a stale render", () => {
     currentState = { kind: "failed", message: "not saved" };
     renderEditor();
-    fireEvent.click(screen.getByText("Some body text."));
+    fireEvent.click(screen.getByTestId("body-edit"));
     const surface = screen.getByTestId("rich-editor");
     surface.focus();
 
@@ -195,7 +205,7 @@ describe("BodyEditor — K33 two-state orchestration", () => {
   // @verifies TSK-69
   it("TSK-69: the raw/markdown toggle switches surfaces inside edit mode", () => {
     renderEditor();
-    fireEvent.click(screen.getByText("Some body text."));
+    fireEvent.click(screen.getByTestId("body-edit"));
     expect(screen.getByTestId("rich-editor")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("mode-raw"));
@@ -205,7 +215,7 @@ describe("BodyEditor — K33 two-state orchestration", () => {
 
   it("aligns the edit surface flush-left too, so entering edit does not shift the text horizontally", () => {
     renderEditor();
-    fireEvent.click(screen.getByText("Some body text."));
+    fireEvent.click(screen.getByTestId("body-edit"));
     // The framed edit box mirrors the read view's `-mx-3` so its own px-3
     // content padding lands the text flush-left with the section label —
     // no horizontal jump between read and edit. Red-proof: without `-mx-3`
@@ -223,7 +233,7 @@ describe("BodyEditor — K33 two-state orchestration", () => {
   // asserting them present right after entering edit fails against it.
   it("K33: the toolbar (with the mode toggle) is shown at once on entering edit, not focus-gated", () => {
     renderEditor();
-    fireEvent.click(screen.getByText("Some body text."));
+    fireEvent.click(screen.getByTestId("body-edit"));
     // The single always-visible toolbar and the mode toggle are present
     // the instant edit is entered — there is no focus gate any more. (The
     // formatting buttons populate once the real rich editor publishes its

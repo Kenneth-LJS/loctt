@@ -107,6 +107,84 @@ export class RichBuffer {
  * ------------------------------------------------------------------ */
 
 /**
+ * A list-item line: leading indentation, a bullet (`-`/`*`/`+`) or ordinal
+ * (`\d+.`/`\d+)`), then the item text. The indent group drives nesting and
+ * the ordinal group carries the list's `start`.
+ */
+const LIST_ITEM_RE = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+
+/** Column width of a line's leading whitespace (a tab counts as one). */
+function indentOf(line: string): number {
+  return (/^(\s*)/.exec(line)?.[1] ?? "").length;
+}
+
+/**
+ * Parses one list — every consecutive item at exactly `indent` columns —
+ * into a `bulletList`/`orderedList` node, recursing on any deeper-indented
+ * run beneath an item to build nested lists. Returns the node and the next
+ * unconsumed line.
+ *
+ * A change of marker family (bullet ↔ ordinal) at the same indent ends the
+ * list, matching the flat parser's old behaviour. An ordered list records
+ * its first item's ordinal as `start`; `toMarkdown` counts up from it, so
+ * `3.`/`4.` survives instead of being renumbered to `1.`/`2.`.
+ */
+function parseList(
+  lines: readonly string[],
+  start: number,
+  indent: number,
+): { node: JSONContent; next: number } {
+  const first = LIST_ITEM_RE.exec(lines[start] ?? "");
+  const ordered = /\d/.test(first?.[2] ?? "");
+  const startNum = ordered ? Number(/\d+/.exec(first?.[2] ?? "0")?.[0] ?? "1") : undefined;
+  const items: JSONContent[] = [];
+  let i = start;
+
+  while (i < lines.length) {
+    const m = LIST_ITEM_RE.exec(lines[i] ?? "");
+    if (!m) break;
+    if (indentOf(lines[i] ?? "") !== indent) break;
+    if (/\d/.test(m[2] ?? "") !== ordered) break;
+
+    let text = m[3] ?? "";
+    const task = /^\[([ xX])\]\s+(.*)$/.exec(text);
+    const attrs = task ? { checked: (task[1] ?? " ").toLowerCase() === "x" } : undefined;
+    if (task) text = task[2] ?? "";
+
+    const itemContent: JSONContent[] = [
+      { type: "paragraph", content: inlineNodes(text) },
+    ];
+    i++;
+
+    // A deeper-indented list-item run directly below becomes a nested list
+    // on this item.
+    if (i < lines.length) {
+      const next = LIST_ITEM_RE.exec(lines[i] ?? "");
+      if (next && indentOf(lines[i] ?? "") > indent) {
+        const nested = parseList(lines, i, indentOf(lines[i] ?? ""));
+        itemContent.push(nested.node);
+        i = nested.next;
+      }
+    }
+
+    items.push({
+      type: "listItem",
+      ...(attrs ? { attrs } : {}),
+      content: itemContent,
+    });
+  }
+
+  const node: JSONContent = {
+    type: ordered ? "orderedList" : "bulletList",
+    ...(ordered && startNum !== undefined && startNum !== 1
+      ? { attrs: { start: startNum } }
+      : {}),
+    content: items,
+  };
+  return { node, next: i };
+}
+
+/**
  * Parses markdown into a TipTap document.
  *
  * Deliberately a block-level parser with inline handling, not a
@@ -217,26 +295,15 @@ export function fromMarkdown(md: string): JSONContent {
 
     // Lists. Task-list items are a bullet list with `checked` attrs, so
     // `- [x] done` does not degrade into the literal text "[x] done".
-    const listItem = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(line);
-    if (listItem) {
-      const ordered = /\d/.test(listItem[2] ?? "");
-      const items: JSONContent[] = [];
-      while (i < lines.length) {
-        const m = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(lines[i] ?? "");
-        if (!m) break;
-        if (/\d/.test(m[2] ?? "") !== ordered) break;
-        let text = m[3] ?? "";
-        const task = /^\[([ xX])\]\s+(.*)$/.exec(text);
-        const attrs = task ? { checked: (task[1] ?? " ").toLowerCase() === "x" } : undefined;
-        if (task) text = task[2] ?? "";
-        items.push({
-          type: "listItem",
-          ...(attrs ? { attrs } : {}),
-          content: [{ type: "paragraph", content: inlineNodes(text) }],
-        });
-        i++;
-      }
-      content.push({ type: ordered ? "orderedList" : "bulletList", content: items });
+    // Nesting is by leading indentation (LIST_ITEM_RE captures it): a run
+    // of items at one indent is a list, and a deeper-indented run beneath
+    // an item becomes a nested list on that item, recursively. Ordered
+    // lists carry their first ordinal as `start` so `3.\n4.` is not
+    // renumbered to `1.\n2.` on a rich edit.
+    if (LIST_ITEM_RE.test(line)) {
+      const parsed = parseList(lines, i, indentOf(line));
+      content.push(parsed.node);
+      i = parsed.next;
       continue;
     }
 
@@ -245,7 +312,7 @@ export function fromMarkdown(md: string): JSONContent {
     while (i < lines.length) {
       const l = lines[i] ?? "";
       if (l.trim() === "") break;
-      if (/^(#{1,6})\s/.test(l) || /^\s*>/.test(l) || /^(\s*)([-*+]|\d+[.)])\s/.test(l)) break;
+      if (/^(#{1,6})\s/.test(l) || /^\s*>/.test(l) || LIST_ITEM_RE.test(l)) break;
       if (/^(\s*)(`{3,}|~{3,})/.test(l)) break;
       if (isTableStart(lines, i)) break;
       para.push(l);
@@ -383,27 +450,42 @@ function inlineNodes(text: string): JSONContent[] {
   // reason `~~` precedes `~`.
   const pattern = new RegExp(
     [
-      "(`+)([\\s\\S]*?)\\1", // 1,2 code span
-      "!\\[\\[([^\\]]+)\\]\\]", // 3 file embed
-      "!\\[([^\\]]*)\\]\\(([^)]+)\\)", // 4,5 image/attachment embed
-      "\\[([^\\]]+)\\]\\(([^)]+)\\)", // 6,7 link
-      "\\*\\*([\\s\\S]+?)\\*\\*", // 8 bold
-      // 9 bold, 12 italic — underscore emphasis only at word boundaries.
+      // 1 backslash escape — TAKEN FIRST so an escaped delimiter (`\*`,
+      // `\_`, `` \` ``, `\\`) is consumed as one literal character and can
+      // never be seen as an emphasis/code opener afterwards. CommonMark
+      // escape semantics: a backslash before an ASCII punctuation char
+      // makes that char literal and the backslash is dropped on render.
+      // The escaped char keeps an `mdEscape` mark so `toMarkdown` re-emits
+      // it in its `\x` form and the round-trip is stable.
+      "\\\\([!-/:-@\\[-`{-~])", // 1 escaped punctuation
+      "(`+)([\\s\\S]*?)\\2", // 2 (fence), 3 code span
+      "!\\[\\[([^\\]]+)\\]\\]", // 4 file embed
+      "!\\[([^\\]]*)\\]\\(([^)]+)\\)", // 5,6 image/attachment embed
+      "\\[([^\\]]+)\\]\\(([^)]+)\\)", // 7,8 link
+      "\\*\\*([\\s\\S]+?)\\*\\*", // 9 bold
+      // 10 bold, 13 italic — underscore emphasis only at word boundaries.
       // CommonMark: an underscore *inside* a word does not open or close
       // emphasis, so `snake_case`, `my_var_name` and `a_b_c` stay literal
       // instead of being read as emphasis and re-serialized with `*`
       // (the prose-corruption bug). The `(?<!\w)`/`(?!\w)` guards require a
-      // non-word char (or string edge) on the outer side of each
-      // delimiter. `*` emphasis (8, 11) is intentionally NOT guarded —
-      // CommonMark allows intra-word `*`.
-      "(?<!\\w)__([\\s\\S]+?)__(?!\\w)", // 9 bold
-      "~~([\\s\\S]+?)~~", // 10 strike
-      "\\*([\\s\\S]+?)\\*", // 11 italic
-      "(?<!\\w)_([\\s\\S]+?)_(?!\\w)", // 12 italic
-      "\\$([^$\\n]+?)\\$", // 13 inline math
-      "\\^([^^\\s]+)\\^", // 14 superscript
-      "~([^~\\s]+)~", // 15 subscript
-      "@user:([A-Za-z0-9_-]+)", // 16 mention
+      // non-word char (or string edge) on the outer side of each delimiter.
+      "(?<!\\w)__([\\s\\S]+?)__(?!\\w)", // 10 bold
+      "~~([\\s\\S]+?)~~", // 11 strike
+      // 12 italic — asterisk emphasis with a space+digit flanking guard.
+      // Without a guard `5 * 3 * 2` parsed to italic ` 3 ` and RENDERED
+      // italic where the user wrote arithmetic. The guard is a scoped
+      // subset of CommonMark flanking: the opening `*` must be followed by
+      // a non-space and not be preceded by a digit; the closing `*` must be
+      // preceded by a non-space and not be followed by a digit. This keeps
+      // whitespace-flanked (` * `) and digit-adjacent (`5*3`) asterisks
+      // literal while still recognising `*real italic*`. Full punctuation
+      // flanking is deliberately out of scope (see A245).
+      "(?<!\\d)\\*(?=\\S)([\\s\\S]+?)(?<=\\S)\\*(?!\\d)", // 12 italic
+      "(?<!\\w)_([\\s\\S]+?)_(?!\\w)", // 13 italic
+      "\\$([^$\\n]+?)\\$", // 14 inline math
+      "\\^([^^\\s]+)\\^", // 15 superscript
+      "~([^~\\s]+)~", // 16 subscript
+      "@user:([A-Za-z0-9_-]+)", // 17 mention
     ].join("|"),
     "g",
   );
@@ -415,32 +497,35 @@ function inlineNodes(text: string): JSONContent[] {
     if (at > last) out.push({ type: "text", text: text.slice(last, at) });
     last = at + m[0].length;
 
-    if (m[2] !== undefined) {
-      out.push({ type: "text", text: m[2], marks: [{ type: "code" }] });
+    if (m[1] !== undefined) {
+      // Escaped punctuation: render the bare char, tag it so it re-escapes.
+      out.push({ type: "text", text: m[1], marks: [{ type: "mdEscape" }] });
     } else if (m[3] !== undefined) {
-      out.push({ type: "attachmentEmbed", attrs: { src: m[3], alt: "" } });
-    } else if (m[5] !== undefined) {
-      out.push({ type: "attachmentEmbed", attrs: { src: m[5], alt: m[4] ?? "" } });
-    } else if (m[7] !== undefined) {
+      out.push({ type: "text", text: m[3], marks: [{ type: "code" }] });
+    } else if (m[4] !== undefined) {
+      out.push({ type: "attachmentEmbed", attrs: { src: m[4], alt: "" } });
+    } else if (m[6] !== undefined) {
+      out.push({ type: "attachmentEmbed", attrs: { src: m[6], alt: m[5] ?? "" } });
+    } else if (m[8] !== undefined) {
       out.push({
         type: "text",
-        text: m[6] ?? "",
-        marks: [{ type: "link", attrs: { href: m[7] } }],
+        text: m[7] ?? "",
+        marks: [{ type: "link", attrs: { href: m[8] } }],
       });
-    } else if (m[8] !== undefined || m[9] !== undefined) {
-      out.push(...marked(m[8] ?? m[9] ?? "", "bold"));
-    } else if (m[10] !== undefined) {
-      out.push(...marked(m[10], "strike"));
-    } else if (m[11] !== undefined || m[12] !== undefined) {
-      out.push(...marked(m[11] ?? m[12] ?? "", "italic"));
-    } else if (m[13] !== undefined) {
-      out.push({ type: "inlineMath", attrs: { expr: m[13] } });
+    } else if (m[9] !== undefined || m[10] !== undefined) {
+      out.push(...marked(m[9] ?? m[10] ?? "", "bold"));
+    } else if (m[11] !== undefined) {
+      out.push(...marked(m[11], "strike"));
+    } else if (m[12] !== undefined || m[13] !== undefined) {
+      out.push(...marked(m[12] ?? m[13] ?? "", "italic"));
     } else if (m[14] !== undefined) {
-      out.push(...marked(m[14], "superscript"));
+      out.push({ type: "inlineMath", attrs: { expr: m[14] } });
     } else if (m[15] !== undefined) {
-      out.push(...marked(m[15], "subscript"));
+      out.push(...marked(m[15], "superscript"));
     } else if (m[16] !== undefined) {
-      out.push({ type: "mention", attrs: { userId: m[16] } });
+      out.push(...marked(m[16], "subscript"));
+    } else if (m[17] !== undefined) {
+      out.push({ type: "mention", attrs: { userId: m[17] } });
     }
   }
   if (last < text.length) out.push({ type: "text", text: text.slice(last) });
@@ -518,15 +603,29 @@ function block(node: JSONContent, depth = 0): string {
     case "orderedList": {
       const ordered = node.type === "orderedList";
       const pad = "  ".repeat(depth);
+      // Honour an ordered list's `start` so `3.`/`4.` is not renumbered to
+      // `1.`/`2.`; count up from it. A bullet list uses `-`.
+      const startRaw = (node.attrs as { start?: unknown } | undefined)?.start;
+      const start = ordered && typeof startRaw === "number" && Number.isFinite(startRaw)
+        ? startRaw
+        : 1;
       return (node.content ?? [])
         .map((item, idx) => {
-          const marker = ordered ? `${idx + 1}.` : "-";
+          const marker = ordered ? `${start + idx}.` : "-";
           const checked = (item.attrs as { checked?: unknown } | undefined)?.checked;
           const box = checked === true ? "[x] " : checked === false ? "[ ] " : "";
-          const inner = (item.content ?? [])
-            .map(c => block(c, depth + 1))
-            .join("\n\n");
-          return `${pad}${marker} ${box}${inner}`;
+          // Split the item's own leaf blocks (paragraphs) from any nested
+          // lists: the leaf text sits on the marker line, a nested list is
+          // emitted on its own following lines at depth+1 (its own `pad`
+          // handles the indentation), joined by a single newline so the
+          // list stays tight.
+          const children = item.content ?? [];
+          const leaf = children.filter(c => c.type !== "bulletList" && c.type !== "orderedList");
+          const nested = children.filter(c => c.type === "bulletList" || c.type === "orderedList");
+          const leafText = leaf.map(c => block(c, depth + 1)).join("\n\n");
+          const nestedText = nested.map(c => block(c, depth + 1)).join("\n");
+          const head = `${pad}${marker} ${box}${leafText}`;
+          return nestedText === "" ? head : `${head}\n${nestedText}`;
         })
         .join("\n");
     }
@@ -616,6 +715,13 @@ function inlineText(nodes: readonly JSONContent[]): string {
       if (n.type === "hardBreak") return "\n";
       let text = n.text ?? "";
       const marks = n.marks ?? [];
+      // A char that arrived as a backslash escape (`mdEscape`) re-emits in
+      // its `\x` form so it stays literal on the next parse — otherwise a
+      // `*` that the user escaped would round-trip back into an emphasis
+      // delimiter. No other markup wraps an escaped char.
+      if (marks.some(mk => mk.type === "mdEscape")) {
+        return text.replace(/([!-/:-@[-`{-~])/g, "\\$1");
+      }
       // A link wraps whatever the character marks produced, so it is
       // applied last — `[**bold**](url)`, not `**[bold](url)**`.
       for (const [name, open, close] of MARK_WRAPPERS) {
