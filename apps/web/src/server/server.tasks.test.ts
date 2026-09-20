@@ -129,6 +129,35 @@ describe("GET /api/tasks (sort + pagination)", () => {
     for (const title of made) expect(titles).toContain(title);
   });
 
+  // Fix 1 (server dslAtom under-quoting): the server used to build its
+  // filter atoms with a plain regex that let a bare keyword/number/date
+  // through UNQUOTED, so it re-tokenized as the wrong type or as invalid
+  // DSL. It now imports core's tokenizer-checked dslAtom, which quotes
+  // such values so they round-trip to one plain STRING token.
+  //
+  // Red-proof: under the old regex `labels=and` emitted `labels = and`,
+  // where `and` is the AND keyword — invalid DSL, which the list route
+  // maps to 400. Quoted (`labels = "and"`) it is a valid query that
+  // matches nothing, i.e. 200 with an empty set.
+  it("quotes a keyword-shaped filter value so the query stays valid (Fix 1)", async () => {
+    const res = await fetch(`${base}/api/tasks?labels=and`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: TaskFrontmatterPublic[] };
+    // No task carries a label literally named "and", so the set is empty
+    // — but the request is valid, not a 400 parse error.
+    expect(body.items.map(t => t.title)).not.toContain("Apple");
+  });
+
+  it("quotes other keyword-shaped filter values (Fix 1)", async () => {
+    // `or`/`in`/`is` are DSL operators/keywords: emitted bare they make
+    // `labels = or` etc., which is invalid DSL (the old regex passed them
+    // through, giving a 400). Quoted, each is a valid string comparison.
+    for (const value of ["or", "in", "is"]) {
+      const res = await fetch(`${base}/api/tasks?labels=${value}`);
+      expect(res.status, `labels=${value}`).toBe(200);
+    }
+  });
+
   it("excludes archived tasks by default, includes them with archived=true", async () => {
     const all = await list("sort=title&dir=asc");
     const apple = all.items.find(t => t.title === "Apple");

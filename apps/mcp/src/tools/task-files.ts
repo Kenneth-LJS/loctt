@@ -6,9 +6,11 @@
  * resolving against an arbitrary value.
  *
  * F1 (agent-surface hardening): the source path is CONFINED to inside
- * the tracker root. An auto-approved / steered agent cannot copy a file
- * from anywhere on disk (`~/.ssh/id_rsa`, `.env`) into `.loctt/`, where
- * git-backed mode would then commit and push it off the machine. When
+ * the tracker's resolved data dir (`.loctt/`), not merely the project
+ * root (Ken's narrowing). An auto-approved / steered agent cannot copy a
+ * file from anywhere on disk (`~/.ssh/id_rsa`, `.env`) — nor a secret
+ * sitting BESIDE `.loctt/` (`<root>/credentials.txt`) — into `.loctt/`,
+ * where git-backed mode would then commit and push it off the machine. When
  * git-backed mode is on, a successful attach also auto-commits (publishes
  * to the loctt branch), matching Ken's model: attachments push INTO the
  * repo, then commit.
@@ -24,6 +26,7 @@ import {
   loadSyncState,
   lookupTask,
   publish,
+  resolveLocttDir,
 } from "@loctt/core";
 import { z } from "zod";
 
@@ -81,10 +84,10 @@ async function autoCommitAttachment(
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "attach_file",
-    description: "Copy a local file into a task's attachments directory. Only file paths are supported in v1 (no base64 content); the file must be readable from the MCP server's filesystem AND resolve to inside the tracker root — a path outside the tracker (e.g. ~/.ssh/id_rsa) is refused. Stage the file inside the tracker first, then attach it by its path there. When git-backed mode is enabled, a successful attach also commits (publishes) the new attachment.",
+    description: "Copy a local file into a task's attachments directory. Only file paths are supported in v1 (no base64 content); the file must be readable from the MCP server's filesystem AND resolve to inside the tracker's data directory (.loctt/) — a path outside it (e.g. ~/.ssh/id_rsa, or a secret sitting beside .loctt/) is refused. Stage the file inside .loctt/ first, then attach it by its path there. When git-backed mode is enabled, a successful attach also commits (publishes) the new attachment.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
-      source_path: z.string().describe("Absolute path to the file to attach. Must be absolute AND inside the tracker root — a path outside the tracker is refused. The MCP server's cwd is not guaranteed to match the agent's mental model."),
+      source_path: z.string().describe("Absolute path to the file to attach. Must be absolute AND inside the tracker's data directory (.loctt/) — a path outside it is refused. The MCP server's cwd is not guaranteed to match the agent's mental model."),
       force: z.boolean().optional().describe("If true, overwrite an existing attachment with the same basename."),
     },
     handler: async ({ locttDir, root }, args) => {
@@ -99,9 +102,18 @@ export const TOOLS: readonly ToolDef[] = [
           locttDir,
           taskId: task.frontmatter.id,
           sourcePath,
-          // F1: confine the source to inside the tracker root on the
-          // agent surface. The CLI (human) does not confine.
-          confineToRoot: root,
+          // F1: confine the source to inside the RESOLVED DATA DIR
+          // (.loctt/) on the agent surface, not merely the project root
+          // (Ken's ruling). A secret sitting BESIDE .loctt/ — e.g.
+          // <root>/credentials.txt — was attachable and, under git-backed
+          // mode, auto-committed and pushed off the machine; narrowing the
+          // safe zone to resolveLocttDir(root) blocks that exfil path. The
+          // legitimate agent workflow already stages the file inside the
+          // tracker first (see the tool description), so it lands inside
+          // .loctt/ and still passes. The CLI (human) does not confine.
+          // Uses the resolver, not a hardcoded ".loctt", so it follows the
+          // LOCTT_DIR constant. See decisions.md § 8.
+          confineToRoot: resolveLocttDir(root),
           force,
         });
         // Auto-commit when git-backed mode is on (Ken's model). Best-effort:

@@ -144,85 +144,40 @@ are milestone surfaces — but the label must become a `label` prop
 sprint caller is added, or that caller will announce "Milestone
 progress". Fold into the work that adds the new caller.
 
-### The server's private `dslAtom` copy under-quotes grammar-colliding values
+### ~~The server's private `dslAtom` copy under-quotes grammar-colliding values~~ RESOLVED (2026-09-20, A227)
 
-`apps/web/src/server/server.ts` defines its own `dslAtom` with a plain
-regex (`^[A-Za-z_][A-Za-z0-9_.-]*$` → bare, else quoted), separate from
-core's `packages/core/src/query/serialize.ts`, whose `dslAtom` delegates
-to `isBareSafe` — a re-tokenize check that guarantees the atom round-trips
-to a single token. So a facet whose value is a bare keyword/number/
-date-shaped string (`"true"`, `"123"`, `"and"`, …) would still
-under-quote on the server copy and break on reparse.
+The server's private `dslAtom` in `apps/web/src/server/server.ts` was
+deleted and replaced with `import { dslAtom } from "@loctt/core"` (the
+tokenizer-checked one). One quoter across all producers; a bare
+keyword/number/date-shaped filter value now quotes so it round-trips to
+one token. Covered by `server.tasks.test.ts` ("Fix 1" cases,
+red-proven).
 
-**Latent, low-risk:** no current facet feeds such a value (facet values
-are ULIDs and config-controlled enum keys), so it is not a live defect —
-but it is the class core already fixed for its own producer.
+### ~~An attachment name that differs only by case aliases on macOS~~ RESOLVED (2026-09-20, A224)
 
-**Fix:** replace the server's private `dslAtom` with an import of core's
-(the browser-bundle constraint that kept them separate does not apply
-server-side), giving one tokenizer-checked quoter across all producers.
+Fixed in core (`packages/core/src/task/attachments.ts`), so CLI/MCP/web
+all inherit it:
+- `detachFile` now resolves the ACTUAL on-disk dirent case-insensitively
+  (`findRealAttachmentName`), unlinks that file, and records the real
+  name in history — never a casing that was never on disk.
+- `attachFile` REFUSES a name that collides case-insensitively (but not
+  exactly) with an existing attachment, throwing the new
+  `AttachmentCaseCollisionError` regardless of `force` — deterministic
+  across case-sensitive and -insensitive filesystems.
+- The refusal is a parity change: a case-colliding attach now refuses on
+  CLI and MCP too. Registered in both surfaces' KNOWN_DOMAIN_ERRORS and
+  the web attach route (409). Red-proven in `attachments.test.ts`.
 
-**Core side done** (2026-09-19). Core's `dslAtom`
-(`packages/core/src/query/serialize.ts`) was confirmed correct (it
-delegates to `isBareSafe`, a tokenizer round-trip check) and is now
-**exported** from `@loctt/core` (via `query/index.ts` and the package
-index), so the server can `import { dslAtom } from "@loctt/core"`.
-Replacing the server's private copy with that import is a server-file
-change owned by another agent and was not made here.
+### ~~A displaced body is not carried by a later backup (BAK-C13)~~ RESOLVED (2026-09-20, A226)
 
-### An attachment name that differs only by case aliases on macOS
-
-`DELETE /api/tasks/:ref/attachments/DROP.TXT` deletes `drop.txt` on a
-default macOS volume, because APFS is case-insensitive: `unlink` resolves
-the alias and core's `detachFile` reports success, writing an
-`attachment_removed` history entry naming `DROP.TXT` — a name never on
-disk. Symmetrically, uploading `README.md` over an existing `readme.md`
-throws `AttachmentExistsError` on macOS but on a case-sensitive Linux
-volume keeps both as distinct files. The behaviour differs by
-filesystem, which is the problem.
-
-Not fixed: the honest fix is core normalising or refusing names that
-collide case-insensitively with an existing attachment, which changes
-what the CLI and MCP accept too. No REL case covers case-folding.
-
-### A displaced body is not carried by a later backup (BAK-C13)
-
-`restore --overwrite` preserves the body it displaces as
-`.loctt/tasks/<id>/displaced-body-<ulid>.md`, named in the report. That
-file is **not** picked up by a subsequent `loctt backup`: the export
-(`packages/core/src/backup/export.ts`) carries `task.md`,
-`_comments.yaml`, `_history.yaml` and the contents of `attachments/`,
-and a displaced body is none of those (it is written into the task dir,
-not `attachments/`). So "overwrite-restore, then back up, then restore
-elsewhere" loses the preserved text.
-
-**Not fixed, deliberately** — the alternatives each need a decision (a
-dedicated record kind is the clean fix but adds a format shape no case
-describes). **Mitigation today:** the path is in the restore report and
-the file stays on disk, so it survives everything except a round-trip
-through a backup.
-
-**Reproduce:** restore with `--overwrite` over a task whose body
-differs, confirm `displaced-body-*.md` exists, then `loctt backup` and
-grep the JSONL for its text — absent.
-
-### MSL-35 · Milestone progress cannot fail per row (documented ceiling)
-
-MSL-35's last bullet wants a failed progress computation to show an error
-in place of the numbers for one milestone **while other milestones' rows
-keep rendering their own progress**. That last part cannot happen as the
-server stands: progress is computed from **one shared corpus scan**
-(`milestoneProgress` / `referenceProgress`), which either succeeds for
-every milestone or throws for all of them — there is no per-milestone
-failure mode.
-
-The client half is fully built and unit-tested: `progressState(undefined)`
-returns `kind: "unavailable"`, and `ProgressReadout` renders a named,
-retryable error in place of `0 / 0`. The whole-list failure path has a
-`(MSL-35, partial)` UI test. Building a `progress | {error}` per-row
-shape would be building for a failure that cannot occur, so this is left
-as documented-partial rather than a speculative per-milestone endpoint.
-Revisit only if a real per-milestone computation is ever introduced.
+The exporter now carries any `displaced-body-*.md` files in a task's
+directory on the task record (`displacedBodies`, an optional
+`{name, content}[]` — task-dir content alongside task.md/comments/
+history/attachments, NOT a new top-level record kind), and restore
+re-lands them through the same staged swap. "Overwrite-restore → backup
+→ restore elsewhere" now preserves the text. Names validated up front in
+`assertBackupContained`. Red-proven in `restore.test.ts` (BAK-C13
+carry).
 
 ### A saved view whose `conditions` block is missing/corrupt is object-fatal, not per-field-degraded
 
@@ -295,18 +250,20 @@ agent-authored content, against a 127.0.0.1-bound server. The must-fix
 path-confinement and packaging findings from the 2026-09-19 audits are
 resolved (decisions.md A205–A207); what remains open is below.
 
-### F1's confinement boundary is the project root, not `.loctt/`
+### ~~F1's confinement boundary is the project root, not `.loctt/`~~ RESOLVED (2026-09-20, A225, Ken-approved)
 
-`attach_file` confines the source read to the tracker root (the project
-working dir), so `~/.ssh/id_rsa` (outside root) is blocked — but a
-steered agent can still attach a non-dotfile secret sitting **beside**
-`.loctt/` (e.g. `credentials.txt`, `config/prod.json`) and, under
-git-backed mode, auto-commit it to the loctt branch. This is within the
-stated "confine into the repo" boundary (A205), not a bypass.
-
-**Ken's call / should-fix:** narrow the MCP safe zone to `.loctt/`
-(`confineToRoot: locttDir`) if in-repo-but-outside-`.loctt/` secrets are
-in scope for the threat model.
+The MCP `attach_file` handler now confines the source to the RESOLVED
+DATA DIR via `confineToRoot: resolveLocttDir(root)` (not a hardcoded
+`.loctt` — it follows the `LOCTT_DIR` constant), narrowing the safe zone
+from the project root to `.loctt/`. A secret sitting **beside** `.loctt/`
+(e.g. `<root>/credentials.txt`) is now refused, closing the auto-commit
+exfil path. `attachFile`'s `confineToRoot` option stays a generic
+directory; the surface picks the boundary. The legitimate agent workflow
+already stages the file inside the tracker first (the tool description
+now says `.loctt/`), so it lands inside the data dir and still passes —
+no legitimate attach broke. Red-proven in `mcp.test.ts` (attach beside
+`.loctt/` refused; staged-inside attach works) and in
+`attachments.test.ts` (data-dir boundary at the core level).
 
 ### ~~The local server has no Host/Origin validation (DNS-rebinding)~~ — FIXED 2026-09-19
 
@@ -419,9 +376,10 @@ is the app-shell navigation drawer, a separate component.
 These cases have no @verifies tag on purpose — the capability they assert
 cannot exist on the current build. Do not tag them; do not re-report them
 as uncovered gaps. The authoritative uncovered set is whatever
-`npm run cases:coverage` prints; as of this writing it is exactly the ten
-cases named below (the six schema cases, A11Y-9, ERR-23, ERR-32, and
-MSL-35, which has its own section above).
+`npm run cases:coverage` prints; as of this writing it is exactly the nine
+cases named below (the six schema cases, ERR-23, ERR-32, and
+MSL-35, which has its own section above). A11Y-9 was in this roster and
+is now covered — see below.
 
 ### Schema-migration cases wait on the first schema bump
 
@@ -433,14 +391,47 @@ a natural unblock. (XS-43/44/45 were once grouped here but depend on the
 rekey engine, which shipped; they are now covered by
 `tests/ui/flow-git-rekey.spec.ts`.)
 
-### A11Y-9 · full keyboard operation of the task list
+### A11Y-9 · full keyboard operation of the task list — COVERED 2026-09-20
 
-The `ui/Menu` half is built (roving arrow-key focus + type-ahead). What
-remains is the list itself: task rows in `ListView.tsx` are still
-click-only (a bare `<tr>` with `onClick`, no `role`/`tabIndex`/key
-handler), the status dropdown lacks arrow traversal, and nothing restores
-focus to the opened row on Back. A11Y-9 stays uncovered until row
-focusability is built — an a11y feature, and a11y blocks publish (K74).
+Built and tagged (`@verifies A11Y-9`). The four bullets that live in the
+list are satisfied and asserted, three in a real browser
+(`tests/ui/flow-accessibility.spec.ts`, the "list → open → change status
+→ save → back cycle" test) and the ListView-local logic in
+`apps/web/src/client/list/ListView.a11y.test.tsx`:
+
+- **Row keyboard-activatable.** The premise "rows are click-only" was
+  only half true — the key cell already rendered a real `<Link>` (an
+  `<a href>`), which is a native Tab stop that navigates on Enter, so the
+  row was reachable by keyboard all along. What was missing was the
+  focus-restore, not the activation. The row keeps the `<tr onClick>` for
+  the mouse and the key link as its single, ARIA-correct keyboard action
+  (no `tabIndex` on the `<tr>` — that would double the Tab stop and make
+  a reader announce the row twice).
+- **Status dropdown arrow traversal.** The old note said `OptionPicker`
+  had no arrow handling; that is stale. OptionPicker now renders
+  `ui/Combobox` (the A211 refactor), which opens on Enter/Space, traverses
+  options with ArrowDown/Up/Home/End, commits on Enter and closes on
+  Escape returning focus to the trigger — proven in `Combobox.test.tsx`
+  and driven end-to-end (with the committed value checked on disk) in the
+  A11Y-9 Playwright test. Status editing lives on the task **detail**, not
+  in a list row.
+- **Focus restore on return.** New: opening a task records its key in
+  `sessionStorage` (bridging the list's unmount), and on returning to
+  `/list` focus is restored to that row's key-link anchor. The restore
+  wins over the generic route-change focus move (`useRouteAnnouncement`
+  lands focus on `#main-content`; the restore treats body and that pane
+  as default landings it may override, but never a focus the user placed).
+
+**Remaining dependency (A11Y-24, not A11Y-9's to fix here):** a
+successful field save on the detail page is still silent — `MetaPanel`'s
+write path does not call the shell announcer (the `announcer-polite`
+region exists and theme changes use it). A11Y-9's fourth bullet ("the
+save outcome is announced (A11Y-24)") therefore rides on A11Y-24 landing.
+The A11Y-9 Playwright test documents this with a negative assertion
+(`announcer-polite` does **not** contain "saved") so the day A11Y-24 is
+built for field saves, that test goes red and this note must be
+revisited. A11Y-24 is itself untagged/unbuilt and is a separate publish
+blocker.
 
 ### ERR-23 · no multi-step create flow exists to interrupt
 

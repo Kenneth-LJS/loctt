@@ -199,10 +199,39 @@ export function asGroupRoot(tree: BuilderTree): BuilderTree {
   return tree.kind === "group" ? tree : { kind: "group", op: "and", children: [tree] };
 }
 
-/** builderTreeToQuery throws on an empty group; the empty builder is "". */
+/**
+ * Drops empty groups (a group with no children, recursively) from the
+ * tree. An empty group carries no query meaning — `builderTreeToQuery`
+ * throws on one — but a user mid-build routinely has one: "+ Group" adds
+ * an empty group they have not filled yet. Left in place it makes the
+ * WHOLE tree unserializable, so {@link safeSerialize} would swallow the
+ * throw and return `""`, silently discarding every OTHER (completed)
+ * condition alongside it (the text/visual toggle data-loss, A-toggle).
+ * Pruning first lets the completed conditions survive serialization; the
+ * dropped empty group held nothing, so nothing is lost.
+ *
+ * This edits ONLY the derived text — the live builder tree is untouched,
+ * so an empty group the user is still building stays visible in the
+ * builder and survives a round-trip when the tree itself is preserved.
+ */
+export function pruneEmptyGroups(tree: BuilderTree): BuilderTree {
+  if (tree.kind !== "group") return tree;
+  const children = tree.children
+    .map(pruneEmptyGroups)
+    .filter(c => !(c.kind === "group" && c.children.length === 0));
+  return { ...tree, children };
+}
+
+/**
+ * Serializes a builder tree to its DSL text, tolerating the in-progress
+ * shapes the builder produces mid-edit. `builderTreeToQuery` throws on an
+ * empty group; the empty builder is `""`, and an empty group nested beside
+ * real conditions is pruned first ({@link pruneEmptyGroups}) so those
+ * conditions are NOT lost when the query is shown as text.
+ */
 export function safeSerialize(tree: BuilderTree): string {
   try {
-    return builderTreeToQuery(tree);
+    return builderTreeToQuery(pruneEmptyGroups(tree));
   } catch {
     return "";
   }

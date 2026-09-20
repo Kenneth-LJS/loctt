@@ -20,6 +20,7 @@
 
 import {
   ArchivedReferenceError,
+  AttachmentCaseCollisionError,
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
@@ -80,6 +81,7 @@ export class UsageError extends Error {
  */
 export const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error> = [
   ArchivedReferenceError,
+  AttachmentCaseCollisionError,
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,

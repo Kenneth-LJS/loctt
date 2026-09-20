@@ -251,6 +251,31 @@ describe("QueryBuilder", () => {
     expect(ops).not.toContain("<");
   });
 
+  // Bug: the condition row's controls were ragged — the value control
+  // shrank to its content ("—") while field/operator kept their width, so
+  // rows did not line up. The fix puts them in a stable column rhythm: a
+  // `qb-leaf-row` flex row holding field + operator + a flex-filling value
+  // column. This pins that structure (layout itself is hard to unit-test;
+  // the structure the alignment relies on is not).
+  it("lays each condition out as one row with field, operator and a filling value column", () => {
+    renderBuilder();
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+    fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
+
+    const row = screen.getByTestId("qb-leaf-row");
+    // Field, operator and value all live in the one row container…
+    expect(within(row).getByTestId("qb-field")).toBeTruthy();
+    expect(within(row).getByTestId("qb-op")).toBeTruthy();
+    const value = within(row).getByTestId("qb-value");
+    // …and the value control sits in a flex-filling column, so it stops
+    // shrinking to its "—" content and lines up with the row below. The
+    // wrapper carries `flex-1` — red-proof: drop the wrapper (value emitted
+    // bare, as before the fix) and this goes red.
+    const valueColumn = value.closest("div.flex-1");
+    expect(valueColumn).not.toBeNull();
+    expect(row.contains(valueColumn)).toBe(true);
+  });
+
   it("builds an `in (…)` list from a constrained multi-select picker", () => {
     const b = renderBuilder();
     fireEvent.click(screen.getByTestId("qb-add-condition"));

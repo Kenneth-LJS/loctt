@@ -137,6 +137,14 @@ export function ViewFormDialog({
   // The advanced (raw DSL) draft; seeded from the derived query so both
   // modes show the same query across the toggle.
   const [draft, setDraft] = useState(seed.draft);
+  // The DSL text we last emitted FROM the builder tree, if any. It lets
+  // advanced→builder restore the EXACT builder state — including
+  // in-progress and empty groups that don't survive a text round-trip —
+  // when the user only glanced at the text and did not edit it. Reset
+  // whenever the switch is not tree-derived (a manual edit invalidates it).
+  const [treeSnapshot, setTreeSnapshot] = useState<
+    { draft: string; tree: BuilderTree } | undefined
+  >(undefined);
 
   const nameEmpty = name.trim().length === 0;
 
@@ -193,8 +201,15 @@ export function ViewFormDialog({
             pending={pending}
             onSwitchToAdvanced={() => {
               // Carry the builder's query into the DSL draft so the two
-              // modes show the same thing across the toggle.
-              setDraft(safeSerialize(tree));
+              // modes show the same thing across the toggle. safeSerialize
+              // prunes empty groups so a half-built "+ Group" does not
+              // blank out every completed condition (the toggle data-loss).
+              const text = safeSerialize(tree);
+              setDraft(text);
+              // Remember the exact tree behind this text so switching back
+              // restores it verbatim (incl. in-progress/empty groups the
+              // text can't express) as long as the user hasn't edited it.
+              setTreeSnapshot({ draft: text, tree });
               setMode("advanced");
             }}
             onSave={doMutate}
@@ -209,8 +224,21 @@ export function ViewFormDialog({
             refuseReason={seed.refuseReason}
             onSwitchToBuilder={() => {
               // Only reachable when the live draft is renderable (the
-              // control is disabled otherwise). Re-parse so the builder
-              // opens on exactly what the text says — never an approximation.
+              // control is disabled otherwise).
+              //
+              // If the text is byte-identical to what we last serialized
+              // out of the builder — the user switched to text and back
+              // without editing — restore that EXACT tree. Re-parsing would
+              // drop any in-progress or empty group the text can't express,
+              // silently losing the builder state the user was mid-way
+              // through. This is the lossless happy path.
+              if (treeSnapshot !== undefined && treeSnapshot.draft === draft) {
+                setTree(treeSnapshot.tree);
+                setMode("builder");
+                return;
+              }
+              // The text was edited: re-parse so the builder opens on
+              // exactly what the text now says — never an approximation.
               const parsed = parseForBuilder(draft);
               if (!parsed.ok) return; // defensive; button disabled here
               setTree(asGroupRoot(parsed.tree));

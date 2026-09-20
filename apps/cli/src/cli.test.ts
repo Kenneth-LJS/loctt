@@ -3,7 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { initLoctt, lookupByKey, resolveLocttDir } from "@loctt/core";
+import { initLoctt, lookupByKey, resolveLocttDir, serializeQueriesConfig } from "@loctt/core";
+import { queryToConditions } from "@loctt/core/query/builderTree.js";
 import type { MockInstance } from "vitest";
 import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1417,12 +1418,19 @@ describe("CLI list — stale saved view warning", () => {
     await initLoctt(root);
     // A view referencing a custom field that doesn't exist — the
     // shape a tracker ends up in after the field is deleted.
+    // A saved view now carries structured `conditions` (a required field);
+    // derive it from the DSL exactly as the API does, so the fixture is
+    // valid and the test reaches the unknown-custom-field warning it asserts.
+    const staleQuery = "fields.deleted_field = x";
+    const staleParsed = queryToConditions(staleQuery);
+    if (!staleParsed.ok) throw new Error("fixture query does not parse");
     await writeFile(
       join(root, ".loctt", "config", "queries.yaml"),
-      "queries:\n"
-      + "  - id: 01HSV0000000000000STALE3\n"
-      + "    name: stale\n"
-      + "    query: fields.deleted_field = x\n",
+      serializeQueriesConfig({
+        queries: [
+          { id: "01HSV0000000000000STALE3", name: "stale", query: staleQuery, conditions: staleParsed.tree },
+        ],
+      }),
       "utf-8",
     );
   });

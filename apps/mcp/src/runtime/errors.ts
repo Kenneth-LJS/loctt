@@ -12,6 +12,7 @@
  */
 
 import {
+  AttachmentCaseCollisionError,
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
@@ -63,6 +64,7 @@ export function isKnownDomainError(err: unknown): err is Error {
     || err instanceof TaskNotFoundError
     || err instanceof TaskLifecycleError
     || err instanceof RelationshipError
+    || err instanceof AttachmentCaseCollisionError
     || err instanceof AttachmentExistsError
     || err instanceof AttachmentNotFoundError
     || err instanceof AttachmentSourceError

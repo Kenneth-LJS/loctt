@@ -15276,3 +15276,372 @@ plus estimation description does not leak `custom_enum`.
 a no-op / confirm performs the reset. `UserDeleteDialog.test.tsx` (new):
 combobox picks target and carries `remapTo`, blocked until picked, no
 radio-per-user wall.
+
+### A222 · Text↔visual toggle preserves builder state; empty groups never blank the query
+
+**Ticket:** UI bug (Ken, live) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** Ken reported: *"if i swap between the text and
+visual form, i just lose all my data without any confirmation."* In the
+`New saved view` / `Edit view` dialog (`ViewFormDialog` → `BuilderBody`
+→ `QueryBuilder`), the builder→advanced toggle did
+`setDraft(safeSerialize(tree))`. `safeSerialize` wrapped
+`builderTreeToQuery`, which THROWS on an empty group, in a try/catch that
+returns `""`. So whenever the tree held an empty group anywhere — the
+exact state after clicking "+ Group" and not yet filling it (also the
+Bug-1 repro) — serialization threw and the whole draft went blank: every
+OTHER, completed condition was silently discarded. Switching back then
+re-parsed `""` into an empty builder. The advanced→builder direction also
+re-parsed the draft unconditionally, dropping any in-progress/empty group
+the text cannot express even when the user never touched the text.
+
+**What had to be decided.** When the user toggles text↔visual, what is
+the right behavior for in-progress builder state that a DSL string cannot
+faithfully hold (an empty group; a half-built row) — silently drop it,
+confirm before dropping, or preserve it?
+
+**Options considered.**
+- *Confirm-on-loss (ConfirmDialog before switching).* Honest, but adds
+  friction to the common, fully-recoverable case, and the "loss" here is
+  avoidable — so a confirm would be apologizing for a bug instead of
+  fixing it.
+- *Make it lossless (chosen).* Prune empty groups only from the DERIVED
+  text so completed conditions survive serialization, and preserve the
+  live tree across the toggle so switching back restores it verbatim
+  (incl. empty/in-progress groups) whenever the user didn't edit the
+  text.
+
+**Decided.** Lossless. `safeSerialize` now prunes empty groups before
+serializing (via new `pruneEmptyGroups`), so a half-built "+ Group" no
+longer blanks the query. `ViewFormDialog` snapshots the tree behind the
+emitted text (`treeSnapshot`); advanced→builder restores that exact tree
+when the draft is byte-identical to what was emitted, and re-parses only
+when the user actually edited the text. No confirm is needed: the round
+trip is lossless on every reachable path (unrenderable text keeps the
+"Switch to visual" control disabled-with-reason, as before).
+
+**Why.** The repo's rule is "destructive actions are confirmed, and
+never silently drop the user's text" (BodyConflictDialog, K96). Silent
+loss was the defect; the preferred remedy is to remove the loss, not to
+narrate it. Pruning touches only the text projection — the builder tree
+is untouched — so an empty group the user is still building stays visible
+and survives the round trip.
+
+**To revert.** `apps/web/src/client/list/AdvancedQuerySurface.tsx`:
+remove `pruneEmptyGroups` and restore `safeSerialize` to the bare
+`builderTreeToQuery` try/catch. `apps/web/src/client/settings/ViewFormDialog.tsx`:
+drop the `treeSnapshot` state and the restore branch in
+`onSwitchToBuilder`, and revert `onSwitchToAdvanced` to
+`setDraft(safeSerialize(tree))`. Tests to drop:
+`ViewFormDialog.test.tsx`'s "preserves an in-progress condition across a
+text↔visual round-trip" and "does NOT blank out completed conditions when
+a half-built nested group is present". (The `QueryBuilder` row-alignment
+change — the `qb-leaf-row` column layout and its test — is a separate
+CSS-only fix in the same session and reverts independently.)
+
+### A223 · Milestone/sprint progress fails per-milestone, not all-or-nothing (MSL-35)
+
+**Ticket:** MSL-35 (Ken-approved core redesign) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** Milestone progress ("7 / 12 done") was computed in
+core by one shared corpus scan (`referenceProgressDetailed`) that read
+every task once and bucketed per milestone. Because it was one scan that
+computed once and returned `Record<string, Progress>`, a failure took
+down *every* milestone's numbers together — there was no per-milestone
+failure mode at all. Object-fatal (unreadable) tasks were reported only
+at the tracker level, and each milestone always got a `Progress`, so the
+one thing MSL-35's last bullet asks for — an error IN PLACE of the
+numbers for ONE milestone while the OTHERS keep rendering theirs — could
+not happen. This was recorded as the "documented ceiling" in
+known-gaps.md.
+
+**What had to be decided.** (1) The per-milestone result shape. (2) What
+to do with an unreadable task that cannot be tied to a milestone —
+attribute it somewhere, or keep it tracker-level.
+
+**Decided.**
+- **Shape.** `ProgressReport.progress` is now
+  `Record<string, MilestoneProgressResult>` where
+  `MilestoneProgressResult = Progress | ProgressUnavailable` and
+  `ProgressUnavailable = { unavailable: true; reason: string }`. A new
+  exported guard `isProgressUnavailable()` narrows it. `Progress` itself
+  is unchanged, so every existing consumer of a *computed* milestone is
+  untouched.
+- **Isolation.** In `referenceProgressDetailed` each milestone's
+  `computeProgress(group)` is wrapped so a failure computing one group
+  yields `ProgressUnavailable` for that milestone only; the others return
+  their real numbers.
+- **Attribution.** An object-fatal (unreadable) task is now best-effort
+  attributed to its milestone: `recoverReference()` splits the raw file
+  and reads a single top-level `milestone:`/`sprint:` line (unquoted or
+  quoted; no YAML re-parse). If it names one of the reported milestones,
+  that milestone is marked `unavailable` and the task is NOT
+  double-reported in the tracker-level `unreadable` list. A task whose
+  frontmatter delimiters are themselves destroyed (or that names no
+  recoverable milestone) stays in `unreadable` exactly as before — the
+  documented sensible default for a genuinely un-attributable task (P-5:
+  a short total must be explained, never silent).
+
+**Surface parity.** CLI `milestone/sprint list --progress` prints
+"(progress unavailable)" in place of `done/total` for a failed row while
+the other rows print their real numbers. MCP `list_milestones` /
+`list_sprints` (progress:true) emit
+`progress: { unavailable: true, reason }` per failing entry (tool
+descriptions updated). Web `server.ts` `withProgress` omits the
+`progress` field for an unavailable milestone, so the already-built
+client half — `progressState(undefined)` → `kind:"unavailable"` →
+`ProgressReadout`'s named, retryable error — renders the per-row error
+while siblings show numbers. No new client code was needed.
+
+**Tests (red-proven).** Core `progress-batch.test.ts`: attributed
+unreadable member → milestone unavailable, not double-reported; one
+milestone fails while two siblings keep real numbers; un-attributable
+unreadable stays tracker-level (the old K28 behaviour, kept for that
+case). Web `MilestonesView.test.tsx`: one milestone's error row + others'
+numbers simultaneously. Integration parity added (not run here — the
+integrator runs those): `tests/integration/cli/milestone-progress.test.ts`
+and `tests/integration/mcp/list-sprints-progress.test.ts`.
+
+**A green test that was asserting the bug (CLAUDE.md rule).** The old
+`progress-batch.test.ts` case "reports an unreadable member rather than
+silently shortening the total (K28)" asserted the milestone kept
+`{done:1,total:1}` while its unreadable member vanished into a global
+list — i.e. it encoded the all-or-nothing ceiling. It was replaced by the
+per-milestone cases above; the un-attributable arm of K28 is preserved as
+a separate test.
+
+**To revert.** `packages/core/src/task/progress.ts`: drop
+`ProgressUnavailable`/`MilestoneProgressResult`/`isProgressUnavailable`
+and `recoverReference`, restore `ProgressReport.progress` to
+`Record<string, Progress>`, and revert `referenceProgressDetailed` to the
+plain per-id `computeProgress` loop with all unreadable tasks
+tracker-level. Remove the re-exports from `packages/core/src/index.ts`
+and `packages/core/src/task/index.ts`. CLI (`milestone.ts`,`sprint.ts`)
+and MCP (`milestone.ts`,`sprint.ts`) revert to the `{done,total,discarded}`
+map and prior descriptions; web `server.ts` `withProgress` restores the
+zero-fill default. Drop the MSL-35 tests listed above and restore the old
+K28 core test. Re-add the MSL-35 ceiling entry to known-gaps.md.
+
+### A224 · Attachment name case-collision is refused; detach acts on the real on-disk name
+
+**Ticket:** known-gaps "attachment name case-alias" · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** On a case-insensitive volume (macOS APFS, Windows
+NTFS) an attachment name that differs only by letter case aliased an
+existing file: `detachFile("DROP.TXT")` unlinked `drop.txt` and wrote an
+`attachment_removed` history entry naming `DROP.TXT` — a name never on
+disk. Symmetrically, `attachFile("README.md")` over an existing
+`readme.md` threw `AttachmentExistsError` on macOS but coexisted as two
+files on Linux. Behaviour differed by filesystem.
+
+**What had to be decided.** (1) For detach: normalize to the real name,
+or refuse on a case mismatch. (2) For attach: allow (FS-dependent) or
+refuse a case-only collision.
+
+**Decided (the honest, deterministic behavior).**
+- **Detach normalizes to the real name.** `detachFile` resolves the
+  actual on-disk dirent case-insensitively (`findRealAttachmentName`),
+  unlinks that file, and records the real name in history. History names
+  what actually existed; the outcome is identical on every filesystem. A
+  mismatch is not refused because the user's intent — remove the
+  attachment they can see — is unambiguous, and refusing would strand a
+  file the user cannot name in the exact stored casing.
+- **Attach refuses a case-only collision.** `attachFile` throws the new
+  `AttachmentCaseCollisionError` when a name collides case-insensitively
+  (but not exactly) with an existing attachment, regardless of `force`.
+  Allowing it means either overwriting the wrong-cased file (APFS) or
+  coexisting (ext4) — both FS-dependent. Refusing is the one behavior
+  that is the same everywhere; the caller picks a casing.
+
+**Surface parity.** The refusal is a parity change: a case-colliding
+attach now refuses on CLI, MCP and web alike (core-level). Registered in
+CLI and MCP `KNOWN_DOMAIN_ERRORS` and mapped to 409 in the web attach
+route. Exact-same-name attach still throws `AttachmentExistsError`
+(unchanged; `force` still overwrites).
+
+**Tests (red-proven).** `attachments.test.ts`: attach `README.md` over
+`readme.md` refuses (with and without `force`, and names both casings);
+detach `DROP.TXT` against an on-disk `drop.txt` unlinks the real file and
+records `drop.txt`. Red-proven by disabling the collision check and the
+real-name resolution.
+
+**To revert.** In `packages/core/src/task/attachments.ts`: delete
+`AttachmentCaseCollisionError` and `findRealAttachmentName`, restore
+`detachFile` to unlink `getAttachmentPath(...)` and record the requested
+`name`, and restore `attachFile`'s exists check to the `stat(dest)`
+form. Remove the export from `task/index.ts` and `index.ts` and the
+`KNOWN_DOMAIN_ERRORS`/web-route arms in CLI, MCP and `server.ts`.
+
+### A225 · F1 attach-source confinement narrowed from project root to the resolved data dir (Ken-approved)
+
+**Ticket:** known-gaps "F1's confinement boundary" (Ken's call) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** `attach_file` (MCP) confined its source read to the
+PROJECT ROOT (A205), so `~/.ssh/id_rsa` was blocked but a steered agent
+could still attach a secret sitting BESIDE `.loctt/` (e.g.
+`<root>/credentials.txt`) and, under git-backed mode, auto-commit and
+push it off the machine.
+
+**What had to be decided.** Whether narrowing the source to `.loctt/`
+would break a legitimate human/agent attach.
+
+**Decided.** Narrow the MCP safe zone to the RESOLVED DATA DIR:
+`confineToRoot: resolveLocttDir(root)` (the resolver, so it follows the
+`LOCTT_DIR` constant — not a hardcoded `".loctt"`). Investigated the
+current boundary before narrowing: `attach_file` COPIES a source file
+INTO the tracker's attachments dir, and the tool already instructs the
+agent to "stage the file inside the tracker first, then attach it by its
+path there." The legitimate agent source is therefore expected to be
+inside `.loctt/` already, so confining to the data dir blocks the sibling
+exfil path WITHOUT breaking a real attach. `attachFile`'s `confineToRoot`
+option stays a generic directory — the surface picks the boundary; the
+human CLI still does not confine at all.
+
+**Tests (red-proven).** `mcp.test.ts`: attach of `<root>/credentials.txt`
+is refused (isError, nothing written); attach of a file staged inside
+`.loctt/` succeeds. The two pre-existing MCP attach tests that placed the
+source in the project root were updated to stage inside `.loctt/` (the
+parity change; they were not asserting the bug, the code outgrew them).
+`attachments.test.ts` adds a core-level data-dir boundary pair. Red-proven
+by reverting the handler to `confineToRoot: root`.
+
+**To revert.** In `apps/mcp/src/tools/task-files.ts` change
+`confineToRoot: resolveLocttDir(root)` back to `confineToRoot: root`
+(and drop the `resolveLocttDir` import), and revert the tool
+description/param text to "tracker root". Re-point the two updated MCP
+attach tests at `join(root, …)` and drop the new refusal/staged tests.
+
+### A226 · Backup carries displaced-body files as task-dir content (BAK-C13)
+
+**Ticket:** BAK-C13 (known-gaps) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** `restore --overwrite` preserves a displaced body as
+`.loctt/tasks/<id>/displaced-body-<ulid>.md` (K17 ruling 6), but
+`loctt backup` carried only `task.md`, `_comments.yaml`, `_history.yaml`
+and `attachments/`, so a subsequent backup lost the preserved text.
+
+**What had to be decided.** How to carry the file without inventing a
+broad new record format (the known-gap noted a dedicated record kind is
+clean but adds a format shape no case describes).
+
+**Decided (the smaller fix).** Treat displaced-body files as task-dir
+content, carried on the EXISTING task record via an optional
+`displacedBodies: { name, content }[]` field — the same pattern as
+`attachments`, not a new top-level `kind`. The exporter gathers any
+`displaced-body-*.md` in the task dir (`readDisplacedBodies`, stable
+sort, regex-matched, files only); restore re-lands them through the same
+`stagedSwap` as task.md (so they are in the one rollback-able unit).
+Their `displaced-body-<ulid>.md` names are unique, so re-landing never
+overwrites another. Names are validated up front in
+`assertBackupContained` (SEC-1/SEC-2) like attachment names. The restore
+report's existing `displacedBodies` (bodies displaced BY this restore) is
+a different concept and is left unchanged.
+
+**Tests (red-proven).** `restore.test.ts` (BAK-C13 carry):
+overwrite-restore to displace a body, backup, restore into a fresh
+tracker, assert the `displaced-body-*.md` survives with its text.
+Red-proven by making the exporter not carry it.
+
+**To revert.** In `packages/core/src/backup/format.ts` drop
+`BackupDisplacedBodySchema` and the `displacedBodies` field on
+`BackupTaskSchema`; in `export.ts` drop `readDisplacedBodies` and its use
+(and the `getTaskDir` import); in `restore.ts` drop the displaced-body
+write loop and the `assertBackupContained` arm. Re-add the BAK-C13 entry
+to known-gaps.md.
+
+### A227 · Server imports core's `dslAtom` instead of a private under-quoting copy
+
+**Ticket:** known-gaps "server's private dslAtom" · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** `apps/web/src/server/server.ts` had its own `dslAtom`
+built on a plain regex (`^[A-Za-z_][A-Za-z0-9_.-]*$` → bare, else
+quoted), separate from core's tokenizer-checked one. A filter value that
+is a bare keyword/number/date-shaped string (`"true"`, `"123"`, `"and"`)
+under-quoted and re-tokenized as the wrong type or as invalid DSL. Core's
+`dslAtom` was already exported from `@loctt/core`.
+
+**What had to be decided.** Nothing of scope — the browser-bundle
+constraint that kept the copies separate does not apply server-side.
+
+**Decided.** Delete the server's private `dslAtom` and
+`import { dslAtom } from "@loctt/core"`. One tokenizer-checked quoter
+across all producers.
+
+**Tests (red-proven).** `server.tasks.test.ts` (Fix 1): a keyword-shaped
+filter value (`labels=and`, `or`, `in`, `is`) now yields a valid query
+(200) rather than a 400 parse error. Red-proven by shadowing the import
+with the old regex.
+
+**To revert.** Restore the private `dslAtom` function in `server.ts` and
+drop the `dslAtom` import from the `@loctt/core` block.
+
+### A235 · A11Y-9 list keyboard cycle: row focus-restore on return, key link as the row's keyboard action
+
+**Ticket:** A11Y-9 (blocker · P8; K74 publish blocker) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** A11Y-9 requires the list → open → change status → save
+→ back cycle to work with no pointer. The known-gap said list rows were
+click-only, the status dropdown lacked arrow traversal, and nothing
+restored focus to the opened row on Back. Two of those three were already
+false: the key cell renders a real `<Link>` (`<a href>`, a native Tab
+stop that navigates on Enter), and status editing (on the task **detail**,
+not in a row) goes through `ui/Combobox`, which already opens on
+Enter/Space, arrow-traverses and commits on Enter (the A211 refactor,
+covered by `Combobox.test.tsx`). The one genuine gap was focus-restore
+across the list's unmount when a task opens and the user navigates back.
+
+**What had to be decided (recorded, revertible).**
+
+1. *How to make the row keyboard-activatable without a double Tab stop /
+   double announcement.* Chose: keep the `<tr>` a plain table row (no
+   `role`/`tabIndex` — those break table semantics and would add a second
+   Tab stop that a screen reader announces as a second focusable thing),
+   and treat the existing key `<Link>` as the row's single, ARIA-correct
+   keyboard action. Both the pointer path (`<tr onClick>`) and the
+   keyboard path (the link) route through one `openTask(key)` helper so
+   they never diverge. A modified click (cmd/ctrl/shift/middle → open in
+   new tab) is left to the browser.
+2. *Where to hold the "last opened" key across the list's unmount.*
+   Chose `sessionStorage` (per-tab, ephemeral, survives the remount),
+   consumed-and-cleared on restore so an unrelated later mount cannot
+   inherit it; every access try/caught (private mode can throw). Restore
+   runs on the `[items]` effect (the first paint has no anchor yet).
+3. *Restore vs. the generic route-change focus move.* `useRouteAnnouncement`
+   (A11Y-45) lands focus on `#main-content` on every route change,
+   including the return to `/list`. Chose: the list restore treats
+   `document.body` **and** the `#main-content` pane as default landings it
+   may override, but never a focus the user has since placed elsewhere.
+   The more-specific A11Y-9 restore wins over the generic A11Y-45 landing.
+
+**Not decided / deliberately out of scope.** A11Y-24 (announce a
+successful field save) is unbuilt for field saves — `MetaPanel`'s write
+path does not call the shell announcer, so A11Y-9's fourth bullet ("save
+outcome announced") rides on A11Y-24. That lives on the detail page,
+outside this lane; it is left as a tracked dependency (known-gaps) and
+the A11Y-9 Playwright test asserts the current silence negatively so it
+flips red the day A11Y-24 lands. Arrow-key row-to-row traversal (a "nice",
+not the blocker) was not added.
+
+**Tests (red-proven).**
+- `apps/web/src/client/list/ListView.a11y.test.tsx` (new): (a) Enter on
+  the row's key link opens the task — red-proven by replacing the link
+  with a plain span; (b) focus returns to the opened row's anchor on Back
+  — red-proven by disabling the restore; (c) a task opened by clicking the
+  **row** also restores on return — red-proven by reverting the `<tr>` to
+  a direct navigate that skips key-recording.
+- `tests/ui/flow-accessibility.spec.ts` (rewrote the former "A11Y-9
+  (partial): broken in three named places" into a passing `@verifies
+  A11Y-9` cycle): real key events throughout, the committed status
+  checked on disk (A11Y-28 discipline), Back restores focus to the row
+  anchor. Red-proven in-session: the focus-restore assertion failed
+  (`null` vs the task key) before the `#main-content` guard fix landed.
+
+**To revert.** In `apps/web/src/client/list/ListView.tsx`: delete
+`LAST_OPENED_KEY`, `rememberOpenedTask`, `takeOpenedTask`, `escapeTaskKey`
+(restore the inline `CSS.escape` at the two `[data-task-key]` selectors),
+`openTask`, and the `[items]` focus-restore effect; revert the `<tr>`/card
+`onClick` to `void navigate({ to: "/tasks/$key" … })`, drop the `onOpen`
+prop from `Cell` and the key `<Link>`'s recording `onClick` (back to bare
+`e.stopPropagation()`). Delete `ListView.a11y.test.tsx` and restore the
+"A11Y-9 (partial)" test; drop the A11Y-9 coverage notes in
+`known-gaps.md` and `flow-accessibility.md`.

@@ -154,6 +154,43 @@ describe("MilestonesView — unreadable task notice (K28 / P-5)", () => {
   });
 });
 
+describe("MilestonesView — per-milestone progress failure (MSL-35)", () => {
+  // @verifies MSL-35
+  it("shows one milestone's error row while its siblings show their numbers", async () => {
+    // The exact case the documented ceiling blocked: a milestone whose
+    // own progress could not be computed (server omits its `progress`,
+    // so `progressState(undefined)` ⇒ kind "unavailable") renders the
+    // named, retryable error IN PLACE of its numbers, while the other
+    // milestones in the SAME list keep rendering their real done/total.
+    // Under the old all-or-nothing scan this could not happen — a single
+    // failure blanked every row's numbers together.
+    MILESTONES = [
+      // ms_bad: no `progress` field ⇒ unavailable (the attributed-failure
+      // wire shape the server now emits for a per-milestone failure).
+      { id: "ms_bad", name: "Broken" },
+      // ms_ok: real numbers, must be untouched by the sibling's failure.
+      { id: "ms_ok", name: "Healthy", progress: { done: 3, total: 5, discarded: 0, fraction: 0.6 } },
+    ];
+    await renderView();
+
+    // The failing milestone shows its named error, not `0 / 0`.
+    const errText = await screen.findByTestId("milestone-ms_bad-progress-error-text");
+    expect(errText.textContent).toContain("Broken");
+    expect(errText.textContent?.toLowerCase()).toContain("could not be computed");
+    // It offers a retry (MSL-35's retryable affordance).
+    expect(screen.getByTestId("milestone-ms_bad-progress-retry")).toBeTruthy();
+    // The failing row shows NO numeric readout…
+    expect(screen.queryByTestId("milestone-ms_bad-readout")).toBeNull();
+
+    // …while the healthy sibling shows its real numbers simultaneously.
+    const okReadout = screen.getByTestId("milestone-ms_ok-readout");
+    expect(okReadout.textContent).toContain("3");
+    expect(okReadout.textContent).toContain("5");
+    // And the healthy sibling shows NO error row.
+    expect(screen.queryByTestId("milestone-ms_ok-progress-error")).toBeNull();
+  });
+});
+
 describe("MilestonesView — full-card click (MSL-39)", () => {
   // @verifies MSL-39
   it("clicking anywhere on the card opens the milestone", async () => {

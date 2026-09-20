@@ -100,6 +100,7 @@ import {
   detachFile,
   detectSyncFsAdvisory,
   disableGit,
+  dslAtom,
   duplicateTask,
   editComment,
   editLabel,
@@ -137,6 +138,7 @@ import {
   isEmptyTracker,
   isMalformedHistoryEntry,
   isMigrationLocked,
+  isProgressUnavailable,
   LabelError,
   linkTask,
   listComments,
@@ -1031,28 +1033,6 @@ function assertPersisted<T>(entity: T | undefined, kind: string, key: string): T
 }
 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
-
-/**
- * Renders a filter value as a DSL atom.
- *
- * Identifiers that **start with a letter or underscore** pass through
- * unquoted; everything else is double-quoted with `"`/`\` escaped, so
- * a value can never break out of its atom and inject query structure.
- * This is the single chokepoint that makes
- * {@link buildStructuredQuery} injection-safe.
- *
- * The leading-character rule is load-bearing, and the previous
- * `[A-Za-z0-9_.-]+` was not: **every ULID begins with a digit**, so the
- * tokenizer read `01M0TC…` as the number `01` followed by a stray
- * identifier and rejected the query. That broke every ULID-valued
- * filter — project, assignee, reporter, milestone, sprint, labels —
- * on every request, while the UI still displayed a chip claiming the
- * filter was applied.
- */
-function dslAtom(value: string): string {
-  if (/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(value)) return value;
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
 
 /**
  * The structured list filters, mapping a URL search-param name to the
@@ -2410,10 +2390,21 @@ export function createWebApp(options: WebAppOptions) {
       ? await milestoneProgressDetailed(locttDir, ids, workflow)
       : await sprintProgressDetailed(locttDir, ids, workflow);
     return {
-      items: items.map(i => ({
-        ...i,
-        progress: report.progress[i.id] ?? { done: 0, total: 0, discarded: 0, fraction: 0 },
-      })),
+      items: items.map(i => {
+        const result = report.progress[i.id];
+        // MSL-35: a milestone whose own progress could not be computed
+        // (an unreadable member attributed to it) carries NO `progress`
+        // field. The client's `progressState(undefined)` renders that as
+        // the named, retryable "unavailable" row for THAT milestone only,
+        // distinct from `0 / 0` (a real empty milestone). Every other
+        // milestone still ships its real numbers, so one row's failure
+        // never blanks the list — the per-row behaviour the old
+        // all-or-nothing scan could not express.
+        if (result === undefined || isProgressUnavailable(result)) {
+          return i;
+        }
+        return { ...i, progress: result };
+      }),
       // K28 (aggregate half): an unreadable task cannot be attributed to
       // a milestone/sprint (its ref field is what failed to parse), so it
       // rides at the top level alongside `broken`. The per-item totals

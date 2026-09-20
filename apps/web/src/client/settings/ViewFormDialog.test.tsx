@@ -171,6 +171,65 @@ describe("ViewFormDialog — builder-first (Stage 2)", () => {
     expect(screen.getByTestId<HTMLTextAreaElement>("dsl-input").value).toContain("has_link");
   });
 
+  it("preserves an in-progress condition across a text↔visual round-trip (no silent loss)", async () => {
+    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
+    await screen.findByTestId("query-builder");
+
+    // Author a completed condition.
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+    fillTitleLeaf("login");
+
+    // Switch to text, then straight back to visual without editing the DSL.
+    fireEvent.click(screen.getByTestId("view-switch-to-advanced"));
+    await screen.findByTestId("advanced-query-editor");
+    // The completed condition IS carried into the text box (red-proof: with
+    // the pre-fix safeSerialize this could still be present when there was
+    // no empty group; the empty-group case below is the harder one).
+    expect(screen.getByTestId<HTMLTextAreaElement>("dsl-input").value).toContain("login");
+
+    fireEvent.click(screen.getByTestId("view-switch-to-builder"));
+    await screen.findByTestId("query-builder");
+
+    // The row survived the round-trip — field/op/value all intact.
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLSelectElement>("qb-field").value).toBe("title");
+    });
+    expect(screen.getByTestId<HTMLSelectElement>("qb-op").value).toBe("=");
+    expect(screen.getByTestId<HTMLInputElement>("qb-value").value).toBe("login");
+  });
+
+  it("does NOT blank out completed conditions when a half-built nested group is present (toggle data-loss)", async () => {
+    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
+    await screen.findByTestId("query-builder");
+
+    // A completed condition AND an empty "+ Group" the user just added and
+    // has not filled — the exact state Ken hit. Pre-fix, safeSerialize threw
+    // on the empty group and returned "", so switching to text showed a
+    // BLANK box: the completed `title = login` was silently discarded.
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+    fillTitleLeaf("login");
+    fireEvent.click(screen.getByTestId("qb-add-group"));
+
+    fireEvent.click(screen.getByTestId("view-switch-to-advanced"));
+    await screen.findByTestId("advanced-query-editor");
+
+    // Red-proof: this is empty under the old code (safeSerialize → "").
+    const dsl = screen.getByTestId<HTMLTextAreaElement>("dsl-input");
+    expect(dsl.value).toContain("login");
+    expect(dsl.value.trim().length).toBeGreaterThan(0);
+
+    // And switching back restores the FULL builder state, including the
+    // empty group the text couldn't express (tree preserved, not re-parsed).
+    fireEvent.click(screen.getByTestId("view-switch-to-builder"));
+    await screen.findByTestId("query-builder");
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLSelectElement>("qb-field").value).toBe("title");
+    });
+    // The empty nested group is still there (2 children at the root: the
+    // leaf's row and the group card).
+    expect(screen.getAllByTestId("query-builder-group").length).toBeGreaterThanOrEqual(2);
+  });
+
   it("refuses to save an unparseable Advanced-mode DSL (VUE-11)", async () => {
     render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
     await screen.findByTestId("query-builder");
