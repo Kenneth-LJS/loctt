@@ -70,7 +70,7 @@ async function renderSidebar() {
     path: "/list",
     validateSearch: (s: Record<string, unknown>) => s,
     component: () => (
-      <Sidebar collapsed={false} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+      <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
     ),
   });
   // A `/settings/$section` route must exist for the Link to resolve.

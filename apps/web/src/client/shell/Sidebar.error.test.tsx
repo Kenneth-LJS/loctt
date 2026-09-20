@@ -65,7 +65,7 @@ async function renderSidebar(failing: string | string[], collapsed = false) {
     path: "/list",
     validateSearch: (s: Record<string, unknown>) => s,
     component: () => (
-      <Sidebar collapsed={collapsed} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+      <Sidebar collapsed={collapsed} currentUserId="u_ken" today="2026-06-08" />
     ),
   });
   const router = createRouter({
@@ -220,7 +220,7 @@ describe("a sidebar group that has not been answered yet", () => {
       path: "/list",
       validateSearch: (search: Record<string, unknown>) => search,
       component: () => (
-        <Sidebar collapsed={false} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+        <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
       ),
     });
     const router = createRouter({
@@ -260,7 +260,7 @@ function renderSidebarOk(): void {
     path: "/list",
     validateSearch: (search: Record<string, unknown>) => search,
     component: () => (
-      <Sidebar collapsed={false} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+      <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
     ),
   });
   const router = createRouter({

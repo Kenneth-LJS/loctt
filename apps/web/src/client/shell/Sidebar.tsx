@@ -1,4 +1,4 @@
-import type { LabelDef, MilestoneDef, ProjectDef, SavedQuery, SidebarGroupId, SprintDef, TrackerInfoResponse, UserSettings } from "@loctt/contracts";
+import type { LabelDef, MilestoneDef, ProjectDef, SavedQuery, SidebarGroupId, SprintDef, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -81,12 +81,10 @@ function useIsNarrow(): boolean {
 
 export function Sidebar({
   collapsed,
-  info,
   currentUserId,
   today,
 }: {
   readonly collapsed: boolean;
-  readonly info: TrackerInfoResponse;
   readonly currentUserId: string | null;
   readonly today: string;
 }) {
@@ -143,7 +141,7 @@ export function Sidebar({
           today={today}
         />
       </div>
-      <Footer collapsed={collapsed} info={info} />
+      <Footer collapsed={collapsed} />
     </>
   );
 
@@ -1657,34 +1655,9 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function Footer({ collapsed, info }: { collapsed: boolean; info: TrackerInfoResponse }) {
+function Footer({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="flex shrink-0 flex-col gap-1 border-t border-border-subtle pt-2">
-      {!collapsed ? (
-        <div className="px-2.5 text-[0.7857rem] text-text-tertiary">
-          {/* The count is omitted rather than shown as zero when the
-              tracker could not be read. `TrackerInfoResponse.taskCount`
-              is a number, so the placeholder the shell falls back to
-              during an outage has to say *something* — and "0 tasks"
-              in front of a user with two is a claim about their data,
-              not a missing value. ERR-1's rule, at footer scale: a
-              server that is down and a tracker that is empty must not
-              look alike.
-              `cwd === ""` is that placeholder's signature.
-              The tracker path and the `next` allocator key were removed
-              (Ken's report): the path is developer chrome and the next-
-              to-be-issued key is internal bookkeeping a user never uses. */}
-          <div>
-            {info.cwd === "" ? (
-              <span className="italic">task count unavailable</span>
-            ) : (
-              <>
-                {info.taskCount} task{info.taskCount === 1 ? "" : "s"}
-              </>
-            )}
-          </div>
-        </div>
-      ) : null}
       <Link to="/settings/$section" params={{ section: DEFAULT_SECTION }} title="Settings" className="no-underline">
         <ItemShell collapsed={collapsed} title="Settings">
           <SettingsIcon />
