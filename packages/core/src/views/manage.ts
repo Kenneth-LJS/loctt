@@ -1,4 +1,5 @@
 import type { QueriesConfig, SavedQuery, WorkflowConfig } from "@loctt/contracts";
+import type { BuilderTree } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import {
@@ -6,6 +7,7 @@ import {
   saveQueriesConfig,
 } from "../config/queries.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
+import { conditionsToDsl, queryToConditions } from "../query/builderTree.js";
 import { parseQuery } from "../query/parser.js";
 import { tokenize } from "../query/tokenizer.js";
 import { validateQuery } from "../query/validate.js";
@@ -61,9 +63,47 @@ async function assertQueryValid(locttDir: string, query: string): Promise<void> 
   }
 }
 
+/**
+ * Resolve a view's filter into the `{ query, conditions }` pair the stored
+ * shape needs, deriving whichever the caller did not supply.
+ *
+ * - `conditions` given → `query` is DERIVED from it by the spacing-only
+ *   serializer (conditions are the source of truth). Any `query` the
+ *   caller also passed is ignored — the derived string is authoritative.
+ * - only `query` given (the CLI/MCP raw-DSL path, wired in a later stage) →
+ *   `conditions` are DERIVED by parsing the DSL. If the DSL does not
+ *   parse we REJECT rather than store a view with no structured form. With
+ *   the total BuilderTree, every construct the parser accepts is
+ *   representable, so the only rejection here is a genuine parse error;
+ *   `assertQueryValid` (the caller) additionally checks the DSL semantics.
+ *
+ * Exactly one of the two must be present.
+ */
+function resolveViewFilter(
+  input: { readonly conditions?: BuilderTree; readonly query?: string },
+): { query: string; conditions: BuilderTree } {
+  if (input.conditions !== undefined) {
+    return { conditions: input.conditions, query: conditionsToDsl(input.conditions) };
+  }
+  if (input.query !== undefined) {
+    const res = queryToConditions(input.query);
+    if (!res.ok) {
+      throw new ViewError(`invalid query: ${res.reason}`);
+    }
+    // Re-derive the query from the parsed conditions so what we store is
+    // exactly what the conditions serialize to (spacing normalized) — the
+    // stored `query` is never independently trusted.
+    return { conditions: res.tree, query: conditionsToDsl(res.tree) };
+  }
+  throw new ViewError("a view needs either conditions or a query");
+}
+
 export interface CreateViewInput {
   readonly name: string;
-  readonly query: string;
+  /** The DSL string. Optional when `conditions` is supplied. */
+  readonly query?: string;
+  /** Structured conditions. Optional when `query` is supplied. */
+  readonly conditions?: BuilderTree;
   readonly sort?: SavedQuery["sort"];
 }
 
@@ -72,13 +112,15 @@ export async function createView(
   locttDir: string,
   input: CreateViewInput,
 ): Promise<SavedQuery> {
-  await assertQueryValid(locttDir, input.query);
+  const { query, conditions } = resolveViewFilter(input);
+  await assertQueryValid(locttDir, query);
   return withStateLock(locttDir, async () => {
     const config = await loadQueriesConfig(locttDir);
     const created: SavedQuery = {
       id: ulid(),
       name: input.name,
-      query: input.query,
+      query,
+      conditions,
       ...(input.sort !== undefined ? { sort: input.sort } : {}),
     };
     await saveQueriesConfig(locttDir, {
@@ -92,6 +134,7 @@ export async function createView(
 export interface EditViewInput {
   readonly name?: string;
   readonly query?: string;
+  readonly conditions?: BuilderTree;
   readonly sort?: SavedQuery["sort"] | null;
 }
 
@@ -100,8 +143,18 @@ export async function editView(
   ref: string,
   changes: EditViewInput,
 ): Promise<SavedQuery> {
-  if (changes.query !== undefined) {
-    await assertQueryValid(locttDir, changes.query);
+  // Recompute the {query, conditions} pair when the filter changes.
+  // `conditions` wins (query is derived); a raw-DSL edit derives the
+  // conditions. An edit that touches neither leaves both as-is.
+  const filterChanged = changes.conditions !== undefined || changes.query !== undefined;
+  const nextFilter = filterChanged
+    ? resolveViewFilter({
+        ...(changes.conditions !== undefined ? { conditions: changes.conditions } : {}),
+        ...(changes.query !== undefined ? { query: changes.query } : {}),
+      })
+    : undefined;
+  if (nextFilter !== undefined) {
+    await assertQueryValid(locttDir, nextFilter.query);
   }
   return withStateLock(locttDir, async () => {
     const config = await loadQueriesConfig(locttDir);
@@ -109,7 +162,8 @@ export async function editView(
     const updated: SavedQuery = {
       id: existing.id,
       name: changes.name ?? existing.name,
-      query: changes.query ?? existing.query,
+      query: nextFilter?.query ?? existing.query,
+      conditions: nextFilter?.conditions ?? existing.conditions,
       ...(changes.sort === null
         ? {}
         : changes.sort !== undefined
@@ -147,6 +201,7 @@ export async function unarchiveView(locttDir: string, ref: string): Promise<void
       id: existing.id,
       name: existing.name,
       query: existing.query,
+      conditions: existing.conditions,
       ...(existing.sort !== undefined ? { sort: existing.sort } : {}),
     };
     const next = config.queries.map(q => (q.id === existing.id ? cleared : q));

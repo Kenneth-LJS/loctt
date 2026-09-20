@@ -476,7 +476,7 @@ function GroupNode({
                     fields={fields}
                     fieldByName={fieldByName}
                   />
-                ) : (
+                ) : child.kind === "group" ? (
                   <GroupNode
                     node={child}
                     path={[...path, i]}
@@ -484,7 +484,9 @@ function GroupNode({
                     fields={fields}
                     fieldByName={fieldByName}
                   />
-                )}
+                ) : null /* not/has_link are stored-conditions kinds the
+                  visual builder never produces (queryToBuilderTree refuses
+                  them); nothing to render here. */}
               </div>
               <IconButton
                 size="xs"

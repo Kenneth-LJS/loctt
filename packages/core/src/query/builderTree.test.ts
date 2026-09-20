@@ -2,7 +2,7 @@
 // the renderability predicate (refuse rather than approximate).
 import { describe, expect, it } from "vitest";
 
-import { builderTreeToQuery, queryToBuilderTree } from "./builderTree.js";
+import { builderTreeToQuery, conditionsToDsl, queryToBuilderTree, queryToConditions } from "./builderTree.js";
 import type { QueryNode } from "./parser.js";
 import { parseQuery } from "./parser.js";
 import { tokenize } from "./tokenizer.js";
@@ -233,5 +233,167 @@ describe("quoting round-trip (LST-42)", () => {
     const reserialized = builderTreeToQuery(res.tree);
     // The escaped value must survive verbatim through re-parse.
     expect(normalize(parse(reserialized))).toEqual(normalize(parse(q)));
+  });
+});
+
+// ── Stored-conditions round-trip: total + FORM-PRESERVING ─────────────
+//
+// `queryToConditions` (total, lossless) + `conditionsToDsl` (the
+// spacing-only serializer) back a saved view's stored `conditions` and its
+// DERIVED `query`. Unlike the UI `queryToBuilderTree`, these accept EVERY
+// construct the grammar has, and the serializer's only transformation is
+// whitespace: it must never switch `= A` ↔ `in (A)`, canonicalize a list
+// to a negation, invert an operator, or reorder values.
+describe("conditions round-trip is form-preserving (spacing-only)", () => {
+  // Each case: [input, exact expected DSL after one round-trip]. The
+  // expected string is byte-for-byte — that is what pins "spacing only".
+  const cases: ReadonlyArray<readonly [string, string]> = [
+    // `= A` stays `= A`, never widened to `in (A)`.
+    ["status = A", "status = A"],
+    // `in (A)` stays `in (A)`, never narrowed to `= A`.
+    ["status in (A)", "status in (A)"],
+    // A multi-value list stays `in (...)`, never flipped to a negation.
+    ["status in (A, B)", "status in (A, B)"],
+    // `not in` stays `not in`, never inverted.
+    ["status not in (A, B)", "status not in (A, B)"],
+    // Value order is preserved verbatim.
+    ["status in (C, A, B)", "status in (C, A, B)"],
+    // Only whitespace is normalized: tight input → canonical spacing.
+    ["status=A", "status = A"],
+    ["status   =   A", "status = A"],
+    ["status in (A,B)", "status in (A, B)"],
+    // `!=` is preserved, not rewritten to `not (... = ...)`.
+    ["status != A", "status != A"],
+  ];
+
+  it.each(cases)("%s → %s (form preserved, only whitespace normalized)", (input, expected) => {
+    const res = queryToConditions(input);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(conditionsToDsl(res.tree)).toBe(expected);
+  });
+
+  it("preserves value ORDER through the tree (no reordering)", () => {
+    const res = queryToConditions("status in (zeta, alpha, mid)");
+    expect(res.ok).toBe(true);
+    if (!res.ok || res.tree.kind !== "leaf") return;
+    expect(res.tree.value).toEqual({
+      type: "list",
+      values: [
+        { type: "string", value: "zeta" },
+        { type: "string", value: "alpha" },
+        { type: "string", value: "mid" },
+      ],
+    });
+    // And it survives serialization in the same order.
+    expect(conditionsToDsl(res.tree)).toBe("status in (zeta, alpha, mid)");
+  });
+
+  it("keeps `= A` distinct from `in (A)` (no count-based operator switch)", () => {
+    // If the serializer ever collapsed a single-value list to `=` (or
+    // widened `=` to a list), these two would converge. They must not.
+    const eq = queryToConditions("status = A");
+    const list = queryToConditions("status in (A)");
+    expect(eq.ok && list.ok).toBe(true);
+    if (!eq.ok || !list.ok) return;
+    expect(conditionsToDsl(eq.tree)).toBe("status = A");
+    expect(conditionsToDsl(list.tree)).toBe("status in (A)");
+    expect(conditionsToDsl(eq.tree)).not.toBe(conditionsToDsl(list.tree));
+  });
+});
+
+// ── The BuilderTree extension: not / has_link / link_count ────────────
+//
+// These are the node kinds Stage 1 added so the stored tree is TOTAL over
+// the grammar. Each must round-trip losslessly through
+// queryToConditions → conditionsToDsl.
+describe("extended node kinds round-trip losslessly", () => {
+  const extended: readonly string[] = [
+    "not (status = done)",
+    "not (status in (a, b))",
+    "status = a and not (priority = high)",
+    'has_link("blocks")',
+    'has_link("blocks", "T-10")',
+    "has_link()",
+    'link_count("child") > 2',
+    "link_count() >= 1",
+    'archived != true and has_link("is_blocked_by")',
+    "due_date >= startOfWeek()",
+    'due_date <= endOfWeek("+1w")',
+    "created_at >= now()",
+  ];
+
+  it.each(extended)("round-trips %s to a semantically equal query", (q) => {
+    const res = queryToConditions(q);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const reserialized = conditionsToDsl(res.tree);
+    expect(normalize(parse(reserialized))).toEqual(normalize(parse(q)));
+  });
+
+  it("represents a `not` node structurally (kind: 'not')", () => {
+    const res = queryToConditions("not (status = done)");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.tree.kind).toBe("not");
+  });
+
+  it("represents has_link with linkKind/target (not the discriminant `kind`)", () => {
+    const res = queryToConditions('has_link("blocks", "T-10")');
+    expect(res.ok).toBe(true);
+    if (!res.ok || res.tree.kind !== "has_link") return;
+    expect(res.tree.linkKind).toBe("blocks");
+    expect(res.tree.target).toBe("T-10");
+  });
+
+  it("represents link_count as a leaf carrying a `call`", () => {
+    const res = queryToConditions('link_count("child") > 2');
+    expect(res.ok).toBe(true);
+    if (!res.ok || res.tree.kind !== "leaf") return;
+    expect(res.tree.call).toEqual({ name: "link_count", kind: "child" });
+    expect(res.tree.op).toBe(">");
+  });
+
+  it("the seeded `blocked` view round-trips (proves the has_link extension)", () => {
+    const dsl = 'archived != true and has_link("is_blocked_by")';
+    const res = queryToConditions(dsl);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // Re-serializes to the same DSL (modulo spacing) and reparses equal.
+    expect(normalize(parse(conditionsToDsl(res.tree)))).toEqual(normalize(parse(dsl)));
+  });
+});
+
+// ── The two entry points stay SEPARATE ────────────────────────────────
+//
+// queryToConditions is total (only a parse error is refused);
+// queryToBuilderTree layers the visual-builder renderability check on top
+// and STILL refuses not/has_link/link_count/date_fn.
+describe("queryToConditions is total; queryToBuilderTree still refuses", () => {
+  const unrenderableButRepresentable: readonly string[] = [
+    "not (status = done)",
+    'has_link("blocks")',
+    'link_count("child") > 2',
+    "due_date >= startOfWeek()",
+  ];
+
+  it.each(unrenderableButRepresentable)("queryToConditions accepts %s", (q) => {
+    expect(queryToConditions(q).ok).toBe(true);
+  });
+
+  it.each(unrenderableButRepresentable)("queryToBuilderTree still refuses %s", (q) => {
+    expect(queryToBuilderTree(q).ok).toBe(false);
+  });
+
+  it("queryToConditions refuses ONLY a genuine parse error", () => {
+    expect(queryToConditions("status = ").ok).toBe(false);
+    expect(queryToConditions("status == done").ok).toBe(false);
+  });
+
+  it("builderTreeToQuery and conditionsToDsl are the same serializer", () => {
+    const res = queryToConditions("status = a and status = b");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(conditionsToDsl(res.tree)).toBe(builderTreeToQuery(res.tree));
   });
 });

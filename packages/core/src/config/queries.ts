@@ -1,10 +1,11 @@
 
-import type { BrokenSavedQuery, QueriesConfig, SavedQuery } from "@loctt/contracts";
+import type { BrokenSavedQuery, QueriesConfig, QueryValue, SavedQuery } from "@loctt/contracts";
 import { SavedQuerySchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getQueriesConfigPath } from "../paths/index.js";
+import { conditionsToDsl } from "../query/builderTree.js";
 import { ParseError, parseQuery } from "../query/parser.js";
 import { tokenize, TokenizeError } from "../query/tokenizer.js";
 import { renderRawText } from "../task/frontmatter.js";
@@ -89,6 +90,7 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
       id: item.id,
       name: item.name,
       query: item.query,
+      conditions: item.conditions,
       ...(item.sort !== undefined ? { sort: item.sort } : {}),
       ...(item.display !== undefined ? { display: item.display } : {}),
       ...(item.archived === true ? { archived: true } : {}),
@@ -104,18 +106,84 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
   };
 }
 
-/** Build a plain serializable object for one SavedQuery. */
+/**
+ * Build a plain serializable object for one SavedQuery.
+ *
+ * `query` is DERIVED: it is always regenerated from `conditions` by the
+ * spacing-only serializer here, never trusted from the in-memory value —
+ * so a caller that hands us stale/hand-forged `query` alongside fresh
+ * `conditions` still writes a `query` that matches the conditions. The
+ * serializer's only transformation is whitespace (no operator/negation/
+ * order rewriting), so this does not silently reshape the user's filter.
+ */
 function serializeSavedQuery(q: QueriesConfig["queries"][number]): Record<string, unknown> {
   return {
     id: q.id,
     name: q.name,
-    query: q.query,
+    query: conditionsToDsl(q.conditions),
+    conditions: serializeConditions(q.conditions),
     ...(q.sort !== undefined ? {
       sort: q.sort.map(s => ({ field: s.field, direction: s.direction })),
     } : {}),
     ...(q.display !== undefined ? { display: serializeDisplay(q.display) } : {}),
     ...(q.archived === true ? { archived: true } : {}),
   };
+}
+
+/**
+ * Serialize a conditions tree to a plain, YAML-friendly object, omitting
+ * `undefined` optionals so the on-disk shape is minimal and stable. The
+ * tree is already plain data; this is a structural deep copy that drops
+ * absent optionals (a `has_link` with no kind emits neither key).
+ */
+function serializeConditions(tree: QueriesConfig["queries"][number]["conditions"]): Record<string, unknown> {
+  switch (tree.kind) {
+    case "group":
+      return { kind: "group", op: tree.op, children: tree.children.map(serializeConditions) };
+    case "not":
+      return { kind: "not", child: serializeConditions(tree.child) };
+    case "has_link":
+      return {
+        kind: "has_link",
+        ...(tree.linkKind !== undefined ? { linkKind: tree.linkKind } : {}),
+        ...(tree.target !== undefined ? { target: tree.target } : {}),
+      };
+    case "leaf":
+      return {
+        kind: "leaf",
+        field: tree.field,
+        op: tree.op,
+        value: serializeQueryValue(tree.value),
+        ...(tree.call !== undefined
+          ? { call: { name: tree.call.name, ...(tree.call.kind !== undefined ? { kind: tree.call.kind } : {}) } }
+          : {}),
+      };
+  }
+}
+
+/** Serialize a QueryValue to a plain object, omitting absent optionals. */
+function serializeQueryValue(value: QueryValue): Record<string, unknown> {
+  switch (value.type) {
+    case "list":
+      return { type: "list", values: value.values.map(serializeQueryValue) };
+    case "date_fn":
+      return {
+        type: "date_fn",
+        fn: value.fn,
+        ...(value.offset !== undefined
+          ? { offset: { sign: value.offset.sign, n: value.offset.n, unit: value.offset.unit } }
+          : {}),
+      };
+    case "string":
+    case "number":
+    case "boolean":
+    case "date":
+      return { type: value.type, value: value.value };
+    case "today":
+    case "current_user":
+    case "empty":
+      return { type: value.type };
+  }
 }
 
 function serializeDisplay(d: NonNullable<QueriesConfig["queries"][number]["display"]>): Record<string, unknown> {
