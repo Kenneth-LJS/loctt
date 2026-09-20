@@ -124,6 +124,33 @@ afterEach(() => {
   SPRINT_UNREADABLE = [];
 });
 
+describe("SprintDetail — titled header fold (Ken 2026-09-20)", () => {
+  it("renders the sprint name as the page h1 title", async () => {
+    await renderDetail();
+    const heading = await screen.findByRole("heading", { name: "Sprint 1", level: 1 });
+    expect(heading.tagName).toBe("H1");
+  });
+
+  it("shows the dates and state in the header subtitle", async () => {
+    await renderDetail();
+    const window = await screen.findByTestId("sprint-detail-window");
+    expect(window.textContent).toContain("2026-06-01");
+    expect(window.textContent).toContain("2026-06-14");
+    expect(screen.getByTestId("sprint-detail-state").textContent).toBe("Active");
+  });
+
+  it("does NOT duplicate the name/dates/state in the meta header below (foldReadMeta)", async () => {
+    await renderDetail();
+    // The meta header is present (Edit + Goal still live there)...
+    expect(await screen.findByTestId("sprint-meta-edit")).toBeTruthy();
+    // ...but its read-mode name/dates/state fields are folded out, so
+    // they are not rendered a second time under the PageHeader title.
+    expect(screen.queryByTestId("sprint-meta-name-value")).toBeNull();
+    expect(screen.queryByTestId("sprint-meta-start_date-value")).toBeNull();
+    expect(screen.queryByTestId("sprint-meta-state-value")).toBeNull();
+  });
+});
+
 describe("SprintDetail — sprint progress (F1 / K30)", () => {
   it("renders done/total from core's ?progress=true response", async () => {
     await renderDetail();

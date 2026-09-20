@@ -23,6 +23,7 @@ import { progressState } from "../milestones/model.ts";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import type { CollapseOverrides } from "./collapse.ts";
 import { isExpanded, readOverrides, toggle, writeOverrides } from "./collapse.ts";
 import type { SprintColumn } from "./columns.ts";
@@ -314,29 +315,42 @@ export function SprintsView() {
           RemapDeleteDialog, so the two surfaces cannot drift); the
           overview links there in one click, and reveals archived
           sprints in place with a local view toggle that never writes. */}
-      <header className="flex items-center justify-between gap-3">
-        <Link
-          to="/settings/$section"
-          params={{ section: "sprints" }}
-          data-testid="sprints-manage-link"
-          className="text-[0.8571rem] text-accent no-underline hover:underline"
-        >
-          Manage sprints in Settings →
-        </Link>
-        {archivedCount > 0 && (
-          // SPR-1: archived sprints appear only behind this affordance.
-          // A checkbox so the state is announced; nothing here writes to
-          // sprints.yaml (unarchiving is a Settings action).
-          <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
-            <Checkbox
-              data-testid="sprints-show-archived"
-              checked={showArchived}
-              onChange={e => { setShowArchived(e.target.checked); }}
-            />
-            Show archived ({archivedCount})
-          </label>
-        )}
-      </header>
+      {/* The titled header (Ken 2026-09-20): a "Sprints" h1, with the
+          lifecycle affordances (A166) in the actions slot — the manage
+          link and the local archived-reveal toggle. Create, delete and
+          archive *act* in Settings → Sprints (the shared
+          RemapDeleteDialog, so the two surfaces cannot drift); the
+          overview links there in one click, and reveals archived sprints
+          in place with a local view toggle that never writes. */}
+      <PageHeader
+        title="Sprints"
+        testId="sprints-header"
+        actions={
+          <>
+            <Link
+              to="/settings/$section"
+              params={{ section: "sprints" }}
+              data-testid="sprints-manage-link"
+              className="text-[0.8571rem] text-accent no-underline hover:underline"
+            >
+              Manage sprints in Settings →
+            </Link>
+            {archivedCount > 0 && (
+              // SPR-1: archived sprints appear only behind this affordance.
+              // A checkbox so the state is announced; nothing here writes to
+              // sprints.yaml (unarchiving is a Settings action).
+              <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
+                <Checkbox
+                  data-testid="sprints-show-archived"
+                  checked={showArchived}
+                  onChange={e => { setShowArchived(e.target.checked); }}
+                />
+                Show archived ({archivedCount})
+              </label>
+            )}
+          </>
+        }
+      />
 
       {pending !== null && (
         <SprintWriter

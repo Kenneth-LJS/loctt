@@ -64,6 +64,19 @@ const STATE_LABELS: Record<SprintState, string> = {
 
 interface Props {
   readonly sprint: SprintDef;
+  /**
+   * Fold the read-mode name/dates/state presentation OUT of this header,
+   * because the host (SprintDetail's PageHeader) is showing them as the
+   * page title + subtitle (Ken 2026-09-20 "fold the meta into
+   * PageHeader"). When set, the read view drops the Name/Start/End/State
+   * fields but keeps the Goal block, the Archived badge and the Edit
+   * control — so opening the editor still edits every field. Edit mode is
+   * untouched by this flag: the full five-field editor and its single
+   * combined PUT are exactly as before, so none of the persistence
+   * guarantees (SPR-28/33/37, A147) move. Defaults to false, which is the
+   * standalone presentation every existing test renders.
+   */
+  readonly foldReadMeta?: boolean;
 }
 
 /** Which field a save is in flight for, or failed on. */
@@ -109,7 +122,7 @@ function serverValue(sprint: SprintDef, field: FieldKey): string {
   return typeof v === "string" ? v : "";
 }
 
-export function SprintMetaHeader({ sprint }: Props) {
+export function SprintMetaHeader({ sprint, foldReadMeta = false }: Props) {
   const update = useUpdateSprintMeta();
 
   // `editing` is the SPR-8 gate: null when reading, a full draft of the
@@ -268,17 +281,25 @@ export function SprintMetaHeader({ sprint }: Props) {
         className="flex flex-col gap-3 border-b border-border-subtle pb-3"
       >
         <div className="flex flex-wrap items-start gap-4">
-          <ReadField label="Name" value={serverValue(sprint, "name")} testId="sprint-meta-name-value" />
-          <ReadField label="Start" value={serverValue(sprint, "start_date")} testId="sprint-meta-start_date-value" />
-          <ReadField label="End" value={serverValue(sprint, "end_date")} testId="sprint-meta-end_date-value" />
-          <div className="flex flex-col gap-1">
-            <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">State</span>
-            <span data-testid="sprint-meta-state-value" className="text-[0.9286rem] text-text-primary">
-              {STATE_LABELS[serverValue(sprint, "state") as SprintState] ?? serverValue(sprint, "state")}
-            </span>
-          </div>
+          {/* Folded out when the host PageHeader shows name/dates/state as
+              the title + subtitle (Ken 2026-09-20). The editor still edits
+              all of them — only this read presentation moves. */}
+          {!foldReadMeta && (
+            <>
+              <ReadField label="Name" value={serverValue(sprint, "name")} testId="sprint-meta-name-value" />
+              <ReadField label="Start" value={serverValue(sprint, "start_date")} testId="sprint-meta-start_date-value" />
+              <ReadField label="End" value={serverValue(sprint, "end_date")} testId="sprint-meta-end_date-value" />
+              <div className="flex flex-col gap-1">
+                <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">State</span>
+                <span data-testid="sprint-meta-state-value" className="text-[0.9286rem] text-text-primary">
+                  {STATE_LABELS[serverValue(sprint, "state") as SprintState] ?? serverValue(sprint, "state")}
+                </span>
+              </div>
+            </>
+          )}
 
-          {/* SPR-26: an archived sprint's detail page says so. */}
+          {/* SPR-26: an archived sprint's detail page says so. Kept here in
+              both modes so this header remains SPR-26's carrier. */}
           {sprint.archived === true && (
             <span
               data-testid="sprint-meta-archived"

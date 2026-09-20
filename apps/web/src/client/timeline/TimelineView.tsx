@@ -19,6 +19,7 @@ import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 import { dependencyGraph } from "./arrows.ts";
 import {
@@ -519,6 +520,15 @@ export function TimelineView() {
 
   return (
     <div ref={panelRef} className="flex h-full flex-col gap-3 p-4" data-testid="timeline">
+      {/* The titled header (Ken 2026-09-20). A title-only "Timeline" h1
+          row above the toolbar; the toolbar controls (FilterBar, zoom,
+          group-by, Today) keep their own rows below rather than folding
+          into the actions slot — the zoom/group/Today cluster already
+          wraps and collapses into a "More" menu at phone width, and
+          hoisting it into the header would fight that responsive
+          behaviour. This is a title row, not a toolbar restructure. */}
+      <PageHeader title="Timeline" testId="timeline-header" />
+
       {/* The shared list filter bar, so `/timeline` filters the same way
           `/list` does (assignee, milestone, status, saved views, …). The
           `from` route type is widened by the list-owning agent; this
