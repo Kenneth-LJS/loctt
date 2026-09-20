@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wordmark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/wordmark-light.svg">
+    <img alt="LocTT" src="docs/assets/wordmark-light.svg" width="240">
+  </picture>
+</p>
+
 # LocTT
 
 **A task tracker that lives in your repo — driven from the terminal, an AI agent, or a browser.**
@@ -18,15 +26,13 @@ For a solo project or a small team that already version-controls everything, thi
 
 That's what LocTT is.
 
-## Benefits
+## Why LocTT
 
-- **Free of charge.** No subscriptions, no tiers, no per-seat pricing. Open source under MIT.
-- **No vendor lock-in.** Your tasks are markdown files with YAML frontmatter. Move them, grep them, script against them — they're just files.
-- **No accounts or API keys.** No admin consoles, no onboarding flow, no OAuth dance.
-- **No rate limits, no outages, no "scheduled maintenance."** It runs on your machine.
-- **Works offline.** On a plane, on a train, in a cabin with no signal. Your tasks are right there on disk.
-- **Git-friendly.** Commit `.loctt/` like any other folder, or use the opt-in sync mode that stores tasks on a dedicated branch.
-- **AI-agent native.** Ships with an MCP server so Claude, Cursor, and other agents can manage tasks directly — no integration code required.
+- **It's just files.** Tasks are markdown with YAML frontmatter in `.loctt/`. `grep` them, diff them in a pull request, script against them — there's no database and no export feature to escape through.
+- **Your agent is a first-class user.** The built-in MCP server gives an AI agent the same task operations you get — no API keys, no OAuth, no integration layer to build.
+- **Three surfaces, one store.** The CLI, the web UI, and the MCP server all read and write the same directory, so they never disagree. Create a task in one, see it in the others.
+- **Sharing is opt-in and free.** Commit `.loctt/` with your code, or turn on git-backed sync to keep tasks on a dedicated branch — you already have git, so it costs nothing to set up.
+- **It runs on your machine.** No accounts, no rate limits, no outages, and it works offline.
 
 ## Features
 
@@ -157,92 +163,21 @@ See [docs/user/mcp/reference.md](docs/user/mcp/reference.md) for the full tool l
 
 ## CLI Usage
 
-### Create a task
+A taste of the everyday commands:
 
 ```bash
-loctt create "Set up CI pipeline"
+loctt create "Fix login bug" --priority high --type bug   # create, with fields
+loctt list --query "status = in_progress and priority = high"   # filter
+loctt list --view recent-open        # run a saved view
+loctt set T-1 status done            # set a field
+loctt link T-2 blocks T-1            # relate two tasks
+loctt show T-1                       # full detail
 ```
 
-Set fields right away:
-
-```bash
-loctt create "Fix login bug" --status in_progress --priority high --type bug
-```
-
-### List tasks
-
-```bash
-loctt list
-```
-
-Filter with the query language:
-
-```bash
-loctt list --query "status = in_progress and priority = high"
-loctt list --query "text ~ CI"
-```
-
-Use a saved view:
-
-```bash
-loctt list --view recent-open
-```
-
-### View a task
-
-```bash
-loctt show T-1
-```
-
-### Update a task
-
-```bash
-loctt set T-1 status in_progress
-loctt set T-1 priority high
-loctt set T-1 assignee "ken"
-loctt unset T-1 priority
-```
-
-Edit the task body (free-form markdown):
-
-```bash
-loctt body T-1 --set "Need to check the auth middleware first."
-```
-
-### Link tasks
-
-```bash
-loctt link T-2 blocks T-1
-loctt link T-3 parent T-1
-```
-
-### Attach files
-
-```bash
-loctt attach T-1 ./screenshot.png
-loctt detach T-1 screenshot.png
-```
-
-### Archive and delete
-
-Archive is reversible:
-
-```bash
-loctt archive T-1
-loctt unarchive T-1
-```
-
-Delete is permanent:
-
-```bash
-loctt delete T-1 --yes
-```
-
-### History
-
-```bash
-loctt log T-1
-```
+Tasks also archive (`loctt archive` / `unarchive`), attach files, carry a
+markdown body, and record every change in `loctt log`. See the
+[CLI reference](docs/user/cli/reference.md) for every command and flag, or
+the [Quick Start](docs/user/quickstart.md) for a guided walk-through.
 
 ## Git Sync
 
