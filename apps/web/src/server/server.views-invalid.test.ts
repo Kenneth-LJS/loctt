@@ -81,10 +81,21 @@ describe("GET /api/views with an invalid queries.yaml", () => {
   });
 
   it("names the duplicate id when that is the violation", async () => {
+    // Both entries are otherwise schema-valid (they carry the now-required
+    // `conditions`), so the DUPLICATE-ID violation is what surfaces — not
+    // a "conditions is required" schema rejection that would preempt it.
+    const dupConditions =
+      "    conditions:\n"
+      + "      kind: leaf\n"
+      + "      field: archived\n"
+      + "      op: '!='\n"
+      + "      value:\n"
+      + "        type: boolean\n"
+      + "        value: true\n";
     await corrupt(
       "queries:\n"
-      + "  - id: dup\n    name: one\n    query: 'archived != true'\n"
-      + "  - id: dup\n    name: two\n    query: 'archived != true'\n",
+      + "  - id: dup\n    name: one\n    query: 'archived != true'\n" + dupConditions
+      + "  - id: dup\n    name: two\n    query: 'archived != true'\n" + dupConditions,
     );
     const res = await fetch(`${base}/api/views`);
     expect(res.status).toBe(400);

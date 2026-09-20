@@ -23,13 +23,31 @@ describe("a saved view whose custom field no longer exists", () => {
   let app: ReturnType<typeof createWebApp>;
   let base: string;
 
+  // `conditions` is required post-Stage-1; each block is the structured
+  // form of the entry's own DSL. `squad` is still absent from
+  // workflow.yaml — the view outlived the field, which the query runs
+  // against, not the schema, so the "unknown field" warning still fires.
   const QUERIES = `queries:
   - id: 01J0000000000000000000001
     name: ghostfield
     query: fields.squad = platform
+    conditions:
+      kind: leaf
+      field: fields.squad
+      op: '='
+      value:
+        type: string
+        value: platform
   - id: 01J0000000000000000000003
     name: healthy
     query: status = backlog
+    conditions:
+      kind: leaf
+      field: status
+      op: '='
+      value:
+        type: string
+        value: backlog
 `;
 
   beforeEach(async () => {

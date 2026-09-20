@@ -1,3 +1,4 @@
+import { queryToConditions } from "@loctt/core/query/builderTree.js";
 import { useState } from "react";
 
 import { useCreateView } from "../api/hooks/useCreateView.ts";
@@ -5,6 +6,7 @@ import type { ListSearch } from "../router/listSearch.ts";
 import { Button } from "../ui/Button.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import { buildConditionsFromSearch } from "./buildConditions.ts";
 import { buildDslFromSearch } from "./buildDsl.ts";
 
 /**
@@ -23,6 +25,11 @@ export function SaveViewDialog({
 }) {
   const [name, setName] = useState("");
   const createView = useCreateView();
+  // Structure is the source of truth (Stage 2): build the conditions tree
+  // from the active filters and SEND that. The `query` string is only for
+  // the read-only preview below — the server derives its own `query` from
+  // the conditions, so what is stored and what is previewed agree.
+  const conditions = buildConditionsFromSearch(search, queryToConditions);
   const query = buildDslFromSearch(search);
 
   const sort =
@@ -33,7 +40,7 @@ export function SaveViewDialog({
   const submit = (): void => {
     if (name.trim().length === 0) return;
     createView.mutate(
-      { name: name.trim(), query, ...(sort ? { sort } : {}) },
+      { name: name.trim(), conditions, ...(sort ? { sort } : {}) },
       { onSuccess: onClose },
     );
   };

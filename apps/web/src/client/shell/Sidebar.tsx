@@ -1111,8 +1111,12 @@ function SavedFiltersGroup({
   // Edit accepts a `SavedQuery` or the `{id,name,query}` picked from a
   // `BrokenSavedQuery` (VUE-22's fix path) — the two are not assignable to
   // one another, so the edit target is stored as the minimal shape
-  // `ViewFormDialog` actually reads.
-  type EditTarget = Pick<SavedQuery, "id" | "name" | "query">;
+  // `ViewFormDialog` actually reads. `conditions` is carried when present
+  // (a valid view) so the dialog seeds the visual builder from structure;
+  // a broken view omits it and the dialog opens Advanced on the raw query.
+  type EditTarget = Pick<SavedQuery, "id" | "name" | "query"> & {
+    readonly conditions?: SavedQuery["conditions"];
+  };
   const [dialog, setDialog] = useState<
     | { mode: "create" }
     | { mode: "edit"; view: EditTarget }

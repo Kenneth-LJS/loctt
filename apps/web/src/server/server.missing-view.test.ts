@@ -42,7 +42,19 @@ describe("GET /api/tasks with a deleted saved view", () => {
     // A queries.yaml with one view that is *not* the one asked for.
     await writeFile(
       join(root, ".loctt", "config", "queries.yaml"),
-      "queries:\n  - id: v_live\n    name: Live view\n    query: 'status.category = active'\n",
+      // `conditions` is now required (Stage 1); it is the structured
+      // form of the same `status.category = active` DSL.
+      "queries:\n"
+      + "  - id: v_live\n"
+      + "    name: Live view\n"
+      + "    query: 'status.category = active'\n"
+      + "    conditions:\n"
+      + "      kind: leaf\n"
+      + "      field: status.category\n"
+      + "      op: '='\n"
+      + "      value:\n"
+      + "        type: string\n"
+      + "        value: active\n",
       "utf8",
     );
   });

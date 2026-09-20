@@ -26,7 +26,15 @@ function jsonResponse(body: unknown, status = 200): Response {
 let fetchMock: ReturnType<typeof vi.fn<(...args: never[]) => Promise<Response>>>;
 
 const ONE_VIEW = {
-  queries: [{ id: "v1", name: "Open bugs", query: "type:bug AND status:open" }],
+  // Post-Stage-1 a saved view carries structured `conditions`; the edit
+  // dialog seeds the visual builder from it. `status = backlog` is a plain
+  // renderable leaf, so edit opens the builder (not the DSL box).
+  queries: [{
+    id: "v1",
+    name: "Open bugs",
+    query: "status = backlog",
+    conditions: { kind: "leaf", field: "status", op: "=", value: { type: "string", value: "backlog" } },
+  }],
 };
 
 beforeEach(() => {
@@ -43,8 +51,12 @@ beforeEach(() => {
     if (u.includes("/api/views/") && (init as RequestInit | undefined)?.method === "PUT") {
       return Promise.resolve(jsonResponse({ id: "v1", name: "n", query: "q" }));
     }
-    // GET /api/views
-    return Promise.resolve(jsonResponse(ONE_VIEW));
+    if (u.endsWith("/api/views") || u.includes("/api/views?")) {
+      return Promise.resolve(jsonResponse(ONE_VIEW));
+    }
+    if (u.includes("/api/workflow")) return Promise.resolve(jsonResponse({ workflow: {} }));
+    // Entity pickers the builder loads (projects/users/labels/…).
+    return Promise.resolve(jsonResponse({ items: [] }));
   });
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -80,39 +92,52 @@ function writeCalls(method: string) {
 
 describe("SavedViewsPanel — create (VUE-40)", () => {
   // @verifies VUE-40
-  it("opens a create dialog and POSTs name + query to /api/views", async () => {
+  it("opens a builder-first create dialog and POSTs structured conditions", async () => {
+    // Stage 2: the create dialog opens the VISUAL builder, not the raw DSL
+    // box, and saves `conditions`. (The old test asserted the DSL box was
+    // the default and `{name,query}` was posted — the behavior Ken
+    // rejected; superseded here.)
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("saved-views-list");
 
     fireEvent.click(screen.getByTestId("saved-views-new"));
-    // The reused advanced query editor is present in the dialog.
-    await screen.findByTestId("advanced-query-editor");
+    await screen.findByTestId("query-builder");
+    expect(screen.queryByTestId("advanced-query-editor")).toBeNull();
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "My open bugs" } });
-    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "status:open" } });
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+    fireEvent.change(screen.getByTestId("qb-field"), { target: { value: "title" } });
+    fireEvent.change(screen.getByTestId("qb-op"), { target: { value: "=" } });
+    fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "login" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
     await waitFor(() => { expect(writeCalls("POST").length).toBe(1); });
     const [post] = writeCalls("POST");
     if (post === undefined) throw new Error("no POST call");
     expect(post.url).toContain("/api/views");
-    expect(post.body).toEqual({ name: "My open bugs", query: "status:open" });
+    const body = post.body as { name: string; conditions?: unknown; query?: unknown };
+    expect(body.name).toBe("My open bugs");
+    expect(body.conditions).toBeDefined();
   });
 
   // @verifies VUE-40
-  it("keeps Create disabled until both name and query are non-empty", async () => {
+  it("keeps Create disabled until the name and at least one condition exist", async () => {
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("saved-views-list");
     fireEvent.click(screen.getByTestId("saved-views-new"));
-    await screen.findByTestId("advanced-query-editor");
+    await screen.findByTestId("query-builder");
 
     const save = screen.getByTestId<HTMLButtonElement>("view-form-save");
+    // Empty builder + empty name → disabled.
     expect(save.disabled).toBe(true);
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "X" } });
-    // Still disabled: query is empty.
+    // Still disabled: no condition yet.
     expect(save.disabled).toBe(true);
-    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "status:open" } });
-    expect(save.disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+    fireEvent.change(screen.getByTestId("qb-field"), { target: { value: "title" } });
+    fireEvent.change(screen.getByTestId("qb-op"), { target: { value: "=" } });
+    fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "x" } });
+    await waitFor(() => { expect(save.disabled).toBe(false); });
   });
 });
 
@@ -168,27 +193,30 @@ describe("SavedViewsPanel — delete / archive (VUE-38)", () => {
 
 describe("SavedViewsPanel — edit (VUE-41)", () => {
   // @verifies VUE-41
-  it("opens an edit dialog prefilled with the view and PUTs to /api/views/:id", async () => {
+  it("opens a builder-first edit dialog seeded from conditions and PUTs conditions", async () => {
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("saved-views-list");
 
     fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
     fireEvent.click(screen.getByTestId("view-edit"));
-    await screen.findByTestId("advanced-query-editor");
-
-    // Prefilled from the existing view.
+    // Renderable conditions → the visual builder, seeded from the stored
+    // tree (not the DSL string).
+    await screen.findByTestId("query-builder");
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("Open bugs");
-    expect(screen.getByTestId<HTMLTextAreaElement>("dsl-input").value).toBe("type:bug AND status:open");
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLSelectElement>("qb-field").value).toBe("status");
+    });
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
-    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "status:done" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
     await waitFor(() => { expect(writeCalls("PUT").length).toBe(1); });
     const [put] = writeCalls("PUT");
     if (put === undefined) throw new Error("no PUT call");
     expect(put.url).toContain("/api/views/v1");
-    expect(put.body).toEqual({ name: "Renamed", query: "status:done" });
+    const body = put.body as { name: string; conditions?: unknown };
+    expect(body.name).toBe("Renamed");
+    expect(body.conditions).toBeDefined();
   });
 
   // @verifies VUE-41
@@ -201,15 +229,18 @@ describe("SavedViewsPanel — edit (VUE-41)", () => {
           jsonResponse({ message: "invalid query near 'xyz'", code: "rejected_write", data_state: "unchanged" }, 400),
         );
       }
-      return Promise.resolve(jsonResponse(ONE_VIEW));
+      if (u.endsWith("/api/views") || u.includes("/api/views?")) return Promise.resolve(jsonResponse(ONE_VIEW));
+      if (u.includes("/api/workflow")) return Promise.resolve(jsonResponse({ workflow: {} }));
+      return Promise.resolve(jsonResponse({ items: [] }));
     });
 
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("saved-views-list");
     fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
     fireEvent.click(screen.getByTestId("view-edit"));
-    await screen.findByTestId("advanced-query-editor");
-    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "xyz" } });
+    await screen.findByTestId("query-builder");
+    // Rename and save through the builder; the server rejects it (400).
+    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
     const err = await screen.findByTestId("view-form-error");
