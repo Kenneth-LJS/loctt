@@ -131,6 +131,16 @@ afterEach(() => {
   TASKS = [];
 });
 
+describe("SprintsView — titled header (Ken 2026-09-20)", () => {
+  it("renders a 'Sprints' h1 title with the manage link in the header", async () => {
+    await renderView();
+    const heading = await screen.findByRole("heading", { name: "Sprints", level: 1 });
+    expect(heading.tagName).toBe("H1");
+    // The manage link moved into the PageHeader actions slot; still there.
+    expect(screen.getByTestId("sprints-manage-link")).toBeTruthy();
+  });
+});
+
 describe("SprintsView — corrupt sprint-config entry (A138)", () => {
   it("surfaces a broken sprint entry, named and marked, alongside the healthy ones", async () => {
     BROKEN_SPRINTS = [

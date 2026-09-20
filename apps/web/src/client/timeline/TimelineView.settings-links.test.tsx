@@ -128,6 +128,14 @@ afterEach(() => {
   FAIL_CALENDAR = false;
 });
 
+describe("TimelineView — titled header (Ken 2026-09-20)", () => {
+  it("renders a 'Timeline' h1 title", async () => {
+    mountTimeline();
+    const heading = await screen.findByRole("heading", { name: "Timeline", level: 1 });
+    expect(heading.tagName).toBe("H1");
+  });
+});
+
 describe("the timeline config banners", () => {
   it("links the dependency-config banner to Timeline settings", async () => {
     mountTimeline();

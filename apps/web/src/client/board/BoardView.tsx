@@ -18,6 +18,7 @@ import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import { BoardCard } from "./BoardCard.tsx";
 import { resolveCardLayout, resolveColumnCardLayout } from "./cardLayout.ts";
 import { hiddenColumnsOf, withHiddenColumns } from "./chipSettings.ts";
@@ -387,39 +388,51 @@ export function BoardView() {
           console warning the user never sees (P7). */}
       <ColumnDriftBanner columns={columns} />
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <ChipsBar
-          columns={columns}
-          counts={buckets}
-          hidden={hidden}
-          onToggle={toggleColumn}
-          loading={loading}
-        />
-        {/* NEW-1's board entry point. BRD-40's "+ Add task" lives
-            inside the `total === 0` empty state, so on any board that
-            actually has tasks there was no way to open the modal from
-            here at all — NEW-1's test passed only because it never
-            seeded. This is board-level, not per-column, deliberately:
-            M3.1 built per-column controls and removed them because a
-            column still rendered for a status `workflow.yaml` no
-            longer declares would carry a create control, which is what
-            broke BRD-42. */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            testId="board-add-task"
-            onClick={() => { createTask.open(); }}
-          >
-            + Add task
-          </Button>
-          {/* K100: board config is discoverable from the board. Both are
-              whole-surface editors (columns = whole-document draft, card
-              layout = whole-surface pref), so both are DEEP LINKS,
-              labelled as navigation — never in-place edits from a view. */}
-          <BoardOptionsMenu />
-        </div>
-      </div>
+      {/* The titled header (Ken 2026-09-20). The "Board" h1 gives the
+          view the same titled top row the other list-like views have.
+          The chips bar is its own row below rather than in the actions
+          slot: it wraps to many pills (up to one per column) and would
+          crush the title on a phone if it shared the row. The board's
+          two board-level controls — "+ Add task" (NEW-1) and the
+          options overflow (K100) — sit in the actions slot. */}
+      <PageHeader
+        title="Board"
+        testId="board-header"
+        actions={
+          // NEW-1's board entry point. BRD-40's "+ Add task" lives
+          // inside the `total === 0` empty state, so on any board that
+          // actually has tasks there was no way to open the modal from
+          // here at all — NEW-1's test passed only because it never
+          // seeded. This is board-level, not per-column, deliberately:
+          // M3.1 built per-column controls and removed them because a
+          // column still rendered for a status `workflow.yaml` no
+          // longer declares would carry a create control, which is what
+          // broke BRD-42.
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              testId="board-add-task"
+              onClick={() => { createTask.open(); }}
+            >
+              + Add task
+            </Button>
+            {/* K100: board config is discoverable from the board. Both are
+                whole-surface editors (columns = whole-document draft, card
+                layout = whole-surface pref), so both are DEEP LINKS,
+                labelled as navigation — never in-place edits from a view. */}
+            <BoardOptionsMenu />
+          </>
+        }
+      />
+
+      <ChipsBar
+        columns={columns}
+        counts={buckets}
+        hidden={hidden}
+        onToggle={toggleColumn}
+        loading={loading}
+      />
 
       {/* BRD-40: a tracker with zero tasks gets ONE board-level empty
           state, not six per-column placeholders reading as six

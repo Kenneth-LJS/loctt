@@ -14812,3 +14812,82 @@ delete `ui/PageHeader.tsx` + `ui/PageHeader.test.tsx` and inline the old
 `settings/WorkflowPanelFrame.tsx` (and restore it on `UnknownSection`/
 `NotBuiltYet`). This is a consistency standard, not a one-off — new views
 should follow it rather than reverting.
+
+
+### A216 · Titled `PageHeader`s for Board/Timeline/Sprints (static) and SprintDetail (name as title, meta as subtitle)
+
+**Ticket:** UI/UX polish · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** A215 extracted `ui/PageHeader` but adopted it only in
+MilestonesView, reasoning that Board/Timeline/Sprints/SprintDetail "have
+**no** title, so there is nothing to converge there." Ken subsequently
+ruled those four views *should* carry a titled header — so A216
+supersedes that specific part of A215's "Why" (the primitive and the
+layout standard stand; only the "these four have no title" call changes).
+The four views each had a bespoke, title-less top row: Board a
+`ChipsBar` + "+ Add task" flex row; Timeline a `FilterBar` + `Toolbar`;
+Sprints a `<header>` with a manage-link + archived checkbox; SprintDetail
+a back-link then the rich, edit-capable `SprintMetaHeader`
+(SPR-7/8/25/26/28/33/37, one combined PUT, non-optimistic errors, many
+testids).
+
+**What had to be decided.** For each view, where the title goes and what
+shares its row; and for SprintDetail specifically, how to make the sprint
+name the page title and the dates/state the subtitle **without**
+rewriting or weakening `SprintMetaHeader`'s edit machinery or any SPR
+test.
+
+**Options considered.**
+- *Board:* put `ChipsBar` in the header actions slot vs. keep it as its
+  own row below a title-only header. The chips wrap to up to one pill per
+  column and would crush the title at phone width in the actions slot —
+  so its own row is cleaner. "+ Add task" + the options overflow (both
+  small, fixed) go in the actions slot.
+- *Timeline:* fold the zoom/group/Today cluster into the actions slot vs.
+  leave the toolbar as its own row under a title-only header. The cluster
+  already wraps and collapses into a "More" menu at phone width; hoisting
+  it would fight that. Title-only header, toolbar unchanged below.
+- *Sprints:* the manage-link + archived toggle are small and fixed, so
+  they move cleanly into the actions slot.
+- *SprintDetail:* (a) add a title above an untouched `SprintMetaHeader` —
+  rejected, it renders the name/dates/state **twice**; (b) lift
+  `SprintMetaHeader`'s read-mode markup out into the PageHeader —
+  rejected, its unit tests render `<SprintMetaHeader>` alone and assert
+  the read-mode `sprint-meta-*-value` testids, so removing them there
+  would force weakening behavioral tests (a STOP-and-report condition);
+  (c) add an optional `foldReadMeta` prop that suppresses **only** the
+  read-mode Name/Start/End/State fields (keeping Goal, the Archived badge
+  and the Edit button), default `false` — chosen.
+
+**Decided.** Board/Timeline/Sprints get static `PageHeader`s titled
+"Board"/"Timeline"/"Sprints"; Board and Sprints put their small controls
+in the actions slot with the wide bar/toolbar as their own row, Timeline
+is title-only with the toolbar unchanged below. SprintDetail renders the
+sprint **name** as the PageHeader title (h1) and the **dates · state** as
+its subtitle, and passes `foldReadMeta` to `SprintMetaHeader` so those
+fields are not shown twice. `SprintMetaHeader`'s entire edit flow and
+persistence (one combined PUT, SPR-28/33/37, A147) are untouched.
+
+**Why.** §8 rule 2 (never invent titles) is satisfied — these are the
+exact four titles Ken named, no more. The fold is done conservatively:
+`foldReadMeta` defaults to `false`, so every existing `SprintMetaHeader`
+test renders the standalone (unfolded) presentation and stays green with
+no edit; only SprintDetail (which no test asserts the meta *values* of)
+opts in. No behavioral test was weakened or deleted. `PageHeader` needed
+**no** API change — `subtitle` is already `ReactNode`, so the
+dates/state node drops straight in.
+
+**To revert.** In `apps/web/src/client`: in `board/BoardView.tsx`,
+`timeline/TimelineView.tsx`, `sprints/SprintsView.tsx` remove the
+`PageHeader` (and its `import`) and restore the prior bespoke top rows
+(Board's `flex … justify-between` wrapping `ChipsBar` + the button
+cluster; Timeline drops the header line above `FilterBar`; Sprints'
+`<header>` with the manage-link + archived label). In
+`sprints/SprintDetail.tsx` remove the `PageHeader` + `SPRINT_STATE_LABELS`
+and drop the `foldReadMeta` prop from the `SprintMetaHeader` mount. In
+`sprints/SprintMetaHeader.tsx` remove the `foldReadMeta` prop and its
+`!foldReadMeta &&` guard around the read-mode Name/Start/End/State block.
+Remove the added "titled header" tests in `board/BoardView.test.tsx`,
+`timeline/TimelineView.settings-links.test.tsx`,
+`sprints/SprintsView.test.tsx`, and the "titled header fold" describe in
+`sprints/SprintDetail.test.tsx`.

@@ -150,6 +150,22 @@ afterEach(() => {
   SETTINGS_PUTS = [];
 });
 
+describe("BoardView — titled header (Ken 2026-09-20)", () => {
+  it("renders a 'Board' h1 title", async () => {
+    await renderBoard();
+    const heading = await screen.findByRole("heading", { name: "Board", level: 1 });
+    expect(heading.tagName).toBe("H1");
+  });
+
+  it("keeps the '+ Add task' control in the header", async () => {
+    await renderBoard();
+    // The Add-task button moved into the PageHeader actions slot; it must
+    // still be present and functional (NEW-1's board entry point).
+    expect(await screen.findByTestId("board-add-task")).toBeTruthy();
+    expect(screen.getByTestId("board-options-menu")).toBeTruthy();
+  });
+});
+
 describe("BoardView — column-header menu (BRD-52, K100)", () => {
   it("renders a menu on each column header with the three items", async () => {
     await renderBoard();

@@ -12,8 +12,16 @@ import { FilterBar } from "../list/FilterBar.tsx";
 import { progressState } from "../milestones/model.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import { BurndownChart } from "./BurndownChart.tsx";
 import { SprintMetaHeader } from "./SprintMetaHeader.tsx";
+
+/** The three sprint states' human labels, mirroring SprintMetaHeader. */
+const SPRINT_STATE_LABELS: Record<string, string> = {
+  active: "Active",
+  completed: "Completed",
+  future: "Future",
+};
 
 /**
  * The sprint detail route — `/sprints/$key` (M4.7).
@@ -145,7 +153,33 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
         </Link>
       </div>
 
-      <SprintMetaHeader sprint={sprint} />
+      {/* The fold (Ken 2026-09-20): the sprint NAME is the page title
+          (h1), and the dates/state read-out is the subtitle beneath it.
+          SprintMetaHeader still owns the entire EDIT flow and all its
+          persistence guarantees — `foldReadMeta` only removes the
+          duplicate read presentation of the fields shown here, so the
+          name/dates/state are not rendered twice. The Edit button, the
+          Goal read/edit and the Archived badge stay in the header below. */}
+      <PageHeader
+        title={sprint.name}
+        testId="sprint-detail-header"
+        subtitle={
+          <p
+            data-testid="sprint-detail-meta-subtitle"
+            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.8571rem] text-text-tertiary"
+          >
+            <span data-testid="sprint-detail-window" className="tabular-nums">
+              {sprint.start_date} → {sprint.end_date}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span data-testid="sprint-detail-state">
+              {SPRINT_STATE_LABELS[sprint.state] ?? sprint.state}
+            </span>
+          </p>
+        }
+      />
+
+      <SprintMetaHeader sprint={sprint} foldReadMeta />
 
       {/* F1 (K30): the sprint's done/total, from core via
           `?progress=true` — the same figure the CLI's `sprint list
