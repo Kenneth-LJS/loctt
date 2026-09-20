@@ -224,6 +224,25 @@ shape would be building for a failure that cannot occur, so this is left
 as documented-partial rather than a speculative per-milestone endpoint.
 Revisit only if a real per-milestone computation is ever introduced.
 
+### A saved view whose `conditions` block is missing/corrupt is object-fatal, not per-field-degraded
+
+Since saved views gained a structured `conditions` tree (Stage 1 of the
+structured-conditions work), `SavedQuerySchema` requires `conditions`. A
+hand-edited `queries.yaml` entry that is missing or has a malformed
+`conditions` block therefore fails schema validation as a whole. A broken
+**DSL `query`** still degrades gracefully to a `BrokenSavedQuery` marker
+(the entry is listed, marked, still clickable), but a broken/missing
+**`conditions`** block does not yet have that per-field degradation — it
+takes the entry out at the object level.
+
+To reproduce: hand-edit a `.loctt/config/queries.yaml` entry to delete its
+`conditions:` key (or make it a non-tree value) and load the tracker. Per
+the corruption-handling guide this should degrade like a bad `query`
+string does (mark the one entry broken, keep the rest), not fail the
+entry's schema. Deferred out of Stage 1 scope; revisit alongside the
+`BrokenSavedQuery` path so both a bad `query` and a bad `conditions`
+degrade identically.
+
 ### A211 · Value pickers over growable sets still on native `Select`/radio/pill controls
 
 A211 standardised the searchable picker (`ui/Combobox`) and migrated the
