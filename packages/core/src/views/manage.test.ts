@@ -3,10 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { stringify as stringifyYaml } from "yaml";
 
 import { loadQueriesConfig } from "../config/queries.js";
 import { initLoctt } from "../init/init.js";
 import { getQueriesConfigPath, resolveLocttDir } from "../paths/index.js";
+import { queryToConditions } from "../query/builderTree.js";
 import {
   archiveView,
   createView,
@@ -19,6 +21,18 @@ import {
 
 let root: string;
 let locttDir: string;
+
+/**
+ * A `conditions:` YAML block (indented under a `queries:` list item),
+ * derived from a DSL so a hand-written fixture satisfies the required
+ * `conditions` field.
+ */
+function conditionsYaml(dsl: string, indent = "    "): string {
+  const res = queryToConditions(dsl);
+  if (!res.ok) throw new Error(`fixture DSL does not parse: ${dsl}`);
+  const yaml = stringifyYaml({ conditions: res.tree }).trimEnd();
+  return yaml.split("\n").map(line => indent + line).join("\n") + "\n";
+}
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-views-"));
@@ -38,6 +52,64 @@ describe("createView", () => {
     });
     expect(view.id).toMatch(/^[0-9A-Z]{26}$/);
     expect(view.name).toBe("open");
+  });
+
+  it("derives the query string from structured conditions", async () => {
+    // conditions are the source of truth; `query` is derived by the
+    // spacing-only serializer. Tight spacing in the input tree comes back
+    // canonically spaced — and NOT operator-switched.
+    const view = await createView(locttDir, {
+      name: "by-conditions",
+      conditions: {
+        kind: "leaf",
+        field: "status",
+        op: "in",
+        value: { type: "list", values: [{ type: "string", value: "backlog" }] },
+      },
+    });
+    // `in (backlog)` stays a list, never collapsed to `= backlog`.
+    expect(view.query).toBe("status in (backlog)");
+    // The derived query is what is persisted.
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(findView(cfg, view.id).query).toBe("status in (backlog)");
+  });
+
+  it("derives conditions from a raw DSL query (the CLI/MCP path)", async () => {
+    // When only a DSL string is supplied, core parses it into structured
+    // conditions so the stored view always has both.
+    const view = await createView(locttDir, {
+      name: "from-dsl",
+      query: "status = done and priority = high",
+    });
+    expect(view.conditions).toMatchObject({ kind: "group", op: "and" });
+    if (view.conditions.kind !== "group") throw new Error("expected a group");
+    expect(view.conditions.children).toHaveLength(2);
+  });
+
+  it("derives conditions for a has_link DSL (the extended grammar)", async () => {
+    // Proves the BuilderTree extension: a raw-DSL view using has_link,
+    // which the visual builder refuses, still derives a valid conditions
+    // tree rather than being rejected.
+    const view = await createView(locttDir, {
+      name: "blocked-like",
+      query: 'archived != true and has_link("is_blocked_by")',
+    });
+    expect(view.conditions.kind).toBe("group");
+    // The derived query keeps the has_link predicate. A bare-safe name is
+    // emitted unquoted (the same quoting normalization dslAtom applies to
+    // values) — `has_link("is_blocked_by")` and `has_link(is_blocked_by)`
+    // parse identically, so this is lossless, not a form rewrite.
+    expect(view.query).toContain("has_link(is_blocked_by)");
+  });
+
+  it("rejects a syntactically invalid DSL rather than storing it", async () => {
+    // With the total BuilderTree, nothing the parser ACCEPTS is
+    // unrepresentable, so the derivation path only rejects a genuine
+    // syntax error. (There is no valid-but-unrepresentable construct left
+    // to test — the extension made the mapping total.)
+    await expect(
+      createView(locttDir, { name: "bad", query: "status == done" }),
+    ).rejects.toThrow(ViewError);
   });
 });
 
@@ -146,15 +218,22 @@ describe("deleteView (hard)", () => {
 describe("view writes preserve a concurrent broken view (K28)", () => {
   /** Write a queries.yaml holding one valid and one unparseable entry. */
   async function seedWithBroken(): Promise<void> {
+    // Both entries carry a `conditions` block (a required field). Only the
+    // second's DSL is broken, so it degrades to a `broken` marker while the
+    // first loads as a valid view.
+    const keepConditions = conditionsYaml("status != done");
+    const brokenConditions = conditionsYaml("status = x");
     await writeFile(
       getQueriesConfigPath(locttDir),
       "queries:\n"
       + "  - id: 01KEEP000000000000000000AA\n"
       + "    name: keep\n"
       + "    query: status != done\n"
+      + keepConditions
       + "  - id: 01BROKEN00000000000000000B\n"
       + "    name: broken-one\n"
-      + "    query: \"status ==\"\n",
+      + "    query: \"status ==\"\n"
+      + brokenConditions,
       "utf-8",
     );
   }

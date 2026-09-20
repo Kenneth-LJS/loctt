@@ -1,9 +1,22 @@
-import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
+import type { QueriesConfig, SavedQuery, Task, WorkflowConfig } from "@loctt/contracts";
 import { describe, expect,it } from "vitest";
 
 import { QueriesConfigError } from "../config/queries.js";
+import { queryToConditions } from "./builderTree.js";
 import { buildListContext, listTasks, listTasksPaginated, resolveView } from "./list.js";
 import { QueryValidationError } from "./validate.js";
+
+/**
+ * Build a SavedQuery fixture, deriving `conditions` from the DSL so these
+ * `listTasks`/`resolveView` fixtures satisfy the (required) conditions
+ * field without hand-authoring a tree — these tests exercise list/view
+ * resolution, not the conditions shape.
+ */
+function view(q: Omit<SavedQuery, "conditions">): SavedQuery {
+  const res = queryToConditions(q.query);
+  if (!res.ok) throw new Error(`test fixture DSL does not parse: ${q.query}`);
+  return { ...q, conditions: res.tree };
+}
 
 const config: WorkflowConfig = {
   key: { prefix: "T" },
@@ -23,18 +36,18 @@ const config: WorkflowConfig = {
 
 const queriesConfig: QueriesConfig = {
   queries: [
-    {
+    view({
       id: "01HSV0000000000000RECENT",
       name: "recent-open",
       query: "status != done",
       sort: [{ field: "updated_at", direction: "desc" }],
-    },
-    {
+    }),
+    view({
       id: "01HSV0000000000000BYPRIORITY",
       name: "by-priority",
       query: "status != done",
       sort: [{ field: "priority", direction: "desc" }],
-    },
+    }),
   ],
 };
 
@@ -309,7 +322,7 @@ describe("listTasks", () => {
 
     it("does not inject archived filter when using a saved view", () => {
       const viewConfig: QueriesConfig = {
-        queries: [{ id: "01HSV0000000000000VIEW", name: "all-not-started", query: "status = not_started" }],
+        queries: [view({ id: "01HSV0000000000000VIEW", name: "all-not-started", query: "status = not_started" })],
       };
       const result = listTasks({
         tasks: archivedTasks,
@@ -352,7 +365,7 @@ describe("listTasks", () => {
       // query is the source of truth — surfaces would conflate the
       // two if they were AND-merged silently.
       const viewConfig: QueriesConfig = {
-        queries: [{ id: "01HSV0000000000000ALLOPEN", name: "all-open", query: "status != done" }],
+        queries: [view({ id: "01HSV0000000000000ALLOPEN", name: "all-open", query: "status != done" })],
       };
       const result = listTasks({
         tasks: multiProjectTasks,
@@ -456,11 +469,11 @@ describe("listTasks — semantic query validation", () => {
     // A view referencing a since-deleted custom field used to work.
     // Breaking `--view` outright would regress existing trackers.
     const staleView: QueriesConfig = {
-      queries: [{
+      queries: [view({
         id: "01HSV0000000000000STALE",
         name: "stale",
         query: "fields.deleted_field = x",
-      }],
+      })],
     };
 
     it("runs the view and reports through onWarning", () => {
@@ -566,11 +579,11 @@ describe("listTasks — view + ad hoc query", () => {
   // the user's own typing, so a typo in it must still throw rather
   // than being downgraded to a warning because a view was named.
   const staleView: QueriesConfig = {
-    queries: [{
+    queries: [view({
       id: "01HSV0000000000000STALE2",
       name: "stale",
       query: "fields.deleted_field = x",
-    }],
+    })],
   };
 
   it("throws on a typo'd ad hoc query even when a view is also named", () => {

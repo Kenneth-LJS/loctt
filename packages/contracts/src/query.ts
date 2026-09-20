@@ -13,6 +13,142 @@ export const QuerySortSchema = z.object({
 }).strict();
 export type QuerySort = z.infer<typeof QuerySortSchema>;
 
+/**
+ * Structured query conditions for a saved view (Stage 1 of "saved views
+ * store structured conditions").
+ *
+ * These schemas MIRROR core's `BuilderTree` / `QueryValue` / `ComparisonOp`
+ * types (packages/core/src/query/builderTree.ts + parser.ts) exactly —
+ * core OWNS the TypeScript types; contracts owns the runtime (zod) shape,
+ * the same split as `SavedQuerySchema`/`SavedQuery`. If the core type
+ * gains a node kind or value kind, these must gain the matching case.
+ *
+ * The tree is TOTAL over the query grammar: it can hold every construct
+ * the parser accepts (`not`, `has_link`, `link_count`, date functions),
+ * so a view's stored `conditions` losslessly captures its DSL and the
+ * `query` string is derived from it.
+ */
+
+/** Mirrors core's `ComparisonOp`. */
+export const ComparisonOpSchema = z.enum([
+  "=", "!=", "<", "<=", ">", ">=", "~", "in", "not in",
+  "is empty", "is not empty",
+]);
+export type ComparisonOp = z.infer<typeof ComparisonOpSchema>;
+
+/** A signed offset for a date function — mirrors core's `DateOffset`. */
+const DateOffsetSchema = z.object({
+  sign: z.union([z.literal(1), z.literal(-1)]),
+  n: z.number(),
+  unit: z.enum(["d", "w", "m"]),
+}).strict();
+
+/**
+ * A signed date-function offset — mirrors core's `DateOffset`.
+ * Optionals carry `| undefined` to line up with `exactOptionalPropertyTypes`.
+ */
+export interface DateOffset {
+  readonly sign: 1 | -1;
+  readonly n: number;
+  readonly unit: "d" | "w" | "m";
+}
+
+/**
+ * Mirrors core's `QueryValue` discriminated union. Recursive (a `list`
+ * holds `QueryValue`s), so the schema carries an explicit type annotation
+ * and the type is declared by hand — core owns the canonical type; this is
+ * its runtime mirror.
+ */
+export type QueryValue =
+  | { type: "string"; value: string }
+  | { type: "number"; value: number }
+  | { type: "boolean"; value: boolean }
+  | { type: "date"; value: string }
+  | { type: "today" }
+  | { type: "current_user" }
+  | { type: "date_fn"; fn: DateFn; offset?: DateOffset | undefined }
+  | { type: "list"; values: readonly QueryValue[] }
+  | { type: "empty" };
+
+/** The seven date functions — mirrors core's `DateFn`. */
+export type DateFn =
+  | "now" | "startOfDay" | "startOfWeek" | "startOfMonth"
+  | "endOfDay" | "endOfWeek" | "endOfMonth";
+
+export const QueryValueSchema: z.ZodType<QueryValue> = z.lazy(() =>
+  z.discriminatedUnion("type", [
+    z.object({ type: z.literal("string"), value: z.string() }).strict(),
+    z.object({ type: z.literal("number"), value: z.number() }).strict(),
+    z.object({ type: z.literal("boolean"), value: z.boolean() }).strict(),
+    z.object({ type: z.literal("date"), value: z.string() }).strict(),
+    z.object({ type: z.literal("today") }).strict(),
+    z.object({ type: z.literal("current_user") }).strict(),
+    z.object({
+      type: z.literal("date_fn"),
+      fn: z.enum([
+        "now", "startOfDay", "startOfWeek", "startOfMonth",
+        "endOfDay", "endOfWeek", "endOfMonth",
+      ]),
+      offset: DateOffsetSchema.optional(),
+    }).strict(),
+    z.object({
+      type: z.literal("list"),
+      // A list holds scalars; nested lists never occur (the parser rejects
+      // them), but the schema mirrors the recursive core type verbatim.
+      values: z.array(QueryValueSchema),
+    }).strict(),
+    z.object({ type: z.literal("empty") }).strict(),
+  ]),
+);
+
+/** Mirrors core's `LinkCountCall`. */
+export const LinkCountCallSchema = z.object({
+  name: z.literal("link_count"),
+  kind: z.string().optional(),
+}).strict();
+export interface LinkCountCall {
+  readonly name: "link_count";
+  readonly kind?: string | undefined;
+}
+
+/**
+ * Mirrors core's `BuilderTree`. Recursive via `z.lazy` on the `group`
+ * children and the `not` child. The `has_link` relationship kind is
+ * `linkKind` (not `kind`) because `kind` is the union discriminant — the
+ * exact same field name as the core type.
+ */
+export type BuilderTree =
+  | { kind: "group"; op: "and" | "or"; children: BuilderTree[] }
+  | { kind: "not"; child: BuilderTree }
+  | { kind: "has_link"; linkKind?: string | undefined; target?: string | undefined }
+  | { kind: "leaf"; field: string; op: ComparisonOp; value: QueryValue; call?: LinkCountCall | undefined };
+
+export const BuilderTreeSchema: z.ZodType<BuilderTree> = z.lazy(() =>
+  z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("group"),
+      op: z.enum(["and", "or"]),
+      children: z.array(BuilderTreeSchema),
+    }).strict(),
+    z.object({
+      kind: z.literal("not"),
+      child: BuilderTreeSchema,
+    }).strict(),
+    z.object({
+      kind: z.literal("has_link"),
+      linkKind: z.string().optional(),
+      target: z.string().optional(),
+    }).strict(),
+    z.object({
+      kind: z.literal("leaf"),
+      field: z.string(),
+      op: ComparisonOpSchema,
+      value: QueryValueSchema,
+      call: LinkCountCallSchema.optional(),
+    }).strict(),
+  ]),
+);
+
 /** Which top-level view a saved query is authored for. */
 export const SavedViewModeSchema = z.enum(["list", "board", "timeline"]);
 export type SavedViewMode = z.infer<typeof SavedViewModeSchema>;
@@ -60,7 +196,19 @@ export type SavedViewDisplay = z.infer<typeof SavedViewDisplaySchema>;
 export const SavedQuerySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  /**
+   * The DSL string is a DERIVED field: it is regenerated from
+   * `conditions` on every write by a spacing-only serializer and is never
+   * independently trusted. It stays in the stored shape (and required) so
+   * hand-reading `queries.yaml` and existing readers still work.
+   */
   query: z.string().min(1),
+  /**
+   * The structured conditions the view filters by — the source of truth
+   * the `query` string is derived from. Required (greenfield; no stored
+   * data to migrate).
+   */
+  conditions: BuilderTreeSchema,
   sort: z.array(QuerySortSchema).optional(),
   display: SavedViewDisplaySchema.optional(),
   archived: z.boolean().optional(),

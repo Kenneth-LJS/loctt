@@ -28,8 +28,13 @@ export function ViewFormDialog({
   existing,
   onClose,
 }: {
-  /** The view being edited; omit to create a new one. */
-  readonly existing?: SavedQuery;
+  /**
+   * The view being edited; omit to create a new one. Only id/name/query
+   * are read here, so the prop is narrowed to those — a saved view now
+   * also carries structured `conditions`, but authoring conditions from
+   * this dialog is a later stage; today it still edits the DSL string.
+   */
+  readonly existing?: Pick<SavedQuery, "id" | "name" | "query">;
   readonly onClose: () => void;
 }) {
   const isEdit = existing !== undefined;

@@ -1,14 +1,31 @@
 import { describe, expect,it } from "vitest";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+import { queryToConditions } from "../query/builderTree.js";
 import { parseQueriesConfig, QueriesConfigError, serializeQueriesConfig } from "./queries.js";
 import { YamlSyntaxError } from "./yaml-coerce.js";
+
+/**
+ * A `conditions:` YAML block derived from a DSL query, indented to sit
+ * under a `queries:` list item. `conditions` is a required field on a
+ * saved view (it is the source of truth the `query` string is derived
+ * from), so every VALID fixture entry needs one; these tests exercise
+ * sort/display/broken-entry behavior, not the conditions shape, so we
+ * derive a matching tree from the DSL rather than hand-author it.
+ */
+function conditionsBlock(dsl: string, indent = "    "): string {
+  const res = queryToConditions(dsl);
+  if (!res.ok) throw new Error(`fixture DSL does not parse: ${dsl}`);
+  const yaml = stringifyYaml({ conditions: res.tree }).trimEnd();
+  return yaml.split("\n").map(line => indent + line).join("\n");
+}
 
 const CANONICAL_YAML = `
 queries:
   - id: 01HQ000000000000000000000A
     name: recent-open
     query: archived != true and status != done
+${conditionsBlock("archived != true and status != done")}
     sort:
       - field: updated_at
         direction: desc
@@ -16,6 +33,7 @@ queries:
   - id: 01HQ000000000000000000000B
     name: blocked
     query: archived != true and status = blocked
+${conditionsBlock("archived != true and status = blocked")}
     sort:
       - field: priority
         direction: desc
@@ -25,6 +43,7 @@ queries:
   - id: 01HQ000000000000000000000C
     name: init-work
     query: text ~ "init"
+${conditionsBlock('text ~ "init"')}
     sort:
       - field: key
         direction: asc
@@ -56,6 +75,7 @@ queries:
   - id: 01HQ000000000000000000000Z
     name: all
     query: archived != true
+${conditionsBlock("archived != true")}
 `;
     const config = parseQueriesConfig(yaml);
     expect(config.queries[0]?.sort).toBeUndefined();
@@ -115,6 +135,7 @@ queries:
   - id: 01HQ000000000000000000000Y
     name: broken
     query: "status =="
+${conditionsBlock("status = x")}
 `;
       // @verifies VUE-22
       const config = parseQueriesConfig(yaml);
@@ -138,9 +159,11 @@ queries:
   - id: 01HQ00000000000000000000OK
     name: ok
     query: status = backlog
+${conditionsBlock("status = backlog")}
   - id: 01HQ0000000000000000000BAD
     name: broken
     query: "status = = done"
+${conditionsBlock("status = x")}
 `;
       // @verifies VUE-22
       const config = parseQueriesConfig(yaml);
@@ -165,9 +188,11 @@ queries:
   - id: 01HQ00000000000000000000OK
     name: ok
     query: status = backlog
+${conditionsBlock("status = backlog")}
   - id: 01HQ0000000000000000000BAD
     name: broken
     query: "status = = done"
+${conditionsBlock("status = x")}
 `;
       const config = parseQueriesConfig(yaml);
       const serialized = serializeQueriesConfig(config);
@@ -193,9 +218,11 @@ queries:
   - id: 01HQ00000000000000000000OK
     name: ok
     query: status = backlog
+${conditionsBlock("status = backlog")}
   - id: 01HQ0000000000000000000BAD
     name: broken
     query: "status = = done"
+${conditionsBlock("status = x")}
     archived: true
     sort:
       - field: created_at
@@ -233,9 +260,11 @@ queries:
   - id: 01HQ000000000000000000DUPE
     name: a
     query: status = backlog
+${conditionsBlock("status = backlog")}
   - id: 01HQ000000000000000000DUPE
     name: b
     query: "status =="
+${conditionsBlock("status = x")}
 `;
       expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
       expect(() => parseQueriesConfig(yaml)).toThrow(/duplicate query id/);
@@ -254,6 +283,7 @@ queries:
   - id: 01HX0000000000000000000001
     name: sprint-12-timeline
     query: sprint = S-12
+${conditionsBlock("sprint = S-12")}
     display:
       mode: timeline
       zoom: month
@@ -274,6 +304,7 @@ queries:
   - id: 01HX0000000000000000000002
     name: my-bugs
     query: assignee = me and task_type = bug
+${conditionsBlock("assignee = me and task_type = bug")}
     sort:
       - field: priority
         direction: desc
@@ -294,6 +325,7 @@ queries:
   - id: 01HX0000000000000000000003
     name: by-assignee
     query: archived != true
+${conditionsBlock("archived != true")}
     display:
       mode: board
       group_by: assignee
@@ -310,6 +342,7 @@ queries:
   - id: 01HX0000000000000000000004
     name: plain
     query: archived != true
+${conditionsBlock("archived != true")}
 `;
       const config = parseQueriesConfig(yaml);
       expect(config.queries[0]?.display).toBeUndefined();
@@ -321,6 +354,7 @@ queries:
   - id: 01HX0000000000000000000006
     name: rt
     query: archived != true
+${conditionsBlock("archived != true")}
     display:
       mode: timeline
       zoom: day
@@ -337,6 +371,7 @@ queries:
   - id: 01HX0000000000000000000005
     name: bad
     query: archived != true
+${conditionsBlock("archived != true")}
     display:
       mode: list
       unknown_key: foo

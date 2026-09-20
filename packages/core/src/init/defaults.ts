@@ -1,6 +1,9 @@
+import type { BuilderTree, SavedQuery } from "@loctt/contracts";
 import { ulid } from "ulid";
 
+import { serializeQueriesConfig } from "../config/queries.js";
 import { slugifyName } from "../projects/slug.js";
+import { queryToConditions } from "../query/builderTree.js";
 
 /**
  * Default workflow.yaml content seeded on `loctt init`.
@@ -109,27 +112,48 @@ timeline:
 `;
 }
 
+/**
+ * Derive the structured `conditions` for a seeded view from its DSL. The
+ * DSL is the authored intent; `conditions` are generated from it (and, via
+ * `serializeQueriesConfig`, the written `query` is re-derived from the
+ * conditions — so the two are guaranteed to agree). A parse failure here
+ * is a bug in the seed DSL, not user input, so it throws.
+ *
+ * The `blocked` view uses `has_link("is_blocked_by")`, which the extended
+ * BuilderTree represents structurally — this is what proves the extension.
+ */
+function seedConditions(dsl: string): BuilderTree {
+  const res = queryToConditions(dsl);
+  if (!res.ok) {
+    throw new Error(`default view DSL does not parse: ${dsl} — ${res.reason}`);
+  }
+  return res.tree;
+}
+
 /** Default queries.yaml content. */
 export function defaultQueriesYaml(): string {
-  const id1 = ulid();
-  const id2 = ulid();
-  return `queries:
-  - id: ${id1}
-    name: recent-open
-    query: archived != true and status != done
-    sort:
-      - field: updated_at
-        direction: desc
-
-  - id: ${id2}
-    name: blocked
-    query: archived != true and has_link("is_blocked_by")
-    sort:
-      - field: priority
-        direction: desc
-      - field: updated_at
-        direction: desc
-`;
+  const recentOpenDsl = "archived != true and status != done";
+  const blockedDsl = 'archived != true and has_link("is_blocked_by")';
+  const queries: SavedQuery[] = [
+    {
+      id: ulid(),
+      name: "recent-open",
+      query: recentOpenDsl,
+      conditions: seedConditions(recentOpenDsl),
+      sort: [{ field: "updated_at", direction: "desc" }],
+    },
+    {
+      id: ulid(),
+      name: "blocked",
+      query: blockedDsl,
+      conditions: seedConditions(blockedDsl),
+      sort: [
+        { field: "priority", direction: "desc" },
+        { field: "updated_at", direction: "desc" },
+      ],
+    },
+  ];
+  return serializeQueriesConfig({ queries });
 }
 
 /**

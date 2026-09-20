@@ -316,6 +316,10 @@ function BuilderMode({
  */
 function hasIncompleteLeaf(tree: BuilderTree): boolean {
   if (tree.kind === "group") return tree.children.some(hasIncompleteLeaf);
+  // `not`/`has_link` are stored-conditions node kinds the visual builder
+  // never produces (queryToBuilderTree refuses them), so they cannot be
+  // "incomplete" here — only a `leaf` carries an editable value.
+  if (tree.kind !== "leaf") return false;
   const v = tree.value;
   switch (v.type) {
     case "empty":

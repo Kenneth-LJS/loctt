@@ -60,7 +60,7 @@ export type QueryValue =
   // K80: a date function — `now()`, `startOf/endOf Day/Week/Month`, with
   // an optional signed offset (`endOfWeek("+1w")`). Resolved against the
   // evaluator's clock (`ctx.today`/`ctx.now`) and `ctx.weekStartsOn`.
-  | { type: "date_fn"; fn: DateFn; offset?: DateOffset }
+  | { type: "date_fn"; fn: DateFn; offset?: DateOffset | undefined }
   | { type: "list"; values: readonly QueryValue[] }
   // K77: the RHS placeholder for `is empty` / `is not empty`, which take
   // no value. Kept in the value union so a comparison node is uniform.
