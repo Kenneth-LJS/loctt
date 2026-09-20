@@ -44,6 +44,18 @@ loctt init --prefix WEB --project-label "Web App"
 Use `--prefix` to choose the key prefix for the first project (tasks become
 `WEB-1`, `WEB-2`, …) and `--project-label` to name it.
 
+## Introduce yourself
+
+Create a user and make it the current one:
+
+```bash
+loctt user create "Your Name" --switch
+```
+
+This is who your tasks get assigned to and who your comments are posted as.
+Filters like "assigned to me" and the `currentUser()` query need a current
+user to resolve, so it's worth doing before you start.
+
 ## Then pick a surface
 
 | You want to… | Start here |
