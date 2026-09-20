@@ -685,7 +685,8 @@ export const TOOLS: readonly ToolDef[] = [
         `Deleted ${result.succeeded.length}, failed ${result.failed.length} (bulk_op_id ${result.bulk_op_id})`,
       ];
       for (const f of result.failed) lines.push(`  ${f.taskId}: ${f.error}`);
-      return text(lines.join("\n"));
+      // Any failed ref is an error (parity with the CLI's non-zero exit).
+      return result.failed.length > 0 ? errorResult(lines.join("\n")) : text(lines.join("\n"));
     },
   },
   {
