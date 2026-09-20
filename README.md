@@ -1,8 +1,10 @@
 # LocTT
 
-**Project management that lives in your repo, not on someone else's server.**
+**A task tracker that lives in your repo — driven from the terminal, an AI agent, or a browser.**
 
-An open-source, local-first task tracker — a free **JIRA / Linear / Asana alternative** for personal projects and small teams. Tasks are stored as markdown files in a `.loctt/` directory, right alongside your code. No subscriptions, no vendor lock-in, no accounts to set up. Just your tasks, in your repo, under your control.
+Tasks are plain markdown files in a `.loctt/` directory next to your code. Nothing to sign up for, nothing to host, no lock-in: the data is yours, readable, and versioned alongside the project. An MCP server is built in, so an AI agent can read and write tasks with no integration to wire up.
+
+Open source under MIT. A free, local-first alternative to JIRA, Linear, and Asana for personal projects and small teams.
 
 ## The Problem
 
@@ -31,7 +33,7 @@ That's what LocTT is.
 **Core task management**
 - Tasks with status, priority, type, assignee, reporter, dates, labels, custom fields, and free-form markdown body
 - Configurable workflows — define your own statuses, priorities, task types, and relationship kinds in YAML
-- Directed relationships between tasks (`blocks`, `depends_on`, `parent`, or any custom kind you define)
+- Relationships between tasks (`blocks`, `parent`/`child`, `relates_to`, and more — or any custom kind you define)
 - File attachments per task
 - Activity log — every field change, link, body edit, and archive action is recorded
 - Soft-delete (archive) with restore, plus permanent delete
@@ -47,7 +49,7 @@ That's what LocTT is.
 - Saved views in `queries.yaml` for frequently-used filters
 
 **Three ways to use it**
-- **Web UI** — board and list views in your browser
+- **Web UI** — list, board, and timeline views in your browser
 - **CLI** — fast, scriptable task management from the terminal
 - **MCP server** — AI agents read and manage tasks through structured tools
 
@@ -204,7 +206,7 @@ loctt unset T-1 priority
 Edit the task body (free-form markdown):
 
 ```bash
-loctt body T-1 --set "## Notes\nNeed to check the auth middleware first."
+loctt body T-1 --set "Need to check the auth middleware first."
 ```
 
 ### Link tasks
@@ -256,14 +258,13 @@ Conflicts are handled through automatic 3-way reconciliation — see [docs/user/
 
 ## Configuration
 
-Everything is customizable in `.loctt/config/workflow.yaml`: statuses, priorities, task types, relationships, and custom fields. Saved queries live in `.loctt/config/queries.yaml`.
+Everything is customizable in `.loctt/config/workflow.yaml`: statuses, priorities, task types, relationships, and custom fields. Saved views live in `.loctt/config/queries.yaml`.
 
 ## Documentation
 
 **Start here:**
-- [Concepts](docs/user/common/concepts.md) — how LocTT works, where data lives, and how sharing works
 - [Quick Start](docs/user/quickstart.md) — install, initialize, and walk through the basics
-- [Features](docs/user/features.md) — feature tour with links to each interface (Web UI, MCP, CLI)
+- [Concepts](docs/user/common/concepts.md) — how LocTT works, where data lives, and how sharing works
 
 **By interface:**
 - [Features](docs/user/features.md) — what LocTT does, and which interfaces support each capability
