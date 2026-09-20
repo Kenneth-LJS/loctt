@@ -97,3 +97,6 @@ The configurability matters because LocTT isn't trying to impose someone else's 
 - [Configuration](configuration.md) — customizing the workflow
 - [Git Sync](git-sync.md) — details of the sync model
 - [Query Language](query-language.md) — filtering tasks
+- [Recovery & health](recovery.md) — undo, lost tasks, hand-editing, `doctor`
+- [Data portability](data-portability.md) — reading and exporting your data
+- [Upgrading & migrations](upgrading.md) — updating safely

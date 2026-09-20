@@ -75,6 +75,24 @@ task_types:
 
 Task types are lightweight labels. There's no behavioral difference between them — they're for filtering and organization.
 
+## Estimation
+
+A task can carry an `estimate`. Estimation is on by default; the unit and label are configured under the `estimation` block (Settings → Workflow → Estimation in the UI):
+
+```yaml
+estimation:
+  enabled: true
+  unit: points        # points | hours | days | custom_numeric | custom_enum
+  unit_label: pts     # display suffix; required for the custom_* units
+  scale: free         # free | linear | fibonacci
+```
+
+- **`enabled: false`** hides the Estimate field everywhere (task detail, the create dialog, the list column).
+- **`unit`** sets what the numbers mean; `unit_label` is the suffix shown beside them.
+- **`custom_enum`** takes a `preset_values` list (e.g. `S, M, L, XL`) instead of raw numbers, and an optional `weights` map for weighted burndown.
+
+The `estimate` value itself is **free-form** — LocTT stores whatever you enter and does not check it against the unit or scale. Sprint [burndown](../cli/reference.md#sprints) sums numeric estimates for its chart; a value it can't read as a number simply counts as zero there, so keep estimates in the unit you configured.
+
 ## Relationships
 
 This is what `loctt init` creates:

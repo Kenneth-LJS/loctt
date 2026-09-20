@@ -73,10 +73,20 @@ For the concepts behind the features:
 - **Attachments from an agent are confined to the tracker.** The
   `attach_file` MCP tool only accepts a path inside the tracker root, so an
   agent can't reach out to arbitrary files on the machine. See
-  [Agent setup](mcp/agent-setup.md) for the security posture.
+  [Agent setup](mcp/agent-setup.md) for how to control an agent.
 - **Global search is a query.** The web UI's header search is the query
   `text ~ "your terms"` — the same [query language](common/query-language.md)
   the filter bar and `loctt list --query` use.
 - **A CSV or JSON export is a report, not a backup.** Use the backup tools
   (`loctt backup` / the `backup` MCP tool / Settings → Backup & restore) to
   capture something you can restore from.
+
+## Scale
+
+LocTT holds every task as a file and reads them into memory to answer a
+query, so it is built for the hundreds-to-low-thousands of tasks a personal
+project or small team accumulates, not for a corpus of tens of thousands.
+There's no artificial task limit; the practical ceiling is how fast your
+disk reads the files. A few concrete caps: an attachment is up to 50 MB, and
+a bulk change (from the CLI or an agent) touches up to 500 tasks per call.
+
