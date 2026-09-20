@@ -75,7 +75,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "disable_git",
-    description: "Disables git-backed mode for this tracker. Local task data is preserved.",
+    description: "Disables git-backed mode for this tracker by clearing the enabled flag; the branch, remote, and last-sync configuration are kept so re-enabling resumes where it left off, and the loctt branch and its commits are left in place. Local task data is preserved. Refused if git-backed mode is not currently enabled.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       await disableGit(locttDir);

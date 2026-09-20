@@ -318,8 +318,9 @@ export const TOOLS: readonly ToolDef[] = [
       + "column set, formula-injection escaping and array handling come from "
       + "core, so the output matches the web download for the same rows. This "
       + "is a report for a spreadsheet, not a backup — it cannot restore (use "
-      + "the `backup` tool for that). Tasks that cannot be read are named in an "
-      + "`unreadable` field rather than silently dropped.",
+      + "the `backup` tool for that). The output is raw CSV/JSON text; tasks "
+      + "that cannot be read are named in a `Warning:` line prepended to that "
+      + "text rather than silently dropped.",
     inputSchema: {
       format: z.enum(["csv", "json"]).optional().describe("Output format (default csv)."),
       query: z.string().optional().describe("Ad hoc query string, as in list_tasks."),
@@ -404,10 +405,10 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_task",
-    description: "Create a new task. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the workspace default (or the only project) is used.",
+    description: "Create a new task and allocate its key under the resolved project. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the workspace default (or the only project) is used. Enum fields (status, priority, task_type) are validated against workflow.yaml before anything is written — an unknown key is rejected with the valid keys listed. Referencing an archived milestone, sprint, label, or user is refused by the archived-reference guard. Pass `parent` to pre-link the task under the tree axis in the same operation.",
     inputSchema: {
       title: z.string(),
-      project: z.string().optional().describe("Project key (slug). Optional when a default project is configured or only one project exists."),
+      project: z.string().optional().describe("Project slug, id, or name. Optional when a default project is configured or only one project exists."),
       status: z.string().optional(),
       priority: z.string().optional(),
       task_type: z.string().optional(),
