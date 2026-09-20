@@ -404,19 +404,8 @@ export function ListView() {
     const key = takeOpenedTask();
     if (key === null) return;
     // Do not fight a focus the user has already placed since arriving
-    // back on the list — but the generic route-change focus move IS the
-    // thing this restore refines. `useRouteAnnouncement` (A11Y-45) lands
-    // focus on the `#main-content` pane on every route change, including
-    // the return to `/list`; that is a default landing spot, not a
-    // deliberate placement, so restoring the opened row over it is the
-    // more specific correct behaviour (A11Y-9 bullet 5). Body and that
-    // pane are both "nobody chose this"; anything else the user chose.
-    const active = document.activeElement;
-    const isDefaultLanding =
-      active === null
-      || active === document.body
-      || (active instanceof HTMLElement && active.id === "main-content");
-    if (!isDefaultLanding) return;
+    // back on the list.
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
     const anchor = table.querySelector<HTMLElement>(
       `[data-task-key="${escapeTaskKey(key)}"]`,
     );
@@ -730,6 +719,8 @@ export function ListView() {
           in the middle of nowhere"). They are passed in as props so the bar
           controls their layout without re-deriving the tasks feed. */}
       <FilterBar
+        onRefresh={() => { void tasks.refetch(); }}
+        refreshBusy={tasks.isFetching}
         exportTotal={total}
         exportQueryString={buildQueryString(params)}
       />
@@ -1111,10 +1102,39 @@ export function ListView() {
           a screen reader or a test's `getByText`. */}
       {isNarrow && (
       <ul className="flex flex-col gap-2 sm:hidden" data-testid="task-cards">
-        {items.length === 0 ? (
+        {queryFailed ? (
+          // Parity with the desktop table (ERR-1): a failed /api/tasks
+          // must read as "could not load", never fall through to the
+          // empty copy below. Without this branch a phone showed
+          // "No tasks match these filters." for a server that was down —
+          // the exact data-loss confusion the table already guards. Same
+          // latched error and Retry the table uses.
+          <li data-testid="task-cards-error">
+            <ErrorState
+              error={lastQueryError.current}
+              context="Could not load tasks"
+              onRetry={() => { void tasks.refetch(); }}
+            />
+          </li>
+        ) : tasks.isLoading ? (
+          // A load in progress shows placeholders, not the empty state
+          // (ONB-12). Card-shaped to match the rows they stand in for;
+          // capped like the table so a large page size does not paint
+          // a wall of placeholders.
+          <SkeletonCards rows={Math.min(params.limit ?? DEFAULT_LIST_LIMIT, 25)} />
+        ) : items.length === 0 ? (
           <li className="rounded-md border border-border-subtle bg-bg-surface px-3 py-8 text-center text-text-tertiary">
             {hasFilters ? (
-              "No tasks match these filters."
+              <>
+                No tasks match these filters.{" "}
+                <button
+                  type="button"
+                  onClick={() => void navigate({ search: clearedSearch })}
+                  className="underline underline-offset-2 hover:text-text-primary"
+                >
+                  Clear filters
+                </button>
+              </>
             ) : (
               <div className="flex flex-col items-center gap-3">
                 <span>No tasks yet. Create your first one to get started.</span>
@@ -1447,6 +1467,30 @@ function Cell({
     default:
       return <Dash />;
   }
+}
+
+/**
+ * The mobile counterpart of {@link SkeletonRows}: a placeholder card per
+ * pending row, so the narrow layout shows a load-in-progress rather than
+ * the empty state (ONB-12 parity with the table).
+ */
+function SkeletonCards({ rows }: { rows: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, r) => (
+        <li
+          key={r}
+          aria-hidden
+          data-testid="task-card-skeleton"
+          className="rounded-md border border-border-subtle bg-bg-surface p-3"
+        >
+          <span className="block h-3 w-16 animate-pulse rounded bg-bg-muted" />
+          <span className="mt-2 block h-3.5 w-3/4 animate-pulse rounded bg-bg-muted" />
+          <span className="mt-2 block h-3 w-1/2 animate-pulse rounded bg-bg-muted" />
+        </li>
+      ))}
+    </>
+  );
 }
 
 function SkeletonRows({ columns, rows }: { columns: number; rows: number }) {

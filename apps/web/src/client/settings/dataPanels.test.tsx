@@ -248,6 +248,31 @@ describe("LabelsPanel", () => {
   });
 
   /**
+   * @verifies ERR-13
+   *
+   * Before the fix the archive toggle had no error path (mirroring the
+   * MilestonesPanel bug-3): a failed POST /api/labels/:id/archive read as
+   * done while nothing changed on disk. Red-proven — without the
+   * `archive.isError` Callout this row does not render.
+   */
+  it("surfaces a failed archive on the row rather than swallowing it", async () => {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> =>
+      Promise.resolve(
+        String(url).includes("/api/labels/L1/archive")
+          ? jsonResponse({ message: "could not write labels.yaml", code: "rejected_write" }, 500)
+          : jsonResponse(twoLabels),
+      ),
+    );
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    openRowAction(screen.getByTestId("label-row-L1"), "label-archive-toggle");
+
+    const err = await screen.findByTestId("label-archive-error");
+    expect(err.textContent).toContain("could not write");
+  });
+
+  /**
    * DEG-30 / UX-13: a label whose stored fields do not validate is lifted
    * by the tolerant loader into the response's `broken` array. The panel
    * must show it as a marked, disabled error row naming the id and the

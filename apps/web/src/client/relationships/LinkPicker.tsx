@@ -189,6 +189,43 @@ export function LinkPicker({
               </button>
             </li>
           ))}
+          {/* A search in flight with nothing yet to show. Announced
+              (role=status) so a screen-reader user hears the picker is
+              working rather than a silent blank void between keystroke
+              and results (ERR/announcement gap). Only while the first
+              page for this query is loading — a refetch over existing
+              hits keeps those on screen. */}
+          {results.isFetching && results.data === undefined && (
+            <li
+              role="status"
+              data-testid="link-searching"
+              className="px-2 py-1.5 text-[0.9286rem] text-text-tertiary"
+            >
+              Searching…
+            </li>
+          )}
+          {/* The search request itself failed — distinct from "no task
+              matches", which is a successful empty result. Says what
+              broke and offers the repeatable action, rather than reading
+              as "nothing found" and sending the user hunting for a typo
+              (ERR-1). */}
+          {results.isError && results.data === undefined && (
+            <li
+              role="alert"
+              data-testid="link-search-error"
+              className="px-2 py-1.5 text-[0.9286rem] text-danger-fg"
+            >
+              Could not search for tasks.{" "}
+              <button
+                type="button"
+                data-testid="link-search-retry"
+                onClick={() => { void results.refetch(); }}
+                className="underline underline-offset-2 hover:text-text-primary"
+              >
+                Try again
+              </button>
+            </li>
+          )}
           {results.isSuccess && results.data.length === 0 && (
             <li
               data-testid="link-no-results"

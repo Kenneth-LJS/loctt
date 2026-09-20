@@ -207,9 +207,19 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
       </div>
 
       {save.isError ? (
-        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
-          The layout was not saved. The list shows your last saved layout.
-        </p>
+        // ErrorState standard: the server's reason + a Retry that re-sends
+        // the last write, replacing a generic line with no recovery. The
+        // write is rolled back on failure (BRD-47), so the list already
+        // shows the last saved layout; the context says so.
+        <div className="mt-4" data-testid="card-layout-save-error">
+          <ErrorState
+            error={save.error}
+            context="The layout was not saved — the list shows your last saved layout"
+            {...(save.variables !== undefined
+              ? { onRetry: () => { save.mutate(save.variables); } }
+              : {})}
+          />
+        </div>
       ) : null}
     </div>
   );

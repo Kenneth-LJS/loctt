@@ -180,4 +180,48 @@ describe("PreferencesPanel", () => {
     expect(link).not.toBeNull();
     expect(link.getAttribute("href")).toContain("/settings/projects");
   });
+
+  // A failed save carries the server's reason + a Retry (the ErrorState
+  // standard), not a canned "not saved" line with no recovery. Red-proven:
+  // the pre-fix panel showed a fixed string and had no Retry.
+  it("shows the server message and a Retry when the save fails", async () => {
+    const { fireEvent, within } = await import("@testing-library/react");
+    SETTINGS = { default_project: "p_backend" };
+    // Fail PUTs; reads still succeed.
+    vi.stubGlobal("fetch", vi.fn((input: unknown, init?: RequestInit) => {
+      const path = String(input).replace(/^https?:\/\/[^/]+/, "");
+      if (path.startsWith("/api/user-settings") && init?.method === "PUT") {
+        return Promise.resolve(new Response(
+          JSON.stringify({ message: "settings.yaml is read-only", code: "rejected_write" }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        ));
+      }
+      if (path.startsWith("/api/user-settings")) {
+        return Promise.resolve(new Response(JSON.stringify({ user: "u1", settings: SETTINGS }), {
+          status: 200, headers: { "content-type": "application/json" },
+        }));
+      }
+      if (path.startsWith("/api/projects")) {
+        return Promise.resolve(new Response(
+          JSON.stringify({ items: PROJECTS, total: PROJECTS.length, offset: 0, limit: 1000 }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ items: [], total: 0, offset: 0, limit: 1000 }), {
+        status: 200, headers: { "content-type": "application/json" },
+      }));
+    }));
+    renderPanel();
+
+    (await screen.findByTestId("theme-dark")).click();
+
+    const host = await screen.findByTestId("preferences-save-error");
+    expect(host.textContent).toContain("read-only");
+    expect(within(host).getByRole("button", { name: "Retry" })).toBeTruthy();
+    const before = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    fireEvent.click(within(host).getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
+    });
+  });
 });

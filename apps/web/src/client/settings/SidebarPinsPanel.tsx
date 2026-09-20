@@ -267,15 +267,33 @@ function PinsEditor({
       ) : null}
 
       {deleteView.isError ? (
-        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
-          The view was not deleted. It is still among your saved views.
-        </p>
+        // ErrorState standard: the server's reason + a Retry that re-sends
+        // the delete, rather than a bare line. The view is still present,
+        // as the context says.
+        <div className="mt-4" data-testid="sidebar-pins-delete-error">
+          <ErrorState
+            error={deleteView.error}
+            context="The view was not deleted — it is still among your saved views"
+            {...(deleteView.variables !== undefined
+              ? { onRetry: () => { deleteView.mutate(deleteView.variables); } }
+              : {})}
+          />
+        </div>
       ) : null}
 
       {save.isError ? (
-        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
-          Your pins were not saved. The list shows your last saved order.
-        </p>
+        // ErrorState standard: the server's reason + a Retry that re-sends
+        // the last write. The write is rolled back on failure, so the list
+        // already shows the last saved order; the context says so.
+        <div className="mt-4" data-testid="sidebar-pins-save-error">
+          <ErrorState
+            error={save.error}
+            context="Your pins were not saved — the list shows your last saved order"
+            {...(save.variables !== undefined
+              ? { onRetry: () => { save.mutate(save.variables); } }
+              : {})}
+          />
+        </div>
       ) : null}
     </div>
   );

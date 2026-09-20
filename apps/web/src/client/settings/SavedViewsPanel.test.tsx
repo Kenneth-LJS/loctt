@@ -191,6 +191,65 @@ describe("SavedViewsPanel — delete / archive (VUE-38)", () => {
   });
 });
 
+describe("SavedViewsPanel — failed archive / delete are surfaced (ERR-13)", () => {
+  // Before the fix the archive/unarchive/permanent-delete mutations had no
+  // onError: a failed archive read as done, and a failed delete just left
+  // the confirm dialog open with no word of why. Both are red-proven —
+  // without the error props these testids/messages do not render.
+
+  // @verifies ERR-13
+  it("a failed permanent delete shows the reason inside the confirm dialog", async () => {
+    fetchMock.mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.includes("/api/query/validate")) return Promise.resolve(jsonResponse({ valid: true }));
+      if (u.includes("/api/views/") && (init as RequestInit | undefined)?.method === "DELETE") {
+        return Promise.resolve(
+          jsonResponse({ message: "queries.yaml is read-only", code: "rejected_write" }, 500),
+        );
+      }
+      return Promise.resolve(jsonResponse(ONE_VIEW));
+    });
+
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("saved-views-list");
+
+    fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    fireEvent.click(screen.getByTestId("view-delete-confirm"));
+
+    // The failure is shown in the dialog, not swallowed by a confirm that
+    // just closes.
+    const err = await screen.findByTestId("confirm-dialog-error");
+    expect(err.textContent).toContain("read-only");
+    // Dialog stays open (it only closes onSuccess).
+    expect(screen.getByTestId("view-delete-dialog")).toBeTruthy();
+  });
+
+  // @verifies ERR-13
+  it("a failed archive is surfaced on the row rather than read as done", async () => {
+    fetchMock.mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.includes("/api/query/validate")) return Promise.resolve(jsonResponse({ valid: true }));
+      // Archive is a soft DELETE (?soft=true) — fail it.
+      if (u.includes("/api/views/") && (init as RequestInit | undefined)?.method === "DELETE") {
+        return Promise.resolve(
+          jsonResponse({ message: "could not write queries.yaml", code: "rejected_write" }, 500),
+        );
+      }
+      return Promise.resolve(jsonResponse(ONE_VIEW));
+    });
+
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("saved-views-list");
+
+    fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
+    fireEvent.click(screen.getByTestId("view-archive"));
+
+    const err = await screen.findByTestId("view-archive-error");
+    expect(err.textContent).toContain("could not write");
+  });
+});
+
 describe("SavedViewsPanel — edit (VUE-41)", () => {
   // @verifies VUE-41
   it("opens a builder-first edit dialog seeded from conditions and PUTs conditions", async () => {

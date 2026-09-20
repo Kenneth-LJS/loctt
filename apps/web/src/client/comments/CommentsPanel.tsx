@@ -12,6 +12,7 @@ import {
 } from "../api/hooks/useComments.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
 import { Button } from "../ui/Button.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { uploadAsEmbeds } from "./commentAttachments.ts";
 import { CommentComposer } from "./CommentComposer.tsx";
 import { CommentItem } from "./CommentItem.tsx";
@@ -118,10 +119,13 @@ export function CommentsPanel({
   }, []);
 
   if (comments.isPending) {
+    // LoadingState carries role="status" + aria-busy, so the load is
+    // announced — the bare <p aria-busy> was silent to a screen reader
+    // (design-review §A3). Inline treatment preserved via className.
     return (
-      <p aria-busy="true" className="text-[0.9286rem] text-text-tertiary">
+      <LoadingState className="text-[0.9286rem] text-text-tertiary">
         Loading comments…
-      </p>
+      </LoadingState>
     );
   }
 

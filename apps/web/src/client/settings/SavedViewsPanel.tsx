@@ -6,6 +6,7 @@ import { apiClient,ApiError } from "../api/client.ts";
 import { useViews } from "../api/hooks/sidebarData.ts";
 import { useDeleteView } from "../api/hooks/useDeleteView.ts";
 import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
 import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
@@ -119,11 +120,35 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
               filters are unchanged.
             </>
           }
+          // Before this the permanent-delete mutation had no error path:
+          // a failed DELETE just left the dialog open with no word of why
+          // (the confirm only closes onSuccess). Surface it in the dialog,
+          // mirroring RemapDeleteDialog, so a swallowed failure is shown.
+          error={del.isError
+            ? (del.error instanceof ApiError ? del.error.message : "The view could not be deleted.")
+            : undefined}
           onConfirm={() => {
+            del.reset();
             del.mutate({ id: view.id }, { onSuccess: () => { setConfirming(false); } });
           }}
-          onCancel={() => { setConfirming(false); }}
+          onCancel={() => { del.reset(); setConfirming(false); }}
         />
+      )}
+
+      {/* Archive (soft delete) and unarchive are kebab actions with no
+          dialog — a failure had nowhere to show and read as done while
+          nothing changed on disk (mirrors MilestonesPanel's bug-3 fix).
+          Surface it inline on the row. `basis-full` drops it to its own
+          line under the flex row. */}
+      {del.isError && !confirming && (
+        <Callout tone="danger" role="alert" testId="view-archive-error" className="basis-full">
+          {del.error instanceof ApiError ? del.error.message : "The view could not be archived."}
+        </Callout>
+      )}
+      {unarchive.isError && (
+        <Callout tone="danger" role="alert" testId="view-unarchive-error" className="basis-full">
+          {unarchive.error instanceof ApiError ? unarchive.error.message : "The view could not be unarchived."}
+        </Callout>
       )}
     </li>
   );

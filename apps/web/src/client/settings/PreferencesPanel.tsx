@@ -225,9 +225,21 @@ export function PreferencesPanel() {
       </section>
 
       {save.isError ? (
-        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
-          Your preferences were not saved. The last saved values are shown.
-        </p>
+        // Was a generic "not saved" line that dropped the server's own
+        // reason and offered no way to try again. ErrorState carries the
+        // server message + Retry (re-sends the last write) — the standard
+        // the rest of the app holds. The write is optimistic and rolled
+        // back on failure, so the panel is already showing the last saved
+        // values; the context line says so.
+        <div className="mt-4" data-testid="preferences-save-error">
+          <ErrorState
+            error={save.error}
+            context="Your preferences were not saved — the last saved values are shown"
+            {...(save.variables !== undefined
+              ? { onRetry: () => { save.mutate(save.variables); } }
+              : {})}
+          />
+        </div>
       ) : null}
     </div>
   );

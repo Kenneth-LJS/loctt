@@ -8,6 +8,7 @@ import {
   useDeleteLabel,
 } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { LabelEditDialog } from "./LabelEditDialog.tsx";
@@ -101,11 +102,20 @@ function LabelRow({ label, count, allLabels }: {
             label: archived ? "Unarchive" : "Archive",
             testId: "label-archive-toggle",
             disabled: archive.isPending,
-            onSelect: () => { archive.mutate({ id: label.id, archived: !archived }); },
+            onSelect: () => { archive.reset(); archive.mutate({ id: label.id, archived: !archived }); },
           },
           { label: "Delete", testId: "label-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
         ]}
       />
+
+      {/* An archive/unarchive that fails must say so — the toggle used to
+          swallow the error and read as done while nothing changed on disk
+          (mirrors MilestonesPanel's bug-3 fix). */}
+      {archive.isError && (
+        <Callout tone="danger" role="alert" testId="label-archive-error" className="basis-full">
+          {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
+        </Callout>
+      )}
 
       {editing && (
         <LabelEditDialog

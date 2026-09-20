@@ -693,6 +693,120 @@ describe("ListView pagination", () => {
   });
 });
 
+/**
+ * Mobile (< sm) card layout: loading and error branches.
+ *
+ * The desktop `<table>` had a three-way split (skeleton / ErrorState /
+ * empty), but the narrow `<ul>` card layout rendered results with NO
+ * loading and NO error branch — a failed initial fetch fell straight
+ * through to "No tasks match these filters" / "No tasks yet", which reads
+ * as data loss on a phone (ERR-1). These assert the card layout now
+ * matches the table's handling. Both are red-proven: on the pre-fix code
+ * the empty copy rendered and neither the error nor the skeleton existed.
+ */
+describe("ListView mobile card layout — loading and error", () => {
+  const NARROW = 375;
+
+  // This describe sits outside the top `describe("ListView")`; make its
+  // cleanup explicit so a mounted tree never straddles into the next test.
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  async function atNarrow(fn: () => Promise<void>): Promise<void> {
+    const original = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: NARROW });
+    try {
+      await fn();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
+  }
+
+  // A tasks stub whose /api/tasks response is controlled by `tasksResult`
+  // (a rejected promise for the error case, a never-settling promise for
+  // the loading case); config requests resolve normally so the rest of the
+  // shell mounts.
+  function stubTasks(tasksResult: () => Promise<Response>) {
+    vi.spyOn(globalThis, "fetch").mockImplementation(((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      if (path.startsWith("/api/tasks")) {
+        return tasksResult();
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(routeFetch(path)), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }) as typeof fetch);
+  }
+
+  function mountRaw(initialSearch = "") {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: listSearchSchema,
+      component: WrappedListView,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: [`/list${initialSearch}`] }),
+    });
+    // Return the RTL result so each test scopes its queries to its OWN
+    // container (`within(result.container)`) rather than the whole
+    // document — this describe has no per-test cleanup of its own, and a
+    // document-wide query would otherwise trip over a sibling test's
+    // not-yet-unmounted tree.
+    return render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+  }
+
+  // @verifies ERR-1 (a failed load must not read as an empty list)
+  it("shows the load error, not the empty copy, when the initial fetch fails", async () => {
+    await atNarrow(async () => {
+      // A rejected /api/tasks (offline-style, like the desktop table's
+      // guard) with retry:false, so the error is immediate and
+      // deterministic.
+      // A rejected /api/tasks (offline-style) with retry:false, so the
+      // error is immediate and deterministic — mirrors the desktop table's
+      // guard.
+      stubTasks(() => Promise.reject(new TypeError("Failed to fetch")));
+      const { container } = mountRaw();
+      const view = within(container);
+
+      // The card layout renders the error surface...
+      const errorHost = await view.findByTestId("task-cards-error", undefined, { timeout: 3000 });
+      expect(within(errorHost).getByText("Could not load tasks")).toBeTruthy();
+      // ...and does NOT fall through to either empty message. This is the
+      // pre-fix bug: a down server read as "no tasks".
+      expect(view.queryByText(/No tasks match these filters/i)).toBeNull();
+      expect(view.queryByText(/No tasks yet/i)).toBeNull();
+    });
+  });
+
+  // @verifies ONB-12 (a load in progress shows placeholders, not empty)
+  it("shows a skeleton, not the empty state, while the initial fetch is in flight", async () => {
+    await atNarrow(async () => {
+      // /api/tasks never settles, so the feed stays in its loading state.
+      stubTasks(() => new Promise<Response>(() => { /* never resolves */ }));
+      const { container } = mountRaw();
+      const view = within(container);
+
+      // Placeholder cards appear while loading...
+      expect((await view.findAllByTestId("task-card-skeleton")).length).toBeGreaterThan(0);
+      // ...and the empty copy is NOT shown (the pre-fix bug: loading read
+      // as "no tasks yet").
+      expect(view.queryByText(/No tasks yet/i)).toBeNull();
+      expect(view.queryByText(/No tasks match these filters/i)).toBeNull();
+    });
+  });
+});
+
 // Q4: there is no manual refresh button (removed; freshness is TanStack
 // Query staleTime + focus refetch). The former "ListView manual refresh"
 // block and its XS-3 window-stated-on-the-control assertions went with it.

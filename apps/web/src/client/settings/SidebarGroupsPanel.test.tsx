@@ -112,6 +112,41 @@ describe("SidebarGroupsPanel", () => {
     expect(groups.order).toEqual(expect.arrayContaining(["projects", "labels"]));
   });
 
+  it("shows the server message and a Retry when the save fails", async () => {
+    // The ErrorState standard: the server's reason + a Retry, not a bare
+    // "not saved" line. Red-proven — the pre-fix panel had neither testid
+    // nor a Retry control.
+    const { within } = await import("@testing-library/react");
+    vi.stubGlobal("fetch", vi.fn((input: unknown, init?: RequestInit) => {
+      const path = String(input).replace(/^https?:\/\/[^/]+/, "");
+      if (path.startsWith("/api/user-settings") && init?.method === "PUT") {
+        return Promise.resolve(new Response(
+          JSON.stringify({ message: "settings.yaml is read-only", code: "rejected_write" }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        ));
+      }
+      if (path.startsWith("/api/user-settings")) {
+        return Promise.resolve(new Response(JSON.stringify({ user: "u1", settings: SETTINGS }), {
+          status: 200, headers: { "content-type": "application/json" },
+        }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), {
+        status: 200, headers: { "content-type": "application/json" },
+      }));
+    }));
+    renderPanel();
+    fireEvent.click(await screen.findByTestId("sidebar-group-toggle-labels"));
+
+    const host = await screen.findByTestId("sidebar-groups-save-error");
+    expect(host.textContent).toContain("read-only");
+    expect(within(host).getByRole("button", { name: "Retry" })).toBeTruthy();
+    const before = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    fireEvent.click(within(host).getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
+    });
+  });
+
   it("reset clears the setting entirely", async () => {
     // @verifies SHL-45 — reset returns to the default (absent) setting
     SETTINGS = { sidebar_groups: { hidden: ["labels"] }, theme: "dark" };
