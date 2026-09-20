@@ -93,7 +93,7 @@ The configurability matters because LocTT isn't trying to impose someone else's 
 
 ## Where to go next
 
-- [Getting Started](getting-started.md) — install and first steps
+- [Quick Start](../quickstart.md) — install and first steps
 - [Configuration](configuration.md) — customizing the workflow
 - [Git Sync](git-sync.md) — details of the sync model
 - [Query Language](query-language.md) — filtering tasks

@@ -16,22 +16,45 @@ loctt mcp
 ```
 
 You do not run this yourself day to day — your MCP client launches it.
-Register LocTT in the client's config, run from your project directory:
+Register LocTT in the client's config, pointing `cwd` at the project that
+holds your `.loctt/` tracker.
+
+**Claude Desktop** — in `claude_desktop_config.json` (on macOS,
+`~/Library/Application Support/Claude/`):
 
 ```json
 {
   "mcpServers": {
     "loctt": {
       "command": "loctt",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "cwd": "/path/to/your/project"
     }
   }
 }
 ```
 
+**VS Code (Claude Code extension)** — in your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "loctt": {
+      "command": "loctt",
+      "args": ["mcp"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+```
+
+**Cursor** — via Settings → MCP Servers, or `.cursor/mcp.json`, with the
+same shape.
+
 That is the entire setup. On connect, the agent receives the tool schemas
 and a short set of instructions for using LocTT correctly — you do not
-configure any of that.
+configure any of that. Ask it to "list my tasks" to confirm it is wired
+up.
 
 ## 2. Ask the agent to create a task
 

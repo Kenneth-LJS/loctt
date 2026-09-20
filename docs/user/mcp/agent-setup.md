@@ -1,6 +1,6 @@
 # AI Agent Setup
 
-After [connecting LocTT via MCP](../common/getting-started.md#mcp-setup-ai-agent-integration), your AI agent can create, query, and update tasks using structured tools. But for it to follow your project's specific workflow conventions, you need to give it instructions.
+After [connecting LocTT via MCP](../quickstart-mcp.md), your AI agent can create, query, and update tasks using structured tools. But for it to follow your project's specific workflow conventions, you need to give it instructions.
 
 This guide covers what to put in your agent's instruction file — `CLAUDE.md` for Claude Code, `.cursorrules` for Cursor, or whatever your tool uses.
 
