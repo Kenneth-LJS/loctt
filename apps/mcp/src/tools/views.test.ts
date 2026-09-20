@@ -45,6 +45,44 @@ describe("MCP saved-view management", () => {
     expect(body).toContain(id);
   });
 
+  it("create_view then list_views returns the derived structured `conditions`", async () => {
+    // @verifies Stage-3 MCP parity for structured saved-view conditions.
+    // The agent supplies DSL only; core derives the structured form and
+    // both create_view's return and list_views must surface it, so an
+    // agent introspecting a view sees the same tree the web builder edits.
+    const created = await executeTool(root, "create_view", {
+      name: "membership",
+      query: "status in (backlog, in_progress)",
+    });
+    expect(created.isError).toBeUndefined();
+    const createdView = JSON.parse(created.content[0]?.text ?? "") as {
+      id: string; conditions: unknown;
+    };
+    const expectedConditions = {
+      kind: "leaf",
+      field: "status",
+      op: "in",
+      value: {
+        type: "list",
+        values: [
+          { type: "string", value: "backlog" },
+          { type: "string", value: "in_progress" },
+        ],
+      },
+    };
+    expect(createdView.conditions).toEqual(expectedConditions);
+
+    const list = await executeTool(root, "list_views", {});
+    const entries = JSON.parse(list.content[0]?.text ?? "") as Array<{
+      id: string; conditions?: unknown;
+    }>;
+    const listed = entries.find(e => e.id === createdView.id);
+    expect(listed).toBeDefined();
+    // The parity assertion the red-proof breaks: list_views carries the
+    // structured conditions, not just the DSL string.
+    expect(listed!.conditions).toEqual(expectedConditions);
+  });
+
   it("create_view stores a multi-key sort", async () => {
     const created = await executeTool(root, "create_view", {
       name: "sorted",

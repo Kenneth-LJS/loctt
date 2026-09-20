@@ -21,7 +21,7 @@
 
 import { z } from "zod";
 
-import { QuerySortSchema } from "./query.js";
+import { BuilderTreeSchema, QuerySortSchema } from "./query.js";
 import { WorkflowConfigSchema } from "./workflow.js";
 
 /**
@@ -39,10 +39,25 @@ export type ValidateQueryRequest = z.infer<typeof ValidateQueryRequestSchema>;
 
 /**
  * Body of `POST /api/views`. Mirrors `core/views/manage.CreateViewInput`.
+ *
+ * A view's filter can be supplied two ways, and core (`resolveViewFilter`)
+ * accepts EITHER and derives the other:
+ *
+ * - structured `conditions` (the web builder's path) → core derives the
+ *   spacing-normalized `query` string from it;
+ * - a DSL `query` string (the CLI/MCP raw-DSL path) → core parses it into
+ *   `conditions`, rejecting unparseable DSL.
+ *
+ * Both fields are therefore OPTIONAL at the wire boundary — exactly one is
+ * required, which core enforces (it throws when neither is present). This
+ * one schema is shared by all three surfaces; before, the web server
+ * re-extended a `{name,query,sort}`-only version locally, which was drift
+ * with a good address (Stage-2 flag).
  */
 export const CreateViewRequestSchema = z.object({
   name: z.string().min(1),
-  query: z.string().min(1),
+  query: z.string().min(1).optional(),
+  conditions: BuilderTreeSchema.optional(),
   sort: z.array(QuerySortSchema).optional(),
 }).strict();
 export type CreateViewRequest = z.infer<typeof CreateViewRequestSchema>;
@@ -52,10 +67,15 @@ export type CreateViewRequest = z.infer<typeof CreateViewRequestSchema>;
  *
  * `sort: null` is the explicit "clear sort" signal — distinct from
  * `sort: undefined` (leave unchanged). The schema accepts both.
+ *
+ * As with create, a filter edit may carry structured `conditions` (web) OR
+ * a DSL `query` (CLI/MCP); core derives whichever is absent and leaves the
+ * filter untouched when neither is present.
  */
 export const EditViewRequestSchema = z.object({
   name: z.string().min(1).optional(),
   query: z.string().min(1).optional(),
+  conditions: BuilderTreeSchema.optional(),
   sort: z.array(QuerySortSchema).nullable().optional(),
 }).strict();
 export type EditViewRequest = z.infer<typeof EditViewRequestSchema>;

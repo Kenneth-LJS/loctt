@@ -35,7 +35,7 @@ const SortSchema = z.array(z.object({
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_views",
-    description: "List saved views from queries.yaml. Returns JSON [{id, name, query, sort?, archived?}]. Address a view by `id`, not `name` — names are not unique, and running a view by an ambiguous name fails. Archived views are returned with `archived: true` and are still runnable by id.",
+    description: "List saved views from queries.yaml. Returns JSON [{id, name, query, conditions, sort?, archived?}]. `query` is the DSL string (regenerated, spacing-normalized) and `conditions` is its structured form — the source of truth the query is derived from. Address a view by `id`, not `name` — names are not unique, and running a view by an ambiguous name fails. Archived views are returned with `archived: true` and are still runnable by id.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       let config;
@@ -70,6 +70,10 @@ export const TOOLS: readonly ToolDef[] = [
         id: q.id,
         name: q.name,
         query: q.query,
+        // The structured source of truth, returned alongside `query` for
+        // parity/debuggability: an agent introspecting a view sees the
+        // same conditions the web builder edits, not just the DSL.
+        conditions: q.conditions,
         ...(q.sort !== undefined ? { sort: q.sort } : {}),
         ...(q.archived !== undefined ? { archived: q.archived } : {}),
       }));
@@ -91,8 +95,12 @@ export const TOOLS: readonly ToolDef[] = [
       "user can re-run by name or id. The `query` is a LocTT DSL string (the same " +
       "language `list_tasks` accepts as `query`); it is validated on write, so a " +
       "malformed query is rejected here rather than silently poisoning the catalog. " +
-      "`sort` is optional and orders results. Returns the created view including its " +
-      "generated id — address the view by that id afterward, since names are not unique.",
+      "The view stores a structured `conditions` form derived from the DSL (that " +
+      "is the source of truth); the returned `query` is regenerated from it and is " +
+      "spacing-normalized, so `status=a` comes back as `status = a`. " +
+      "`sort` is optional and orders results. Returns the created view (including its " +
+      "generated id and derived `conditions`) — address the view by that id afterward, " +
+      "since names are not unique.",
     inputSchema: {
       name: z.string().describe("Display label. Need not be unique, but a unique name can be used as a ref."),
       query: z.string().describe("LocTT query DSL, e.g. `status in (backlog, in_progress)`"),
@@ -113,8 +121,10 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "Edit a saved view. `view` accepts an id or a unique name (an ambiguous name is " +
       "rejected — use the id). Any of `name`, `query`, `sort` may be supplied; omitted " +
-      "fields are left unchanged. A new `query` is validated on write. Pass `sort: null` " +
-      "to clear an existing sort (distinct from omitting it, which leaves it as-is).",
+      "fields are left unchanged. A new `query` is validated on write and its structured " +
+      "`conditions` re-derived (the returned `query` is regenerated, spacing-normalized). " +
+      "Pass `sort: null` to clear an existing sort (distinct from omitting it, which " +
+      "leaves it as-is).",
     inputSchema: {
       view: z.string().describe("View id or unique name"),
       name: z.string().optional(),
