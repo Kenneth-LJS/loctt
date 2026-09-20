@@ -498,8 +498,9 @@ function DisabledState({ status, onAdopted }: {
                   <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                     {status.branch}
                   </code>{" "}
-                  branch, published through a temporary worktree so your
-                  working tree and current branch are never switched;
+                  branch and publish to it in the background, so your own
+                  working files and the branch you have checked out are
+                  never touched or switched;
                 </li>
                 <li>
                   publish the tracker&apos;s task and config files to that branch;

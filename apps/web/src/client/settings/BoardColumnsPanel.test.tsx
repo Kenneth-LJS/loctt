@@ -147,7 +147,12 @@ describe("BoardColumnsPanel", () => {
     expect(put.workflow.statuses).toEqual(BASE.statuses);
   });
 
-  it("reset writes an undefined boards block (back to one column per status)", async () => {
+  it("reset writes an undefined boards block (back to one column per status) after confirming", async () => {
+    // NOTE: this test previously asserted the reset PUT fired on a single
+    // click of "board-columns-reset". That was the unsafe one-click
+    // destructive persist this change guards; the test was asserting that
+    // behaviour. Reset now goes through a confirm — the PUT fires only
+    // after "board-columns-reset-confirm-button".
     const { putBodies } = mockWorkflow({
       ...BASE,
       boards: { columns: [{ key: "todo", label: "To do", statuses: ["backlog"] }, { key: "d", label: "Done", statuses: ["done"] }] },
@@ -156,9 +161,45 @@ describe("BoardColumnsPanel", () => {
 
     await screen.findByTestId("board-columns-list");
     fireEvent.click(screen.getByTestId("board-columns-reset"));
+    // The confirm dialog appears; only its confirm button performs the reset.
+    fireEvent.click(await screen.findByTestId("board-columns-reset-confirm-button"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });
     const put = putBodies[0] as { workflow: WorkflowConfig };
     expect(put.workflow.boards).toBeUndefined();
+  });
+
+  // @verifies data-safety: BoardColumns reset needs a confirm (decisions.md §8)
+  it("does not reset without confirming — clicking Reset alone PUTs nothing", async () => {
+    const { putBodies } = mockWorkflow({
+      ...BASE,
+      boards: { columns: [{ key: "todo", label: "To do", statuses: ["backlog"] }, { key: "d", label: "Done", statuses: ["done"] }] },
+    });
+    render(<BoardColumnsPanel />, { wrapper: wrapper() });
+
+    await screen.findByTestId("board-columns-list");
+    fireEvent.click(screen.getByTestId("board-columns-reset"));
+    // The confirm dialog is shown, and nothing has been persisted yet.
+    expect(await screen.findByTestId("board-columns-reset-confirm")).toBeTruthy();
+    expect(putBodies.length).toBe(0);
+  });
+
+  // @verifies data-safety: cancelling the confirm performs no reset
+  it("cancelling the reset confirm performs no reset", async () => {
+    const { putBodies } = mockWorkflow({
+      ...BASE,
+      boards: { columns: [{ key: "todo", label: "To do", statuses: ["backlog"] }, { key: "d", label: "Done", statuses: ["done"] }] },
+    });
+    render(<BoardColumnsPanel />, { wrapper: wrapper() });
+
+    await screen.findByTestId("board-columns-list");
+    fireEvent.click(screen.getByTestId("board-columns-reset"));
+    fireEvent.click(await screen.findByTestId("board-columns-reset-cancel"));
+
+    // The dialog is dismissed and nothing was written.
+    await waitFor(() => {
+      expect(screen.queryByTestId("board-columns-reset-confirm")).toBeNull();
+    });
+    expect(putBodies.length).toBe(0);
   });
 });

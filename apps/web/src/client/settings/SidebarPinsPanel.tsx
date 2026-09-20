@@ -135,8 +135,8 @@ function PinsEditor({
           className="mb-4 rounded-md border border-border-subtle bg-warn-bg px-3 py-2 text-[0.8571rem] text-warn-fg"
         >
           {explained.length === 1
-            ? "A pinned view was removed because it no longer exists in queries.yaml:"
-            : "Pinned views were removed because they no longer exist in queries.yaml:"}
+            ? "A pinned view was removed because it no longer exists in your saved views:"
+            : "Pinned views were removed because they no longer exist in your saved views:"}
           <ul className="mt-1 mb-0 list-disc pl-5">
             {explained.map(id => (
               <li key={id} data-swept-pin={id}>{id}</li>
@@ -252,7 +252,7 @@ function PinsEditor({
 
       {deleteView.isError ? (
         <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
-          The view was not deleted. It is still in queries.yaml.
+          The view was not deleted. It is still among your saved views.
         </p>
       ) : null}
 

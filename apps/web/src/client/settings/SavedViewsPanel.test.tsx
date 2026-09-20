@@ -161,7 +161,7 @@ describe("SavedViewsPanel — delete / archive (VUE-38)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
     fireEvent.click(screen.getByTestId("view-delete"));
-    // Inline confirm appears, then the destructive confirm issues the DELETE.
+    // The shared ConfirmDialog opens; its confirm button issues the DELETE.
     fireEvent.click(screen.getByTestId("view-delete-confirm"));
 
     await waitFor(() => {

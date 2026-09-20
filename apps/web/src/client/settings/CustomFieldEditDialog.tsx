@@ -32,6 +32,21 @@ import {
 
 const TYPES = ["string", "number", "date", "boolean", "enum"] as const;
 
+/**
+ * Human labels for the stored custom-field type keys. Display-only — the
+ * value written to `field.type` is still the raw key, and the type is
+ * locked after creation regardless. The tokens
+ * `string`/`number`/`date`/`boolean`/`enum` leaked verbatim before. See
+ * decisions.md §8.
+ */
+const TYPE_LABEL: Record<CustomFieldType, string> = {
+  string: "Text",
+  number: "Number",
+  date: "Date",
+  boolean: "Yes / No",
+  enum: "Choice list",
+};
+
 interface ValueRow {
   readonly key: string;
   readonly label: string;
@@ -218,7 +233,7 @@ export function CustomFieldEditDialog({
             onChange={e => { setType(e.target.value as CustomFieldType); }}
             aria-label="Field type"
           >
-            {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            {TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
           </Select>
         </label>
 
