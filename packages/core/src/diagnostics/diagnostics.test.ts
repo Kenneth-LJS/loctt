@@ -171,6 +171,45 @@ describe("runDoctor", () => {
     expect(checks.find(c => c.name === "list-view.yaml references")).toBeUndefined();
   });
 
+  it("warns when a saved view had its conditions derived from the query (migrated)", async () => {
+    // Red-proof: before the migration path, loadQueriesConfig threw on a
+    // conditions-less entry and this check reported an error, not a warn.
+    const { writeFile } = await import("node:fs/promises");
+    const { getQueriesConfigPath, resolveLocttDir } = await import("../paths/index.js");
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    // A pre-`conditions` (legacy) entry: query, no conditions block.
+    await writeFile(
+      getQueriesConfigPath(locttDir),
+      `queries:\n  - id: 01HQ00000000000000000LEGACY\n    name: legacy\n    query: status = backlog\n`,
+      "utf-8",
+    );
+    const checks = await runDoctor(root);
+    const q = checks.find(c => c.name === "queries.yaml" && c.status === "warn");
+    expect(q?.message).toContain("derived from their query");
+    expect(q?.message).toContain("legacy");
+    // A migrated view is recoverable, so it must not be an error.
+    expect(checks.find(c => c.name === "queries.yaml" && c.status === "error")).toBeUndefined();
+  });
+
+  it("warns when a saved view is broken (neither query nor conditions usable)", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const { getQueriesConfigPath, resolveLocttDir } = await import("../paths/index.js");
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    await writeFile(
+      getQueriesConfigPath(locttDir),
+      `queries:\n  - id: 01HQ000000000000000DBLBAD\n    name: double-broken\n    query: "status =="\n    conditions:\n      kind: not-a-real-kind\n`,
+      "utf-8",
+    );
+    const checks = await runDoctor(root);
+    const q = checks.find(c => c.name === "queries.yaml" && c.status === "warn");
+    expect(q?.message).toContain("could not be loaded");
+    expect(q?.message).toContain("double-broken");
+    // Per-view degradation: the file loads, so this is not a parse error.
+    expect(checks.find(c => c.name === "queries.yaml" && c.status === "error")).toBeUndefined();
+  });
+
   it("warns on key-index drift after an out-of-band frontmatter edit", async () => {
     const { readFile, writeFile } = await import("node:fs/promises");
     const { resolveLocttDir } = await import("../paths/index.js");

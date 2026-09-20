@@ -11,7 +11,7 @@ import { useMemo } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption, type ComboboxSearch } from "../ui/Combobox.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Select } from "../ui/Select.tsx";
@@ -89,14 +89,43 @@ export interface BuilderField {
    * For `enum`/`entity`/`user` fields: the closed set of choosable
    * values (value = stored key/ULID, label = human). Absent for the
    * free-value kinds (text/date/number/boolean).
+   *
+   * For an `entity`/`user` field with a {@link search}, this is only the
+   * SEED list (the capped initial fetch) — used before the user types and
+   * to keep the current selection's label resolvable; the live candidates
+   * come from `search`.
    */
   readonly options?: readonly ValueOption[];
+  /**
+   * K90: server-side value search for `entity`/`user` fields. When present
+   * the value picker queries the server `?q=` as the user types rather than
+   * filtering the capped {@link options} in memory — so a workspace past the
+   * fetch window (hundreds of users/labels/milestones/sprints, A211) is
+   * searchable, matching the rest of the app (task-meta, FilterDropdown).
+   * Absent for enum fields (a closed config set, never large) and the
+   * free-value kinds. Returns `{ value, label }` rows already mapped, plus
+   * a `disabled`/`suffix` for archived entities so they stay visible but
+   * unselectable (the option mapper carries the same rule the sidebar hooks
+   * apply).
+   */
+  readonly search?: EntitySearch;
 }
 
 export interface ValueOption {
   readonly value: string;
   readonly label: string;
+  /** Present-but-disabled (archived entities), with the reason as a suffix. */
+  readonly disabled?: boolean;
+  readonly suffix?: string;
 }
+
+/**
+ * K90: an imperative entity search. `q` is the trimmed search text (empty
+ * before the user types); resolves to the bounded, already-mapped matches.
+ * Mirrors {@link ComboboxSearch.onQuery}'s contract so it threads straight
+ * through to the value Combobox.
+ */
+export type EntitySearch = (q: string) => Promise<readonly ValueOption[]>;
 
 /**
  * Everything the builder needs to populate its pickers. Step 3 builds
@@ -155,6 +184,20 @@ export function buildBuilderConfig(input: {
   readonly labels: readonly ValueOption[];
   readonly milestones: readonly ValueOption[];
   readonly sprints: readonly ValueOption[];
+  /**
+   * K90: per-entity-type server search. Threaded onto the matching
+   * `entity`/`user` fields so their value pickers query the server as the
+   * user types instead of filtering the capped seed list. Optional — the
+   * step-2 tests and any caller that only has the seed lists omit it, and
+   * the picker falls back to client-side filtering over `options`.
+   */
+  readonly search?: {
+    readonly projects?: EntitySearch;
+    readonly users?: EntitySearch;
+    readonly labels?: EntitySearch;
+    readonly milestones?: EntitySearch;
+    readonly sprints?: EntitySearch;
+  };
 }): BuilderConfig {
   const entityOptions: Record<string, readonly ValueOption[]> = {
     project: input.projects,
@@ -164,6 +207,18 @@ export function buildBuilderConfig(input: {
     labels: input.labels,
     milestone: input.milestones,
     sprint: input.sprints,
+  };
+
+  // The search fn for each entity field, by the SAME field→source mapping
+  // as entityOptions above, so a field's live search matches its seed list.
+  const entitySearch: Record<string, EntitySearch | undefined> = {
+    project: input.search?.projects,
+    assignee: input.search?.users,
+    reporter: input.search?.users,
+    comment_mentions: input.search?.users,
+    labels: input.search?.labels,
+    milestone: input.search?.milestones,
+    sprint: input.search?.sprints,
   };
 
   const enumFields: BuilderField[] = [
@@ -177,7 +232,11 @@ export function buildBuilderConfig(input: {
 
   const builtins: BuilderField[] = BUILTIN_FIELDS.map(f =>
     f.field in entityOptions
-      ? { ...f, options: entityOptions[f.field] ?? [] }
+      ? {
+          ...f,
+          options: entityOptions[f.field] ?? [],
+          ...(entitySearch[f.field] !== undefined ? { search: entitySearch[f.field] } : {}),
+        }
       : { ...f },
   );
 
@@ -278,6 +337,22 @@ function isListOp(op: ComparisonOp): boolean {
 }
 
 // ── Value construction ───────────────────────────────────────────────
+
+/**
+ * Maps a config/search {@link ValueOption} to the value picker's
+ * {@link ComboboxOption}, carrying an archived entity's disabled+suffix so
+ * it stays visible-but-unselectable — the same rule the task-meta pickers'
+ * option mappers apply, so the builder and the rest of the app render an
+ * archived value the same way.
+ */
+function valueOptionToCombobox(o: ValueOption): ComboboxOption {
+  return {
+    key: o.value,
+    label: o.label,
+    ...(o.disabled === true ? { disabled: true } : {}),
+    ...(o.suffix !== undefined ? { suffix: o.suffix } : {}),
+  };
+}
 
 /**
  * The empty/default value for a (field, op) pair — used when the op
@@ -712,6 +787,15 @@ function ValueControl({
   readonly onChange: (v: QueryValue) => void;
 }) {
   const constrained = field?.options; // enum/entity/user closed sets
+  // K90: server-side value search for the entity/user fields that carry
+  // one. Threaded straight into the Combobox's `search` prop, whose
+  // `onQuery` shape this matches: the field's search yields ValueOptions,
+  // which map to ComboboxOptions exactly as the seed `options` do.
+  const entitySearch = field?.search;
+  const search: ComboboxSearch | undefined =
+    entitySearch === undefined
+      ? undefined
+      : { onQuery: q => entitySearch(q).then(rows => rows.map(valueOptionToCombobox)) };
 
   // Multi-value control for in / not in.
   if (isListOp(op)) {
@@ -725,7 +809,9 @@ function ValueControl({
       // multi-value analogue of the single enum picker, so `in (…)` can
       // never name a value the validator rejects. A searchable list, not
       // a wall of checkboxes: a label or user set can run to hundreds
-      // (A211), and the search box appears once it passes the threshold.
+      // (A211). With a `search` the candidates come from the server
+      // (K90 parity); without one, the box appears once the seed list
+      // passes the threshold and filters in memory.
       const toggle = (optValue: string, on: boolean): void => {
         const nextKeys = on
           ? [...selectedKeys, optValue]
@@ -735,7 +821,17 @@ function ValueControl({
           values: nextKeys.map(k => scalarFromString(kind, k)),
         });
       };
-      const options: ComboboxOption[] = constrained.map(o => ({ key: o.value, label: o.label }));
+      // The options the Combobox must always be able to render: in server
+      // mode only the current selections must persist (the rest arrive from
+      // `search`), so a chosen value's label survives even when it is not in
+      // the latest result page. In static mode this is the whole seed list.
+      const options: ComboboxOption[] =
+        search !== undefined
+          ? selectedKeys.map(k => ({
+              key: k,
+              label: constrained.find(o => o.value === k)?.label ?? k,
+            }))
+          : constrained.map(valueOptionToCombobox);
       const chosen = selectedKeys.map(k => constrained.find(o => o.value === k)?.label ?? k);
       const summary =
         chosen.length === 0 ? undefined
@@ -746,6 +842,7 @@ function ValueControl({
           mode="multi"
           label="Values"
           options={options}
+          search={search}
           selected={selectedKeys}
           onToggle={toggle}
           optionTestId={o => `qb-value-opt-${o.key}`}
@@ -791,23 +888,43 @@ function ValueControl({
   // same control and simply never grow a box.
   if (constrained !== undefined) {
     const current = value.type === "current_user" ? "@currentUser" : scalarToString(value);
+    // In server mode the picker's candidates come from `search`; `options`
+    // then carries only what must ALWAYS be present regardless of the query:
+    // the currentUser affordance and the current selection (so its label —
+    // or "(not in config)" note — survives when the latest result page does
+    // not include it, XS-27). In static mode it is the whole seed list.
+    const currentOption =
+      current.length > 0 && current !== "@currentUser"
+        ? {
+            key: current,
+            label:
+              constrained.find(o => o.value === current)?.label ??
+              `${current} (not in config)`,
+          }
+        : undefined;
     const options: ComboboxOption[] = [
       // K80: user fields offer the querying user as a live value.
       ...(kind === "user" ? [{ key: "@currentUser", label: "Current user" }] : []),
-      ...constrained.map(o => ({ key: o.value, label: o.label })),
-      // A stored value outside the current config stays selectable so
-      // it isn't silently dropped (XS-27 precedent).
-      ...(current.length > 0 &&
-        current !== "@currentUser" &&
-        !constrained.some(o => o.value === current)
-        ? [{ key: current, label: `${current} (not in config)` }]
-        : []),
+      ...(search !== undefined
+        ? currentOption !== undefined
+          ? [currentOption]
+          : []
+        : [
+            ...constrained.map(valueOptionToCombobox),
+            // A stored value outside the current config stays selectable so
+            // it isn't silently dropped (XS-27 precedent).
+            ...(currentOption !== undefined &&
+              !constrained.some(o => o.value === current)
+              ? [{ ...currentOption, label: `${current} (not in config)` }]
+              : []),
+          ]),
     ];
     const selected = current.length > 0 ? options.find(o => o.key === current) : undefined;
     return (
       <Combobox
         label="Value"
         options={options}
+        search={search}
         value={selected?.key}
         onSelect={v => {
           if (v === "@currentUser") { onChange({ type: "current_user" }); return; }

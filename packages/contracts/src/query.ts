@@ -253,6 +253,34 @@ export const BrokenSavedQuerySchema = z.object({
 }).strict();
 export type BrokenSavedQuery = z.infer<typeof BrokenSavedQuerySchema>;
 
+/**
+ * A saved view whose stored `conditions` block was ABSENT or malformed
+ * but whose `query` still parses, so the loader DERIVED a fresh
+ * `conditions` tree from the query on load rather than failing the entry.
+ * The entry is otherwise a fully valid `SavedQuery` — it lives in
+ * `QueriesConfig.queries` like any other; this record is only a load-time
+ * diagnostic so a surface (and `loctt doctor`) can tell the user the view
+ * was migrated and will self-heal on the next write.
+ *
+ * Predates the greenfield decision that `conditions` is required (A217–
+ * A219): a `queries.yaml` written before that ruling has `query` but no
+ * `conditions`. Deriving on load (rather than throwing) is the migration
+ * path — the derived conditions persist the next time the file is written
+ * (the serializer already emits `conditions`), so the file self-heals.
+ *
+ * `reason` says WHY it was migrated ("conditions missing" vs the zod
+ * message when a `conditions` block was present but did not validate), and
+ * `index` is the entry's original position in the `queries:` array, so a
+ * message can name `queries[N]` the way the other diagnostics do.
+ */
+export const MigratedSavedQuerySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  reason: z.string().min(1),
+  index: z.number().int().nonnegative(),
+}).strict();
+export type MigratedSavedQuery = z.infer<typeof MigratedSavedQuerySchema>;
+
 export const QueriesConfigSchema = z.object({
   queries: z.array(SavedQuerySchema),
   /**
@@ -262,5 +290,15 @@ export const QueriesConfigSchema = z.object({
    * look". Never written back to disk — it is a load-time diagnostic.
    */
   broken: z.array(BrokenSavedQuerySchema).optional(),
+  /**
+   * Per-entry `conditions` migrations, if any — views whose `conditions`
+   * were derived from their `query` on load because the stored block was
+   * absent or malformed. These entries ARE in `queries` (valid, runnable);
+   * this list is purely so `doctor`/a surface can report "migrated, will
+   * persist on next write". Omitted (not `[]`) when nothing migrated, and
+   * never written back to disk — the derived conditions are written as an
+   * ordinary `conditions` block, so a re-load finds nothing to migrate.
+   */
+  migrated: z.array(MigratedSavedQuerySchema).optional(),
 }).strict();
 export type QueriesConfig = z.infer<typeof QueriesConfigSchema>;

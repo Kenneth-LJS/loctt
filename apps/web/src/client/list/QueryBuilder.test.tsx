@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { type BuilderTree,builderTreeToQuery } from "@loctt/core/query/builderTree.js";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act,cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildBuilderConfig, type BuilderConfig,QueryBuilder } from "./QueryBuilder.tsx";
@@ -296,5 +296,114 @@ describe("QueryBuilder", () => {
     // Picking again un-picks.
     fireEvent.click(screen.getByTestId("qb-value-opt-todo"));
     expect(b.q()).toBe("status in (done)");
+  });
+});
+
+/**
+ * K90 parity (A211, last bullet): the builder's entity value pickers search
+ * the SERVER as the user types, rather than filtering the capped seed list
+ * in memory — so a value outside the initial fetch window is findable and
+ * selectable, matching the rest of the app.
+ *
+ * Red-proof: drop `search` from `buildBuilderConfig` and the picker falls
+ * back to the client-side seed filter — `onQuery` is never called, the
+ * out-of-seed value never renders, and both assertions below go red.
+ */
+describe("QueryBuilder — server-side entity value search (K90)", () => {
+  /** A config whose assignee search returns a user NOT in the seed list. */
+  function serverConfig(onQuery: (q: string) => Promise<readonly { value: string; label: string }[]>) {
+    return buildBuilderConfig({
+      workflow: { statuses: [], priorities: [], task_types: [], custom_fields: [] } as never,
+      projects: [],
+      // Seed is a single user — the capped list. The searched-for user is
+      // deliberately absent from it, so only a server query can surface them.
+      users: [{ value: "u-seed", label: "Seed User" }],
+      labels: [],
+      milestones: [],
+      sprints: [],
+      search: { users: onQuery },
+    });
+  }
+
+  it("queries the server for an entity field and makes an out-of-seed result selectable", async () => {
+    vi.useFakeTimers();
+    const onQuery = vi.fn((q: string): Promise<readonly { value: string; label: string }[]> =>
+      Promise.resolve(
+        q === "zoe" ? [{ value: "u-zoe", label: "Zoe (not in seed)" }] : [],
+      ));
+    try {
+      const b = renderBuilder(EMPTY, serverConfig(onQuery));
+      fireEvent.click(screen.getByTestId("qb-add-condition"));
+      fireEvent.change(nth("qb-field", 0), { target: { value: "assignee" } });
+
+      // Open the value picker. In server mode the search box is ALWAYS
+      // present (the list is by definition too big to fetch whole), even
+      // though the seed list holds a single user.
+      fireEvent.click(nth("qb-value", 0));
+      const search = screen.getByRole("combobox", { name: /search value/i });
+
+      fireEvent.change(search, { target: { value: "zoe" } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+
+      // The server search ran with the typed query…
+      expect(onQuery).toHaveBeenCalledWith("zoe");
+
+      // …and its result — a user the capped seed list never held — is in
+      // the list and selectable, which no client-side filter over the seed
+      // could produce.
+      const list = screen.getByTestId("qb-value-options");
+      fireEvent.click(within(list).getByRole("option", { name: "Zoe (not in seed)" }));
+      expect(b.q()).toBe("assignee = u-zoe");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("threads server search into the `in (…)` multi-value picker too", async () => {
+    vi.useFakeTimers();
+    const onQuery = vi.fn((q: string): Promise<readonly { value: string; label: string }[]> =>
+      Promise.resolve(
+        q === "zoe" ? [{ value: "u-zoe", label: "Zoe (not in seed)" }] : [],
+      ));
+    try {
+      const b = renderBuilder(EMPTY, serverConfig(onQuery));
+      fireEvent.click(screen.getByTestId("qb-add-condition"));
+      fireEvent.change(nth("qb-field", 0), { target: { value: "assignee" } });
+      fireEvent.change(nth("qb-op", 0), { target: { value: "in" } });
+
+      fireEvent.click(nth("qb-value", 0));
+      const search = screen.getByRole("combobox", { name: /search value/i });
+      fireEvent.change(search, { target: { value: "zoe" } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+
+      expect(onQuery).toHaveBeenCalledWith("zoe");
+      fireEvent.click(screen.getByTestId("qb-value-opt-u-zoe"));
+      expect(b.q()).toBe("assignee in (u-zoe)");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves enum fields on the static (client-filtered) picker — no server search", () => {
+    // An enum field has no `search` even when entity search is configured,
+    // so its picker stays the closed-config Select-like Combobox.
+    const onQuery = vi.fn(() => Promise.resolve([]));
+    const config = buildBuilderConfig({
+      workflow: {
+        statuses: [{ key: "todo", label: "To do" }, { key: "done", label: "Done" }],
+        priorities: [], task_types: [], custom_fields: [],
+      } as never,
+      projects: [], users: [], labels: [], milestones: [], sprints: [],
+      search: { users: onQuery, labels: onQuery },
+    });
+    renderBuilder(EMPTY, config);
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+    fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
+
+    fireEvent.click(nth("qb-value", 0));
+    // Two options is a small fixed set: no search box, and nothing queried.
+    const list = screen.getByTestId("qb-value-options");
+    expect(within(list.parentElement as HTMLElement).queryByRole("combobox")).toBeNull();
+    expect(onQuery).not.toHaveBeenCalled();
   });
 });

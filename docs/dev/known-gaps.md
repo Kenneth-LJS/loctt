@@ -179,25 +179,6 @@ re-lands them through the same staged swap. "Overwrite-restore → backup
 `assertBackupContained`. Red-proven in `restore.test.ts` (BAK-C13
 carry).
 
-### A saved view whose `conditions` block is missing/corrupt is object-fatal, not per-field-degraded
-
-Since saved views gained a structured `conditions` tree (Stage 1 of the
-structured-conditions work), `SavedQuerySchema` requires `conditions`. A
-hand-edited `queries.yaml` entry that is missing or has a malformed
-`conditions` block therefore fails schema validation as a whole. A broken
-**DSL `query`** still degrades gracefully to a `BrokenSavedQuery` marker
-(the entry is listed, marked, still clickable), but a broken/missing
-**`conditions`** block does not yet have that per-field degradation — it
-takes the entry out at the object level.
-
-To reproduce: hand-edit a `.loctt/config/queries.yaml` entry to delete its
-`conditions:` key (or make it a non-tree value) and load the tracker. Per
-the corruption-handling guide this should degrade like a bad `query`
-string does (mark the one entry broken, keep the rest), not fail the
-entry's schema. Deferred out of Stage 1 scope; revisit alongside the
-`BrokenSavedQuery` path so both a bad `query` and a bad `conditions`
-degrade identically.
-
 ### A211 · Value pickers over growable sets still on native `Select`/radio/pill controls
 
 A211 standardised the searchable picker (`ui/Combobox`) and migrated the
@@ -234,9 +215,18 @@ control that does not search, and were left because Playwright specs
 - `list/FilterDropdown.tsx` — searchable already (≥12), but on the
   `Menu`/`menuitemcheckbox` model rather than `Combobox`; its option
   lists are the 1000-capped sidebar fetches, not `?q=`.
-- `list/QueryBuilder.tsx` entity values — client-filtered over the same
+- ~~`list/QueryBuilder.tsx` entity values — client-filtered over the same
   capped lists; K90 parity needs `searchUsers`/`searchLabels`/… threaded
-  into `BuilderConfig`.
+  into `BuilderConfig`.~~ — DONE (A241): `BuilderField` grew an optional
+  `search: EntitySearch`; `buildBuilderConfig` accepts a per-entity-type
+  `search` map and threads it onto the matching entity/user fields;
+  `ValueControl` passes it to the value `Combobox`'s `search` prop (both the
+  single picker and the `in (…)` multi picker), so the pickers query the
+  server `?q=` as the user types instead of filtering the seed list.
+  `AdvancedQuerySurface` supplies `searchUsers`/`searchLabels`/
+  `searchMilestones`/`searchSprints`/`searchProjects` from `sidebarData.ts`
+  (the same fns MetaPanel uses). Enum fields keep the static client-filtered
+  picker (a closed config set is never large).
 
 **To fix:** swap each for `Combobox` (`ComboboxButton` trigger, keep the
 testid on the trigger) and update the named specs from `selectOption` to

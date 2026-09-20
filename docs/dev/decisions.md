@@ -15575,6 +15575,66 @@ with the old regex.
 **To revert.** Restore the private `dslAtom` function in `server.ts` and
 drop the `dslAtom` import from the `@loctt/core` block.
 
+### A228 · Saved-view `conditions` migrate-on-load (derive from query) + per-view degradation
+
+**Ticket:** TEMP-TODO "Saved-view `conditions` migration path" + known-gaps
+"conditions block missing/corrupt is object-fatal" · **Date:** 2026-09-20 ·
+**Commit:** (uncommitted; Ken integrates)
+
+**The situation.** A217–A219 made saved views store a required structured
+`conditions` tree (`query` derived from it), chosen greenfield. But
+`queries.yaml` written before that ruling has a `query` and no
+`conditions`, and a hand edit can leave a malformed one. `parseQueriesConfig`
+validated the whole `queries` array with `SavedQuerySchema` (which requires
+`conditions`) up front, so either case rejected the ENTIRE file
+(object-fatal) — bricking an upgrade and violating per-element degradation
+(north-star P5 / corruption-handling guide).
+
+**What had to be decided.**
+- *Where in the load pipeline to repair.* Chosen: a TOLERANT loader schema
+  (`LoaderSavedQuerySchema`: requires id/name/query, validates
+  sort/display/archived strictly, accepts `conditions` as `z.unknown()`),
+  then a per-entry `resolveConditions` that validates the block or derives
+  from `query` via core's total `queryToConditions` — all BEFORE the strict
+  shape is required. `SavedQuerySchema` (the WRITTEN/validated shape) is
+  unchanged, so writes still require `conditions` and the file self-heals on
+  the next write (the serializer already emits `conditions`). This keeps
+  "loaded config always has conditions" without loosening the write path.
+- *When is an entry broken vs migrated.* Migrated: `conditions`
+  absent/malformed but `query` parses → derive, entry is valid+runnable,
+  recorded in a new `QueriesConfig.migrated` diagnostic. Broken (per-view
+  marker, existing `BrokenSavedQuery` path): recoverable from neither side.
+- *Bad-query + good-conditions.* KEPT as broken (pre-existing behavior — the
+  stored `query` is the runnable field a surface expects to parse; a valid
+  conditions block does not rescue a bad query). The task's degradation
+  trigger ("NEITHER usable") is satisfied without expanding scope to
+  re-derive `query` from conditions. **Flagged** — see below.
+
+**Decided.** Derive-on-load for absent/malformed `conditions`; per-view
+degrade only when neither `query` nor `conditions` is usable; a `doctor`
+check that reports migrated ("will persist on next write") and broken views.
+New `MigratedSavedQuery`/`migrated` contract diagnostic (mirrors `broken`;
+omitted when empty; never serialized). All surfaces inherit via the shared
+`loadQueriesConfig`.
+
+**Tests (red-proven).** `queries.test.ts` "conditions migration path":
+derive-on-MISSING, derive-on-MALFORMED, persist-on-write (self-heal),
+per-view degrade when both broken, whole legacy file loads. Red-proofs:
+restoring the object-fatal throw for missing conditions reddens the
+missing/legacy/persist tests; restoring the throw for malformed conditions
+reddens the malformed + degrade tests. `diagnostics.test.ts`: doctor warns
+"derived from their query" (migrated) and "could not be loaded" (broken),
+neither an error — red-proven by the same missing-derive throw.
+
+**To revert.** In `packages/core/src/config/queries.ts`, replace the
+`LoaderSavedQuerySchema`/`resolveConditions` path with the old
+`RawQueriesConfigSchema = z.object({ queries: z.array(SavedQuerySchema) })`
+and the direct DSL-parse-only per-entry loop; drop the `migrated` array from
+the returned config and the doctor check's migrated/broken branches; drop
+`MigratedSavedQuery`/`MigratedSavedQuerySchema` from
+`packages/contracts/src/query.ts` (+ index barrel). Restores the
+object-fatal behavior (and re-opens both tracked gaps).
+
 ### A235 · A11Y-9 list keyboard cycle: row focus-restore on return, key link as the row's keyboard action
 
 **Ticket:** A11Y-9 (blocker · P8; K74 publish blocker) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
@@ -15645,3 +15705,76 @@ prop from `Cell` and the key `<Link>`'s recording `onClick` (back to bare
 `e.stopPropagation()`). Delete `ListView.a11y.test.tsx` and restore the
 "A11Y-9 (partial)" test; drop the A11Y-9 coverage notes in
 `known-gaps.md` and `flow-accessibility.md`.
+
+### A241 · K90 parity: the visual query builder's entity value pickers search server-side
+
+**Ticket:** K90 / A211 (the roster's last open bullet) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** The rest of the app searches growable entity sets
+server-side via `?q=` (task-meta pickers, FilterDropdown) — the K90
+mechanism. The visual query builder was the last holdout: its entity value
+pickers (assignee/reporter/comment_mentions → users; labels; milestone;
+sprint; project) were populated from the 1000-capped sidebar fetches and
+filtered client-side. A workspace past the fetch window could not find an
+out-of-window value in the builder, even though the same value was findable
+everywhere else (known-gaps A211, last bullet).
+
+**What was decided (recorded, revertible).**
+
+1. *How to thread search in.* `ui/Combobox` already supports server-side
+   search through its `search={{ onQuery }}` prop (the A211 refactor,
+   `Combobox.test.tsx`'s "server-side search (K90)" block). Chose to reuse
+   it rather than invent anything: `BuilderField` grew an optional
+   `search: EntitySearch` (`(q) => Promise<ValueOption[]>`); `ValueControl`
+   maps it to the Combobox's `ComboboxSearch` and passes it to both value
+   controls — the single picker and the `in (…)` multi picker.
+2. *Where the search fns come from.* `buildBuilderConfig` grew an optional
+   `search` map (`{ users, labels, milestones, sprints, projects }`) keyed
+   by the SAME field→source mapping as the seed `options`, so a field's live
+   search matches its seed list. `AdvancedQuerySurface` supplies it from the
+   existing `searchUsers`/`searchLabels`/`searchMilestones`/`searchSprints`/
+   `searchProjects` in `sidebarData.ts` — the identical fns MetaPanel uses,
+   no new endpoints. The map is a module-level const (stable identity), so
+   it never re-triggers the config `useMemo`.
+3. *What `options` carries in server mode.* When a field has a `search`, the
+   Combobox candidates come from the server, so `options` is trimmed to only
+   what must ALWAYS render regardless of the query: the `@currentUser`
+   affordance (K80) and the current selection(s), so a chosen value's label
+   — or its "(not in config)" note (XS-27) — survives when the latest result
+   page does not include it. Without a `search`, `options` stays the whole
+   seed list and the picker keeps the A211 client-side threshold filter.
+4. *Enum fields are left alone.* An enum/status/priority/type set is a closed
+   config set, never large, so it keeps the static client-filtered picker and
+   gets no `search`. Archived entities are carried through as
+   present-but-disabled (`disabled` + `(archived)` suffix on `ValueOption`),
+   matching the MetaPanel option mappers.
+
+**Not decided / out of scope.** `FilterDropdown` (the other A211 bullet)
+stays on its `Menu`/`menuitemcheckbox` model over the capped fetch — a
+separate ticket. No core/contracts change (the search endpoints and hooks
+already existed).
+
+**Tests (red-proven).** In `apps/web/src/client/list/QueryBuilder.test.tsx`,
+new "server-side entity value search (K90)" block:
+- the single entity picker queries the server with the typed text and makes
+  an out-of-seed result selectable (`assignee = u-zoe` for a user absent
+  from the seed list) — red-proven by disabling the `search` threading in
+  `ValueControl` (the fallback client filter never calls `onQuery` and never
+  surfaces the out-of-seed user; the assertion goes red);
+- the `in (…)` multi picker threads the same search — red-proven the same
+  way;
+- an enum field keeps the static picker (no search box, `onQuery` never
+  called) — guards against over-reaching the change onto closed sets.
+The existing `qb-leaf-row` layout test and every other QueryBuilder /
+Combobox test stay green (247 web tests pass).
+
+**To revert.** In `QueryBuilder.tsx`: remove `EntitySearch`, the `search`
+field on `BuilderField`, the `search` param + `entitySearch` map in
+`buildBuilderConfig`, the `search`/`entitySearch` local and its pass-through
+to both Comboboxes in `ValueControl` (restore `options` to the full
+`constrained.map(...)` in both), the `disabled`/`suffix` on `ValueOption`
+and `valueOptionToCombobox`, and the `ComboboxSearch` import. In
+`AdvancedQuerySurface.tsx`: drop the `sidebarData` search imports,
+`named`, `BUILDER_ENTITY_SEARCH`, and the `search:` arg to
+`buildBuilderConfig`. Delete the new test block and re-open the
+known-gaps A211 bullet.
