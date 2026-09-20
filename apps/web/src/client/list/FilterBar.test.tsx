@@ -383,8 +383,13 @@ describe("FilterBar", () => {
     // Switch to a q= filter B via a fresh navigation (as a sidebar q-based
     // saved filter would). The editor closes and the draft re-syncs.
     await router.navigate({ to: "/list", search: { q: "title ~ zzz" } as never });
-    await vi.waitFor(() =>
-      expect(screen.queryByTestId("advanced-query-surface")).toBeNull());
+    // Generous timeout: the reset runs in an effect after the navigation
+    // commits, and under full-suite parallel load that can take longer
+    // than waitFor's 1s default (the close itself is prompt in isolation).
+    await vi.waitFor(
+      () => expect(screen.queryByTestId("advanced-query-surface")).toBeNull(),
+      { timeout: 3000 },
+    );
 
     // Re-open the editor: its draft now reflects filter B, not the stale A.
     fireEvent.click(await screen.findByTestId("query-chip-edit"));
@@ -393,8 +398,10 @@ describe("FilterBar", () => {
     const toText = screen.queryByTestId("switch-to-text");
     if (toText !== null) fireEvent.click(toText);
     const input = await screen.findByTestId("dsl-input");
-    await vi.waitFor(() =>
-      expect((input as HTMLTextAreaElement).value).toBe("title ~ zzz"));
+    await vi.waitFor(
+      () => expect((input as HTMLTextAreaElement).value).toBe("title ~ zzz"),
+      { timeout: 3000 },
+    );
   });
 
   // In-editor Apply writes `q` but must NOT close the editor — that is the
