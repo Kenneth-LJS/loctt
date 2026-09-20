@@ -303,39 +303,6 @@ describe("attachments", () => {
         }
       });
 
-      // F1 narrowing (Ken): confining to the DATA DIR (.loctt/) rather than
-      // the project root blocks a secret sitting BESIDE .loctt/ — the exact
-      // exfil path a steered agent would use — while a source already staged
-      // inside .loctt/ still attaches.
-      it("refuses a secret beside .loctt/ when confined to the data dir", async () => {
-        // <root>/credentials.txt is inside the project root but OUTSIDE
-        // .loctt/. Confining to locttDir must refuse it.
-        const secret = join(root, "credentials.txt");
-        await writeFile(secret, "AKIA-super-secret", "utf-8");
-        const err = await attachFile({
-          locttDir,
-          taskId,
-          sourcePath: secret,
-          confineToRoot: locttDir,
-        }).catch((e: unknown) => e) as Error;
-        expect(err).toBeInstanceOf(AttachmentSourceError);
-        const listed = await readdir(getAttachmentsDir(locttDir, taskId)).catch(() => []);
-        expect(listed).toEqual([]);
-      });
-
-      it("accepts a source staged inside .loctt/ when confined to the data dir", async () => {
-        // A file staged inside the data dir is the legitimate agent path.
-        const staged = join(locttDir, "staged.txt");
-        await mkdir(locttDir, { recursive: true });
-        await writeFile(staged, "ok", "utf-8");
-        const result = await attachFile({
-          locttDir,
-          taskId,
-          sourcePath: staged,
-          confineToRoot: locttDir,
-        });
-        expect(result.name).toBe("staged.txt");
-      });
     });
 
     it("creates attachments/ lazily", async () => {

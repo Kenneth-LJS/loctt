@@ -769,33 +769,19 @@ describe("MCP executeTool", () => {
       expect(attachments[0]).not.toHaveProperty("mime");
     });
 
-    // F1 narrowing (Ken): the agent surface confines the source to the
-    // RESOLVED DATA DIR (.loctt/), not the project root. A secret sitting
-    // BESIDE .loctt/ (e.g. <root>/credentials.txt) — the exfil path a
-    // steered agent under git-backed mode would use — is refused, while a
-    // file staged inside .loctt/ still attaches.
-    it("attach_file refuses a source beside .loctt/ (outside the data dir)", async () => {
+    // Attach source is confined to the PROJECT ROOT (A205): a real file
+    // anywhere in the project attaches (an attachment legitimately comes
+    // from the working tree, not only from inside .loctt/ — the A225
+    // data-dir narrowing was reverted for breaking that). A path outside
+    // the root is still refused by the core confinement.
+    it("attach_file accepts a source elsewhere in the project", async () => {
       const { writeFile } = await import("node:fs/promises");
-      await executeTool(root, "create_task", { title: "secret guard" });
-      const secret = join(root, "credentials.txt");
-      await writeFile(secret, "AKIA-super-secret");
+      await executeTool(root, "create_task", { title: "attach from project" });
+      const src = join(root, "notes.txt");
+      await writeFile(src, "a real project file");
       const result = await executeTool(root, "attach_file", {
         ref: "T-1",
-        source_path: secret,
-      });
-      expect(result.isError).toBe(true);
-      const body = await getTaskJson("T-1");
-      expect(body["attachments"]).toEqual([]);
-    });
-
-    it("attach_file accepts a source staged inside .loctt/", async () => {
-      const { writeFile } = await import("node:fs/promises");
-      await executeTool(root, "create_task", { title: "staged" });
-      const staged = join(resolveLocttDir(root), "staged.txt");
-      await writeFile(staged, "ok");
-      const result = await executeTool(root, "attach_file", {
-        ref: "T-1",
-        source_path: staged,
+        source_path: src,
       });
       expect(result.isError).toBeUndefined();
       const body = await getTaskJson("T-1");

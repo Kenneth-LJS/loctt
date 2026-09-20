@@ -255,20 +255,40 @@ agent-authored content, against a 127.0.0.1-bound server. The must-fix
 path-confinement and packaging findings from the 2026-09-19 audits are
 resolved (decisions.md A205–A207); what remains open is below.
 
-### ~~F1's confinement boundary is the project root, not `.loctt/`~~ RESOLVED (2026-09-20, A225, Ken-approved)
+### F1's attach confinement — the `.loctt/`-narrowing was tried and reverted; the boundary stays the project root
 
-The MCP `attach_file` handler now confines the source to the RESOLVED
-DATA DIR via `confineToRoot: resolveLocttDir(root)` (not a hardcoded
-`.loctt` — it follows the `LOCTT_DIR` constant), narrowing the safe zone
-from the project root to `.loctt/`. A secret sitting **beside** `.loctt/`
-(e.g. `<root>/credentials.txt`) is now refused, closing the auto-commit
-exfil path. `attachFile`'s `confineToRoot` option stays a generic
-directory; the surface picks the boundary. The legitimate agent workflow
-already stages the file inside the tracker first (the tool description
-now says `.loctt/`), so it lands inside the data dir and still passes —
-no legitimate attach broke. Red-proven in `mcp.test.ts` (attach beside
-`.loctt/` refused; staged-inside attach works) and in
-`attachments.test.ts` (data-dir boundary at the core level).
+Attempted 2026-09-20 (A225) then reverted the same day (Ken's call). The
+idea was to confine the MCP `attach_file` source to `.loctt/` so a secret
+sitting beside it could not be attached and git-auto-committed. It broke
+the actual feature: **a legitimate attachment comes from anywhere the
+user points to** — a working-tree file, `~/Downloads`, outside the repo —
+so a `.loctt/`-only source is wrong, and 7 integration tests (attach by
+absolute path from a project temp dir) confirmed that is the intended
+contract. Attaching is also not a privileged or destructive act — it is a
+reversible copy that refuses a name collision unless `force`.
+
+The residual concern (an auto-approved, steered agent causing sensitive
+content to be git-auto-committed and pushed) is **not specific to
+attachments** — it applies equally to any content an agent writes (a task
+body, a comment). So a path hack on one tool was the wrong shape. The
+attach source stays confined to the **project root** (A205 — blocks
+reading e.g. `~/.ssh/id_rsa` outside the repo while allowing real project
+files). The broader "agent-written content can be auto-committed+pushed"
+question is recorded below as its own item for a deliberate future
+decision, not a per-tool confinement.
+
+### An auto-approved agent can cause any written content to be git-auto-committed and pushed
+
+Under git-backed mode, content an MCP agent writes — an attachment, a task
+body, a comment — is auto-committed to the `loctt` branch and, if that
+branch is pushed, leaves the machine. A steered/auto-approved agent could
+therefore exfiltrate or publish content the user did not intend. This is a
+property of the auto-commit+publish path, not of any one tool (the A225
+attempt to fix it via `attach_file` path-confinement was the wrong shape —
+see above). The right fix is a deliberate decision about the
+agent→auto-commit→push boundary (e.g. not auto-pushing agent-written
+content, or a confirmation before publish), scoped across all written
+content. Not yet built; needs a ruling.
 
 ### ~~The local server has no Host/Origin validation (DNS-rebinding)~~ — FIXED 2026-09-19
 
