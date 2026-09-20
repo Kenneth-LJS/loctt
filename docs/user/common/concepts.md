@@ -20,7 +20,9 @@ The CLI, the web UI, and the MCP server are all just three different ways of rea
 
 A local-first tool has to answer one question: **what happens when more than one machine is involved?**
 
-LocTT doesn't push your tasks anywhere by default. If you want your tasks on a second machine, or in a teammate's hands, you have to choose how to share them. There are two reasonable approaches.
+LocTT doesn't push your tasks anywhere by default. If you want your tasks on a second machine, or in a teammate's hands, you have to choose how to share them. There are three reasonable approaches.
+
+**Not sure which?** Commit `.loctt/` to your repo — approach 1. It's the simplest, needs no extra setup, and is the right default for most solo and small-team projects. Reach for the others only when task-churn commits on your main branch bother you (approach 2) or you want tasks to stay off Git entirely (approach 3).
 
 ### Approach 1: Commit `.loctt/` to your repo
 
