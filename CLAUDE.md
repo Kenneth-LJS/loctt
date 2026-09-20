@@ -55,8 +55,8 @@ work, read `decisions.md` (§ 8 agent-made, § 9 Ken's) and
 
 **A capability in core is not done until CLI and MCP have it.** Core
 exists so two surfaces answer the same question the same way; adding
-to it for one surface is drift with a good address. `unarchiveView` is
-exported from core and called by nothing at all. See `lessons.md`
+to it for one surface is drift with a good address — a core export no
+surface calls is unfinished, not done. See `lessons.md`
 § Core / surface parity.
 
 **Check before claiming something does not exist.** An audit claimed
