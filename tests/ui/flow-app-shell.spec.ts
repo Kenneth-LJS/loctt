@@ -633,8 +633,11 @@ test.describe("XS — the UI and the CLI mean the same things", () => {
     }
 
     // The refetch reflects *all six*, not a subset — a page-1 refresh
-    // stitched onto a stale page 2 is the failure this case names.
-    await page.getByRole("button", { name: "Refresh" }).click();
+    // stitched onto a stale page 2 is the failure this case names. There
+    // is no manual refresh button (Q4); a browser reload is the force-
+    // refresh path, and it must reflect the full CLI change (not a stale
+    // page-1-over-page-2 stitch).
+    await page.reload();
     await expect(page.getByText("Showing 1–6 of 6")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator("tbody tr")).toHaveCount(6);
 

@@ -842,7 +842,7 @@ describe("FilterBar — toolbar redesign (A210 / K97)", () => {
     expect(vf()).not.toContain("milestone");
   });
 
-  it("renders the view-action cluster (Refresh + Export) when the props are passed", async () => {
+  it("renders the view-action cluster (Export + Save as view) with NO manual refresh (Q4)", async () => {
     stubFetch();
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     const rootRoute = createRootRoute();
@@ -850,8 +850,6 @@ describe("FilterBar — toolbar redesign (A210 / K97)", () => {
       getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema,
       component: () => (
         <FilterBar
-          onRefresh={() => {}}
-          refreshBusy={false}
           exportTotal={3}
           exportQueryString=""
         />
@@ -866,9 +864,9 @@ describe("FilterBar — toolbar redesign (A210 / K97)", () => {
         <RouterProvider router={router as never} />
       </QueryClientProvider>,
     );
-    // Both live inside the aligned action cluster, not floating siblings.
     const cluster = await screen.findByTestId("view-actions");
-    expect(within(cluster).getByRole("button", { name: "Refresh" })).toBeTruthy();
+    // Q4: no manual refresh button — freshness is staleTime + focus refetch.
+    expect(within(cluster).queryByRole("button", { name: "Refresh" })).toBeNull();
     expect(within(cluster).getByRole("button", { name: "Export" })).toBeTruthy();
     expect(within(cluster).getByRole("button", { name: /Save as view/ })).toBeTruthy();
   });

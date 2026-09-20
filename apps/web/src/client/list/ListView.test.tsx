@@ -693,61 +693,9 @@ describe("ListView pagination", () => {
   });
 });
 
-/**
- * @verifies XS-3
- *
- * The tracker has three writers — this UI, the CLI, and the MCP
- * server — so "I just changed that in the terminal" is the ordinary
- * case. Automatic refresh bounds how stale a value can get; this is
- * the control for when the user already knows.
- */
-describe("ListView manual refresh", () => {
-  it("offers a top-level refresh that refetches and reports itself busy", async () => {
-    await mountList();
-
-    const before = vi.mocked(globalThis.fetch).mock.calls.filter(c =>
-      typeof c[0] === "string" && c[0].includes("/api/tasks"),
-    ).length;
-    expect(before).toBeGreaterThan(0);
-
-    // Reachable directly, not behind a menu.
-    const refresh = screen.getByRole("button", { name: "Refresh" });
-    expect(refresh.getAttribute("title")).toMatch(/refresh/i);
-
-    await act(async () => {
-      fireEvent.click(refresh);
-      await Promise.resolve();
-    });
-
-    // It never silently no-ops: a request actually goes out.
-    await waitFor(() => {
-      const after = vi.mocked(globalThis.fetch).mock.calls.filter(c =>
-        typeof c[0] === "string" && c[0].includes("/api/tasks"),
-      ).length;
-      expect(after).toBeGreaterThan(before);
-    });
-
-    // And it settles rather than staying busy forever.
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "Refresh" }).getAttribute("aria-busy"),
-      ).toBe("false");
-    });
-  });
-
-  /**
-   * @verifies XS-3
-   *
-   * The staleness window is *stated*, not described as "eventually" —
-   * XS-2's requirement, surfaced where a user would look for it.
-   */
-  it("states the automatic refresh window on the control", async () => {
-    await mountList();
-    const title = screen.getByRole("button", { name: "Refresh" }).getAttribute("title") ?? "";
-    expect(title).toMatch(/\d+ seconds/);
-    expect(title).toMatch(/return to the tab/i);
-  });
-});
+// Q4: there is no manual refresh button (removed; freshness is TanStack
+// Query staleTime + focus refetch). The former "ListView manual refresh"
+// block and its XS-3 window-stated-on-the-control assertions went with it.
 
 /**
  * @verifies XS-28
