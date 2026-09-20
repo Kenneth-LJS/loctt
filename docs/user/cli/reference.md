@@ -638,14 +638,14 @@ Ctrl-C.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
-| `--port` | 1–65535 | an open port | Port to serve on. |
+| `--port` | 1–65535 | `4321` | Port to serve on. |
 | `--no-open` | — | opens a browser | Do not open a browser automatically. |
 
 ```bash
-loctt ui --port 5601
+loctt ui --port 8080
 ```
 ```
-LocTT UI running at http://localhost:4321
+LocTT UI running at http://localhost:8080
 Press Ctrl-C to stop.
 ```
 
