@@ -95,9 +95,9 @@ Anything without a rule — `config/workflow.yaml` most notably — still
 are left exactly as they were. Resolve by making one side match the other,
 then re-run `loctt git sync`.
 
-Workflow config is deliberately not merged: statuses and priorities are
-referenced by every task, so combining two divergent vocabularies could
-leave tasks pointing at a status the merged config does not define.
+Workflow config is not merged: statuses and priorities are referenced by
+every task, so combining two divergent vocabularies could leave tasks
+pointing at a status the merged config does not define.
 
 ### Delete versus edit
 

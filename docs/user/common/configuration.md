@@ -16,21 +16,16 @@ prefix containing a dash, lowercase, digit, or punctuation is rejected.
 
 ## Statuses
 
-Each status has a `key` (stored in task data), a `label` (display name), and a `category` (semantic grouping).
+Each status has a `key` (stored in task data), a `label` (display name), and a `category` (semantic grouping). One status carries `default: true` — it is the status a new task gets when none is given. This is what `loctt init` creates:
 
 ```yaml
 statuses:
-  - key: not_started
-    label: Not started
+  - key: backlog
+    label: Backlog
     category: pending
+    default: true
   - key: in_progress
     label: In progress
-    category: active
-  - key: in_review
-    label: In review
-    category: active
-  - key: blocked
-    label: Blocked
     category: active
   - key: done
     label: Done
@@ -44,32 +39,36 @@ Categories: `pending`, `active`, `completed`, `discarded`. Every status must bel
 
 ## Priorities
 
+Listed highest to lowest. The `value` is the numeric weight used for sorting; the Settings UI recomputes these when you drag to reorder. This is what `loctt init` creates:
+
 ```yaml
 priorities:
-  - key: low
-    label: Low
-    value: 1
-  - key: medium
-    label: Medium
-    value: 2
-  - key: high
-    label: High
-    value: 3
   - key: critical
     label: Critical
     value: 4
+  - key: high
+    label: High
+    value: 3
+  - key: medium
+    label: Medium
+    value: 2
+  - key: low
+    label: Low
+    value: 1
 ```
-
-The optional `value` field controls sort order. Without it, sorting falls back to alphabetical.
 
 ## Task Types
 
 ```yaml
 task_types:
-  - key: task
-    label: Task
+  - key: story
+    label: Story
   - key: bug
     label: Bug
+  - key: task
+    label: Task
+  - key: spike
+    label: Spike
   - key: feature
     label: Feature
 ```
@@ -106,10 +105,8 @@ Each relationship defines a forward key/label and an inverse. When you `link T-1
 | `tree` | Cycles are rejected **and** this relationship may be drawn as a tree axis. |
 
 The shipped default gives `parent` `graph: tree` and `blocks`
-`graph: acyclic` — a blocking cycle is a deadlock worth refusing, but
-nobody draws a tree of blocking edges. Any number of relationships may
-be `tree`; views pick which axis to draw rather than the config
-deciding for them.
+`graph: acyclic`. Any number of relationships may be `tree`; views pick
+which axis to draw rather than the config deciding for them.
 
 Symmetric relationships are never `tree`: a symmetric edge is a
 two-node cycle by definition.
@@ -198,9 +195,9 @@ fields:
   story_points: 5
 ```
 
-## Saved Queries
+## Saved views
 
-Saved queries live in `.loctt/config/queries.yaml`:
+Saved views live in `.loctt/config/queries.yaml`:
 
 ```yaml
 queries:
