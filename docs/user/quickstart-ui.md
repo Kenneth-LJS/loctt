@@ -11,7 +11,7 @@ The full app is covered in the [Web UI guide](ui/guide.md).
 loctt ui
 ```
 ```
-LocTT UI running at http://localhost:5601
+LocTT UI running at http://localhost:4321
 ```
 
 It opens in your browser. The app runs on your machine and reads the same
@@ -46,8 +46,15 @@ to a new column shows its new status in `loctt show`, and a task created
 from `loctt create` appears in this list without a refresh step beyond
 reloading the view.
 
-## Next
+## What's next
 
-- [Web UI guide](ui/guide.md) — every screen in depth.
-- [CLI Quick Start](quickstart-cli.md) — the same tasks from the terminal.
-- [MCP Quick Start](quickstart-mcp.md) — let an agent manage them.
+- **Every screen in depth** — board, timeline, task detail, settings:
+  the [Web UI guide](ui/guide.md).
+- **Understand the model** — [Concepts](common/concepts.md).
+- **Customize the workflow** — statuses, priorities, types, custom
+  fields, board columns: [Configuration](common/configuration.md).
+- **Write sharper queries** — the language behind the filter bar's
+  advanced editor: [Query language](common/query-language.md).
+- **Share across machines** — [Git-backed mode](common/git-sync.md).
+- **Use another surface** — the same tasks from the
+  [CLI](quickstart-cli.md) or driven by an [AI agent](quickstart-mcp.md).

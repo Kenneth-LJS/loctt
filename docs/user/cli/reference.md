@@ -645,7 +645,7 @@ Ctrl-C.
 loctt ui --port 5601
 ```
 ```
-LocTT UI running at http://localhost:5601
+LocTT UI running at http://localhost:4321
 Press Ctrl-C to stop.
 ```
 

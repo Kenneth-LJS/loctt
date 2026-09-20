@@ -38,9 +38,6 @@ loctt body WEB-1 --append "Root cause: unhandled null in the auth callback."
 Appended to body for WEB-1
 ```
 
-> Field values are validated. `status`, `priority`, and `type` must be keys
-> your workflow defines — run `loctt schema` to see them.
-
 ## 3. Find it again
 
 List everything, or filter with a query:
@@ -68,15 +65,25 @@ an agent see. Open the UI:
 loctt ui
 ```
 ```
-LocTT UI running at http://localhost:5601
+LocTT UI running at http://localhost:4321
 ```
 
 `WEB-1` is already there — with the status, assignee, and description you
 set from the command line. Edit it in the browser and the next `loctt show
 WEB-1` reflects the change.
 
-## Next
+## What's next
 
-- [CLI reference](cli/reference.md) — every command and flag.
-- [Web UI Quick Start](quickstart-ui.md) — the same lifecycle in the app.
-- [MCP Quick Start](quickstart-mcp.md) — let an agent do this.
+You now have the task lifecycle. From here:
+
+- **Do more from the CLI** — links, sprints, milestones, projects, bulk
+  edits, export, backup: the [CLI reference](cli/reference.md).
+- **Understand the model** — how tasks, keys, and projects fit together:
+  [Concepts](common/concepts.md).
+- **Customize the workflow** — statuses, priorities, types,
+  relationships, custom fields: [Configuration](common/configuration.md).
+- **Write sharper queries** — the filter language behind `--query` and
+  saved views: [Query language](common/query-language.md).
+- **Share across machines** — [Git-backed mode](common/git-sync.md).
+- **Use another surface** — the same tasks in the
+  [web UI](quickstart-ui.md) or driven by an [AI agent](quickstart-mcp.md).

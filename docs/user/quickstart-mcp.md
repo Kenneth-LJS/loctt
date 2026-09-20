@@ -78,9 +78,16 @@ Or open the UI to watch the agent's work land in real time:
 loctt ui
 ```
 
-## Next
+## What's next
 
-- [MCP reference](mcp/reference.md) — the full tool catalogue and example
-  flows.
-- [CLI Quick Start](quickstart-cli.md) — the same lifecycle by hand.
-- [Web UI Quick Start](quickstart-ui.md) — browse what the agent changes.
+- **The full agent surface** — every tool (links, sprints, milestones,
+  projects, bulk edits, backup) and example flows: the
+  [MCP reference](mcp/reference.md).
+- **Set your agent's conventions** — how to tell an agent your status
+  rules and naming: [Agent setup](mcp/agent-setup.md).
+- **Understand the model** — [Concepts](common/concepts.md).
+- **Customize the workflow** — statuses, priorities, types, custom
+  fields: [Configuration](common/configuration.md).
+- **Write sharper queries** — [Query language](common/query-language.md).
+- **Use another surface** — the same tasks from the
+  [CLI](quickstart-cli.md) or the [web UI](quickstart-ui.md).
