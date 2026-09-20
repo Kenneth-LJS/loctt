@@ -125,24 +125,11 @@ Two related gaps found in the Jira-comparison review:
    route/modal never send it. A create-pre-linked "+ New child" needs
    this plumbed through all three surfaces.
 
-### `ProgressReadout` hard-codes `aria-label="Milestone progress"`
+### ~~`ProgressReadout` hard-codes `aria-label="Milestone progress"`~~ RESOLVED (2026-09-20, L4)
 
-**Fixed** (2026-09-20, L4). `ProgressReadout` now takes a `label` prop
-(default `"Milestone progress"`, so the milestone/sprint callers are
-unchanged), and the new tree-child-progress caller
-(`RelationshipsPanel`) passes `label="Child progress"`. Covered by
-`apps/web/src/client/milestones/ProgressReadout.test.tsx` (default and
-override, red-proven against the old literal). Fixed as part of the L4
-child-progress-meter work, exactly as this note asked.
-
-Original report follows.
-
-`apps/web/src/client/milestones/ProgressReadout.tsx` sets a literal
-`aria-label="Milestone progress"`. Not a live bug — both current callers
-are milestone surfaces — but the label must become a `label` prop
-(default "Milestone progress") **before** a tree-child-progress or
-sprint caller is added, or that caller will announce "Milestone
-progress". Fold into the work that adds the new caller.
+`ProgressReadout` takes a `label` prop (default `"Milestone progress"`);
+the tree-child-progress caller passes `label="Child progress"`. Covered
+by `ProgressReadout.test.tsx`, red-proven.
 
 ### ~~The server's private `dslAtom` copy under-quotes grammar-colliding values~~ RESOLVED (2026-09-20, A227)
 
@@ -183,35 +170,63 @@ carry).
 
 A211 standardised the searchable picker (`ui/Combobox`) and migrated the
 task meta fields, the labels editor and the query builder's value
-controls. These sites still pick from a set the user can grow with a
-control that does not search, and were left because Playwright specs
-(outside the ticket's run scope) drive them with `selectOption` /
-`.check()` / direct pill clicks:
+controls. Subsequent waves (A218, A241, and A211/A242 on 2026-09-20)
+converted the rest of the roster. **The value-picker roster is now
+complete** — every growable-set picker below is a `Combobox`; the one
+remaining item (`list/FilterDropdown.tsx`) is a *different model*
+(`Menu`/`menuitemcheckbox`), searchable already, and is tracked as a
+model-parity nicety rather than an unsearchable-set defect. These sites
+were originally left because Playwright specs (outside the ticket's run
+scope) drove them with `selectOption` / `.check()` / direct pill clicks;
+those specs were updated to click-trigger → click-option as each site
+converted:
 
-- `settings/UsersPanel.tsx` (`user-edit-timezone-<id>`) and
+- ~~`settings/UsersPanel.tsx` (`user-edit-timezone-<id>`) and
   `settings/CalendarPanel.tsx` (`calendar-timezone`) — ~400 IANA zones in
-  a native `Select`. The clearest remaining offender.
-- `settings/PreferencesPanel.tsx` (`default-project-select`),
+  a native `Select`~~ — DONE: both (edit/create user rows and the calendar
+  panel) are `Combobox` over the zone list, with the trigger testids kept.
+  A211/A242 (2026-09-20) also fixed a stale spec that still drove
+  `calendar-timezone` with `selectOption` (`flow-settings-workflow.spec.ts`
+  — the CalendarPanel migration in an earlier wave had left it) → now
+  click-trigger → filter → click-option.
+- ~~`settings/PreferencesPanel.tsx` (`default-project-select`),
   `settings/DeleteProjectDialog.tsx` (`project-delete-remap`),
-  `task/MoveTaskDialog.tsx` ("Destination project") — projects.
-- `settings/ReconcilePanel.tsx` (`git-reconcile-pick-value`) — enum
-  values of the conflicting field (`flow-git-reconcile.spec.ts` asserts
-  `tagName === "SELECT"`). **Evaluated 2026-09-20 (A218) and deliberately
-  left:** the control's accessible name comes from the field heading via
-  `aria-labelledby`, and the Batch-2 a11y unit test (`ReconcilePanel.test.tsx`)
-  asserts `getByRole("combobox", { name: "Status" })`. A `<button>`-based
-  `ComboboxButton` has role "button" (not "combobox") and takes `aria-label`,
-  not `aria-labelledby`, so the swap needs the shared primitive's aria
-  contract extended — out of that lane. Do this alongside a ComboboxButton
-  `aria-labelledby` prop + updating the a11y test and the Playwright spec.
+  `task/MoveTaskDialog.tsx` ("Destination project") — projects~~ — DONE:
+  all three were already `Combobox` in code; A211/A242 (2026-09-20)
+  updated the last specs still driving them with `selectOption`
+  (`project-delete-remap` in `flow-settings-projects-users.spec.ts`;
+  "Destination project" in three places in `flow-tasks.spec.ts`) →
+  click-trigger → click-option.
+- ~~`settings/ReconcilePanel.tsx` (`git-reconcile-pick-value`) — enum
+  values of the conflicting field~~ — DONE (A211/A242, 2026-09-20):
+  migrated to a searchable `Combobox`. The blocker recorded here (the
+  control's accessible name comes from the field heading via
+  `aria-labelledby`, which a `<button>`-based `ComboboxButton` did not
+  accept) is resolved — `ComboboxButton` grew an `aria-labelledby` prop
+  that forwards to the button and takes precedence over `aria-label`. The
+  a11y unit test now asserts `getByRole("button", { name: "Status" })`
+  (role changed select→button, name preserved) plus a new
+  select-through-the-Combobox test; `flow-git-reconcile.spec.ts`'s
+  `tagName === "SELECT"` assertions became `"BUTTON"` +
+  `aria-haspopup="listbox"`, and its option-list read opens the trigger
+  first. Scalar (free-text) conflicts stay a `TextField` — not a growable
+  set.
 - ~~`settings/UserDeleteDialog.tsx` (`user-delete-remap-<id>`) — one radio
   per other user~~ — DONE (A218): migrated to `Combobox` (trigger
   `user-delete-remap`, per-option testids kept `user-delete-remap-<id>`),
-  mirroring DeleteProjectDialog. `settings/RemapDeleteDialog.tsx`
-  (`remap-to-<key>`) — one radio per alternative entry — still open.
-- `create/CreateTaskModal.tsx` multi custom enum — one toggle pill per
-  value (`create-field-<key>-<v>`); the detail panel's `MultiEnum` uses
-  OptionPicker and so already searches past 12.
+  mirroring DeleteProjectDialog. ~~`settings/RemapDeleteDialog.tsx`
+  (`remap-to-<key>`) — one radio per alternative entry~~ — DONE
+  (A211/A242, 2026-09-20): the per-alternative radios became a "reassign"
+  gating radio + searchable `Combobox` (trigger `remap-to`, per-option
+  testids kept `remap-to-<key>`), mirroring UserDeleteDialog; the "clear"
+  radio (`remap-clear`, a distinct action, not a value in the set) stays.
+- ~~`create/CreateTaskModal.tsx` multi custom enum — one toggle pill per
+  value (`create-field-<key>-<v>`)~~ — DONE (A211/A242, 2026-09-20):
+  migrated to a searchable multi-select `Combobox` (`mode="multi"`),
+  mirroring the detail panel's `MultiEnum`; the trigger carries
+  `create-field-<key>` and the per-value `create-field-<key>-<v>` testids
+  stay on each option. `flow-task-create.spec.ts` opens the trigger before
+  reading/clicking the options.
 - `list/FilterDropdown.tsx` — searchable already (≥12), but on the
   `Menu`/`menuitemcheckbox` model rather than `Combobox`; its option
   lists are the 1000-capped sidebar fetches, not `?q=`.
@@ -412,16 +427,15 @@ list are satisfied and asserted, three in a real browser
   lands focus on `#main-content`; the restore treats body and that pane
   as default landings it may override, but never a focus the user placed).
 
-**Remaining dependency (A11Y-24, not A11Y-9's to fix here):** a
-successful field save on the detail page is still silent — `MetaPanel`'s
-write path does not call the shell announcer (the `announcer-polite`
-region exists and theme changes use it). A11Y-9's fourth bullet ("the
-save outcome is announced (A11Y-24)") therefore rides on A11Y-24 landing.
-The A11Y-9 Playwright test documents this with a negative assertion
-(`announcer-polite` does **not** contain "saved") so the day A11Y-24 is
-built for field saves, that test goes red and this note must be
-revisited. A11Y-24 is itself untagged/unbuilt and is a separate publish
-blocker.
+**Fourth bullet — now satisfied (A11Y-24 landed 2026-09-20).** The
+field-save path announces its outcome through the shell's live region:
+`TaskDetail`'s `writeField` calls `announce("<Field> saved")` (polite) in
+the mutation's `onSuccess` and `announce(failure.message, "assertive")`
+in `onError`. The A11Y-9 Playwright test's negative assertion has been
+flipped to assert the successful status save **is** announced
+(`announcer-polite` contains "status saved"). A11Y-24 itself is covered
+and tagged — see `flow-accessibility.md` A11Y-24 and its spec test. No
+remaining dependency.
 
 ### ERR-23 · no multi-step create flow exists to interrupt
 
@@ -433,11 +447,18 @@ The guarantee ERR-23 wants is provided more strongly than the case
 assumes. It becomes live only if a future create flow gains a distinct
 follow-up write.
 
-### ERR-32 · an audit, not a @verifies test
+### ~~ERR-32 · an audit, not a @verifies test~~ AUDITED CLEAN (2026-09-20)
 
 ERR-32 asks that no routine failure lands in a developer-facing error
 channel — a codebase audit of error vocabulary, not a behaviour a single
-spec can assert. It is tracked as audit work, not as a coverable case.
+spec can assert. **Audit performed 2026-09-20 across `apps/*/src` and
+`packages/core/src`: passes.** Every `console.*` is a legitimate channel,
+not a routine-failure leak — CLI stdout/stderr (the CLI's own UI), the
+web server's operator logging (`[web]`/`[req]`-prefixed), the
+`LOCTT_DEBUG`-gated auto-open error, `RegionErrorBoundary`'s render-error
+diagnostic (a crash, not routine), and `journal.ts`'s missing-recovery-
+handler line (a programming/import-order bug, deduped, deliberately loud
+for logs/CI). No routine user-facing failure reaches a dev channel.
 
 ### Toolbar redesign (A210) — e2e specs assert the OLD toolbar structure — FIXED 2026-09-20
 

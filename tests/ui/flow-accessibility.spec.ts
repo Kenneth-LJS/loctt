@@ -1542,6 +1542,74 @@ test.describe("ERR — error surfaces across routes and layers", () => {
 });
 
 test.describe("A11Y — failure communication", () => {
+  /**
+   * A11Y-24: a field save's outcome is announced in the shell's live
+   * region, so a non-sighted user knows the edit landed (or did not)
+   * without inspecting the field. Both halves in one flow: a real
+   * successful save, then the same field forced to fail.
+   *
+   * The two announcements go to different regions — success polite,
+   * failure assertive — and the failure carries the same text the
+   * anchored notice shows, so the channel and the notice never disagree.
+   *
+   * @verifies A11Y-24
+   */
+  test("A11Y-24: a field save's success and forced failure are both announced in a live region", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Announced save subject", fields: { priority: "low" } },
+    ]);
+    const taskKey = keys[0] ?? "T-1";
+
+    await page.goto(`${tracker.baseURL}/tasks/${taskKey}`);
+    await expect(page.getByText("Announced save subject").first()).toBeVisible();
+
+    const polite = page.getByTestId("announcer-polite");
+    const assertive = page.getByTestId("announcer-assertive");
+
+    // (1) A real, successful save. First bullet: the success is announced
+    // ("Priority saved") politely, and focus is NOT moved by the
+    // announcement — the picker's own focus behaviour is unchanged.
+    const priority = page.getByTestId("meta-edit-priority");
+    await priority.click();
+    await page.getByRole("option", { name: /high/i }).first().click();
+
+    await expect(polite).toContainText(/priority saved/i);
+    // A success is not an interruption, so the assertive channel is silent.
+    await expect(assertive).not.toContainText(/saved/i);
+
+    // (2) Now force the same field's write to fail. Second bullet: the
+    // failure is announced ASSERTIVELY (interrupting) with the same
+    // message the notice shows — a silent failure is A11Y-24's worst
+    // case. Fourth bullet: a non-sighted user can tell the two apart —
+    // here, the failure text lands in the assertive region, the success
+    // never did.
+    await page.route(`**/api/tasks/**/set`, route =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "io_failed",
+          message: "Could not write the task file: the disk is full.",
+          error: "Could not write the task file: the disk is full.",
+          field: "priority",
+          data_state: "not_saved",
+          recovery: { kind: "retry" },
+        }),
+      }),
+    );
+
+    await priority.click();
+    await page.getByRole("option", { name: /medium|low/i }).first().click();
+
+    // The assertive region carries the reason (same words as the notice).
+    await expect(assertive).toContainText(/disk is full/i);
+    // And the notice shows the identical message, so the two agree.
+    await expect(page.getByTestId("meta-field-error")).toContainText(/disk is full/i);
+  });
+
   // @verifies A11Y-46
   test("A11Y-46: a failed field save is announced and the rollback is perceivable", async ({
     page,
@@ -3058,14 +3126,13 @@ test.describe("A11Y — sidebar and full-cycle keyboard operation", () => {
    * 5. **Return restores focus at/near the opened row.** Back lands
    *    focus on that row's key-link anchor, not on `document.body`.
    *
-   * The fourth bullet — "the save outcome is announced (A11Y-24)" —
-   * is NOT asserted as satisfied: a successful field save currently
-   * emits nothing to the shell announcer (the region exists and theme
-   * changes use it, but MetaPanel's write path does not call it). That
-   * is A11Y-24's subject and lives on the detail page, out of this
-   * lane; it is tracked as the remaining A11Y-9 dependency in
-   * known-gaps.md. This test documents it with a negative assertion so
-   * the day it lands, this goes red and the note is revisited.
+   * The fourth bullet — "the save outcome is announced (A11Y-24)" — is
+   * now satisfied: A11Y-24 landed, and the field-save path announces the
+   * outcome through the shell's live region. This test asserts the
+   * successful status save IS announced ("Status saved") in the polite
+   * region, which is what A11Y-9's fourth bullet requires; the flip from
+   * the previous negative assertion is deliberate and is the day the
+   * A11Y-9 note in known-gaps.md said to revisit.
    *
    * @verifies A11Y-9
    */
@@ -3118,11 +3185,11 @@ test.describe("A11Y — sidebar and full-cycle keyboard operation", () => {
       }, { timeout: 10_000 })
       .not.toBe(statusBefore);
 
-    // Fourth bullet, tracked-not-satisfied: a successful save is silent.
-    // When A11Y-24 lands for field saves this expectation flips and the
-    // note in known-gaps.md must be revisited.
-    await expect(page.getByTestId("announcer-polite")).not.toContainText(/saved/i);
-    await expect(page.getByTestId("announcer-assertive")).not.toContainText(/saved/i);
+    // Fourth bullet, now satisfied (A11Y-24 landed): the successful save
+    // is announced politely in the shell's live region, so a non-sighted
+    // user knows the edit landed. Naming the field ("Status saved"), and
+    // in the polite region — a routine confirmation is not an interrupt.
+    await expect(page.getByTestId("announcer-polite")).toContainText(/status saved/i);
 
     // (5) Return to the list; focus lands on the opened row's anchor,
     // not on document.body / the top of the page.

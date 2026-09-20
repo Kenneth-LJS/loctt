@@ -915,9 +915,14 @@ test.describe("NEW — create task modal", () => {
     await page.getByTestId("create-field-points").fill("8");
     await page.getByTestId("create-field-reviewed_on").fill("2026-06-01");
     await page.getByTestId("create-field-urgent").check();
-    // The multi enum shows LABELS...
+    // A211/A242: the multi enum is a searchable Combobox now (control type
+    // changed, not behavior) — open the trigger, then the options show
+    // LABELS and clicking one (by its unchanged per-value testid) selects
+    // it. It stays open after a pick (multi-select), so close with Escape.
+    await page.getByTestId("create-field-tags").click();
     await expect(page.getByTestId("create-field-tags-alpha")).toContainText("Alpha Label");
     await page.getByTestId("create-field-tags-alpha").click();
+    await page.keyboard.press("Escape");
 
     await page.getByTestId("create-submit").click();
     await expect(page.getByTestId("create-task-modal")).toBeHidden();

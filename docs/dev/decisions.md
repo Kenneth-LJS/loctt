@@ -15778,3 +15778,178 @@ and `valueOptionToCombobox`, and the `ComboboxSearch` import. In
 `named`, `BUILDER_ENTITY_SEARCH`, and the `search:` arg to
 `buildBuilderConfig`. Delete the new test block and re-open the
 known-gaps A211 bullet.
+
+### A242 · A211 roster finished: the last native value-pickers over growable sets became `Combobox`
+
+**Ticket:** A211 (the value-picker roster) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** A211 standardised `ui/Combobox` and earlier waves
+(A218, A241) migrated most of the roster. Four sites remained, each
+picking from a set the user can grow with a control that does not search:
+the reconcile pick-value `Select`, the RemapDeleteDialog per-alternative
+radios, the CreateTaskModal multi-enum toggle pills, and — already
+converted in code but with specs still driving the old control — the two
+timezone pickers and the three project pickers. Verified current state
+before touching each (several were already `Combobox`; only the still-native
+ones were converted, per the roster's "don't re-convert" note).
+
+**What was decided (recorded, revertible).**
+
+1. *ComboboxButton learns `aria-labelledby`.* ReconcilePanel's pick-value
+   control is named by a separate heading `<div>` (wired via `useId()`),
+   not a string — a native `<select aria-labelledby>` carried that. A
+   `<button>`-based `ComboboxButton` took only `aria-label`. Added an
+   `aria-labelledby` prop that forwards to the button and, when present,
+   takes precedence over `aria-label` (the button emits one or the other,
+   never both — no duplicated name). This is the general primitive fix the
+   A218 note said the swap needed; it is on the shared `ui/Combobox`, so
+   any future heading-labelled trigger reuses it.
+2. *Reconcile pick-value → Combobox.* The enum/parent branch (a growable
+   value set: statuses, priorities, tasks) became a searchable `Combobox`
+   whose trigger forwards `aria-labelledby={fieldLabelId}`. The scalar
+   branch stays a free-text `TextField` — a third-value entry, not a set,
+   so out of roster scope. `Select` import dropped (it was the only use).
+3. *RemapDeleteDialog → reassign radio + Combobox.* Mirrored
+   UserDeleteDialog/DeleteProjectDialog: the per-alternative radios became
+   a "reassign" gating radio + a `Combobox` over the alternatives (trigger
+   `remap-to`, per-option testids kept `remap-to-<key>`). The "clear"
+   radio (`remap-clear`) stays — it is a distinct action (empty the field),
+   not another value in the set, so it is deliberately NOT a Combobox
+   option. `blocked` now also gates on "reassign chosen but no target
+   picked", matching UserDeleteDialog.
+4. *CreateTaskModal multi-enum → multi Combobox.* The toggle pills became a
+   `Combobox mode="multi"`, mirroring the detail panel's `MultiEnum` (which
+   is an OptionPicker over the same primitive) so create and detail cannot
+   disagree. Trigger carries `create-field-<key>`; per-value
+   `create-field-<key>-<v>` testids stay on each option button.
+5. *Stale specs on already-converted controls fixed.* `calendar-timezone`
+   (`selectOption`, left from the CalendarPanel migration),
+   `project-delete-remap` (`selectOption`), and "Destination project" in
+   three places (`selectOption` on the MoveTaskDialog button) were driving
+   converted `Combobox`es with native-`select` APIs — they would fail if
+   run. Updated to click-trigger → click-option. Noted in each as "control
+   type changed, not behavior."
+
+**Not decided / out of scope.** `list/FilterDropdown.tsx` — the last A211
+bullet — stays on its `Menu`/`menuitemcheckbox` model (searchable already;
+a model-parity nicety, not an unsearchable-set defect). A fixed small set
+with help text (e.g. a 3-option radio) is not in scope. No core/contracts
+change.
+
+**Tests (red-proven).**
+- `Combobox.test.tsx`: new "ComboboxButton — aria-labelledby" block — the
+  trigger exposes the accessible name via `aria-labelledby` and it wins
+  over `aria-label`. Red-proven by removing the forwarding (the button
+  loses the name; `getByRole("button", { name: "Status" })` goes red).
+- `ReconcilePanel.test.tsx`: the a11y test now asserts
+  `getByRole("button", { name: "Status" })` (role changed select→button,
+  name preserved — this test was asserting the old control type, now
+  corrected) + a new "selecting an enum option through the Combobox records
+  the value" test. Red-proven by breaking the enum `onSelect`'s
+  `onChoose("value", key)` (the selection is never recorded; assertion goes
+  red).
+- `dataPanels.test.tsx` (RemapDeleteDialog via LabelsPanel): the remap test
+  now chooses reassign, opens the picker, and clicks `remap-to-L2`.
+  Red-proven by breaking the Combobox `onSelect` (the target is never set;
+  confirm stays disabled / no `remap_to` on the request; assertion goes
+  red).
+- Playwright specs updated (typechecked via `tests/ui/tsconfig.json`, not
+  run this lane): `flow-git-reconcile.spec.ts` (`tagName` SELECT→BUTTON +
+  `aria-haspopup`, option-list read opens the trigger),
+  `flow-settings-workflow.spec.ts` (reassign+Combobox for remap; timezone
+  click-trigger), `flow-settings-projects-users.spec.ts` (project-delete
+  remap), `flow-tasks.spec.ts` (MoveTaskDialog ×3),
+  `flow-task-create.spec.ts` (multi-enum opens the trigger).
+
+Gates: `tsc --build` clean, eslint on touched files 0 errors, full web
+vitest suite green (2028 tests), `tsc -p tests/ui/tsconfig.json` clean.
+
+**To revert.** In `ui/Combobox.tsx`: remove the `aria-labelledby` prop,
+its doc block, and restore `aria-label={ariaLabel}` unconditionally
+(delete the `aria-labelledby` line). In `ReconcilePanel.tsx`: restore the
+`Select`-based pick-value (the `<Select>…<option>…` block), re-add the
+`Select` import, drop the `Combobox`/`ComboboxButton`/`ComboboxOption`
+import. In `RemapDeleteDialog.tsx`: restore the per-alternative radios
+(`remap-to-<key>` as radios), drop the reassign radio/Combobox and the
+`Combobox` import, restore the simpler `blocked`. In `CreateTaskModal.tsx`:
+restore the toggle-pill `<button data-testid={`${testid}-${v.key}`}>` map
+and drop the `Combobox` import. Revert the four spec edits and the two unit
+tests, and re-open the corresponding known-gaps A211 bullets.
+
+### A243 · A11Y-24: field-save outcomes are announced in the shell live region
+
+**Ticket:** A11Y-24 (WCAG-AA publish blocker, K74) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** The shell's `Announcer` (`apps/web/src/client/ui/Announcer.tsx`)
+already backed theme-change (A11Y-7), route-change (A11Y-45), sort (A11Y-27)
+and result-count (A11Y-25) announcements, and `CommentsPanel` used it. The
+one confirmed gap A11Y-24 names was the **task-detail field save**: a
+successful `set`/`unset` was completely silent to a screen reader (the value
+just updated in place, with no live-region output), so a non-sighted user
+could not tell a save landed. The failure already rendered an anchored
+`role="alert"` notice (A11Y-46), but nothing spoke through the announcement
+channel. A11Y-9's fourth bullet rode on this and documented the silence with
+a negative Playwright assertion set to flip when A11Y-24 landed.
+
+**What was decided (recorded, revertible).**
+
+1. *Which layer owns the announce.* The mutation success/error handlers live
+   in `TaskDetail.tsx`'s `writeField` (MetaPanel's `onSet`/`onUnset` are thin
+   forwarders to it, and `EditableTitle` writes through it too). That is the
+   only place that knows the outcome, so the announce is wired there — in the
+   mutation's `onSuccess`/`onError`, **not** in render, which is what makes
+   it once-per-event rather than once-per-repaint (a background poll or a
+   sibling field's edit re-renders the panel). MetaPanel itself stays a pure
+   presenter; it never learns the outcome. `TaskDetail.tsx` was not in the
+   original lane's file list but is neither MetaPanel's do-not-touch set nor
+   another agent's; it is literally MetaPanel's save path, so touching it was
+   the honest which-layer call rather than inventing a callback prop to carry
+   the outcome up.
+2. *Success is polite, failure assertive.* `announce("<Field> saved")` polite
+   on success (a routine confirmation is not an interruption, and A11Y-24's
+   first bullet forbids moving focus — the announce sets state only, it never
+   focuses); `announce(failure.message, "assertive")` on failure, carrying
+   the **same** text the `role="alert"` notice shows (`FieldFailure.message`),
+   so the channel and the notice never disagree and a silent failure — the
+   case's named worst case — cannot happen.
+3. *Field label reuse.* Extracted `fieldLabel(field)` (underscores→spaces,
+   capitalised — no hardcoded map, so custom fields work too) from
+   `FieldFailureNotice.tsx` into a shared `task/fieldLabel.ts`, so the
+   announcement and the notice headline name a field identically.
+4. *Theme/toast verified, not rebuilt.* The theme toggle (A11Y-7) and route
+   change (A11Y-45) already announce; the toast region is itself an
+   `aria-live="polite"` region, so create toasts are announced. Left as-is.
+
+**Not decided / out of scope.** No change to `Announcer`'s API (the existing
+`announce(message, politeness?)` and its per-message keying were sufficient),
+no core/contracts/CLI/MCP change (this is a web-only a11y surface — the CLI
+and MCP have no live region), no change to the failure notice's rendering.
+
+**Tests (red-proven).**
+- `apps/web/src/client/task/TaskDetail.announce.test.tsx` (new): a successful
+  field save announces "<Field> saved" politely and does not move focus
+  (red-proven by deleting the success `announce` → polite region empty); a
+  failed save announces the error message assertively (red-proven by deleting
+  the failure `announce` → assertive region empty); once per save event, not
+  on re-render or before any save (red-proven by moving announce into render).
+- `tests/ui/flow-accessibility.spec.ts`: new `@verifies A11Y-24` — a real
+  successful priority save announced politely, then the same field forced to
+  fail announced assertively with the notice's message. The `@verifies A11Y-9`
+  test's negative assertion was flipped to assert the successful status save
+  **is** announced (`announcer-polite` contains "status saved").
+
+**Gate note.** The UI specs serve the **built** SPA (`tests/ui/fixtures`),
+so `npm run -w apps/web build` must run before the Playwright specs pick up
+a source change to the client. (Cost me a long debugging detour — recorded
+so the next agent does not repeat it.)
+
+**To revert.** In `TaskDetail.tsx`: remove the `useAnnouncer` import and
+call, the `fieldLabel` import, and the `onSuccess`/`announce` lines in
+`writeField` (restore it to the `onError`-only `setFieldError` form). Delete
+`task/fieldLabel.ts` and restore the private `fieldLabel` in
+`FieldFailureNotice.tsx` (dropping its import). Delete
+`TaskDetail.announce.test.tsx`, restore the A11Y-9 spec's negative assertion
+(`announcer-polite`/`-assertive` do **not** contain "saved") and its
+tracked-not-satisfied comment, delete the A11Y-24 spec test, and re-open the
+A11Y-9 "remaining dependency (A11Y-24)" note in known-gaps.md and the
+flow-accessibility.md coverage notes.

@@ -30,6 +30,7 @@ import { OptionPicker } from "../task/editors/OptionPicker.tsx";
 import { estimationShape } from "../task/estimation.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
@@ -1311,33 +1312,44 @@ function CreateCustomField({
     const values = def.values ?? [];
     if (def.multi) {
       const selected = Array.isArray(value) ? (value as string[]) : [];
+      // A211/A242: the value set grows with the workflow config — a
+      // searchable multi-select `ui/Combobox` (the box appears on its own
+      // past twelve values), not one toggle pill per value. This mirrors
+      // the detail panel's MultiEnum, which is already an OptionPicker over
+      // the same Combobox primitive, so the create modal and task detail
+      // cannot disagree. The per-value `create-field-<key>-<v>` testids
+      // stay reachable on each option button; the trigger carries
+      // `create-field-<key>`. Dialog-safe: the Combobox's Escape stops
+      // propagation so it does not also close the create modal.
+      const chosenLabels = selected
+        .map(k => values.find(v => v.key === k)?.label ?? k);
       return (
         <Field label={def.label}>
-          <div data-testid={testid} className="flex flex-wrap gap-1.5">
-            {values.map(v => {
-              const on = selected.includes(v.key);
-              return (
-                <button
-                  key={v.key}
-                  type="button"
-                  data-testid={`${testid}-${v.key}`}
-                  aria-pressed={on}
-                  onClick={() => {
-                    const next = on ? selected.filter(k => k !== v.key) : [...selected, v.key];
-                    onChange(next.length > 0 ? next : undefined);
-                  }}
-                  className={[
-                    "rounded-full border px-2 py-0.5 text-[0.8571rem]",
-                    on
-                      ? "border-accent bg-accent text-accent-contrast"
-                      : "border-border-default text-text-secondary hover:bg-bg-muted",
-                  ].join(" ")}
-                >
-                  {v.label}
-                </button>
-              );
-            })}
-          </div>
+          <Combobox
+            mode="multi"
+            label={def.label}
+            options={values.map((v): ComboboxOption => ({ key: v.key, label: v.label }))}
+            selected={selected}
+            onToggle={(key, on) => {
+              const next = on ? [...selected, key] : selected.filter(k => k !== key);
+              onChange(next.length > 0 ? next : undefined);
+            }}
+            listTestId={`${testid}-list`}
+            optionTestId={o => `${testid}-${o.key}`}
+            searchTestId={`${testid}-search`}
+            trigger={p => (
+              <ComboboxButton
+                {...p}
+                testId={testid}
+                dataValue={selected.join(",")}
+                aria-label={def.label}
+                placeholder="None"
+                className="w-full"
+              >
+                {chosenLabels.length > 0 ? chosenLabels.join(", ") : ""}
+              </ComboboxButton>
+            )}
+          />
           <FieldProblem problem={problem} testid={testid} />
         </Field>
       );

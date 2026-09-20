@@ -214,7 +214,14 @@ describe("LabelsPanel", () => {
     const confirm = await screen.findByTestId("remap-confirm");
     expect(confirm).toHaveProperty("disabled", true);
 
-    // Choosing the remap target enables it.
+    // A211/A242: the alternatives are a searchable Combobox behind a
+    // "reassign" radio now, not one radio per alternative. Control type
+    // changed, not behavior: choose reassign, open the picker, pick L2 by
+    // its (unchanged) per-option testid. The confirm is still gated on a
+    // concrete target — reassign with nothing picked stays disabled.
+    fireEvent.click(screen.getByTestId("remap-reassign"));
+    expect(screen.getByTestId("remap-confirm")).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByTestId("remap-to"));
     fireEvent.click(screen.getByTestId("remap-to-L2"));
     expect(screen.getByTestId("remap-confirm")).toHaveProperty("disabled", false);
     fireEvent.click(screen.getByTestId("remap-confirm"));

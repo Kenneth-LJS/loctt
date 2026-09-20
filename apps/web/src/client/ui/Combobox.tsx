@@ -590,6 +590,7 @@ export function ComboboxButton({
   testId,
   dataValue,
   "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
   "aria-haspopup": haspopup,
   "aria-expanded": expanded,
   "aria-controls": controls,
@@ -607,6 +608,15 @@ export function ComboboxButton({
    */
   readonly dataValue?: string | undefined;
   readonly "aria-label"?: string | undefined;
+  /**
+   * A211/A242: the id of an element that names this control, for callers
+   * whose label is a separate heading rather than a string (ReconcilePanel's
+   * field-name `<div>`, wired via `useId()`). When supplied it takes
+   * precedence over `aria-label`, so the trigger announces the field it
+   * belongs to without duplicating the name — the same association a
+   * native `<select aria-labelledby>` carried before the swap.
+   */
+  readonly "aria-labelledby"?: string | undefined;
 }) {
   const empty = children === undefined || children === null || children === "";
   return (
@@ -615,7 +625,8 @@ export function ComboboxButton({
       type="button"
       data-testid={testId}
       data-value={dataValue}
-      aria-label={ariaLabel}
+      aria-label={ariaLabelledBy !== undefined ? undefined : ariaLabel}
+      aria-labelledby={ariaLabelledBy}
       aria-haspopup={haspopup}
       aria-expanded={expanded}
       aria-controls={controls}
