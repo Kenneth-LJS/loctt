@@ -17,12 +17,12 @@ import {
   bodyToken,
   buildListContext,
   buildShowModel,
+  bulkDelete,
   bulkMoveTasksToProject,
   bulkSetFields,
   computeProgressFromStatuses,
   createTask,
   DEFAULT_LIST_LIMIT,
-  deleteTask,
   duplicateTask,
   exportTasksToCSV,
   exportTasksToJSON,
@@ -665,18 +665,27 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "delete_task",
     description:
-      "Permanently remove a task directory. Use `archive_task` for the reversible (soft) " +
-      "variant. Always requires `confirm: true`.",
+      "Permanently remove one or more task directories. Use `archive_task` " +
+      "for the reversible (soft) variant. Always requires `confirm: true`. " +
+      "Pass several refs to delete them as one operation (a single lock, a " +
+      "shared bulk_op_id); a bad ref is reported without aborting the rest. " +
+      "This is irreversible — there is no history entry, because the file it " +
+      "would live in is deleted with the task.",
     inputSchema: {
-      ref: z.string(),
+      refs: z.array(z.string()).min(1).max(500)
+        .describe("Task keys or IDs. Capped at 500 — one bulk op holds the tracker lock for its whole run."),
       confirm: z.boolean().optional().describe("Required: must be true to proceed"),
     },
     handler: async ({ locttDir }, args) => {
       const blocked = requireConfirm(args, "delete_task");
       if (blocked) return blocked;
-      const task = await lookupTask(locttDir, args["ref"] as string);
-      await deleteTask(locttDir, task.frontmatter.id, { force: true });
-      return text(`Deleted ${task.frontmatter.key}.`);
+      const refs = args["refs"] as string[];
+      const result = await bulkDelete({ locttDir, taskRefs: refs });
+      const lines = [
+        `Deleted ${result.succeeded.length}, failed ${result.failed.length} (bulk_op_id ${result.bulk_op_id})`,
+      ];
+      for (const f of result.failed) lines.push(`  ${f.taskId}: ${f.error}`);
+      return text(lines.join("\n"));
     },
   },
   {

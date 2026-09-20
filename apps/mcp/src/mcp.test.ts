@@ -330,20 +330,22 @@ describe("MCP executeTool", () => {
     });
   });
 
+  // These tools now take `refs` (bulk parity with the web); the single
+  // task is `refs: ["T-1"]`. The confirm gate is unchanged.
   it("delete_task without confirm is rejected; archive_task is the soft path", async () => {
     await executeTool(root, "create_task", { title: "to-delete" });
 
     // Without confirm: refused.
-    const refused = await executeTool(root, "delete_task", { ref: "T-1" });
+    const refused = await executeTool(root, "delete_task", { refs: ["T-1"] });
     expect(refused.isError).toBe(true);
     expect(refused.content[0]?.text).toMatch(/confirm/i);
 
     // archive_task succeeds without confirm.
-    const archived = await executeTool(root, "archive_task", { ref: "T-1" });
+    const archived = await executeTool(root, "archive_task", { refs: ["T-1"] });
     expect(archived.isError).toBeUndefined();
 
     // delete_task with confirm succeeds and removes the task entirely.
-    const deleted = await executeTool(root, "delete_task", { ref: "T-1", confirm: true });
+    const deleted = await executeTool(root, "delete_task", { refs: ["T-1"], confirm: true });
     expect(deleted.isError).toBeUndefined();
   });
 

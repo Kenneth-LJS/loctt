@@ -17,7 +17,9 @@ import {
   createBoardColumn,
   createCustomField,
   createPriority,
+  createRelationship,
   createStatus,
+  createTaskType,
   deleteCustomField,
   deleteFieldValue,
   deletePriority,
@@ -342,5 +344,85 @@ describe("atomicity of refusals", () => {
       .rejects.toBeInstanceOf(WorkflowEntityError);
     const after = await loadWorkflowConfig(locttDir);
     expect(after.statuses.length).toBe(before.statuses.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Entity-key charset (security: a malformed key writes cleanly but the
+// read-side regexes reject it, producing a self-inflicted corrupt config).
+// ---------------------------------------------------------------------------
+
+describe("entity key charset validation", () => {
+  it("every seeded/default key satisfies the rule", async () => {
+    const cfg = await loadWorkflowConfig(locttDir);
+    const rule = /^[a-z][a-z0-9_-]*$/;
+    for (const s of cfg.statuses) expect(rule.test(s.key)).toBe(true);
+    for (const p of cfg.priorities) expect(rule.test(p.key)).toBe(true);
+    for (const t of cfg.task_types) expect(rule.test(t.key)).toBe(true);
+    for (const r of cfg.relationships) {
+      expect(rule.test(r.key)).toBe(true);
+      if (r.inverse) expect(rule.test(r.inverse)).toBe(true);
+    }
+  });
+
+  it("rejects a key with a space", async () => {
+    await expect(createStatus(locttDir, { key: "in progress", label: "X", category: "active" }))
+      .rejects.toThrow(/not valid/i);
+  });
+
+  it("rejects a key with a dot", async () => {
+    await expect(createTaskType(locttDir, { key: "my.type", label: "X" }))
+      .rejects.toThrow(/not valid/i);
+  });
+
+  it("rejects a key with a newline", async () => {
+    await expect(createPriority(locttDir, { key: "bad\nkey", label: "X" }))
+      .rejects.toThrow(/not valid/i);
+  });
+
+  it("rejects an uppercase key", async () => {
+    await expect(createStatus(locttDir, { key: "Blocked", label: "X", category: "active" }))
+      .rejects.toThrow(/not valid/i);
+  });
+
+  it("rejects a key that starts with a digit", async () => {
+    await expect(createStatus(locttDir, { key: "1st", label: "X", category: "active" }))
+      .rejects.toThrow(/not valid/i);
+  });
+
+  it("accepts a valid key (lowercase, digits, underscore, hyphen)", async () => {
+    await createStatus(locttDir, { key: "in_review-2", label: "In review", category: "active" });
+    const cfg = await loadWorkflowConfig(locttDir);
+    expect(cfg.statuses.some(s => s.key === "in_review-2")).toBe(true);
+  });
+
+  it("rejects a malformed enum field value key", async () => {
+    await createCustomField(locttDir, {
+      key: "sev", label: "Severity", type: "enum", multi: false, searchable: false,
+      values: [{ key: "low", label: "Low" }],
+    });
+    await expect(addFieldValue(locttDir, "sev", { key: "very high", label: "Very high" }))
+      .rejects.toThrow(/not valid/i);
+  });
+
+  it("rejects a malformed board column key", async () => {
+    await expect(createBoardColumn(locttDir, { key: "To Do", label: "To Do", statuses: [] }))
+      .rejects.toThrow(/not valid/i);
+  });
+
+  it("rejects a malformed relationship inverse key", async () => {
+    await expect(createRelationship(locttDir, {
+      key: "mirrors", label: "Mirrors", inverse: "is mirrored by", inverse_label: "Is mirrored by",
+    })).rejects.toThrow(/not valid/i);
+  });
+
+  it("anchors the charset error on 'key'", async () => {
+    try {
+      await createStatus(locttDir, { key: "bad key", label: "X", category: "active" });
+      throw new Error("expected rejection");
+    } catch (err) {
+      expect(err).toBeInstanceOf(WorkflowEntityError);
+      expect((err as WorkflowEntityError).toEnvelope().field).toBe("key");
+    }
   });
 });

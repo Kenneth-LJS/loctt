@@ -5,6 +5,7 @@ import {
   bodyToken,
   buildListContext,
   buildShowModel,
+  bulkDelete,
   bulkMoveTasksToProject,
   bulkSetFields,
   computeProgressFromStatuses,
@@ -703,7 +704,7 @@ export async function set(args: string[], root: string): Promise<void> {
  *
  * Empty segments are dropped so a trailing comma is not an error.
  */
-function splitRefs(raw: string): string[] {
+export function splitRefs(raw: string): string[] {
   return raw.split(",").map(r => r.trim()).filter(Boolean);
 }
 
@@ -711,12 +712,23 @@ function splitRefs(raw: string): string[] {
  * Prints a bulk result. Failures are listed individually and set a
  * non-zero exit code, so a script does not read a partial success as
  * a complete one.
+ *
+ * `unchanged` (archive's no-op tasks, already in the target state) is a
+ * subset of `succeeded`; it is surfaced as a parenthetical so a mixed
+ * selection reads honestly — parity with the web, which returns it in
+ * the same bulk shape (BLK-27).
  */
-function reportBulk(
+export function reportBulk(
   action: string,
-  result: { succeeded: readonly string[]; failed: readonly { taskId: string; error: string }[] },
+  result: {
+    succeeded: readonly string[];
+    failed: readonly { taskId: string; error: string }[];
+    unchanged?: readonly string[];
+  },
 ): void {
-  console.log(`${action} on ${result.succeeded.length} task(s)`);
+  const noop = result.unchanged?.length ?? 0;
+  const suffix = noop > 0 ? ` (${String(noop)} already in that state)` : "";
+  console.log(`${action} on ${result.succeeded.length} task(s)${suffix}`);
   if (result.failed.length > 0) {
     console.error(`${result.failed.length} failed:`);
     for (const f of result.failed) console.error(`  ${f.taskId}: ${f.error}`);
@@ -764,10 +776,30 @@ export async function deleteCmd(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_DELETE_CMD_FLAGS);
   const ref = args[1];
   if (!ref) {
-    throw new UsageError("missing task ref", "loctt delete <task> [--yes]");
+    throw new UsageError("missing task ref", "loctt delete <task>[,<task>...] [--yes]");
   }
   const locttDir = resolveLocttDir(root);
-  const task = await lookupTask(locttDir, ref);
+  const refs = splitRefs(ref);
+
+  if (refs.length > 1) {
+    // The confirm gate covers the whole batch — a single "yes" for the
+    // set, not one per task. Core resolves each ref inside the lock and
+    // reports per-ref outcomes, so an invalid ref does not abort the rest
+    // (matching set/move and the web bulk-delete route).
+    const outcome = await confirmHardDelete(
+      args,
+      `Permanently delete ${String(refs.length)} tasks? (use 'loctt archive' for a reversible alternative)`,
+    );
+    if (outcome !== "yes") {
+      process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS;
+      return;
+    }
+    const result = await bulkDelete({ locttDir, taskRefs: refs });
+    reportBulk("Deleted", result);
+    return;
+  }
+
+  const task = await lookupTask(locttDir, refs[0] as string);
   const outcome = await confirmHardDelete(
     args,
     `Permanently delete task ${task.frontmatter.key}? (use 'loctt archive' for a reversible alternative)`,

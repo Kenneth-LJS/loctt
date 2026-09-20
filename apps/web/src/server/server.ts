@@ -36,7 +36,6 @@ import {
   CreateViewRequestSchema,
   EditCommentRequestSchema,
   EditViewRequestSchema,
-  EmailSchema,
   InitRequestSchema,
   isSortableTaskField,
   ListViewConfigSchema,
@@ -2858,18 +2857,11 @@ export function createWebApp(options: WebAppOptions) {
       error(res, "A name is required.", 400, { ...REJECTED_WRITE, field: "name" });
       return;
     }
-    // B2 bug 1: reject a malformed email on the WRITE path. Without this,
-    // core persists `email: "bob"`, the reader degrades it into `health`
-    // on the next load, and the field silently reads back blank — data
-    // loss reported as a 201. `field: "email"` lets the client anchor the
-    // error at the email input.
-    if (request.email !== undefined && !EmailSchema.safeParse(request.email).success) {
-      error(res, "Enter a valid email address, or leave it blank.", 400, {
-        ...REJECTED_WRITE,
-        field: "email",
-      });
-      return;
-    }
+    // B2 bug 1: a malformed email is refused by core `createUser` now
+    // (parity — the CLI/MCP inherit it), against the same `EmailSchema`.
+    // Its UserError anchors `field: "email"`; the catch surfaces that, so
+    // the client still places the error at the email input and nothing is
+    // written (the field was degraded into `health` on read before).
     try {
       const created = await createUser(locttDir, {
         name: request.name,
@@ -2880,7 +2872,8 @@ export function createWebApp(options: WebAppOptions) {
       json(res, created, 201);
     } catch (err) {
       if (err instanceof UserError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        const envelope = err.toEnvelope();
+        error(res, envelope.message, 400, { ...REJECTED_WRITE, field: envelope.field ?? "name" });
         return;
       }
       throw err;
@@ -2894,21 +2887,10 @@ export function createWebApp(options: WebAppOptions) {
       email?: string | null;
       timezone?: string;
     }>(req, res);
-    // B2 bug 1: a non-null email must be a valid address before it is
-    // written. `null` clears the field (allowed); `undefined` leaves it
-    // unchanged. A malformed string is rejected here, not degraded into
-    // `health` on the next read (silent data loss).
-    if (
-      "email" in request
-      && request.email !== null
-      && !EmailSchema.safeParse(request.email).success
-    ) {
-      error(res, "Enter a valid email address, or leave it blank.", 400, {
-        ...REJECTED_WRITE,
-        field: "email",
-      });
-      return;
-    }
+    // B2 bug 1: a malformed non-null email is refused by core `updateUser`
+    // now (parity). `null` clears the field, `undefined` leaves it. The
+    // UserError anchors `field: "email"`; the catch surfaces that, so the
+    // previous, valid email stays on disk (no silent corruption).
     try {
       const target = await resolveUserRef(locttDir, ref);
       const updated = await updateUser(locttDir, target.id, {
@@ -2919,7 +2901,8 @@ export function createWebApp(options: WebAppOptions) {
       json(res, updated);
     } catch (err) {
       if (err instanceof UserError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        const envelope = err.toEnvelope();
+        error(res, envelope.message, 400, { ...REJECTED_WRITE, field: envelope.field ?? "name" });
         return;
       }
       throw err;
@@ -3849,34 +3832,14 @@ export function createWebApp(options: WebAppOptions) {
       return;
     }
 
-    // TML-45: "the write is rejected ... and the reason names the
-    // constraint: start cannot be after due", and "nothing is written
-    // to disk". Checked here, before `setFields`, so the rejection
-    // happens without a partial write — and against the *effective*
-    // pair, which for a single-edge drag means the stored value of the
-    // date this request does not carry. A left-edge drag past the due
-    // date sends only `start_date`, so comparing the two sent values
-    // would find nothing wrong and write the anomaly.
+    // TML-45: start-after-due is refused in core `setFields` now, against
+    // the *effective* pair (the stored value of the date this request does
+    // not carry). A left-edge drag past due sends only `start_date`, and
+    // core compares it to the due date on disk. The LocttError it throws
+    // — message and `field` — is surfaced by the catch below, so the
+    // constraint, and "nothing was written" (setFields is atomic), reach
+    // the client exactly as before, but every surface now inherits it.
     const current = await lookupTask(locttDir, ref);
-    const sent = new Map(changes.map(c => [c.field, c.value as string]));
-    const start = sent.get("start_date") ?? current.frontmatter.start_date;
-    const due = sent.get("due_date") ?? current.frontmatter.due_date;
-    if (
-      typeof start === "string" && typeof due === "string"
-      && start.slice(0, 10) > due.slice(0, 10)
-    ) {
-      error(
-        res,
-        `The start date (${start.slice(0, 10)}) cannot be after the due date `
-        + `(${due.slice(0, 10)}).`,
-        400,
-        {
-          ...REJECTED_WRITE,
-          field: sent.has("start_date") ? "start_date" : "due_date",
-        },
-      );
-      return;
-    }
 
     try {
       const wfConfig = await loadWorkflowConfig(locttDir);
