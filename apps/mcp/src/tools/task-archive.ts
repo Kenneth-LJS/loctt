@@ -8,7 +8,7 @@
 import { bulkArchive } from "@loctt/core";
 import { z } from "zod";
 
-import { text } from "../runtime/errors.js";
+import { errorResult, text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
 
 /**
@@ -55,7 +55,8 @@ export const TOOLS: readonly ToolDef[] = [
     handler: async ({ locttDir }, args) => {
       const refs = args["refs"] as string[];
       const result = await bulkArchive({ locttDir, taskRefs: refs, archive: true });
-      return text(reportArchive("Archived", result));
+      const out = reportArchive("Archived", result);
+      return result.failed.length > 0 ? errorResult(out) : text(out);
     },
   },
   {
@@ -73,7 +74,8 @@ export const TOOLS: readonly ToolDef[] = [
     handler: async ({ locttDir }, args) => {
       const refs = args["refs"] as string[];
       const result = await bulkArchive({ locttDir, taskRefs: refs, archive: false });
-      return text(reportArchive("Unarchived", result));
+      const out = reportArchive("Unarchived", result);
+      return result.failed.length > 0 ? errorResult(out) : text(out);
     },
   },
 ];

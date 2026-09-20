@@ -12,8 +12,7 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("link_tasks", {
-          ref: "T-1",
+        const result = await client.callTool("link_tasks", { refs: ["T-1"],
           type: "nonexistent_type",
           target: "T-2",
         });
@@ -31,8 +30,7 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("link_tasks", {
-          ref: "T-1",
+        const result = await client.callTool("link_tasks", { refs: ["T-1"],
           type: "blocks",
           target: "T-99",
         });
@@ -50,8 +48,7 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("link_tasks", {
-          ref: "T-1",
+        const result = await client.callTool("link_tasks", { refs: ["T-1"],
           type: "blocks",
           target: "T-1",
         });
@@ -71,11 +68,11 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const ok1 = await client.callTool("link_tasks", { ref: "T-1", type: "parent", target: "T-2" });
+        const ok1 = await client.callTool("link_tasks", { refs: ["T-1"], type: "parent", target: "T-2" });
         expect(ok1.isError).toBeFalsy();
-        const ok2 = await client.callTool("link_tasks", { ref: "T-2", type: "parent", target: "T-3" });
+        const ok2 = await client.callTool("link_tasks", { refs: ["T-2"], type: "parent", target: "T-3" });
         expect(ok2.isError).toBeFalsy();
-        const bad = await client.callTool("link_tasks", { ref: "T-3", type: "parent", target: "T-1" });
+        const bad = await client.callTool("link_tasks", { refs: ["T-3"], type: "parent", target: "T-1" });
         expect(bad.isError).toBe(true);
         expect(bad.content[0]?.text ?? "").toContain("cannot create cycle in relationship 'parent'");
       } finally {
@@ -96,11 +93,11 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const ok1 = await client.callTool("link_tasks", { ref: "T-1", type: "relates_to", target: "T-2" });
+        const ok1 = await client.callTool("link_tasks", { refs: ["T-1"], type: "relates_to", target: "T-2" });
         expect(ok1.isError).toBeFalsy();
-        const ok2 = await client.callTool("link_tasks", { ref: "T-2", type: "relates_to", target: "T-3" });
+        const ok2 = await client.callTool("link_tasks", { refs: ["T-2"], type: "relates_to", target: "T-3" });
         expect(ok2.isError).toBeFalsy();
-        const ok3 = await client.callTool("link_tasks", { ref: "T-3", type: "relates_to", target: "T-1" });
+        const ok3 = await client.callTool("link_tasks", { refs: ["T-3"], type: "relates_to", target: "T-1" });
         expect(ok3.isError).toBeFalsy();
       } finally {
         await client.close();
@@ -114,8 +111,7 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("link_tasks", {
-          ref: "T-99",
+        const result = await client.callTool("link_tasks", { refs: ["T-99"],
           type: "blocks",
           target: "T-1",
         });

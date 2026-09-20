@@ -8,7 +8,7 @@
 import { bulkLink, loadOptionalConfigs, lookupTask, unlinkTask } from "@loctt/core";
 import { z } from "zod";
 
-import { text } from "../runtime/errors.js";
+import { errorResult, text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
 
 export const TOOLS: readonly ToolDef[] = [
@@ -46,7 +46,10 @@ export const TOOLS: readonly ToolDef[] = [
         + `--${relType}--> ${args["target"] as string} (bulk_op_id ${result.bulk_op_id})`,
       ];
       for (const f of result.failed) lines.push(`  ${f.taskId}: ${f.error}`);
-      return text(lines.join("\n"));
+      // Any failed edge is an error (parity with the CLI's non-zero exit):
+      // a single-ref link to a bad target/type/cycle must surface as
+      // isError, not a success the caller has to introspect.
+      return result.failed.length > 0 ? errorResult(lines.join("\n")) : text(lines.join("\n"));
     },
   },
   {

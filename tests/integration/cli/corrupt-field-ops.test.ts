@@ -110,7 +110,7 @@ describe("set/unset and derived-op refusal over an on-disk corrupt task", () => 
         // Derived op refuses with an isError envelope naming the field —
         // MCP signals failure differently from the CLI (isError vs exit
         // code) but both name `relationships` and neither emits a fault.
-        const link = await client.callTool("link_tasks", { ref: "T-1", type: "blocks", target: "T-2" });
+        const link = await client.callTool("link_tasks", { refs: ["T-1"], type: "blocks", target: "T-2" });
         expect(link.isError).toBe(true);
         expect(link.content[0]?.text ?? "").toMatch(/relationships/);
 

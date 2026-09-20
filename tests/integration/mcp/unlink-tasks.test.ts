@@ -12,7 +12,7 @@ describe("MCP unlink_tasks (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        await client.callTool("link_tasks", { ref: "T-1", type: "blocks", target: "T-2" });
+        await client.callTool("link_tasks", { refs: ["T-1"], type: "blocks", target: "T-2" });
         const unlink = await client.callTool("unlink_tasks", {
           ref: "T-1",
           type: "blocks",
