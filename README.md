@@ -262,14 +262,14 @@ Everything is customizable in `.loctt/config/workflow.yaml`: statuses, prioritie
 
 **Start here:**
 - [Concepts](docs/user/common/concepts.md) — how LocTT works, where data lives, and how sharing works
-- [Getting Started](docs/user/common/getting-started.md) — install, initialize, and walk through the basics
+- [Quick Start](docs/user/quickstart.md) — install, initialize, and walk through the basics
 - [Features](docs/user/features.md) — feature tour with links to each interface (Web UI, MCP, CLI)
 
 **By interface:**
 - [Features](docs/user/features.md) — what LocTT does, and which interfaces support each capability
 - [CLI reference](docs/user/cli/reference.md)
 - [MCP reference](docs/user/mcp/reference.md)
-- [Web UI guide](docs/user/ui/features.md)
+- [Web UI guide](docs/user/ui/guide.md)
 
 **Cross-cutting:**
 - [Configuration](docs/user/common/configuration.md)

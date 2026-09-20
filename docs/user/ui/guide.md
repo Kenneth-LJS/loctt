@@ -190,6 +190,25 @@ Settings panel that owns it, so you rarely have to hunt.
 
 <!-- [screenshot: the Settings shell — grouped nav and a panel such as Board columns] -->
 
+### Backup and restore
+
+Settings → Backup & restore writes a complete tracker backup and restores
+one. A restore runs in one of three modes:
+
+- **Bare** — writes only into an empty tracker; refuses one that already
+  has tasks.
+- **Merge** — adds only the tasks missing here; never edits a task that is
+  already present.
+- **Overwrite** — replaces any task the backup carries. This can lose
+  work, so it is gated behind a typed **OVERWRITE** confirmation; any
+  displaced body is kept beside the task and named in the result.
+
+A **dry run** predicts the counts and writes nothing, in any mode, and the
+restore reports per-outcome counts plus any key reallocations, renamed
+entities, or skipped lines. A backup taken in split parts must be restored
+with the `loctt restore` CLI, which takes every part at once. (A CSV or
+JSON export is a report, not a backup — it cannot restore.)
+
 ## Keyboard shortcuts
 
 Press `?` for the full list. The global shortcuts:
