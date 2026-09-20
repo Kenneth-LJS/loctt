@@ -16333,3 +16333,189 @@ narrow width, i.e. no dot-rail.
 **To revert.** Remove the `if (narrow) { return null; }` guard in
 `Sidebar.tsx` (between the `overlay` branch and the in-grid `<aside>` return);
 the narrow+collapsed state then falls through to the `w-14` rail again.
+
+### A252 · Per-entity workflow-write functions in core (foundation for CLI/MCP parity editing of workflow.yaml)
+
+**Ticket:** CLI/MCP workflow-editing parity, wave 1 (core) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** implements Ken's approved shape for per-entity workflow writes (the op matrix + guarantees he confirmed); mirrors the labels/milestones/sprints per-entity CRUD template Ken chose.
+
+**The situation.** `applyWorkflowEdit` (workflow-write.ts) is the whole-document
+workflow-write primitive — validated, atomic, journaled, with task-rewrite +
+remap — but its only caller was the web server's `PUT /api/workflow`, which
+ships the entire config. CLI and MCP have no way to change *one* workflow
+entity (add a status, delete a priority, reorder task types) and get the same
+guarantees. Per core/surface parity, a capability that exists for one surface
+only is drift; the per-entity layer is the shared foundation both later waves
+(CLI, MCP) call.
+
+**What was built (recorded, revertible).** New module
+`packages/core/src/config/workflow-entities.ts` with a per-entity
+create/edit/delete/reorder set per workflow entity, each a thin wrapper over one
+shared helper `mutateWorkflow(locttDir, mutator, remap)` that reads the config
+fresh, splices in the one change, and delegates to `applyWorkflowEdit`. Roster:
+statuses (create/edit/delete(remapTo)/reorder), priorities (create/edit/
+delete(remapTo)/reorder — reorder is the ONLY way to set `value`), task_types
+(create/edit/delete(remapTo)/reorder), relationships (create/edit/
+delete(remapTo-or-clear) — no reorder), custom_fields (create/edit/delete —
+whole delete is clear-only, no remap target), custom-field enum values
+(add/edit/delete(remapTo)/reorder), board columns (create/edit/delete/reorder —
+no remap; deleting the last column drops the `boards` block), estimation
+(editEstimationConfig singleton — scale + weights + all fields), timeline
+(editTimelineConfig singleton). Exported from `config/index.ts` and the package
+root, plus a `WorkflowEntityError` (extends `LocttError`, `validation_failed` /
+`not_saved`, mirroring `LabelError`).
+
+Guarantees enforced by construction: **key immutability** — `create*` takes
+`key`, `edit*` has no `key` path and constructs `updated.key = existing.key`
+(nor `type`/`multi` on a custom field, per SET-16, which `editCustomField`
+copies from `existing`); a rename is delete+create, there is deliberately no
+rename op. **Priority `value`** is never an argument — `createPriority`/
+`editPriority` inputs omit it and `renumberPriorities` (inside
+`assertWorkflowConfigValid`) recomputes it 1..N in list order; `reorderPriorities`
+is the only setter (D20). **Remap-or-refuse on delete** — the shared
+`resolveDeleteRemap` gate uses `computeWorkflowKeyUsage` for the in-use check
+and throws `WorkflowEntityError` when an in-use key is deleted with no
+`remapTo`; with `remapTo` it builds the `WorkflowRemap` directive the primitive
+understands. Custom-field WHOLE delete is clear-only (no target). **Read-fresh**
+per Ken's concurrency mitigation — each fn loads the current config itself,
+shrinking the read→write race window. **Atomicity** — every write funnels
+through `applyWorkflowEdit`, so a refused edit leaves workflow.yaml unchanged;
+no partial writes.
+
+Note: this wave is **core only**. CLI and MCP do not yet call these; that is the
+next wave. Per "a capability in core is not done until CLI and MCP have it",
+this A-entry records the foundation, not the finished parity.
+
+**Tests (red-proven).** `packages/core/src/config/workflow-entities.test.ts`
+(24 cases). Guard red-proofs performed and confirmed: (1) removing the in-use
+refusal in `resolveDeleteRemap` → the four delete-in-use refusal tests go red
+(the assertion is `toBeInstanceOf(WorkflowEntityError)`, which the primitive's
+own `WorkflowConfigError` does not satisfy, so the layer's own guard is what
+they pin); (2) letting `editStatus` honour a smuggled `key` → the
+key-immutability test goes red; (3) letting `editCustomField` honour `type`/
+`multi` → the SET-16 immutability test goes red; (4) making `reorderByKeys`
+ignore the requested order → the priority-value-recompute test goes red.
+
+**Signatures (for the CLI/MCP wave to call).** All async, `void` unless noted;
+`locttDir: string` is the first arg throughout.
+- `createStatus(locttDir, { key, label, category, default?, icon?, color? })`
+- `editStatus(locttDir, key, { label?, category?, default?, icon?, color? })` (icon/color: `null` clears)
+- `deleteStatus(locttDir, key, remapTo?: string | null)`
+- `reorderStatuses(locttDir, orderedKeys: string[])`
+- `createPriority(locttDir, { key, label, icon?, color? })` (no `value`)
+- `editPriority(locttDir, key, { label?, icon?, color? })`
+- `deletePriority(locttDir, key, remapTo?: string | null)`
+- `reorderPriorities(locttDir, orderedKeys)` (sets `value`)
+- `createTaskType(locttDir, { key, label, icon?, color? })`
+- `editTaskType(locttDir, key, { label?, icon?, color? })`
+- `deleteTaskType(locttDir, key, remapTo?: string | null)`
+- `reorderTaskTypes(locttDir, orderedKeys)`
+- `createRelationship(locttDir, { key, label, kind?, inverse?, inverse_label?, graph?, ranked?, icon?, color? })`
+- `editRelationship(locttDir, key, { label?, kind?, inverse?, inverse_label?, graph?, ranked?, icon?, color? })`
+- `deleteRelationship(locttDir, key, remapTo?: string | null)` (`null` clears edges; no reorder)
+- `createCustomField(locttDir, { key, label, type, multi, searchable, values?, task_types? })`
+- `editCustomField(locttDir, key, { label?, searchable?, task_types? })` (`task_types: null` → global; type/multi immutable)
+- `deleteCustomField(locttDir, key)` (clear-only, no remap)
+- `addFieldValue(locttDir, fieldKey, { key, label, icon?, color? })`
+- `editFieldValue(locttDir, fieldKey, valueKey, { label?, icon?, color? })`
+- `deleteFieldValue(locttDir, fieldKey, valueKey, remapTo?: string | null)`
+- `reorderFieldValues(locttDir, fieldKey, orderedKeys)`
+- `createBoardColumn(locttDir, { key, label, statuses, wip? })`
+- `editBoardColumn(locttDir, key, { label?, statuses?, wip? })` (`wip: null` clears)
+- `deleteBoardColumn(locttDir, key)`
+- `reorderBoardColumns(locttDir, orderedKeys)`
+- `editEstimationConfig(locttDir, { enabled?, unit?, unit_label?, scale?, preset_values?, weights? })` (optionals accept `null` to clear; requires enabled+unit resolvable)
+- `editTimelineConfig(locttDir, { dependency_relationship?, default_zoom?, show_arrows?, default_grouping? })` (`dependency_relationship: null` = explicit disable, written through)
+
+**To revert.** Delete `packages/core/src/config/workflow-entities.ts` and its
+test, and remove the corresponding export blocks added to
+`packages/core/src/config/index.ts` and `packages/core/src/index.ts`. Nothing
+outside those files depends on the new module yet (CLI/MCP waves not started),
+so removal is clean. The `invariants.md` WF-key-immutability row (below) documents
+a property the primitive already enforced independent of this module, so leave it.
+
+### A253 · CLI parity for workflow.yaml entity editing (calls the A252 core functions)
+
+**Ticket:** CLI/MCP workflow-editing parity, wave 2 (CLI) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** implements the CLI half of the parity A252 built the core for; mirrors the `label`/`views` command-family pattern (arg parsing via `runtime/args`, confirm via `runtime/confirm`, error mapping via `runtime/errors`). A-number chosen as A253 (the next free number after the A252 core wave; A260–A264 were claimed concurrently by the web-editability agent).
+
+**The situation.** A252 added per-entity workflow-write functions to core but recorded that "a capability in core is not done until CLI and MCP have it" — CLI and MCP called none of them. The web could edit statuses/priorities/etc.; the CLI could only read them (`loctt schema`). This wave brings the CLI to the core.
+
+**What was built (recorded, revertible).** New module `apps/cli/src/commands/workflow-entities.ts` — eight top-level command families, each a thin arg-parse → core-call → error-map wrapper: `status`, `priority`, `task-type`, `relationship`, `custom-field` (incl. `value <field>` sub-group for enum values), `board-column`, `estimation`, `timeline`. Each scalar family has `list|add|edit|rm|reorder` (relationships: no `reorder`; custom-field whole `rm`: no remap; board-column `rm`: no remap); estimation/timeline are `show|set` singletons. Wired into `apps/cli/src/index.ts` dispatcher (each `case` wrapped in `runCommand`), `usage.ts`, and `WorkflowEntityError` added to `KNOWN_DOMAIN_ERRORS` in `runtime/errors.ts`. Docs: `docs/user/cli/reference.md` gains a "Workflow configuration" section.
+
+Grammar decisions the docs did not settle (recorded here):
+- **`reorder` takes a trailing comma-list of keys** (`loctt priority reorder low,medium,high,critical`), matching the core `orderedKeys` signature — not `--before`/`--after` (that convention is for task *ranking*, task-rank.ts; workflow entities reorder the whole list at once, which the comma-list expresses directly). **To revert:** if a per-move UX is later wanted, add `--before`/`--after` parsing that reduces to a full `orderedKeys` list before the core call.
+- **`--value` is deliberately NOT accepted anywhere** (priority value is derived from order, D20). It is absent from the shared `ACCEPTED_FLAGS`, so `loctt priority add --value 9` fails as an unknown option (exit 2) rather than silently. Red-proven.
+- **Enum custom-field creation needs seed values**, and the CLI had no way to pass them (core `createCustomField` accepts `values`, but `custom-field add` exposed no flag, and `value add` needs the field to already exist — a valueless enum is rejected by core). Added a repeatable **`--enum-value key=label`** on `custom-field add`, required-and-only-allowed for `--type enum`. Named `--enum-value` (not `--value`) precisely so priority's `--value` rejection stays intact. **To revert:** drop `--enum-value` + `parseFieldValueSeeds`; enum fields would then be uncreatable from the CLI (a parity regression), so this stays unless the seeding UX changes.
+- **`edit` clears icon/color/wip/unit-label/scale/preset/task-types with `-`** (mirrors `label edit --color -`, `milestone edit --target-date -`); `timeline set --dependency-relationship -` is the explicit "no arrows" null (written through), not a clear-to-unset, matching the core contract.
+- **`rm` confirms via `confirmHardDelete`** (`--yes` to skip, `refused` in non-TTY → exit 2), like every other destructive CLI command. The core delete-in-use refusal fires *after* the confirm, so `--yes` alone does not bypass the remap requirement.
+
+**Error mapping.** `WorkflowEntityError` extends `LocttError`, which `KNOWN_DOMAIN_ERRORS` already caught, so refusals mapped to exit 1 with a clean message even before this change; it is named explicitly in the list (alongside `ViewError`) so the workflow-entity commands sit with every sibling's domain error rather than depending on the catch-all. The delete-in-use message ("… is in use; provide a remap target (or clear) to delete it") reaches the terminal as a clean `Error:` line.
+
+**Tests (red-proven).** `apps/cli/src/commands/workflow-entities.test.ts` (18 cases, integration-style against a temp tracker via `initLoctt`). Distinct CLI-layer rules covered: status add→workflow.yaml with icon/color; status edit label; status rm in-use refuses without `--remap-to` and succeeds with it; priority reorder changes the derived value from list order; priority `--value` rejected as unknown option; priority add appended and renumbered by position (no `--value` path); task-type rm; relationship add stores kind/graph; relationship `reorder` is not a subcommand (usage error); custom-field edit cannot change type; custom-field whole rm is clear-only; enum add requires `--enum-value`; enum seed + `value add` + `value rm --remap-to`; `value reorder`; board-column add/reorder; estimation scale; estimation `--weight key=n` map; timeline set. Guard red-proofs performed and confirmed (each broken, watched go red, restored): (1) `del(key, undefined)` in `removeScalar` → the status in-use remap test goes red; (2) adding `--value` to `ACCEPTED_FLAGS` → the `--value` rejection test goes red; (3) making priority reorder keep existing order → the reorder-value test goes red; (4) removing the enum seed guard → the enum-requires-value test goes red; (5) making `value reorder` keep order → the value-reorder test goes red.
+
+**Gates.** `npx tsc --build` clean; `npx eslint` on touched files clean (one import-sort autofix); `npx vitest run --root apps/cli` — 136 passed (18 new + 118 existing). Not run (integrator's job / out of lane): `test:integration`, `test:e2e`, the tsup CLI bundle. Note: the CLI's runnable bundle is produced by tsup (`npm run build`), not `tsc --build`, so `apps/cli/dist/*.js` was stale during this work; the vitest suite (which runs against source) is the authoritative behavioural gate.
+
+**Parity note.** CLI now matches the web's workflow-editing capability except that these are the same core functions, so behaviour is identical by construction. One place the CLI is *more* explicit than a raw core call: enum creation requires `--enum-value` at the CLI boundary (the web dialog enforces the same "an enum needs ≥1 value" rule before submit). MCP is the remaining wave (a separate agent's lane); until it lands, the "not done until CLI **and** MCP have it" bar is not fully met.
+
+**To revert.** Delete `apps/cli/src/commands/workflow-entities.ts` and its test; remove the eight `case` blocks + the import in `apps/cli/src/index.ts`; remove the `WorkflowEntityError` import + list entry in `runtime/errors.ts`; revert the `usage.ts` and `docs/user/cli/reference.md` additions. Nothing else depends on them.
+
+### A260 · Web dialogs gain icon + color controls (statuses/priorities/task_types/relationships/enum values); create builders thread them
+
+**Ticket:** Web editability gaps, Part A (Ken-approved) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** the schema already carries `icon`/`color` on StatusDef/PriorityDef/TaskTypeDef/RelationshipDef/CustomFieldValueDef (`IconStringSchema`/`HexColor`, optional); this brings the web authoring surface to it. Parallels A252 (core per-entity writes accept the same fields).
+
+**The situation.** `icon` and `color` are optional presentational fields on the five workflow entity kinds. `color` was displayed (dots/chips) and both round-tripped a hand-authored value, but **no web dialog let a user set either** — and the create builders in `workflowForms.ts` (`buildStatus`/`buildPriority`/`buildTaskType`, `buildCustomField`'s value map) *dropped* them, so even a value the edit path preserved could not be created. The relationship/enum-value edit paths preserved the fields only by spreading the stored row.
+
+**What was built (recorded, revertible).**
+1. New shared `ui/IconPicker.tsx` — a searchable, clearable `Combobox` over the app's SVG icon set (`ui/Icon.tsx`). Stores the icon *name*; keeps a stored-but-unknown value (a hand-authored emoji / other-set name) selectable rather than dropping it; "No icon" clear row (icon is optional).
+2. New shared `ui/ColorInput.tsx` — swatch + hex `TextField`, validating the contract's `HexColor` shape (`#`-optional, 3/6-digit), empty = none. Chosen over reusing `LabelEditDialog`'s stricter 6-digit-only regex because the workflow `HexColor` schema accepts the looser shape; matching it means a value the control passes is one the server accepts.
+3. `workflowForms.ts`: `EntryDraft` + `CustomFieldDraft` carry `icon`/`color`; a shared `presentational()` helper includes them only when non-empty (so the stored row stays clean and the schema never sees a blank icon / malformed colour). `buildStatus`/`buildPriority`/`buildTaskType` now thread them.
+4. Wired the controls into `EntryEditDialog` (statuses/priorities/task_types), `RelationshipEditDialog`, and per-enum-value rows in `CustomFieldEditDialog`. On **edit**, `EnumCollectionPanel.applyDialog` now applies the dialog's icon/color (clearing the key when undefined) rather than only spreading the stored row, so an edit can *change or clear* them, not just preserve.
+
+**Tests (red-proven).** `ui/IconPicker.test.tsx` (pick / searchable / clearable / keeps-unknown; 3 of 4 red-proven by breaking onSelect, clear, and unknown-handling). `settings/workflowPanels.test.tsx` — status create+edit, relationship create+edit, enum-value create carry icon+color on the PUT; red-proven by breaking `presentational()` (create), `applyDialog`'s withPresentational (status edit), and the value-map spread (enum value).
+
+**To revert.** Delete `ui/IconPicker.tsx` + `ui/ColorInput.tsx` (+ their tests), drop the icon/color threading from `workflowForms.ts` (`presentational`, the `EntryDraft`/`CustomFieldDraft` fields, the builder spreads), remove the IconPicker/ColorInput blocks from the three dialogs, and restore `EnumCollectionPanel.applyDialog`'s edit branch to the plain spread.
+
+### A261 · Custom-field `task_types` scope gets a web authoring control (K91 consumption shipped without it)
+
+**Ticket:** Web editability gaps, Part C1 (Ken-approved, highest) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** K91 / TSK-12 — `task_types?: string[]` scopes a custom field to specific types; absent ⇒ global. `customFieldInScope`/`customFieldsForType` (contracts) are the consumption rule.
+
+**The situation.** K91 added the `task_types` allowlist and the consumption side (create-task modal + detail filter custom fields by type) shipped, but there was **no authoring control** — a field could only be scoped by hand-editing workflow.yaml. `CustomFieldDraft`/`buildCustomField` did not carry it either, so neither create nor edit could set it.
+
+**What was built.** `CustomFieldEditDialog` gains a multi-select `Combobox` (`custom-field-dialog-scope`) over the workflow's task types, passed in via a new `taskTypes` prop from `CustomFieldsPanel` (`workflow.task_types`). `CustomFieldDraft` carries `task_types`; `buildCustomField` includes it only when non-empty. **Empty selection = global** — the builder drops the key, matching the consumption default (`customFieldInScope`: absent ⇒ all). Confirmed against the consumption code: an empty array is a valid "no types" config, but the dialog treats empty as global (never storing a field that shows nowhere via the UI); a hand-authored empty array still degrades as before.
+
+**Tests (red-proven).** `settings/workflowPanels.test.tsx` — create scopes to a chosen type; empty selection stores no `task_types`; edit adds a scope to a global field. Red-proven by breaking the `task_types` spread in `buildCustomField`.
+
+**To revert.** Remove the scope `Combobox` + `scope` state from `CustomFieldEditDialog` and the `taskTypes` prop, drop `task_types` from `CustomFieldDraft`/`buildCustomField`, and drop the `taskTypes={…}` prop in `CustomFieldsPanel`.
+
+### A262 · Estimation panel gains `scale` select + per-category `weights` inputs
+
+**Ticket:** Web editability gaps, Part B (Ken-approved) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** `EstimationConfigSchema` carries `scale` (free/linear/fibonacci) and `weights` (per-`custom_enum`-preset non-negative map; empty `{}` rejected).
+
+**What was built.** `EstimationPanel` gains a `scale` `Select` (all units) and, for `custom_enum`, one numeric weight input per preset value (`estimation-weight-<key>`). `scale: "free"` (the implicit default) drops the key so a CLI-written file round-trips. Weights: an empty input clears that key; clearing the last drops the whole map (the schema rejects `{}`); editing `preset_values` prunes weight keys no longer present (the schema rejects a weight key not in `preset_values`).
+
+**Tests (red-proven).** `settings/EstimationPanel.test.tsx` — scale persists / drops on "free"; weight input per preset, persists / drops-map-when-all-cleared; no weights control for a non-enum unit. Scale-persist + weight-persist red-proven by breaking the scale setter and the weight assignment.
+
+**To revert.** Remove the `SCALES`/`SCALE_LABEL` + scale `Select`, the `setWeight` helper + weights block, and the `preset_values` onChange weight-pruning in `EstimationPanel`.
+
+### A263 · Create/edit asymmetry fixed: sprint `goal` on create, user `avatar` on create (create-then-set)
+
+**Ticket:** Web editability gaps, Parts C2/C3 (Ken-approved) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** SprintDef `goal` optional free text (edit already had it via SprintMetaHeader); UserProfile `avatar` set via `POST /api/users/:id/avatar` (needs a persisted id).
+
+**What was built.**
+- **Sprint goal on create:** `SprintsPanel` create form gains a `goal` textarea (`sprint-create-goal`), omitted from the POST when blank. `useCreateSprint` already accepted `goal?`.
+- **User avatar on create (create-then-set):** `CreateUserForm` gains an avatar picker that decodes + crops (reusing `decodeImageFile` + `AvatarCropper`) into a *prepared* File held in state, then in the create mutation's `onSuccess` — once the new id exists — POSTs it to `/api/users/:id/avatar` via `useUploadAvatar`. Chosen over "create then open the row's upload dialog" as the cleaner one-step UX; if the avatar POST fails the user is still created and the per-row `AvatarUpload` can retry. The existing per-row `AvatarUpload` is unchanged.
+
+**Tests (red-proven).** `settings/SprintsPanel.test.tsx` — goal POSTed when entered / omitted when blank (goal-POST red-proven). `settings/UsersPanel.test.tsx` — with `prepareAvatar`/`AvatarCropper` mocked, a chosen avatar POSTs to the new user's id after create; none chosen ⇒ no avatar POST. Create-then-set red-proven by removing the onSuccess upload.
+
+**To revert.** Remove the `goal` state + textarea (and goal from the POST) in `SprintsPanel`; remove the avatar picker + prepared-file state + the onSuccess upload in `CreateUserForm`.
+
+### A264 · Label + Milestone create/edit dialogs unified into one mode-aware component each
+
+**Ticket:** Web editability gaps, Part D (Ken-approved) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** matches the mode-aware pattern `EntryEditDialog`/`ViewFormDialog` already use; K100 (one component owns the write).
+
+**The situation.** Labels and Milestones each had a separate inline create form (in `LabelsPanel`/`MilestonesPanel`) AND a modal edit dialog (`LabelEditDialog`/`MilestoneEditDialog`) with identical fields — copy-paste, two write sites per entity.
+
+**What was built.** `LabelEditDialog` and `MilestoneEditDialog` are now mode-aware (`mode: "create" | "edit"`). The panels drop their inline create forms and open the dialog in create mode from a "New label" / "New milestone" button. Create-specific bits kept as create-mode branches, not separate components: Labels' MSL-34 duplicate-name caution ("Create anyway", non-blocking). Testids kept stable — create mode reuses `label-create-name`/`label-create-color`/`label-create-submit`/`label-duplicate-warning` and `milestone-create-name`/`milestone-create-date`/`milestone-create-submit`; edit keeps `label-name-input`/`milestone-name-input` etc. **Not unified across entities** (labels stay separate from milestones) — only each entity's own create+edit split collapsed. Sidebar + MilestoneDetail edit callers updated to pass `mode="edit"`.
+
+**Tests (red-proven).** `settings/dataPanels.test.tsx` — Part D block: create-through-dialog POSTs for both entities (red-proven by breaking the create branch), edit-through-same-dialog PUTs, MSL-34 caution still shows in create mode. The two pre-existing inline-create tests (duplicate caution, non-hex colour) were updated to open the dialog first — a test that stopped covering its subject when the create form moved into the dialog.
+
+**To revert.** Restore `CreateLabelForm` in `LabelsPanel` and the inline create form in `MilestonesPanel`; make `LabelEditDialog`/`MilestoneEditDialog` edit-only (`existing` required, no `mode`); restore the `existing={…}` (no `mode`) callers in the panels, Sidebar and MilestoneDetail.

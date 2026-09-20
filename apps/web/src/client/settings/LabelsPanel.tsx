@@ -2,7 +2,6 @@ import type { BrokenEntry, LabelDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
-import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
 import {
   useArchiveLabel,
   useCountedLabels,
@@ -11,7 +10,6 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { TextField } from "../ui/TextField.tsx";
 import { LabelEditDialog } from "./LabelEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
@@ -37,13 +35,6 @@ import { RowActions } from "./RowActions.tsx";
  * guard uses, so the number in the row and the number in the confirm
  * cannot disagree (MSL-11).
  */
-
-/** MSL-37: the format the editor accepts, stated to the user. */
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-
-function isValidColor(value: string): boolean {
-  return value === "" || HEX_RE.test(value);
-}
 
 function LabelRow({ label, count, allLabels }: {
   readonly label: LabelDef & { readonly taskCount?: number };
@@ -118,6 +109,7 @@ function LabelRow({ label, count, allLabels }: {
 
       {editing && (
         <LabelEditDialog
+          mode="edit"
           existing={label}
           onClose={() => { setEditing(false); }}
         />
@@ -155,96 +147,6 @@ function LabelRow({ label, count, allLabels }: {
         />
       )}
     </li>
-  );
-}
-
-function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] }) {
-  const create = useCreateLabel();
-  const [name, setName] = useState("");
-  const [color, setColor] = useState("");
-  const [acknowledgedDuplicate, setAcknowledgedDuplicate] = useState(false);
-
-  const trimmed = name.trim();
-  const colorOk = isValidColor(color);
-  /**
-   * MSL-34: names are not unique, so a duplicate is a caution shown
-   * *before* confirming — never an error, and never a block. The
-   * wording must not claim the name is invalid, because it is not.
-   */
-  const duplicate = trimmed !== ""
-    && existing.some(l => l.name.toLowerCase() === trimmed.toLowerCase());
-  const needsAck = duplicate && !acknowledgedDuplicate;
-
-  return (
-    <form
-      data-testid="label-create-form"
-      className="mb-4 flex flex-col gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (needsAck) { setAcknowledgedDuplicate(true); return; }
-        create.mutate(
-          { name: trimmed, ...(color !== "" ? { color } : {}) },
-          {
-            onSuccess: () => {
-              setName("");
-              setColor("");
-              setAcknowledgedDuplicate(false);
-            },
-          },
-        );
-      }}
-    >
-      <div className="flex gap-2">
-        <TextField
-          aria-label="New label name"
-          data-testid="label-create-name"
-          value={name}
-          placeholder="New label"
-          onChange={(e) => { setName(e.target.value); setAcknowledgedDuplicate(false); }}
-          className="min-w-0 flex-1"
-        />
-        <TextField
-          aria-label="New label colour"
-          data-testid="label-create-color"
-          value={color}
-          placeholder="#aabbcc"
-          onChange={e => { setColor(e.target.value); }}
-          className="w-28"
-        />
-        <Button
-          type="submit"
-          variant="secondary"
-          testId="label-create-submit"
-          disabled={trimmed === "" || !colorOk || create.isPending}
-        >
-          {needsAck ? "Create anyway" : "Create"}
-        </Button>
-      </div>
-
-      {!colorOk && (
-        <p role="alert" data-testid="label-create-color-invalid" className="text-[0.8571rem] text-danger-fg">
-          Colour must be a 6-digit hex value like <code>#aabbcc</code>.
-        </p>
-      )}
-
-      {duplicate && (
-        <p
-          data-testid="label-duplicate-warning"
-          data-label-duplicate="warning"
-          className="text-[0.8571rem] text-warn-fg"
-        >
-          A label with this name already exists. Label names do not have to be
-          unique — you can create it anyway, and both will be shown with their
-          colours to tell them apart.
-        </p>
-      )}
-
-      {create.isError && (
-        <p role="alert" className="text-[0.8571rem] text-danger-fg">
-          {create.error instanceof ApiError ? create.error.message : "Could not create the label."}
-        </p>
-      )}
-    </form>
   );
 }
 
@@ -317,6 +219,7 @@ function BrokenLabelRow({ entry, onRepair, repairing }: {
 
 export function LabelsPanel() {
   const labels = useCountedLabels();
+  const [creating, setCreating] = useState(false);
 
   if (labels.isError) {
     /*
@@ -368,7 +271,23 @@ export function LabelsPanel() {
         Task counts exclude archived tasks.
       </p>
 
-      <CreateLabelForm existing={items} />
+      <div className="mb-4">
+        <Button
+          variant="secondary"
+          testId="label-create-open"
+          onClick={() => { setCreating(true); }}
+        >
+          New label
+        </Button>
+      </div>
+
+      {creating && (
+        <LabelEditDialog
+          mode="create"
+          existingLabels={items}
+          onClose={() => { setCreating(false); }}
+        />
+      )}
 
       {items.length === 0 && broken.length === 0
         ? (

@@ -390,6 +390,53 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
     Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
   const create = useCreateUser();
+  // C3: an avatar can be chosen at create time. AvatarUpload's POST needs a
+  // persisted id (the file route is `/api/users/:id/avatar`), so the create
+  // form holds the *already-cropped* file and attaches it in the create
+  // mutation's onSuccess, once the id exists (create-then-set). The existing
+  // per-row AvatarUpload is unchanged.
+  const uploadAvatar = useUploadAvatar();
+  const [avatarProblem, setAvatarProblem] = useState<string | undefined>(undefined);
+  const [avatarFile, setAvatarFile] = useState<File | undefined>(undefined);
+  const [avatarPreview, setAvatarPreview] = useState<string | undefined>(undefined);
+  const [cropping, setCropping] = useState<
+    { decoded: DecodedImage; fileName: string } | undefined
+  >(undefined);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Revoke live object URLs on unmount (the preview blob and any open
+  // decoded source), mirroring AvatarUpload's cleanup.
+  const avatarPreviewRef = useRef(avatarPreview);
+  avatarPreviewRef.current = avatarPreview;
+  const croppingRef = useRef(cropping);
+  croppingRef.current = cropping;
+  useEffect(() => () => {
+    if (avatarPreviewRef.current !== undefined) URL.revokeObjectURL(avatarPreviewRef.current);
+    croppingRef.current?.decoded.revoke();
+  }, []);
+
+  const pickAvatar = async (file: File) => {
+    setAvatarProblem(undefined);
+    try {
+      const decoded = await decodeImageFile(file);
+      setCropping({ decoded, fileName: file.name });
+    } catch (err) {
+      if (err instanceof AvatarRejected) { setAvatarProblem(err.message); return; }
+      throw err;
+    }
+  };
+
+  const setPrepared = (file: File) => {
+    setAvatarFile(file);
+    if (avatarPreview !== undefined) URL.revokeObjectURL(avatarPreview);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const closeAvatarCropper = () => {
+    cropping?.decoded.revoke();
+    setCropping(undefined);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+  };
 
   // The runtime's resolved zone must be selectable even if this browser's
   // list omits it; offer it first when so (mirrors EditUserDialog).
@@ -451,6 +498,71 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
           )}
         />
       </div>
+      {/* C3: optional avatar at create time. The file is prepared (decoded
+          + cropped) here and posted after the user is created. */}
+      <div className="grid gap-1 text-[0.9286rem]">
+        <span className="text-text-secondary">Avatar</span>
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          data-testid="user-create-avatar-input"
+          onChange={e => {
+            const file = e.target.files?.[0];
+            if (file) void pickAvatar(file);
+          }}
+          className="sr-only"
+        />
+        <div className="flex items-center gap-2">
+          {avatarPreview !== undefined && (
+            <img
+              src={avatarPreview}
+              alt=""
+              data-testid="user-create-avatar-preview"
+              className="h-12 w-12 rounded-full object-cover"
+            />
+          )}
+          <Button
+            size="sm"
+            variant="secondary"
+            testId="user-create-avatar-choose"
+            onClick={() => { avatarInputRef.current?.click(); }}
+          >
+            {avatarFile !== undefined ? "Change avatar" : "Add avatar"}
+          </Button>
+          {avatarFile !== undefined && (
+            <Button
+              size="sm"
+              variant="ghost"
+              testId="user-create-avatar-clear"
+              onClick={() => {
+                if (avatarPreview !== undefined) { URL.revokeObjectURL(avatarPreview); setAvatarPreview(undefined); }
+                setAvatarFile(undefined);
+              }}
+            >
+              Remove
+            </Button>
+          )}
+        </div>
+        {avatarProblem !== undefined && (
+          <p role="alert" data-testid="user-create-avatar-problem" className="text-[0.7857rem] text-danger-fg">
+            {avatarProblem}
+          </p>
+        )}
+      </div>
+      {cropping !== undefined && (
+        <AvatarCropper
+          decoded={cropping.decoded}
+          fileName={cropping.fileName}
+          animated={cropping.decoded.animated}
+          testIdSuffix="create"
+          onConfirm={result => {
+            setPrepared(result.file);
+            closeAvatarCropper();
+          }}
+          onCancel={closeAvatarCropper}
+        />
+      )}
       {create.isError && (
         <p role="alert" data-testid="user-create-error" className="text-[0.8571rem] text-danger-fg">
           {create.error instanceof ApiError
@@ -473,7 +585,17 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
                 ...(email.trim().length > 0 ? { email: email.trim() } : {}),
                 ...(timezone.trim().length > 0 ? { timezone: timezone.trim() } : {}),
               },
-              { onSuccess: onDone },
+              {
+                onSuccess: (user) => {
+                  // C3 create-then-set: the id exists now, so attach the
+                  // cropped avatar. If it fails the user is still created;
+                  // the per-row AvatarUpload can retry. Close either way.
+                  if (avatarFile !== undefined) {
+                    uploadAvatar.mutate({ id: user.id, file: avatarFile });
+                  }
+                  onDone();
+                },
+              },
             );
           }}
         >

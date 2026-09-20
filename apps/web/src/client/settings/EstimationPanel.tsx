@@ -27,6 +27,19 @@ import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
 
 const UNITS = ["points", "hours", "days", "custom_numeric", "custom_enum"] as const;
 
+const SCALES = ["free", "linear", "fibonacci"] as const;
+
+/**
+ * Human labels for the stored scale keys. The value written to
+ * `estimation.scale` is the raw key; only the displayed text changes,
+ * matching how `UNIT_LABEL` treats units.
+ */
+const SCALE_LABEL: Record<(typeof SCALES)[number], string> = {
+  free: "Free — any value",
+  linear: "Linear — 1, 2, 3, …",
+  fibonacci: "Fibonacci — 1, 2, 3, 5, 8, …",
+};
+
 /**
  * Human labels for the stored unit keys. Only the *displayed* text
  * changes — the value written to `estimation.unit` is still the raw key,
@@ -67,6 +80,30 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
     setDraft(prev => ({ ...prev, ...next }));
   };
 
+  /**
+   * Set or clear one category's weight. An empty input clears that key;
+   * clearing the last one drops the whole `weights` map, because the
+   * schema rejects an empty `{}` (a zero-entry map would be a silent flat
+   * burndown). A non-numeric input is ignored — the field is `type=number`.
+   */
+  const setWeight = (key: string, raw: string): void => {
+    setDraft(prev => {
+      const next = { ...(prev.weights ?? {}) };
+      if (raw.trim() === "") {
+        delete next[key];
+      } else {
+        const n = Number(raw);
+        if (Number.isNaN(n)) return prev;
+        next[key] = n;
+      }
+      if (Object.keys(next).length === 0) {
+        const { weights: _weights, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, weights: next };
+    });
+  };
+
   const envelope = save.error instanceof ApiError ? save.error.envelope : undefined;
   const saveError = save.error === null
     ? undefined
@@ -100,6 +137,34 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
           className="w-56"
         >
           {UNITS.map(u => <option key={u} value={u}>{UNIT_LABEL[u]}</option>)}
+        </Select>
+      </label>
+
+      <label className="grid gap-1">
+        <span className="text-text-secondary">
+          Scale
+          <span className="ml-1 text-text-tertiary">
+            — which values an estimate may take.
+          </span>
+        </span>
+        <Select
+          data-testid="estimation-scale"
+          value={draft.scale ?? "free"}
+          onChange={e => {
+            const v = e.target.value as (typeof SCALES)[number];
+            setDraft(prev => {
+              // "free" is the implicit default — drop the key rather than
+              // storing it, so a workflow.yaml the CLI wrote round-trips.
+              if (v === "free") {
+                const { scale: _scale, ...rest } = prev;
+                return rest;
+              }
+              return { ...prev, scale: v };
+            });
+          }}
+          className="w-56"
+        >
+          {SCALES.map(s => <option key={s} value={s}>{SCALE_LABEL[s]}</option>)}
         </Select>
       </label>
 
@@ -158,10 +223,21 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
                 .filter(s => s.length > 0);
               setDraft(prev => {
                 if (parts.length === 0) {
-                  const { preset_values: _presetValues, ...rest } = prev;
+                  // No presets ⇒ no valid weight keys; drop the map too so
+                  // a stale weight cannot fail the server's membership check.
+                  const { preset_values: _presetValues, weights: _weights, ...rest } = prev;
                   return rest;
                 }
-                return { ...prev, preset_values: parts };
+                // Prune weights whose key is no longer a preset value —
+                // the schema rejects a weight key not in preset_values.
+                const allowed = new Set(parts.map(p => String(p)));
+                const prunedEntries = Object.entries(prev.weights ?? {})
+                  .filter(([k]) => allowed.has(k));
+                if (prunedEntries.length === 0) {
+                  const { weights: _weights, ...rest } = prev;
+                  return { ...rest, preset_values: parts };
+                }
+                return { ...prev, preset_values: parts, weights: Object.fromEntries(prunedEntries) };
               });
             }}
           />
@@ -176,6 +252,39 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
             </p>
           )}
         </label>
+      )}
+
+      {draft.unit === "custom_enum" && (draft.preset_values ?? []).length > 0 && (
+        <div className="grid gap-1" data-testid="estimation-weights">
+          <span className="text-text-secondary">
+            Weights
+            <span className="ml-1 text-text-tertiary">
+              — optional per-category burndown weight. Leave all blank to
+              burn down by task count.
+            </span>
+          </span>
+          <div className="grid gap-1">
+            {(draft.preset_values ?? []).map(pv => {
+              const key = String(pv);
+              const current = draft.weights?.[key];
+              return (
+                <label key={key} className="flex items-center gap-2 text-[0.8571rem]">
+                  <span className="w-24 shrink-0 text-text-secondary">{key}</span>
+                  <TextField
+                    size="sm"
+                    type="number"
+                    data-testid={`estimation-weight-${key}`}
+                    value={current ?? ""}
+                    placeholder="—"
+                    aria-label={`Weight for ${key}`}
+                    onChange={e => { setWeight(key, e.target.value); }}
+                    className="w-24"
+                  />
+                </label>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       <p data-testid="estimation-aggregate-note" className="text-[0.8571rem] text-text-tertiary">

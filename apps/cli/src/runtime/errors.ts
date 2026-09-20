@@ -36,6 +36,7 @@ import {
   TaskNotFoundError,
   UserError,
   ViewError,
+  WorkflowEntityError,
 } from "@loctt/core";
 
 /**
@@ -111,6 +112,16 @@ export const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error>
   // message is the same, but runCommand is where every other view error
   // (and every sibling command's domain error) is already handled.
   ViewError,
+  // A refused workflow-entity edit — a delete-in-use with no --remap-to,
+  // an unknown key, a duplicate key, a reorder that isn't a permutation —
+  // is a rejection the user can act on, not a crash. WorkflowEntityError
+  // DOES extend LocttError (listed above), so the instanceof check already
+  // catches it; it is named here anyway, alongside ViewError, so the
+  // workflow-entity commands sit with every sibling command's domain error
+  // rather than depending on the LocttError catch-all silently covering
+  // them. The delete-in-use message ("… is in use; provide a remap target
+  // (or clear) to delete it") reaches the terminal as a clean `Error:` line.
+  WorkflowEntityError,
   // RelationshipError is NOT listed, and does not need to be: it
   // extends LocttError, which is, so the instanceof check above
   // already catches it. Measured — `link T-1 blocks T-1` and a link to

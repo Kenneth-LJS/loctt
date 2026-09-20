@@ -34,12 +34,62 @@ export type { OptionalConfigs } from "./config/index.js";
 export type { WorkflowRemap } from "./config/index.js";
 export type { ConfigKeyDef } from "./config/index.js";
 export type { ArchivedGuardConfigs } from "./config/index.js";
+export type {
+  AddFieldValueInput,
+  CreateBoardColumnInput,
+  CreateCustomFieldInput,
+  CreatePriorityInput,
+  CreateRelationshipInput,
+  CreateStatusInput,
+  CreateTaskTypeInput,
+  EditBoardColumnChanges,
+  EditCustomFieldChanges,
+  EditEstimationChanges,
+  EditFieldValueChanges,
+  EditPriorityChanges,
+  EditRelationshipChanges,
+  EditStatusChanges,
+  EditTaskTypeChanges,
+  EditTimelineChanges,
+  IconColorInput,
+} from "./config/index.js";
 export {
   applyWorkflowEdit,
   computeWorkflowKeyCounts,
   computeWorkflowKeyUsage,
   saveWorkflowConfig,
   validateRemapCoversDeletions,
+} from "./config/index.js";
+export {
+  addFieldValue,
+  createBoardColumn,
+  createCustomField,
+  createPriority,
+  createRelationship,
+  createStatus,
+  createTaskType,
+  deleteBoardColumn,
+  deleteCustomField,
+  deleteFieldValue,
+  deletePriority,
+  deleteRelationship,
+  deleteStatus,
+  deleteTaskType,
+  editBoardColumn,
+  editCustomField,
+  editEstimationConfig,
+  editFieldValue,
+  editPriority,
+  editRelationship,
+  editStatus,
+  editTaskType,
+  editTimelineConfig,
+  reorderBoardColumns,
+  reorderFieldValues,
+  reorderPriorities,
+  reorderStatuses,
+  reorderTaskTypes,
+  WorkflowEntityError,
 } from "./config/index.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./config/index.js";
 export {

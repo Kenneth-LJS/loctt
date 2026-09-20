@@ -156,6 +156,10 @@ describe("LabelsPanel", () => {
     render(<LabelsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("labels-list");
 
+    // K100 / Part-D: create is now the shared mode-aware dialog, opened
+    // from the panel, not an always-present inline form.
+    fireEvent.click(screen.getByTestId("label-create-open"));
+    await screen.findByTestId("label-create-dialog");
     fireEvent.change(screen.getByTestId("label-create-name"), { target: { value: "bug" } });
 
     const warning = await screen.findByTestId("label-duplicate-warning");
@@ -172,6 +176,8 @@ describe("LabelsPanel", () => {
     render(<LabelsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("labels-list");
 
+    fireEvent.click(screen.getByTestId("label-create-open"));
+    await screen.findByTestId("label-create-dialog");
     fireEvent.change(screen.getByTestId("label-create-name"), { target: { value: "new" } });
     fireEvent.change(screen.getByTestId("label-create-color"), { target: { value: "notacolour" } });
 
@@ -854,5 +860,150 @@ describe("DiagnosticsPanel", () => {
     // Unmount aborted the fetch — nothing is left running behind a gone
     // component, which is what "no permanently spinning check" means.
     expect(capturedSignal?.aborted).toBe(true);
+  });
+});
+
+/**
+ * Part D: the Label and Milestone create + edit forms are unified into one
+ * mode-aware dialog each. These pin the create side going through the
+ * shared dialog (opened from the panel), that a create issues the POST,
+ * and that the create-mode duplicate caution (MSL-34) still shows — a
+ * create-only branch of the shared component, not a separate form.
+ */
+describe("Part D — unified Label create+edit dialog", () => {
+  const twoLabels = {
+    items: [
+      { id: "L1", name: "bug", color: "#ff0000", taskCount: 3 },
+      { id: "L2", name: "chore", taskCount: 0 },
+    ],
+    total: 2,
+  };
+
+  it("creates a label through the shared dialog (POST /api/labels)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/labels") && method === "POST") {
+        return Promise.resolve(jsonResponse({ id: "L3", name: "feature", color: "#00ff00" }, 201));
+      }
+      return Promise.resolve(jsonResponse(twoLabels));
+    });
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    fireEvent.click(screen.getByTestId("label-create-open"));
+    await screen.findByTestId("label-create-dialog");
+    fireEvent.change(screen.getByTestId("label-create-name"), { target: { value: "feature" } });
+    fireEvent.change(screen.getByTestId("label-create-color"), { target: { value: "#00ff00" } });
+    fireEvent.click(screen.getByTestId("label-create-submit"));
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(c =>
+        String(c[0]).includes("/api/labels")
+        && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "POST");
+      expect(post).toBeDefined();
+      const body = JSON.parse((post?.[1] as RequestInit).body as string) as unknown;
+      expect(body).toEqual({ name: "feature", color: "#00ff00" });
+    });
+  });
+
+  it("edits a label through the same dialog (PUT /api/labels/:id)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/labels/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "L1", name: "defect", color: "#ff0000" }));
+      }
+      return Promise.resolve(jsonResponse(twoLabels));
+    });
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    openRowAction(screen.getByTestId("label-row-L1"), "label-edit");
+    await screen.findByTestId("label-edit-dialog");
+    fireEvent.change(screen.getByTestId("label-name-input"), { target: { value: "defect" } });
+    fireEvent.click(screen.getByTestId("label-save"));
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(c =>
+        String(c[0]).includes("/api/labels/L1")
+        && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "PUT");
+      expect(put).toBeDefined();
+    });
+  });
+
+  /** @verifies MSL-34 (create-only branch preserved) */
+  it("shows the duplicate-name caution in create mode, non-blocking", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(twoLabels));
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    fireEvent.click(screen.getByTestId("label-create-open"));
+    await screen.findByTestId("label-create-dialog");
+    fireEvent.change(screen.getByTestId("label-create-name"), { target: { value: "bug" } });
+
+    const warning = await screen.findByTestId("label-duplicate-warning");
+    expect(warning.textContent).toMatch(/already exists/i);
+    // Non-blocking — the submit is enabled, it becomes "Create anyway".
+    expect(screen.getByTestId("label-create-submit")).not.toHaveProperty("disabled", true);
+  });
+});
+
+describe("Part D — unified Milestone create+edit dialog", () => {
+  const twoMilestones = {
+    items: [
+      { id: "M1", name: "v1", target_date: "2026-03-31", taskCount: 2 },
+      { id: "M2", name: "old", archived: true, taskCount: 0 },
+    ],
+    total: 2,
+  };
+
+  it("creates a milestone through the shared dialog (POST /api/milestones)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones") && method === "POST") {
+        return Promise.resolve(jsonResponse({ id: "M3", name: "v2", target_date: "2026-09-30" }, 201));
+      }
+      return Promise.resolve(jsonResponse(twoMilestones));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    fireEvent.click(screen.getByTestId("milestone-create-open"));
+    await screen.findByTestId("milestone-create-dialog");
+    fireEvent.change(screen.getByTestId("milestone-create-name"), { target: { value: "v2" } });
+    fireEvent.change(screen.getByTestId("milestone-create-date"), { target: { value: "2026-09-30" } });
+    fireEvent.click(screen.getByTestId("milestone-create-submit"));
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(c =>
+        String(c[0]).includes("/api/milestones")
+        && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "POST");
+      expect(post).toBeDefined();
+      const body = JSON.parse((post?.[1] as RequestInit).body as string) as unknown;
+      expect(body).toEqual({ name: "v2", target_date: "2026-09-30" });
+    });
+  });
+
+  it("edits a milestone through the same dialog (PUT /api/milestones/:id)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "M1", name: "v1.1", target_date: "2026-03-31" }));
+      }
+      return Promise.resolve(jsonResponse(twoMilestones));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    openRowAction(screen.getByTestId("milestone-row-M1"), "milestone-edit");
+    await screen.findByTestId("milestone-edit-dialog");
+    fireEvent.change(screen.getByTestId("milestone-name-input"), { target: { value: "v1.1" } });
+    fireEvent.click(screen.getByTestId("milestone-save"));
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(c =>
+        String(c[0]).includes("/api/milestones/M1")
+        && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "PUT");
+      expect(put).toBeDefined();
+    });
   });
 });

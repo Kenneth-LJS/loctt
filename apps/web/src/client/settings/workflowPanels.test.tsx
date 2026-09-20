@@ -522,3 +522,166 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     expect(put.remap).toEqual({ custom_fields: { size: { s: null } } });
   });
 });
+
+describe("Part A — icon + color on statuses (create + edit)", () => {
+  it("create carries the chosen icon and color onto the new status", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
+    await screen.findByTestId("statuses-list");
+
+    fireEvent.click(screen.getByTestId("statuses-create"));
+    const dialog = await screen.findByTestId("statuses-entry-dialog");
+    fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "Blocked" } });
+    fireEvent.click(within(dialog).getByTestId("statuses-entry-icon"));
+    fireEvent.click(within(dialog).getByTestId("icon-option-flag"));
+    fireEvent.change(within(dialog).getByTestId("statuses-entry-color"), { target: { value: "#123456" } });
+    fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.statuses.find(s => s.key === "blocked");
+    expect(added).toMatchObject({ key: "blocked", label: "Blocked", icon: "flag", color: "#123456" });
+  });
+
+  it("edit sets an icon and color on a status that had none", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
+    await screen.findByTestId("statuses-list");
+
+    fireEvent.click(screen.getByTestId("statuses-edit-doing"));
+    const dialog = await screen.findByTestId("statuses-entry-dialog");
+    fireEvent.click(within(dialog).getByTestId("statuses-entry-icon"));
+    fireEvent.click(within(dialog).getByTestId("icon-option-star"));
+    fireEvent.change(within(dialog).getByTestId("statuses-entry-color"), { target: { value: "#abcdef" } });
+    fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const edited = put.workflow.statuses.find(s => s.key === "doing");
+    expect(edited).toMatchObject({ key: "doing", icon: "star", color: "#abcdef" });
+  });
+});
+
+describe("Part A — icon + color on relationships (create + edit)", () => {
+  it("create carries the chosen icon and color onto the new relationship", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<RelationshipsSettingsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("relationships-list");
+
+    fireEvent.click(screen.getByTestId("relationships-create"));
+    const dialog = await screen.findByTestId("relationships-entry-dialog");
+    fireEvent.change(within(dialog).getByTestId("relationships-entry-label"), { target: { value: "Duplicates" } });
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-symmetric"));
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-icon"));
+    fireEvent.click(within(dialog).getByTestId("icon-option-link"));
+    fireEvent.change(within(dialog).getByTestId("relationships-entry-color"), { target: { value: "#0a0b0c" } });
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.relationships.find(r => r.key === "duplicates");
+    expect(added).toMatchObject({ key: "duplicates", label: "Duplicates", icon: "link", color: "#0a0b0c" });
+  });
+
+  it("edit can change a relationship's icon while keeping its color", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<RelationshipsSettingsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("relationships-list");
+
+    // Row actions live behind a kebab (responsive GROUP A): open it, then Edit.
+    fireEvent.click(screen.getByRole("button", { name: /Actions for relationship/ }));
+    fireEvent.click(screen.getByTestId("relationships-edit-blocks"));
+    const dialog = await screen.findByTestId("relationships-entry-dialog");
+    // WORKFLOW's `blocks` starts with icon "ban", color "#ff0000".
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-icon"));
+    fireEvent.click(within(dialog).getByTestId("icon-option-flag"));
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const edited = put.workflow.relationships.find(r => r.key === "blocks");
+    expect(edited).toMatchObject({ key: "blocks", icon: "flag", color: "#ff0000" });
+  });
+});
+
+describe("Part A — icon + color on a custom-field enum value", () => {
+  it("create sets an enum value's icon and color", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByTestId("custom-fields-create"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Severity" } });
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-type"), { target: { value: "enum" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-value-add"));
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-key-0"), { target: { value: "high" } });
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-label-0"), { target: { value: "High" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-value-icon-0"));
+    fireEvent.click(within(dialog).getByTestId("icon-option-alert"));
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-color-0"), { target: { value: "#ee0000" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.custom_fields.find(f => f.key === "severity");
+    const high = added?.values?.find(v => v.key === "high");
+    expect(high).toMatchObject({ key: "high", label: "High", icon: "alert", color: "#ee0000" });
+  });
+});
+
+describe("Part C1 — custom-field task_types scope (create + edit)", () => {
+  /** @verifies K91 */
+  it("create scopes a field to the chosen task types", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByTestId("custom-fields-create"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Repro steps" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope"));
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope-option-task"));
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.custom_fields.find(f => f.key === "repro_steps");
+    expect(added?.task_types).toEqual(["task"]);
+  });
+
+  /** @verifies K91 */
+  it("an empty scope selection stores no task_types (field is global)", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByTestId("custom-fields-create"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Notes" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.custom_fields.find(f => f.key === "notes");
+    expect(added).not.toHaveProperty("task_types");
+  });
+
+  /** @verifies K91 */
+  it("edit can add a task_types scope to a field that had none", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByTestId("custom-field-edit-story_points"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope"));
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope-option-task"));
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const edited = put.workflow.custom_fields.find(f => f.key === "story_points");
+    expect(edited?.task_types).toEqual(["task"]);
+  });
+});

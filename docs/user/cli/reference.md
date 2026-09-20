@@ -13,7 +13,9 @@ repeats these tables.
 - **Invocation.** Task operations are top-level commands (`loctt create`,
   `loctt list`, `loctt set`), not a `loctt task …` group. A few areas are
   grouped: `project`, `user`, `label`, `milestone`, `sprint`, `config`,
-  `git`, `views`, `calendar`.
+  `git`, `views`, `calendar`, and the workflow families `status`,
+  `priority`, `task-type`, `relationship`, `custom-field`, `board-column`,
+  `estimation`, `timeline`.
 - **Flags** take the form `--flag value` or `--flag=value`. There are no
   single-dash short flags. `--` ends flag parsing; anything after it is a
   literal positional. A value that begins with `-` must use the `=` form
@@ -558,6 +560,131 @@ the web UI.
 ```bash
 loctt calendar show
 ```
+
+---
+
+## Workflow configuration
+
+The workflow — statuses, priorities, task types, relationships, custom
+fields, board columns, and the estimation and timeline settings — lives
+in `.loctt/config/workflow.yaml`. These commands edit it the same way the
+web settings panels do (they call the same core functions), so a change
+made here and one made in the UI are indistinguishable.
+
+Rules that hold across every family:
+
+- **Keys are immutable.** `add` fixes the key; `edit` has no `--key` and
+  no rename. A rename is a delete followed by a create.
+- **`edit` never changes the key** (nor a custom field's `--type` /
+  `--multi`, which are fixed at creation).
+- **`rm` of an in-use entity refuses** unless you pass `--remap-to <key>`
+  (move every task's value onto another key) — except custom-field whole
+  deletes, which are clear-only (no remap). `rm` prompts for
+  confirmation; pass `--yes` to skip it (required non-interactively).
+- **`reorder` takes a comma-separated list of every key, once.** For
+  priorities this is the *only* way to set the numeric `value` — it is
+  derived from list position, never passed as a flag.
+
+### `loctt status`
+
+| Subcommand | Usage | Notes |
+| --- | --- | --- |
+| `list` | `loctt status list` | Key, category, label, icon/color, default. |
+| `add` | `loctt status add <key> --label <text> --category <pending\|active\|completed\|discarded> [--default] [--icon <s>] [--color <hex>]` | |
+| `edit` | `loctt status edit <key> [--label] [--category] [--default] [--icon <s\|->] [--color <hex\|->]` | `-` clears icon/color. |
+| `rm` | `loctt status rm <key> [--remap-to <key>] [--yes]` | |
+| `reorder` | `loctt status reorder <key,key,…>` | |
+
+### `loctt priority`
+
+| Subcommand | Usage | Notes |
+| --- | --- | --- |
+| `list` | `loctt priority list` | Shows the derived `[value]`. |
+| `add` | `loctt priority add <key> --label <text> [--icon <s>] [--color <hex>]` | No `--value`. Appends at the bottom. |
+| `edit` | `loctt priority edit <key> [--label] [--icon <s\|->] [--color <hex\|->]` | No `--value`. |
+| `rm` | `loctt priority rm <key> [--remap-to <key>] [--yes]` | |
+| `reorder` | `loctt priority reorder <key,key,…>` | Sets the value from position (top = 1). |
+
+### `loctt task-type`
+
+| Subcommand | Usage | Notes |
+| --- | --- | --- |
+| `list` | `loctt task-type list` | |
+| `add` | `loctt task-type add <key> --label <text> [--icon <s>] [--color <hex>]` | |
+| `edit` | `loctt task-type edit <key> [--label] [--icon <s\|->] [--color <hex\|->]` | |
+| `rm` | `loctt task-type rm <key> [--remap-to <key>] [--yes]` | |
+| `reorder` | `loctt task-type reorder <key,key,…>` | |
+
+### `loctt relationship`
+
+No `reorder` (relationships have no order).
+
+| Subcommand | Usage | Notes |
+| --- | --- | --- |
+| `list` | `loctt relationship list` | |
+| `add` | `loctt relationship add <key> --label <text> [--kind <directional\|symmetric>] [--inverse <key>] [--inverse-label <text>] [--graph <none\|acyclic\|tree>] [--ranked] [--icon <s>] [--color <hex>]` | |
+| `edit` | `loctt relationship edit <key> [--label] [--kind] [--inverse] [--inverse-label] [--graph] [--ranked] [--icon <s\|->] [--color <hex\|->]` | |
+| `rm` | `loctt relationship rm <key> [--remap-to <key>] [--yes]` | |
+
+### `loctt custom-field`
+
+Whole-field `rm` is **clear-only** — there is no `--remap-to`; the field
+and any stored values are cleared from every task. An **enum** field must
+be seeded with at least one value at creation via `--enum-value`
+(repeatable).
+
+| Subcommand | Usage | Notes |
+| --- | --- | --- |
+| `list` | `loctt custom-field list` | Fields and their enum values. |
+| `add` | `loctt custom-field add <key> --label <text> --type <string\|number\|date\|boolean\|enum> [--multi] [--searchable] [--task-types a,b] [--enum-value key=label]…` | `--enum-value` required (and only allowed) for `enum`. |
+| `edit` | `loctt custom-field edit <key> [--label] [--searchable[=true\|false]] [--task-types a,b\|-]` | No `--type` / `--multi` (immutable). `--task-types -` clears the scope. |
+| `rm` | `loctt custom-field rm <key> [--yes]` | Clear-only. |
+| `value <field> add` | `loctt custom-field value <field> add <key> --label <text> [--icon <s>] [--color <hex>]` | Enum values only. |
+| `value <field> edit` | `loctt custom-field value <field> edit <key> [--label] [--icon <s\|->] [--color <hex\|->]` | |
+| `value <field> rm` | `loctt custom-field value <field> rm <key> [--remap-to <key>] [--yes]` | Remap onto another value of the same field. |
+| `value <field> reorder` | `loctt custom-field value <field> reorder <key,key,…>` | |
+
+### `loctt board-column`
+
+Board columns only group statuses for the board view — deleting one
+never orphans a task, so `rm` takes no remap. Deleting the last column
+reverts the board to one column per status.
+
+| Subcommand | Usage | Notes |
+| --- | --- | --- |
+| `list` | `loctt board-column list` | |
+| `add` | `loctt board-column add <key> --label <text> --statuses <s,s,…> [--wip <n>]` | |
+| `edit` | `loctt board-column edit <key> [--label] [--statuses <s,s,…>] [--wip <n\|->]` | `--wip -` clears the limit. |
+| `rm` | `loctt board-column rm <key> [--yes]` | No remap. |
+| `reorder` | `loctt board-column reorder <key,key,…>` | |
+
+### `loctt estimation`
+
+A singleton (no add/delete). `set` needs at least `--enabled` and
+`--unit` when estimation is not yet configured.
+
+| Subcommand | Usage |
+| --- | --- |
+| `show` | `loctt estimation show` |
+| `set` | `loctt estimation set [--enabled[=true\|false]] [--unit <points\|hours\|days\|custom_numeric\|custom_enum>] [--unit-label <text\|->] [--scale <free\|linear\|fibonacci\|->] [--preset <a,b,c\|->] [--weight key=n]…` |
+
+`--weight` is repeatable (one per category, for `custom_enum` units);
+pass `--weight -` to clear all weights. `-` clears the optional fields.
+
+```bash
+loctt estimation set --enabled --unit custom_enum --unit-label Size \
+  --preset S,M,L --weight S=1 --weight M=3 --weight L=5
+```
+
+### `loctt timeline`
+
+A singleton. `--dependency-relationship -` is the explicit "no dependency
+arrows" value (distinct from unset); `-` clears the other fields.
+
+| Subcommand | Usage |
+| --- | --- |
+| `show` | `loctt timeline show` |
+| `set` | `loctt timeline set [--dependency-relationship <key\|->] [--default-zoom <day\|week\|month\|->] [--show-arrows[=true\|false]] [--default-grouping <builtin\|field.key\|->]` |
 
 ---
 

@@ -202,6 +202,7 @@ export function SprintsPanel() {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [state, setState] = useState<(typeof STATES)[number]>("active");
+  const [goal, setGoal] = useState("");
   const [showArchived, setShowArchived] = useState(false);
 
   // K100 archived-row anchor. A deep link to an archived sprint
@@ -274,8 +275,16 @@ export function SprintsPanel() {
           e.preventDefault();
           if (!canCreate) return;
           create.mutate(
-            { name: name.trim(), start_date: start, end_date: end, state },
-            { onSuccess: () => { setName(""); setStart(""); setEnd(""); setState("active"); } },
+            {
+              name: name.trim(),
+              start_date: start,
+              end_date: end,
+              state,
+              // `goal` is optional free text; omit it when blank so the
+              // stored sprint has no empty goal key.
+              ...(goal.trim().length > 0 ? { goal: goal.trim() } : {}),
+            },
+            { onSuccess: () => { setName(""); setStart(""); setEnd(""); setState("active"); setGoal(""); } },
           );
         }}
       >
@@ -321,6 +330,20 @@ export function SprintsPanel() {
               <option key={s} value={s}>{STATE_LABEL[s]}</option>
             ))}
           </Select>
+        </label>
+        {/* SPR-8/SPR-28: `goal` is optional free text. The edit surface
+            (SprintMetaHeader) always had a goal field; the create form did
+            not — a sprint could only gain a goal after creation. */}
+        <label className="flex basis-full flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
+          Goal
+          <textarea
+            data-testid="sprint-create-goal"
+            value={goal}
+            placeholder="What this sprint is for (optional)"
+            rows={2}
+            onChange={e => { setGoal(e.target.value); }}
+            className="rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem] normal-case tracking-normal text-text-primary"
+          />
         </label>
         <Button variant="primary" size="sm" type="submit" testId="sprint-create-submit" disabled={!canCreate}>
           Create

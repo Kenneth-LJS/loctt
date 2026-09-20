@@ -4,7 +4,9 @@ import { useState } from "react";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { ColorInput, isValidHexColor } from "../ui/ColorInput.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { IconPicker } from "../ui/IconPicker.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
@@ -47,6 +49,9 @@ export interface EntryDialogResult {
   readonly label: string;
   readonly category?: StatusDef["category"];
   readonly makeDefault?: boolean;
+  /** Optional presentational fields (undefined = none). */
+  readonly icon?: string | undefined;
+  readonly color?: string | undefined;
 }
 
 export function EntryEditDialog({
@@ -82,6 +87,10 @@ export function EntryEditDialog({
   const [makeDefault, setMakeDefault] = useState(
     (initial as StatusDef | undefined)?.default === true,
   );
+  // Presentational fields — seeded from the row on edit so an unrelated
+  // edit does not drop them, editable on both create and edit.
+  const [icon, setIcon] = useState<string | undefined>(initial?.icon);
+  const [color, setColor] = useState(initial?.color ?? "");
 
   // On create, the key tracks the label until the user edits the key
   // directly — the same derive-then-detach behaviour project slugs use.
@@ -92,7 +101,8 @@ export function EntryEditDialog({
       ? validateNewEntry({ key: effectiveKey, label }, existingKeys)
       : (label.trim().length === 0 ? { label: "A label is required." } : {});
 
-  const canSubmit = hasNoProblems(problems) && !pending;
+  const colorOk = isValidHexColor(color);
+  const canSubmit = hasNoProblems(problems) && colorOk && !pending;
 
   const submit = (): void => {
     if (!canSubmit) return;
@@ -101,6 +111,8 @@ export function EntryEditDialog({
       label: label.trim(),
       ...(isStatus ? { category } : {}),
       ...(isStatus ? { makeDefault } : {}),
+      icon: icon !== undefined && icon.trim().length > 0 ? icon.trim() : undefined,
+      color: color.trim().length > 0 ? color.trim() : undefined,
     });
   };
 
@@ -201,6 +213,29 @@ export function EntryEditDialog({
             Make this the default status — new tasks land here.
           </label>
         )}
+
+        <div className="block">
+          <span className="mb-1 block text-text-secondary">Icon</span>
+          <IconPicker
+            value={icon}
+            onChange={setIcon}
+            testId={`${collection}-entry-icon`}
+            listTestId={`${collection}-entry-icon-list`}
+            searchTestId={`${collection}-entry-icon-search`}
+            clearTestId={`${collection}-entry-icon-clear`}
+            ariaLabel={`Icon for the ${noun}`}
+          />
+        </div>
+
+        <div className="block">
+          <span className="mb-1 block text-text-secondary">Colour</span>
+          <ColorInput
+            value={color}
+            onChange={setColor}
+            testId={`${collection}-entry-color`}
+            ariaLabel={`Colour for the ${noun}`}
+          />
+        </div>
 
         {/* SET-51: a failed save is anchored here, not thrown as a toast,
             and the dialog stays open with the edit un-committed. */}

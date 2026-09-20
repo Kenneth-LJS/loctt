@@ -5,13 +5,11 @@ import { ApiError } from "../api/client.ts";
 import {
   useArchiveMilestone,
   useCountedMilestones,
-  useCreateMilestone,
   useDeleteMilestone,
 } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { TextField } from "../ui/TextField.tsx";
 import { MilestoneEditDialog } from "./MilestoneEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
@@ -124,6 +122,7 @@ function MilestoneRow({ milestone, count, all }: {
 
       {editing && (
         <MilestoneEditDialog
+          mode="edit"
           existing={milestone}
           onClose={() => { setEditing(false); }}
         />
@@ -226,9 +225,7 @@ function BrokenMilestoneRow({ entry, onRepair, repairing }: {
 
 export function MilestonesPanel() {
   const milestones = useCountedMilestones();
-  const create = useCreateMilestone();
-  const [name, setName] = useState("");
-  const [date, setDate] = useState("");
+  const [creating, setCreating] = useState(false);
 
   if (milestones.isError) {
     return (
@@ -266,47 +263,21 @@ export function MilestonesPanel() {
         Progress is shown on the Milestones view, not here.
       </p>
 
-      <form
-        data-testid="milestone-create-form"
-        className="mb-4 flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          create.mutate(
-            { name: name.trim(), ...(date !== "" ? { target_date: date } : {}) },
-            { onSuccess: () => { setName(""); setDate(""); } },
-          );
-        }}
-      >
-        <TextField
-          aria-label="New milestone name"
-          data-testid="milestone-create-name"
-          value={name}
-          placeholder="New milestone"
-          onChange={e => { setName(e.target.value); }}
-          className="min-w-0 flex-1"
-        />
-        <input
-          type="date"
-          aria-label="New milestone target date"
-          data-testid="milestone-create-date"
-          value={date}
-          onChange={e => { setDate(e.target.value); }}
-          className="w-40 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
-        />
+      <div className="mb-4">
         <Button
-          type="submit"
           variant="secondary"
-          testId="milestone-create-submit"
-          disabled={name.trim() === "" || create.isPending}
+          testId="milestone-create-open"
+          onClick={() => { setCreating(true); }}
         >
-          Create
+          New milestone
         </Button>
-      </form>
+      </div>
 
-      {create.isError && (
-        <p role="alert" className="mb-3 text-[0.8571rem] text-danger-fg">
-          {create.error instanceof ApiError ? create.error.message : "Could not create."}
-        </p>
+      {creating && (
+        <MilestoneEditDialog
+          mode="create"
+          onClose={() => { setCreating(false); }}
+        />
       )}
 
       {items.length === 0 && broken.length === 0

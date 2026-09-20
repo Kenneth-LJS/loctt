@@ -194,6 +194,7 @@ function FieldsEditor({
         <CustomFieldEditDialog
           mode={dialog.mode}
           existingKeys={collectionKeys(workflow, "custom_fields")}
+          taskTypes={workflow.task_types.map(t => ({ key: t.key, label: t.label }))}
           initial={dialog.mode === "edit" ? dialog.field : undefined}
           pending={save.isPending}
           error={dialogError}
