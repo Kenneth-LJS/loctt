@@ -4,7 +4,9 @@ import { useState } from "react";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { ColorInput, isValidHexColor } from "../ui/ColorInput.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { IconPicker } from "../ui/IconPicker.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { isSymmetric } from "./workflowEdits.ts";
@@ -73,6 +75,11 @@ export function RelationshipEditDialog({
   const [inverseLabel, setInverseLabel] = useState(initial?.inverse_label ?? "");
   const [graph, setGraph] = useState<RelationshipDef["graph"]>(initial?.graph ?? "none");
   const [ranked, setRanked] = useState(initial?.ranked === true);
+  // Presentational fields — seeded from the row on edit, editable on both
+  // create and edit. Previously these were carried straight from `initial`
+  // (survived a round-trip) but had no control; now they are set here.
+  const [icon, setIcon] = useState<string | undefined>(initial?.icon);
+  const [color, setColor] = useState(initial?.color ?? "");
 
   const effectiveKey = mode === "create" && !keyTouched ? keyFromLabel(label) : key;
 
@@ -84,10 +91,8 @@ export function RelationshipEditDialog({
     inverse_label: inverseLabel,
     graph,
     ranked,
-    // Carry the presentational fields the dialog does not render, so a
-    // label edit does not drop the row's icon/color.
-    icon: initial?.icon,
-    color: initial?.color,
+    icon: icon !== undefined && icon.trim().length > 0 ? icon.trim() : undefined,
+    color: color.trim().length > 0 ? color.trim() : undefined,
   };
 
   const problems =
@@ -106,6 +111,7 @@ export function RelationshipEditDialog({
   const canSubmit = hasNoProblems(problems)
     && problems.inverse === undefined
     && problems.inverse_label === undefined
+    && isValidHexColor(color)
     && !pending;
 
   const submit = (): void => {
@@ -250,6 +256,29 @@ export function RelationshipEditDialog({
           />
           Ranked — links of this type keep an explicit order.
         </label>
+
+        <div className="block">
+          <span className="mb-1 block text-text-secondary">Icon</span>
+          <IconPicker
+            value={icon}
+            onChange={setIcon}
+            testId="relationships-entry-icon"
+            listTestId="relationships-entry-icon-list"
+            searchTestId="relationships-entry-icon-search"
+            clearTestId="relationships-entry-icon-clear"
+            ariaLabel="Icon for the relationship"
+          />
+        </div>
+
+        <div className="block">
+          <span className="mb-1 block text-text-secondary">Colour</span>
+          <ColorInput
+            value={color}
+            onChange={setColor}
+            testId="relationships-entry-color"
+            ariaLabel="Colour for the relationship"
+          />
+        </div>
 
         {error !== undefined && (
           <Callout tone="danger" role="alert" testId="relationships-entry-error">

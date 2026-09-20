@@ -346,6 +346,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
           from that refetched list. */}
       {editing && (
         <MilestoneEditDialog
+          mode="edit"
           existing={milestone}
           onClose={() => { setEditing(false); }}
         />

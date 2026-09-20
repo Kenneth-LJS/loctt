@@ -7,6 +7,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UsersPanel } from "./UsersPanel.tsx";
 
 /**
+ * Part C3 relies on the decode → crop → prepared-file flow. Decoding uses
+ * canvas/ImageBitmap (not in jsdom) and the cropper is a heavy interactive
+ * surface, so both are mocked to the shape the create form consumes: a
+ * decode that yields a trivial DecodedImage, and a cropper that
+ * immediately confirms with a prepared File. The create-then-set wiring
+ * under test — attach the prepared file to the new user's id after create
+ * — is exercised directly.
+ */
+vi.mock("./prepareAvatar.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./prepareAvatar.ts")>();
+  return {
+    ...actual,
+    decodeImageFile: vi.fn(() => Promise.resolve({
+      animated: false,
+      revoke: () => {},
+    })),
+  };
+});
+
+vi.mock("./AvatarCropper.tsx", () => ({
+  AvatarCropper: ({ onConfirm }: { onConfirm: (r: { file: File }) => void }) => (
+    <button
+      type="button"
+      data-testid="mock-cropper-confirm"
+      onClick={() => { onConfirm({ file: new File(["x"], "cropped.png", { type: "image/png" }) }); }}
+    >
+      confirm crop
+    </button>
+  ),
+}));
+
+/**
  * @verifies PRU-47
  *
  * The Edit dialog that lets an existing user's name, email and timezone
@@ -354,5 +386,70 @@ describe("UsersPanel Edit dialog (PRU-47)", () => {
     // bare inline `<input type=file>`.
     const input = screen.getByTestId<HTMLInputElement>("user-avatar-input-u-alice");
     expect(input.className).toContain("sr-only");
+  });
+});
+
+describe("CreateUserForm avatar (Part C3)", () => {
+  /**
+   * Records POSTs so the test can assert BOTH the create and the
+   * follow-on avatar upload to the new user's id (create-then-set).
+   */
+  function stubCreateFlow(): { posts: { url: string; isFile: boolean }[] } {
+    const posts: { url: string; isFile: boolean }[] = [];
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const urlStr = String(url);
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (urlStr.includes("/avatar") && method === "POST") {
+        posts.push({ url: urlStr, isFile: true });
+        return Promise.resolve(jsonResponse({ id: "u-new", name: "Carol", avatar: "carol.png" }));
+      }
+      if (/\/api\/users$/.test(urlStr) && method === "POST") {
+        posts.push({ url: urlStr, isFile: false });
+        return Promise.resolve(jsonResponse({ id: "u-new", name: "Carol", timezone: "UTC" }, 201));
+      }
+      if (urlStr.includes("/api/user/current")) return Promise.resolve(jsonResponse(BOB));
+      if (urlStr.includes("/api/users")) return Promise.resolve(jsonResponse(USERS));
+      return Promise.resolve(jsonResponse({}));
+    });
+    return { posts };
+  }
+
+  it("attaches the chosen avatar to the new user after create (create-then-set)", async () => {
+    const { posts } = stubCreateFlow();
+    render(<UsersPanel />, { wrapper: wrapper() });
+
+    fireEvent.click(await screen.findByTestId("user-create-open"));
+    fireEvent.change(await screen.findByTestId("user-create-name"), { target: { value: "Carol" } });
+
+    // Choose a file → mocked decode → mocked cropper → confirm prepares it.
+    const fileInput = screen.getByTestId<HTMLInputElement>("user-create-avatar-input");
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["y"], "raw.png", { type: "image/png" })] },
+    });
+    fireEvent.click(await screen.findByTestId("mock-cropper-confirm"));
+    await screen.findByTestId("user-create-avatar-preview");
+
+    fireEvent.click(screen.getByTestId("user-create-submit"));
+
+    // Both the create and the avatar upload to the NEW id fire.
+    await waitFor(() => {
+      expect(posts.some(p => p.url.endsWith("/api/users") && !p.isFile)).toBe(true);
+      expect(posts.some(p => p.url.includes("/api/users/u-new/avatar") && p.isFile)).toBe(true);
+    });
+  });
+
+  it("creates the user with no avatar upload when none is chosen", async () => {
+    const { posts } = stubCreateFlow();
+    render(<UsersPanel />, { wrapper: wrapper() });
+
+    fireEvent.click(await screen.findByTestId("user-create-open"));
+    fireEvent.change(await screen.findByTestId("user-create-name"), { target: { value: "Carol" } });
+    fireEvent.click(screen.getByTestId("user-create-submit"));
+
+    await waitFor(() => {
+      expect(posts.some(p => p.url.endsWith("/api/users") && !p.isFile)).toBe(true);
+    });
+    // No avatar upload fired.
+    expect(posts.some(p => p.isFile)).toBe(false);
   });
 });

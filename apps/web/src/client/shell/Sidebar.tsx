@@ -1521,6 +1521,7 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
           the current milestone. */}
       {editingMilestone !== null ? (
         <MilestoneEditDialog
+          mode="edit"
           existing={editingMilestone}
           onClose={() => { setEditingId(null); }}
         />
@@ -1722,6 +1723,7 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
           the current label. */}
       {editingLabel !== null ? (
         <LabelEditDialog
+          mode="edit"
           existing={editingLabel}
           onClose={() => { setEditingId(null); }}
         />

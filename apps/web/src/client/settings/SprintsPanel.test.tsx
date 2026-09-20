@@ -136,6 +136,39 @@ describe("SprintsPanel — create (SPR-40)", () => {
     });
   });
 
+  // @verifies SPR-40 (Part C2: goal on create)
+  it("POSTs the goal when one is entered on create", async () => {
+    renderPanel();
+    await screen.findByTestId("sprints-list");
+
+    fireEvent.change(screen.getByTestId("sprint-create-name"), { target: { value: "Sprint G" } });
+    fireEvent.change(screen.getByTestId("sprint-create-start"), { target: { value: "2026-07-01" } });
+    fireEvent.change(screen.getByTestId("sprint-create-end"), { target: { value: "2026-07-14" } });
+    fireEvent.change(screen.getByTestId("sprint-create-goal"), { target: { value: "Ship the beta" } });
+    fireEvent.click(screen.getByTestId("sprint-create-submit"));
+
+    await waitFor(() => { expect(writeCalls("POST").length).toBe(1); });
+    const [post] = writeCalls("POST");
+    if (post === undefined) throw new Error("no POST call");
+    expect(post.body).toMatchObject({ name: "Sprint G", goal: "Ship the beta" });
+  });
+
+  // @verifies SPR-40 (Part C2)
+  it("omits goal from the POST when the field is left blank", async () => {
+    renderPanel();
+    await screen.findByTestId("sprints-list");
+
+    fireEvent.change(screen.getByTestId("sprint-create-name"), { target: { value: "Sprint N" } });
+    fireEvent.change(screen.getByTestId("sprint-create-start"), { target: { value: "2026-07-01" } });
+    fireEvent.change(screen.getByTestId("sprint-create-end"), { target: { value: "2026-07-14" } });
+    fireEvent.click(screen.getByTestId("sprint-create-submit"));
+
+    await waitFor(() => { expect(writeCalls("POST").length).toBe(1); });
+    const [post] = writeCalls("POST");
+    if (post === undefined) throw new Error("no POST call");
+    expect(post.body).not.toHaveProperty("goal");
+  });
+
   // @verifies SPR-40
   it("keeps Create disabled until the name and both dates are filled", async () => {
     renderPanel();

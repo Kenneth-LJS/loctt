@@ -204,10 +204,10 @@ function CollectionEditor({
     if (dialog.mode === "create") {
       const built: Row =
         collection === "statuses"
-          ? buildStatus({ key: result.key, label: result.label, category: result.category ?? "pending" })
+          ? buildStatus({ key: result.key, label: result.label, category: result.category ?? "pending", icon: result.icon, color: result.color })
           : collection === "priorities"
-            ? buildPriority({ key: result.key, label: result.label })
-            : buildTaskType({ key: result.key, label: result.label });
+            ? buildPriority({ key: result.key, label: result.label, icon: result.icon, color: result.color })
+            : buildTaskType({ key: result.key, label: result.label, icon: result.icon, color: result.color });
       let next: readonly Row[] = [...rows, built];
       if (collection === "statuses" && result.makeDefault === true) {
         next = setDefaultStatus(next as readonly StatusDef[], built.key);
@@ -215,12 +215,23 @@ function CollectionEditor({
       commit(next, { onDone: () => { setDialog(null); } });
       return;
     }
-    // Edit: replace the row, carrying the un-editable fields through.
+    // Edit: replace the row, carrying the un-editable fields through and
+    // applying the presentational icon/colour the dialog now edits — an
+    // undefined value clears the key rather than leaving the stored one.
     const target = dialog.row;
-    const nextRow: Row =
+    const withPresentational = <T extends Row>(base: T): T => {
+      const { icon: _icon, color: _color, ...rest } = base as T & { icon?: string; color?: string };
+      return {
+        ...rest,
+        ...(result.icon !== undefined ? { icon: result.icon } : {}),
+        ...(result.color !== undefined ? { color: result.color } : {}),
+      } as T;
+    };
+    const nextRow: Row = withPresentational(
       collection === "statuses"
         ? { ...(target as StatusDef), label: result.label, category: result.category ?? (target as StatusDef).category }
-        : { ...target, label: result.label };
+        : { ...target, label: result.label },
+    );
     let next = rows.map(r => (r.key === target.key ? nextRow : r));
     if (collection === "statuses" && result.makeDefault === true) {
       next = setDefaultStatus(next as readonly StatusDef[], target.key);
