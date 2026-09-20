@@ -197,18 +197,30 @@ test.describe("SET — the settings shell", () => {
   });
 
   // @verifies SET-2
-  test("SET-2: the nav is grouped into the five groups with non-interactive headings", async ({
+  // @verifies A64
+  test("SET-2/A64: the nav is grouped into the four semantic groups, System last, with non-interactive headings", async ({
     page,
     tracker,
   }) => {
     await page.goto(`${tracker.baseURL}/settings/projects`);
     const nav = page.getByTestId("settings-nav");
 
-    for (const group of ["Workspace", "Workflow", "Data", "Tracker", "Personal"]) {
+    // Four groups (A64), frequency-ordered with System last.
+    const groups = ["Content", "Workflow", "Personal", "System"];
+    for (const group of groups) {
       await expect(nav.getByRole("heading", { name: group })).toBeVisible();
     }
+    // And no stragglers from the old five-group scheme.
+    for (const stale of ["Workspace", "Data", "Tracker"]) {
+      await expect(nav.getByRole("heading", { name: stale })).toHaveCount(0);
+    }
+
+    // The headings render in the approved order (Content → System).
+    const headingNames = await nav.getByRole("heading").allTextContents();
+    expect(headingNames.map(t => t.trim())).toEqual(groups);
+
     // A heading is not a link — it cannot navigate away by accident.
-    await expect(nav.getByRole("link", { name: "Workspace", exact: true })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Content", exact: true })).toHaveCount(0);
 
     // The active section is marked.
     await expect(page.getByTestId("settings-nav-projects")).toHaveAttribute(
