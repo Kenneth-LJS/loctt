@@ -1,7 +1,7 @@
 import type { LabelDef, MilestoneDef, ProjectDef, SavedQuery, SidebarGroupId, SprintDef, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
@@ -37,6 +37,12 @@ import { useInertBackground } from "../ui/Modal.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import { requestSidebarCollapse } from "./useSidebarCollapse.ts";
+import {
+  MAX_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  SIDEBAR_WIDTH_STEP,
+  useSidebarWidth,
+} from "./useSidebarWidth.ts";
 import { useVanishedViews } from "./useVanishedViews.ts";
 
 /**
@@ -94,6 +100,16 @@ export function Sidebar({
   // does not steal layout width, and a backdrop behind it makes the rest
   // of the screen a tap-away dismiss target.
   const overlay = narrow && !collapsed;
+  // The drag-to-resize width applies ONLY to the expanded, in-grid,
+  // desktop column (not the collapsed rail, not the mobile overlay). The
+  // hook is called unconditionally (rules of hooks); its value is only
+  // read when that state is active.
+  const { width, setWidth } = useSidebarWidth();
+  // True while a pointer drag is in progress, so the width transition is
+  // suppressed (otherwise the width would animate toward each pointer
+  // position and the drag would lag). Collapse/expand still animates.
+  const [dragging, setDragging] = useState(false);
+  const inGridExpanded = !collapsed && !overlay;
   // A navigation dismisses the mobile overlay (following a link should
   // reveal the destination, not leave the drawer covering it). Watched
   // here because `Sidebar` is inside the router; the collapse itself is
@@ -157,14 +173,129 @@ export function Sidebar({
   return (
     <aside
       className={[
-        "row-start-2 flex min-h-0 flex-col border-r border-border-subtle bg-bg-surface py-3",
-        "transition-[width] duration-150 ease-out",
-        collapsed ? "w-14 px-2" : "w-60 px-2",
+        "relative row-start-2 flex min-h-0 flex-col border-r border-border-subtle bg-bg-surface py-3 px-2",
+        // The width transition animates the collapse/expand only. During
+        // an active drag it is removed so the column tracks the pointer
+        // 1:1 instead of easing toward it. (Reduced-motion is handled
+        // globally in index.css, SHL-28.)
+        dragging ? "" : "transition-[width] duration-150 ease-out",
+        // Collapsed keeps the fixed rail width; expanded uses the
+        // persisted width via inline style below.
+        collapsed ? "w-14" : "",
       ].join(" ")}
+      // Only the expanded, in-grid column is width-driven. The grid
+      // column is `auto`, so the element's own width sets the track.
+      style={inGridExpanded ? { width } : undefined}
       data-collapsed={collapsed}
     >
       {body}
+      {/* The grab strip is rendered only for the expanded, in-grid,
+          desktop column — never for the collapsed rail or the mobile
+          overlay (which has its own width and floats over the content). */}
+      {inGridExpanded ? (
+        <SidebarResizeHandle width={width} setWidth={setWidth} onDraggingChange={setDragging} />
+      ) : null}
     </aside>
+  );
+}
+
+/**
+ * The drag-to-resize grab strip on the expanded sidebar's right edge.
+ *
+ * Pointer: `setPointerCapture` on pointer-down routes every subsequent
+ * move to this element even when the cursor outruns it, and the new
+ * width is the pointer's X relative to the sidebar's left edge. The hook
+ * clamps; this only measures. Release ends the drag.
+ *
+ * A11Y (WCAG 2.1.1, mouse-only would fail): the strip is a
+ * `role="separator"` with `aria-orientation="vertical"`, an
+ * `aria-label`, and `aria-valuenow/min/max`. Left/Right arrows nudge by
+ * `SIDEBAR_WIDTH_STEP`; Home/End jump to the min/max. So the whole
+ * feature is operable from the keyboard, not just the mouse.
+ */
+function SidebarResizeHandle({
+  width,
+  setWidth,
+  onDraggingChange,
+}: {
+  readonly width: number;
+  readonly setWidth: (px: number) => void;
+  readonly onDraggingChange: (dragging: boolean) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    // Left button / primary pointer only; ignore secondary buttons.
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const el = ref.current;
+    if (el === null) return;
+    // The sidebar's left edge is the resize origin — width is the
+    // pointer's distance from it. Read once at drag start; the sidebar
+    // does not move horizontally during a drag.
+    const originX = el.parentElement?.getBoundingClientRect().left ?? 0;
+    onDraggingChange(true);
+    el.setPointerCapture(e.pointerId);
+
+    const onMove = (ev: PointerEvent): void => {
+      setWidth(ev.clientX - originX);
+    };
+    const onUp = (ev: PointerEvent): void => {
+      onDraggingChange(false);
+      try {
+        el.releasePointerCapture(ev.pointerId);
+      } catch {
+        // The capture may already be gone (pointercancel); harmless.
+      }
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+    };
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    let next: number | null = null;
+    switch (e.key) {
+      case "ArrowLeft":
+        next = width - SIDEBAR_WIDTH_STEP;
+        break;
+      case "ArrowRight":
+        next = width + SIDEBAR_WIDTH_STEP;
+        break;
+      case "Home":
+        next = MIN_SIDEBAR_WIDTH;
+        break;
+      case "End":
+        next = MAX_SIDEBAR_WIDTH;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    setWidth(next);
+  };
+
+  return (
+    <div
+      ref={ref}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      aria-valuenow={width}
+      aria-valuemin={MIN_SIDEBAR_WIDTH}
+      aria-valuemax={MAX_SIDEBAR_WIDTH}
+      tabIndex={0}
+      data-testid="sidebar-resize-handle"
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      // A thin strip hugging the right border, slightly wider than the
+      // 1px border so it is an easy grab target, and reaching full height.
+      // Focus ring for keyboard users.
+      className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize outline-none hover:bg-accent-muted focus-visible:bg-accent-muted focus-visible:ring-1 focus-visible:ring-accent"
+    />
   );
 }
 
