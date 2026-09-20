@@ -172,7 +172,7 @@ export function MilestonesPanel() {
 
   if (milestones.isError) {
     return (
-      <div className="p-8" data-testid="milestones-panel">
+      <div data-testid="milestones-panel">
         <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
           Milestones
         </h1>
@@ -197,7 +197,7 @@ export function MilestonesPanel() {
   const items = milestones.data.items;
 
   return (
-    <div className="p-8" data-testid="milestones-panel">
+    <div data-testid="milestones-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Milestones
       </h1>

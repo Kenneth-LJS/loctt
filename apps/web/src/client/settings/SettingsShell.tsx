@@ -134,7 +134,7 @@ function SectionNav({ active }: { readonly active: string }) {
  */
 function UnknownSection({ requested }: { readonly requested: string }) {
   return (
-    <div role="alert" data-testid="settings-unknown-section" className="p-8">
+    <div role="alert" data-testid="settings-unknown-section">
       <h1 className="mb-2 text-lg font-semibold text-text-primary">
         No settings section called{" "}
         <code className="rounded bg-bg-muted px-1 py-0.5 text-[1.0714rem]">
@@ -165,7 +165,7 @@ function UnknownSection({ requested }: { readonly requested: string }) {
 /** A section that is real but whose panel has not been built yet. */
 function NotBuiltYet({ section }: { readonly section: SettingsSection }) {
   return (
-    <div data-testid="settings-not-built" className="p-8">
+    <div data-testid="settings-not-built">
       <h1 className="mb-2 text-lg font-semibold text-text-primary">
         {section.label}
       </h1>
@@ -221,7 +221,12 @@ export function SettingsShell({ section }: { readonly section: string }) {
     // forcing horizontal body scroll — overflow lives in the panes.
     <div className="flex h-full flex-col overflow-hidden bg-bg-canvas font-sans text-text-primary md:flex-row">
       <SectionNav active={section} />
-      <div data-testid="settings-pane" className="min-w-0 flex-1 overflow-auto">
+      {/* The settings pane owns the panel padding — one source of truth
+          (K-layout). Every panel (and the frame the workflow panels share)
+          renders with no outer page padding of its own, so switching
+          sections cannot shift the content in or out. A nested sub-panel
+          like ReconcilePanel adds no page padding for the same reason. */}
+      <div data-testid="settings-pane" className="min-w-0 flex-1 overflow-auto p-8">
         {resolved
           ? <Panel section={resolved} />
           : <UnknownSection requested={section} />}

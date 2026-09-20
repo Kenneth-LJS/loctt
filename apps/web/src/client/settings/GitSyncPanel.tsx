@@ -1137,7 +1137,7 @@ export function GitSyncPanel() {
   >(undefined);
 
   return (
-    <div className="p-8" data-testid="git-panel">
+    <div data-testid="git-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Sync
       </h1>

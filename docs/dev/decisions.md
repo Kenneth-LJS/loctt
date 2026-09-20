@@ -14738,3 +14738,77 @@ branches in `{Labels,Milestones,Projects}Panel.tsx` from git; remove the
 in `dataPanels.test.tsx`, `ProjectsPanel.test.tsx`, and `Sidebar.test.tsx`.
 The shared dialogs are the standard's payoff — this is a standard (K100),
 not a one-off; new point-of-use config must follow it.
+
+### A215 · Cross-view layout standard: `p-4`/`gap-3`/full-bleed, bare `ErrorState`, the `PageHeader` primitive, and a pane-owned settings padding
+
+**Ticket:** UI layout-consistency pass · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** The list-like main views had drifted apart. `ListView`
+used `p-6` + `gap-4` while Board/Timeline/Sprints/Milestones used `p-4`, so
+switching List↔any-other-view shifted the content 8px per edge. The
+header→body gap was `gap-4` on three views and `gap-3` elsewhere.
+`ErrorState` — which already self-centers and self-pads
+(`mx-auto max-w-lg px-4 py-10`) — was wrapped in a redundant `p-4` div in
+four views and mounted bare in TaskDetail, so a load failure was padded
+differently per view. Each titled view rolled its own header
+(`items-baseline` vs `items-center`, mixed gaps). And the settings panels
+were internally inconsistent: most padded `p-8` themselves (some via the
+shared `WorkflowPanelFrame`, some standalone), so switching sections
+shifted the panel — sixteen definitions of one value.
+
+**What had to be decided.** What is the one shell every list-like view
+uses; where does `ErrorState`'s spacing live; is a shared title-row
+primitive worth extracting and which views adopt it; and where does the
+settings-panel padding live so there is exactly one definition?
+
+**Options considered.**
+- *Page padding:* converge on `p-4`/`gap-3`/full-bleed (the built
+  majority) — cheap, matches four of five views already; vs. converge on
+  `p-6` — would touch four views instead of one and widen the gutter past
+  the mobile 16px minimum for no reason.
+- *ErrorState:* remove the redundant wrapper divs so the primitive owns its
+  spacing (TaskDetail's bare mount is already the target form); vs. add a
+  wrapper to TaskDetail too — would double-pad and re-encode the drift.
+- *PageHeader:* extract a title+subtitle+actions primitive and migrate the
+  views that have a title row; vs. leave each header bespoke — keeps the
+  typography drift.
+- *Settings padding:* give the `settings-pane` one `p-8` and strip every
+  panel/frame (one source of truth); vs. give every panel the same `p-8`
+  (sixteen copies of the value that will drift again).
+
+**Decided.** (1) All list-like main views use `p-4` + `gap-3` +
+full-bleed + view-owned scroll where a header is pinned. (2) `ErrorState`
+mounts bare everywhere — no wrapping padding div. (3) A `ui/PageHeader`
+primitive owns the plain title row
+(`flex flex-wrap items-center justify-between gap-3`, title
+`text-[1.0714rem] font-semibold`); MilestonesView adopts it. (4) The
+`settings-pane` in `SettingsShell` owns a single `p-8`; every panel and
+`WorkflowPanelFrame` render with no outer padding.
+
+**Why.** P7/consistency: two views answering "where is the edge of the
+content" must answer the same way. `p-4`/`gap-3` is the built majority, so
+converging on it is the smallest change. `ErrorState` already self-pads —
+a wrapper is redundant and was the actual source of the per-view drift.
+One padding definition (pane-owned) cannot drift; sixteen already had.
+PageHeader is scoped to the *plain* title row deliberately: only
+MilestonesView (and, as a bordered card, MilestoneDetail) have a real page
+title. Board's chips row, Sprints' manage-link + checkbox, the Timeline
+toolbar, and SprintDetail's back-link + `SprintMetaHeader` have **no**
+title, so there is nothing to converge there — forcing them into a
+title-oriented primitive would invent titles (§8 rule 2). MilestoneDetail
+and TaskDetail keep their bordered/`px-6 py-4` card headers: a border
+variant is a different component (different padding, background, bottom
+border), so adopting PageHeader there is more churn than value.
+
+**To revert.** In `apps/web/src/client`: restore `list/ListView.tsx`'s
+outer wrapper to `flex flex-col gap-4 p-6`; restore `gap-4` on the
+`flex-col` wrappers of `milestones/MilestonesView.tsx`,
+`milestones/MilestoneDetail.tsx`, `sprints/SprintDetail.tsx`; re-wrap the
+`ErrorState` in `board/BoardView.tsx`, `timeline/TimelineView.tsx`,
+`sprints/SprintsView.tsx`, `milestones/MilestonesView.tsx` in a `p-4` div;
+delete `ui/PageHeader.tsx` + `ui/PageHeader.test.tsx` and inline the old
+`<header>` back into `MilestonesView`; and move `p-8` off the
+`settings-pane` in `settings/SettingsShell.tsx` back onto each panel and
+`settings/WorkflowPanelFrame.tsx` (and restore it on `UnknownSection`/
+`NotBuiltYet`). This is a consistency standard, not a one-off — new views
+should follow it rather than reverting.

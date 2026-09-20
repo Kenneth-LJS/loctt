@@ -618,7 +618,7 @@ export function ListView() {
   }, [loadedPages, search.page, navigate]);
 
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex flex-col gap-3 p-4">
       {/* FilterBar owns the whole toolbar row now — the filters (left) AND
           the view-action cluster (Refresh/Export/Save, top-right). Refresh
           + Export used to be rendered here as siblings in a `justify-between`

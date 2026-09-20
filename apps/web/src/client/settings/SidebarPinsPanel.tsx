@@ -46,7 +46,7 @@ export function SidebarPinsPanel() {
 
   if (settings.isError || views.isError) {
     return (
-      <div className="p-8">
+      <div>
         <h1 className="mb-2 text-lg font-semibold text-text-primary">Sidebar pins</h1>
         <ErrorState
           error={settings.error ?? views.error}
@@ -118,7 +118,7 @@ function PinsEditor({
   };
 
   return (
-    <div className="p-8" data-testid="sidebar-pins-panel">
+    <div data-testid="sidebar-pins-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Sidebar pins</h1>
       <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
         Saved views pinned to the sidebar, in the order they appear there.

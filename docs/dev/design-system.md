@@ -112,6 +112,32 @@ the day-to-day tool and are already `rem` (so they scale with text-zoom).
 Use the numeric utilities; the `--space-*` scale is the documented grid they
 follow. A 16px side gutter is the mobile minimum; no horizontal page scroll.
 
+**Desktop page padding (K-layout).** Every list-like main view (List,
+Board, Timeline, Sprints, Milestones, and the detail views) uses the same
+shell so switching views does not shift the content in or out:
+
+- **Outer wrapper:** `p-4` (16px on every edge) — never a page-level
+  `max-w`/`mx-auto` (views are full-bleed) and never `p-6`.
+- **Header→body gap:** `gap-3` on the wrapper's `flex-col`.
+- **Scroll:** a view that pins a header owns its own scroll
+  (`overflow-auto` on the wrapper), so the header stays put while the body
+  scrolls.
+- **The title row** is the shared `ui/PageHeader` primitive
+  (`flex flex-wrap items-center justify-between gap-3`, title
+  `text-[1.0714rem] font-semibold`). It covers the *plain* title case
+  only; bordered/card headers (TaskDetail, MilestoneDetail) and toolbars
+  (Timeline) are not PageHeaders. A view whose top row carries no title
+  (Board's chips row, Sprints' manage-link) keeps its own row.
+- **An `ErrorState` mounts bare** — it self-centers and self-pads
+  (`mx-auto max-w-lg px-4 py-10`), so no view wraps it in a padding div.
+
+**Settings panels** carry no outer page padding of their own. The
+`settings-pane` in `SettingsShell` owns the `p-8` — one source of truth —
+so switching sections cannot shift the panel. `WorkflowPanelFrame` (shared
+by the workflow panels) and every standalone panel render with no outer
+padding; a nested sub-panel (e.g. `ReconcilePanel` inside `GitSyncPanel`)
+adds none for the same reason.
+
 ---
 
 ## 4. Iconography (A208)

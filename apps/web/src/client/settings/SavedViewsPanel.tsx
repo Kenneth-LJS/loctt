@@ -149,7 +149,7 @@ export function SavedViewsPanel() {
     const envelope = views.error instanceof ApiError ? views.error.envelope : undefined;
     const isConfigInvalid = envelope?.code === "config_invalid";
     return (
-      <div className="p-8" data-testid="saved-views-panel">
+      <div data-testid="saved-views-panel">
         <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
           Saved views
         </h1>
@@ -195,7 +195,7 @@ export function SavedViewsPanel() {
   const broken = views.data.broken ?? [];
 
   return (
-    <div className="p-8" data-testid="saved-views-panel">
+    <div data-testid="saved-views-panel">
       <div className="mb-1 flex items-start justify-between gap-3">
         <h1 data-testid="settings-panel-title" className="text-lg font-semibold text-text-primary">
           Saved views

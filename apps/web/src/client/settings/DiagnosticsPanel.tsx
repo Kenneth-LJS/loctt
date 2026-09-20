@@ -194,7 +194,7 @@ export function DiagnosticsPanel() {
   };
 
   return (
-    <div className="p-8" data-testid="diagnostics-panel">
+    <div data-testid="diagnostics-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Diagnostics
       </h1>

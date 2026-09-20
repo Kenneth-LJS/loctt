@@ -138,7 +138,7 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
   const progressUnreadable = sprintsProgress.data?.unreadable ?? [];
 
   return (
-    <div data-testid="sprint-detail" data-sprint-id={sprint.id} className="flex h-full flex-col gap-4 overflow-auto p-4">
+    <div data-testid="sprint-detail" data-sprint-id={sprint.id} className="flex h-full flex-col gap-3 overflow-auto p-4">
       <div>
         <Link to="/sprints" className="text-[0.8571rem] text-text-tertiary no-underline hover:underline">
           ← All sprints

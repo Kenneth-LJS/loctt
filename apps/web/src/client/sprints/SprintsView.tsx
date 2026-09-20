@@ -292,7 +292,7 @@ export function SprintsView() {
   // which is a 400 the user must fix rather than retry.
   if (!loading && (tasks.isError || sprints.isError)) {
     return (
-      <div className="p-4" data-testid="sprints-load-error">
+      <div data-testid="sprints-load-error">
         <ErrorState
           error={sprints.error ?? tasks.error}
           context="Could not load sprints"

@@ -66,7 +66,7 @@ export function PreferencesPanel() {
 
   if (settings.isError) {
     return (
-      <div className="p-8">
+      <div>
         <h1 className="mb-2 text-lg font-semibold text-text-primary">My preferences</h1>
         <ErrorState
           error={settings.error}
@@ -107,7 +107,7 @@ export function PreferencesPanel() {
     && !items.some(p => p.id === personalDefault);
 
   return (
-    <div className="p-8" data-testid="preferences-panel">
+    <div data-testid="preferences-panel">
       <h1 className="mb-6 text-lg font-semibold text-text-primary">My preferences</h1>
 
       <section className="mb-8">

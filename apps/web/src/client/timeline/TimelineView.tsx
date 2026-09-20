@@ -464,16 +464,14 @@ export function TimelineView() {
   const loading = tasks.isPending || tasks.isLoading || workflow.isLoading;
   if (!loading && (tasks.isError || workflow.isError)) {
     return (
-      <div className="p-4">
-        <ErrorState
-          error={tasks.error ?? workflow.error}
-          context="Could not load the timeline"
-          onRetry={() => {
-            void tasks.refetch();
-            void workflow.refetch();
-          }}
-        />
-      </div>
+      <ErrorState
+        error={tasks.error ?? workflow.error}
+        context="Could not load the timeline"
+        onRetry={() => {
+          void tasks.refetch();
+          void workflow.refetch();
+        }}
+      />
     );
   }
 
