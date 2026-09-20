@@ -79,7 +79,7 @@ Define how the agent should interact with tasks during its work.
 ## Workflow
 
 Before starting work:
-- Run `list_tasks` with view "active" to see current state
+- Run `list_tasks` with view "recent-open" to see current state
 - Check if a task already exists for what you're about to do
 - If working on an existing task, move it to `in_progress`
 

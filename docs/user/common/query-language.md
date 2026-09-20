@@ -150,7 +150,7 @@ Two functions cover link queries:
 
 ```
 has_link("blocks")                 # blocks something
-has_link("blocked_by")             # is blocked by something
+has_link("is_blocked_by")          # is blocked by something
 has_link("blocks", "T-2")          # blocks T-2 specifically
 has_link()                         # has any link at all
 not has_link()                     # orphan — no links
@@ -199,11 +199,11 @@ Targets match on either the stored ULID or the current key, so
 ### Both directions are queryable
 
 **Each task stores its own outbound edges.** Linking `A blocks B` writes a
-`blocks` edge on A **and** a `blocked_by` edge on B. So "what blocks T-2"
+`blocks` edge on A **and** an `is_blocked_by` edge on B. So "what blocks T-2"
 is an ordinary forward lookup on the inverse key:
 
-- `has_link("blocks")` matches **A only** — B holds `blocked_by`.
-- `has_link("blocked_by", "T-2")` finds the tasks blocked by T-2.
+- `has_link("blocks")` matches **A only** — B holds `is_blocked_by`.
+- `has_link("is_blocked_by", "T-2")` finds the tasks blocked by T-2.
 - For a symmetric kind (`kind: symmetric`, e.g. `relates_to`) both tasks
   hold the same edge type, so both match. There is no source/target
   distinction to worry about.

@@ -41,7 +41,7 @@ That's what LocTT is.
 - Configurable workflows — define your own statuses, priorities, task types, and relationship kinds in YAML
 - Relationships between tasks (`blocks`, `parent`/`child`, `relates_to`, and more — or any custom kind you define)
 - File attachments per task
-- Activity log — every field change, link, body edit, and archive action is recorded
+- Comments with @-mentions, and an activity log that records every field change, link, body edit, and archive action
 - Soft-delete (archive) with restore, plus permanent delete
 
 **Organization**
@@ -103,7 +103,7 @@ Start the web server:
 loctt ui
 ```
 
-This starts the server in the foreground and opens your browser to [http://localhost:4321](http://localhost:4321). You get board and list views for browsing, creating, and updating tasks — all backed by the same `.loctt/` data on disk. Press Ctrl-C to stop. Pass `--no-open` to skip the browser launch, or `--port <n>` to use a different port.
+This starts the server in the foreground and opens your browser to [http://localhost:4321](http://localhost:4321). You get list, board, and timeline views for browsing, creating, and updating tasks — all backed by the same `.loctt/` data on disk. Press Ctrl-C to stop. Pass `--no-open` to skip the browser launch, or `--port <n>` to use a different port.
 
 ### Keyboard shortcuts
 

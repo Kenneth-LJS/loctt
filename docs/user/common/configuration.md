@@ -77,18 +77,34 @@ Task types are lightweight labels. There's no behavioral difference between them
 
 ## Relationships
 
+This is what `loctt init` creates:
+
 ```yaml
 relationships:
-  - key: parent
-    label: Parent
-    inverse: child
-    inverse_label: Child
-    graph: tree
   - key: blocks
     label: Blocks
     inverse: is_blocked_by
     inverse_label: Is blocked by
     graph: acyclic
+    ranked: true
+  - key: parent
+    label: Parent
+    inverse: child
+    inverse_label: Child
+    graph: tree
+    ranked: true
+  - key: clones
+    label: Clones
+    inverse: is_cloned_by
+    inverse_label: Is cloned by
+  - key: duplicates
+    label: Duplicates
+    inverse: is_duplicated_by
+    inverse_label: Is duplicated by
+  - key: causes
+    label: Causes
+    inverse: is_caused_by
+    inverse_label: Is caused by
   - key: relates_to
     label: Relates to
     kind: symmetric
@@ -104,9 +120,7 @@ Each relationship defines a forward key/label and an inverse. When you `link T-1
 | `acyclic` | Cycles are rejected when linking. |
 | `tree` | Cycles are rejected **and** this relationship may be drawn as a tree axis. |
 
-The shipped default gives `parent` `graph: tree` and `blocks`
-`graph: acyclic`. Any number of relationships may be `tree`; views pick
-which axis to draw rather than the config deciding for them.
+So the default `parent` is a `tree` axis and `blocks` is `acyclic`. Any number of relationships may be `tree`; views pick which axis to draw rather than the config deciding for them. `ranked: true` lets a relationship's targets be ordered relative to each other (see `loctt rerank`).
 
 Symmetric relationships are never `tree`: a symmetric edge is a
 two-node cycle by definition.
