@@ -17,10 +17,10 @@ import {
   useSaveReconcileDecisions,
 } from "../api/hooks/useGit.ts";
 import { Button } from "../ui/Button.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
-import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -576,21 +576,42 @@ export function ConflictRow({ conflict, decision, onChoose }: {
       <div className="mt-2 flex items-center gap-2">
         {isEnumLike
           ? (
-              <Select
-                size="sm"
-                data-testid="git-reconcile-pick-value"
-                aria-labelledby={fieldLabelId}
-                value={chosen === "value" ? pickValue : ""}
-                onChange={(e) => {
-                  setPickValue(e.target.value);
-                  onChoose("value", e.target.value);
+              // A211/A242: the enum/parent value set grows with the
+              // workflow (statuses, priorities, tasks) — a searchable
+              // Combobox rather than a native <select>. Its accessible
+              // name comes from the field heading via `aria-labelledby`
+              // (the heading is a plain <div>, not a <label>), which the
+              // ComboboxButton forwards to the trigger — so the control
+              // still announces the field it belongs to (Batch-2 a11y).
+              <Combobox
+                label={conflict.fieldLabel}
+                options={(conflict.options ?? []).map((o): ComboboxOption => ({
+                  key: o.key,
+                  label: o.label,
+                }))}
+                value={chosen === "value" && pickValue !== "" ? pickValue : undefined}
+                onSelect={(key) => {
+                  setPickValue(key);
+                  onChoose("value", key);
                 }}
-              >
-                <option value="">Pick a value…</option>
-                {conflict.options?.map(o => (
-                  <option key={o.key} value={o.key}>{o.label}</option>
-                ))}
-              </Select>
+                listTestId="git-reconcile-pick-value-list"
+                optionTestId={o => `git-reconcile-pick-value-option-${o.key}`}
+                searchTestId="git-reconcile-pick-value-search"
+                trigger={p => (
+                  <ComboboxButton
+                    {...p}
+                    size="sm"
+                    testId="git-reconcile-pick-value"
+                    dataValue={chosen === "value" ? pickValue : ""}
+                    aria-labelledby={fieldLabelId}
+                    placeholder="Pick a value…"
+                  >
+                    {chosen === "value" && pickValue !== ""
+                      ? conflict.options?.find(o => o.key === pickValue)?.label ?? pickValue
+                      : ""}
+                  </ComboboxButton>
+                )}
+              />
             )
           : (
               <TextField

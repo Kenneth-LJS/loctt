@@ -8,11 +8,16 @@ import { ConflictRow, DeleteVsEditRow } from "./ReconcilePanel.tsx";
 /**
  * @verifies Batch-2 a11y (ReconcilePanel pick-value control label)
  *
- * The pick-value select/input had no accessible name — the field name
- * beside it was a plain `<div>` with no `id`, so neither control was
- * associated with it. This wires the field-name element via `useId()`
- * + `aria-labelledby`, so the control announces the field it belongs
- * to.
+ * The pick-value control had no accessible name — the field name beside
+ * it was a plain `<div>` with no `id`, so neither control was associated
+ * with it. This wires the field-name element via `useId()` +
+ * `aria-labelledby`, so the control announces the field it belongs to.
+ *
+ * A211/A242: the enum picker became a searchable `ui/Combobox` over the
+ * growable value set. Its trigger is a `<button>` (role "button", not
+ * "combobox") that forwards `aria-labelledby` — so the accessible-name
+ * assertion below targets the button role. The scalar path is still a
+ * free-text `<input>` (role "textbox"), unchanged.
  */
 
 afterEach(() => {
@@ -52,10 +57,24 @@ function scalarConflict(): ReconcileConflict {
 describe("ReconcilePanel pick-value control has an accessible name", () => {
   it("labels the enum picker with the field name", () => {
     render(<ConflictRow conflict={enumConflict()} decision={undefined} onChoose={() => {}} />);
-    // getByRole with a name only matches when the control has an
-    // accessible name — which is exactly the association under test.
-    const select = screen.getByRole("combobox", { name: "Status" });
-    expect(select).toBeDefined();
+    // The enum picker is now a Combobox whose trigger is a <button>
+    // (role "button") naming itself via aria-labelledby. getByRole with a
+    // name only matches when the control has an accessible name — which
+    // is exactly the aria-labelledby association under test. Anchoring on
+    // the pick-value testid keeps this off the side buttons.
+    const trigger = screen.getByRole("button", { name: "Status" });
+    expect(trigger).toBeDefined();
+    expect(trigger.getAttribute("data-testid")).toBe("git-reconcile-pick-value");
+  });
+
+  it("selecting an enum option through the Combobox records the value", () => {
+    const onChoose = vi.fn();
+    render(<ConflictRow conflict={enumConflict()} decision={undefined} onChoose={onChoose} />);
+    // Opens as a Combobox: click the trigger, then click an option by its
+    // per-value testid, and the value is recorded via onChoose("value", …).
+    fireEvent.click(screen.getByTestId("git-reconcile-pick-value"));
+    fireEvent.click(screen.getByTestId("git-reconcile-pick-value-option-doing"));
+    expect(onChoose).toHaveBeenCalledWith("value", "doing");
   });
 
   it("labels the scalar free-text input with the field name", () => {

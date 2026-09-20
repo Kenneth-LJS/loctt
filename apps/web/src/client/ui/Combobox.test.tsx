@@ -251,3 +251,48 @@ describe("Combobox — disabled options", () => {
     expect(onSelect).toHaveBeenCalledWith("b");
   });
 });
+
+describe("ComboboxButton — aria-labelledby (A211/A242)", () => {
+  // ReconcilePanel's pick-value control is named by a separate heading
+  // <div>, not a string label. The trigger must take that heading's id via
+  // aria-labelledby and expose it as its accessible name, so a swap from a
+  // native <select aria-labelledby> keeps the association — otherwise
+  // getByRole("button", { name: "Status" }) finds nothing.
+  it("names the trigger via aria-labelledby when supplied", () => {
+    render(
+      <>
+        <div id="field-name">Status</div>
+        <Combobox
+          label="Status"
+          options={[{ key: "a", label: "A" }]}
+          value={undefined}
+          onSelect={() => {}}
+          listTestId="list"
+          trigger={p => (
+            <ComboboxButton {...p} testId="trigger" aria-labelledby="field-name" />
+          )}
+        />
+      </>,
+    );
+    // The accessible name comes from the referenced element.
+    const trigger = screen.getByRole("button", { name: "Status" });
+    expect(trigger.getAttribute("data-testid")).toBe("trigger");
+    expect(trigger.getAttribute("aria-labelledby")).toBe("field-name");
+    // aria-labelledby wins over aria-label — no duplicated name.
+    expect(trigger.getAttribute("aria-label")).toBeNull();
+  });
+
+  it("falls back to aria-label when no aria-labelledby is given", () => {
+    render(
+      <Combobox
+        label="Zone"
+        options={[{ key: "a", label: "A" }]}
+        value={undefined}
+        onSelect={() => {}}
+        listTestId="list"
+        trigger={p => <ComboboxButton {...p} testId="trigger" aria-label="Zone" />}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Zone" }).getAttribute("aria-label")).toBe("Zone");
+  });
+});

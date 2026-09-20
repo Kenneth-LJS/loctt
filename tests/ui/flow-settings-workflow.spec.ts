@@ -298,9 +298,13 @@ test.describe("SET — delete with remap", () => {
     await expect(page.getByTestId("remap-refcount")).toContainText("9 tasks");
 
     // No default is preselected — the confirm requires a choice.
+    // A211/A242: alternatives are a searchable Combobox behind a
+    // "reassign" radio now (control type changed, not behavior), so the
+    // no-default assertion is on the two radios rather than one radio per
+    // alternative.
     await expect(page.getByTestId("remap-confirm")).toBeDisabled();
     await expect(page.getByTestId("remap-clear")).not.toBeChecked();
-    await expect(page.getByTestId(`remap-to-${keep}`)).not.toBeChecked();
+    await expect(page.getByTestId("remap-reassign")).not.toBeChecked();
 
     // BUG-2 (SET-17): the "clear" option states the real consequence —
     // the field is cleared/emptied on those tasks, not left dangling with
@@ -312,8 +316,13 @@ test.describe("SET — delete with remap", () => {
     await expect(page.getByTestId("remap-clear-warning"))
       .not.toContainText(/Diagnostics/i);
 
-    // Choosing remap moves all nine and reports the count.
-    await page.getByTestId(`remap-to-${keep}`).check();
+    // Choosing remap moves all nine and reports the count. Control type
+    // changed (radio-per-alternative → reassign radio + Combobox), not
+    // behavior: choose reassign, open the picker, pick the target by its
+    // (unchanged) per-option testid.
+    await page.getByTestId("remap-reassign").check();
+    await page.getByTestId("remap-to").click();
+    await page.getByTestId(`remap-to-${keep}`).click();
     await expect(page.getByTestId("remap-confirm")).toBeEnabled();
     await page.getByTestId("remap-confirm").click();
 
@@ -378,7 +387,11 @@ test.describe("SET — delete with remap", () => {
     await expect(page.getByTestId("remap-clear-warning"))
       .not.toContainText(/Diagnostics/i);
 
-    await page.getByTestId("remap-to-sprint_2").check();
+    // Control type changed (radio-per-alternative → reassign radio +
+    // Combobox), not behavior.
+    await page.getByTestId("remap-reassign").check();
+    await page.getByTestId("remap-to").click();
+    await page.getByTestId("remap-to-sprint_2").click();
     await page.getByTestId("remap-confirm").click();
 
     await expect.poll(async () => (await workflowYaml(tracker.root)).includes("sprint_1"))
@@ -982,7 +995,14 @@ test.describe("SET — calendar", () => {
     await expect(note).toContainText(/date-only/i);
     await expect(note).toContainText("updated_at");
 
-    await page.getByTestId("calendar-timezone").selectOption("Asia/Singapore");
+    // A211: the timezone picker is a searchable Combobox (~400 IANA
+    // zones), not a native <select>. Control type changed, not behavior:
+    // open the trigger, filter, and click the option. (This spec still
+    // drove it with selectOption from before the CalendarPanel timezone
+    // was migrated — updated here alongside the roster completion.)
+    await page.getByTestId("calendar-timezone").click();
+    await page.getByTestId("calendar-timezone-search").fill("Asia/Singapore");
+    await page.getByTestId("calendar-timezone-option-Asia/Singapore").click();
     // XS-31: working days go with it in the same save.
     await page.getByTestId("calendar-working-day-6").check();
     await page.getByTestId("calendar-save").click();

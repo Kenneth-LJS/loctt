@@ -94,10 +94,11 @@ minority of these.
 > the opened row), plus the ListView-local row-activation and
 > focus-restore logic in `apps/web/src/client/list/ListView.a11y.test.tsx`.
 > Status editing lives on the task **detail**, not in a list row. The
-> fourth bullet — save outcome announced — depends on **A11Y-24**, which
-> is not yet built for field saves (a successful save is currently silent);
-> the Playwright test asserts that silence negatively so it flips red when
-> A11Y-24 lands. A11Y-9's own list-side gaps (row focus-restore) are built.
+> fourth bullet — save outcome announced — is now satisfied: **A11Y-24**
+> landed (the field-save path announces the outcome), and the Playwright
+> test asserts the successful status save **is** announced
+> (`announcer-polite` contains "status saved"). A11Y-9's own list-side
+> gaps (row focus-restore) are built.
 
 ### A11Y-10 · M4 · blocker · P8
 **Filtering is fully keyboard-operable.** From `/list`, add a status filter and a label filter, then remove one, using only the keyboard.
@@ -211,6 +212,22 @@ minority of these.
 - The failure is announced with the same message the toast shows, and the announcement is assertive enough to interrupt — a silent failure is the worst case in P4 terms.
 - Announcements are not duplicated (once per event, not once per re-render) and are not queued up into a backlog that reads out stale results.
 - A non-sighted user can tell a failed save from a successful one without inspecting the field.
+
+> **Coverage (2026-09-20).** Tagged `@verifies A11Y-24`. The field-save
+> path in `apps/web/src/client/task/TaskDetail.tsx` (`writeField`, the
+> mutation success/error handlers behind MetaPanel's `onSet`/`onUnset`)
+> announces through the shell's `Announcer`: `announce("<Field> saved")`
+> polite on success, `announce(failure.message, "assertive")` on failure
+> — the same text the anchored `role="alert"` notice shows, so the two
+> never disagree. Announced in the mutation callbacks, not in render, so
+> it is once-per-event. Proven end-to-end in
+> `tests/ui/flow-accessibility.spec.ts` (a real successful save announced
+> politely, then the same field forced to fail announced assertively) and
+> at the unit level in `apps/web/src/client/task/TaskDetail.announce.test.tsx`
+> (success polite without moving focus; failure assertive with the notice's
+> message; once per save event). The theme toggle (A11Y-7) and route
+> change (A11Y-45) already announced; the toast region is itself an
+> `aria-live="polite"` region, so create toasts are announced.
 
 ### A11Y-25 · M4 · major · P8 P9
 **Filter result counts are announced when they change.** Apply a filter that narrows a 300-task list to 4.

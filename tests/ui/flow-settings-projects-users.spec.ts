@@ -430,7 +430,11 @@ test.describe("PRU — the projects panel", () => {
     // No default that silently orphans them: confirm is blocked until
     // a remap target is chosen.
     await expect(page.getByTestId("project-delete-confirm")).toBeDisabled();
-    await page.getByTestId("project-delete-remap").selectOption({ label: "Web" });
+    // A211: the remap target is a searchable Combobox, not a native
+    // <select> (control type changed, not behavior) — open the trigger,
+    // then click the option.
+    await page.getByTestId("project-delete-remap").click();
+    await page.getByTestId("project-delete-remap-list").getByRole("option", { name: "Web" }).click();
     await expect(page.getByTestId("project-delete-confirm")).toBeEnabled();
   });
 

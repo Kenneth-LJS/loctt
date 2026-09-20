@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
 import type { FieldFailure } from "./fieldFailure.ts";
+import { fieldLabel } from "./fieldLabel.ts";
 
 /**
  * A rejected field write, rendered **at the control that failed**.
@@ -132,16 +133,3 @@ const DATA_STATE_COPY = {
     "LocTT cannot tell whether this was saved. Reload the page, or run "
     + "`loctt show` in a terminal to see what the file holds.",
 } as const;
-
-/**
- * A field key rendered for a reader.
- *
- * `start_date` → "Start date". Not a map from field name to caption:
- * a map would have to be kept in step with core's field set, and a
- * custom field the user declared would fall out of it entirely and
- * render blank. Underscores to spaces is right for every one of them.
- */
-function fieldLabel(field: string): string {
-  const words = field.replace(/_/g, " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}

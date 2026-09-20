@@ -635,7 +635,11 @@ test.describe("TSK — task detail read shell", () => {
     // Move: choose a destination, then dismiss both ways.
     await page.getByRole("button", { name: "More" }).click();
     await page.getByRole("menuitem", { name: "Move to project…" }).click();
-    await page.getByRole("dialog").getByLabel("Destination project").selectOption({ label: "Web App" });
+    // A211: the destination picker is a searchable Combobox, not a native
+    // <select> (control type changed, not behavior) - open the trigger,
+    // then click the option.
+    await page.getByTestId("move-task-project").click();
+    await page.getByTestId("move-task-project-list").getByRole("option", { name: "Web App" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(await frontmatterOf(tracker.root, key)).toBe(before);
@@ -1008,7 +1012,11 @@ test.describe("TSK — task detail read shell", () => {
 
     await page.getByRole("button", { name: "More" }).click();
     await page.getByRole("menuitem", { name: "Move to project…" }).click();
-    await page.getByRole("dialog").getByLabel("Destination project").selectOption({ label: "Web App" });
+    // A211: the destination picker is a searchable Combobox, not a native
+    // <select> (control type changed, not behavior) - open the trigger,
+    // then click the option.
+    await page.getByTestId("move-task-project").click();
+    await page.getByTestId("move-task-project-list").getByRole("option", { name: "Web App" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Move task" }).click();
 
     // Named, not generic. The reason the server gave is what tells the
@@ -1056,7 +1064,11 @@ test.describe("TSK — task detail read shell", () => {
 
     await page.getByRole("button", { name: "More" }).click();
     await page.getByRole("menuitem", { name: "Move to project…" }).click();
-    await page.getByRole("dialog").getByLabel("Destination project").selectOption({ label: "Web App" });
+    // A211: the destination picker is a searchable Combobox, not a native
+    // <select> (control type changed, not behavior) - open the trigger,
+    // then click the option.
+    await page.getByTestId("move-task-project").click();
+    await page.getByTestId("move-task-project-list").getByRole("option", { name: "Web App" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Move task" }).click();
 
     await expect(page.getByRole("dialog")).toHaveCount(0);

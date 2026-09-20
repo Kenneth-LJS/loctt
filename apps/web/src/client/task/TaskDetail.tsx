@@ -32,6 +32,7 @@ import { AttachmentsPanel } from "../attachments/AttachmentsPanel.tsx";
 import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { RelationshipsPanel } from "../relationships/RelationshipsPanel.tsx";
+import { useAnnouncer } from "../ui/Announcer.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -40,6 +41,7 @@ import { DeleteTaskDialog } from "./DeleteTaskDialog.tsx";
 import { EditableTitle } from "./EditableTitle.tsx";
 import type { FieldFailure } from "./fieldFailure.ts";
 import { buildLabelIndex, toFieldFailure } from "./fieldFailure.ts";
+import { fieldLabel } from "./fieldLabel.ts";
 import { MetaPanel } from "./MetaPanel.tsx";
 import { MoveTaskDialog } from "./MoveTaskDialog.tsx";
 import { TaskNotFound } from "./TaskNotFound.tsx";
@@ -95,6 +97,12 @@ export function TaskDetail({
   const task = useTask(taskRef);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // A11Y-24: the shell's screen-reader channel, so a field save's
+  // outcome is spoken. A successful `set` has no durable surface of its
+  // own (the value simply updates in place), and its failure notice is
+  // an anchored `role="alert"` — this makes both perceptible to a
+  // non-sighted user through the one announcement region.
+  const { announce } = useAnnouncer();
 
   const projects = useProjects();
   const users = useUsers();
@@ -341,11 +349,31 @@ export function TaskDetail({
    * through a retired key or a ULID must still be told about `T-12`
    * (XS-57's first bullet, and P4 generally).
    */
+  /**
+   * A11Y-24. Announce the save outcome exactly once per write, from the
+   * mutation's own callbacks — never from render, which would re-speak on
+   * every unrelated re-paint (a background poll, a sibling field's edit)
+   * and read out a stale backlog. The `Announcer` keys each message by a
+   * counter, so two identical outcomes still both announce.
+   *
+   *  - Success is polite ("Status saved"): the value updated in place
+   *    without moving focus, and a poll interrupt would be the wrong
+   *    shape for a routine confirmation.
+   *  - Failure is assertive and carries the *same message the notice
+   *    shows* (`failure.message`) — a silent failure is A11Y-24's named
+   *    worst case, and the field's `role="alert"` notice and this
+   *    channel agree word-for-word so the two are never in conflict.
+   */
   const writeField = (vars: { field: string; value?: unknown }): void => {
     setFieldError(null);
     setField.mutate(vars, {
+      onSuccess: () => {
+        announce(`${fieldLabel(vars.field)} saved`);
+      },
       onError: (err: Error) => {
-        setFieldError(toFieldFailure(err, vars, labelIndex, fm.key));
+        const failure = toFieldFailure(err, vars, labelIndex, fm.key);
+        setFieldError(failure);
+        announce(failure.message, "assertive");
       },
     });
   };
