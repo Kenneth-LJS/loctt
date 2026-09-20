@@ -63,9 +63,9 @@ Initialized .loctt at /Users/you/project
 Created 9 files
 
 Next steps:
-  loctt create "My first task"
-  loctt list
-  loctt ui
+  Create a task:   loctt create "<title>"
+  Open the web UI: loctt ui
+  Read the docs:   .loctt/docs/
 ```
 
 ---
@@ -142,17 +142,16 @@ loctt show WEB-3
 ```
 ```
 WEB-3: Fix login crash
-Status:    in_progress
-Priority:  high
-Type:      bug
-Assignee:  Jordan
-Labels:    urgent
+Status: in_progress
+Priority: high
+Type: bug
+Assignee: Jordan
+Labels: urgent
 
 Relationships:
   is_blocked_by → WEB-5
 
-Body:
-  Steps to reproduce…
+Steps to reproduce…
 ```
 
 ### `loctt set <task> <field> <value>`
@@ -348,7 +347,7 @@ web UI's export.
 loctt export --format json --query "status != done" --output open.json
 ```
 ```
-Exported 12 task(s) to open.json
+Exported 12 task(s) to open.json (json).
 ```
 
 A CSV or JSON export is a report, not a backup — see
