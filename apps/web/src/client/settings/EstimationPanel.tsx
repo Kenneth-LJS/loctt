@@ -27,13 +27,28 @@ import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
 
 const UNITS = ["points", "hours", "days", "custom_numeric", "custom_enum"] as const;
 
+/**
+ * Human labels for the stored unit keys. Only the *displayed* text
+ * changes — the value written to `estimation.unit` is still the raw key,
+ * so a workflow.yaml the CLI wrote reads back unchanged. `custom_numeric`
+ * and `custom_enum` leaked verbatim before (they read as machine tokens
+ * to a user choosing an estimation scale). See decisions.md §8.
+ */
+const UNIT_LABEL: Record<(typeof UNITS)[number], string> = {
+  points: "Points",
+  hours: "Hours",
+  days: "Days",
+  custom_numeric: "Custom number scale",
+  custom_enum: "Custom label scale",
+};
+
 const DEFAULT: EstimationConfig = { enabled: false, unit: "points" };
 
 export function EstimationPanel() {
   return (
     <WorkflowPanelFrame
       title="Estimation"
-      description="How a task's estimate is expressed. Numeric units aggregate as a sum; custom_enum aggregates as counts per category."
+      description="How a task's estimate is expressed. Number scales (points, hours, days, or your own) aggregate as a sum; a label scale aggregates as counts per category."
     >
       {({ workflow }) => <EstimationEditor workflow={workflow} />}
     </WorkflowPanelFrame>
@@ -84,7 +99,7 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
           onChange={e => { patch({ unit: e.target.value as EstimationConfig["unit"] }); }}
           className="w-56"
         >
-          {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+          {UNITS.map(u => <option key={u} value={u}>{UNIT_LABEL[u]}</option>)}
         </Select>
       </label>
 

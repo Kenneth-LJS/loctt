@@ -284,3 +284,74 @@ describe("SprintsPanel — deep-link row anchors (K100)", () => {
     expect(toggle.checked).toBe(false);
   });
 });
+
+/**
+ * @verifies DEG-30 / A138 (sprints broken-entry degradation)
+ *
+ * A sprint whose stored fields do not validate is lifted by the tolerant
+ * loader into `broken` and rides `handleListSprints`. The panel must show
+ * it as a marked, read-only row — never silently omit it — while the
+ * healthy sprints still render. Before this the panel read only
+ * `data.items`, so a corrupt sprint vanished with no notice.
+ *
+ * Red-proof: delete the `sprints-broken-list` block (or read `broken`
+ * from nothing) and the "marker renders" assertion goes red while the
+ * healthy-row assertion stays green — proving the marker is what is under
+ * test, not the list itself.
+ */
+describe("SprintsPanel — broken-entry degradation (DEG-30)", () => {
+  const WITH_BROKEN = {
+    items: [
+      { id: "sp_ok", name: "Healthy sprint", start_date: "2026-06-01", end_date: "2026-06-14", state: "active", taskCount: 0 },
+    ],
+    total: 1,
+    offset: 0,
+    limit: 500,
+    broken: [
+      { id: "sp_bad", index: 1, rawText: "name: 42\n", error: "name: Expected string, received number" },
+    ],
+  };
+
+  function mockWithBroken(): void {
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(WITH_BROKEN)));
+  }
+
+  it("renders a broken sprint as a marked row and keeps the healthy one", async () => {
+    mockWithBroken();
+    renderPanel();
+    // The healthy sprint still renders...
+    await screen.findByTestId("sprint-row-sp_ok");
+    // ...and the corrupt one is shown as a marked, read-only row rather
+    // than vanishing.
+    const brokenRow = screen.getByTestId("sprint-broken-sp_bad");
+    expect(brokenRow.getAttribute("aria-disabled")).toBe("true");
+    expect(brokenRow.textContent).toContain("couldn't be read");
+    expect(brokenRow.textContent).toContain("Expected string, received number");
+  });
+
+  it("does not read a lone broken sprint as an empty list", async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(jsonResponse({
+        items: [],
+        total: 0,
+        offset: 0,
+        limit: 500,
+        broken: WITH_BROKEN.broken,
+      })),
+    );
+    renderPanel();
+    await screen.findByTestId("sprints-broken-list");
+    // The "No sprints yet" empty state must NOT show — there IS a sprint,
+    // it just could not be read.
+    expect(screen.queryByTestId("sprints-empty")).toBeNull();
+  });
+
+  it("Repair refetches the sprints", async () => {
+    mockWithBroken();
+    renderPanel();
+    const repair = await screen.findByTestId("sprint-broken-repair-sp_bad");
+    const before = fetchMock.mock.calls.length;
+    fireEvent.click(repair);
+    await waitFor(() => { expect(fetchMock.mock.calls.length).toBeGreaterThan(before); });
+  });
+});

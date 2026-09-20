@@ -1033,8 +1033,9 @@ the same list, which is the drift SET-2's bullet is really about.
 `SectionNav` and `UnknownSection`
 (`apps/web/src/client/settings/SettingsShell.tsx`); the `built` field
 can then be dropped. The SET-2 test in
-`tests/ui/flow-settings-projects-users.spec.ts` asserts the five group
-headings, not the unbuilt entries, so it survives either way.
+`tests/ui/flow-settings-projects-users.spec.ts` asserts the group
+headings (four since A218), not the unbuilt entries, so it survives
+either way.
 
 ### A64 · The create form marks a duplicate project name without blocking it
 
@@ -14999,3 +15000,231 @@ stop forwarding `conditions`) and the `BuilderTreeSchema` import; delete
 test edits noted above. (The 5 fixture-`conditions` additions in
 `server.missing-view`/`view-warnings`/`views-invalid` tests are required
 by Stage 1's schema and stay.)
+
+### A218 · Settings nav is four frequency-ordered semantic groups (Content / Workflow / Personal / System), System last
+
+**Ticket:** ui/ux-polish · **Date:** 2026-09-20 · **Commit:** (uncommitted)
+
+**The situation.** SET-2 shipped the settings nav as five groups —
+Workspace, Workflow, Data, Tracker, Personal — with all 23 sections
+distributed across them (see A63 for why every section is listed).
+Ken reviewed the IA and found the five-group split fuzzy: "Data" vs
+"Tracker" vs "Workspace" did not map onto how a user reaches for a
+setting (Sync and Backup sat under "Tracker" next to Board columns;
+Users sat under "Workspace" next to Projects), and there was no cue
+that admin/plumbing settings are used least.
+
+**What had to be decided.** What group structure and order the settings
+nav should use.
+
+**Options considered.**
+
+1. **Keep the five SET-2 groups.** No churn, but the fuzzy boundaries
+   and the missing "least-used last" signal remain.
+2. **Four semantic groups, ordered by likelihood of use, System last:**
+   Content (Projects, Saved views, Labels, Milestones, Sprints),
+   Workflow (Statuses, Priorities, Task types, Custom fields,
+   Relationships, Estimation, Board columns, Timeline defaults,
+   Calendar), Personal (My preferences, Card layout, Sidebar pins,
+   Sidebar groups, Keyboard), System (Users, Sync, Backup & restore,
+   Diagnostics — Diagnostics last of all).
+
+**Decided.** Option 2 — Ken approved the exact four-group scheme and
+order above. Projects stays the landing section (`DEFAULT_SECTION`),
+and it is the first section of the first group. Section ids are
+unchanged, so no `/settings/<id>` URL changes; only each section's
+`group` and the array order changed. No labels were renamed.
+
+**Why.** Ken's ruling. The four groups are semantic but ordered by
+frequency (Content and Workflow are reached far more often than System),
+and putting System last with Diagnostics dead last signals "plumbing,
+rarely needed". This supersedes the SET-2 five-group *structure* while
+keeping SET-2's one-data-module design (A63): nav, route resolution,
+and the not-found state still all read from `sections.ts`, and array
+order is the single source of both grouping and within-group order
+(`sectionsInGroup` preserves array order). No empty catch-all group was
+introduced (A63's last point) — every group has real members.
+
+**To revert.** In `apps/web/src/client/settings/sections.ts`, restore
+the `SettingsGroup` union to `Workspace | Workflow | Data | Tracker |
+Personal`, restore `SETTINGS_GROUPS` to that five-name order, and put
+each section back to its pre-A218 group and array position (git blame /
+the diff for this commit has the exact old mapping). Then revert the
+group-heading assertion in
+`tests/ui/flow-settings-projects-users.spec.ts` (SET-2/A64 test) to the
+five names in the old order, and update
+`apps/web/src/client/settings/sections.test.ts` (added here) to the
+five groups — or delete it. `DEFAULT_SECTION` stays `projects` either
+way.
+
+### A219 · Saved-view Stage 3 (CLI + MCP + docs parity): `conditions` hoisted into the shared contracts request schema
+
+**Ticket:** Saved views store structured conditions (Stage 3 of 3) · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** Stages 1 (core+contracts, 9c673e7) and 2 (web, A217)
+made `conditions` the source of truth and `query` its derived, spacing-
+normalized serialization, and brought the web surface into line. Stage 3
+closes the core/surface-parity rule — "a capability in core is not done
+until CLI and MCP have it" — and resolves the Stage-2 drift A217 flagged:
+the web server had re-extended the frozen contracts request schemas
+LOCALLY (`CreateViewRequestWithConditions`/`EditViewRequestWithConditions`).
+
+**What had to be decided (agent calls).**
+
+- *A — hoist `conditions` into contracts, don't keep three copies.* Three
+  surfaces now need `conditions` on the create/edit request, so it belongs
+  in the one schema all three share, not re-derived at the web edge.
+  `CreateViewRequestSchema`/`EditViewRequestSchema` gained an OPTIONAL
+  `conditions: BuilderTreeSchema` and `query` on create was relaxed to
+  optional (a caller may send EITHER; core's `resolveViewFilter` requires
+  exactly one and derives the other). The web server dropped its two local
+  `*WithConditions` extensions and the now-unused `BuilderTreeSchema`
+  import, using the contracts schemas directly — web behavior identical
+  (all 114 view-related web server tests still green, incl.
+  `server.view-conditions.test.ts`).
+
+- *B — CLI needs no filter-path code change; core already derives.* The CLI
+  `views create/edit --query "<dsl>"` already passes the raw DSL to core's
+  `createView`/`editView`, which parse it into `conditions` and reject
+  unparseable DSL (Stage 1). Verified end-to-end: a CLI-created view's
+  `queries.yaml` entry has a populated structured `conditions` and its
+  stored `query` round-trips as the membership form (`status in (a, b)`,
+  not `= a`). `views list` unchanged (text output of the derived `query`).
+
+- *B′ — register `ViewError` as a CLI domain error.* Found while testing
+  the reject path: `ViewError` extends `Error`, not `LocttError`, so it was
+  NOT in `KNOWN_DOMAIN_ERRORS` and an unparseable `--query` bubbled to
+  `main()`'s outer catch instead of being handled in `runCommand` like
+  every sibling command's domain error. Added it (one import + one array
+  entry). Same user-facing message and exit code; the difference is it is
+  now handled at the command boundary and is unit-testable there. Pre-
+  existing latent inconsistency, not introduced by this change.
+
+- *C — MCP: DSL-in kept, `conditions` added to `list_views`.* `create_view`/
+  `edit_view` keep their DSL `query` input (the agent-facing shape); core
+  derives+validates `conditions`. `list_views` now returns `conditions`
+  alongside `query` (cheap; an agent introspecting a view sees the same
+  structured tree the web builder edits). Tool descriptions updated to be
+  honest: the stored form is structural and the returned `query` is a
+  spacing-normalized regeneration (`status=a` → `status = a`).
+
+**Tests added (red-proven).**
+- `apps/cli/src/commands/views.test.ts`: `views create --query "status in
+  (a, b)"` writes a populated membership `conditions` tree AND round-trips
+  the query as `status in (a, b)` — red-proofed by stubbing core's DSL
+  derivation to a bogus leaf; an unparseable `--query` is rejected and no
+  view is written.
+- `apps/mcp/src/tools/views.test.ts` (added case): `create_view` returns
+  the derived `conditions` and `list_views` carries it — red-proofed by
+  removing `conditions` from the `list_views` output.
+- `packages/contracts/src/service-schemas.test.ts` (new file): the create/
+  edit request schema accepts a body with `conditions` and one with DSL
+  `query` only, stays `.strict()`, and rejects a malformed tree — the
+  conditions-accepted assertion red-proofed by removing `conditions` from
+  the schema.
+
+**Why.** One request schema for three surfaces means a view authored on
+any surface produces the same stored `{query, conditions}` pair; the web
+edge no longer maintains a private copy that could drift. The CLI/MCP
+DSL-in path was correct since Stage 1 — Stage 3 proves it and closes the
+introspection gap (`list_views` conditions) and the description honesty
+gap.
+
+**To revert.** In `packages/contracts/src/service-schemas.ts` drop
+`conditions` from `CreateViewRequestSchema`/`EditViewRequestSchema`, make
+`query` on create required again, and remove the `BuilderTreeSchema`
+import; delete `service-schemas.test.ts`. In `apps/web/src/server/server.ts`
+re-add the `CreateViewRequestWithConditions`/`EditViewRequestWithConditions`
+extensions and the `BuilderTreeSchema` import, and point the handlers back
+at them (this reinstates A217's Stage-2 shape). In `apps/cli/src/runtime/
+errors.ts` remove `ViewError` from the import and `KNOWN_DOMAIN_ERRORS`;
+delete `apps/cli/src/commands/views.test.ts`. In `apps/mcp/src/tools/
+views.ts` drop `conditions: q.conditions` from the `list_views` `good`
+map and revert the three description strings; remove the added case in
+`apps/mcp/src/tools/views.test.ts`. Revert the docs notes in
+`docs/user/cli/reference.md`, `docs/user/mcp/reference.md`, and the
+`conditions` field/example in `docs/dev/schema-reference.md`.
+
+### A220 · Settings-panel UX fixes: broken-entry degradation (milestones/sprints), display-only friendly labels, BoardColumns reset confirm, UserDelete + SavedViews shared controls
+
+**Ticket:** Settings panels UX/correctness review · **Date:** 2026-09-20 · **Commit:** (this one) · **Reviewer:** self · **To revert:** see per-item notes below; every change is client-only (no core/contracts/CLI/MCP touched).
+
+**The situation.** A settings review surfaced four categories of
+client-only defect, all in individual panel files. Each was decided and
+implemented here; the load-bearing calls are recorded below.
+
+- *1 — Milestones/Sprints broken-entry degradation (correctness,
+  corruption-guide § 4.6).* The API **already exposes** `broken` for both
+  (`handleListMilestones`/`handleListSprints` in server.ts rode it since
+  Phase-7B; `CountedPage<T>.broken` already typed the hook). The panels
+  simply never rendered it, so a corrupt milestone/sprint silently
+  vanished — the exact DEG-30/A138 failure Labels/SavedViews/Enum panels
+  already handle. Fix is pure client rendering: `BrokenMilestoneRow` /
+  `BrokenSprintRow` mirror `BrokenLabelRow` (⚠ marker + `rawText` reason +
+  **Repair** = reload-from-disk, no Delete, per A202), and a lone broken
+  entry no longer reads as an empty list. **No server change was needed or
+  made** — this was the "API already exposes broken" case, not the
+  flag-a-gap case. *To revert:* delete the two `Broken*Row` components and
+  the `broken` reads/renders in each panel.
+
+- *2 — Jargon leaks (display-only relabels).* Every relabel changes ONLY
+  the visible text; the stored value stays the raw key (asserted by the
+  jargon tests reading `option.value`). The mappings (chosen here):
+  - Estimation units: `points/hours/days/custom_numeric/custom_enum` →
+    "Points / Hours / Days / Custom number scale / Custom label scale";
+    the panel description no longer names `custom_enum`.
+  - Relationship graph: `none/acyclic/tree` → "No constraint / No cycles
+    allowed / Strict hierarchy (one parent)".
+  - Custom-field type: `string/number/date/boolean/enum` → "Text / Number
+    / Date / Yes / No / Choice list" (type still locked after creation).
+  - GitSync happy-path enable confirm: "temporary worktree" → plain "publish
+    to it in the background, so your own working files and the branch you
+    have checked out are never touched or switched." The K93 hard-error /
+    refusal banners (force-push, history-rewrite, SHAs) keep git terms and
+    were NOT touched.
+  - Raw config filenames removed from ordinary copy: SidebarPins
+    swept-pin notice + delete-failed line ("queries.yaml" → "your saved
+    views"); Reconcile drift warning ("workflow.yaml" → "your workflow
+    configuration"). Code comments naming the files were left. *To revert:*
+    inline the raw tokens back into the option text / copy.
+
+- *3 — BoardColumns "Reset to one column per status" now confirms.* It
+  persisted (PUT undefined boards block) on ONE click, discarding all
+  custom columns. It is recoverable, so a typed-word gate would be
+  overkill — a plain shared `ConfirmDialog` gate is the call. The reset
+  behavior is unchanged; only a confirm step is added. **A pre-existing
+  green test (`reset writes an undefined boards block`) asserted the
+  one-click persist — i.e. the unsafe behavior this fixes — and was
+  updated to click through the confirm; called out at its edit site.** *To
+  revert:* drop `confirmingReset` state + the dialog, point the Reset
+  button back at `onReset`.
+
+- *4 — Growable-set controls → shared components (A211 roster).* Two done:
+  UserDeleteDialog's remap target was a radio WALL (one per user) → shared
+  searchable `Combobox`, mirroring DeleteProjectDialog; per-option testids
+  kept as `user-delete-remap-<id>`, trigger `user-delete-remap`, and the
+  delete stays blocked until a target is picked. SavedViewsPanel's delete
+  used a bespoke inline "Delete permanently?" row with two secondary
+  buttons → shared `ConfirmDialog` (same `view-delete-confirm` testid), so
+  the destructive confirm reads/behaves like the other Data panels and
+  inherits the focus trap. **Deferred (flagged, not half-done):**
+  ReconcilePanel's `git-reconcile-pick-value` native `<select>` → Combobox
+  was NOT done — the control's accessible name comes from the field
+  heading via `aria-labelledby` and a Batch-2 a11y unit test asserts
+  `getByRole("combobox", { name })`; a `<button>`-based ComboboxButton
+  changes that role and would require extending the shared primitive's
+  aria contract, which is bigger than this lane. Left on the A211 roster.
+  *To revert:* the UserDelete/SavedViews changes are the two `Combobox`/
+  `ConfirmDialog` swaps.
+
+**Tests added (all red-proven — behaviour broken → test red → restored).**
+`MilestonesPanel.test.tsx` (new) + `SprintsPanel.test.tsx` broken-entry
+block: marker renders + healthy row survives + lone-broken ≠ empty +
+Repair refetches. `settingsJargon.test.tsx` (new): friendly label present
+AND raw token absent AND stored value still the key, for graph/type/unit;
+plus estimation description does not leak `custom_enum`.
+`GitSyncPanel.confirm.test.tsx` (new): happy-path confirm has no
+"worktree". `BoardColumnsPanel.test.tsx`: reset needs confirm / cancel is
+a no-op / confirm performs the reset. `UserDeleteDialog.test.tsx` (new):
+combobox picks target and carries `remapTo`, blocked until picked, no
+radio-per-user wall.

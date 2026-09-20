@@ -260,10 +260,19 @@ control that does not search, and were left because Playwright specs
   `task/MoveTaskDialog.tsx` ("Destination project") — projects.
 - `settings/ReconcilePanel.tsx` (`git-reconcile-pick-value`) — enum
   values of the conflicting field (`flow-git-reconcile.spec.ts` asserts
-  `tagName === "SELECT"`).
-- `settings/UserDeleteDialog.tsx` (`user-delete-remap-<id>`) — one radio
-  per other user; `settings/RemapDeleteDialog.tsx` (`remap-to-<key>`) —
-  one radio per alternative entry.
+  `tagName === "SELECT"`). **Evaluated 2026-09-20 (A218) and deliberately
+  left:** the control's accessible name comes from the field heading via
+  `aria-labelledby`, and the Batch-2 a11y unit test (`ReconcilePanel.test.tsx`)
+  asserts `getByRole("combobox", { name: "Status" })`. A `<button>`-based
+  `ComboboxButton` has role "button" (not "combobox") and takes `aria-label`,
+  not `aria-labelledby`, so the swap needs the shared primitive's aria
+  contract extended — out of that lane. Do this alongside a ComboboxButton
+  `aria-labelledby` prop + updating the a11y test and the Playwright spec.
+- ~~`settings/UserDeleteDialog.tsx` (`user-delete-remap-<id>`) — one radio
+  per other user~~ — DONE (A218): migrated to `Combobox` (trigger
+  `user-delete-remap`, per-option testids kept `user-delete-remap-<id>`),
+  mirroring DeleteProjectDialog. `settings/RemapDeleteDialog.tsx`
+  (`remap-to-<key>`) — one radio per alternative entry — still open.
 - `create/CreateTaskModal.tsx` multi custom enum — one toggle pill per
   value (`create-field-<key>-<v>`); the detail panel's `MultiEnum` uses
   OptionPicker and so already searches past 12.

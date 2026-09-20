@@ -567,7 +567,7 @@ export function ConflictRow({ conflict, decision, onChoose }: {
       {/* GIT-14: keep-remote on a drift value warns it will render with a marker + appear in Diagnostics. */}
       {chosen === "remote" && conflict.remote.drift !== undefined && (
         <p role="alert" data-testid="git-reconcile-drift-warning" className="mt-1 text-[0.8571rem] text-warn-fg">
-          This value is not in the local workflow.yaml. Keeping it leaves the task with a drift
+          This value is not in your local workflow configuration. Keeping it leaves the task with a drift
           marker, and it will appear in Diagnostics until the referenced value is re-added.
         </p>
       )}

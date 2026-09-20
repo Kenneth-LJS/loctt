@@ -6,6 +6,7 @@ import { apiClient,ApiError } from "../api/client.ts";
 import { useViews } from "../api/hooks/sidebarData.ts";
 import { useDeleteView } from "../api/hooks/useDeleteView.ts";
 import { Button } from "../ui/Button.tsx";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { RowActions } from "./RowActions.tsx";
@@ -87,44 +88,43 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
       {/* Row actions collapse into a kebab (responsive GROUP A) so the
           view name + query chip + actions no longer overflow the row.
           Edit only on an active row (an archived view is restored first). */}
-      {confirming
-        ? (
-            <span className="flex shrink-0 items-center gap-2 text-[0.8571rem]">
-              <span className="text-text-secondary">Delete permanently?</span>
-              <Button
-                variant="secondary"
-                size="sm"
-                testId="view-delete-confirm"
-                disabled={del.isPending}
-                onClick={() => {
-                  del.mutate({ id: view.id }, { onSuccess: () => { setConfirming(false); } });
-                }}
-              >
-                Delete
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => { setConfirming(false); }}
-              >
-                Cancel
-              </Button>
-            </span>
-          )
-        : (
-            <RowActions
-              label={`Actions for view ${view.name}`}
-              actions={[
-                ...(!archived && onEdit !== undefined
-                  ? [{ label: "Edit", testId: "view-edit", onSelect: () => { onEdit(view); } }]
-                  : []),
-                archived
-                  ? { label: "Unarchive", testId: "view-unarchive", disabled: unarchive.isPending, onSelect: () => { unarchive.mutate({ id: view.id }); } }
-                  : { label: "Archive", testId: "view-archive", disabled: del.isPending, onSelect: () => { del.mutate({ id: view.id, soft: true }); } },
-                { label: "Delete", testId: "view-delete", danger: true, onSelect: () => { setConfirming(true); } },
-              ]}
-            />
-          )}
+      <RowActions
+        label={`Actions for view ${view.name}`}
+        actions={[
+          ...(!archived && onEdit !== undefined
+            ? [{ label: "Edit", testId: "view-edit", onSelect: () => { onEdit(view); } }]
+            : []),
+          archived
+            ? { label: "Unarchive", testId: "view-unarchive", disabled: unarchive.isPending, onSelect: () => { unarchive.mutate({ id: view.id }); } }
+            : { label: "Archive", testId: "view-archive", disabled: del.isPending, onSelect: () => { del.mutate({ id: view.id, soft: true }); } },
+          { label: "Delete", testId: "view-delete", danger: true, onSelect: () => { setConfirming(true); } },
+        ]}
+      />
+
+      {/* A211 / consistency: the bespoke inline "Delete permanently?" row
+          with two secondary buttons is replaced by the shared
+          ConfirmDialog the other Data panels use, so the destructive
+          confirm reads and behaves the same everywhere (and inherits the
+          focus trap + inert background). See decisions.md §8. */}
+      {confirming && (
+        <ConfirmDialog
+          title={`Delete “${view.name}”?`}
+          testId="view-delete-dialog"
+          confirmTestId="view-delete-confirm"
+          confirmLabel="Delete view"
+          body={
+            <>
+              The view <span className="font-medium text-text-primary">{view.name}</span>{" "}
+              is deleted permanently. Tasks are not affected, and built-in
+              filters are unchanged.
+            </>
+          }
+          onConfirm={() => {
+            del.mutate({ id: view.id }, { onSuccess: () => { setConfirming(false); } });
+          }}
+          onCancel={() => { setConfirming(false); }}
+        />
+      )}
     </li>
   );
 }

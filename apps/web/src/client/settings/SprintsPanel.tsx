@@ -1,4 +1,4 @@
-import type { SprintDef } from "@loctt/contracts";
+import type { BrokenEntry, SprintDef } from "@loctt/contracts";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
@@ -141,6 +141,59 @@ function SprintRow({ sprint, all }: {
   );
 }
 
+/**
+ * DEG-30 / A138 parity: a sprint whose stored fields do not validate is
+ * lifted by the tolerant loader into `broken` and rides the list endpoint
+ * (`handleListSprints`) rather than being dropped. It renders as a
+ * disabled, marked error row mirroring `BrokenLabelRow`/`BrokenMilestoneRow`,
+ * so a corrupt sprint is visible and repairable instead of silently
+ * vanishing (corruption-guide § 4.6). Repair (reload-from-disk), not
+ * Delete, for the same reason as labels/milestones (A202).
+ */
+function BrokenSprintRow({ entry, onRepair, repairing }: {
+  readonly entry: BrokenEntry;
+  readonly onRepair: () => void;
+  readonly repairing: boolean;
+}) {
+  const name = entry.id ?? `Sprint entry #${String(entry.index + 1)}`;
+  const idOrIndex = entry.id ?? `index-${String(entry.index)}`;
+  return (
+    <li
+      {...(entry.id !== undefined ? { id: `row-${entry.id}` } : {})}
+      data-testid={`sprint-broken-${idOrIndex}`}
+      data-broken-sprint={idOrIndex}
+      aria-disabled="true"
+      className="flex items-start gap-2 border-b border-border-subtle py-2 text-danger-fg last:border-0"
+    >
+      <span aria-hidden="true" className="shrink-0 pt-0.5">⚠</span>
+      <div className="min-w-0 flex-1">
+        <span className="text-[0.9286rem] font-medium">{name}</span>
+        <span className="text-text-tertiary"> — couldn't be read</span>
+        <span className="ml-1 text-[0.8571rem] text-danger-fg/90">
+          ({entry.error})
+        </span>
+        <p className="mt-0.5 text-[0.8571rem] text-text-secondary">
+          Fix this entry in{" "}
+          <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem]">
+            .loctt/config/sprints.yaml
+          </code>{" "}
+          and reload — LocTT will not rewrite it for you.
+        </p>
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        testId={`sprint-broken-repair-${idOrIndex}`}
+        disabled={repairing}
+        onClick={onRepair}
+        className="shrink-0"
+      >
+        Repair
+      </Button>
+    </li>
+  );
+}
+
 export function SprintsPanel() {
   const sprints = useCountedSprints();
   const create = useCreateSprint();
@@ -195,6 +248,10 @@ export function SprintsPanel() {
   const items = sprints.data.items as readonly CountedSprint[];
   const activeItems = items.filter(s => s.archived !== true);
   const archivedItems = items.filter(s => s.archived === true);
+  // DEG-30 / A138: sprints present in sprints.yaml whose stored fields no
+  // longer validate. Rendered in their own marked block rather than
+  // hidden, so a hand edit that breaks one does not read as "deleted".
+  const broken = sprints.data.broken ?? [];
 
   const datesOk = ISO_DATE_RE.test(start) && ISO_DATE_RE.test(end);
   const canCreate = name.trim().length > 0 && datesOk && !create.isPending;
@@ -278,13 +335,15 @@ export function SprintsPanel() {
         </Callout>
       )}
 
-      {activeItems.length === 0
+      {activeItems.length === 0 && broken.length === 0
         ? (
+            // A lone broken entry is NOT an empty list (DEG-30 / A138) —
+            // its block renders below.
             <p data-testid="sprints-empty" data-sprints-state="empty" className="text-[0.9286rem] text-text-tertiary">
               No sprints yet.
             </p>
           )
-        : (
+        : activeItems.length > 0 && (
             <ul className="m-0 list-none p-0" data-testid="sprints-list">
               {activeItems.map(s => <SprintRow key={s.id} sprint={s} all={items} />)}
             </ul>
@@ -305,6 +364,32 @@ export function SprintsPanel() {
               {archivedItems.map(s => <SprintRow key={s.id} sprint={s} all={items} />)}
             </ul>
           )}
+        </div>
+      )}
+
+      {broken.length > 0 && (
+        <div className="mt-5">
+          <h2 className="mb-1 text-[0.9286rem] font-semibold text-danger-fg">
+            Broken
+          </h2>
+          <p className="mb-2 text-[0.8571rem] text-text-secondary">
+            These sprints are still in the file, but their stored fields no
+            longer validate. Fix them by hand in{" "}
+            <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
+              .loctt/config/sprints.yaml
+            </code>{" "}
+            and reload.
+          </p>
+          <ul className="m-0 list-none p-0" data-testid="sprints-broken-list">
+            {broken.map(entry => (
+              <BrokenSprintRow
+                key={`broken-${entry.id ?? `index-${String(entry.index)}`}`}
+                entry={entry}
+                repairing={sprints.isFetching}
+                onRepair={() => { void sprints.refetch(); }}
+              />
+            ))}
+          </ul>
         </div>
       )}
     </div>

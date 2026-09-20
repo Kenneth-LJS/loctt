@@ -32,6 +32,18 @@ import {
 
 const GRAPHS = ["none", "acyclic", "tree"] as const;
 
+/**
+ * Human labels for the stored graph-constraint keys. Display-only — the
+ * value written to `relationship.graph` is still the raw key. The tokens
+ * `none`/`acyclic`/`tree` leaked verbatim to the user before. See
+ * decisions.md §8.
+ */
+const GRAPH_LABEL: Record<(typeof GRAPHS)[number], string> = {
+  none: "No constraint",
+  acyclic: "No cycles allowed",
+  tree: "Strict hierarchy (one parent)",
+};
+
 export interface RelationshipDialogResult {
   readonly draft: RelationshipDraft;
 }
@@ -226,7 +238,7 @@ export function RelationshipEditDialog({
             onChange={e => { setGraph(e.target.value as RelationshipDef["graph"]); }}
             aria-label="Graph constraint"
           >
-            {GRAPHS.map(g => <option key={g} value={g}>{g}</option>)}
+            {GRAPHS.map(g => <option key={g} value={g}>{GRAPH_LABEL[g]}</option>)}
           </Select>
         </label>
 

@@ -5,6 +5,7 @@ import { ApiError } from "../api/client.ts";
 import { useSaveWorkflowCollection } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -96,6 +97,11 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
   const [draft, setDraft] = useState<DraftColumn[] | null>(
     isExplicit ? configured.map(toDraft) : null,
   );
+  // "Reset to one column per status" persists to disk on click, discarding
+  // every custom column. It is recoverable (the user can rebuild), so a
+  // typed-word gate would be overkill, but a one-click destructive persist
+  // deserves a confirm — see decisions.md §8.
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   const statuses = workflow.statuses ?? [];
 
@@ -329,11 +335,30 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
           variant="secondary"
           testId="board-columns-reset"
           disabled={save.isPending}
-          onClick={onReset}
+          onClick={() => { setConfirmingReset(true); }}
         >
           Reset to one column per status
         </Button>
       </div>
+
+      {confirmingReset && (
+        <ConfirmDialog
+          title="Reset board columns?"
+          testId="board-columns-reset-confirm"
+          confirmTestId="board-columns-reset-confirm-button"
+          cancelTestId="board-columns-reset-cancel"
+          confirmLabel="Reset columns"
+          body={
+            <>
+              This discards every custom column and returns the board to one
+              column per status, in the order statuses are defined. It saves
+              immediately. You can build your columns again afterwards.
+            </>
+          }
+          onConfirm={() => { setConfirmingReset(false); onReset(); }}
+          onCancel={() => { setConfirmingReset(false); }}
+        />
+      )}
     </div>
   );
 }
