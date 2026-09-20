@@ -522,6 +522,25 @@ describe("ListView", () => {
     // create CTA is deliberately absent here.
     expect(screen.queryByTestId("list-empty-add-task")).toBeNull();
   });
+
+  // Cross-view layout standardisation (commit 02b05cd): the ListView root
+  // container uses the shared `p-4` / `gap-3` rhythm, NOT the older
+  // `p-6` / `gap-4`. A silent bump back to p-6 would desync it from Board
+  // and Timeline (which this same rule pins) with nothing to catch it.
+  // The root is the parent of the FilterBar's own root; `add-filter` sits
+  // inside FilterBar, so its nearest `.flex-col` ancestor is the FilterBar
+  // root and that root's parent is the ListView container.
+  it("uses the shared p-4/gap-3 layout rhythm on its root container", async () => {
+    await mountList();
+    const filterBarRoot = screen.getByTestId("add-filter").closest("div.flex-col");
+    expect(filterBarRoot).not.toBeNull();
+    const listRoot = filterBarRoot?.parentElement as HTMLElement;
+    expect(listRoot.className).toContain("p-4");
+    expect(listRoot.className).toContain("gap-3");
+    // Guard against the specific regression: the pre-standardisation values.
+    expect(listRoot.className).not.toContain("p-6");
+    expect(listRoot.className).not.toContain("gap-4");
+  });
 });
 
 /**

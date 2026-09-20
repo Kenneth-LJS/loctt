@@ -134,6 +134,16 @@ describe("TimelineView — titled header (Ken 2026-09-20)", () => {
     const heading = await screen.findByRole("heading", { name: "Timeline", level: 1 });
     expect(heading.tagName).toBe("H1");
   });
+
+  // Cross-view layout standardisation (commit 02b05cd): the timeline root
+  // shares the `p-4` / `gap-3` rhythm with List and Board.
+  it("uses the shared p-4/gap-3 layout rhythm on its root container", async () => {
+    mountTimeline();
+    const root = await screen.findByTestId("timeline");
+    expect(root.className).toContain("p-4");
+    expect(root.className).toContain("gap-3");
+    expect(root.className).not.toContain("p-6");
+  });
 });
 
 describe("the timeline config banners", () => {

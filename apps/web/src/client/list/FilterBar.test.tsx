@@ -502,6 +502,56 @@ describe("FilterBar — mobile filter sheet", () => {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
     }
   });
+
+  // Stale-open-sheet-on-switch: the mobile filter sheet is transient local
+  // state, not derived from the URL. Switching to a different saved
+  // filter/view (a navigation that changes `search.view`) must close it —
+  // otherwise the sheet stays open aimed at the previous filter. The
+  // editor/draft halves of this reset are tested above; the sheet halves
+  // (`setFilterSheetOpen(false)` / `setAddSheetOpen(false)`) were not.
+  it("closes an open filter sheet when the user switches to a different view", async () => {
+    const original = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      const router = await mountNarrow("?view=v_recent");
+      fireEvent.click(screen.getByTestId("filters-open"));
+      expect(await screen.findByTestId("filters-sheet")).toBeTruthy();
+
+      // Switch to another saved view from outside the bar (as the sidebar does).
+      await router.navigate({ to: "/list", search: { view: "v_blocked" } as never });
+
+      await vi.waitFor(
+        () => expect(screen.queryByTestId("filters-sheet")).toBeNull(),
+        { timeout: 3000 },
+      );
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
+  });
+
+  it("closes an open add-filter sheet when the user switches to a different view", async () => {
+    const original = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      const router = await mountNarrow("?view=v_recent");
+      // Open the filter sheet, then the Add-filter sub-sheet from inside it.
+      // On mobile the Add-filter trigger inside the sheet is
+      // `add-filter-mobile` (the `add-filter` Menu is the desktop-only one).
+      fireEvent.click(screen.getByTestId("filters-open"));
+      await screen.findByTestId("filters-sheet");
+      fireEvent.click(await screen.findByTestId("add-filter-mobile"));
+      expect(await screen.findByTestId("add-filter-sheet")).toBeTruthy();
+
+      await router.navigate({ to: "/list", search: { view: "v_blocked" } as never });
+
+      await vi.waitFor(
+        () => expect(screen.queryByTestId("add-filter-sheet")).toBeNull(),
+        { timeout: 3000 },
+      );
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
+  });
 });
 
 /**

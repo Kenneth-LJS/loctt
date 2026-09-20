@@ -164,6 +164,16 @@ describe("BoardView — titled header (Ken 2026-09-20)", () => {
     expect(await screen.findByTestId("board-add-task")).toBeTruthy();
     expect(screen.getByTestId("board-options-menu")).toBeTruthy();
   });
+
+  // Cross-view layout standardisation (commit 02b05cd): the board root
+  // shares the `p-4` / `gap-3` rhythm with List and Timeline.
+  it("uses the shared p-4/gap-3 layout rhythm on its root container", async () => {
+    await renderBoard();
+    const root = await screen.findByTestId("board");
+    expect(root.className).toContain("p-4");
+    expect(root.className).toContain("gap-3");
+    expect(root.className).not.toContain("p-6");
+  });
 });
 
 describe("BoardView — column-header menu (BRD-52, K100)", () => {
