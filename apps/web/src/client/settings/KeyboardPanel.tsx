@@ -130,7 +130,7 @@ function modifierLabel(): string {
 export function KeyboardPanel() {
   const mod = modifierLabel();
   return (
-    <div className="p-8" data-testid="keyboard-panel">
+    <div data-testid="keyboard-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Keyboard</h1>
       <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
         The shortcuts this build actually has. Shortcuts are not

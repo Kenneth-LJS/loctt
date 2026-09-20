@@ -584,7 +584,7 @@ export function UsersPanel() {
 
   if (users.isError) {
     return (
-      <div className="p-8">
+      <div>
         <ErrorState
           error={users.error}
           onRetry={() => { void users.refetch(); }}
@@ -601,7 +601,7 @@ export function UsersPanel() {
   const currentId = current.data?.id;
 
   return (
-    <div className="p-8" data-testid="settings-users">
+    <div data-testid="settings-users">
       <h1 className="mb-1 text-lg font-semibold">Users</h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Identities that can be assigned work and attributed activity.

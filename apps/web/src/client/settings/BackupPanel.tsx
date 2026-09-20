@@ -101,7 +101,7 @@ export function BackupPanel() {
   }
 
   return (
-    <div className="p-8" data-testid="backup-panel">
+    <div data-testid="backup-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Backup &amp; restore
       </h1>

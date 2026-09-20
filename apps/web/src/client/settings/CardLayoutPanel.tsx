@@ -68,7 +68,7 @@ export function CardLayoutPanel() {
 
   if (settings.isError) {
     return (
-      <div className="p-8">
+      <div>
         <h1 className="mb-2 text-lg font-semibold text-text-primary">Card layout</h1>
         <ErrorState
           error={settings.error}
@@ -117,7 +117,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
   };
 
   return (
-    <div className="p-8" data-testid="card-layout-panel">
+    <div data-testid="card-layout-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Card layout</h1>
       <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
         Which fields board cards show, and in what order. Saved against your

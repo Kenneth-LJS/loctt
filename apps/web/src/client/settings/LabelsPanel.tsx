@@ -327,7 +327,7 @@ export function LabelsPanel() {
     */
     const envelope = labels.error instanceof ApiError ? labels.error.envelope : undefined;
     return (
-      <div className="p-8" data-testid="labels-panel">
+      <div data-testid="labels-panel">
         <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
           Labels
         </h1>
@@ -360,7 +360,7 @@ export function LabelsPanel() {
   const broken = labels.data.broken ?? [];
 
   return (
-    <div className="p-8" data-testid="labels-panel">
+    <div data-testid="labels-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Labels
       </h1>

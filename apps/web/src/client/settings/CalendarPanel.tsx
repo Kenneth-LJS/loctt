@@ -44,7 +44,7 @@ export function CalendarPanel() {
 
   if (calendar.isError) {
     return (
-      <div className="p-8">
+      <div>
         <h1 className="mb-2 text-lg font-semibold text-text-primary">Calendar</h1>
         <ErrorState
           error={calendar.error}
@@ -118,7 +118,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
   };
 
   return (
-    <div className="p-8" data-testid="calendar-panel">
+    <div data-testid="calendar-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Calendar</h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Working days, holidays and the workspace timezone. Date pickers

@@ -170,7 +170,7 @@ export function SprintsPanel() {
 
   if (sprints.isError) {
     return (
-      <div className="p-8" data-testid="sprints-panel">
+      <div data-testid="sprints-panel">
         <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
           Sprints
         </h1>
@@ -200,7 +200,7 @@ export function SprintsPanel() {
   const canCreate = name.trim().length > 0 && datesOk && !create.isPending;
 
   return (
-    <div className="p-8" data-testid="sprints-panel">
+    <div data-testid="sprints-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Sprints
       </h1>

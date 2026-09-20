@@ -12,6 +12,7 @@ import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import type { MilestoneWithProgress, Readout } from "./model.ts";
 import {
   EXCLUDE_DISCARDED_QUERY,
@@ -154,7 +155,7 @@ export function MilestonesView() {
   // different screens (ERR-1).
   if (milestones.isError) {
     return (
-      <div data-testid="milestones-load-error" className="p-4">
+      <div data-testid="milestones-load-error">
         <ErrorState
           error={milestones.error}
           context="Could not load milestones"
@@ -165,15 +166,15 @@ export function MilestonesView() {
   }
 
   return (
-    <div data-testid="milestones" className="flex h-full flex-col gap-4 overflow-auto p-4">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <div className="flex flex-col gap-0.5">
-          <h1 className="text-[1.0714rem] font-semibold text-text-primary">Milestones</h1>
-          {/* MSL-42 (UX-15): the discoverability copy. This *is* where
-              milestone progress renders, so the subhead says so plainly
-              and points at where milestones are created — closing the
-              "a view the user cannot find" gap the case is written
-              against. */}
+    <div data-testid="milestones" className="flex h-full flex-col gap-3 overflow-auto p-4">
+      <PageHeader
+        title="Milestones"
+        subtitle={
+          /* MSL-42 (UX-15): the discoverability copy. This *is* where
+             milestone progress renders, so the subhead says so plainly
+             and points at where milestones are created — closing the
+             "a view the user cannot find" gap the case is written
+             against. */
           <p data-testid="milestones-subhead" className="text-[0.8571rem] text-text-tertiary">
             Progress toward every milestone. Manage them in{" "}
             <Link
@@ -185,8 +186,8 @@ export function MilestonesView() {
             </Link>
             .
           </p>
-        </div>
-        {archivedCount > 0 && (
+        }
+        actions={archivedCount > 0 && (
           // MSL-25: reveals archived milestones *in the view* without
           // unarchiving them. A checkbox rather than a button so its
           // state is announced, and nothing here writes to
@@ -200,7 +201,7 @@ export function MilestonesView() {
             Show archived ({archivedCount})
           </label>
         )}
-      </header>
+      />
 
       {/* K28 / P-5: task files that could not be read are excluded
           from every milestone's totals (they cannot be attributed to

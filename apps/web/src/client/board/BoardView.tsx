@@ -282,16 +282,14 @@ export function BoardView() {
 
   if (queryFailed) {
     return (
-      <div className="p-4">
-        <ErrorState
-          error={tasks.error ?? workflow.error}
-          context="Could not load the board"
-          onRetry={() => {
-            void tasks.refetch();
-            void workflow.refetch();
-          }}
-        />
-      </div>
+      <ErrorState
+        error={tasks.error ?? workflow.error}
+        context="Could not load the board"
+        onRetry={() => {
+          void tasks.refetch();
+          void workflow.refetch();
+        }}
+      />
     );
   }
 

@@ -305,7 +305,7 @@ export function ProjectsPanel() {
   // "you have no projects".
   if (projects.isError) {
     return (
-      <div className="p-8">
+      <div>
         <ErrorState
           error={projects.error}
           onRetry={() => { void projects.refetch(); }}
@@ -324,7 +324,7 @@ export function ProjectsPanel() {
   const completed = info.data?.completedPrefixRename;
 
   return (
-    <div className="p-8" data-testid="settings-projects">
+    <div data-testid="settings-projects">
       <h1 className="mb-1 text-lg font-semibold">Projects</h1>
       <p className="mb-1 text-[0.9286rem] text-text-secondary">
         Each project has its own key prefix and counter. Set the workspace

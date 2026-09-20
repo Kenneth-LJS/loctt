@@ -53,7 +53,7 @@ export function SidebarGroupsPanel() {
 
   if (settings.isError) {
     return (
-      <div className="p-8">
+      <div>
         <h1 className="mb-2 text-lg font-semibold text-text-primary">Sidebar groups</h1>
         <ErrorState
           error={settings.error}
@@ -113,7 +113,7 @@ function GroupsEditor({ stored }: { readonly stored: UserSettings }) {
   };
 
   return (
-    <div className="p-8" data-testid="sidebar-groups-panel">
+    <div data-testid="sidebar-groups-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Sidebar groups
       </h1>

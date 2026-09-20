@@ -58,7 +58,7 @@ export function WorkflowPanelFrame({
     const envelope = workflow.error instanceof ApiError ? workflow.error.envelope : undefined;
     const isConfigInvalid = envelope?.code === "config_invalid";
     return (
-      <div className="p-8" data-testid="workflow-panel-error">
+      <div data-testid="workflow-panel-error">
         {header}
         <div
           data-workflow-error={isConfigInvalid ? "config-invalid" : "unreachable"}
@@ -95,7 +95,7 @@ export function WorkflowPanelFrame({
 
   if (workflow.isLoading || workflow.data === undefined) {
     return (
-      <div className="p-8">
+      <div>
         {header}
         <LoadingState className="text-[0.9286rem] text-text-tertiary">Loading workflow…</LoadingState>
       </div>
@@ -121,7 +121,7 @@ export function WorkflowPanelFrame({
           })));
   if (brokenEntries.length > 0) {
     return (
-      <div className="p-8" data-testid="workflow-panel-error">
+      <div data-testid="workflow-panel-error">
         {header}
         <div data-workflow-error="config-invalid">
           <div className="rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[0.9286rem]">
@@ -163,7 +163,7 @@ export function WorkflowPanelFrame({
   }
 
   return (
-    <div className="p-8" data-testid="workflow-panel">
+    <div data-testid="workflow-panel">
       {header}
       {children({
         workflow: workflow.data,

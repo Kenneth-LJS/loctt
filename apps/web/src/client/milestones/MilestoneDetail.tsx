@@ -167,7 +167,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
     <div
       data-testid="milestone-detail"
       data-milestone-id={milestone.id}
-      className="flex h-full flex-col gap-4 overflow-auto p-4"
+      className="flex h-full flex-col gap-3 overflow-auto p-4"
     >
       <div className="flex items-baseline justify-between gap-3">
         <Link
