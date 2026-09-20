@@ -65,11 +65,16 @@ describe("BodyRenderedView — K33 read state", () => {
   });
 
   // @verifies TSK-68
-  it("TSK-68: an empty body shows the placeholder in the read state", () => {
-    renderView("   \n  ");
-    expect(screen.getByTestId("body-rendered-placeholder").textContent).toBe(
-      "Describe this task…",
-    );
+  // @verifies A247
+  it("TSK-68/A247: an empty body shows a placeholder that invites editing", () => {
+    const onEnterEdit = vi.fn();
+    renderView("   \n  ", onEnterEdit);
+    const placeholder = screen.getByTestId("body-rendered-placeholder");
+    expect(placeholder.textContent).toBe("Describe this task…");
+    // A247: the empty placeholder still invites editing — it is a real
+    // button (no interactive content to nest), so a click enters edit.
+    fireEvent.click(placeholder);
+    expect(onEnterEdit).toHaveBeenCalledTimes(1);
   });
 
   it("aligns the read text flush-left with the section (cancels the hover-box inset)", () => {
@@ -83,33 +88,27 @@ describe("BodyRenderedView — K33 read state", () => {
     expect(box.className).toContain("px-3");
   });
 
-  // @verifies TSK-69
-  it("TSK-69: clicking the rendered text enters edit, passing the click point", () => {
-    const onEnterEdit = vi.fn();
-    renderView("Plain paragraph of text.", onEnterEdit);
-
-    // The click's viewport coordinates are forwarded so the editor can
-    // place the caret where the user clicked (`posAtCoords`) rather than
-    // at position 0. Red-proof: the previous `onEnterEdit()` call passed
-    // nothing, so asserting the coordinate object fails against it.
-    fireEvent.click(screen.getByText("Plain paragraph of text."), { clientX: 42, clientY: 99 });
-    expect(onEnterEdit).toHaveBeenCalledTimes(1);
-    expect(onEnterEdit).toHaveBeenCalledWith({ x: 42, y: 99 });
+  // @verifies A247
+  it("A247: the rendered content region is NOT a role=button (no nested interactive)", () => {
+    // The read view used to wrap the markdown — which contains links and
+    // images — in a `role="button" tabIndex={0}` container, which is
+    // nested interactive content (WCAG 4.1.2): a screen reader announces
+    // one button and never reaches the links inside it. Ken ruled (A247)
+    // the region is a plain content region.
+    // Red-proof: against the pre-A247 markup the container carried
+    // role="button" and tabIndex=0, so both assertions fail.
+    renderView("A [link](https://example.com/page) and text.");
+    const region = screen.getByTestId("body-rendered");
+    expect(region.getAttribute("role")).toBeNull();
+    expect(region.getAttribute("tabindex")).toBeNull();
   });
 
-  // @verifies TSK-69
-  it("TSK-69: Enter/Space on the focused read view enters edit", () => {
-    const onEnterEdit = vi.fn();
-    renderView("Text.", onEnterEdit);
-    const view = screen.getByTestId("body-rendered");
-
-    fireEvent.keyDown(view, { key: "Enter" });
-    fireEvent.keyDown(view, { key: " " });
-    expect(onEnterEdit).toHaveBeenCalledTimes(2);
-  });
-
-  // @verifies TSK-70
-  it("TSK-70: a link renders with target=_blank rel=noreferrer noopener and does not enter edit", () => {
+  // @verifies A247
+  it("A247: a link inside the description is reachable as a normal focusable link", () => {
+    // With the region no longer a button, the `<a>` is a real, reachable
+    // interactive element — focusable, with its href intact. Red-proof:
+    // when the `<a>` was nested inside a `role="button"`, it was not an
+    // independently reachable control (the button subsumed it).
     const onEnterEdit = vi.fn();
     renderView("A [link](https://example.com/page) here.", onEnterEdit);
 
@@ -118,9 +117,41 @@ describe("BodyRenderedView — K33 read state", () => {
     expect(anchor.getAttribute("target")).toBe("_blank");
     expect(anchor.getAttribute("rel")).toBe("noreferrer noopener");
 
+    // The link is focusable (a real anchor with an href) and is NOT
+    // wrapped in a role=button ancestor.
+    anchor.focus();
+    expect(document.activeElement).toBe(anchor);
+    expect(anchor.closest('[role="button"]')).toBeNull();
+
     // Clicking the link is a read action; it must not enter edit.
     fireEvent.click(anchor);
     expect(onEnterEdit).not.toHaveBeenCalled();
+  });
+
+  // @verifies A247
+  it("A247: an explicit Edit button enters edit via click AND keyboard", () => {
+    // The enter-edit affordance is now a discrete, keyboard-accessible
+    // button rather than the whole text region. Red-proof: no
+    // `body-edit` control existed before A247, so getByTestId throws.
+    const onEnterEdit = vi.fn();
+    renderView("Some text.", onEnterEdit);
+
+    const edit = screen.getByTestId("body-edit");
+    // Reachable by its accessible name.
+    expect(screen.getByRole("button", { name: "Edit description" })).toBe(edit);
+
+    // Pointer.
+    fireEvent.click(edit);
+    expect(onEnterEdit).toHaveBeenCalledTimes(1);
+
+    // Keyboard: a real <button> activates on Enter/Space via a native
+    // click, which fireEvent.click models (jsdom does not synthesize the
+    // click from keydown). The button being a native control is what
+    // makes it keyboard-operable at all.
+    edit.focus();
+    expect(document.activeElement).toBe(edit);
+    fireEvent.click(edit);
+    expect(onEnterEdit).toHaveBeenCalledTimes(2);
   });
 
   // @verifies TSK-70

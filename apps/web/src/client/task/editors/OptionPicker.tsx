@@ -145,7 +145,7 @@ export function OptionPicker({
           // semantics for AT) make it legible as a control without turning it
           // into a heavy form <select>. The chevron sits at low opacity at
           // rest and strengthens on hover/open.
-          className="group -mx-1 flex w-full items-center gap-1 rounded border border-transparent px-1 py-0.5 text-left text-[0.9286rem] text-text-primary hover:cursor-pointer hover:border-border-subtle hover:bg-bg-muted aria-expanded:border-border-subtle aria-expanded:bg-bg-muted"
+          className="group -mx-1 flex min-h-7 w-full items-center gap-1 rounded border border-transparent px-1 py-0.5 text-left text-[0.9286rem] text-text-primary hover:cursor-pointer hover:border-border-subtle hover:bg-bg-muted aria-expanded:border-border-subtle aria-expanded:bg-bg-muted"
         >
           <span className="min-w-0 flex-1">
             {current !== undefined ? (

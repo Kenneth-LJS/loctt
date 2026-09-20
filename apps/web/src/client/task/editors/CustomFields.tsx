@@ -290,7 +290,10 @@ function MultiEnum({
                 type="button"
                 aria-label={`Remove ${opt?.label ?? key} from ${def.label}`}
                 onClick={() => { onChange(selected.filter(k => k !== key)); }}
-                className="opacity-60 hover:opacity-100"
+                // #15 (WCAG 2.5.8): 12px glyph, ≥24px hit target. Negative
+                // margins keep the chip's visual height unchanged while the
+                // clickable square meets the 24px minimum.
+                className="-my-1 -mr-1 grid min-h-6 min-w-6 shrink-0 place-items-center rounded opacity-60 hover:opacity-100"
               >
                 <Icon name="close" size={12} />
               </button>

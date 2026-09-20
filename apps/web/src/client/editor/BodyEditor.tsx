@@ -37,6 +37,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useUnsavedGuard } from "../router/useUnsavedGuard.ts";
 import { BodyConflictDialog } from "./BodyConflictDialog.tsx";
 import { BodyRenderedView } from "./BodyRenderedView.tsx";
 import { RichBuffer } from "./markdown.ts";
@@ -64,16 +65,8 @@ export interface BodyEditorProps {
 export function BodyEditor({
   taskRef, body, bodyToken, lossyConstructs, mentionCandidates, onSaved,
 }: BodyEditorProps): React.JSX.Element {
-  /** K33: rendered read state by default; a click enters edit. */
+  /** K33: rendered read state by default; the Edit button enters edit. */
   const [editing, setEditing] = useState(false);
-  /**
-   * The click point that entered edit (TSK-69), handed to the editor so
-   * the caret lands where the user clicked rather than at position 0.
-   * Cleared whenever we return to the read view so a later keyboard entry
-   * does not reuse a stale coordinate.
-   */
-  const [enterCoords, setEnterCoords] =
-    useState<{ readonly x: number; readonly y: number } | undefined>(undefined);
 
   if (!editing) {
     return (
@@ -81,7 +74,7 @@ export function BodyEditor({
         body={body}
         placeholder={PLACEHOLDER}
         mentionCandidates={mentionCandidates}
-        onEnterEdit={coords => { setEnterCoords(coords); setEditing(true); }}
+        onEnterEdit={() => { setEditing(true); }}
       />
     );
   }
@@ -93,9 +86,8 @@ export function BodyEditor({
       bodyToken={bodyToken}
       lossyConstructs={lossyConstructs}
       mentionCandidates={mentionCandidates}
-      {...(enterCoords !== undefined ? { enterCoords } : {})}
       {...(onSaved !== undefined ? { onSaved } : {})}
-      onLeave={() => { setEnterCoords(undefined); setEditing(false); }}
+      onLeave={() => { setEditing(false); }}
     />
   );
 }
@@ -103,8 +95,6 @@ export function BodyEditor({
 interface EditSurfaceProps extends BodyEditorProps {
   /** Return to the rendered read view (TSK-71). */
   readonly onLeave: () => void;
-  /** The click point that entered edit (TSK-69). */
-  readonly enterCoords?: { readonly x: number; readonly y: number };
 }
 
 /**
@@ -115,7 +105,7 @@ interface EditSurfaceProps extends BodyEditorProps {
  * effect) when the user leaves.
  */
 function BodyEditSurface({
-  taskRef, body, bodyToken, lossyConstructs, mentionCandidates, onSaved, onLeave, enterCoords,
+  taskRef, body, bodyToken, lossyConstructs, mentionCandidates, onSaved, onLeave,
 }: EditSurfaceProps): React.JSX.Element {
   /**
    * B5's guardrail. Footnotes and unregistered raw HTML have no TipTap
@@ -137,7 +127,18 @@ function BodyEditSurface({
     ...(onSaved !== undefined ? { onSaved } : {}),
   });
 
-  const { edit, flush } = autosave;
+  const { edit, flush, flushForNav, hasUnsavedWork } = autosave;
+
+  /**
+   * A246: in-app navigation while the body is dirty/failed is intercepted
+   * by the router. It flushes first; the route change proceeds only if
+   * the flush lands clean. A refused write blocks the navigation and
+   * keeps this edit surface mounted, so its SaveIndicator /
+   * BodyConflictDialog stay on screen rather than the route tearing the
+   * editor down and losing the text silently. This mirrors the
+   * `beforeunload` guard (tab close / reload) for the in-app-nav exit.
+   */
+  useUnsavedGuard({ hasUnsavedWork, onNavigateAway: flushForNav });
 
   // A fresh body from the server (task switch, or an adopted refetch)
   // reseeds the buffer. Guarded on it actually differing so a
@@ -324,7 +325,6 @@ function BodyEditSurface({
         ariaLabel="Description"
         placeholder={PLACEHOLDER}
         onRichBlur={() => { void flush(); }}
-        {...(enterCoords !== undefined ? { focusCoords: enterCoords } : {})}
         toolbarTrailing={
           <SaveIndicator state={autosave.state} onRetry={() => { void autosave.retry(); }} />
         }

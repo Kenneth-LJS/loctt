@@ -183,7 +183,11 @@ export function LabelsField({
                     type="button"
                     aria-label={`Remove label ${def?.name ?? id}`}
                     onClick={() => { onChange(attached.filter(x => x !== id)); }}
-                    className="shrink-0 opacity-60 hover:opacity-100"
+                    // #15 (WCAG 2.5.8): the ✕ glyph stays 12px but the hit
+                    // target is ≥24px — a grid-centred min-h/min-w square
+                    // with the negative margin keeping the pill compact so
+                    // the larger target does not inflate the chip's height.
+                    className="-my-1 -mr-1 grid min-h-6 min-w-6 shrink-0 place-items-center rounded-full opacity-60 hover:opacity-100"
                   >
                     <Icon name="close" size={12} />
                   </button>

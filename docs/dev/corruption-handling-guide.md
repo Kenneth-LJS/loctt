@@ -107,6 +107,15 @@ composes them into `fieldView(field, value, health)` at the render edge
 8. **Cases + tests.** Map onto a DEG- case; every new assertion must be
    shown to fail (break the behaviour → red → restore).
 
+**Keep the schema tolerant of pre-existing files.** A `.strict()` schema
+rejects every older file on load, or destroys unknown keys on save.
+`UserSettings.passthrough()` is load-bearing: every panel saves
+`{...stored, ...next}`, so `.strict()` there would destroy sidebar pins
+when editing an unrelated card layout — a data-loss bug that looks like
+drift to remove. Add a write-path check for the new field
+(`schema-coverage.test.ts` enumerates the schema at runtime and fails
+naming an unhandled field), or exempt it with a one-line reason.
+
 ## 4. Checklist — adding a new **config object** (list-shaped)
 
 For a new sibling of labels/sprints/milestones/projects:
@@ -234,6 +243,12 @@ finding must pick the right one: **can we safely publish this?** If yes,
    round-trips a corrupt sibling untouched.
 3. **Corruption is never *silently* rewritten, but it is not sticky.** A
    validated write to the corrupt field itself repairs it (principle 7).
+   Refuse rather than approximate when a wrong conversion would fail
+   silently: a false conversion costs wrong data with no signal, while a
+   false refusal costs a visible "can't". Advanced→Basic DSL conversion
+   accepts only the exact shape the generator emits and names the
+   construct otherwise; config is refused when malformed (a definition
+   other data references), while event records degrade in place.
 4. **Report, don't hide.** A preserved broken entry that nothing
    surfaces is invisible forever. Doctor, the surface affordance, and
    the wire all have to name it.

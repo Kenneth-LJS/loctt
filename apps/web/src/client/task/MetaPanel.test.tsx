@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { TaskFrontmatterPublic, UserProfile, WorkflowConfig } from "@loctt/contracts";
+import type { LabelDef, TaskFrontmatterPublic, UserProfile, WorkflowConfig } from "@loctt/contracts";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -45,6 +45,8 @@ function renderPanel(overrides: {
   users?: readonly UserProfile[];
   currentUser?: UserProfile | null;
   identityUnknown?: boolean;
+  labels?: readonly LabelDef[];
+  workflow?: WorkflowConfig;
 }) {
   const fm: TaskFrontmatterPublic = {
     id: "01TASK0000000000000000000",
@@ -60,9 +62,9 @@ function renderPanel(overrides: {
       frontmatter={fm}
       {...(overrides.health !== undefined ? { health: overrides.health } : {})}
       lookups={LOOKUPS}
-      workflow={WORKFLOW}
+      workflow={overrides.workflow ?? WORKFLOW}
       users={overrides.users ?? []}
-      labels={[]}
+      labels={overrides.labels ?? []}
       milestones={[]}
       sprints={[]}
       calendar={undefined}
@@ -449,5 +451,71 @@ describe("L3 — 'Assign to me' quick action", () => {
       currentUser: ME,
     });
     expect(screen.getByTestId("meta-assignee-avatar")).not.toBeNull();
+  });
+});
+
+/**
+ * #15 (WCAG 2.5.8 AA): the chip ✕-remove controls in the meta panel carry
+ * a ≥24px hit target, and the single-line meta editors share one control
+ * height (`min-h-7`) rather than varying 17–50px in a viewport.
+ *
+ * The ✕ glyph stays 12px; the button's `min-h-6 min-w-6` (24px) is the
+ * clickable target. Red-proof: before the fix the buttons rendered a bare
+ * `Icon size={12}` with no min hit area, so this assertion fails.
+ */
+describe("#15 — tap targets and control-height normalization", () => {
+  const LABELS: readonly LabelDef[] = [
+    { id: "l_fe", name: "frontend", color: "#1e6fcb" } as unknown as LabelDef,
+  ];
+
+  const WF_WITH_MULTI: WorkflowConfig = {
+    statuses: [{ key: "todo", label: "To do", category: "todo" }],
+    priorities: [],
+    task_types: [],
+    relationship_types: [],
+    custom_fields: [
+      {
+        key: "areas",
+        label: "Areas",
+        type: "enum",
+        multi: true,
+        searchable: false,
+        values: [
+          { key: "ui", label: "UI" },
+          { key: "api", label: "API" },
+        ],
+      },
+    ],
+  } as unknown as WorkflowConfig;
+
+  it("gives the label ✕-remove a ≥24px hit target (glyph stays 12px)", () => {
+    renderPanel({ frontmatter: { labels: ["l_fe"] }, labels: LABELS });
+    const remove = screen.getByRole("button", { name: "Remove label frontend" });
+    expect(remove.className).toContain("min-h-6");
+    expect(remove.className).toContain("min-w-6");
+    // The glyph itself is untouched — still the small 12px icon.
+    const svg = remove.querySelector("svg");
+    expect(svg?.getAttribute("width")).toBe("12");
+  });
+
+  it("gives the multi-select custom-field ✕-remove a ≥24px hit target", () => {
+    renderPanel({
+      frontmatter: { fields: { areas: ["ui"] } },
+      workflow: WF_WITH_MULTI,
+    });
+    const remove = screen.getByRole("button", { name: "Remove UI from Areas" });
+    expect(remove.className).toContain("min-h-6");
+    expect(remove.className).toContain("min-w-6");
+  });
+
+  it("normalizes single-line meta editors to the standard control height (min-h-7)", () => {
+    // The Status / Type / Priority editors are OptionPicker triggers; the
+    // Estimate editor (numeric) is a TextField display. Both must share the
+    // one control height so the panel does not show 17–50px variance.
+    // Red-proof: before the fix the triggers used `py-0.5` with no height
+    // floor, so no `min-h-7` was present.
+    renderPanel({ frontmatter: { status: "todo" } });
+    const statusTrigger = screen.getByRole("button", { name: /Status/ });
+    expect(statusTrigger.className).toContain("min-h-7");
   });
 });

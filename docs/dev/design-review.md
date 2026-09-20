@@ -26,9 +26,10 @@ design flaw:
   **and barely adopted**: `useFocusTrap` is called in 3 places out of
   ~9 dialogs.
 
-This is the same lesson `lessons.md` already records as
-`unarchiveView`: **built is not adopted.** Nothing here asks for a
-redesign. It asks for the migrations the v1 build deferred and never ran.
+This is the same failure `architecture.md` § Core / surface parity
+records for `unarchiveView`: **built is not adopted.** Nothing here asks
+for a redesign. It asks for the migrations that were deferred and never
+ran.
 
 ## Is any of this a publish blocker?
 
@@ -273,7 +274,8 @@ board/sprints/list/header). Low priority — no token to migrate to.
 2. **§A3 `LoadingState`** + **§A2 `Menu` arrow-keys** — remaining a11y.
 3. **§B2/B3/B4 mechanical adoption** — Button, Callout, form controls.
    Each is find-and-replace against an existing primitive; do file by
-   file, mutate the component's own tests (per `lessons.md`).
+   file, mutate the component's own tests (per `build-loop.md` — extending
+   code someone else tested means mutating their tests too).
 4. **§C1/C2 token migrations** — the big mechanical passes. Consider
    codemods; ~2,700 sites. Fix the false `index.css` comment (C2) now,
    independent of the migration.

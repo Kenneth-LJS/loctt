@@ -172,6 +172,20 @@ export function Sidebar({
     return <MobileSidebarDrawer onClose={() => { requestSidebarCollapse(); }}>{body}</MobileSidebarDrawer>;
   }
 
+  // R2 (Ken 2026-09-20): on a narrow viewport there is NO persistent
+  // in-grid rail. The collapsed narrow state renders nothing at all —
+  // the header hamburger is the sole nav, opening the drawer overlay
+  // above. Rendering a `w-14` icon rail here (the old behaviour) put an
+  // unlabelled dot strip on every phone; the drawer already carries the
+  // labels, scrim, focus-trap and Escape, so the rail was pure noise
+  // stealing the width the content came for. The grid column is `auto`,
+  // so returning null collapses the track to 0 without disturbing the
+  // main pane. Desktop (wide) is unchanged: expanded in-grid column,
+  // collapsed rail, and the resize handle all still render below.
+  if (narrow) {
+    return null;
+  }
+
   return (
     <aside
       className={[

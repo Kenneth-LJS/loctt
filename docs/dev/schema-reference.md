@@ -1002,6 +1002,14 @@ Located at `.loctt/.schema-version`. A single positive integer (newline-terminat
 | Missing | Returns `null` (treated as legacy / fresh directory) |
 | Larger than `CURRENT_SCHEMA_VERSION` | Throws `SchemaTooNewError`; the user must update LocTT |
 
+`CURRENT_SCHEMA_VERSION` is `1`, so no migration has run yet and no
+real migration exists to exercise. The acceptance cases that describe
+behaviour *during or after* a schema migration (SET-15, SET-31, SET-37,
+XS-36, XS-38, XS-48) therefore have nothing to run against; they become
+testable for free the moment `CURRENT_SCHEMA_VERSION` first advances past
+1. This is a natural unblock at the first version bump, not a separate
+work item.
+
 ---
 
 ## .schema-migration-in-progress
