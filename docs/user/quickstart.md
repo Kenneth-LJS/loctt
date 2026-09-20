@@ -6,10 +6,10 @@ your repo. There is nothing to sign up for, no service to run, and no lock-in
 
 You work with those tasks through three surfaces, over the one store:
 
-- **[CLI](quickstart-cli.md)** — `loctt` in your terminal.
-- **[AI agent (MCP)](quickstart-mcp.md)** — let an agent read and write
+- **[CLI](cli/quickstart.md)** — `loctt` in your terminal.
+- **[AI agent (MCP)](mcp/quickstart.md)** — let an agent read and write
   tasks through built-in tools, no API to build.
-- **[Web UI](quickstart-ui.md)** — a local app for browsing, boards, and
+- **[Web UI](ui/quickstart.md)** — a local app for browsing, boards, and
   timelines.
 
 They are complementary, not alternatives. Create a task from the CLI or an
@@ -60,9 +60,9 @@ user to resolve, so it's worth doing before you start.
 
 | You want to… | Start here |
 |---|---|
-| Work from the terminal | [CLI Quick Start](quickstart-cli.md) |
-| Give an AI agent access | [MCP Quick Start](quickstart-mcp.md) |
-| Browse, filter, and drag on a board | [Web UI Quick Start](quickstart-ui.md) |
+| Work from the terminal | [CLI Quick Start](cli/quickstart.md) |
+| Give an AI agent access | [MCP Quick Start](mcp/quickstart.md) |
+| Browse, filter, and drag on a board | [Web UI Quick Start](ui/quickstart.md) |
 
 Whichever you choose, you can always open another to see the same tasks —
 that is the point of one plain-text store.

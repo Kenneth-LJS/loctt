@@ -1,9 +1,9 @@
 # CLI Quick Start
 
 Track a task from the terminal, start to finish. This assumes you have
-already run `loctt init` — see the [Quick Start](quickstart.md) if not.
+already run `loctt init` — see the [Quick Start](../quickstart.md) if not.
 
-Every command here is covered in full in the [CLI reference](cli/reference.md).
+Every command here is covered in full in the [CLI reference](reference.md).
 
 ## 1. Create a task
 
@@ -79,13 +79,13 @@ T-1` reflects the change.
 You now have the task lifecycle. From here:
 
 - **Do more from the CLI** — links, sprints, milestones, projects, bulk
-  edits, export, backup: the [CLI reference](cli/reference.md).
+  edits, export, backup: the [CLI reference](reference.md).
 - **Understand the model** — how tasks, keys, and projects fit together:
-  [Concepts](common/concepts.md).
+  [Concepts](../common/concepts.md).
 - **Customize the workflow** — statuses, priorities, types,
-  relationships, custom fields: [Configuration](common/configuration.md).
+  relationships, custom fields: [Configuration](../common/configuration.md).
 - **Write sharper queries** — the filter language behind `--query` and
-  saved views: [Query language](common/query-language.md).
-- **Share across machines** — [Git-backed mode](common/git-sync.md).
+  saved views: [Query language](../common/query-language.md).
+- **Share across machines** — [Git-backed mode](../common/git-sync.md).
 - **Use another surface** — the same tasks in the
-  [web UI](quickstart-ui.md) or driven by an [AI agent](quickstart-mcp.md).
+  [web UI](../ui/quickstart.md) or driven by an [AI agent](../mcp/quickstart.md).

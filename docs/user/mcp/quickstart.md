@@ -3,9 +3,9 @@
 Give an AI agent read/write access to your tracker. No API to build, no
 glue code — you point an MCP client at LocTT and the agent has the whole
 task surface. This assumes you have already run `loctt init` — see the
-[Quick Start](quickstart.md) if not.
+[Quick Start](../quickstart.md) if not.
 
-Full tool details are in the [MCP reference](mcp/reference.md).
+Full tool details are in the [MCP reference](reference.md).
 
 ## 1. Connect your agent
 
@@ -115,12 +115,12 @@ loctt ui
 
 - **The full agent surface** — every tool (links, sprints, milestones,
   projects, bulk edits, backup) and example flows: the
-  [MCP reference](mcp/reference.md).
+  [MCP reference](reference.md).
 - **Set your agent's conventions** — how to tell an agent your status
-  rules and naming: [Agent setup](mcp/agent-setup.md).
-- **Understand the model** — [Concepts](common/concepts.md).
+  rules and naming: [Agent setup](agent-setup.md).
+- **Understand the model** — [Concepts](../common/concepts.md).
 - **Customize the workflow** — statuses, priorities, types, custom
-  fields: [Configuration](common/configuration.md).
-- **Write sharper queries** — [Query language](common/query-language.md).
+  fields: [Configuration](../common/configuration.md).
+- **Write sharper queries** — [Query language](../common/query-language.md).
 - **Use another surface** — the same tasks from the
-  [CLI](quickstart-cli.md) or the [web UI](quickstart-ui.md).
+  [CLI](../cli/quickstart.md) or the [web UI](../ui/quickstart.md).

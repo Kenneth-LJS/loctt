@@ -1,9 +1,9 @@
 # Web UI Quick Start
 
 Browse, filter, and manage tasks in a local app. This assumes you have
-already run `loctt init` — see the [Quick Start](quickstart.md) if not.
+already run `loctt init` — see the [Quick Start](../quickstart.md) if not.
 
-The full app is covered in the [Web UI guide](ui/guide.md).
+The full app is covered in the [Web UI guide](guide.md).
 
 ## 1. Open the app
 
@@ -49,12 +49,12 @@ Refresh in the toolbar).
 ## What's next
 
 - **Every screen in depth** — board, timeline, task detail, settings:
-  the [Web UI guide](ui/guide.md).
-- **Understand the model** — [Concepts](common/concepts.md).
+  the [Web UI guide](guide.md).
+- **Understand the model** — [Concepts](../common/concepts.md).
 - **Customize the workflow** — statuses, priorities, types, custom
-  fields, board columns: [Configuration](common/configuration.md).
+  fields, board columns: [Configuration](../common/configuration.md).
 - **Write sharper queries** — the language behind the filter bar's
-  advanced editor: [Query language](common/query-language.md).
-- **Share across machines** — [Git-backed mode](common/git-sync.md).
+  advanced editor: [Query language](../common/query-language.md).
+- **Share across machines** — [Git-backed mode](../common/git-sync.md).
 - **Use another surface** — the same tasks from the
-  [CLI](quickstart-cli.md) or driven by an [AI agent](quickstart-mcp.md).
+  [CLI](../cli/quickstart.md) or driven by an [AI agent](../mcp/quickstart.md).
