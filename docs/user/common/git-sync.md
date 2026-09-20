@@ -2,6 +2,33 @@
 
 LocTT can optionally sync task data across machines using Git. This is entirely opt-in — LocTT works fine as a purely local tracker.
 
+Git-backed mode keeps your tasks on a dedicated `loctt` branch, separate from your code. You **publish** your local changes to that branch and **sync** other people's changes down from it. The rest of this page covers the day-to-day rhythm first, then the mechanics.
+
+## The everyday rhythm
+
+Whether it's you across two machines or a small team, the loop is the same:
+
+1. **`loctt git sync`** at the start of a session, to pull in anything published since you last worked.
+2. Work as usual — create, edit, move tasks.
+3. **`loctt git publish`** when you're done (or periodically), to push your changes up.
+
+Publish and sync are separate from `git push`/`pull` of your code: your tasks live on their own branch, so committing code never touches them and vice versa.
+
+## Working with a team
+
+Everyone points at the **same remote and the same `loctt` branch**. Each person runs `loctt git enable` once on their machine, then follows the sync/publish rhythm above. There are no roles — anyone can publish and sync; the branch is shared, like a code branch.
+
+When two people change **different** tasks (or different fields of the same task), sync merges both automatically — nobody clobbers anybody. When two people change the **same field of the same task** between syncs, sync pauses and asks you to resolve it (see [How Sync Works](#how-sync-works)). The way to avoid that is ordinary team hygiene: sync before you start, publish when you finish, and don't both edit the same task at the same time.
+
+Two practical notes:
+
+- **Everyone needs the same LocTT version's schema.** If a teammate on an older LocTT tries to sync a branch a newer one migrated, the sync is refused until they upgrade — see [Upgrading & migrations](upgrading.md).
+- **Branch access is your access control.** LocTT has no accounts of its own; whoever can push to the `loctt` branch can change the tasks. It's as private as the repo it lives in.
+
+## What to do when sync pauses
+
+A sync stops and asks you to resolve when it can't merge automatically — a real conflict (both sides set the same field differently) or a duplicate key created on two machines. `loctt git status` shows what's pending, and reconciliation is resolved in the web UI (Settings → Sync) or abandoned with `loctt git reconcile abandon`. Nothing is written until you resolve it, so a paused sync never leaves your tracker half-changed.
+
 ## Enabling Git-Backed Mode
 
 ```
