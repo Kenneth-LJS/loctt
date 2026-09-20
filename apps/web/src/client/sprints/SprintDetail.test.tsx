@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SprintDetail } from "./SprintDetail.tsx";
@@ -148,6 +148,22 @@ describe("SprintDetail — titled header fold (Ken 2026-09-20)", () => {
     expect(screen.queryByTestId("sprint-meta-name-value")).toBeNull();
     expect(screen.queryByTestId("sprint-meta-start_date-value")).toBeNull();
     expect(screen.queryByTestId("sprint-meta-state-value")).toBeNull();
+  });
+
+  // foldReadMeta only folds the READ view's name/dates/state. The EDIT
+  // form must still yield all five fields — folding the read display must
+  // not accidentally drop the editable inputs. (SprintDetail renders the
+  // header with foldReadMeta active, so this exercises that exact path.)
+  it("still offers all five editable fields when the read meta is folded", async () => {
+    await renderDetail();
+    fireEvent.click(await screen.findByTestId("sprint-meta-edit"));
+    // Name / Start / End text inputs and the State select all render, plus
+    // Goal — the full editor, not a folded subset.
+    expect(await screen.findByTestId("sprint-meta-name")).toBeTruthy();
+    expect(screen.getByTestId("sprint-meta-start_date")).toBeTruthy();
+    expect(screen.getByTestId("sprint-meta-end_date")).toBeTruthy();
+    expect(screen.getByTestId("sprint-meta-state")).toBeTruthy();
+    expect(screen.getByTestId("sprint-meta-goal")).toBeTruthy();
   });
 });
 

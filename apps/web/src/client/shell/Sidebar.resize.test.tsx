@@ -11,7 +11,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Sidebar } from "./Sidebar.tsx";
-import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_STEP } from "./useSidebarWidth.ts";
+import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_STEP } from "./useSidebarWidth.ts";
 
 /**
  * The resize handle (drag-to-resize + keyboard) on the expanded, in-grid,
@@ -118,6 +118,53 @@ describe("Sidebar resize handle", () => {
     const handle = screen.getByRole("separator", { name: "Resize sidebar" });
     fireEvent.keyDown(handle, { key: "End" });
     expect(handle.getAttribute("aria-valuenow")).toBe(String(MAX_SIDEBAR_WIDTH));
+  });
+
+  it("jumps to min on Home", async () => {
+    // End is covered above; Home (MIN_SIDEBAR_WIDTH) was not — the Home
+    // branch of the handle's keydown had no test. Start above the min so
+    // the jump is observable.
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, "320");
+    await renderSidebar(false);
+    const handle = screen.getByRole("separator", { name: "Resize sidebar" });
+    expect(handle.getAttribute("aria-valuenow")).toBe("320");
+    fireEvent.keyDown(handle, { key: "Home" });
+    expect(handle.getAttribute("aria-valuenow")).toBe(String(MIN_SIDEBAR_WIDTH));
+  });
+
+  it("does not render the handle in the mobile overlay (expanded + narrow)", async () => {
+    // The `is absent when collapsed` test above covers the `!collapsed`
+    // term of `inGridExpanded`; the `!overlay` term was untested. On a
+    // narrow viewport an EXPANDED sidebar is the floating overlay drawer,
+    // not the in-grid column — so it has no resize handle. NARROW_PX is
+    // 900 in Sidebar; render below it and expanded to hit the overlay path.
+    setWidth(700);
+    await renderSidebar(false);
+    // A positive control: the overlay drawer itself rendered (its close
+    // button is unique to the overlay), so a missing handle is the
+    // overlay branch, not an unrendered sidebar.
+    expect(screen.getByTestId("sidebar-overlay-close")).toBeTruthy();
+    expect(screen.queryByRole("separator", { name: "Resize sidebar" })).toBeNull();
+  });
+
+  it("suppresses the width transition during a drag and restores it after", async () => {
+    await renderSidebar(false);
+    const handle = screen.getByRole("separator", { name: "Resize sidebar" });
+    const aside = handle.closest("aside") as HTMLElement;
+    handle.setPointerCapture = vi.fn();
+    handle.releasePointerCapture = vi.fn();
+
+    // Before any drag the width animates the collapse/expand.
+    expect(aside.className).toContain("transition-[width]");
+
+    // While dragging the transition is removed so the column tracks the
+    // pointer 1:1 instead of easing toward it.
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: DEFAULT_SIDEBAR_WIDTH });
+    expect(aside.className).not.toContain("transition-[width]");
+
+    // Releasing ends the drag and the transition returns.
+    fireEvent(handle, new PointerEvent("pointerup", { pointerId: 1 } as PointerEventInit));
+    expect(aside.className).toContain("transition-[width]");
   });
 
   it("resizes from a pointer drag, clamped to the max", async () => {

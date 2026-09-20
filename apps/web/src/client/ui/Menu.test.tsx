@@ -289,4 +289,135 @@ describe("Menu dismissal", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  /**
+   * The menu's Escape handler calls `e.stopPropagation()` so an Escape
+   * pressed inside a menu that was opened from a modal closes only the
+   * menu, not the modal behind it. The plain "Escape closes the menu"
+   * test above still passes if that call is deleted — it fires Escape on
+   * `document`, where propagation is moot. This asserts the stop directly:
+   * a document-level keydown listener (standing in for the modal's own
+   * Escape handler) must NOT receive an Escape dispatched from the panel.
+   */
+  it("Escape stops propagation past document so an outer keydown handler is spared", () => {
+    // The menu's Escape handler is a `document` keydown listener that
+    // calls `e.stopPropagation()`. In jsdom (as in the browser) that does
+    // not stop sibling *document* listeners, but it DOES stop the event
+    // reaching `window`. A `window` keydown spy therefore isolates the
+    // stopPropagation call: the event still runs the menu's own document
+    // handler (closing the menu) but never bubbles on to window.
+    const winSpy = vi.fn();
+    window.addEventListener("keydown", winSpy);
+    try {
+      render(
+        <Menu
+          aria-label="Actions"
+          trigger={({ toggle, ...rest }) => (
+            <button type="button" onClick={toggle} {...rest}>Open</button>
+          )}
+        >
+          {() => <MenuItem>Alpha</MenuItem>}
+        </Menu>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Open" }));
+      const menu = screen.getByRole("menu");
+
+      // Fire Escape ON the panel so the event bubbles up to document
+      // (where the menu's handler runs) and would continue to window.
+      fireEvent.keyDown(menu, { key: "Escape" });
+
+      // The menu closed...
+      expect(screen.queryByRole("menu")).toBeNull();
+      // ...and the window-level listener never saw the Escape, because the
+      // menu stopped it at document. Delete `e.stopPropagation()` in
+      // Menu.tsx and this spy is called once — the test goes red.
+      expect(winSpy).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", winSpy);
+    }
+  });
+});
+
+/**
+ * Flip-above placement (MENU-PORTAL, `place()` vertical branch).
+ *
+ * The panel normally opens below the trigger, but when the trigger sits
+ * low in a short viewport with no room for the panel underneath, it flips
+ * ABOVE. The existing placement tests all mock `innerHeight: 800`, so the
+ * flip branch never ran. This drives it directly.
+ */
+describe("Menu flip-above placement", () => {
+  it("places the panel above the trigger when there is no room below", () => {
+    // A short viewport with the trigger near its bottom: 300px tall,
+    // trigger bottom at 270, and a 120px panel — 270 + 4 + 120 = 394 is
+    // well past 300 - 8, so below does not fit and the panel flips up.
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(400);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(300);
+
+    const TRIGGER_TOP = 242;
+    const TRIGGER_BOTTOM = 270;
+    const PANEL_HEIGHT = 120;
+
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement): DOMRect {
+        if (this.getAttribute("role") === "menu") {
+          return {
+            left: 0, right: 200, top: 0, bottom: PANEL_HEIGHT,
+            width: 200, height: PANEL_HEIGHT, x: 0, y: 0, toJSON: () => ({}),
+          } as DOMRect;
+        }
+        // The trigger wrapper, low in the viewport.
+        return {
+          left: 20, right: 48, top: TRIGGER_TOP, bottom: TRIGGER_BOTTOM,
+          width: 28, height: 28, x: 20, y: TRIGGER_TOP, toJSON: () => ({}),
+        } as DOMRect;
+      },
+    );
+
+    render(
+      <Menu
+        aria-label="Actions"
+        trigger={({ toggle, ...rest }) => (
+          <button type="button" onClick={toggle} {...rest}>Open</button>
+        )}
+      >
+        {() => <MenuItem>Alpha</MenuItem>}
+      </Menu>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+
+    const menu = screen.getByRole("menu");
+    const top = parseFloat(menu.style.top);
+    // Flipped above: the panel's top sits above the trigger's top, and
+    // its bottom clears the trigger's top edge. Natural below-placement
+    // would be TRIGGER_BOTTOM + 4 = 274; the flip yields
+    // TRIGGER_TOP - 4 - PANEL_HEIGHT = 118.
+    expect(top).toBeLessThan(TRIGGER_TOP);
+    expect(top + PANEL_HEIGHT).toBeLessThanOrEqual(TRIGGER_TOP);
+    expect(top).toBe(TRIGGER_TOP - 4 - PANEL_HEIGHT);
+  });
+});
+
+/**
+ * z-index layering (MENU-PORTAL). The portalled panel carries `z-[65]`
+ * so a menu opened from inside a dialog shows above the modal layers
+ * (Modal `z-50`, CreateTaskModal `z-[55]`). Asserting the literal token
+ * pins the chosen stacking level — dropping it to `z-50` goes red.
+ */
+describe("Menu z-index", () => {
+  it("gives the panel z-[65] so it sits above the modal layers", () => {
+    render(
+      <Menu
+        aria-label="Actions"
+        trigger={({ toggle, ...rest }) => (
+          <button type="button" onClick={toggle} {...rest}>Open</button>
+        )}
+      >
+        {() => <MenuItem>Alpha</MenuItem>}
+      </Menu>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    const menu = screen.getByRole("menu");
+    expect(menu.className).toContain("z-[65]");
+  });
 });
