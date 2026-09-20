@@ -1946,6 +1946,21 @@ describe("Sidebar inline customize (A244, K100)", () => {
     expect(screen.queryByTestId("settings-panel-title")).toBeNull();
   });
 
+  it("opens the responsive primitive as a DIALOG on desktop, not a bare Sheet", async () => {
+    // Ken flagged this: Customize sidebar used a bare `Sheet`, so it was a
+    // bottom drawer even on desktop. It is now a `ResponsiveDialog`, which
+    // is a centered Dialog at desktop width. Red-proof: the desktop Dialog
+    // has no Sheet ✕ close button — if it reverted to a bare Sheet, the
+    // `sidebar-customize-sheet-close` control would be present here.
+    setWidth(1200);
+    await renderSidebarAt("/list");
+    fireEvent.click(await screen.findByTestId("sidebar-customize"));
+    await screen.findByTestId("sidebar-customize-sheet");
+    expect(await screen.findByTestId("sidebar-groups-panel")).toBeTruthy();
+    // Desktop → Dialog → no Sheet header/close button.
+    expect(screen.queryByTestId("sidebar-customize-sheet-close")).toBeNull();
+  });
+
   it("writes the same sidebar_groups setting through the same PUT", async () => {
     // Red-proof: this is the "no second source of truth" guard. The inline
     // editor must hit PUT /api/user-settings with sidebar_groups, exactly

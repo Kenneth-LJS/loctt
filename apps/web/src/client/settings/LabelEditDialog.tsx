@@ -6,7 +6,8 @@ import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
 import { useUpdateLabel } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -93,7 +94,7 @@ export function LabelEditDialog(props: LabelDialogProps) {
   const colorTestId = isEdit ? "label-color-input" : "label-create-color";
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={isEdit ? "Edit label" : "New label"}
       onClose={props.onClose}
       testId={isEdit ? "label-edit-dialog" : "label-create-dialog"}
@@ -174,6 +175,6 @@ export function LabelEditDialog(props: LabelDialogProps) {
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

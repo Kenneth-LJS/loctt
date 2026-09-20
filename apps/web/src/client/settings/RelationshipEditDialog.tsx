@@ -5,8 +5,9 @@ import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ColorInput, isValidHexColor } from "../ui/ColorInput.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
 import { IconPicker } from "../ui/IconPicker.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { isSymmetric } from "./workflowEdits.ts";
@@ -120,7 +121,7 @@ export function RelationshipEditDialog({
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={mode === "create" ? "New relationship" : "Edit relationship"}
       onClose={onClose}
       testId="relationships-entry-dialog"
@@ -286,6 +287,6 @@ export function RelationshipEditDialog({
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

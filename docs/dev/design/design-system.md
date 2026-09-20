@@ -191,11 +191,26 @@ Use these rather than hand-rolled markup.
 - **`ToolbarButton`** — the toolbar pill height/spacing.
 - **`Menu` / `MenuItem`** — overflow/kebab menus. The trigger receives
   `toggle`/`open` (not `onClick`).
+- **`ResponsiveDialog`** — **the default overlay for a modal surface that
+  carries editable content** (any multi-field editor or create form). A
+  centered titled `Dialog` at ≥640px, a bottom `Sheet` below it, from ONE
+  content slot — the same children render in both modes (no forked state).
+  Shares Modal's a11y machinery by construction (its two branches ARE
+  `Dialog`→`Modal` and `Sheet`). Reach for this first; drop to a plain
+  `Modal`/`Dialog` only when a surface is intentionally centered at all
+  widths (see below).
 - **`Modal`** — base overlay; use `useFocusTrap` + `useInertBackground`.
-  **`Dialog`** layers a titled panel on Modal. **`ConfirmDialog`** is the
-  shared destructive-confirm (don't write a bespoke delete dialog).
-- **`Sheet`** — bottom/full drawer for mobile (filter sheet, section
-  switcher). Same focus-trap/inert/Esc/backdrop as Modal.
+  **`Dialog`** layers a titled panel on Modal. Use these directly only for
+  a surface that should stay centered at every width — a short
+  confirm/`ConfirmDialog`, a single-field prompt (e.g. Save-as-view) — not
+  for a multi-field editor, which should be a `ResponsiveDialog`.
+  **`ConfirmDialog`** is the shared destructive-confirm (don't write a
+  bespoke delete dialog); it stays a centered dialog at all widths.
+- **`Sheet`** — bottom/full drawer, used directly only for the specific
+  list-filter facets and the advanced-query editor (and the settings
+  section switcher). For an editor that wants dialog-on-desktop /
+  drawer-on-mobile, use `ResponsiveDialog` (which wraps Sheet), not a bare
+  Sheet. Same focus-trap/inert/Esc/backdrop as Modal.
 - **`Combobox`** (A211) — THE searchable value picker: single or multi
   select, a listbox popover with a search box, `aria-combobox` +
   `aria-activedescendant` keyboard model (type to filter, ArrowUp/Down,
@@ -263,8 +278,16 @@ WCAG AA):
 
 ## 7. Responsiveness
 
-Below the breakpoint, use a mobile-native pattern, not naive wrapping:
+The mobile breakpoint is **640px** (the `useIsNarrow` default, Tailwind
+`sm`). Below it, use a mobile-native pattern, not naive wrapping:
 
+- Modal surfaces with editable content → a **`ResponsiveDialog`**: a
+  centered dialog at ≥640px, a bottom drawer below it. This is the default
+  for any multi-field editor or create form — do NOT ship a fixed centered
+  card that crams on a phone, and do NOT ship a bare `Sheet` that is a
+  drawer even on desktop. The switch is at 640px. (The Sidebar's own
+  `NARROW_PX=900` is a different axis — in-grid column vs. floating shell
+  drawer — and is not the overlay breakpoint.)
 - Filters → a bottom **`Sheet`**, not a cramped wrapping row.
 - Row/section overflow actions → a kebab **`Menu`**.
 - Tables → card layout (conditionally rendered via `useIsNarrow`, not a CSS

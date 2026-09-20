@@ -35,7 +35,7 @@ import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { ICON } from "../ui/icons.ts";
 import { useInertBackground } from "../ui/Modal.tsx";
-import { Sheet } from "../ui/Sheet.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import { requestSidebarCollapse } from "./useSidebarCollapse.ts";
@@ -1821,10 +1821,13 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
  * self-contained editor owning its own `useUserSettings` read and
  * `useUserSettingsMutation` write. So this is the K100 **in-place** tier,
  * not a deep link — the gear opens the SAME `SidebarGroupsPanel` the
- * Settings section renders, inside a `Sheet`. No second source of truth:
- * an edit made here writes the same `sidebar_groups` user setting through
- * the same mutation. The panel still carries its own note pointing at
- * Settings, and the Settings link below keeps the full surface reachable.
+ * Settings section renders, inside a `ResponsiveDialog` (A273): a centered
+ * dialog on desktop, a bottom drawer on mobile. It was a bare `Sheet`,
+ * which made it a bottom drawer even on desktop — wrong there, per Ken.
+ * No second source of truth: an edit made here writes the same
+ * `sidebar_groups` user setting through the same mutation. The panel still
+ * carries its own note pointing at Settings, and the Settings link below
+ * keeps the full surface reachable.
  *
  * Kept out of the way on a narrow/overlay viewport (`overlay`): the
  * sidebar is a temporary drawer there, and a nested config sheet over a
@@ -1872,16 +1875,17 @@ function Footer({ collapsed, overlay }: { collapsed: boolean; overlay: boolean }
       </Link>
 
       {customizing ? (
-        // K100 in-place: the exact Settings component, in a sheet. `embedded`
-        // only suppresses the panel's own <h1> (the Sheet supplies the
-        // title) — the editor, its mutation and its validation are the same.
-        <Sheet
+        // K100 in-place: the exact Settings component, in a responsive
+        // overlay. `embedded` only suppresses the panel's own <h1> (the
+        // overlay supplies the title) — the editor, its mutation and its
+        // validation are the same.
+        <ResponsiveDialog
           title="Customize sidebar"
           testId="sidebar-customize-sheet"
           onClose={() => { setCustomizing(false); }}
         >
           <SidebarGroupsPanel embedded />
-        </Sheet>
+        </ResponsiveDialog>
       ) : null}
     </div>
   );

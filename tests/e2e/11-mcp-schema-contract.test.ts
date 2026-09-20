@@ -20,6 +20,10 @@ describe("E2E journey: MCP schema contract", () => {
           [
             {
               "hasDescription": true,
+              "name": "abandon_reconcile",
+            },
+            {
+              "hasDescription": true,
               "name": "append_task_body",
             },
             {
@@ -309,6 +313,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "replace_task_body",
+            },
+            {
+              "hasDescription": true,
+              "name": "resolve_reconcile",
             },
             {
               "hasDescription": true,

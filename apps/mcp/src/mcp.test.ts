@@ -1114,3 +1114,100 @@ describe("edit_workflow_entity", () => {
     expect(res.content[0]?.text ?? "").toMatch(/nothing to change/i);
   });
 });
+
+describe("MCP reconcile resolve/abandon parity", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-mcp-reconcile-"));
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // Parity: MCP had only the read side (get_reconcile_status); CLI/web could
+  // resolve. These cover the two write tools now closing that gap.
+  it("registers resolve_reconcile and abandon_reconcile as write-side reconcile tools", () => {
+    const names = getTools().map(t => t.name);
+    expect(names).toContain("get_reconcile_status");
+    expect(names).toContain("resolve_reconcile");
+    expect(names).toContain("abandon_reconcile");
+  });
+
+  it("resolve_reconcile is gated on confirm — without it, nothing is applied", async () => {
+    // Red-proof: delete the requireConfirm gate in the handler and this goes
+    // green while the destructive apply runs unconfirmed.
+    const res = await executeTool(root, "resolve_reconcile", {
+      decisions: [{ taskId: "01ABC", field: "title", choice: "local" }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/resolve_reconcile requires confirm: true/);
+  });
+
+  it("resolve_reconcile with confirm but no reconciliation in progress reaches core and reports it cleanly", async () => {
+    // With confirm passed, the gate is cleared and the core fn is called; a
+    // tracker with no sentinel makes core throw "no reconciliation is in
+    // progress", which the handler maps to a clean error result (not a
+    // rethrown server fault). Red-proof: change the handler to swallow/relabel
+    // it and this message assertion fails.
+    const res = await executeTool(root, "resolve_reconcile", {
+      confirm: true,
+      decisions: [{ taskId: "01ABC", field: "title", choice: "local" }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/no reconciliation is in progress/);
+  });
+
+  it("resolve_reconcile rejects a decision missing required fields (strict input validation)", async () => {
+    // choice is required; a decision without it is an invalid-args error before
+    // the handler runs. Red-proof: loosen decisionSchema and this goes green.
+    const res = await executeTool(root, "resolve_reconcile", {
+      confirm: true,
+      decisions: [{ taskId: "01ABC", field: "title" }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/invalid args for resolve_reconcile/);
+  });
+
+  it("resolve_reconcile rejects an unknown key on a decision (strict)", async () => {
+    // The decision shape is core's camelCase ReconcileDecision, byte-for-byte
+    // the CLI file, and it is .strict(): an otherwise-valid decision carrying
+    // an extra unknown key (e.g. a snake_case `task_id` alongside the required
+    // `taskId`) is rejected. This pins the strictness so a later loosening to
+    // .passthrough() can't slip an unvalidated key through. Red-proof: change
+    // decisionSchema to .passthrough() and this goes green.
+    const res = await executeTool(root, "resolve_reconcile", {
+      confirm: true,
+      decisions: [{ taskId: "01ABC", field: "title", choice: "local", task_id: "01ABC" }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/invalid args for resolve_reconcile/);
+  });
+
+  it("abandon_reconcile is gated on confirm", async () => {
+    // Red-proof: remove the requireConfirm gate and this goes green.
+    const res = await executeTool(root, "abandon_reconcile", {});
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/abandon_reconcile requires confirm: true/);
+  });
+
+  it("abandon_reconcile with confirm is a no-op-safe clear when none is in progress", async () => {
+    // abandonReconcile just clears the sentinel; with none present it succeeds
+    // and reports local files are unchanged. Red-proof: make the handler throw
+    // when no sentinel exists and this fails.
+    const res = await executeTool(root, "abandon_reconcile", { confirm: true });
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0]?.text ?? "").toMatch(/abandoned/i);
+    expect(res.content[0]?.text ?? "").toMatch(/unchanged/i);
+  });
+
+  it("get_reconcile_status still reads clean when no reconciliation is in progress", async () => {
+    // The read side is unchanged by adding the write tools.
+    const res = await executeTool(root, "get_reconcile_status", {});
+    expect(res.isError).toBeUndefined();
+    const parsed = JSON.parse(res.content[0]?.text ?? "{}") as { in_progress?: boolean };
+    expect(parsed.in_progress).toBe(false);
+  });
+});

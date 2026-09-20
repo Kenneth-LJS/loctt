@@ -3,7 +3,8 @@ import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 
 /**
  * Move one task to another project.
@@ -45,7 +46,7 @@ export function MoveTaskDialog({
   const choices = projects.filter(p => p.archived !== true);
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={`Move ${taskKey} to another project`}
       onClose={onCancel}
       testId="move-task-dialog"
@@ -114,6 +115,6 @@ export function MoveTaskDialog({
           {error}
         </p>
       )}
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

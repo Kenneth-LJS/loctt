@@ -5,8 +5,9 @@ import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ColorInput, isValidHexColor } from "../ui/ColorInput.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
 import { IconPicker } from "../ui/IconPicker.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
@@ -117,7 +118,7 @@ export function EntryEditDialog({
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={mode === "create" ? `New ${noun}` : `Edit ${noun}`}
       onClose={onClose}
       testId={`${collection}-entry-dialog`}
@@ -245,6 +246,6 @@ export function EntryEditDialog({
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }
