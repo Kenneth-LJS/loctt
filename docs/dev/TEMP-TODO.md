@@ -173,6 +173,19 @@ lines are implementation work, not decisions.
 
 ## 7. Features — each a build of its own
 
+- [ ] **Saved-view `conditions` migration path (BEFORE public release)** — the
+  saved-view schema now REQUIRES structured `conditions` (A217–A219); a view
+  with a `query` but no `conditions` fails schema validation, and one bad
+  entry rejects the whole `queries.yaml`. Chosen greenfield with no
+  backward-compat because no real trackers exist yet (Ken, 2026-09-20). BUT
+  once there are real users with saved views, an upgrade must not brick their
+  `queries.yaml`. Build before public release: derive `conditions` from the
+  stored `query` on load when it is absent (persist on next write), OR a
+  `loctt doctor`/repair that backfills it, plus per-view degradation so a
+  single missing-conditions entry does not take the whole file down (see the
+  matching entry in known-gaps.md). Confirmed reproducible: the demo tracker's
+  pre-existing views showed exactly this until hand-migrated.
+
 - [x] **Deep-linking (NEW workstream, K76)** — **DONE.** Audit + plan (`docs/dev/deep-linking-audit.md`) and all 5 build steps landed. ✅ **Step 1: `useScrollToHash`** — shared scroll-into-view + brief-highlight hook (hash-driven, retries for late-mounting targets, bounded so a deleted target doesn't loop; reduced-motion drops the flash), wired at `AppShell`, unit-tested + red-proven. ✅ **Step 2:** comment anchor (`#comment-<id>` on the `<li>`) + `#comments` section wrapper, red-proven. ✅ **Step 3:** copy-link-to-comment (`Copy link` button → `${origin}/tasks/${ref}?tab=comments#comment-<id>` via clipboard + announce), `@verifies K76`. ✅ **Step 4:** settings scroll-to-field (`id="field-timezone"` + `field-<key>` scheme), `@verifies K76`. ✅ **Step 5:** Tier-2 task sections (`id="relationships"`/`id="attachments"` via optional `Section` id), `@verifies K76` in `flow-relationships.spec.ts`, red-proven. **K75 GUI nudge wired on top:** the create modal's no-default message now renders "Settings → Projects" as a deep `<Link>` to `/settings/projects` that closes the modal (`NO_PROJECT_MESSAGE_PARTS`; `@verifies K75` UI test + a unit drift-guard, both red-proven) — this closes the GUI half of NEW-20/K75.
 - [x] **Visual nested query builder + JQL-like DSL (LST-40/44/45; K80/K83)** — DONE. K77/currentUser/IN/labels-match/K80-dates all done earlier; the visual builder UI now shipped across dacae7c (core tree/serializer + renderability predicate), 670a82b (QueryBuilder component + FilterBar/Advanced-surface wiring, refuse-on-unrenderable, chips coexist), 6c55b3c (P-11 dslAtom grammar-collision quoting fix + op/validator agreement + QBLD-1..5 cases + user docs). @verifies K83/QBLD-1..5 + LST-40/41/42, red-proven; PM-reviewed.
 - [x] **Timeline virtualization (TML-21, TML-26, TML-32)** — DONE (A184; commit 6e62de2). Both-axis windowing (compute-all/render-window; centreById+taskById stay complete so off-window arrows anchor), sticky band headers (TML-27), arrow hover-highlight (TML-32). Threshold-gated (ROW 400/COL 5000); @verifies red-proven; PM review SHIP.
