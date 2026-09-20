@@ -176,7 +176,7 @@ refuse a stale write.
 | `list_comments` | A task's comments, in order. | `ref` |
 | `post_comment` | Add a comment as the current user (resolves `@user:<id>` mentions). | `ref`, `body` |
 | `edit_comment` | Replace a comment's body (records the editor). | `ref`, `comment_id`, `body` |
-| `delete_comment` | Permanently remove a comment. | `ref`, `comment_id` |
+| `delete_comment` | Permanently remove a comment. Requires `confirm`. | `ref`, `comment_id`, `confirm` |
 
 ### Attachments
 
