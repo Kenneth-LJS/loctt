@@ -12,7 +12,7 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { Modal } from "../ui/Modal.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { DeleteProjectDialog } from "./DeleteProjectDialog.tsx";
 import { ProjectEditDialog } from "./ProjectEditDialog.tsx";
@@ -437,9 +437,9 @@ export function ProjectsPanel() {
       </div>
 
       {creating && (
-        <Modal title="New project" onClose={() => { setCreating(false); }}>
+        <ResponsiveDialog title="New project" onClose={() => { setCreating(false); }}>
           <CreateProjectForm existing={items} onDone={() => { setCreating(false); }} />
-        </Modal>
+        </ResponsiveDialog>
       )}
 
       {deleting !== undefined && (

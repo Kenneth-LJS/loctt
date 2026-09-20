@@ -309,7 +309,31 @@ created here is indistinguishable from one created there.
 | `get_git_status` | Enabled state, branch, remote, and drift in both directions. |
 | `publish_to_git` | Commit (and push) local state to the branch. |
 | `sync_from_git` | Fetch and reconcile the branch into the workspace. |
-| `get_reconcile_status` | Details of an in-progress reconcile (resolved in the UI). |
+| `get_reconcile_status` | Details of an in-progress reconcile: each conflict's `task_id`, `task_key`, field, and both values; delete-vs-edit rows; auto-merged fields. Read this before `resolve_reconcile`. |
+| `resolve_reconcile` | Apply per-conflict decisions and complete the blocked publish/sync. Requires `confirm`; a surfaced rekey needs `confirm_rekey`. |
+| `abandon_reconcile` | Discard the in-progress reconcile, leaving local files as they are. Requires `confirm`. |
+
+**Resolving a reconcile from MCP.** When `publish_to_git` or
+`sync_from_git` reports a reconciliation is needed, the conflicts can be
+resolved from any surface — CLI (`loctt git reconcile apply/abandon`), the
+web UI (Settings → Sync), or MCP:
+
+1. `get_reconcile_status` — lists each conflict with its `task_id`, `field`,
+   and both values, plus any delete-vs-edit rows (a whole-task keep-deletion
+   / keep-task choice carried by the reserved field `__delete_vs_edit__`).
+2. `resolve_reconcile` — pass `decisions`, one per conflict: `{ taskId,
+   field, choice }` where `choice` is `local`, `remote`, or `value` (with a
+   typed third value in `value`). This is the same decision shape the CLI's
+   `--decisions <file.json>` takes. **`confirm: true` is required** — keeping
+   one side discards the other. If completing the sync then hits a key
+   collision that must be renumbered, the tool reports the rekey preview and
+   stops unless **`confirm_rekey: true`** is also passed; re-call with it to
+   renumber and finish. A partial apply keeps the reconcile open with the
+   successes journalled, so a re-call retries only the unwritten rows.
+3. `abandon_reconcile` (`confirm: true`) — discards the pending decisions and
+   the record of what must be resolved, leaving local files exactly as they
+   are (not a revert). The blocked publish/sync does not complete; re-run it
+   to re-plan.
 
 ### Tracker and backup
 

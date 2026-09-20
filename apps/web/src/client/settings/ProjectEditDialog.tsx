@@ -11,6 +11,7 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -203,7 +204,7 @@ export function ProjectEditDialog({
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={`Edit ${project.name}`}
       onClose={onClose}
       testId={`project-edit-dialog-${project.id}`}
@@ -303,6 +304,6 @@ export function ProjectEditDialog({
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

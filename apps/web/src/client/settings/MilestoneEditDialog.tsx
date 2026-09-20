@@ -5,7 +5,8 @@ import { ApiError } from "../api/client.ts";
 import { useCreateMilestone, useUpdateMilestone } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -65,7 +66,7 @@ export function MilestoneEditDialog(props: MilestoneDialogProps) {
   const mutation = isEdit ? update : create;
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={isEdit ? "Edit milestone" : "New milestone"}
       onClose={props.onClose}
       testId={isEdit ? "milestone-edit-dialog" : "milestone-create-dialog"}
@@ -124,6 +125,6 @@ export function MilestoneEditDialog(props: MilestoneDialogProps) {
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

@@ -6,9 +6,10 @@ import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ColorInput } from "../ui/ColorInput.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { IconPicker } from "../ui/IconPicker.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
@@ -169,7 +170,7 @@ export function CustomFieldEditDialog({
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={mode === "create" ? "New custom field" : `Edit field "${initial?.label ?? ""}"`}
       onClose={onClose}
       testId="custom-field-dialog"
@@ -422,7 +423,7 @@ export function CustomFieldEditDialog({
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }
 

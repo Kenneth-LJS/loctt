@@ -16,10 +16,10 @@ import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { Modal } from "../ui/Modal.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { AvatarCropper } from "./AvatarCropper.tsx";
@@ -289,7 +289,7 @@ function EditUserDialog({
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title="Edit user"
       onClose={onClose}
       testId={`user-edit-dialog-${user.id}`}
@@ -379,7 +379,7 @@ function EditUserDialog({
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }
 
@@ -855,9 +855,9 @@ export function UsersPanel() {
       </div>
 
       {creating && (
-        <Modal title="New user" onClose={() => { setCreating(false); }}>
+        <ResponsiveDialog title="New user" onClose={() => { setCreating(false); }}>
           <CreateUserForm onDone={() => { setCreating(false); }} />
-        </Modal>
+        </ResponsiveDialog>
       )}
 
       {editing !== null && (

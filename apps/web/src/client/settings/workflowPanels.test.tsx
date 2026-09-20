@@ -180,6 +180,37 @@ describe("EnumCollectionPanel — statuses (SET-46)", () => {
     // No request left the client.
     expect(putBodies.length).toBe(0);
   });
+
+  /**
+   * The entry editor migrated from a fixed centered Dialog to the
+   * responsive primitive (A273). At narrow width it renders as a bottom
+   * sheet, but the SAME testids resolve and it still opens/edits/saves
+   * through the same PUT — no forked state. jsdom lacks matchMedia, so
+   * `useIsNarrow` reads innerWidth. Red-proof: the testids are the only
+   * handle the spec has, so a broken switch that dropped them would fail
+   * `findByTestId` here.
+   */
+  it("still opens, edits and saves at narrow (mobile-drawer) width, testids stable", async () => {
+    const original = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      const { putBodies } = mockWorkflow();
+      render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
+      await screen.findByTestId("statuses-list");
+
+      fireEvent.click(screen.getByTestId("statuses-create"));
+      const dialog = await screen.findByTestId("statuses-entry-dialog");
+      fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "Blocked" } });
+      fireEvent.change(within(dialog).getByTestId("statuses-entry-category"), { target: { value: "active" } });
+      fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
+
+      await waitFor(() => { expect(putBodies.length).toBe(1); });
+      const put = putBodies[0] as { workflow: WorkflowConfig };
+      expect(put.workflow.statuses.find(s => s.key === "blocked")).toMatchObject({ label: "Blocked" });
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
+  });
 });
 
 describe("EnumCollectionPanel — priorities/task-types (SET-47)", () => {

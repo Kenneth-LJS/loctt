@@ -10,11 +10,15 @@
  */
 
 import {
+  abandonReconcile,
+  applyReconcileDecisions,
+  confirmRekey,
   disableGit,
   enableGit,
   getGitStatus,
   GitBranchAdoptNeededError,
   GitHistoryRewrittenError,
+  GitReconcileInterruptedError,
   GitReconcileNeededError,
   GitRemoteSchemaNewerError,
   GitSyncFirstError,
@@ -25,8 +29,28 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { requireConfirm } from "../runtime/confirm.js";
 import { errorResult, text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
+
+/**
+ * One decision `resolve_reconcile` accepts. This is the exact shape the
+ * CLI's `--decisions <file.json>` and the web's apply body take — core's
+ * `ReconcileDecision` (@loctt/contracts): identity is `taskId` + `field`,
+ * `choice` is local | remote | value, and `value` carries the typed third
+ * value only for `choice: "value"`. Kept camelCase (not the MCP surface's
+ * snake_case) so the array is byte-for-byte the CLI decisions file — no
+ * re-mapping layer to drift from core, exactly as the CLI passes it
+ * straight through. `taskId` is the task's ULID; get_reconcile_status now
+ * reports it as `task_id` on every conflict/delete-vs-edit row so an agent
+ * can build these decisions without guessing.
+ */
+const decisionSchema = z.object({
+  taskId: z.string().min(1).describe("The task's ULID (its `id`, not the `key`). Read it from get_reconcile_status, which reports `task_id` on each conflict / delete-vs-edit row."),
+  field: z.string().min(1).describe("The conflicting frontmatter field, or the reserved `__delete_vs_edit__` for a whole-task keep-deletion / keep-task decision."),
+  choice: z.enum(["local", "remote", "value"]).describe("Which side to keep: `local`, `remote`, or `value` (a typed third value carried in `value`). For a delete-vs-edit row, `choice` is the side to keep — the editing side keeps the task, the deleting side keeps the deletion."),
+  value: z.unknown().optional().describe("Present only for `choice: \"value\"` — the picked/typed value (raw form)."),
+}).strict();
 
 export const TOOLS: readonly ToolDef[] = [
   {
@@ -292,6 +316,9 @@ export const TOOLS: readonly ToolDef[] = [
         remote_commit: state.remote_commit,
         started_at: state.started_at,
         conflicts: plan.conflicts.map(c => ({
+          // task_id is the identity a resolve_reconcile decision is keyed by
+          // (with `field`); reported here so an agent can build decisions.
+          task_id: c.taskId,
           task_key: c.taskKey,
           field: c.field,
           field_label: c.fieldLabel,
@@ -304,16 +331,176 @@ export const TOOLS: readonly ToolDef[] = [
         // GIT-16: tasks deleted one side and edited the other — a whole-task
         // keep-deletion / keep-task decision, reported by key.
         delete_vs_edit: plan.deleteVsEdit.map(d => ({
+          task_id: d.taskId,
           task_key: d.taskKey,
           task_title: d.taskTitle,
           deleted_side: d.deletedSide,
           edited_side: d.editedSide,
+          // The reserved `field` a decision for this row must carry; the
+          // `choice` is one of deleted_side / edited_side.
+          decision_field: "__delete_vs_edit__",
         })),
         auto_merged: plan.autoMerged,
       }, null, 2));
     },
   },
+  {
+    name: "resolve_reconcile",
+    description:
+      "Applies decisions to the in-progress git reconciliation and completes the "
+      + "originally-requested publish/sync (parity with the CLI's `git reconcile apply` "
+      + "and the web UI's Apply). Read the conflicts with get_reconcile_status first; "
+      + "pass one decision per conflicting field (identity is `taskId` + `field`), plus "
+      + "one reserved-field decision (`field: \"__delete_vs_edit__\"`) per delete-vs-edit "
+      + "row. DESTRUCTIVE — an apply that keeps one side discards the other's value, so "
+      + "it requires `confirm: true`. If completing the sync then hits a key collision "
+      + "that must be renumbered (a rekey), this does NOT renumber unless `confirm_rekey: "
+      + "true` is also passed: without it, the tool reports the rekey preview and stops "
+      + "so you can show the user which keys would move before re-calling with "
+      + "`confirm_rekey: true`. A partial apply (some tasks failed) keeps the "
+      + "reconciliation open with the successes journalled, so a re-call retries only the "
+      + "unwritten rows.",
+    inputSchema: {
+      decisions: z.array(decisionSchema).min(1)
+        .describe("One decision per conflicting field / delete-vs-edit row (see get_reconcile_status). Same shape as the CLI `--decisions` file."),
+      confirm: z.boolean().optional().describe("Required: must be true — keeping one side discards the other, which is destructive."),
+      confirm_rekey: z.boolean().optional()
+        .describe("If the completing sync needs a rekey to resolve a key collision, must be true to renumber. Without it the tool reports the rekey preview and stops."),
+    },
+    handler: async ({ locttDir, root }, args) => {
+      const blocked = requireConfirm(args, "resolve_reconcile");
+      if (blocked) return blocked;
+      // camelCase already — the decision schema mirrors core's ReconcileDecision
+      // exactly, so the array passes straight through with no re-mapping.
+      const decisions = args["decisions"] as z.infer<typeof decisionSchema>[];
+      let outcome;
+      try {
+        outcome = await applyReconcileDecisions(locttDir, root, decisions);
+      } catch (err) {
+        const handled = reconcileErrorText(err);
+        if (handled !== undefined) return handled;
+        throw err;
+      }
+
+      const lines: string[] = [];
+      for (const r of outcome.results) {
+        if (!r.ok) {
+          lines.push(`  ${r.taskKey}: FAILED — ${r.error ?? "unknown"}`);
+          continue;
+        }
+        // GIT-16: a delete-vs-edit outcome names kept/deleted by key.
+        const dve = r.resolved.find(f => f.field === "deletion");
+        lines.push(dve !== undefined ? `  ${r.taskKey}: ${dve.value}` : `  ${r.taskKey}: applied`);
+      }
+
+      // GIT-8/K92: the field conflicts resolved, but completing the sync found
+      // a key collision that needs a rekey. Unlike sync_from_git (which
+      // auto-applies), a reconcile apply is already a confirmed destructive
+      // action mid-flow, so the rekey gets its own gate: report the preview
+      // and stop unless confirm_rekey was passed.
+      if (!outcome.reconciled && outcome.rekeyPlan !== undefined) {
+        if (args["confirm_rekey"] !== true) {
+          const rk = outcome.rekeyPlan;
+          lines.push(
+            "",
+            `Field conflicts resolved, but completing the sync needs a rekey: `
+            + `${String(rk.losers.length)} task(s) would be renumbered to resolve key `
+            + "collision(s). Nothing has been renumbered yet.",
+          );
+          for (const l of rk.losers) {
+            lines.push(`  ${l.key} → ${l.newKey ?? "(no key available)"} (keeper decided by ${l.tiebreak})`);
+          }
+          for (const s of rk.skipped) {
+            lines.push(`  ${s.key}: cannot rekey — ${s.reason}`);
+          }
+          lines.push("", "Re-call resolve_reconcile with the same decisions plus confirm_rekey: true to renumber and finish.");
+          return text(lines.join("\n"));
+        }
+        // confirm_rekey: true — apply the renumber and finish the sync.
+        let confirmed;
+        try {
+          confirmed = await confirmRekey(locttDir, root);
+        } catch (err) {
+          const handled = reconcileErrorText(err);
+          if (handled !== undefined) return handled;
+          throw err;
+        }
+        const syncOut = confirmed.syncOutcome as {
+          rekeys?: readonly { oldKey: string; newKey: string }[];
+          unresolvedKeys?: readonly string[];
+        };
+        if (syncOut.rekeys !== undefined && syncOut.rekeys.length > 0) {
+          lines.push("", `Renumbered ${String(syncOut.rekeys.length)} task(s) to resolve key collisions:`);
+          for (const r of syncOut.rekeys) lines.push(`  ${r.oldKey} → ${r.newKey}`);
+        }
+        // GIT-33: a collision the rekey could not resolve is surfaced, not
+        // swallowed — two tasks still share a key until the user acts.
+        if (syncOut.unresolvedKeys !== undefined && syncOut.unresolvedKeys.length > 0) {
+          lines.push(
+            `Warning: ${String(syncOut.unresolvedKeys.length)} key collision(s) remain unresolved: `
+            + `${syncOut.unresolvedKeys.join(", ")}. Run 'loctt doctor'.`,
+          );
+        }
+        lines.push("", "Reconciliation complete; the operation finished.");
+        return text(lines.join("\n"));
+      }
+
+      if (outcome.reconciled) {
+        lines.push("", "Reconciliation complete; the operation finished.");
+      } else {
+        // GIT-12/GIT-32: an honest partial — the sentinel is kept with the
+        // successes journalled; a re-call retries only the unwritten rows.
+        lines.push("", "Reconciliation incomplete — some tasks failed; fix them and re-call resolve_reconcile to retry the remaining rows.");
+      }
+      return text(lines.join("\n"));
+    },
+  },
+  {
+    name: "abandon_reconcile",
+    description:
+      "Abandons the in-progress git reconciliation (parity with the CLI's `git "
+      + "reconcile abandon` and the web UI's Abandon). Clears the reconciliation record "
+      + "and leaves local files exactly as they are — this is NOT a revert, so anything "
+      + "a partial resolve_reconcile already wrote stays written. The blocked publish/sync "
+      + "does not complete; re-run it to re-plan from scratch. Requires `confirm: true` "
+      + "because it discards the pending decisions and the record of what must be resolved.",
+    inputSchema: {
+      confirm: z.boolean().optional().describe("Required: must be true to proceed."),
+    },
+    handler: async ({ locttDir }, args) => {
+      const blocked = requireConfirm(args, "abandon_reconcile");
+      if (blocked) return blocked;
+      await abandonReconcile(locttDir);
+      return text("Reconciliation abandoned. Local files are unchanged; re-run publish/sync to re-plan.");
+    },
+  },
 ];
+
+/**
+ * Maps the git domain errors an apply/confirm-rekey can surface to a clean
+ * text result, matching the publish/sync handlers (parity). Returns undefined
+ * for anything unrecognised so the handler rethrows it as a real fault.
+ *
+ * `applyReconcileDecisions` throws a plain Error("no reconciliation is in
+ * progress") when no sentinel is present (core, not a domain class); it is
+ * handled by message here so an agent that calls resolve out of order gets a
+ * clear sentence instead of an opaque server fault.
+ */
+function reconcileErrorText(err: unknown) {
+  if (err instanceof GitReconcileNeededError) return reconcileNeededResult(err);
+  if (err instanceof GitReconcileInterruptedError) return text(err.message);
+  if (err instanceof GitHistoryRewrittenError) return text(err.message);
+  if (err instanceof GitRemoteSchemaNewerError) return text(err.message);
+  if (err instanceof GitWorktreeMissingError) return text(err.message);
+  if (err instanceof GitSyncFirstError) return text(err.message);
+  if (err instanceof Error && err.message === "no reconciliation is in progress") {
+    return errorResult("no reconciliation is in progress");
+  }
+  if (err instanceof Error && err.message === "no rekey is awaiting confirmation") {
+    return errorResult("no rekey is awaiting confirmation");
+  }
+  return undefined;
+}
 
 /**
  * The reconcile-needed outcome for publish/sync (parity with the panel).
