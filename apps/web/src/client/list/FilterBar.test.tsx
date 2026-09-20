@@ -34,6 +34,7 @@ function routeFetch(path: string): unknown {
     return {
       queries: [
         { id: "v_recent", name: "recent-open", query: "archived != true and status != done" },
+        { id: "v_blocked", name: "blocked", query: "status = blocked" },
       ],
     };
   }
@@ -348,6 +349,71 @@ describe("FilterBar", () => {
     const router = await mountFilterBar("?view=v_recent");
     fireEvent.click(await screen.findByRole("button", { name: "Clear active view" }));
     await vi.waitFor(() => expect(search(router).view).toBeUndefined());
+  });
+
+  // Stale-open-UI-on-navigation: the advanced editor is transient local
+  // state, not derived from the URL. Switching to a different saved
+  // filter/view from the sidebar (a navigation that changes `search.view`)
+  // must close it — otherwise it stays open aimed at the wrong filter.
+  it("closes the advanced editor when the user switches to a different saved view", async () => {
+    const router = await mountFilterBar("?view=v_recent");
+    // Open the editor from the active-view chip (converts view → editable q).
+    fireEvent.click(await screen.findByTestId("active-view-chip-edit"));
+    expect(await screen.findByTestId("advanced-query-surface")).toBeTruthy();
+
+    // The sidebar switches to another saved view: navigate to view B.
+    await router.navigate({ to: "/list", search: { view: "v_blocked" } as never });
+
+    // The editor closes — it no longer applies to the newly-selected view.
+    await vi.waitFor(() =>
+      expect(screen.queryByTestId("advanced-query-surface")).toBeNull());
+    // …and the toolbar now names the new view.
+    expect((await screen.findByTestId("active-view-chip")).textContent).toContain("blocked");
+  });
+
+  // The draft must re-sync to the newly-selected filter's query, not keep
+  // the previous filter's working text. Uses a q→q switch so the draft is
+  // directly observable in the text box.
+  it("re-syncs the editor draft to the new filter's query on a switch", async () => {
+    const router = await mountFilterBar(`?q=${encodeURIComponent("priority = high")}`);
+    // Open the editor and confirm it holds filter A's query.
+    fireEvent.click(await screen.findByTestId("query-chip-edit"));
+    await screen.findByTestId("advanced-query-surface");
+
+    // Switch to a q= filter B via a fresh navigation (as a sidebar q-based
+    // saved filter would). The editor closes and the draft re-syncs.
+    await router.navigate({ to: "/list", search: { q: "title ~ zzz" } as never });
+    await vi.waitFor(() =>
+      expect(screen.queryByTestId("advanced-query-surface")).toBeNull());
+
+    // Re-open the editor: its draft now reflects filter B, not the stale A.
+    fireEvent.click(await screen.findByTestId("query-chip-edit"));
+    await screen.findByTestId("advanced-query-surface");
+    // Switch to the text box to read the draft verbatim.
+    const toText = screen.queryByTestId("switch-to-text");
+    if (toText !== null) fireEvent.click(toText);
+    const input = await screen.findByTestId("dsl-input");
+    await vi.waitFor(() =>
+      expect((input as HTMLTextAreaElement).value).toBe("title ~ zzz"));
+  });
+
+  // In-editor Apply writes `q` but must NOT close the editor — that is the
+  // user refining their query, not navigating to a different filter.
+  it("keeps the editor open when the user applies a query from inside it", async () => {
+    const router = await mountFilterBar(`?q=${encodeURIComponent("title ~ foo")}`);
+    fireEvent.click(await screen.findByTestId("query-chip-edit"));
+    await screen.findByTestId("query-builder");
+
+    // Edit the leaf value and apply — writes q, view unchanged, editor open.
+    fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "bar" } });
+    fireEvent.click(screen.getByTestId("qb-apply"));
+
+    await vi.waitFor(() => expect(search(router).q).toBe("title ~ bar"));
+    // Let any reset effect flush, then assert the editor is STILL mounted —
+    // an in-editor Apply must not be mistaken for a filter switch. (Without
+    // the appliedByEditor guard, the q change closes the editor here.)
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.getByTestId("advanced-query-surface")).toBeTruthy();
   });
 
   // @verifies LST-56

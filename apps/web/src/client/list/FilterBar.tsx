@@ -1,6 +1,6 @@
 import type { WorkflowConfig } from "@loctt/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   useLabels,
@@ -157,18 +157,6 @@ export function FilterBar({
   const [advanced, setAdvanced] = useState(openEditorRequested);
   const [draft, setDraft] = useState(query);
 
-  // When `?edit=1` arrives while the bar is already mounted (the user
-  // was on /list and clicked a broken view), open the editor and seed it
-  // from the URL query, then strip `edit` so switching back to basic
-  // does not immediately re-open it. Initial mount is covered by the
-  // useState seed above; this handles the in-place navigation.
-  useEffect(() => {
-    if (!openEditorRequested) return;
-    setDraft(query);
-    setAdvanced(true);
-    void navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, edit: undefined }) });
-  }, [openEditorRequested, query, navigate]);
-
   const projects = useProjects();
   const users = useUsers();
   const labels = useLabels();
@@ -187,6 +175,84 @@ export function FilterBar({
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   // The "Add filter" picker Sheet on mobile (the desktop one is a Menu).
   const [addSheetOpen, setAddSheetOpen] = useState(false);
+
+  // ── Transient-UI reset on a filter switch ──────────────────────────
+  //
+  // The bar holds open-UI state that is NOT derived from the URL
+  // (`advanced`, `draft`, and the two mobile sheets). When the user
+  // switches which filter they are looking at — clicking saved filter B
+  // in the sidebar while filter A is active, i.e. `search.view` or the
+  // free-text `q` is replaced by a navigation — that transient UI is now
+  // aimed at the wrong thing and must reset: the advanced editor closes,
+  // its draft re-syncs to the new query, and any open sheet closes.
+  //
+  // The discriminator is "the user navigated to a DIFFERENT filter" vs
+  // "the editor asked to open". The `?edit=1` path IS the editor opening
+  // (the query chip's Edit, or a broken view's "Fix in editor") — it must
+  // NOT be treated as a filter switch, or it would open then immediately
+  // close itself. So `openEditorRequested` wins: when it is set, open the
+  // editor from the URL query and strip `edit`; otherwise, when the
+  // filter signature changed since the last render, reset.
+  //
+  // Keyed on the (view, q) pair — the "which filter am I looking at"
+  // signature. The two parts are compared separately because they answer
+  // two different questions:
+  //   - `view` changing is UNAMBIGUOUSLY a switch to another saved
+  //     filter/view (the sidebar sets `view=<id>`), or clearing one.
+  //   - `q` changing is a switch ONLY when it did not come from the
+  //     editor itself: applying a query from the OPEN editor writes `q`
+  //     too, and that must NOT close the editor out from under the user.
+  // So a `q` change counts as a switch only while the editor is closed (a
+  // fresh q= navigation landing on the bar); a `q` change with the editor
+  // open is an in-editor Apply and is left alone. A `view` change resets
+  // regardless — that is always someone picking a different filter.
+  // Facet/page/sort changes touch neither part, so the open editor
+  // survives them.
+  const viewSig = (search as { view?: string }).view ?? "";
+  const filterSig = `${viewSig}\n${query}`;
+  const lastViewSig = useRef(viewSig);
+  const lastFilterSig = useRef(filterSig);
+  // The last `q` the editor's own Apply wrote. A q= change is ambiguous by
+  // URL alone: it is EITHER the editor applying (keep it open) OR a
+  // navigation to a different filter from OUTSIDE the bar — the header
+  // search writes `q` on /list too (Header `text ~ "…"`), and that IS a
+  // switch. So the editor tags its own writes here, and the reset skips a
+  // q change that matches the tag. Anything else that changes `q` (header
+  // search, back/forward) is treated as a switch and closes the editor.
+  const appliedByEditor = useRef<string | null>(null);
+  useEffect(() => {
+    if (openEditorRequested) {
+      // The editor asked to open (query-chip Edit / broken-view fix).
+      // Seed it from the URL query and clear the one-shot flag. Record
+      // the signatures so the reset branch does not also fire for this
+      // same navigation.
+      lastViewSig.current = viewSig;
+      lastFilterSig.current = filterSig;
+      setDraft(query);
+      setAdvanced(true);
+      void navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, edit: undefined }) });
+      return;
+    }
+    const viewChanged = viewSig !== lastViewSig.current;
+    const sigChanged = filterSig !== lastFilterSig.current;
+    // An in-editor Apply is a `q` change (view unchanged) whose new value
+    // is exactly what the editor just wrote — not a switch.
+    const isOwnApply = !viewChanged && sigChanged && appliedByEditor.current === query;
+    if (query !== appliedByEditor.current) appliedByEditor.current = null;
+    const isSwitch = sigChanged && !isOwnApply;
+    lastViewSig.current = viewSig;
+    lastFilterSig.current = filterSig;
+    if (isSwitch) {
+      // A genuine switch to a different filter/view. Reset the transient
+      // UI: close the editor, re-sync the draft to the new filter's query,
+      // and close any open picker sheet/dialog.
+      setAdvanced(false);
+      setDraft(query);
+      setAddSheetOpen(false);
+      setFilterSheetOpen(false);
+      setSaveOpen(false);
+    }
+  }, [openEditorRequested, viewSig, filterSig, query, navigate]);
 
   const options = useMemo(
     () =>
@@ -421,6 +487,10 @@ export function FilterBar({
         // param untouched, so q + chips compose as intersection in the
         // URL (LST-40). An empty query removes the `q` param (LST-41).
         onApply={(q: string) => {
+          // Tag this as the editor's own write so the transient-reset
+          // effect does not mistake the resulting `q` change for a switch
+          // to a different filter and close the editor (see appliedByEditor).
+          appliedByEditor.current = q.trim().length > 0 ? q : "";
           void navigate({
             search: (prev: Record<string, unknown>) => ({
               ...prev,
