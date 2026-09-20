@@ -2319,6 +2319,54 @@ tests in `tests/ui/flow-milestones.spec.ts`. A per-status breakdown, if
 wanted later, is a core `Progress` extension (with CLI/MCP parity), not a
 view change.
 
+### A221 · `delete_comment` joins the delete_* confirm gate
+
+**Ticket:** MCP agent-surface audit · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** Every destructive `delete_*` MCP tool (delete_task,
+delete_label, delete_milestone, delete_sprint, delete_project,
+delete_user, delete_view) takes a `confirm` flag and enforces it via
+`requireConfirm`. `delete_comment` (`apps/mcp/src/tools/comments.ts`) did
+not — it deleted unconditionally. Both the server instructions
+(MCP_INSTRUCTIONS in `apps/cli/src/commands/mcp.ts`: "delete_* tools …
+require confirm: true") and the user-facing reference
+(`docs/user/mcp/reference.md`) already documented delete_comment as
+carrying the gate, so the code was behind its own contract.
+
+**What had to be decided.** Should `delete_comment` require `confirm:
+true` like its siblings, changing its runtime behavior (a call that
+succeeded before now refuses without the flag)?
+
+**Options considered.**
+
+1. **Add the gate.** Matches every sibling, the server instructions, and
+   the published reference. Cost: a behavior change — an existing caller
+   relying on no-confirm delete now gets a refusal until it passes
+   `confirm: true`.
+2. **Leave it, fix the docs instead.** Zero behavior change. Cost: makes
+   comment deletion the one unguarded destructive tool, contradicting the
+   "delete_* require confirm" contract an agent is told to rely on, and a
+   comment delete is not recoverable (no archive_comment sibling).
+
+**Decided.** Option 1 — add the `confirm` gate, mirroring `delete_label`
+exactly (optional `confirm: boolean` in the schema, `requireConfirm`
+first in the handler, "Always requires `confirm: true`." appended to the
+description).
+
+**Why.** The gate is the agent-safety net (see `confirm.ts`): a
+destructive call without confirm means the agent misunderstood. Comment
+deletion is hard and irreversible (no soft-delete sibling), so it belongs
+in the family, not outside it. The docs already promised this, so the
+change closes doc/code drift rather than authoring a new requirement.
+
+**To revert.** In `apps/mcp/src/tools/comments.ts`: drop the
+`requireConfirm` import, the `confirm` field from `delete_comment`'s
+`inputSchema`, the two guard lines at the top of the handler, and the
+"Always requires `confirm: true`." sentence from the description. Remove
+the "delete_comment without confirm is rejected; confirm deletes" test in
+`apps/mcp/src/mcp.test.ts`. Note the doc reference and MCP_INSTRUCTIONS
+would then be ahead of the code again.
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the

@@ -14,7 +14,12 @@ import type { ToolDef } from "../types.js";
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "archive_task",
-    description: "Archive a task.",
+    description:
+      "Archive a task (the reversible soft-delete; use delete_task for the " +
+      "hard, irreversible variant). The task stays on disk and remains " +
+      "searchable but is hidden from default list/show surfaces and is " +
+      "blocked as the target of new relationships. Reverse with " +
+      "unarchive_task.",
     inputSchema: {
       ref: z.string(),
     },
@@ -26,7 +31,9 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "unarchive_task",
-    description: "Unarchive a task.",
+    description:
+      "Clear a task's archived flag, restoring it to default list/show " +
+      "surfaces and allowing it as a relationship target again.",
     inputSchema: {
       ref: z.string(),
     },

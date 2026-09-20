@@ -132,7 +132,9 @@ export const TOOLS: readonly ToolDef[] = [
       "what would change — migration rewrites task frontmatter across the " +
       "whole tracker and some steps are marked risky. Only call with " +
       "confirm: true once the user has seen the plan and agreed. A backup " +
-      "is written before any step runs and is never deleted.",
+      "is written before any step runs and is never deleted. Unlike the " +
+      "delete tools, `confirm` here is a preview/apply toggle, not a safety " +
+      "gate.",
     inputSchema: {
       confirm: z.boolean().optional()
         .describe("false/omitted previews the plan; true performs the migration."),

@@ -18,7 +18,7 @@ export const MCP_INSTRUCTIONS = [
   "LocTT is a local task tracker. Manage tasks and config through these structured tools only.",
   "",
   "- Never edit task.md frontmatter or any .loctt/ config file by hand. Edit a task's body via replace_task_body / append_task_body; edit metadata via the update/set tools.",
-  "- Before writing any enum-valued field (status, priority, task_type, relationship types, custom fields), call get_workflow_config to discover the valid keys. Use the *_list tools (list_projects, list_labels, list_milestones, list_sprints, list_users) to discover valid references. Stored values are config keys, not human labels.",
+  "- Before writing any enum-valued field (status, priority, task_type, relationship types, custom fields), call get_workflow_config to discover the valid keys. Use the `list_*` tools (list_projects, list_labels, list_milestones, list_sprints, list_users) to discover valid references, list_views to discover saved views, and get_calendar for the timezone and working days that date queries depend on. Stored values are config keys, not human labels.",
   "- delete_* tools are hard and irreversible; they require confirm: true. Prefer the reversible archive_* tools, and unarchive_* to bring something back.",
   "- Call get_workflow_key_usage before proposing any deletion from workflow.yaml, so you know how many tasks a remap would touch.",
 ].join("\n");

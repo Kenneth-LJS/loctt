@@ -2,7 +2,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { initLoctt, lookupByKey, resolveLocttDir } from "@loctt/core";
+import { initLoctt, lookupByKey, resolveLocttDir, serializeQueriesConfig } from "@loctt/core";
+import { queryToConditions } from "@loctt/core/query/builderTree.js";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { executeTool,getTools } from "./index.js";
@@ -407,6 +408,39 @@ describe("MCP executeTool", () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/confirm/i);
     });
+
+    it("delete_comment without confirm is rejected; confirm deletes", async () => {
+      // delete_comment joins the delete_* confirm-gate family: like
+      // delete_task, a call without confirm means the agent
+      // misunderstood the destructive nature.
+      await executeTool(root, "create_task", { title: "with-comment" });
+      const posted = await executeTool(root, "post_comment", {
+        ref: "T-1",
+        body: "hello",
+      });
+      const commentId = posted.content[0]?.text?.match(/comment (\S+) on/)?.[1] ?? "";
+      expect(commentId).not.toBe("");
+
+      // Without confirm: refused, and the comment survives.
+      const refused = await executeTool(root, "delete_comment", {
+        ref: "T-1",
+        comment_id: commentId,
+      });
+      expect(refused.isError).toBe(true);
+      expect(refused.content[0]?.text).toMatch(/confirm/i);
+      const stillThere = await executeTool(root, "list_comments", { ref: "T-1" });
+      expect(stillThere.content[0]?.text).toContain(commentId);
+
+      // With confirm: deleted.
+      const deleted = await executeTool(root, "delete_comment", {
+        ref: "T-1",
+        comment_id: commentId,
+        confirm: true,
+      });
+      expect(deleted.isError).toBeUndefined();
+      const gone = await executeTool(root, "list_comments", { ref: "T-1" });
+      expect(gone.content[0]?.text).not.toContain(commentId);
+    });
   });
 
   /**
@@ -752,15 +786,23 @@ describe("MCP executeTool", () => {
 describe("list_tasks — stale saved view warning", () => {
   let root: string;
 
+  // A saved view now carries structured `conditions` (a required field);
+  // derive them from the DSL exactly as core does on write, so the fixture
+  // stays valid without hand-authoring the tree shape.
+  function queriesYaml(id: string, name: string, query: string): string {
+    const parsed = queryToConditions(query);
+    if (!parsed.ok) throw new Error(`fixture query does not parse: ${query}`);
+    return serializeQueriesConfig({
+      queries: [{ id, name, query, conditions: parsed.tree }],
+    });
+  }
+
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "loctt-mcp-warn-"));
     await initLoctt(root);
     await writeFile(
       join(resolveLocttDir(root), "config", "queries.yaml"),
-      "queries:\n"
-      + "  - id: 01HSV0000000000000STALE4\n"
-      + "    name: stale\n"
-      + "    query: fields.deleted_field = x\n",
+      queriesYaml("01HSV0000000000000STALE4", "stale", "fields.deleted_field = x"),
       "utf-8",
     );
   });
@@ -781,10 +823,7 @@ describe("list_tasks — stale saved view warning", () => {
   it("returns a clean body for a healthy view", async () => {
     await writeFile(
       join(resolveLocttDir(root), "config", "queries.yaml"),
-      "queries:\n"
-      + "  - id: 01HSV0000000000000FINE02\n"
-      + "    name: fine\n"
-      + "    query: status != done\n",
+      queriesYaml("01HSV0000000000000FINE02", "fine", "status != done"),
       "utf-8",
     );
     const result = await executeTool(root, "list_tasks", { view: "fine" });

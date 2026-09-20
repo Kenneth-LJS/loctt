@@ -131,7 +131,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "detach_file",
-    description: "Remove a file from a task's attachments directory.",
+    description: "Remove a file from a task's attachments directory, identified by basename; refused if no attachment by that name exists. Unlike attach_file, this does not auto-commit — in git-backed mode the removal stays uncommitted until the next publish.",
     inputSchema: {
       ref: z.string().describe("Task key or ID"),
       name: z.string().describe("Basename of the attachment, no path separators"),
