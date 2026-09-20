@@ -259,6 +259,47 @@ Per-user settings and sidebar layout have their own read/write tools:
 | `list_config_values` | All known config keys with values, types, and descriptions. |
 | `get_workflow_key_usage` | Task counts per workflow key (see Discovery). |
 
+### Workflow configuration (editing)
+
+The read side is `get_workflow_config` (see Discovery) — like `list_views`,
+call it first to see the current keys. The write side is one consolidated
+tool plus two singleton tools:
+
+| Tool | Purpose |
+|---|---|
+| `edit_workflow_entity` | Create, edit, delete, or reorder a workflow.yaml **collection** entity — a status, priority, task type, relationship, custom field, custom-field enum value, or board column. Dispatched on `{ entity, op }`. |
+| `set_estimation_config` | Configure the estimation singleton (`enabled`, `unit`, `unit_label`, `scale`, `preset_values`, `weights`). |
+| `set_timeline_config` | Configure the timeline singleton (`dependency_relationship`, `default_zoom`, `show_arrows`, `default_grouping`). |
+
+`edit_workflow_entity` params: `entity` and `op` (required); `key` (the
+entity key — required for `edit`/`delete`, and the **new** key on
+`create`; unused by `reorder`); `field` (the parent custom-field key,
+required only for `entity: "custom_field_value"`); `fields` (the
+create/edit payload, whose shape depends on the entity — `label`,
+`category`, `icon`, `color`, `kind`, `inverse`, `type`, `multi`,
+`task_types`, `statuses`, `wip`, `values`, …); `remap_to` (delete-in-use
+target key, or `null` to clear the value from every task); `order` (the
+full ordered key list, for `reorder`); `confirm` (must be `true` for
+`delete`, matching every other `delete_*` tool).
+
+**Entity / op matrix** (an illegal combination is refused with the legal
+set named):
+
+| Entity | create | edit | delete | reorder | Notes |
+|---|:---:|:---:|:---:|:---:|---|
+| `status` | ✓ | ✓ | ✓ | ✓ | delete-in-use needs `remap_to` |
+| `priority` | ✓ | ✓ | ✓ | ✓ | `value` is never settable — it is derived from list order, so `reorder` is how ranking (and value) changes |
+| `task_type` | ✓ | ✓ | ✓ | ✓ | delete-in-use needs `remap_to` |
+| `relationship` | ✓ | ✓ | ✓ | — | no reorder; delete-in-use needs `remap_to` |
+| `custom_field` | ✓ | ✓ | ✓ | — | delete is **clear-only** — it rejects `remap_to`; `type`/`multi` are immutable after create; an enum field needs `fields.values: [{key,label}, …]` at create |
+| `custom_field_value` | ✓ | ✓ | ✓ | ✓ | needs `field` (parent field key); delete-in-use needs `remap_to` |
+| `board_column` | ✓ | ✓ | ✓ | ✓ | delete carries no remap (columns hold no task data) |
+
+Keys are immutable everywhere: an `edit` cannot rename (a `key` inside
+`fields` is refused), because a rename is delete + create. These tools
+call the same core functions the CLI and web settings use, so a status
+created here is indistinguishable from one created there.
+
 ### Git-backed mode
 
 | Tool | Purpose |
