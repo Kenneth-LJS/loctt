@@ -29,6 +29,7 @@ import type { OptionSearch, PickerOption } from "../task/editors/OptionPicker.ts
 import { OptionPicker } from "../task/editors/OptionPicker.tsx";
 import { estimationShape } from "../task/estimation.ts";
 import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -453,13 +454,12 @@ export function CreateTaskModal({
             button past the viewport. */}
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {failure !== null && (
-            <div
-              role="alert"
-              data-testid="create-error"
-              className="rounded border border-danger-fg/40 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
-            >
+            // Migrated from a hand-rolled danger box to the shared Callout
+            // (design-review §A-Callout) — same anchored, announced error,
+            // one dual-theme-verified treatment. testId + role preserved.
+            <Callout tone="danger" role="alert" testId="create-error">
               {failure.message}
-            </div>
+            </Callout>
           )}
 
           <ProjectField

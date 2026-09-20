@@ -157,6 +157,48 @@ describe("SidebarPinsPanel", () => {
     expect(PUTS.length).toBe(0);
   });
 
+  it("shows the server message and a Retry when the pins save fails", async () => {
+    // The ErrorState standard: server reason + Retry, not a bare "not
+    // saved" line. The stale sweep fires a settings write; fail it.
+    // Red-proven — the pre-fix panel had neither testid nor a Retry.
+    const { fireEvent, within } = await import("@testing-library/react");
+    VIEWS = [];
+    SETTINGS = { sidebar_pins: ["v_gone"] };
+    vi.stubGlobal("fetch", vi.fn((input: unknown, init?: RequestInit) => {
+      const path = String(input).replace(/^https?:\/\/[^/]+/, "");
+      if (path.startsWith("/api/user-settings") && init?.method === "PUT") {
+        return Promise.resolve(new Response(
+          JSON.stringify({ message: "settings.yaml is read-only", code: "rejected_write" }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        ));
+      }
+      if (path.startsWith("/api/user-settings")) {
+        return Promise.resolve(new Response(JSON.stringify({ user: "u1", settings: SETTINGS }), {
+          status: 200, headers: { "content-type": "application/json" },
+        }));
+      }
+      if (path.startsWith("/api/views")) {
+        return Promise.resolve(new Response(
+          JSON.stringify({ queries: VIEWS, items: VIEWS, total: 0, offset: 0, limit: 1000 }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ items: [], total: 0, offset: 0, limit: 1000 }), {
+        status: 200, headers: { "content-type": "application/json" },
+      }));
+    }));
+    renderPanel();
+
+    const host = await screen.findByTestId("sidebar-pins-save-error");
+    expect(host.textContent).toContain("read-only");
+    expect(within(host).getByRole("button", { name: "Retry" })).toBeTruthy();
+    const before = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    fireEvent.click(within(host).getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
+    });
+  });
+
   // @verifies VUE-38
   it("warns that the sidebar pin will be dropped before deleting a pinned view", async () => {
     VIEWS = [{ id: "v_a", name: "Alpha", query: "status:open" }];

@@ -36,6 +36,7 @@ import { useAnnouncer } from "../ui/Announcer.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { DeleteTaskDialog } from "./DeleteTaskDialog.tsx";
 import { EditableTitle } from "./EditableTitle.tsx";
@@ -223,9 +224,13 @@ export function TaskDetail({
     // way as a load in progress.
     return (
       <div className="grid h-full place-items-center p-8">
-        <p aria-busy="true" className="text-[0.9286rem] text-text-tertiary">
+        {/* LoadingState carries role="status" + aria-busy, so the load is
+            announced — the bare <p aria-busy> here was silent to a screen
+            reader (design-review §A3). The centered wrapper and the muted
+            treatment are preserved. */}
+        <LoadingState className="text-[0.9286rem] text-text-tertiary">
           Loading {taskRef}…
-        </p>
+        </LoadingState>
       </div>
     );
   }

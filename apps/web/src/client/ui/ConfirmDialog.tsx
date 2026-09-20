@@ -1,6 +1,7 @@
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 
 import { Button } from "./Button.tsx";
+import { Callout } from "./Callout.tsx";
 import { Dialog, DialogActions } from "./Dialog.tsx";
 import { TextField } from "./TextField.tsx";
 
@@ -39,6 +40,14 @@ export interface ConfirmDialogProps {
   readonly onCancel: () => void;
   /** Extra content between body and actions (e.g. a pin warning). */
   readonly children?: ReactNode;
+  /**
+   * A failure from the confirmed action, rendered inside the dialog so a
+   * rejected delete/archive is shown rather than swallowed by a confirm
+   * that just closes (mirrors RemapDeleteDialog). The caller keeps the
+   * dialog open on failure (close only `onSuccess`) so this message has
+   * somewhere to appear.
+   */
+  readonly error?: ReactNode;
   readonly testId?: string;
   /** testId for the confirm button, for specs that target it. */
   readonly confirmTestId?: string;
@@ -63,6 +72,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   children,
+  error,
   testId,
   confirmTestId,
   cancelTestId,
@@ -98,6 +108,11 @@ export function ConfirmDialog({
     >
       <div className="text-body text-text-secondary">{body}</div>
       {children}
+      {error !== undefined && error !== null && (
+        <Callout tone="danger" role="alert" testId="confirm-dialog-error" className="mt-3">
+          {error}
+        </Callout>
+      )}
     </Dialog>
   );
 }

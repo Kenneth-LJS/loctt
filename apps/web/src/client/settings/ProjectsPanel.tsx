@@ -412,17 +412,42 @@ export function ProjectsPanel() {
           </tr>
         </thead>
         <tbody>
-          {items.map(p => (
-            <ProjectRow
-              key={p.id}
-              project={p}
-              taskCount={counts[p.id] ?? 0}
-              others={items.filter(o => o.id !== p.id)}
-              isOnlyProject={items.length === 1}
-              isDefault={defaultId === p.id}
-              onDelete={() => { setDeleting(p); }}
-            />
-          ))}
+          {items.length === 0 ? (
+            // Ordering (ERR-1): error and loading are handled above, so
+            // reaching here with no rows is a genuinely empty list — not a
+            // failed load. Without this the table rendered header-only,
+            // which reads as broken rather than as "nothing here yet".
+            // A tracker normally keeps at least one project (the delete
+            // guard), so this is the degraded/hand-edited case; it still
+            // teaches and points at the same create control below.
+            <tr>
+              <td colSpan={5} className="py-8 text-center text-[0.9286rem] text-text-tertiary">
+                <div className="flex flex-col items-center gap-3" data-testid="projects-empty">
+                  <span>No projects yet. Every task belongs to a project, so create one to get started.</span>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    testId="projects-empty-create"
+                    onClick={() => { setCreating(true); }}
+                  >
+                    New project
+                  </Button>
+                </div>
+              </td>
+            </tr>
+          ) : (
+            items.map(p => (
+              <ProjectRow
+                key={p.id}
+                project={p}
+                taskCount={counts[p.id] ?? 0}
+                others={items.filter(o => o.id !== p.id)}
+                isOnlyProject={items.length === 1}
+                isDefault={defaultId === p.id}
+                onDelete={() => { setDeleting(p); }}
+              />
+            ))
+          )}
         </tbody>
       </table>
 

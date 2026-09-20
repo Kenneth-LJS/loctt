@@ -15,6 +15,7 @@ import { CommentsPanel } from "../comments/CommentsPanel.tsx";
 import { buildUserIndex } from "../comments/users.ts";
 import { Button } from "../ui/Button.tsx";
 import { cn } from "../ui/cn.ts";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { ActivityEntry } from "./ActivityEntry.tsx";
 import { BulkRow } from "./BulkRow.tsx";
 import { dayHeading, todayIn } from "./days.ts";
@@ -302,10 +303,13 @@ function ActivityFeed({
   );
 
   if (activity.isPending) {
+    // LoadingState carries role="status" + aria-busy, so the load is
+    // announced — the bare <p aria-busy> was silent to a screen reader
+    // (design-review §A3). Inline treatment preserved via className.
     return (
-      <p aria-busy="true" className="text-[0.9286rem] text-text-tertiary">
+      <LoadingState className="text-[0.9286rem] text-text-tertiary">
         Loading activity…
-      </p>
+      </LoadingState>
     );
   }
 

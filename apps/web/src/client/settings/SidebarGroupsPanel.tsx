@@ -194,12 +194,23 @@ function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; rea
         >
           Reset to default
         </button>
-        {save.isError ? (
-          <span role="alert" className="text-[0.8571rem] text-danger-fg">
-            Your changes were not saved. The list shows your last saved layout.
-          </span>
-        ) : null}
       </div>
+
+      {save.isError ? (
+        // ErrorState standard: the server's reason + a Retry that re-sends
+        // the last write, replacing a bare line with no recovery. The
+        // write is rolled back on failure, so the list already shows the
+        // last saved layout; the context says so.
+        <div className="mt-4" data-testid="sidebar-groups-save-error">
+          <ErrorState
+            error={save.error}
+            context="Your changes were not saved — the list shows your last saved layout"
+            {...(save.variables !== undefined
+              ? { onRetry: () => { save.mutate(save.variables); } }
+              : {})}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

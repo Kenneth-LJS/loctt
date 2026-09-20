@@ -176,6 +176,30 @@ function saveButton(): HTMLButtonElement {
   return screen.getByTestId<HTMLButtonElement>("project-prefix-save-p-web");
 }
 
+describe("ProjectsPanel empty state", () => {
+  // Before the fix the tbody mapped items with no length guard, so zero
+  // projects rendered a header-only blank table (reads as broken, not as
+  // "nothing here yet"). Red-proven: without the guard neither the teach
+  // copy nor the create CTA render.
+  it("shows a teach + create empty state at zero projects, not a blank table", async () => {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> => {
+      const urlStr = String(url);
+      if (urlStr.includes("/api/projects")) {
+        return Promise.resolve(jsonResponse({ items: [], total: 0, offset: 0, limit: 100, default: null, task_counts: {} }));
+      }
+      if (urlStr.includes("/api/info")) return Promise.resolve(jsonResponse({ schemaVersion: 1 }));
+      return Promise.resolve(jsonResponse({}));
+    });
+    render(<ProjectsPanel />, { wrapper: wrapper() });
+
+    const empty = await screen.findByTestId("projects-empty");
+    expect(empty.textContent).toMatch(/No projects yet/i);
+    // The CTA opens the same create dialog the panel's own button does.
+    fireEvent.click(screen.getByTestId("projects-empty-create"));
+    expect(await screen.findByTestId("project-create-name")).toBeTruthy();
+  });
+});
+
 describe("ProjectsPanel edit-model (PRU-6)", () => {
   it("shows the name as read-only text by default, editable only after Edit", async () => {
     stubHappyPath();
