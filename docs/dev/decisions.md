@@ -15472,7 +15472,20 @@ real-name resolution.
 form. Remove the export from `task/index.ts` and `index.ts` and the
 `KNOWN_DOMAIN_ERRORS`/web-route arms in CLI, MCP and `server.ts`.
 
-### A225 · F1 attach-source confinement narrowed from project root to the resolved data dir (Ken-approved)
+### A225 · F1 attach-source confinement narrowed to the data dir — REVERTED same day
+
+**REVERTED (2026-09-20, Ken).** The narrowing below broke legitimate
+attach: an attachment can come from anywhere the user points to (a
+working-tree file, `~/Downloads`, outside the repo), so confining the
+source to `.loctt/` is wrong — 7 integration tests (attach by absolute
+path) confirmed attach-from-the-project is the intended contract. Attach
+is a reversible copy, not a privileged act, and the real exfil concern
+(agent-written content auto-committed+pushed) is not attachment-specific,
+so a per-tool path hack was the wrong shape. The attach source is back to
+the project-root boundary (A205). The broader concern is now tracked as
+its own known-gap ("an auto-approved agent can cause any written content
+to be git-auto-committed and pushed") for a deliberate future ruling.
+Original entry follows.
 
 **Ticket:** known-gaps "F1's confinement boundary" (Ken's call) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
 

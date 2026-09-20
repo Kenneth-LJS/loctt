@@ -26,7 +26,6 @@ import {
   loadSyncState,
   lookupTask,
   publish,
-  resolveLocttDir,
 } from "@loctt/core";
 import { z } from "zod";
 
@@ -102,18 +101,15 @@ export const TOOLS: readonly ToolDef[] = [
           locttDir,
           taskId: task.frontmatter.id,
           sourcePath,
-          // F1: confine the source to inside the RESOLVED DATA DIR
-          // (.loctt/) on the agent surface, not merely the project root
-          // (Ken's ruling). A secret sitting BESIDE .loctt/ — e.g.
-          // <root>/credentials.txt — was attachable and, under git-backed
-          // mode, auto-committed and pushed off the machine; narrowing the
-          // safe zone to resolveLocttDir(root) blocks that exfil path. The
-          // legitimate agent workflow already stages the file inside the
-          // tracker first (see the tool description), so it lands inside
-          // .loctt/ and still passes. The CLI (human) does not confine.
-          // Uses the resolver, not a hardcoded ".loctt", so it follows the
-          // LOCTT_DIR constant. See decisions.md § 8.
-          confineToRoot: resolveLocttDir(root),
+          // The source is confined to the project root (A205): blocks a
+          // read of e.g. ~/.ssh/id_rsa outside the repo, while still
+          // allowing a real file the user or agent points to anywhere in
+          // the project. (A tighter .loctt/-only narrowing was tried and
+          // reverted — it broke legitimate attach, which by design copies
+          // a file from the working tree, and attaching is a reversible
+          // copy, not a destructive or privileged act. See decisions.md
+          // A225-REVERTED.)
+          confineToRoot: root,
           force,
         });
         // Auto-commit when git-backed mode is on (Ken's model). Best-effort:
