@@ -853,3 +853,262 @@ describe("list_tasks — stale saved view warning", () => {
     expect(JSON.stringify(result)).not.toContain("Results may be incomplete");
   });
 });
+
+// ---------------------------------------------------------------------------
+// edit_workflow_entity + the two singleton config tools (A265).
+// The MCP half of the A252 core / A253 CLI parity wave. These call the
+// same core `config/workflow-entities.ts` functions the web and CLI call,
+// so behaviour is identical by construction; the tests below assert the
+// MCP-layer additions: the entity/op legality matrix, the confirm gate on
+// delete, the clear-only remap rejection, and that refusals from core
+// (WorkflowEntityError) reach the agent as a clean errorResult rather than
+// a rethrown server fault.
+// ---------------------------------------------------------------------------
+
+describe("edit_workflow_entity", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-mcp-wf-"));
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  /** Parses the get_workflow_config JSON into the config object. */
+  async function workflow(): Promise<Record<string, unknown>> {
+    const res = await executeTool(root, "get_workflow_config", {});
+    expect(res.isError).toBeUndefined();
+    return JSON.parse(res.content[0]?.text ?? "{}") as Record<string, unknown>;
+  }
+
+  it("registers the three new tools", () => {
+    const names = getTools().map(t => t.name);
+    expect(names).toContain("edit_workflow_entity");
+    expect(names).toContain("set_estimation_config");
+    expect(names).toContain("set_timeline_config");
+  });
+
+  it("creates a status visible via get_workflow_config", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status",
+      op: "create",
+      key: "blocked",
+      fields: { label: "Blocked", category: "active", icon: "pause", color: "#ff0000" },
+    });
+    expect(res.isError).toBeUndefined();
+    const cfg = await workflow();
+    const statuses = cfg["statuses"] as { key: string; label: string; icon?: string; color?: string }[];
+    const created = statuses.find(s => s.key === "blocked");
+    expect(created).toBeDefined();
+    expect(created?.label).toBe("Blocked");
+    // icon/color round-trip through the create payload.
+    expect(created?.icon).toBe("pause");
+    expect(created?.color).toBe("#ff0000");
+  });
+
+  it("edits a status label", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "blocked",
+      fields: { label: "Blocked", category: "active" },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "edit", key: "blocked", fields: { label: "On hold" },
+    });
+    expect(res.isError).toBeUndefined();
+    const cfg = await workflow();
+    const statuses = cfg["statuses"] as { key: string; label: string }[];
+    expect(statuses.find(s => s.key === "blocked")?.label).toBe("On hold");
+  });
+
+  it("rejects an edit that tries to rename via a key in fields", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "blocked",
+      fields: { label: "Blocked", category: "active" },
+    });
+    // `key` inside `fields` is not a rename path — the top-level `key`
+    // identifies the target, and `fields.key` is an unknown field. The
+    // rename must be refused (keys are immutable).
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "edit", key: "blocked",
+      fields: { key: "renamed", label: "Still blocked" },
+    });
+    expect(res.isError).toBe(true);
+    const cfg = await workflow();
+    const statuses = cfg["statuses"] as { key: string }[];
+    // No status was renamed; the original key survives and no new key appeared.
+    expect(statuses.some(s => s.key === "blocked")).toBe(true);
+    expect(statuses.some(s => s.key === "renamed")).toBe(false);
+  });
+
+  it("refuses a delete without confirm even when a remap is given", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "blocked",
+      fields: { label: "Blocked", category: "active" },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "delete", key: "blocked", remap_to: "todo",
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/confirm/i);
+    // Still present — the delete did not run.
+    const cfg = await workflow();
+    expect((cfg["statuses"] as { key: string }[]).some(s => s.key === "blocked")).toBe(true);
+  });
+
+  it("refuses a delete-in-use without remap_to, succeeds with remap_to + confirm", async () => {
+    // Seed a task that holds the status so it is in use.
+    const defaultStatus = ((await workflow())["statuses"] as { key: string; default?: boolean }[])
+      .find(s => s.default)?.key ?? "todo";
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "blocked",
+      fields: { label: "Blocked", category: "active" },
+    });
+    await executeTool(root, "create_task", { title: "held" });
+    await executeTool(root, "update_task", { ref: "T-1", field: "status", value: "blocked" });
+
+    // In use, no remap: refused (with confirm, so the confirm gate is not
+    // what fires — the remap requirement is).
+    const refused = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "delete", key: "blocked", confirm: true,
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]?.text ?? "").toMatch(/in use|remap/i);
+
+    // With a remap target and confirm: succeeds, task moved to the target.
+    const ok = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "delete", key: "blocked", remap_to: defaultStatus, confirm: true,
+    });
+    expect(ok.isError).toBeUndefined();
+    const cfg = await workflow();
+    expect((cfg["statuses"] as { key: string }[]).some(s => s.key === "blocked")).toBe(false);
+    const task = await executeTool(root, "get_task", { ref: "T-1" });
+    expect(task.content[0]?.text ?? "").toContain(defaultStatus);
+  });
+
+  it("reorder changes a priority's derived value", async () => {
+    const before = (await workflow())["priorities"] as { key: string; value?: number }[];
+    expect(before.length).toBeGreaterThanOrEqual(3);
+    const keys = before.map(p => p.key);
+    // Move a MIDDLE key to the front so its list position (and therefore
+    // its renumbered value) genuinely changes — endpoints can keep their
+    // value under a swap, but an interior key that jumps to the front
+    // cannot.
+    const midIdx = 2; // keys.length >= 3 asserted above
+    const mid = keys[midIdx]!;
+    const midValueBefore = before.find(p => p.key === mid)?.value;
+    const moved = [mid, ...keys.filter(k => k !== mid)];
+
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "priority", op: "reorder", order: moved,
+    });
+    expect(res.isError).toBeUndefined();
+
+    const after = (await workflow())["priorities"] as { key: string; value?: number }[];
+    // The list order now leads with the moved key (reorder took effect)...
+    expect(after.map(p => p.key)).toEqual(moved);
+    // ...and its derived value changed (value is renumbered from order),
+    // proving the value is NOT carried over from before but recomputed.
+    expect(after.find(p => p.key === mid)?.value).not.toBe(midValueBefore);
+  });
+
+  it("rejects a priority value in fields", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "priority", op: "create", key: "urgent",
+      fields: { label: "Urgent", value: 9 },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/value/i);
+  });
+
+  it("rejects reorder for relationships (no such op)", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "relationship", op: "reorder", order: ["blocks"],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/not valid for entity "relationship"/);
+  });
+
+  it("rejects an unknown entity at the wire (strict enum)", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "nonsense", op: "create", key: "x",
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/invalid args/);
+  });
+
+  it("rejects remap_to on a whole custom_field delete (clear-only)", async () => {
+    // Two enum fields so a remap target would otherwise be plausible.
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "create", key: "team",
+      fields: { label: "Team", type: "enum", values: [{ key: "a", label: "A" }] },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "delete", key: "team", confirm: true, remap_to: "other",
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/clear-only|does not accept remap_to/i);
+    // The field survives — the rejection happened before any write.
+    const cfg = await workflow();
+    expect((cfg["custom_fields"] as { key: string }[]).some(f => f.key === "team")).toBe(true);
+  });
+
+  it("rejects an immutable type change on custom_field edit", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "create", key: "size",
+      fields: { label: "Size", type: "string" },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "edit", key: "size", fields: { type: "number" },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/type.*immutable/i);
+  });
+
+  it("round-trips an enum field value with icon and color", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "create", key: "team",
+      fields: { label: "Team", type: "enum", values: [{ key: "core", label: "Core" }] },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field_value", op: "create", field: "team", key: "ui",
+      fields: { label: "UI", icon: "brush", color: "#00ff00" },
+    });
+    expect(res.isError).toBeUndefined();
+    const cfg = await workflow();
+    const field = (cfg["custom_fields"] as { key: string; values?: { key: string; icon?: string; color?: string }[] }[])
+      .find(f => f.key === "team");
+    const val = field?.values?.find(v => v.key === "ui");
+    expect(val?.icon).toBe("brush");
+    expect(val?.color).toBe("#00ff00");
+  });
+
+  it("round-trips estimation scale via set_estimation_config", async () => {
+    const res = await executeTool(root, "set_estimation_config", {
+      enabled: true, unit: "points", scale: "fibonacci",
+    });
+    expect(res.isError).toBeUndefined();
+    const est = (await workflow())["estimation"] as { scale?: string };
+    expect(est.scale).toBe("fibonacci");
+  });
+
+  it("round-trips estimation weights via set_estimation_config", async () => {
+    // Core only accepts weights when the unit is custom_enum, which in
+    // turn requires preset_values — set all three in one call (the
+    // singleton edit validates the whole resulting config).
+    const res = await executeTool(root, "set_estimation_config", {
+      enabled: true, unit: "custom_enum", preset_values: ["low", "high"], weights: { high: 3, low: 1 },
+    });
+    expect(res.isError).toBeUndefined();
+    const est = (await workflow())["estimation"] as { weights?: Record<string, number> };
+    expect(est.weights).toEqual({ high: 3, low: 1 });
+  });
+
+  it("set_timeline_config with no fields is a clean error, not a write", async () => {
+    const res = await executeTool(root, "set_timeline_config", {});
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/nothing to change/i);
+  });
+});

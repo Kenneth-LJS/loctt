@@ -36,6 +36,7 @@ import {
   UnreadableTaskError,
   UserError,
   ViewError,
+  WorkflowEntityError,
 } from "@loctt/core";
 
 import type { McpToolResult } from "../types.js";
@@ -121,5 +122,15 @@ export function isKnownDomainError(err: unknown): err is Error {
     // error, not a server fault. The publish handler catches it
     // explicitly too; this keeps parity for any other caller.
     || err instanceof GitSyncFirstError
+    // A251/A252/A265: a refused workflow.yaml entity edit (bad key, a
+    // delete-in-use without a remap target, an immutable-field change,
+    // a reorder that is not a permutation). Its message is core's own
+    // user-facing text naming the field and the fix, so it is actionable
+    // by the agent — a domain error, not a server fault to rethrow. It
+    // extends LocttError, so the catch-all already covered it, but it is
+    // named explicitly here so the `edit_workflow_entity` refusals sit
+    // with every sibling's domain error (parity with the CLI's
+    // KNOWN_DOMAIN_ERRORS list).
+    || err instanceof WorkflowEntityError
   );
 }
