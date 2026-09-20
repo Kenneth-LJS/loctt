@@ -246,7 +246,7 @@ async function renderSidebarAt(
     path: "/list",
     validateSearch: (s: Record<string, unknown>) => s,
     component: () => (
-      <Sidebar collapsed={false} info={info()} currentUserId={currentUserId} today="2026-06-08" />
+      <Sidebar collapsed={false} currentUserId={currentUserId} today="2026-06-08" />
     ),
   });
   const router = createRouter({
@@ -456,17 +456,18 @@ describe("Sidebar recents (SHL-10)", () => {
  * distinguishable, and pins a Settings link beside it.
  */
 describe("Sidebar footer (SHL-11)", () => {
-  it("shows the task count and a Settings link", async () => {
+  it("shows a Settings link and no chrome datum", async () => {
     await renderSidebarAt("/list");
 
-    // The footer no longer shows the tracker filesystem path or the
-    // internal `next` allocator key (Ken's report — developer chrome).
-    // The task count remains as the one useful footer datum.
-    expect(await screen.findByText(/\b7 tasks\b/)).toBeTruthy();
+    // The footer is now just the Settings link. The tracker filesystem
+    // path, the internal `next` allocator key, and the total task count
+    // were all removed (Ken's report — developer chrome / a datum a user
+    // never acts on).
+    const settings = (await screen.findByText("Settings")).closest("a") as HTMLAnchorElement;
+    expect(settings.getAttribute("href")).toContain("/settings/");
+    expect(screen.queryByText(/\b7 tasks\b/)).toBeNull();
     expect(screen.queryByText("~/PDev/loctt")).toBeNull();
     expect(screen.queryByText(/next WEB-8/)).toBeNull();
-    const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
-    expect(settings.getAttribute("href")).toContain("/settings/");
   });
 });
 
@@ -505,14 +506,14 @@ describe("Sidebar truncation and scale", () => {
   /**
    * @verifies SHL-19
    *
-   * The footer shows the task count (no tracker path any more) and keeps
-   * the Settings link visible beside it.
+   * The footer keeps the Settings link visible (the tracker path and the
+   * task count were both removed).
    */
-  it("keeps the footer count and the Settings link together", async () => {
+  it("keeps the Settings link in the footer", async () => {
     await renderSidebarAt("/list");
 
-    expect(await screen.findByText(/\b7 tasks\b/)).toBeTruthy();
-    expect(screen.getByText("Settings").closest("a")).not.toBeNull();
+    expect((await screen.findByText("Settings")).closest("a")).not.toBeNull();
+    expect(screen.queryByText(/\b7 tasks\b/)).toBeNull();
   });
 
   /**
@@ -541,9 +542,7 @@ describe("Sidebar truncation and scale", () => {
     // Everything that grows is inside the scroller...
     expect(scroller?.contains(screen.getByText("label-39"))).toBe(true);
     expect(scroller?.contains(screen.getByText("Recent task 20"))).toBe(true);
-    // ...and the footer is not.
-    const footer = screen.getByText(/\b7 tasks\b/);
-    expect(scroller?.contains(footer)).toBe(false);
+    // ...and the footer (now just the Settings link) is not.
     expect(scroller?.contains(screen.getByText("Settings"))).toBe(false);
   });
 
