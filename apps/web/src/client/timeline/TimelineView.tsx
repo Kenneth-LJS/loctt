@@ -537,8 +537,6 @@ export function TimelineView() {
       <FilterBar
         from="/timeline"
         showSaveView
-        onRefresh={() => { void tasks.refetch(); }}
-        refreshBusy={tasks.isFetching}
       />
 
       <Toolbar

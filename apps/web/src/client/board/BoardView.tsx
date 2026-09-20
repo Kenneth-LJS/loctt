@@ -305,8 +305,6 @@ export function BoardView() {
       <FilterBar
         from="/board"
         showSaveView
-        onRefresh={() => { void tasks.refetch(); }}
-        refreshBusy={tasks.isFetching}
       />
 
       {/* BRD-41/BRD-43/BRD-44: a drop that did not land names the

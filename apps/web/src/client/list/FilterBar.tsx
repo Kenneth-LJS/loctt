@@ -25,7 +25,6 @@ import { TextField } from "../ui/TextField.tsx";
 import { AdvancedQuerySurface } from "./AdvancedQuerySurface.tsx";
 import { ExportMenu } from "./ExportMenu.tsx";
 import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
-import { RefreshButton } from "./RefreshButton.tsx";
 import { SaveViewDialog } from "./SaveViewDialog.tsx";
 import {
   addableFilters,
@@ -123,8 +122,6 @@ export interface FilterBarProps {
    * *layout* of the cluster without owning the data. Omitted on the
    * sprint detail, which has its own header actions.
    */
-  readonly onRefresh?: (() => void) | undefined;
-  readonly refreshBusy?: boolean | undefined;
   readonly exportTotal?: number | undefined;
   readonly exportQueryString?: string | undefined;
 }
@@ -133,8 +130,6 @@ export function FilterBar({
   from = "/list",
   hiddenFacets = [],
   showSaveView = true,
-  onRefresh,
-  refreshBusy = false,
   exportTotal,
   exportQueryString,
 }: FilterBarProps = {}) {
@@ -661,14 +656,13 @@ export function FilterBar({
         <div className="flex-1" />
 
         {/* Right band — view actions cluster. A single aligned group so
-            Refresh/Export/Save-as-view share the toolbar baseline instead
-            of floating in ListView's flex gutter. Show-archived rides
-            here at desktop width; on mobile it moves into the sheet. */}
+            Export/Save-as-view share the toolbar baseline instead of
+            floating in ListView's flex gutter. Show-archived rides here at
+            desktop width; on mobile it moves into the sheet. No manual
+            refresh button (Q4): freshness is TanStack Query staleTime +
+            focus refetch. */}
         <div className="flex items-center gap-2" data-testid="view-actions">
           {!isNarrow && showArchivedControl}
-          {onRefresh !== undefined && (
-            <RefreshButton onRefresh={onRefresh} busy={refreshBusy} iconOnly />
-          )}
           {exportTotal !== undefined && exportQueryString !== undefined && (
             <ExportMenu total={exportTotal} queryString={exportQueryString} />
           )}

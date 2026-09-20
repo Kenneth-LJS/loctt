@@ -730,8 +730,6 @@ export function ListView() {
           in the middle of nowhere"). They are passed in as props so the bar
           controls their layout without re-deriving the tasks feed. */}
       <FilterBar
-        onRefresh={() => { void tasks.refetch(); }}
-        refreshBusy={tasks.isFetching}
         exportTotal={total}
         exportQueryString={buildQueryString(params)}
       />
