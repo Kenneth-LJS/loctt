@@ -149,11 +149,82 @@ This project uses LocTT for task tracking. Tasks are managed via MCP tools — n
 - `blocked` — tasks needing attention
 ```
 
-## Permissions and auto-approval
+## Permissions and control
 
-Most MCP clients (Claude Code, Cursor, etc.) let you pre-approve specific tool calls so the agent doesn't prompt every time. Most LocTT tools are safe to allowlist — they only read and write inside `.loctt/`.
+### Where the fence is
 
-**Review `attach_file` before approving it.** It copies a file into the task's `attachments/` directory. `source_path` is confined to inside the tracker root — a path outside it (`~/.ssh/id_rsa`, `~/.aws/credentials`, a `.env` in another project) is refused, so the agent cannot reach out and attach arbitrary files on the machine. The residual risk is a sensitive file *staged inside the tracker*: once attached, its contents live in `.loctt/` and may be committed, pushed, or synced. So check that `source_path` points where you expect, and don't stage secrets inside the tracker. `detach_file` is safe to allowlist — it can only remove files already inside the task's attachments directory.
+LocTT itself has **no permission layer** — no per-tool access control and
+no read-only mode. Any tool the agent can call, it can run. The **only**
+thing standing between the agent and a destructive action is your MCP
+client's approval prompt (or your allowlist).
+
+In particular: the `delete_*` tools require a `confirm: true` argument, but
+**the agent supplies that argument itself** — it is not a prompt to you.
+"Requires confirm" means the tool refuses if the agent forgets the flag; it
+does not mean a human is asked. Your client's approval is the human gate.
+
+To run an agent **read-only**, allowlist only the read tools (`get_*`,
+`list_*`, `export_tasks`) and leave everything else to prompt.
+
+### What to auto-approve
+
+| Auto-approve | Review each call | Never auto-approve |
+|---|---|---|
+| Reads: `get_task`, `list_tasks`, `get_task_history`, `list_*`, `get_workflow_config`, `export_tasks` | Field writes: `create_task`, `update_task`, `unset_field`, `append_task_body`, `replace_task_body`, `post_comment`, `link_tasks`, `archive_task` | Permanent deletes: `delete_task`, `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_view`, `delete_comment` |
+| | Bulk writes (up to 500 tasks at once): `bulk_update_tasks`, `move_task` | Tracker-wide rewrites: `set_project_prefix` |
+| | `attach_file` (see below) | Schema, backup, and sync: `migrate_schema`, `backup`, `restore`, `enable_git`/`disable_git`, `publish_to_git`, `sync_from_git` |
+| | | Identity: `switch_user`, `set_config_value` |
+
+The "never auto-approve" column is either irreversible or has tracker-wide
+blast radius — `set_project_prefix` renames every task's key,
+`publish_to_git` pushes your data to a remote, `switch_user` changes who
+every surface acts as. Prefer the reversible `archive_*` tools over
+`delete_*`, and **take a `backup` before turning an agent loose on real
+data.**
+
+**`attach_file`** copies a file into a task's `attachments/`. `source_path`
+is confined to inside the tracker root — a path outside it (`~/.ssh/id_rsa`,
+a `.env` in another project) is refused, so the agent can't reach arbitrary
+files on the machine. The residual risk is a sensitive file *staged inside
+the tracker*: once attached it lives in `.loctt/` and may be committed or
+synced. `detach_file` only removes files already in a task's attachments,
+so it's safe to allowlist.
+
+### Scoping an agent to one project
+
+There is **no per-project scoping.** The MCP server binds to a *tracker*
+(the directory with `.loctt/`), and an agent connected to it can see and
+change **every project in that tracker**. If you need an agent confined to
+one project, give it its own tracker in its own directory — separate
+`.loctt/` directories are the isolation boundary.
+
+### Auditing what the agent did
+
+Every change records **who made it**: the actor is the current user. So the
+cleanest way to tell an agent's work from your own is to **give the agent
+its own user** and switch to it for the agent's session
+(`loctt user create "Agent" --switch`, or have the agent's client run as
+that user). Then `loctt log <task>` and the Activity tab attribute each
+entry.
+
+History is **per task** — there is no single tracker-wide "everything the
+agent touched this session" view. To review a session, check the history
+of the tasks it worked on.
+
+### Concurrent edits
+
+LocTT and the MCP server share the same files, with no cross-surface lock
+outside git-sync. If you edit a task while an agent writes to it:
+
+- **Field updates** (`update_task`) are last-write-wins — whoever writes
+  last wins, silently.
+- **Body edits** are last-write-wins too, unless the agent passes the
+  `body_token` from its read (which refuses a stale write). You can't force
+  the agent to do this.
+
+So while an agent is running against a tracker, assume a task you're both
+touching can be clobbered in either direction. For real concurrent work,
+let the agent finish, or keep to different tasks.
 
 ## Notes
 

@@ -212,6 +212,9 @@ Everything is customizable in `.loctt/config/workflow.yaml`: statuses, prioritie
 - [Query Language](docs/user/common/query-language.md)
 - [Git Sync](docs/user/common/git-sync.md)
 - [Agent Setup](docs/user/mcp/agent-setup.md) — giving your AI agent project-specific workflow instructions
+- [Recovery & health](docs/user/common/recovery.md) — undo, finding lost tasks, hand-editing, and `loctt doctor`
+- [Data portability](docs/user/common/data-portability.md) — reading and exporting your data
+- [Upgrading & migrations](docs/user/common/upgrading.md) — updating LocTT and schema migrations safely
 - [Uninstall](docs/user/common/uninstall.md)
 
 **For contributors:**
