@@ -42,17 +42,15 @@ Project-specific conventions that go beyond structural validation:
 
 ### Status transitions
 
-If your workflow has rules about how tasks move between statuses, state them explicitly. The MCP server doesn't enforce transition order — any valid status can be set on any task.
+If your workflow has rules about how tasks move between statuses, state them explicitly. The MCP server doesn't enforce transition order — any valid status can be set on any task. Use your own status keys; the example below uses the default set (`backlog`, `in_progress`, `done`, `wont_do`).
 
 ```markdown
 ## Task Management
 
 Status transitions:
-- New tasks start as `not_started`
+- New tasks start as `backlog`
 - Move to `in_progress` only when actively working on it
-- Move to `in_review` when a PR is open
-- Only move to `done` after the PR is merged
-- Use `blocked` when waiting on an external dependency — add a comment explaining what's blocking
+- Only move to `done` after the work is merged or shipped
 - `wont_do` requires a comment explaining why
 ```
 
@@ -90,7 +88,7 @@ During work:
 - If you discover subtasks, create them and link with `parent` relationship
 
 After completing work:
-- Update status to `in_review` or `done` as appropriate
+- Update status to `done`
 - Add a summary of what was done to the task body
 ```
 
@@ -129,11 +127,10 @@ Here's a complete section you could add to your `CLAUDE.md`:
 This project uses LocTT for task tracking. Tasks are managed via MCP tools — never edit `.loctt/` files directly.
 
 ### Workflow rules
-- New tasks start as `not_started`
+- New tasks start as `backlog`
 - Move to `in_progress` when you begin work
-- Move to `in_review` when a PR is open for review
 - Move to `done` only after the change is merged
-- Use `blocked` with a comment explaining what's blocking
+- `wont_do` requires a comment explaining why
 
 ### Creating tasks
 - Title: short imperative phrase
