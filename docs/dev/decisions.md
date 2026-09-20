@@ -13695,6 +13695,19 @@ it.
 extracted modules stay (the panels still use them). This is a standard, not a
 one-off — new point-of-use config must follow it.
 
+### K101 · Git-backed auto-commit + push of agent-written content is accepted, not gated
+
+**Ken's ruling (2026-09-20).** Under git-backed mode, content an MCP agent
+writes — an attachment, a task body, a comment — is auto-committed to the
+`loctt` branch and, when that branch is pushed, leaves the machine. This is
+accepted as the intended behavior of the auto-commit+publish path: git-backed
+mode is opt-in, and the concern is not attachment-specific. No source-path
+confinement, no publish confirmation, and no per-tool gate is added on this
+basis. (This closes the F1 line of work: the A225 attempt to address it via
+`attach_file` path-confinement was reverted for breaking legitimate
+attach-from-the-project, and the underlying concern is now a decision, not an
+open gap.)
+
 ### A199 · REL-16 inline image render — a separate `?inline=1` serve path, raw bytes, `<img>` sandbox (implements K95)
 
 **Ticket:** REL-16 bullet 1 · **Date:** 2026-09-17 · **Implements:** K95.

@@ -277,18 +277,14 @@ files). The broader "agent-written content can be auto-committed+pushed"
 question is recorded below as its own item for a deliberate future
 decision, not a per-tool confinement.
 
-### An auto-approved agent can cause any written content to be git-auto-committed and pushed
+### ~~An auto-approved agent can cause any written content to be git-auto-committed and pushed~~ ACCEPTED (2026-09-20, Ken)
 
 Under git-backed mode, content an MCP agent writes — an attachment, a task
 body, a comment — is auto-committed to the `loctt` branch and, if that
-branch is pushed, leaves the machine. A steered/auto-approved agent could
-therefore exfiltrate or publish content the user did not intend. This is a
-property of the auto-commit+publish path, not of any one tool (the A225
-attempt to fix it via `attach_file` path-confinement was the wrong shape —
-see above). The right fix is a deliberate decision about the
-agent→auto-commit→push boundary (e.g. not auto-pushing agent-written
-content, or a confirmation before publish), scoped across all written
-content. Not yet built; needs a ruling.
+branch is pushed, leaves the machine. Ken ruled this is acceptable: it is
+the intended behavior of the auto-commit+publish path, git-backed mode is
+opt-in, and the boundary is not attachment-specific. No confinement or
+publish-gate is added; this is a decision, not an open gap.
 
 ### ~~The local server has no Host/Origin validation (DNS-rebinding)~~ — FIXED 2026-09-19
 
