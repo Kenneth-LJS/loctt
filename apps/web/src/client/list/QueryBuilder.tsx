@@ -466,7 +466,17 @@ function GroupNode({
           <p className="text-[0.8571rem] text-text-tertiary">No conditions yet.</p>
         ) : (
           node.children.map((child, i) => (
-            <div key={i} className="flex items-start gap-1.5">
+            // A leaf's remove button centers with its single row of h-7
+            // controls; a nested group is tall, so its remove button aligns
+            // to the top of the group card instead.
+            <div
+              key={i}
+              className={
+                child.kind === "leaf"
+                  ? "flex items-center gap-1.5"
+                  : "flex items-start gap-1.5"
+              }
+            >
               <div className="min-w-0 flex-1">
                 {child.kind === "leaf" ? (
                   <LeafRow
@@ -493,7 +503,7 @@ function GroupNode({
                 testId="qb-remove"
                 aria-label="Remove condition"
                 onClick={() => { edit([...path, i], () => null); }}
-                className="mt-0.5 shrink-0"
+                className={child.kind === "leaf" ? "shrink-0" : "mt-1.5 shrink-0"}
               >
                 <Icon name="close" size={14} />
               </IconButton>
@@ -625,10 +635,21 @@ function LeafRow({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded bg-bg-surface/60 px-1 py-0.5">
+    // A consistent column rhythm so rows line up (Bug: ragged rows). The
+    // three controls share one height (all `size="sm"` → h-7) and sit in
+    // stable columns: field and operator take fixed, sensible widths; the
+    // value control fills the rest (`flex-1 min-w-0`) rather than shrinking
+    // to its content — an enum picker showing "—" is no longer awkwardly
+    // narrower than the text box beside it. `flex-wrap` keeps it usable at
+    // phone width, where the value drops to its own full-width row.
+    <div
+      data-testid="qb-leaf-row"
+      className="flex flex-wrap items-center gap-1.5 rounded bg-bg-surface/60 px-1 py-0.5"
+    >
       {/* Field picker */}
       <Select
         size="sm"
+        className="w-[9.5rem] shrink-0"
         data-testid="qb-field"
         aria-label="Field"
         value={node.field}
@@ -647,6 +668,7 @@ function LeafRow({
       {/* Operator picker — filtered to the field kind's renderable ops. */}
       <Select
         size="sm"
+        className="w-[8.5rem] shrink-0"
         data-testid="qb-op"
         aria-label="Operator"
         value={node.op}
@@ -657,15 +679,18 @@ function LeafRow({
         ))}
       </Select>
 
-      {/* Value control — omitted entirely for presence ops. */}
+      {/* Value control — omitted entirely for presence ops. It fills the
+          remaining width of the row so every row's value column aligns. */}
       {!isPostfix(node.op) && (
-        <ValueControl
-          kind={kind}
-          op={node.op}
-          field={fieldDef}
-          value={node.value}
-          onChange={value => { setLeaf({ value }); }}
-        />
+        <div className="min-w-[8rem] flex-1 basis-40">
+          <ValueControl
+            kind={kind}
+            op={node.op}
+            field={fieldDef}
+            value={node.value}
+            onChange={value => { setLeaf({ value }); }}
+          />
+        </div>
       )}
     </div>
   );
@@ -732,7 +757,7 @@ function ValueControl({
               testId="qb-value"
               aria-label="Values"
               placeholder="Choose values…"
-              className="max-w-[16rem]"
+              className="w-full"
             >
               {summary}
             </ComboboxButton>
@@ -746,7 +771,6 @@ function ValueControl({
       <TextField
         type="text"
         size="sm"
-        fullWidth={false}
         data-testid="qb-value"
         aria-label="Values (comma-separated)"
         value={selectedKeys.join(", ")}
@@ -798,7 +822,7 @@ function ValueControl({
             testId="qb-value"
             aria-label="Value"
             placeholder="—"
-            className="max-w-[16rem]"
+            className="w-full"
           >
             {selected?.label}
           </ComboboxButton>
@@ -811,6 +835,7 @@ function ValueControl({
     return (
       <Select
         size="sm"
+        className="w-full"
         data-testid="qb-value"
         aria-label="Value"
         value={value.type === "boolean" ? String(value.value) : "false"}
@@ -825,16 +850,20 @@ function ValueControl({
   if (kind === "date") {
     const isToday = value.type === "today";
     return (
-      <span data-testid="qb-value" className="inline-flex items-center gap-1.5">
+      <span data-testid="qb-value" className="flex min-w-0 items-center gap-1.5">
+        {/* Share the row's h-7 and the standard select border/radius so the
+            date input lines up with the field/operator controls instead of
+            sitting a few pixels short. It flexes to fill; the "today"
+            toggle keeps its intrinsic width at the end. */}
         <input
           type="date"
           aria-label="Value"
           disabled={isToday}
           value={value.type === "date" ? value.value : ""}
           onChange={e => { onChange({ type: "date", value: e.target.value }); }}
-          className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary disabled:opacity-50"
+          className="h-7 min-w-0 flex-1 rounded-md border border-border-default bg-bg-surface px-2 text-[0.8571rem] text-text-primary disabled:opacity-50"
         />
-        <label className="inline-flex items-center gap-1 text-[0.8571rem] text-text-secondary">
+        <label className="inline-flex shrink-0 items-center gap-1 text-[0.8571rem] text-text-secondary">
           <Checkbox
             data-testid="qb-value-today"
             checked={isToday}
@@ -853,12 +882,10 @@ function ValueControl({
       <TextField
         type="number"
         size="sm"
-        fullWidth={false}
         data-testid="qb-value"
         aria-label="Value"
         value={value.type === "number" ? String(value.value) : ""}
         onChange={e => { onChange(scalarFromString("number", e.target.value)); }}
-        className="w-24"
       />
     );
   }
@@ -868,7 +895,6 @@ function ValueControl({
     <TextField
       type="text"
       size="sm"
-      fullWidth={false}
       data-testid="qb-value"
       aria-label="Value"
       value={scalarToString(value)}

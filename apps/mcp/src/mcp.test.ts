@@ -729,7 +729,10 @@ describe("MCP executeTool", () => {
     it("attachment with known extension includes `mime`", async () => {
       const { writeFile } = await import("node:fs/promises");
       await executeTool(root, "create_task", { title: "with png" });
-      const src = join(root, "img.png");
+      // F1 narrowing: the agent surface confines the source to the DATA
+      // DIR (.loctt/), so a legit attach stages the file there first
+      // (was join(root, …), which is now outside the safe zone).
+      const src = join(resolveLocttDir(root), "img.png");
       await writeFile(src, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
       const attachResult = await executeTool(root, "attach_file", {
         ref: "T-1",
@@ -751,7 +754,8 @@ describe("MCP executeTool", () => {
       // absence as application/octet-stream.
       const { writeFile } = await import("node:fs/promises");
       await executeTool(root, "create_task", { title: "with weird" });
-      const src = join(root, "data.xyzunknown");
+      // F1 narrowing: stage inside the data dir (.loctt/), see above.
+      const src = join(resolveLocttDir(root), "data.xyzunknown");
       await writeFile(src, "raw");
       const attachResult = await executeTool(root, "attach_file", {
         ref: "T-1",
@@ -763,6 +767,39 @@ describe("MCP executeTool", () => {
       const attachments = body["attachments"] as Array<Record<string, unknown>>;
       expect(attachments).toHaveLength(1);
       expect(attachments[0]).not.toHaveProperty("mime");
+    });
+
+    // F1 narrowing (Ken): the agent surface confines the source to the
+    // RESOLVED DATA DIR (.loctt/), not the project root. A secret sitting
+    // BESIDE .loctt/ (e.g. <root>/credentials.txt) — the exfil path a
+    // steered agent under git-backed mode would use — is refused, while a
+    // file staged inside .loctt/ still attaches.
+    it("attach_file refuses a source beside .loctt/ (outside the data dir)", async () => {
+      const { writeFile } = await import("node:fs/promises");
+      await executeTool(root, "create_task", { title: "secret guard" });
+      const secret = join(root, "credentials.txt");
+      await writeFile(secret, "AKIA-super-secret");
+      const result = await executeTool(root, "attach_file", {
+        ref: "T-1",
+        source_path: secret,
+      });
+      expect(result.isError).toBe(true);
+      const body = await getTaskJson("T-1");
+      expect(body["attachments"]).toEqual([]);
+    });
+
+    it("attach_file accepts a source staged inside .loctt/", async () => {
+      const { writeFile } = await import("node:fs/promises");
+      await executeTool(root, "create_task", { title: "staged" });
+      const staged = join(resolveLocttDir(root), "staged.txt");
+      await writeFile(staged, "ok");
+      const result = await executeTool(root, "attach_file", {
+        ref: "T-1",
+        source_path: staged,
+      });
+      expect(result.isError).toBeUndefined();
+      const body = await getTaskJson("T-1");
+      expect((body["attachments"] as unknown[]).length).toBe(1);
     });
 
     it("body is included by default, omitted when include_body=false", async () => {

@@ -5,8 +5,10 @@ import {
   deleteSprint,
   editSprint,
   filterByName,
+  isProgressUnavailable,
   loadSprintsConfig,
   loadWorkflowConfig,
+  type MilestoneProgressResult,
   readBurndownSeries,
   resolveLocttDir,
   resolveSprintIdFromInput,
@@ -57,7 +59,7 @@ export async function run(args: string[], root: string): Promise<void> {
 
       // Opt-in: progress scans every task, and `sprint list` is
       // otherwise a config read. Mirrors `milestone list --progress`.
-      let progress: Record<string, { done: number; total: number; discarded: number }> = {};
+      let progress: Record<string, MilestoneProgressResult> = {};
       if (showProgress) {
         const workflow = await loadWorkflowConfig(locttDir);
         const report = await sprintProgressDetailed(locttDir, shown.map(s => s.id), workflow);
@@ -80,12 +82,16 @@ export async function run(args: string[], root: string): Promise<void> {
         const arch = s.archived === true ? "  (archived)" : "";
         const idCol = showIds ? `\t${s.id}` : "";
         const p = progress[s.id];
-        // Name the excluded discarded tasks where the number is shown:
-        // silently shrinking a denominator is as confusing as leaving
-        // dead work in it.
-        const prog = p
-          ? `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`
-          : "";
+        // MSL-35: a per-sprint failure reads "progress unavailable" for
+        // THIS row only; the other rows still print real done/total. Name
+        // the excluded discarded tasks where the number is shown: silently
+        // shrinking a denominator is as confusing as leaving dead work in
+        // it.
+        const prog = p === undefined
+          ? ""
+          : isProgressUnavailable(p)
+            ? "  (progress unavailable)"
+            : `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`;
         console.log(`${s.name}${idCol}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}${prog}${arch}`);
       }
       // DEG-C3: a hand-broken sprint entry is preserved by the tolerant

@@ -393,7 +393,7 @@ export type {
   MoveTaskOptions,
   MoveTaskResult,
 } from "./task/index.js";
-export type { MilestoneProgressOptions, Progress, ProgressReport } from "./task/index.js";
+export type { MilestoneProgressOptions, MilestoneProgressResult, Progress, ProgressReport, ProgressUnavailable } from "./task/index.js";
 export type { BodyWriteOptions } from "./task/index.js";
 export type { CommentsPage } from "./task/index.js";
 export {
@@ -409,6 +409,7 @@ export {
 } from "./task/index.js";
 export {
   attachFile,
+  AttachmentCaseCollisionError,
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
@@ -450,6 +451,7 @@ export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationshi
 export {
   computeProgress,
   computeProgressFromStatuses,
+  isProgressUnavailable,
   milestoneProgress,
   milestoneProgressDetailed,
   sprintProgress,

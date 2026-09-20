@@ -10,7 +10,7 @@
 
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -190,6 +190,48 @@ describe("--overwrite", () => {
     expect(report.displacedBodies).toHaveLength(1);
     const path = report.displacedBodies[0]?.path as string;
     expect(await readFile(path, "utf-8")).toContain(localText.trim());
+  });
+
+  // @verifies BAK-C13
+  // The displaced-body file is task-dir content, so a subsequent backup
+  // must carry it and a restore elsewhere must re-land it. Before the fix
+  // the exporter carried only task.md/_comments/_history/attachments, so
+  // "overwrite-restore → backup → restore elsewhere" lost the text.
+  it("carries a displaced body through a later backup and restore (BAK-C13)", async () => {
+    // 1) Create a displaced body in `dst` via an overwrite-restore.
+    const id = await seed(srcDir, "Carried");
+    await setBody(srcDir, id, "The backup's version.\n");
+    await exportBackup(srcDir, { outputPath: out });
+
+    await emptyTasks(dstDir);
+    await mkdir(join(dstDir, "tasks", id), { recursive: true });
+    await writeFile(
+      getTaskFilePath(dstDir, id),
+      await readFile(getTaskFilePath(srcDir, id), "utf-8"),
+    );
+    const displacedText = "Text the user wrote that got displaced.\n";
+    await setBody(dstDir, id, displacedText);
+    const firstRestore = await restoreBackup(dstDir, [out], { mode: "overwrite" });
+    expect(firstRestore.displacedBodies).toHaveLength(1);
+    const displacedName = basename(firstRestore.displacedBodies[0]!.path);
+
+    // 2) Back up `dst` (which now holds the displaced-body file).
+    const out2 = join(dst, "backup2.jsonl");
+    await exportBackup(dstDir, { outputPath: out2 });
+
+    // 3) Restore into a fresh third tracker.
+    const third = await mkdtemp(join(tmpdir(), "loctt-res-third-"));
+    try {
+      await initLoctt(third, { docs: false });
+      const thirdDir = resolveLocttDir(third);
+      await restoreBackup(thirdDir, [out2], { mode: "bare" });
+
+      // The displaced-body file survived the round-trip, text intact.
+      const landed = join(thirdDir, "tasks", id, displacedName);
+      expect(await readFile(landed, "utf-8")).toContain(displacedText.trim());
+    } finally {
+      await rm(third, { recursive: true, force: true });
+    }
   });
 });
 

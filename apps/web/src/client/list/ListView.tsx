@@ -67,6 +67,59 @@ const DEFAULT_SORT_DIR: Record<string, "asc" | "desc"> = {
 };
 
 /**
+ * A11Y-9: the key of the task most recently opened from the list, held
+ * across the route change into the task detail and back.
+ *
+ * The list unmounts when a task opens, so ListView's per-instance refs
+ * (the A11Y-17 `focusedTaskKey`) are gone by the time the user returns.
+ * `sessionStorage` bridges that unmount — per-tab, ephemeral, and
+ * survives the remount — so on returning to `/list` focus can be
+ * restored to the opened row's anchor rather than to `document.body`
+ * (which would send the next Tab to the top of the page). Cleared once
+ * consumed so an unrelated later mount does not steal focus, and every
+ * access is guarded because `sessionStorage` can throw (private mode,
+ * blocked storage) — a11y restore is a convenience, never a hard
+ * dependency.
+ */
+const LAST_OPENED_KEY = "loctt:list:last-opened-task";
+
+function rememberOpenedTask(key: string): void {
+  try {
+    sessionStorage.setItem(LAST_OPENED_KEY, key);
+  } catch {
+    // Storage unavailable — focus restore on return is skipped, the
+    // rest of the flow is unaffected.
+  }
+}
+
+function takeOpenedTask(): string | null {
+  try {
+    const key = sessionStorage.getItem(LAST_OPENED_KEY);
+    if (key !== null) sessionStorage.removeItem(LAST_OPENED_KEY);
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Escape a task key for a `[data-task-key="…"]` selector.
+ *
+ * `CSS.escape` is the right tool, but it is absent in some non-browser
+ * runtimes (jsdom under test), where reaching for it throws before the
+ * selector is even built. Task keys are already safe CSS-identifier text
+ * (`WEB-1`), so the fallback simply quotes any character CSS treats
+ * specially — enough to keep the attribute selector valid without a
+ * polyfill.
+ */
+function escapeTaskKey(key: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(key);
+  }
+  return key.replace(/["\\]/g, "\\$&");
+}
+
+/**
  * The list view's table (M1.2). Reads URL search state for sort +
  * pagination, fetches the matching task page, and renders the
  * configured columns. Column headers sort (single-column, direction
@@ -322,7 +375,7 @@ export function ListView() {
       if (key === null) return;
       if (document.activeElement !== null && document.activeElement !== document.body) return;
       const anchor = table.querySelector<HTMLElement>(
-        `[data-task-key="${CSS.escape(key)}"]`,
+        `[data-task-key="${escapeTaskKey(key)}"]`,
       );
       if (anchor) anchor.focus();
     });
@@ -333,6 +386,56 @@ export function ListView() {
       observer.disconnect();
     };
   }, []);
+
+  // A11Y-9: returning to the list restores focus to the row that was
+  // opened, not to document.body / the top of the page. The list
+  // unmounts when a task opens, so this cannot lean on the A11Y-17 ref
+  // above (that ref died with the previous instance) — the opened key
+  // was stashed in sessionStorage on open, and is consumed here once the
+  // rows for THIS render exist. It fires on `items` because the first
+  // paint is a loading/empty table with no anchor yet; keyed on the
+  // stored key being present, and the key is cleared as it is taken so a
+  // later unrelated mount cannot inherit it. If the row is gone (the
+  // task was archived, or filtered out) focus is left where it is — the
+  // same "deliberate location" restraint as A11Y-17.
+  useEffect(() => {
+    const table = tableRef.current;
+    if (table === null) return;
+    const key = takeOpenedTask();
+    if (key === null) return;
+    // Do not fight a focus the user has already placed since arriving
+    // back on the list — but the generic route-change focus move IS the
+    // thing this restore refines. `useRouteAnnouncement` (A11Y-45) lands
+    // focus on the `#main-content` pane on every route change, including
+    // the return to `/list`; that is a default landing spot, not a
+    // deliberate placement, so restoring the opened row over it is the
+    // more specific correct behaviour (A11Y-9 bullet 5). Body and that
+    // pane are both "nobody chose this"; anything else the user chose.
+    const active = document.activeElement;
+    const isDefaultLanding =
+      active === null
+      || active === document.body
+      || (active instanceof HTMLElement && active.id === "main-content");
+    if (!isDefaultLanding) return;
+    const anchor = table.querySelector<HTMLElement>(
+      `[data-task-key="${escapeTaskKey(key)}"]`,
+    );
+    if (anchor) {
+      anchor.focus();
+      // Seed the A11Y-17 ref too, so a refetch that immediately re-renders
+      // the table keeps focus on this row rather than dropping it.
+      focusedTaskKey.current = key;
+    }
+  }, [items]);
+
+  // A11Y-9: opening a task from the list (row click, or Enter on the row's
+  // key link) records the key so focus can be restored to that row on the
+  // way back. Both the pointer path (the `<tr>` onClick) and the keyboard
+  // path (the key `<Link>`) go through here, so the two never diverge.
+  const openTask = (key: string): void => {
+    rememberOpenedTask(key);
+    void navigate({ to: "/tasks/$key", params: { key } });
+  };
 
   // The result-set identity, for BLK-18. Everything the server reads
   // except how far we have paged — loading page 2 must not clear a
@@ -925,7 +1028,7 @@ export function ListView() {
               items.map(task => (
                 <tr
                   key={task.id}
-                  onClick={() => void navigate({ to: "/tasks/$key", params: { key: task.key } })}
+                  onClick={() => { openTask(task.key); }}
                   aria-selected={selection.isSelected(task.id)}
                   className={[
                     // The key column is a `<th scope="row">`, not a `<td>`,
@@ -977,7 +1080,7 @@ export function ListView() {
                   </td>
                   {columns.map(col => {
                     const cell = (
-                      <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                      <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} onOpen={openTask} />
                     );
                     // A11Y-26's second bullet: the key column is the
                     // row header, so navigating rows announces *which
@@ -1034,7 +1137,7 @@ export function ListView() {
               key={task.id}
               data-testid={`task-card-${task.key}`}
               aria-selected={selection.isSelected(task.id)}
-              onClick={() => void navigate({ to: "/tasks/$key", params: { key: task.key } })}
+              onClick={() => { openTask(task.key); }}
               className={[
                 "cursor-pointer rounded-md border bg-bg-surface p-3",
                 selection.isSelected(task.id) ? "border-accent bg-accent/5" : "border-border-subtle",
@@ -1051,7 +1154,7 @@ export function ListView() {
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 text-[0.7857rem] text-text-tertiary">
-                    <Cell colId="key" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                    <Cell colId="key" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} onOpen={openTask} />
                     <Cell colId="project" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
                   </div>
                   <div className="mt-0.5 font-medium text-text-primary">
@@ -1180,6 +1283,7 @@ function Cell({
   today,
   estimation,
   onFilterLabel,
+  onOpen,
 }: {
   colId: string;
   task: TaskListRow;
@@ -1188,6 +1292,12 @@ function Cell({
   estimation: EstimationShape | null;
   /** Clicking a label pill filters to it (MSL-6). */
   onFilterLabel: (id: string) => void;
+  /**
+   * A11Y-9: activating the key link opens the task, recording the key
+   * for focus restore on return. Optional so a Cell rendered without it
+   * (none today) still falls back to a plain navigating link.
+   */
+  onOpen?: ((key: string) => void) | undefined;
   now: number;
   today: string;
 }) {
@@ -1209,7 +1319,24 @@ function Cell({
           <Link
             to="/tasks/$key"
             params={{ key: task.key }}
-            onClick={e => e.stopPropagation()}
+            // A11Y-9: this link is the row's keyboard-operable primary
+            // action — a real anchor, so Enter navigates natively and it
+            // is a single, natural Tab stop (no `tabIndex` on the `<tr>`,
+            // which would double the stops and make a reader announce the
+            // row twice). Plain activation records the opened key for
+            // focus-restore on return and stops the click reaching the
+            // `<tr>` (whose own onClick would record it a second time and
+            // is the mouse-only convenience). A modified click
+            // (cmd/ctrl/shift/middle → open in new tab) is left to the
+            // browser: it does not leave this list, so there is nothing
+            // to restore, and recording would be wrong.
+            onClick={e => {
+              e.stopPropagation();
+              if (onOpen === undefined) return;
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+              e.preventDefault();
+              onOpen(task.key);
+            }}
             // A11Y-17: the per-row focus anchor. When a refetch re-renders
             // the table (a filter change, a background poll), the
             // restoration effect re-focuses the same task's link by this

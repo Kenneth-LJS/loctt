@@ -87,6 +87,18 @@ minority of these.
 - The save outcome is announced (A11Y-24), so a non-sighted user knows the edit landed.
 - Returning to the list restores focus at or near the row that was opened, not at the top of the document.
 
+> **Coverage (2026-09-20).** Tagged `@verifies A11Y-9`: the keyboard
+> cycle end-to-end in `tests/ui/flow-accessibility.spec.ts` (row opened by
+> Enter on its key link → status changed via the arrow-traversable
+> `ui/Combobox`, committed value checked on disk → Back restores focus to
+> the opened row), plus the ListView-local row-activation and
+> focus-restore logic in `apps/web/src/client/list/ListView.a11y.test.tsx`.
+> Status editing lives on the task **detail**, not in a list row. The
+> fourth bullet — save outcome announced — depends on **A11Y-24**, which
+> is not yet built for field saves (a successful save is currently silent);
+> the Playwright test asserts that silence negatively so it flips red when
+> A11Y-24 lands. A11Y-9's own list-side gaps (row focus-restore) are built.
+
 ### A11Y-10 · M4 · blocker · P8
 **Filtering is fully keyboard-operable.** From `/list`, add a status filter and a label filter, then remove one, using only the keyboard.
 
