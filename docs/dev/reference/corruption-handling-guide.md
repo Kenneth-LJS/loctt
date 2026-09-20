@@ -6,11 +6,11 @@ instead of crashing — and the principles behind why. Read it before you
 write the code.
 
 Companions:
-- `docs/dev/north-star.md` § Operating principles — the *values* (1, 3,
+- `docs/dev/reference/north-star.md` § Operating principles — the *values* (1, 3,
   5, 6, 7 are the corruption-relevant ones). This guide is the *system*
   that makes them repeatable.
-- `docs/dev/ui-test-cases/flow-degradation.md` (DEG-) +
-  `docs/dev/surface-test-cases/flow-degradation.md` (DEG-C) — the
+- `tests/cases/ui-test-cases/flow-degradation.md` (DEG-) +
+  `tests/cases/surface-test-cases/flow-degradation.md` (DEG-C) — the
   canonical acceptance cases. A new field's corruption behaviour is not
   done until it maps onto these.
 - `docs/dev/decisions.md` K21–K28 — the rulings this guide encodes.

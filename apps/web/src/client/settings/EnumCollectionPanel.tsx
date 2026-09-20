@@ -28,7 +28,7 @@ import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
  * one shape: each is an ordered list of `{key, label, …}` where the
  * order in the file is the order everywhere else in the app, deleting
  * an in-use key demands a remap, and the key itself is immutable
- * (`docs/dev/invariants.md`) while the label is not.
+ * (`docs/dev/reference/invariants.md`) while the label is not.
  *
  * **The key is never editable after creation.** Stored task frontmatter
  * holds keys, not labels, so renaming a key in place would orphan every

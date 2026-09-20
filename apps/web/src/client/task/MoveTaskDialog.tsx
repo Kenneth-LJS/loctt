@@ -19,8 +19,8 @@ import { Dialog, DialogActions } from "../ui/Dialog.tsx";
  *
  * K71: routed through `Dialog` (over `Modal`) for the focus trap, inert
  * background and focus restoration it previously hand-rolled its overlay
- * without; the raw action `<button>`s are now `Button` (design-review
- * §B2). A211: the destination picker is the searchable `ui/Combobox`
+ * without; the raw action `<button>`s are now `Button`
+ * (docs/dev/design/design-review.md §B2). A211: the destination picker is the searchable `ui/Combobox`
  * (single-select) — the project list grows with the workspace — with the
  * current project offered present-but-disabled.
  */

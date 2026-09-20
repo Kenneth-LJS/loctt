@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-settings.md — the M4.2
+ * Transcribed from tests/cases/ui-test-cases/flow-settings.md — the M4.2
  * workflow-panel cases — and flow-cross-surface.md XS-31.
  *
  * Several of these assert the file on disk after the write, so a

@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-cross-surface.md.
+ * Transcribed from tests/cases/ui-test-cases/flow-cross-surface.md.
  *
  * These are the cases whose subject is a *fact shared between
  * surfaces* — the CLI, the MCP server and the UI all read and write

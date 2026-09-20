@@ -49,7 +49,7 @@ export interface Comment {
  * Pattern for `@user:<id>` mentions inside comment text.
  *
  * The `user:` prefix is required, matching the documented syntax in
- * `docs/dev/markdown-extensions.md`. The previous pattern was
+ * `docs/dev/reference/markdown-extensions.md`. The previous pattern was
  * `/@([\w\-.]+)/g` — no colon — so `@user:01J…` captured the literal
  * token `user`, which was then stored as if it were a user id. Every
  * mention in a tracker collapsed to the same meaningless value.

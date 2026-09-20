@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Menu, MenuItem } from "./Menu.tsx";
 
 /**
- * Menu keyboard navigation (A11Y-9 / design-review §A2).
+ * Menu keyboard navigation (A11Y-9 / docs/dev/design/design-review.md §A2).
  *
  * A `role="menu"` promises roving arrow-key movement between items, not
  * just Tab. These assert the roving behavior directly; if the panel ever

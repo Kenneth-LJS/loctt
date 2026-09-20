@@ -10,6 +10,18 @@ and delete an entry the moment it is fixed.
 
 ## Code defects
 
+### `@verifies CONFIG-5` tags a case that does not exist — coverage gate red
+
+Four test files — `PreferencesPanel.test.tsx`, `ProjectsPanel.test.tsx`,
+`Header.test.tsx`, `ShortcutHelpDialog.test.tsx` — carry `@verifies
+CONFIG-5` tags, but no `CONFIG-5` case exists in `tests/cases/`, so
+`npm run cases:coverage` fails ("tag names a case not in the index").
+Pre-existing (CONFIG-5 was absent from the index before the docs move
+too). Fix: either author the CONFIG-5 acceptance case (the config-
+discoverability work these tests cover) in the right flow doc and
+regenerate the index, or drop the tags if the behaviour is covered by an
+existing case ID. Reproduce: `npm run cases:coverage`.
+
 ### A211 · Value pickers over growable sets still on native `Select`/radio/pill controls
 
 A211 standardised the searchable picker (`ui/Combobox`) and migrated the

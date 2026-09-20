@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-tasks.md — M2.3, the
+ * Transcribed from tests/cases/ui-test-cases/flow-tasks.md — M2.3, the
  * body editor.
  *
  * Browser specs because what they assert is browser behaviour: an

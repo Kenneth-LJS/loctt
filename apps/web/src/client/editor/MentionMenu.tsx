@@ -4,7 +4,7 @@
  * Stores `@user:<id>` — the id is the payload and the display name is
  * resolved at render time, so renaming a user does not require
  * rewriting every body that mentions them. That is the on-disk
- * convention in `docs/dev/markdown-extensions.md`, and core's
+ * convention in `docs/dev/reference/markdown-extensions.md`, and core's
  * `extractMentions` is the reader half of the same contract.
  *
  * The trigger rule matches `extractMentions` deliberately: an `@` that

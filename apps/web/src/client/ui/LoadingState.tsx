@@ -1,5 +1,5 @@
 /**
- * The shared loading placeholder (design-review §A3).
+ * The shared loading placeholder (docs/dev/design/design-review.md §A3).
  *
  * ~14 features re-spelled `<div className="p-8 text-[0.9286rem]
  * text-text-tertiary">Loading X…</div>` with **no** `role="status"`, so a

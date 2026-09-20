@@ -8,17 +8,14 @@ npm packages (`npx loctt`, the MCP server). Blockers are tagged by which
 target they apply to.
 
 This doc is the **packaging / security / metadata** axis (B1–B4). The
-full pre-publish blocker set spans three docs — treat all three as the
-release gate together:
-- **`TEMP-TODO.md`** — the product/correctness/a11y backlog. Ken ruled
-  (decisions.md **K73**) the **whole** list is required before publishing
-  — it is not a "build later" queue. It holds silent correctness defects,
-  a P1 data-loss, the BLK-44 robustness gap, the `unarchiveView` parity
-  failure, and every WCAG AA failure (K74). The ~13 rulings in it are the
-  critical path.
-- **`docs/dev/design-review.md`** — UI adoption blockers; §A1 (dialog
+pre-publish blocker set spans two docs — treat both as the release gate
+together:
+- **`docs/dev/design/design-review.md`** — UI adoption blockers; §A1 (dialog
   focus traps) is a ruled blocker (**K71**).
 - this doc — packaging/security below.
+
+(The product/correctness/a11y backlog is closed. Understood-but-unfixed
+defects live in `docs/dev/known-gaps.md`.)
 
 Each item says what's true now, what "done" looks like, and — where it
 matters — the evidence it was checked against, so the next agent doesn't
@@ -68,13 +65,6 @@ roster).
   reverse proxy expecting it to be safe; note that `dev:host` exposes
   only the dev client. Highest-value hardening item and it's prose.
 
-### B3. `TEMP-TODO.md` sits in the published root — **both targets**
-- A `TEMP-`prefixed file in a public root reads as "unfinished," and
-  `CLAUDE.md` points at it as the live backlog.
-- **Done =** move/rename it out of the public-facing root — e.g.
-  `docs/dev/backlog.md`, or `.gitignore` it — and repoint `CLAUDE.md`.
-  Keep the content; only the name/location is the problem.
-
 ### B4. Package each of CLI / MCP / UI as independently installable — **npm target**
 **Intended model (Ken, 2026-09-11):** the three are installed
 **separately** — `@loctt/cli`, `@loctt/mcp`, and the UI as their own
@@ -120,7 +110,7 @@ production.
 ### H1. Corruption / degradation coverage audit
 - The store is user-edited files; malformed input is the real threat.
   Assets exist: `apps/cli/src/commands/doctor.ts`,
-  `docs/dev/corruption-handling-guide.md`, ~124 known-gaps sections.
+  `docs/dev/reference/corruption-handling-guide.md`, ~124 known-gaps sections.
 - **Question to answer:** is coverage complete enough to trust a
   stranger's editor? Field-local degradation vs object-fatal, per the
   guide. Worth a focused audit (≈ an afternoon); not obviously a blocker.
@@ -139,23 +129,12 @@ production.
 
 ---
 
-## Nothing in TEMP-TODO is consciously deferred any more
-
-Superseded by Ken's ruling **K73 (2026-09-11)**: the whole `TEMP-TODO.md`
-backlog is pre-publish. What was framed here as "deferred features" is now
-required. The features are still each their own build (see TEMP-TODO §7),
-but they are in-scope for launch, not a post-launch roadmap. The rulings
-(TEMP-TODO §0) gate the rest and come first.
-
----
-
 ## Quick status of what "done" looks like across the board
 
 | Item | Target | Kind | State |
 |---|---|---|---|
 | B1 license/version metadata | both | metadata | DONE |
 | B2 document security model | both | docs | DONE |
-| B3 relocate TEMP-TODO | both | hygiene | DONE (moved to docs/dev/, 2026-09-18) |
 | B4 web packaging | npm | packaging | DONE (A-B4/K89) |
 | H1 corruption coverage audit | both | robustness | not started |
 | H2 git-sync stability/labelling | both | robustness | DONE — STABLE (2026-09-18): full engine built to K92-K95, all data-safety paths guarded + tested (incl. real-remote integration); shipped unlabeled. The one untestable edge (advisory locks on network/sync filesystems) is detected + warned in-app (GIT-22/XS-50) and documented in docs/user/common/git-sync.md. Ken's call. |

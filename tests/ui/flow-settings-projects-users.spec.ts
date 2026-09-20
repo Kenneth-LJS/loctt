@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-settings.md (SET-32,
+ * Transcribed from tests/cases/ui-test-cases/flow-settings.md (SET-32,
  * SET-42) and flow-projects-users.md (the M4.1 PRU cases), plus
  * XS-63.
  *

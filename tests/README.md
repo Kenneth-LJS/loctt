@@ -381,7 +381,7 @@ Under `tests/e2e/`. Same fixtures, same cleanup. Each journey exercises a full u
 
 - Add `npm run dev` in `apps/cli` and `apps/mcp` (`tsup --watch`).
 - Add `tests/scripts/smoke.sh` mirroring E2E journey #1 for manual reproduction.
-- Document the test layout in `docs/dev/development.md`.
+- Document the test layout in `docs/dev/process/development.md`.
 
 **Exit:** a new dev can add a test without reading the fixture source.
 

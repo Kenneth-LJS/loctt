@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-tasks.md — M2.1, the
+ * Transcribed from tests/cases/ui-test-cases/flow-tasks.md — M2.1, the
  * task detail read shell.
  *
  * These are browser specs because what they assert is browser

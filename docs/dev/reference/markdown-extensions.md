@@ -165,7 +165,7 @@ and save flow.
 > with no autosave. That contradicted both the history-coalescing window
 > (which has nothing to coalesce under explicit save — it would merge two
 > deliberate saves minutes apart) and the UI acceptance criteria in
-> `docs/dev/ui-test-cases/flow-tasks.md`. Autosave is the intended
+> `tests/cases/ui-test-cases/flow-tasks.md`. Autosave is the intended
 > behaviour.
 
 ## Features dropped (not representable in markdown)

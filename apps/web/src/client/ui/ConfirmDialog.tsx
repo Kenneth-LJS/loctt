@@ -5,14 +5,14 @@ import { Dialog, DialogActions } from "./Dialog.tsx";
 import { TextField } from "./TextField.tsx";
 
 /**
- * The shared confirmation primitive (K71 / design-review §B1).
+ * The shared confirmation primitive (K71 / docs/dev/design/design-review.md §B1).
  *
  * Before this, seven delete/confirm dialogs each hand-rolled their own
  * `fixed inset-0 … bg-black/40` overlay and panel. Four of them
  * (`DeleteViewDialog`, `DeleteCommentDialog`, `DeleteConfirmDialog`, and
  * others) skipped the focus trap, the inert background, and focus
  * restoration entirely — a real keyboard/screen-reader regression
- * (design-review §A1, K71): Tab escaped the modal into the frozen page,
+ * (docs/dev/design/design-review.md §A1, K71): Tab escaped the modal into the frozen page,
  * and focus was not returned to the trigger on close.
  *
  * `ConfirmDialog` is a thin wrapper over `Dialog` (hence `Modal`), so it

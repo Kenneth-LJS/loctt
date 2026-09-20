@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-tasks.md and
+ * Transcribed from tests/cases/ui-test-cases/flow-tasks.md and
  * flow-cross-surface.md — M2.2a, the meta panel's inline editors.
  *
  * **Every picker case asserts the far end.** A test that a dropdown
