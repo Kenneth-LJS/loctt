@@ -140,12 +140,47 @@ function mergeIconColor(
   };
 }
 
-/** Refuses when a key already exists in a sub-list. */
+/**
+ * The charset a workflow-entity key must satisfy. Lowercase start letter,
+ * then lowercase letters, digits, `_` or `-` — the same shape as a project
+ * slug (`projects/slug.ts` `SLUG_RE`) and as every seeded/default key
+ * (`backlog`, `in_progress`, `is_blocked_by`, `relates_to`, `wont_do`, …).
+ *
+ * The write side previously accepted any non-empty string (contracts
+ * `z.string().min(1)`), so an agent or a hand-edit could create a key with
+ * spaces, dots, newlines or unicode. The read side does not: timeline
+ * grouping matches `field.<key>` against `/^field\.[A-Za-z0-9_-]+$/`, and
+ * other consumers assume the same shape — so such a key writes cleanly and
+ * then reads back as a self-inflicted corrupt config. Enforced at create
+ * time (keys are immutable after) rather than in the schema, so an existing
+ * config with a legacy key still *loads* and degrades rather than becoming
+ * unreadable.
+ */
+const ENTITY_KEY_RE = /^[a-z][a-z0-9_-]*$/;
+
+/** Refuses a malformed entity key (charset). Create-time only. */
+function assertValidEntityKey(key: string, entity: string): void {
+  if (!ENTITY_KEY_RE.test(key)) {
+    throw new WorkflowEntityError(
+      `${entity} key '${key}' is not valid; use lowercase letters, digits, `
+      + `'_' or '-', starting with a letter`,
+      { field: "key" },
+    );
+  }
+}
+
+/**
+ * Refuses when a key is malformed (charset) or already exists in a
+ * sub-list. Called at the top of every `create*`/`addFieldValue` path with
+ * the caller-supplied key, so it is the single choke point for both the
+ * uniqueness guard and the charset guard.
+ */
 function assertKeyFree(
   existing: readonly { key: string }[],
   key: string,
   entity: string,
 ): void {
+  assertValidEntityKey(key, entity);
   if (existing.some(e => e.key === key)) {
     throw new WorkflowEntityError(`${entity} key '${key}' already exists`);
   }
@@ -517,6 +552,13 @@ export async function createRelationship(
 ): Promise<void> {
   await mutateWorkflow(locttDir, prev => {
     assertKeyFree(prev.relationships, input.key, "relationship");
+    // The inverse is a lookup key too (`has_link("is_blocked_by")`, the
+    // relationship badges), so it must satisfy the same charset — an inverse
+    // with spaces/dots would write cleanly and then fail the read-side
+    // regexes exactly as a bad primary key would.
+    if (input.inverse !== undefined) {
+      assertValidEntityKey(input.inverse, "relationship inverse");
+    }
     const created: RelationshipDef = {
       key: input.key,
       label: input.label,

@@ -208,7 +208,6 @@ export {
   enableGit,
   fetchLocttBranch,
   getGitStatus,
-  getReconcileState,
   // GIT-25: the adopt-or-stop refusal for a pre-existing LocTT-written
   // branch, so a surface can distinguish it from a foreign-content refusal.
   GitBranchAdoptNeededError,

@@ -146,8 +146,8 @@ tools.
 | `bulk_update_tasks` | Set or clear one field across many tasks in one operation. | `refs` (≤500), `field`, `value` (omit to clear) |
 | `duplicate_task` | Copy a task to a new key (no relationships/attachments). | `ref`, `title`, `project` |
 | `move_task` | Reallocate tasks to another project; old keys still resolve. | `refs` (≤500), `project` |
-| `archive_task` / `unarchive_task` | Reversible soft-delete and restore. | `ref` |
-| `delete_task` | Permanent delete. Requires `confirm`. | `ref`, `confirm` |
+| `archive_task` / `unarchive_task` | Reversible soft-delete and restore, one or many tasks in one operation. Tasks already in the target state are counted as unchanged; a bad ref is reported without aborting the rest. | `refs` (≤500) |
+| `delete_task` | Permanent delete of one or many tasks in one operation. Requires `confirm`. A bad ref is reported without aborting the rest. | `refs` (≤500), `confirm` |
 | `get_task_history` | Paginated activity log, newest first. | `ref`, `limit`, `offset` |
 
 ### Body
@@ -164,7 +164,8 @@ refuse a stale write.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `link_tasks` / `unlink_tasks` | Add or remove a relationship (written on both sides). | `ref`, `type`, `target` |
+| `link_tasks` | Add a relationship from one or many sources to a single target (written on both sides of each edge, one operation). Each edge is committed independently; a bad source is reported without aborting the rest, and an unresolvable target fails every source. | `refs` (≤500), `type`, `target` |
+| `unlink_tasks` | Remove a relationship (written on both sides). Takes a single source. | `ref`, `type`, `target` |
 
 ### Reordering
 

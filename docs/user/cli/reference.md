@@ -244,10 +244,12 @@ loctt move WEB-9 mobile
 Moved WEB-9 → MOB-4
 ```
 
-### `loctt delete <task>`
+### `loctt delete <task>[,<task>…]`
 
-Permanently delete a task. Destructive; it prompts for confirmation. To
-hide a task reversibly instead, use [`loctt archive`](#loctt-archive-task--loctt-unarchive-task).
+Permanently delete one or more tasks. `<task>` may be a comma-separated
+list (`WEB-9,WEB-10`) to delete several at once, as a single operation.
+Destructive; it prompts for confirmation once for the whole set. To hide
+a task reversibly instead, use [`loctt archive`](#loctt-archive-task--loctt-unarchive-task).
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
@@ -260,10 +262,25 @@ loctt delete WEB-9 --yes
 Deleted WEB-9
 ```
 
-### `loctt archive <task>` · `loctt unarchive <task>`
+With several refs, a bad ref is reported without aborting the rest and
+the command exits non-zero:
 
-Soft-delete a task or restore it. Archived tasks are hidden from lists
-unless you pass `--archived`.
+```bash
+loctt delete WEB-9,WEB-404 --yes
+```
+```
+Deleted on 1 task(s)
+1 failed:
+  WEB-404: task not found
+```
+
+### `loctt archive <task>[,<task>…]` · `loctt unarchive <task>[,<task>…]`
+
+Soft-delete one or more tasks or restore them. `<task>` may be a
+comma-separated list to archive/unarchive several at once, as a single
+operation. Archived tasks are hidden from lists unless you pass
+`--archived`. A task already in the target state is a no-op counted as
+"already in that state"; a bad ref is reported without aborting the rest.
 
 ```bash
 loctt archive WEB-3
@@ -271,18 +288,34 @@ loctt archive WEB-3
 ```
 Archived WEB-3
 ```
+```bash
+loctt archive WEB-3,WEB-4
+```
+```
+Archived on 2 task(s)
+```
 
-### `loctt link <task> <relationship> <target>` · `loctt unlink …`
+### `loctt link <task>[,<task>…] <relationship> <target>` · `loctt unlink …`
 
-Create or remove a relationship between two tasks. The link is written on
+Create or remove a relationship between tasks. The link is written on
 both sides. The relationship type is validated against the workflow.
-`unlink` still works when the target has been deleted.
+`<task>` may be a comma-separated list of sources — each is linked to the
+one `<target>` with the same relationship type, as a single operation
+(reported per source; a bad source is reported without aborting the
+rest). `unlink` still works when the target has been deleted, and takes a
+single source.
 
 ```bash
 loctt link WEB-3 is_blocked_by WEB-5
 ```
 ```
 Linked WEB-3 --is_blocked_by--> WEB-5
+```
+```bash
+loctt link WEB-3,WEB-4 is_blocked_by WEB-5
+```
+```
+Linked --is_blocked_by--> WEB-5 on 2 task(s)
 ```
 
 ### `loctt attach <task> <file>` · `loctt detach <task> <name>`
