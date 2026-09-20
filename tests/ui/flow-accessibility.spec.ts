@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-accessibility.md.
+ * Transcribed from tests/cases/ui-test-cases/flow-accessibility.md.
  *
  * ## What these specs can and cannot claim
  *

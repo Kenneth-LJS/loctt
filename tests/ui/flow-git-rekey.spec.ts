@@ -1,6 +1,6 @@
 /**
  * Rekey preview + confirm UI cases (GIT-8, GIT-9, GIT-33) from
- * docs/dev/ui-test-cases/flow-git-sync.md, per K92.
+ * tests/cases/ui-test-cases/flow-git-sync.md, per K92.
  *
  * A rekey happens when two clones sharing one project each create a task
  * offline that lands on the same key; on a divergent sync one must be

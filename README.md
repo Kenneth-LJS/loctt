@@ -218,20 +218,20 @@ Everything is customizable in `.loctt/config/workflow.yaml`: statuses, prioritie
 - [Uninstall](docs/user/common/uninstall.md)
 
 **For contributors:**
-- [Architecture](docs/dev/architecture.md) — monorepo layout, data model, task identity
-- [Schema Reference](docs/dev/schema-reference.md) — file formats (`task.md`, `workflow.yaml`, …)
-- [Development](docs/dev/development.md) — building, running, and testing locally
-- [Invariants](docs/dev/invariants.md) — rules a change must not break
+- [Architecture](docs/dev/reference/architecture.md) — monorepo layout, data model, task identity
+- [Schema Reference](docs/dev/reference/schema-reference.md) — file formats (`task.md`, `workflow.yaml`, …)
+- [Development](docs/dev/process/development.md) — building, running, and testing locally
+- [Invariants](docs/dev/reference/invariants.md) — rules a change must not break
 - [Decisions](docs/dev/decisions.md) — locked design decisions, including what is deliberately not built
-- [Markdown extensions](docs/dev/markdown-extensions.md) — what the body editor must round-trip
-- [Build loop](docs/dev/build-loop.md) — how a web-UI ticket gets built and verified
+- [Markdown extensions](docs/dev/reference/markdown-extensions.md) — what the body editor must round-trip
+- [Build loop](docs/dev/process/build-loop.md) — how a web-UI ticket gets built and verified
 - [Known gaps](docs/dev/known-gaps.md) — understood defects not yet fixed
 
 **Acceptance criteria** — cases describing observable behaviour, one file
 per flow. They are the specification each surface is built against:
-- [UI test cases](docs/dev/ui-test-cases/) — plus the P1–P10 principles in its [README](docs/dev/ui-test-cases/README.md)
-- [CLI & MCP test cases](docs/dev/surface-test-cases/)
-- [`case-index.json`](docs/dev/case-index.json) — the machine-readable index; see [tools/README.md](tools/README.md) for the coverage gate
+- [UI test cases](tests/cases/ui-test-cases/) — plus the P1–P10 principles in its [README](tests/cases/ui-test-cases/README.md)
+- [CLI & MCP test cases](tests/cases/surface-test-cases/)
+- [`case-index.json`](tests/cases/case-index.json) — the machine-readable index; see [tools/README.md](tools/README.md) for the coverage gate
 
 ## Data & security
 

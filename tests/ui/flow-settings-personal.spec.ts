@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-settings.md (SET-2,
+ * Transcribed from tests/cases/ui-test-cases/flow-settings.md (SET-2,
  * SET-11, SET-12, SET-13, SET-26, SET-27) and flow-saved-views.md
  * (VUE-38).
  *

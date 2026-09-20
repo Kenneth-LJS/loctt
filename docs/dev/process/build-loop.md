@@ -204,7 +204,7 @@ own claims, another agent's, and every decision record.
 ## Per ticket
 
 ```
- 1. PLAN       Read the ticket. Look up its cases in docs/dev/case-index.json.
+ 1. PLAN       Read the ticket. Look up its cases in tests/cases/case-index.json.
                Restate each in one line and name the ones this ticket satisfies.
                GATE  npm run cases:coverage -- --require <ids>   (must FAIL here —
                      nothing is tagged yet; this proves the IDs are real)

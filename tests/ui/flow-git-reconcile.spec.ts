@@ -1,5 +1,5 @@
 /**
- * Reconciliation UI cases from docs/dev/ui-test-cases/flow-git-sync.md:
+ * Reconciliation UI cases from tests/cases/ui-test-cases/flow-git-sync.md:
  * GIT-5, 6, 7, 11, 12, 13, 14, 15, 17, 18, 26, 31.
  *
  * These build the two-sided divergence the panel needs: a task is

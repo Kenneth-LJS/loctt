@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-sprints.md — M3.5, the
+ * Transcribed from tests/cases/ui-test-cases/flow-sprints.md — M3.5, the
  * `/sprints` overview. `/sprints/$key` (detail + burndown) is M4.7 and
  * is not exercised here.
  *

@@ -50,7 +50,7 @@ it to a third task is refused.
 
 ### MSL-C3 · minor · P10 · CLI
 **Documented invocations for labels, milestones, and sprints actually
-run.** `docs/dev/schema-reference.md:446-540` and
+run.** `docs/dev/reference/schema-reference.md:446-540` and
 `docs/user/cli/reference.md:186-293` are stale key-era spec: they document
 `key`/`--label` where the code has `id`/`--name`, so every worked example
 in them fails or silently misbehaves.

@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-board.md (plus ONB-11
+ * Transcribed from tests/cases/ui-test-cases/flow-board.md (plus ONB-11
  * from flow-onboarding.md and MSL-5 / MSL-20 from
  * flow-milestones-labels.md).
  *

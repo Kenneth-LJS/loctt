@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-relationships.md —
+ * Transcribed from tests/cases/ui-test-cases/flow-relationships.md —
  * M2.5a, the Relationships panel (REL-1..34, REL-42..50, XS-25).
  *
  * ## What is here and what is next door

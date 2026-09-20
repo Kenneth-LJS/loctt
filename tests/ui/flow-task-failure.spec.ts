@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-tasks.md,
+ * Transcribed from tests/cases/ui-test-cases/flow-tasks.md,
  * flow-errors.md and flow-cross-surface.md — M2.2b, the meta panel's
  * failure and concurrency behaviour.
  *

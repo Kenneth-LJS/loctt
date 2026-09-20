@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-timeline.md, section A
+ * Transcribed from tests/cases/ui-test-cases/flow-timeline.md, section A
  * ("Happy path", TML-1..17).
  *
  * M3.3a builds the rendering half; the drag layer (the write half of

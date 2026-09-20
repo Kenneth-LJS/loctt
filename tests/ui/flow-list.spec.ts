@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-list.md.
+ * Transcribed from tests/cases/ui-test-cases/flow-list.md.
  *
  * One `test` per case, named by case ID, with a `@verifies` tag so the
  * coverage gate can see it. Assertions follow the case's bullets in order

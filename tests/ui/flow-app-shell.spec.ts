@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-app-shell.md.
+ * Transcribed from tests/cases/ui-test-cases/flow-app-shell.md.
  *
  * The cases here are about *browser* behaviour — history, scroll
  * position, deep links — which a jsdom test cannot assert. A unit test

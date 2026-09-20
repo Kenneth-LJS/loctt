@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-task-create.md — M3.4,
+ * Transcribed from tests/cases/ui-test-cases/flow-task-create.md — M3.4,
  * the create-task modal.
  *
  * These are browser specs because what they assert is browser

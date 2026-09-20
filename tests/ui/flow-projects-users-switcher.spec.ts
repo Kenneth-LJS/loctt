@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-projects-users.md:
+ * Transcribed from tests/cases/ui-test-cases/flow-projects-users.md:
  * PRU-3 (all-projects mode shows the project column), PRU-4 (the
  * create form defaults to the active project), PRU-21 (a 30-project
  * switcher stays usable), PRU-22 (a 120-char label does not break

@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-git-sync.md — the
+ * Transcribed from tests/cases/ui-test-cases/flow-git-sync.md — the
  * enable / publish / sync / status / disable cases that the built
  * GitSyncPanel actually supports. The reconciliation, rekey-summary,
  * task-and-field-granularity, filesystem-class-warning and

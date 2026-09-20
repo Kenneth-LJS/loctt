@@ -551,7 +551,7 @@ function marked(text: string, mark: string): JSONContent[] {
  * Reached **only** after a real edit in the visual editor — see
  * `RichBuffer`. Its spellings are therefore the ones a rich-mode edit
  * normalizes to, and they are chosen to match what the on-disk syntax
- * table in `docs/dev/markdown-extensions.md` documents, so a body
+ * table in `docs/dev/reference/markdown-extensions.md` documents, so a body
  * written by an agent following that table survives a rich edit
  * unchanged in the parts the user did not touch.
  */

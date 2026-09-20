@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-milestones-labels.md —
+ * Transcribed from tests/cases/ui-test-cases/flow-milestones-labels.md —
  * M4.9, the `/milestones` progress view and `/milestones/<ulid>`
  * detail.
  *

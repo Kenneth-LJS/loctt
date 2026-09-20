@@ -19,7 +19,7 @@ import { readSidebarPins, sweepSidebarPins } from "./sidebarPins.ts";
  *
  * SET-13's third bullet says a pin whose view was deleted is "dropped
  * **silently**". That text is superseded. The README's P7 amendment
- * (`docs/dev/ui-test-cases/README.md:191-198`) resolves the
+ * (`tests/cases/ui-test-cases/README.md:191-198`) resolves the
  * SHL-32 / SET-13 / SET-27 / XS-28 disagreement *in favour of the
  * explaining cases*: "a pinned view deleted from `queries.yaml` tells
  * the user it was removed rather than disappearing. Silently pruning a
