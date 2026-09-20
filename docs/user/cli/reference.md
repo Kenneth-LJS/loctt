@@ -60,7 +60,7 @@ loctt init --prefix WEB --project-label "Web App"
 ```
 ```
 Initialized .loctt at /Users/you/project
-Created 9 files
+Created 11 files
 
 Next steps:
   Create a task:   loctt create "<title>"
