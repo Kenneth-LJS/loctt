@@ -1,6 +1,8 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { loadQueriesConfig, serializeQueriesConfig } from "@loctt/core";
+import { queryToConditions } from "@loctt/core/query/builderTree.js";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../adapters/cli-spawn.js";
@@ -20,17 +22,25 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
  */
 describe("a saved multi-value view runs identically on CLI and MCP", () => {
   /**
-   * Appends a view the way the web API writes one. Each entry carries a
-   * ULID id, so a hand-built fixture must too or the config will not
-   * parse.
+   * Appends a view the way the web API writes one: an entry with a ULID
+   * id AND the structured `conditions` tree the API now derives from the
+   * query (a required field — an entry without it no longer parses, which
+   * is exactly what would take the whole file down). Built through core's
+   * own parser + serializer so the fixture matches what the API writes.
    */
   const saveView = async (root: string, name: string, query: string): Promise<void> => {
-    const file = path.join(root, ".loctt/config/queries.yaml");
-    const existing = await readFile(file, "utf-8");
+    const locttDir = path.join(root, ".loctt");
+    const config = await loadQueriesConfig(locttDir);
+    const parsed = queryToConditions(query);
+    if (!parsed.ok) throw new Error(`fixture query does not parse: ${query}`);
     const id = `01M${name.toUpperCase().replace(/[^0-9A-HJKMNP-TV-Z]/g, "X").padEnd(23, "0").slice(0, 23)}`;
+    const next = {
+      ...config,
+      queries: [...config.queries, { id, name, query, conditions: parsed.tree }],
+    };
     await writeFile(
-      file,
-      `${existing.trimEnd()}\n  - id: ${id}\n    name: ${name}\n    query: "${query}"\n`,
+      path.join(locttDir, "config/queries.yaml"),
+      serializeQueriesConfig(next),
       "utf-8",
     );
   };

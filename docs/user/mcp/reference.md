@@ -160,11 +160,20 @@ tools.
 `expected_token` is the `body_token` from a `get_task` read; pass it to
 refuse a stale write.
 
-### Relationships and ranking
+### Relationships
 
 | Tool | Purpose | Key params |
 |---|---|---|
 | `link_tasks` / `unlink_tasks` | Add or remove a relationship (written on both sides). | `ref`, `type`, `target` |
+
+### Reordering
+
+Ordering a task among its peers — its links, its board column, or across
+columns. Kept separate from relationships so it is findable when the
+starting point is a task, not a link.
+
+| Tool | Purpose | Key params |
+|---|---|---|
 | `reorder_relationship` | Reorder a target among a source's links of one type. | `source`, `type`, `target`, `before`/`after` |
 | `reorder_board` | Reorder a task within its board column. | `ref`, `before`/`after` |
 | `move_board_card` | Move a task to another column and position in one write. | `ref`, `status`, `before`, `after` |
