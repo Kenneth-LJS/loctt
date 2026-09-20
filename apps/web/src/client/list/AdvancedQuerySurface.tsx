@@ -8,6 +8,13 @@ import {
 } from "@loctt/core/query/builderTree.js";
 import { useMemo, useState } from "react";
 
+import {
+  searchLabels,
+  searchMilestones,
+  searchProjects,
+  searchSprints,
+  searchUsers,
+} from "../api/hooks/sidebarData.ts";
 import { useValidateQuery } from "../api/hooks/useValidateQuery.ts";
 import { Button } from "../ui/Button.tsx";
 import { AdvancedQueryEditor } from "./AdvancedQueryEditor.tsx";
@@ -16,6 +23,42 @@ import {
   QueryBuilder,
   type ValueOption,
 } from "./QueryBuilder.tsx";
+
+/**
+ * K90 parity: the builder's entity value pickers search the server as the
+ * user types, exactly as the task-meta pickers and FilterDropdown do,
+ * rather than filtering the capped sidebar-fetch seed lists in memory
+ * (A211). These adapters map each entity's server-search result to the
+ * builder's `{ value, label }` option shape, carrying an archived entity's
+ * disabled+suffix so it stays visible-but-unselectable — the same rule the
+ * MetaPanel option mappers apply.
+ *
+ * The search functions are module-level constants (stable identity), so
+ * this object is built once and never re-triggers the config `useMemo`.
+ */
+const named = (
+  e: { readonly id: string; readonly name: string; readonly archived?: boolean | undefined },
+): ValueOption => ({
+  value: e.id,
+  label: e.name,
+  ...(e.archived === true ? { disabled: true, suffix: "(archived)" } : {}),
+});
+
+const BUILDER_ENTITY_SEARCH = {
+  projects: (q: string) => searchProjects(q).then(rows => rows.map(named)),
+  users: (q: string) =>
+    searchUsers(q).then(rows =>
+      rows.map(u => ({
+        value: u.id,
+        // A corrupt/absent profile name degrades to the id (O5), never blank.
+        label: u.name ?? u.id,
+        ...(u.archived === true ? { disabled: true, suffix: "(archived)" } : {}),
+      })),
+    ),
+  labels: (q: string) => searchLabels(q).then(rows => rows.map(named)),
+  milestones: (q: string) => searchMilestones(q).then(rows => rows.map(named)),
+  sprints: (q: string) => searchSprints(q).then(rows => rows.map(named)),
+} as const;
 
 /**
  * The Advanced surface (K83, step 3) — the mode-switching shell around
@@ -96,7 +139,11 @@ export function AdvancedQuerySurface({
   sprints,
 }: AdvancedQuerySurfaceProps) {
   const config = useMemo(
-    () => buildBuilderConfig({ workflow, projects, users, labels, milestones, sprints }),
+    () =>
+      buildBuilderConfig({
+        workflow, projects, users, labels, milestones, sprints,
+        search: BUILDER_ENTITY_SEARCH,
+      }),
     [workflow, projects, users, labels, milestones, sprints],
   );
 

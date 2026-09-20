@@ -1,11 +1,18 @@
 
-import type { BrokenSavedQuery, QueriesConfig, QueryValue, SavedQuery } from "@loctt/contracts";
-import { SavedQuerySchema } from "@loctt/contracts";
+import type {
+  BrokenSavedQuery,
+  BuilderTree,
+  MigratedSavedQuery,
+  QueriesConfig,
+  QueryValue,
+  SavedQuery,
+} from "@loctt/contracts";
+import { BuilderTreeSchema, SavedQuerySchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getQueriesConfigPath } from "../paths/index.js";
-import { conditionsToDsl } from "../query/builderTree.js";
+import { conditionsToDsl, queryToConditions } from "../query/builderTree.js";
 import { ParseError, parseQuery } from "../query/parser.js";
 import { tokenize, TokenizeError } from "../query/tokenizer.js";
 import { renderRawText } from "../task/frontmatter.js";
@@ -21,9 +28,85 @@ export class QueriesConfigError extends Error {
   }
 }
 
-const RawQueriesConfigSchema = z.object({
-  queries: z.array(SavedQuerySchema),
+/**
+ * The TOLERANT loader schema for one entry — deliberately NOT
+ * `SavedQuerySchema`. It requires `id`/`name`/`query` and validates
+ * `sort`/`display`/`archived` strictly (so those stay object-fatal, as
+ * before), but accepts `conditions` as an arbitrary optional value.
+ *
+ * Why: `SavedQuerySchema` REQUIRES a valid `conditions` tree (the written/
+ * validated shape — A217–A219, greenfield). But a `queries.yaml` written
+ * before that ruling has `query` and NO `conditions`, and a hand edit can
+ * leave a malformed one. Applying the strict schema at load makes either
+ * case reject the WHOLE file (object-fatal) — the two gaps this closes.
+ * So the LOADER accepts the raw shape here and repairs `conditions`
+ * per-entry (derive from `query`) BEFORE the strict shape is required;
+ * write paths still go through `SavedQuerySchema`, so the on-disk shape
+ * stays strict and self-heals on the next write.
+ */
+const LoaderSavedQuerySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  query: z.string().min(1),
+  // Accepted-but-not-validated here; resolved/repaired per-entry below.
+  conditions: z.unknown().optional(),
+  sort: SavedQuerySchema.shape.sort,
+  display: SavedQuerySchema.shape.display,
+  archived: SavedQuerySchema.shape.archived,
 }).strict();
+
+const RawQueriesConfigSchema = z.object({
+  queries: z.array(LoaderSavedQuerySchema),
+}).strict();
+
+/**
+ * Resolve an entry's `conditions`, deriving from `query` when the stored
+ * block is absent or malformed (the migration path). Returns:
+ *
+ *  - `{ tree }` and `migratedReason` unset — the stored conditions were a
+ *    valid `BuilderTree`; nothing migrated.
+ *  - `{ tree, migratedReason }` — conditions were absent/invalid but the
+ *    `query` parses, so `tree` was derived from it. The entry is valid;
+ *    `migratedReason` says why, for the load-time diagnostic. The derived
+ *    tree persists on the next write (the serializer emits `conditions`),
+ *    so the file self-heals.
+ *  - `{ ok: false }` — conditions unusable AND `query` does not parse.
+ *    The caller degrades the entry to a `BrokenSavedQuery` (per-view, not
+ *    whole-file).
+ */
+function resolveConditions(
+  rawConditions: unknown,
+  query: string,
+):
+  | { ok: true; tree: BuilderTree; migratedReason?: string }
+  | { ok: false } {
+  // A present conditions block that validates is authoritative — no
+  // migration, no derivation.
+  if (rawConditions !== undefined) {
+    const parsed = BuilderTreeSchema.safeParse(rawConditions);
+    if (parsed.success) {
+      return { ok: true, tree: parsed.data };
+    }
+    // Present but malformed: fall through to derive from `query`, noting
+    // the validation message as the migration reason.
+    const derived = queryToConditions(query);
+    if (derived.ok) {
+      return {
+        ok: true,
+        tree: derived.tree,
+        migratedReason: `conditions block invalid (${formatZodIssues("conditions", parsed.error)}); derived from query`,
+      };
+    }
+    return { ok: false };
+  }
+
+  // Absent conditions (the pre-A217 legacy shape). Derive from `query`.
+  const derived = queryToConditions(query);
+  if (derived.ok) {
+    return { ok: true, tree: derived.tree, migratedReason: "conditions missing; derived from query" };
+  }
+  return { ok: false };
+}
 
 export function parseQueriesConfig(yamlContent: string): QueriesConfig {
   const raw: unknown = safeParseYaml(yamlContent, "queries.yaml");
@@ -44,12 +127,20 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
   // position, so a surface can list it as broken and mark the fault in
   // place (VUE-22) rather than 500-ing the healthy views beside it.
   //
+  // A missing/malformed `conditions` block is NOT fatal to the entry: it
+  // is repaired by deriving conditions from the `query` (the migration
+  // path — the derived tree persists on the next write). Only when the
+  // conditions are unusable AND the `query` cannot be parsed does the
+  // entry degrade to a broken marker.
+  //
   // Object-fatal problems still throw: the duplicate-id check below, and
-  // everything the schema already rejected above (missing array, missing
-  // id/name/query, bad sort). Only a per-ENTRY query error degrades.
+  // everything the tolerant schema still rejected above (missing array,
+  // missing id/name/query, bad sort/display). Only per-ENTRY query/
+  // conditions failures degrade.
   const seenIds = new Set<string>();
   const queries: SavedQuery[] = [];
   const broken: BrokenSavedQuery[] = [];
+  const migrated: MigratedSavedQuery[] = [];
   parsed.queries.forEach((item, i) => {
     // Duplicate ids are object-fatal: two entries sharing an id makes
     // "run view <id>" ambiguous, so we cannot silently pick one. Checked
@@ -60,37 +151,82 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
     }
     seenIds.add(item.id);
 
-    // DSL validation. Bad query strings are user-fixable and degrade to
-    // a broken marker rather than crashing the rest of the load.
+    // DSL validation. A bad query string is user-fixable, so it degrades
+    // to a broken marker rather than crashing the rest of the load. When
+    // the query parses, its parse tree also feeds conditions derivation
+    // below, so we parse it once here and reuse the outcome.
+    let queryParses = true;
+    let queryError: TokenizeError | ParseError | undefined;
     try {
       parseQuery(tokenize(item.query));
     } catch (err) {
       if (err instanceof TokenizeError || err instanceof ParseError) {
-        broken.push({
-          id: item.id,
-          name: item.name,
-          query: item.query,
-          error: err.message,
-          // Both carry a numeric character offset; kept so a surface can
-          // mark the exact spot (VUE-22: "the offending position").
-          position: err.position,
-          index: i,
-          // The entry's FULL schema-valid YAML (id/name/query and any
-          // sort/display/archived), so a write re-emits every field rather
-          // than only {id,name,query} — Phase Z C2. Mirrors how the six
-          // object-shaped configs preserve via `BrokenEntry.rawText`.
-          rawText: renderRawText(item),
-        });
-        return;
+        queryParses = false;
+        queryError = err;
+      } else {
+        throw err;
       }
-      throw err;
+    }
+
+    // Resolve conditions (validate the stored block, or derive from the
+    // query when it is absent/malformed).
+    const resolved = resolveConditions(item.conditions, item.query);
+
+    // A view is broken only when it can be recovered from NEITHER side:
+    // the query does not parse AND the conditions could not be resolved.
+    // (A parseable query always yields conditions via derivation, so a
+    // broken entry necessarily has an unparseable query — its `error`/
+    // `position` come from that parse failure, exactly as before.)
+    if (!resolved.ok) {
+      const err = queryError;
+      broken.push({
+        id: item.id,
+        name: item.name,
+        query: item.query,
+        error: err?.message ?? "conditions are missing or invalid and the query does not parse",
+        // Both errors carry a numeric character offset; kept so a surface
+        // can mark the exact spot (VUE-22: "the offending position").
+        ...(err?.position !== undefined ? { position: err.position } : {}),
+        index: i,
+        // The entry's FULL raw YAML (id/name/query and any conditions/
+        // sort/display/archived), so a write re-emits every field rather
+        // than only {id,name,query} — Phase Z C2. Mirrors how the six
+        // object-shaped configs preserve via `BrokenEntry.rawText`.
+        rawText: renderRawText(item),
+      });
+      return;
+    }
+
+    // If the query does not parse but conditions ARE resolvable, the entry
+    // is still broken — the stored `query` is the derived/runnable field
+    // and a surface expects it to parse. (This preserves the pre-existing
+    // behavior: a valid conditions block does not rescue a bad query.)
+    if (!queryParses) {
+      const err = queryError;
+      broken.push({
+        id: item.id,
+        name: item.name,
+        query: item.query,
+        error: err?.message ?? "query does not parse",
+        ...(err?.position !== undefined ? { position: err.position } : {}),
+        index: i,
+        rawText: renderRawText(item),
+      });
+      return;
+    }
+
+    // A migration happened when conditions had to be derived. The entry is
+    // valid and runnable; record the diagnostic so doctor/a surface can
+    // report it and the user knows it will self-heal on the next write.
+    if (resolved.migratedReason !== undefined) {
+      migrated.push({ id: item.id, name: item.name, reason: resolved.migratedReason, index: i });
     }
 
     queries.push({
       id: item.id,
       name: item.name,
       query: item.query,
-      conditions: item.conditions,
+      conditions: resolved.tree,
       ...(item.sort !== undefined ? { sort: item.sort } : {}),
       ...(item.display !== undefined ? { display: item.display } : {}),
       ...(item.archived === true ? { archived: true } : {}),
@@ -103,6 +239,10 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
     // only `queries` is unaffected and "none broken" stays distinct from
     // "not inspected". Never serialized back to disk.
     ...(broken.length > 0 ? { broken } : {}),
+    // Same rationale for the migration diagnostic: omitted when nothing
+    // migrated, never written to disk (the derived conditions are written
+    // as an ordinary block, so a re-load finds nothing to migrate).
+    ...(migrated.length > 0 ? { migrated } : {}),
   };
 }
 

@@ -271,6 +271,141 @@ ${conditionsBlock("status = x")}
     });
   });
 
+  // The `conditions` migration path. A view written before `conditions`
+  // was required (A217–A219) has a `query` and no `conditions`; a hand
+  // edit can leave a malformed one. The loader must DERIVE `conditions`
+  // from the `query` rather than reject the whole file, and only degrade
+  // to a broken marker when neither side is recoverable.
+  describe("conditions migration path", () => {
+    // @verifies DEG-25
+    it("derives conditions from the query when the block is MISSING (no throw)", () => {
+      // Red-proof: with the old strict loader schema, this threw
+      // "conditions is required (expected object)" — object-fatal.
+      const yaml = `
+queries:
+  - id: 01HQ00000000000000000LEGACY
+    name: legacy
+    query: status != done and archived != true
+`;
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries).toHaveLength(1);
+      // The derived tree matches exactly what queryToConditions produces.
+      const derived = queryToConditions("status != done and archived != true");
+      expect(derived.ok).toBe(true);
+      if (derived.ok) {
+        expect(config.queries[0]?.conditions).toEqual(derived.tree);
+      }
+      // Reported as migrated so a surface / doctor can tell the user.
+      expect(config.migrated).toHaveLength(1);
+      expect(config.migrated?.[0]).toMatchObject({
+        id: "01HQ00000000000000000LEGACY",
+        name: "legacy",
+        index: 0,
+      });
+      expect(config.migrated?.[0]?.reason).toMatch(/missing/);
+      // Not broken — it is a fully valid, runnable view.
+      expect(config.broken).toBeUndefined();
+    });
+
+    // @verifies DEG-25
+    it("derives conditions from the query when the block is MALFORMED (no throw)", () => {
+      // Red-proof: the old loader rejected the whole file on a `conditions`
+      // that does not validate against BuilderTreeSchema.
+      const yaml = `
+queries:
+  - id: 01HQ0000000000000000MALFRM
+    name: malformed
+    query: status = backlog
+    conditions:
+      kind: not-a-real-kind
+      whatever: 3
+`;
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries).toHaveLength(1);
+      const derived = queryToConditions("status = backlog");
+      expect(derived.ok).toBe(true);
+      if (derived.ok) {
+        expect(config.queries[0]?.conditions).toEqual(derived.tree);
+      }
+      expect(config.migrated).toHaveLength(1);
+      expect(config.migrated?.[0]?.reason).toMatch(/invalid/);
+    });
+
+    // @verifies DEG-25
+    it("persists the derived conditions on the next write (self-heals)", () => {
+      // Red-proof: if derivation did not run, this would throw on load and
+      // never reach serialize; if the derived tree were not stored on the
+      // valid entry, the re-serialized YAML would carry no conditions block
+      // and re-loading would migrate AGAIN (never healing).
+      const yaml = `
+queries:
+  - id: 01HQ00000000000000000LEGACY
+    name: legacy
+    query: status = in_progress
+`;
+      const config = parseQueriesConfig(yaml);
+      const serialized = serializeQueriesConfig(config);
+      // The written entry now carries a conditions block.
+      expect(serialized).toContain("conditions:");
+      // Re-loading finds nothing to migrate — the file has healed.
+      const roundTripped = parseQueriesConfig(serialized);
+      expect(roundTripped.queries).toHaveLength(1);
+      expect(roundTripped.migrated).toBeUndefined();
+      const derived = queryToConditions("status = in_progress");
+      if (derived.ok) {
+        expect(roundTripped.queries[0]?.conditions).toEqual(derived.tree);
+      }
+    });
+
+    // @verifies DEG-25
+    it("degrades to a broken marker when conditions are unusable AND the query does not parse (per-view, not whole-file)", () => {
+      // Red-proof: without per-view degradation this either threw on the
+      // bad conditions (object-fatal) or lost the sibling healthy view.
+      const yaml = `
+queries:
+  - id: 01HQ00000000000000000000OK
+    name: ok
+    query: status = backlog
+${conditionsBlock("status = backlog")}
+  - id: 01HQ000000000000000DBLBAD
+    name: double-broken
+    query: "status =="
+    conditions:
+      kind: not-a-real-kind
+`;
+      const config = parseQueriesConfig(yaml);
+      // The healthy sibling still loads.
+      expect(config.queries).toHaveLength(1);
+      expect(config.queries[0]).toMatchObject({ id: "01HQ00000000000000000000OK", name: "ok" });
+      // The doubly-broken one degrades to a marker, not a throw.
+      expect(config.broken).toHaveLength(1);
+      expect(config.broken?.[0]).toMatchObject({
+        id: "01HQ000000000000000DBLBAD",
+        name: "double-broken",
+        query: "status ==",
+        index: 1,
+      });
+      // Not counted as migrated — it could not be recovered.
+      expect(config.migrated).toBeUndefined();
+    });
+
+    it("a legacy queries.yaml (no conditions anywhere) loads whole, none broken", () => {
+      const yaml = `
+queries:
+  - id: 01HQ0000000000000000LEGCY1
+    name: one
+    query: status = backlog
+  - id: 01HQ0000000000000000LEGCY2
+    name: two
+    query: priority = high
+`;
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries).toHaveLength(2);
+      expect(config.broken).toBeUndefined();
+      expect(config.migrated).toHaveLength(2);
+    });
+  });
+
   it("throws YamlSyntaxError on malformed YAML (tagged with file label)", () => {
     expect(() => parseQueriesConfig("{ queries: [")).toThrow(YamlSyntaxError);
     expect(() => parseQueriesConfig("{ queries: [")).toThrow(/queries\.yaml/);
