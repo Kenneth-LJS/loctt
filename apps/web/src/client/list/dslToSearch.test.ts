@@ -29,10 +29,12 @@ describe("Basic → Advanced is lossless", () => {
 
     const dsl = buildDslFromSearch(search);
 
-    // Every predicate survives the trip out...
+    // Every predicate survives the trip out. Multi-select facets are
+    // membership regardless of value count (Ken's ruling — no count-based
+    // `=` downgrade), so a lone value is `in (…)`, not `= …`.
     expect(dsl).toContain("status in (backlog, in_progress)");
-    expect(dsl).toContain("priority = high");
-    expect(dsl).toContain("assignee = alice");
+    expect(dsl).toContain("priority in (high)");
+    expect(dsl).toContain("assignee in (alice)");
     expect(dsl).toContain("labels in (api, urgent)");
 
     // ...and the trip back restores the identical controls.

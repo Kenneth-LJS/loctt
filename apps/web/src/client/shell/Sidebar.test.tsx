@@ -70,8 +70,15 @@ let FAIL_VIEWS = false;
 let SETTINGS: Record<string, unknown> = {};
 
 /** Saved views returned by /api/views, per-test (SHL-32). */
-let VIEWS: { id: string; name: string; query: string; archived?: boolean }[] = [
-  { id: "v_mine", name: "My open bugs", query: "x" },
+// `conditions` optional: a valid view carries it (edit seeds the builder
+// from it); fixtures that only exercise listing/pin/delete may omit it.
+let VIEWS: { id: string; name: string; query: string; archived?: boolean; conditions?: unknown }[] = [
+  {
+    id: "v_mine",
+    name: "My open bugs",
+    query: "status = backlog",
+    conditions: { kind: "leaf", field: "status", op: "=", value: { type: "string", value: "backlog" } },
+  },
 ];
 
 /** Broken saved views returned by /api/views, per-test (VUE-22). */
@@ -280,7 +287,12 @@ afterEach(() => {
   PRIORITIES = undefined;
   WORKFLOW_STATUSES = [];
   CWD = "~/PDev/loctt";
-  VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+  VIEWS = [{
+    id: "v_mine",
+    name: "My open bugs",
+    query: "status = backlog",
+    conditions: { kind: "leaf", field: "status", op: "=", value: { type: "string", value: "backlog" } },
+  }];
   BROKEN_VIEWS = [];
   SETTINGS = {};
   FAIL_VIEWS = false;
@@ -936,19 +948,21 @@ describe("Sidebar groups customization (SHL-45)", () => {
     // Enabled: no `disabled` attribute (the old stub hardcoded one).
     expect(btn.hasAttribute("disabled")).toBe(false);
     fireEvent.click(btn);
-    // VUE-40: the sidebar entry opens the same create dialog the panel
-    // uses — the one with the advanced query editor, NOT the read-only
-    // "Save as view" dialog that hard-codes `archived != true`.
+    // VUE-40 + Stage 2: the sidebar entry opens the same create dialog the
+    // panel uses — now the VISUAL builder (Ken's ruling), NOT a raw DSL
+    // box and NOT the read-only "Save as view" dialog that hard-codes
+    // `archived != true`.
     await screen.findByTestId("view-create-dialog");
-    screen.getByTestId("advanced-query-editor");
+    screen.getByTestId("query-builder");
+    expect(screen.queryByTestId("advanced-query-editor")).toBeNull();
   });
 
-  it("sidebar + New filter POSTs a TYPED query, not the fixed archived filter", async () => {
+  it("sidebar + New filter POSTs structured conditions, not the fixed archived filter", async () => {
     // @verifies VUE-40 — the sidebar bullet the case leads with. The old
     // wiring opened SaveViewDialog with `search={}`, so every view saved
-    // from the sidebar was `archived != true` and the user could not type
-    // a query. This asserts the sidebar reaches the query editor and POSTs
-    // exactly what was typed.
+    // from the sidebar was `archived != true` and the user could not build
+    // a filter. Stage 2: the sidebar reaches the builder and POSTs the
+    // structured conditions authored there.
     await renderSidebarAt("/list");
     const posts: { url: string; body: unknown }[] = [];
     const realFetch = globalThis.fetch;
@@ -965,14 +979,19 @@ describe("Sidebar groups customization (SHL-45)", () => {
     });
 
     fireEvent.click(screen.getByTestId("sidebar-new-filter"));
-    await screen.findByTestId("advanced-query-editor");
+    await screen.findByTestId("query-builder");
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "My typed view" } });
-    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "status:open AND type:bug" } });
+    fireEvent.click(screen.getByTestId("qb-add-condition"));
+    fireEvent.change(screen.getByTestId("qb-field"), { target: { value: "title" } });
+    fireEvent.change(screen.getByTestId("qb-op"), { target: { value: "=" } });
+    fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "bug" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
     await waitFor(() => { expect(posts.length).toBe(1); });
-    expect(posts[0]?.body).toEqual({ name: "My typed view", query: "status:open AND type:bug" });
+    const body = posts[0]?.body as { name: string; conditions?: unknown };
+    expect(body.name).toBe("My typed view");
+    expect(body.conditions).toBeDefined();
     // Never the SaveViewDialog default derived from an empty search.
     expect(JSON.stringify(posts[0]?.body)).not.toContain("archived != true");
   });
@@ -1048,17 +1067,24 @@ describe("Sidebar saved-filter row actions", () => {
     fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
     fireEvent.click(screen.getByTestId("view-edit"));
     await screen.findByTestId("view-edit-dialog");
-    // Prefilled from the row's view.
+    // Stage 2: a valid view opens the builder, seeded from its conditions
+    // (not the DSL string). Prefilled name, and the builder shows `status`.
+    await screen.findByTestId("query-builder");
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("My open bugs");
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLSelectElement>("qb-field").value).toBe("status");
+    });
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
-    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "status:open" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
     await waitFor(() => {
       const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/views/v_mine"));
       expect(puts.length).toBe(1);
-      expect(puts[0]?.body).toEqual({ name: "Renamed", query: "status:open" });
+      const body = puts[0]?.body as { name: string; conditions?: unknown };
+      expect(body.name).toBe("Renamed");
+      // The edit carries structured conditions, not a DSL string.
+      expect(body.conditions).toBeDefined();
     });
   });
 

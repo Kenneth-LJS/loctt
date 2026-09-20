@@ -14891,3 +14891,111 @@ Remove the added "titled header" tests in `board/BoardView.test.tsx`,
 `timeline/TimelineView.settings-links.test.tsx`,
 `sprints/SprintsView.test.tsx`, and the "titled header fold" describe in
 `sprints/SprintDetail.test.tsx`.
+
+### A217 · Saved-view Stage 2 (web): builder-first filter authoring + structured `conditions` sent from web
+
+**Ticket:** Saved views store structured conditions (Stage 2 of 3) · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** Stage 1 (core+contracts, commit 9c673e7) made a saved
+view's `conditions` (a `BuilderTree`) the source of truth and `query` a
+derived, spacing-only serialization. Stage 2 brings the web surface into
+line. Two Ken rulings drive it: (1) the value-count operator switch in
+the filter-bar→DSL builder (`= x` for one value, `in (...)` for many) is a
+form-rewrite and must go; (2) the New/Edit filter dialog must NOT open a
+raw DSL query field — *"i can't use filters unless i go through the
+learning curve of your query language. NO!"* — it must be a visual builder
+by default, with an Advanced (raw DSL) toggle KEPT.
+
+**What had to be decided (agent calls).**
+
+- *B — operator by facet, not by count.* Every filter-bar facet is a
+  multi-select, so a lone value is still a membership question:
+  `buildConditionsFromSearch` authors `field in (v)` for all nine facets
+  and the `field.<key>` customs, never a count-based `=`. `buildDslFromSearch`
+  became a thin wrapper (`conditionsToDsl(buildConditionsFromSearch(...))`)
+  so the string is one serialization of the same structure "Save as view"
+  stores — string and structure cannot disagree, and the DSL is generated
+  by ONE path (core's serializer). Free-text `q` is now parsed and spliced
+  as a subtree (no blanket `(...)` wrap). *There is no genuinely scalar `=`
+  facet today; if one is ever added it would author a `=` leaf.*
+
+- *C — dialog shape (reuse without force-fit).* `AdvancedQuerySurface` is
+  contractually an inline-filter-bar component (its `onApply` writes URL
+  `q`, `onSwitchToBasic` reconstructs chips, it renders its own
+  Apply/Close). Rather than embed it and neuter two of its three callbacks
+  (which would put a second "Apply" next to the dialog's Save), the dialog
+  is assembled from the SAME building blocks the surface uses —
+  `QueryBuilder`+`buildBuilderConfig` (visual rows) and `AdvancedQueryEditor`
+  (DSL text) — with a dialog-owned builder/advanced toggle. To avoid parity
+  drift the surface's refuse/complete helpers (`parseForBuilder`,
+  `asGroupRoot`, `safeSerialize`, `hasIncompleteLeaf`, `scrubPosition`)
+  were EXPORTED and reused (one copy of the rule, not two). (pm-reviewed.)
+
+- *D — conditions on the wire.* The web sends structured `conditions`.
+  The contracts request schemas (`CreateViewRequest`/`EditViewRequest`)
+  are frozen at `{name,query,sort}` in Stage 1, so the server extends them
+  LOCALLY with the exported `BuilderTreeSchema`
+  (`CreateViewRequestWithConditions`/`EditViewRequestWithConditions`,
+  `query` relaxed to optional) and passes `conditions` to core, which
+  already accepts conditions OR query and derives the other. A client that
+  still sends only `query` (defensive) keeps working. `SaveViewDialog` and
+  the create/edit hooks (`CreateViewBody`/`EditViewBody`) gained `conditions`.
+
+- *E — advanced-mode save.* Editing raw DSL and saving parses it with
+  core's total `queryToConditions` and REFUSES an unparseable string
+  (mirrors VUE-11 "refuse, don't approximate"); the PARSED tree is sent so
+  the stored `conditions` and derived `query` never disagree. After Stage
+  1's total extension any VALID DSL is representable, so the only refusal
+  is a genuine parse error.
+
+- *Broken-view edit (important).* A broken saved view (VUE-22) has a
+  `query` that did not parse and NO `conditions`. The dialog's `existing`
+  prop makes `conditions` OPTIONAL; when absent it opens Advanced on the
+  raw `query` with no refuse-note, which is exactly the fix path. The
+  Sidebar's `EditTarget` carries `conditions` when present (valid view →
+  builder), omits it for a broken row.
+
+**Green tests edited because they asserted the SUPERSEDED behavior (not
+the bug — the pre-ruling shape).** `buildDsl.test.ts` and
+`dslToSearch.test.ts` asserted `priority = high`/`assignee = alice` for
+single-value facets (the count switch); updated to membership.
+`SavedViewsPanel.test.tsx` and `Sidebar.test.tsx` asserted the DSL
+textarea was the create/edit default and `{name,query}` was posted;
+rewritten to the builder-first default and `conditions` bodies. Each is a
+behavior Ken ruled out, called out at its edit site.
+
+**Tests added (red-proven).** `buildConditions.test.ts` (single-value
+facet → `in`, never `=`; value order; splice/guard); the `buildDsl`
+membership cases; `ViewFormDialog.test.tsx` (builder shown by default —
+red-proofed by forcing advanced default; Advanced toggle reveals the DSL
+box; save POSTs `conditions`; edit seeds from conditions; unrenderable
+conditions → Advanced+note; unparseable Advanced DSL refuses save —
+red-proofed by neutering the guard); `SaveViewDialog.test.tsx` (POST body
+carries `conditions`, membership — red-proofed by reverting to query-only);
+`server.view-conditions.test.ts` (create/edit round-trip conditions;
+query-only defensive path).
+
+**Why.** Structure-first end to end means the string a user sees and the
+structure stored are the same object serialized — no drift class survives.
+Builder-first satisfies Ken's ruling literally while keeping the Advanced
+escape hatch for power users and the only-thing-that-works path for
+exotic (has_link/not/date_fn) and broken views. Contracts stayed frozen
+(Stage 1) by extending request schemas at the web edge with an already-
+exported schema; core (Stage 1) and CLI/MCP (Stage 3) were untouched.
+
+**To revert.** In `apps/web/src/client/list/`: restore `buildDsl.ts`'s
+count-switch `clause()` and delete `buildConditions.ts`(+test);
+`SaveViewDialog.tsx` back to sending `query`. In
+`apps/web/src/client/settings/ViewFormDialog.tsx` restore the
+`AdvancedQueryEditor`-only body and narrow the `existing` prop to
+`id|name|query`; delete `ViewFormDialog.test.tsx`. Un-export the five
+helpers in `list/AdvancedQuerySurface.tsx`. In `client/shell/Sidebar.tsx`
+drop `conditions` from `EditTarget`. In `client/api/hooks/useCreateView.ts`/
+`useEditView.ts` drop the `*Body` types' `conditions`. In
+`server/server.ts` remove `CreateViewRequestWithConditions`/
+`EditViewRequestWithConditions` (revert handlers to the base schemas and
+stop forwarding `conditions`) and the `BuilderTreeSchema` import; delete
+`server/server.view-conditions.test.ts`. Revert the superseded-behavior
+test edits noted above. (The 5 fixture-`conditions` additions in
+`server.missing-view`/`view-warnings`/`views-invalid` tests are required
+by Stage 1's schema and stay.)

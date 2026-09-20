@@ -27,6 +27,7 @@ import type {
   WorkflowUsageResponse,
 } from "@loctt/contracts";
 import {
+  BuilderTreeSchema,
   BulkArchiveRequestSchema,
   BulkDeleteRequestSchema,
   BulkLinkRequestSchema,
@@ -1800,10 +1801,35 @@ export function createWebApp(options: WebAppOptions) {
     json(res, { valid: true });
   };
 
+  // Stage-2 web sends structured `conditions`. The contracts request
+  // schemas are frozen at `{name,query,sort}`, so we extend them HERE with
+  // the exported `BuilderTreeSchema` and relax `query` to optional (core
+  // needs conditions OR query, not both). `.extend` on the strict base
+  // keeps it strict, so nothing else new slips through.
+  const CreateViewRequestWithConditions = CreateViewRequestSchema.extend({
+    query: CreateViewRequestSchema.shape.query.optional(),
+    conditions: BuilderTreeSchema.optional(),
+  });
+  const EditViewRequestWithConditions = EditViewRequestSchema.extend({
+    conditions: BuilderTreeSchema.optional(),
+  });
+
   const handleCreateView: RouteHandler = async ({ req, res, locttDir }) => {
-    const r = await parseJsonBodyWithSchema(req, res, CreateViewRequestSchema);
+    // Stage-2 web sends STRUCTURED `conditions` (a BuilderTree); the DSL
+    // `query` is derived by core from it. The contracts request schema is
+    // frozen at `{name,query,sort}`, so we extend it HERE with the exported
+    // `BuilderTreeSchema` rather than reshaping contracts. `query` stays
+    // optional-when-conditions-present: core's `resolveViewFilter` accepts
+    // conditions OR a query and rejects neither. A client that still sends
+    // only `query` (defensive) works unchanged — core derives conditions.
+    const r = await parseJsonBodyWithSchema(req, res, CreateViewRequestWithConditions);
     try {
-      const created = await createView(locttDir, r);
+      const created = await createView(locttDir, {
+        name: r.name,
+        ...(r.conditions !== undefined ? { conditions: r.conditions } : {}),
+        ...(r.query !== undefined ? { query: r.query } : {}),
+        ...(r.sort !== undefined ? { sort: r.sort } : {}),
+      });
       json(res, created, 201);
     } catch (err) {
       // ViewError is core's own user-facing text (a bad query, a
@@ -1818,7 +1844,10 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateView: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
-    const r = await parseJsonBodyWithSchema(req, res, EditViewRequestSchema);
+    // As with create: extend the frozen contracts schema with `conditions`
+    // here. A filter edit sends `conditions` and core derives `query`; a
+    // raw-DSL edit sends `query` and core derives `conditions`.
+    const r = await parseJsonBodyWithSchema(req, res, EditViewRequestWithConditions);
     try {
       // Drop explicitly-`undefined` keys so we're passing
       // EditViewInput (T?: shape) not zod's `T | undefined` shape
@@ -1826,6 +1855,7 @@ export function createWebApp(options: WebAppOptions) {
       // sort: null case ("clear sort") is preserved.
       const updated = await editView(locttDir, ref, {
         ...(r.name !== undefined ? { name: r.name } : {}),
+        ...(r.conditions !== undefined ? { conditions: r.conditions } : {}),
         ...(r.query !== undefined ? { query: r.query } : {}),
         ...(r.sort !== undefined ? { sort: r.sort } : {}),
       });

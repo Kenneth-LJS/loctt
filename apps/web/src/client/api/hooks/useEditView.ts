@@ -1,7 +1,15 @@
-import type { EditViewRequest, SavedQuery } from "@loctt/contracts";
+import type { BuilderTree, EditViewRequest, SavedQuery } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
+
+/**
+ * Edit-view request body, extended (Stage 2) with structured
+ * `conditions` — the contracts `EditViewRequest` is frozen, and the
+ * server accepts either `conditions` OR `query`. Mirrors the server's
+ * `EditViewRequestWithConditions`.
+ */
+export type EditViewBody = EditViewRequest & { readonly conditions?: BuilderTree };
 
 /**
  * Renames a saved view and/or edits its query via `PUT /api/views/:id`
@@ -16,7 +24,7 @@ import { apiClient } from "../client.ts";
  */
 export function useEditView() {
   const qc = useQueryClient();
-  return useMutation<SavedQuery, Error, { id: string; body: EditViewRequest }>({
+  return useMutation<SavedQuery, Error, { id: string; body: EditViewBody }>({
     mutationFn: ({ id, body }) =>
       apiClient.put<SavedQuery>(`/api/views/${encodeURIComponent(id)}`, body),
     onSuccess: () => {

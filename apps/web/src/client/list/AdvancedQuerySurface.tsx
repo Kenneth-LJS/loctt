@@ -176,7 +176,7 @@ export function AdvancedQuerySurface({
  * error still refuses (K83-i). Used for the initial mode seed AND the
  * "Switch to visual" enablement, so both answer renderability identically.
  */
-function parseForBuilder(
+export function parseForBuilder(
   q: string,
 ): { ok: true; tree: BuilderTree } | { ok: false; reason: string } {
   if (q.trim().length === 0) {
@@ -195,12 +195,12 @@ function parseForBuilder(
  * per builderTreeToQuery) with an editable structure. A group root passes
  * through unchanged.
  */
-function asGroupRoot(tree: BuilderTree): BuilderTree {
+export function asGroupRoot(tree: BuilderTree): BuilderTree {
   return tree.kind === "group" ? tree : { kind: "group", op: "and", children: [tree] };
 }
 
 /** builderTreeToQuery throws on an empty group; the empty builder is "". */
-function safeSerialize(tree: BuilderTree): string {
+export function safeSerialize(tree: BuilderTree): string {
   try {
     return builderTreeToQuery(tree);
   } catch {
@@ -314,7 +314,7 @@ function BuilderMode({
  * ops (`is empty`/`is not empty`) carry no value and are always complete;
  * a list op is incomplete while its list is empty.
  */
-function hasIncompleteLeaf(tree: BuilderTree): boolean {
+export function hasIncompleteLeaf(tree: BuilderTree): boolean {
   if (tree.kind === "group") return tree.children.some(hasIncompleteLeaf);
   // `not`/`has_link` are stored-conditions node kinds the visual builder
   // never produces (queryToBuilderTree refuses them), so they cannot be
@@ -342,7 +342,7 @@ function hasIncompleteLeaf(tree: BuilderTree): boolean {
  * text editor keeps the caret + position, which makes sense over raw DSL;
  * the visual builder has no text offset to point at.
  */
-function scrubPosition(message: string | undefined): string | undefined {
+export function scrubPosition(message: string | undefined): string | undefined {
   if (message === undefined) return undefined;
   return message.replace(/\s*at (?:position|character)\s+\d+\.?/gi, "").trim();
 }
