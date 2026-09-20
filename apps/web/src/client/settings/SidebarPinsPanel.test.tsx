@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -62,9 +69,21 @@ function renderPanel() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  // A cross-link `<Link to="/settings/$section">` needs a router with that
+  // route registered, so the panel renders inside a memory router.
+  const rootRoute = createRootRoute({ component: SidebarPinsPanel });
+  const sectionRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/$section",
+    component: () => null,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([sectionRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
   return render(
     <QueryClientProvider client={client}>
-      <SidebarPinsPanel />
+      <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
 }
@@ -166,5 +185,29 @@ describe("SidebarPinsPanel", () => {
     (await screen.findByTestId("view-delete-v_a")).click();
     await screen.findByTestId("delete-view-dialog");
     expect(screen.queryByTestId("delete-view-pin-warning")).toBeNull();
+  });
+});
+
+/**
+ * Task 1 (A244): the two sidebar-config sections were a confusable pair.
+ * The panel is retitled "Pinned views" and cross-links to the sibling
+ * "Sidebar groups" section.
+ */
+describe("SidebarPinsPanel clarity (A244)", () => {
+  it("titles the panel 'Pinned views', not 'Sidebar pins'", async () => {
+    // @verifies A244 — the relabel. Red-proof: the old title must be gone,
+    // so reverting the <h1> back to "Sidebar pins" fails this.
+    renderPanel();
+    expect(await screen.findByRole("heading", { name: "Pinned views" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Sidebar pins" })).toBeNull();
+  });
+
+  it("cross-links to the Sidebar groups section", async () => {
+    // @verifies A244 — the cross-link. Red-proof: deleting the <Link>, or
+    // pointing it at the wrong section, fails the href assertion.
+    renderPanel();
+    const link = await screen.findByTestId("sidebar-pins-see-groups");
+    expect(link.textContent).toMatch(/Sidebar groups/);
+    expect(link.getAttribute("href")).toContain("/settings/sidebar-groups");
   });
 });

@@ -73,7 +73,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   // Personal — per-user preferences.
   { id: "preferences", label: "My preferences", group: "Personal", built: true },
   { id: "card-layout", label: "Card layout", group: "Personal", built: true },
-  { id: "sidebar-pins", label: "Sidebar pins", group: "Personal", built: true },
+  // "Sidebar pins" → "Pinned views" (A244): the two sidebar-config
+  // sections were a confusable pair. This one pins *saved views*; the
+  // other reorders/hides the *built-in groups*. The label now says which.
+  // The section id is unchanged, so /settings/sidebar-pins stays stable.
+  { id: "sidebar-pins", label: "Pinned views", group: "Personal", built: true },
   { id: "sidebar-groups", label: "Sidebar groups", group: "Personal", built: true },
   { id: "keyboard", label: "Keyboard", group: "Personal", built: true },
 

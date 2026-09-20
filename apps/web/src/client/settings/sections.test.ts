@@ -60,6 +60,20 @@ describe("settings sections IA (SET-2, A64)", () => {
     ]);
   });
 
+  it("labels the sidebar-config sections so the pair is not confusable (A244)", () => {
+    // @verifies A244 — the relabel. The two sidebar-config sections were a
+    // confusable pair; "Sidebar pins" is now "Pinned views" (it pins saved
+    // views), while "Sidebar groups" keeps its name (it reorders/hides the
+    // built-in groups). The section *ids* stay put so the URLs are stable.
+    const pins = findSection("sidebar-pins");
+    expect(pins?.label).toBe("Pinned views");
+    // Red-proof: the old label must be gone from the whole section list, so
+    // reverting the relabel fails here.
+    expect(SETTINGS_SECTIONS.map(s => s.label)).not.toContain("Sidebar pins");
+    // The groups section is unchanged and still present.
+    expect(findSection("sidebar-groups")?.label).toBe("Sidebar groups");
+  });
+
   it("puts Diagnostics in System and last of all sections", () => {
     const diagnostics = findSection("diagnostics");
     expect(diagnostics?.group).toBe("System");

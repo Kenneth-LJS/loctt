@@ -26,6 +26,7 @@ import { ProjectEditDialog } from "../settings/ProjectEditDialog.tsx";
 import { RowActions } from "../settings/RowActions.tsx";
 import { DEFAULT_SECTION } from "../settings/sections.ts";
 import { readSidebarGroups, resolveSidebarOrder } from "../settings/sidebarGroups.ts";
+import { SidebarGroupsPanel } from "../settings/SidebarGroupsPanel.tsx";
 import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
@@ -34,6 +35,7 @@ import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { ICON } from "../ui/icons.ts";
 import { useInertBackground } from "../ui/Modal.tsx";
+import { Sheet } from "../ui/Sheet.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import { requestSidebarCollapse } from "./useSidebarCollapse.ts";
@@ -157,7 +159,7 @@ export function Sidebar({
           today={today}
         />
       </div>
-      <Footer collapsed={collapsed} />
+      <Footer collapsed={collapsed} overlay={overlay} />
     </>
   );
 
@@ -1790,15 +1792,81 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function Footer({ collapsed }: { collapsed: boolean }) {
+/**
+ * The pinned footer: a "Customize sidebar" affordance and the Settings
+ * link (SHL-11).
+ *
+ * ## Customize sidebar (K100 point-of-use, A244)
+ *
+ * The sidebar's own layout config (which built-in groups show, their
+ * order, hidden built-in filters) lived only in Settings → Sidebar
+ * groups. K100 wants config editable *from where it is used*, in-place
+ * where a shared editor exists. `SidebarGroupsPanel` is exactly that: a
+ * self-contained editor owning its own `useUserSettings` read and
+ * `useUserSettingsMutation` write. So this is the K100 **in-place** tier,
+ * not a deep link — the gear opens the SAME `SidebarGroupsPanel` the
+ * Settings section renders, inside a `Sheet`. No second source of truth:
+ * an edit made here writes the same `sidebar_groups` user setting through
+ * the same mutation. The panel still carries its own note pointing at
+ * Settings, and the Settings link below keeps the full surface reachable.
+ *
+ * Kept out of the way on a narrow/overlay viewport (`overlay`): the
+ * sidebar is a temporary drawer there, and a nested config sheet over a
+ * drawer is fiddly on a phone — the setting stays reachable from Settings.
+ */
+function Footer({ collapsed, overlay }: { collapsed: boolean; overlay: boolean }) {
+  const [customizing, setCustomizing] = useState(false);
   return (
     <div className="flex shrink-0 flex-col gap-1 border-t border-border-subtle pt-2">
+      {!overlay ? (
+        <>
+          {collapsed ? (
+            // Collapsed rail: icon-only, centred to match the other rail
+            // rows. Still a real, focusable button (keyboard-reachable).
+            <IconButton
+              aria-label="Customize sidebar"
+              testId="sidebar-customize"
+              onClick={() => { setCustomizing(true); }}
+              className="mx-auto"
+            >
+              <Icon name="settings" />
+            </IconButton>
+          ) : (
+            <button
+              type="button"
+              data-testid="sidebar-customize"
+              onClick={() => { setCustomizing(true); }}
+              title="Customize sidebar"
+              className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left text-[0.9286rem] font-medium text-text-secondary hover:bg-bg-muted hover:text-text-primary"
+            >
+              <span className="flex w-4 shrink-0 justify-center">
+                <Icon name="settings" size={16} />
+              </span>
+              <span>Customize sidebar…</span>
+            </button>
+          )}
+        </>
+      ) : null}
+
       <Link to="/settings/$section" params={{ section: DEFAULT_SECTION }} title="Settings" className="no-underline">
         <ItemShell collapsed={collapsed} title="Settings">
           <SettingsIcon />
           {!collapsed ? <span>Settings</span> : null}
         </ItemShell>
       </Link>
+
+      {customizing ? (
+        // K100 in-place: the exact Settings component, in a sheet. `embedded`
+        // only suppresses the panel's own <h1> (the Sheet supplies the
+        // title) — the editor, its mutation and its validation are the same.
+        <Sheet
+          title="Customize sidebar"
+          testId="sidebar-customize-sheet"
+          onClose={() => { setCustomizing(false); }}
+        >
+          <SidebarGroupsPanel embedded />
+        </Sheet>
+      ) : null}
     </div>
   );
 }

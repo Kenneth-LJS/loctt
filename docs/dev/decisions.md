@@ -15953,3 +15953,68 @@ call, the `fieldLabel` import, and the `onSuccess`/`announce` lines in
 tracked-not-satisfied comment, delete the A11Y-24 spec test, and re-open the
 A11Y-9 "remaining dependency (A11Y-24)" note in known-gaps.md and the
 flow-accessibility.md coverage notes.
+
+### A244 · Sidebar-config clarity (Pins vs Groups) + inline "Customize sidebar" (K100 in-place)
+
+**Ticket:** Sidebar UX polish (Ken-approved, two moves) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** implements K100 (point-of-use config)
+
+**The situation.** Two flaws in the per-user sidebar config (which Ken keeps
+per-user, no global layer):
+
+1. *Confusable pair.* "Sidebar pins" (pins saved views) and "Sidebar groups"
+   (reorders/hides the built-in groups + filters) both edit the sidebar,
+   neither cross-referenced the other, and the names did not make the
+   distinction obvious.
+2. *Buried.* The config was reachable only deep in Settings, against K100's
+   point-of-use direction.
+
+**What was decided (recorded, revertible).**
+
+1. *Relabel, ids unchanged.* `Settings → Sidebar pins` → **"Pinned views"**
+   (it pins saved views). "Sidebar groups" keeps its name (it controls which
+   built-in groups show and their order). The section **ids** are unchanged
+   (`sidebar-pins`, `sidebar-groups`), so `/settings/<id>` URLs stay stable.
+   Both panel descriptions were sharpened to say which one to use.
+
+2. *Cross-link.* Each panel now carries a one-line deep link to the other
+   (`Pinned views` → "See Sidebar groups", and vice versa), so a user who
+   opened the wrong one is pointed at the right one instead of guessing.
+
+3. *Inline config — K100 IN-PLACE tier (not deep-link).* A "Customize
+   sidebar" affordance in the sidebar **footer** (gear icon; icon-only on the
+   collapsed rail, a real focusable `<button>` either way) opens the **exact
+   same `SidebarGroupsPanel` the Settings section renders**, inside a `Sheet`.
+   This is the K100 in-place tier and *not* a fork: `SidebarGroupsPanel` is a
+   self-contained editor that already owns its `useUserSettings` read and its
+   `useUserSettingsMutation` write, so reuse is one import — exactly the
+   "reward for extraction" K100 requires. An edit made inline writes the same
+   `sidebar_groups` user setting through the same PUT; there is no second
+   source of truth. The panel gained an `embedded` prop that only suppresses
+   its own `<h1>` (the Sheet supplies the title) — the editor, mutation and
+   validation are untouched. The footer's Settings link stays as the full-
+   surface fallback.
+
+   *Why in-place, not deep-link:* K100 prefers in-place "where feasible via
+   the SAME component the Settings panel renders; else deep-link." Here the
+   panel already qualifies (no logic fork, no refactor), so the deep-link
+   fallback tier does not apply. (Contrast A214, where Labels/Milestones/
+   Projects were deep-linked because their editors were not yet extracted.)
+
+4. *Kept out of the way on narrow/overlay.* On a narrow viewport the sidebar
+   is a temporary overlay drawer; a nested config sheet over it is fiddly on a
+   phone, so the affordance is withheld there (`!overlay`). The setting stays
+   reachable from Settings.
+
+**Tests (red-proven).** `sections.test.ts` (relabel + old label gone);
+`SidebarGroupsPanel.test.tsx` (cross-link href; `embedded` drops the `<h1>`);
+`SidebarPinsPanel.test.tsx` (retitled "Pinned views"; cross-link href — both
+panel test files now render inside a memory router for the `<Link>`);
+`Sidebar.test.tsx` (footer affordance present + keyboard-reachable `<button>` +
+outside the scroll region; opens the shared `SidebarGroupsPanel` — the "not a
+fork" proof; writes `sidebar_groups` through PUT /api/user-settings; hidden on
+narrow/overlay). Each new assertion was shown red by breaking the behaviour.
+
+**To revert.** Remove the footer "Customize sidebar" affordance + Sheet and
+the `embedded` prop from `SidebarGroupsPanel`; drop the two cross-link `<p>`s;
+revert the `sidebar-pins` label to "Sidebar pins" (ids never changed, so no
+URL/route churn). The panels and their mutation are otherwise untouched.
