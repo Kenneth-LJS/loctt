@@ -484,11 +484,32 @@ implying it governs the other two surfaces. See decision A56.
 
 Located at `.loctt/config/queries.yaml`. Defines saved query views. `id` is the stable reference; `name` is just a display label and can be renamed without breaking pinning. Each query string is parsed through the DSL at load time. A single entry whose `query` does not parse degrades to a `broken` marker (kept out of `queries`, surfaced by `doctor`) rather than failing the whole file — only object-fatal problems (a whole-file YAML error, a missing `queries` array, a missing `id`/`name`/`query`, or a duplicate `id`) reject the config.
 
+A view's filter is stored twice: as a structured `conditions` tree (the
+source of truth) and as a `query` string. The `query` is **derived** from
+`conditions` on every write by a spacing-only serializer — it is never a
+rewrite of the user's form, only a spacing-normalized regeneration, so
+`status=a` is stored as `status = a`. All three surfaces (web builder,
+CLI `--query`, MCP `query`) produce this same pair: the web sends
+`conditions` and core derives the string; the CLI/MCP send the DSL and
+core parses it into `conditions`, rejecting unparseable DSL on write.
+
 ```yaml
 queries:
   - id: 01HV3JQX5R7Y8Z2N4M6P8K0T1A
     name: recent-open
     query: archived != true and status != done
+    conditions:
+      kind: group
+      op: and
+      children:
+        - kind: leaf
+          field: archived
+          op: "!="
+          value: { type: boolean, value: true }
+        - kind: leaf
+          field: status
+          op: "!="
+          value: { type: string, value: done }
     sort:
       - field: updated_at
         direction: desc
@@ -514,7 +535,8 @@ queries:
 |---|---|---|---|
 | `id` | string | yes | Stable unique identifier (ULID). Duplicate ids across queries are rejected |
 | `name` | string | yes | Display label |
-| `query` | string | yes | Query DSL string. The parser tokenizes and parses every `query` at load time; an entry that fails to parse degrades to a `broken` marker rather than rejecting the whole file. See [query-language.md](../user/common/query-language.md) |
+| `query` | string | yes | Query DSL string. **Derived** from `conditions` by a spacing-only serializer — spacing-normalized, never a rewrite of the user's form; never independently trusted. Kept required so hand-reading the file and older readers still work. The parser tokenizes and parses every `query` at load time; an entry that fails to parse degrades to a `broken` marker rather than rejecting the whole file. See [query-language.md](../user/common/query-language.md) |
+| `conditions` | object | yes | Structured filter tree — the source of truth the `query` string is derived from. A recursive `BuilderTree`: `group` (`op: and\|or`, `children`), `not` (`child`), `has_link` (`linkKind?`, `target?`), or `leaf` (`field`, `op`, `value`, optional `link_count` `call`). Totally covers the DSL grammar, so a view's stored form is lossless |
 | `sort` | array | no | Ordered list of sort specifiers |
 | `archived` | boolean | no | Hide from default lists. Still runnable by id |
 

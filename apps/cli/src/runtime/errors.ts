@@ -34,6 +34,7 @@ import {
   StaleBodyWriteError,
   TaskNotFoundError,
   UserError,
+  ViewError,
 } from "@loctt/core";
 
 /**
@@ -100,6 +101,14 @@ export const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error>
   StaleBodyWriteError,
   TaskNotFoundError,
   UserError,
+  // A view write rejected for a bad query, an ambiguous ref, or an
+  // unknown view is a rejection the user can act on (fix the DSL, use the
+  // id), not a crash. It does NOT extend LocttError, so — unlike
+  // RelationshipError below — it must be listed explicitly. Without it,
+  // `views create --query "status = ("` bubbles to main()'s catch; the
+  // message is the same, but runCommand is where every other view error
+  // (and every sibling command's domain error) is already handled.
+  ViewError,
   // RelationshipError is NOT listed, and does not need to be: it
   // extends LocttError, which is, so the instanceof check above
   // already catches it. Measured — `link T-1 blocks T-1` and a link to
