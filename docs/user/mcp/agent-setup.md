@@ -153,9 +153,7 @@ This project uses LocTT for task tracking. Tasks are managed via MCP tools — n
 
 Most MCP clients (Claude Code, Cursor, etc.) let you pre-approve specific tool calls so the agent doesn't prompt every time. Most LocTT tools are safe to allowlist — they only read and write inside `.loctt/`.
 
-**Do not auto-approve `attach_file`.** It takes an absolute filesystem path and copies that file into the task's `attachments/` directory. The MCP server runs with your user's permissions, so any path you can read, the agent can attach — including secrets like `~/.ssh/id_rsa`, `~/.aws/credentials`, browser cookie stores, or `.env` files in other projects. Once copied into `.loctt/`, those contents may be committed, pushed, or synced to other machines.
-
-Treat `attach_file` like a file-upload dialog: review every call before approving it, and check that `source_path` points where you expect. `detach_file` is safe to allowlist — it can only remove files already inside the task's attachments directory.
+**Review `attach_file` before approving it.** It copies a file into the task's `attachments/` directory. `source_path` is confined to inside the tracker root — a path outside it (`~/.ssh/id_rsa`, `~/.aws/credentials`, a `.env` in another project) is refused, so the agent cannot reach out and attach arbitrary files on the machine. The residual risk is a sensitive file *staged inside the tracker*: once attached, its contents live in `.loctt/` and may be committed, pushed, or synced. So check that `source_path` points where you expect, and don't stage secrets inside the tracker. `detach_file` is safe to allowlist — it can only remove files already inside the task's attachments directory.
 
 ## Notes
 

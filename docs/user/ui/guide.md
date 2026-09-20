@@ -44,10 +44,10 @@ Groups:
   current filters across.
 - **Projects** — "All projects" plus a row per project (the default is
   marked). A search box appears when you have many.
-- **Saved filters** — built-in filters with live counts (Overdue, High
-  priority, Assigned to me, Mentions me), then your saved views, then any
-  view whose query no longer parses (marked, still openable). "+ New
-  filter…" opens the view builder.
+- **Saved filters** — built-in filters with live counts (Assigned to me,
+  Reported by me, Mentions me, Due this week, Overdue, High priority), then
+  your saved views, then any view whose query no longer parses (marked,
+  still openable). "+ New filter…" opens the view builder.
 - **Milestones**, **Sprints**, **Labels** — rows that filter the List to
   one milestone, sprint, or label.
 - **Recently viewed** — the tasks you opened most recently.
@@ -137,6 +137,15 @@ A schedule view of dated tasks, again on the same filters.
 <!-- [screenshot: the Timeline with grouped bands, dependency arrows, and the today marker] -->
 <!-- [screenshot: the unscheduled drawer expanded] -->
 
+### Sprints and milestones
+
+The **Sprints** and **Milestones** sidebar rows open their own overview
+pages. The sprints overview lists your sprints; opening one shows its
+tasks and a **burndown** chart. The milestones overview shows each
+milestone's progress toward its target date. Both pages use the same
+filter bar as the List, and their sidebar rows also filter the List to a
+single sprint or milestone.
+
 ## Task detail
 
 Opening a task shows everything about it on one page.
@@ -172,17 +181,18 @@ your project and type, for entering several in a row.
 ## Settings
 
 Settings is a grouped set of panels, reached from the sidebar footer or the
-user menu. The groups:
+user menu. A bare `/settings` opens Projects. The groups:
 
-- **Workspace** — Projects, Users.
-- **Workflow** — Statuses, Priorities, Task types, Relationships, Custom
-  fields, Estimation.
-- **Data** — Labels, Milestones, Sprints, Saved views.
-- **Tracker** — Calendar (timezone, working days, holidays), Board columns
-  (and WIP limits), Timeline defaults, Sync (git-backed mode), Backup &
-  restore, Diagnostics.
+- **Content** — the things you make: Projects, Saved views, Labels,
+  Milestones, Sprints.
+- **Workflow** — how tasks are shaped and shown: Statuses, Priorities,
+  Task types, Custom fields, Relationships, Estimation, Board columns (and
+  WIP limits), Timeline defaults, Calendar (timezone, working days,
+  holidays).
 - **Personal** — My preferences (theme, default project), Card layout,
   Sidebar pins, Sidebar groups, Keyboard.
+- **System** — Users, Sync (git-backed mode), Backup & restore,
+  Diagnostics.
 
 Most concepts are also reachable from where you use them: a sidebar row's
 kebab, a board column's menu, or an error banner will deep-link to the exact
