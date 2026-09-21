@@ -1,4 +1,7 @@
 import type { ArchivedScope, WorkflowConfig } from "@loctt/contracts";
+// Per-file subpath, NOT the barrel: the barrel drags node:path into the
+// browser bundle (A37).
+import { filtersToSummary } from "@loctt/core/query/filters.js";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -13,6 +16,7 @@ import {
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import type { ListSearch } from "../router/listSearch.ts";
+import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -25,6 +29,7 @@ import { Sheet } from "../ui/Sheet.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { AdvancedQuerySurface } from "./AdvancedQuerySurface.tsx";
 import { ExportMenu } from "./ExportMenu.tsx";
+import { buildFacetOptions, type FacetOptions } from "./facetOptions.ts";
 import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
 import { SaveViewDialog } from "./SaveViewDialog.tsx";
 import {
@@ -66,6 +71,11 @@ import {
  * back/forward and bookmarking work for free. Changing any filter resets
  * `page`.
  */
+
+// `FacetOptions` moved to `./facetOptions.ts` (K102) so the saved-view
+// dialog can offer the same options; re-exported here because the bar is
+// still where callers reach for it.
+export type { FacetOptions } from "./facetOptions.ts";
 
 /** Filter facets backed by a fixed URL param + a data source. */
 export type FacetKey =
@@ -179,6 +189,10 @@ export function FilterBar({
   const settingsMutation = useUserSettingsMutation();
 
   const [saveOpen, setSaveOpen] = useState(false);
+  // K102: the active-view chip's Edit opens the shared view form dialog
+  // seeded from the view's stored filters (it used to flatten the view
+  // into `q=` and open the raw DSL editor — see `editActiveView`).
+  const [editingView, setEditingView] = useState(false);
   // Below sm the facet band collapses into a single "Filters" button that
   // opens a bottom sheet (responsive plan GROUP B) — 9+ facet pills wrapping
   // into a column ate most of the screen before any task showed.
@@ -262,6 +276,7 @@ export function FilterBar({
       setAddSheetOpen(false);
       setFilterSheetOpen(false);
       setSaveOpen(false);
+      setEditingView(false);
     }
   }, [openEditorRequested, viewSig, filterSig, query, navigate]);
 
@@ -462,20 +477,23 @@ export function FilterBar({
     ? undefined
     : (views.data?.queries ?? []).find(v => v.id === activeViewId);
   const hasActiveView = activeView !== undefined;
-  // The view's query can be long; preview truncates to the same ~32-char
-  // budget as the q= chip, and the full text is on the chip's title/aria.
-  const viewQuery = activeView?.query ?? "";
-  const viewQueryPreview = viewQuery.length > 32 ? `${viewQuery.slice(0, 31)}…` : viewQuery;
+  // What the view matches, for the chip. K102: a view stores an ORDERED
+  // filter list and no derived query string, so this is the shared
+  // display-only summary — computed here, never persisted, never parsed
+  // back. The preview truncates to the same ~32-char budget as the q=
+  // chip, with the full text on the chip's title.
+  const viewSummary = activeView === undefined ? "" : filtersToSummary(activeView.filters);
+  const viewSummaryPreview =
+    viewSummary.length > 32 ? `${viewSummary.slice(0, 31)}…` : viewSummary;
 
-  // Editing a saved view converts it into an editable q= query and opens
-  // the advanced editor pre-populated — the exact mechanism ListView's
-  // broken-view "Fix this view in the editor" button uses (VUE-22), so the
-  // valid and broken paths land in the same place.
-  const editActiveView = (): void => {
-    void navigate({
-      search: prev => ({ ...prev, view: undefined, q: viewQuery, edit: true }),
-    });
-  };
+  // Editing a saved view opens the SAME view form dialog Settings and the
+  // sidebar use, seeded from the view's stored filters.
+  //
+  // It used to flatten the view into `q=<its query>` and open the raw DSL
+  // editor. K102 removed the thing that made that possible — a view has no
+  // single query string any more — and it was the behaviour Ken struck
+  // out: a view built from dropdowns must reopen as dropdowns, not as DSL.
+  const editActiveView = (): void => { setEditingView(true); };
 
   // Clearing the active view returns to all tasks, mirroring `clearQuery`.
   const clearActiveView = (): void => {
@@ -808,8 +826,8 @@ export function FilterBar({
             // The active saved view as a removable chip, styled like the
             // q= query chip (LST-53) — accent-muted, NOT font-mono (K98:
             // mono is code/CLI only). Its label is a BUTTON that opens the
-            // advanced editor pre-loaded with the view's resolved query, so
-            // a view is editable from where it's shown; the full query is
+            // view form dialog seeded from the view's stored filters, so
+            // a view is editable from where it's shown; the full summary is
             // on the title so the truncated preview can be read on hover.
             <span
               data-testid="active-view-chip"
@@ -818,15 +836,15 @@ export function FilterBar({
               <button
                 type="button"
                 data-testid="active-view-chip-edit"
-                title={`Edit view "${activeView.name}": ${viewQuery}`}
+                title={`Edit view "${activeView.name}": ${viewSummary}`}
                 aria-label={`Edit view ${activeView.name}`}
                 onClick={editActiveView}
                 className="inline-flex cursor-pointer items-center gap-1 hover:underline"
               >
                 <span className="text-accent/70">View:</span>
                 <span>{activeView.name}</span>
-                {viewQuery !== "" ? (
-                  <span className="max-w-[24ch] truncate text-accent/70">{viewQueryPreview}</span>
+                {viewSummary !== "" ? (
+                  <span className="max-w-[24ch] truncate text-accent/70">{viewSummaryPreview}</span>
                 ) : null}
               </button>
               <button
@@ -934,6 +952,9 @@ export function FilterBar({
       ) : null}
 
       {saveOpen ? <SaveViewDialog search={search} onClose={() => setSaveOpen(false)} /> : null}
+      {editingView && activeView !== undefined ? (
+        <ViewFormDialog existing={activeView} onClose={() => { setEditingView(false); }} />
+      ) : null}
     </div>
   );
 }
@@ -1058,73 +1079,6 @@ export function clearedSearch<T extends Record<string, unknown>>(prev: T): T {
 const FACET_KEYS: readonly FacetKey[] = [
   "project", "status", "priority", "type", "assignee", "reporter", "labels", "milestone", "sprint",
 ];
-
-export interface FacetOptions {
-  project: FilterOption[];
-  status: FilterOption[];
-  priority: FilterOption[];
-  type: FilterOption[];
-  assignee: FilterOption[];
-  reporter: FilterOption[];
-  labels: FilterOption[];
-  milestone: FilterOption[];
-  sprint: FilterOption[];
-}
-
-interface NamedEntity {
-  readonly id: string;
-  readonly name: string;
-  readonly archived?: boolean | undefined;
-}
-
-/**
- * Like {@link NamedEntity} but `name` may be `undefined` (O5 — a corrupt
- * or absent profile name is field-local; the user still loads). Only the
- * user facet degrades this way, so it is a separate shape rather than
- * loosening every entity's `name`.
- */
-interface NamedUser {
-  readonly id: string;
-  readonly name?: string | undefined;
-  readonly archived?: boolean | undefined;
-}
-
-function buildFacetOptions(input: {
-  projects: readonly NamedEntity[];
-  users: readonly NamedUser[];
-  labels: readonly NamedEntity[];
-  milestones: readonly NamedEntity[];
-  sprints: readonly NamedEntity[];
-  workflow: WorkflowConfig | undefined;
-}): FacetOptions {
-  const live = <T extends { archived?: boolean | undefined }>(xs: readonly T[]): readonly T[] =>
-    xs.filter(x => x.archived !== true);
-  const userOpts: FilterOption[] = input.users.map(u => {
-    // O5: a nameless profile degrades to its id so the facet option is
-    // never blank.
-    const name = u.name ?? u.id;
-    return {
-      value: u.id,
-      label: u.archived ? `${name} (archived)` : name,
-    };
-  });
-  return {
-    project: live(input.projects).map(p => ({ value: p.id, label: p.name })),
-    status: (input.workflow?.statuses ?? []).map(s => ({ value: s.key, label: s.label })),
-    priority: (input.workflow?.priorities ?? []).map(p => ({ value: p.key, label: p.label })),
-    type: (input.workflow?.task_types ?? []).map(t => ({ value: t.key, label: t.label })),
-    // Assignee and reporter share one option set built from the known
-    // users — archived ones included (greyed) so historical filters
-    // still work. Because the options come from the users list and not
-    // from task values, a dangling ULID (a deleted user, PRU-25) is
-    // never offered on either facet.
-    assignee: userOpts,
-    reporter: userOpts,
-    labels: live(input.labels).map(l => ({ value: l.id, label: l.name })),
-    milestone: live(input.milestones).map(m => ({ value: m.id, label: m.name })),
-    sprint: live(input.sprints).map(s => ({ value: s.id, label: s.name })),
-  };
-}
 
 function readCustomFilters(search: Partial<ListSearch>): Record<string, string[]> {
   const out: Record<string, string[]> = {};

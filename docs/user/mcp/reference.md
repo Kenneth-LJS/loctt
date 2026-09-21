@@ -131,7 +131,7 @@ tools.
 | `get_workflow_config` | The valid statuses, priorities, task types, relationships, and custom fields, each with its key and label. Call before writing any enum field. |
 | `get_workflow_key_usage` | How many tasks reference each workflow key. Call before proposing a deletion from the workflow config. |
 | `get_calendar` | Timezone, working days, and holidays (read-only; configured in the UI). |
-| `list_views` | Saved views (address a view by id — names are not unique). Returns each view's structured `conditions` alongside its `query`. Takes `archived` (`active` default hides archived, `archived` = only archived, `all` = both); broken views are always returned. |
+| `list_views` | Saved views (address a view by id — names are not unique). Returns each view's ordered `filters` plus a display-only `summary`. Takes `archived` (`active` default hides archived, `archived` = only archived, `all` = both); broken views are always returned. |
 
 ### Tasks
 
@@ -199,17 +199,66 @@ starting point is a task, not a link.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `create_view` | Create a saved view (query validated on write). | `name`, `query`, `sort` |
-| `edit_view` | Change a view (`sort: null` clears the sort). | `view`, `name`, `query`, `sort` |
+| `create_view` | Create a saved view (filters validated on write). | `name`, `filters`, `sort`, `archivedScope`, `icon` |
+| `edit_view` | Change a view (`sort: null` clears the sort, `icon: null` clears the icon). | `view`, `name`, `filters`, `sort`, `archivedScope`, `icon` |
 | `archive_view` / `unarchive_view` | Hide or restore a view (still runnable by id when archived). | `view` |
 | `delete_view` | Permanently remove a view. Requires `confirm`. | `view`, `confirm` |
 
-`create_view`/`edit_view` take a DSL `query`; the view stores its
-structured `conditions` derived from it (the source of truth), and the
-returned/listed `query` is regenerated from those conditions — it is
-spacing-normalized, so `status=a` comes back as `status = a`, not a
-verbatim copy of the input. `list_views` returns both `query` and
-`conditions`.
+#### The `filters` array
+
+A view is an **ordered list of filters that all AND together**. The list is
+the sole source of truth for what the view matches: it is stored exactly as
+supplied, never merged into a single DSL string and never reordered. Each
+entry is one of two shapes, discriminated on `kind`:
+
+| Shape | Fields | Use for |
+|---|---|---|
+| `simple` | `kind: "simple"`, `field`, `op`, `values` (array of strings) | Everything you can express as one field/operator/value row. |
+| `advanced` | `kind: "advanced"`, `query` (a DSL fragment) | Only what a simple filter cannot express — parentheses, `or`, mixed boolean nesting. |
+
+**Prefer `simple`.** A view authored over MCP should still reopen as
+editable dropdown rows in the web picker; a `simple` filter carries no
+query text, so it always does, while an `advanced` filter renders as
+opaque DSL.
+
+`op` is one of `=`, `!=`, `<`, `<=`, `>`, `>=`, `~`, `in`, `not in`,
+`is empty`, `is not empty`. Several `values` under `=` mean "is any of";
+under `!=` they mean "is none of". The postfix operators (`is empty`,
+`is not empty`) take no values — pass `[]`.
+
+An advanced filter's DSL is validated on write, so a malformed one is
+rejected rather than poisoning the catalog, and it is **spacing**-normalized:
+`status=a` comes back as `status = a`. Only spacing changes — no operator
+rewriting, no negation flipping, no reordering, no paren removal.
+
+```json
+{
+  "name": "My open bugs",
+  "filters": [
+    { "kind": "simple", "field": "task_type", "op": "=", "values": ["bug"] },
+    { "kind": "simple", "field": "status", "op": "!=", "values": ["done"] },
+    { "kind": "advanced", "query": "(due_date < today or priority = high)" }
+  ],
+  "sort": [{ "field": "priority", "direction": "desc" }]
+}
+```
+
+On `edit_view`, supplying `filters` **replaces the whole ordered list** —
+there is no partial patch, because order is meaningful. To change one row,
+call `list_views`, modify that array, and send it back whole. Omitting
+`filters` leaves the view's filters untouched.
+
+`archivedScope` (`active` / `archived` / `all`) is the view's **own** scope —
+whether it looks at active, archived, or all tasks. It is a property of the
+view, never a filter term, and is unrelated to the `archived` param on
+`list_views`, which scopes the *listing of views*.
+
+`list_views` returns `{id, name, filters, summary, sort?, archivedScope?,
+icon?, archived?}`. `summary` is a human-readable one-line rendering of the
+filters, **for display only** — never parse it, never store it, and never
+send it back as input. Edit a view by passing a new `filters` array. A view
+whose stored filters no longer parse comes back as `{id, name, summary,
+broken: true, error, position?}`.
 
 ### Labels, milestones, sprints
 

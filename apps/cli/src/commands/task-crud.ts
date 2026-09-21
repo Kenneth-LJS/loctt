@@ -12,7 +12,7 @@ import {
   createTask,
   deleteTask,
   duplicateTask,
-  getCurrentUser,
+  filtersToScannableText,  getCurrentUser,
   listTasks,
   loadAllTasksDetailed,
   loadAllUsers,
@@ -42,7 +42,7 @@ import {
 
 import type { HistoryDisplayContext } from "../format/history.js";
 import { formatHistoryEntry } from "../format/history.js";
-import { getArg, getNonNegativeIntArg, hasFlag, parseArchivedScope, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, getNonNegativeIntArg, hasFlag, parseOptionalArchivedScope, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, UsageError } from "../runtime/errors.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
@@ -250,18 +250,21 @@ export async function list(args: string[], root: string): Promise<void> {
   const currentUser = await getCurrentUser(locttDir);
 
   // CMT-10: build the list context, loading comment mentions only when the
-  // effective query (the ad-hoc `--query` or a resolved saved view's
-  // query) actually references `comment_mentions`. A list that doesn't
+  // effective filter set (the ad-hoc `--query` or a resolved saved view's
+  // filters) actually references `comment_mentions`. A list that doesn't
   // filter on mentions pays zero comment I/O — the load-bearing gate.
+  // A view contributes one scannable string per filter (K102).
   const viewQuery = view !== undefined && queriesConfig !== undefined
-    ? resolveView(queriesConfig, view)?.query
-    : undefined;
+    ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+    : [];
   const ctx = await resolveCommentMentionsContext(
     locttDir,
     tasks,
     buildListContext(tasks),
-    [baseQuery, viewQuery],
+    [baseQuery, ...viewQuery],
   );
+
+  const requestedScope = parseOptionalArchivedScope(args);
 
   const result = listTasks({
     tasks,
@@ -271,7 +274,10 @@ export async function list(args: string[], root: string): Promise<void> {
       ...(limit !== undefined ? { limit } : {}),
       ...(sort !== undefined ? { sort } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-      archivedScope: parseArchivedScope(args),
+      // Only when the user actually passed a flag — otherwise a saved
+      // view's own `archivedScope` (K102) would be shadowed by the
+      // default and a view saved as `all` would still hide archived rows.
+      ...(requestedScope !== undefined ? { archivedScope: requestedScope } : {}),
       ...(today !== undefined ? { today } : {}),
       ...(now !== undefined ? { now } : {}),
       ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),

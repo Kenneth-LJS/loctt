@@ -1,11 +1,4 @@
 import type { WorkflowConfig } from "@loctt/contracts";
-// Per-file subpath, NOT the barrel: the barrel drags node:path/sharp into
-// the browser bundle (see dslToSearch.ts's parser.js import note, A37).
-import type { BuilderTree } from "@loctt/core/query/builderTree.js";
-import {
-  builderTreeToQuery,
-  queryToBuilderTree,
-} from "@loctt/core/query/builderTree.js";
 import { useMemo, useState } from "react";
 
 import {
@@ -18,6 +11,12 @@ import {
 import { useValidateQuery } from "../api/hooks/useValidateQuery.ts";
 import { Button } from "../ui/Button.tsx";
 import { AdvancedQueryEditor } from "./AdvancedQueryEditor.tsx";
+// The builder's editing model. It was `@loctt/core/query/builderTree.js`
+// until K102 removed the saved-view storage that shared the type; it is
+// web-client-local now, because this surface edits the URL `q` and was
+// never coupled to how a view is stored. See builderTree.ts's header.
+import type { BuilderTree } from "./builderTree.ts";
+import { builderTreeToQuery, queryToBuilderTree } from "./builderTree.ts";
 import {
   buildBuilderConfig,
   QueryBuilder,

@@ -33,8 +33,16 @@ function routeFetch(path: string): unknown {
   if (path.startsWith("/api/views")) {
     return {
       queries: [
-        { id: "v_recent", name: "recent-open", query: "archived != true and status != done" },
-        { id: "v_blocked", name: "blocked", query: "status = blocked" },
+        {
+          id: "v_recent",
+          name: "recent-open",
+          filters: [{ kind: "simple", field: "status", op: "not in", values: ["done"] }],
+        },
+        {
+          id: "v_blocked",
+          name: "blocked",
+          filters: [{ kind: "simple", field: "status", op: "in", values: ["blocked"] }],
+        },
       ],
     };
   }
@@ -322,10 +330,12 @@ describe("FilterBar", () => {
     const chip = await screen.findByTestId("active-view-chip");
     expect(chip.textContent).toContain("View:");
     expect(chip.textContent).toContain("recent-open");
-    // The underlying query is on the edit button's title (it can be long),
-    // so a truncated preview can be read on hover.
+    // K102: the chip shows what the view MATCHES as the shared
+    // display-only filter summary (a view stores no query string any
+    // more). The full summary is on the edit button's title, so a
+    // truncated preview can be read on hover.
     const edit = screen.getByTestId("active-view-chip-edit");
-    expect(edit.getAttribute("title")).toContain("archived != true and status != done");
+    expect(edit.getAttribute("title")).toContain("status not in done");
     // "Clear all" lights up for an active view too.
     expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy();
   });
@@ -346,19 +356,21 @@ describe("FilterBar", () => {
     expect(screen.queryByTestId("active-view-chip")).toBeNull();
   });
 
-  it("editing the active-view chip opens the advanced editor pre-populated with its query", async () => {
+  it("editing the active-view chip opens the view form dialog, NOT a DSL query", async () => {
     const router = await mountFilterBar("?view=v_recent");
     fireEvent.click(await screen.findByTestId("active-view-chip-edit"));
 
-    // The edit affordance converts the view into an editable q= query
-    // (view dropped, edit requested) — the exact broken-view fix mechanism.
-    await vi.waitFor(() => {
-      const s = search(router);
-      expect(s.view).toBeUndefined();
-      expect(s.q).toBe("archived != true and status != done");
-    });
-    // …and lands in the advanced editor.
-    expect(await screen.findByTestId("advanced-query-surface")).toBeTruthy();
+    // K102: the view opens in the same dropdown-row dialog Settings and the
+    // sidebar use, seeded from its STORED filters. It used to flatten the
+    // view into `q=<its query>` and open the raw DSL editor — the exact
+    // behaviour Ken struck out ("QUERY IS ADVANCED SHIT"). A view built
+    // from dropdowns must reopen as dropdowns.
+    await screen.findByTestId("view-edit-dialog");
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
+    expect(screen.queryByTestId("advanced-query-surface")).toBeNull();
+    // And the URL is untouched: the view is still the active one.
+    expect(search(router).view).toBe("v_recent");
+    expect(search(router).q).toBeUndefined();
   });
 
   it("clearing the active-view chip returns to all tasks", async () => {
@@ -372,9 +384,12 @@ describe("FilterBar", () => {
   // filter/view from the sidebar (a navigation that changes `search.view`)
   // must close it — otherwise it stays open aimed at the wrong filter.
   it("closes the advanced editor when the user switches to a different saved view", async () => {
-    const router = await mountFilterBar("?view=v_recent");
-    // Open the editor from the active-view chip (converts view → editable q).
-    fireEvent.click(await screen.findByTestId("active-view-chip-edit"));
+    const router = await mountFilterBar(
+      `?view=v_recent&q=${encodeURIComponent("title ~ foo")}`,
+    );
+    // Open the DSL editor from the q= chip. (K102: the active-VIEW chip's
+    // Edit now opens the view form dialog, not this editor.)
+    fireEvent.click(await screen.findByTestId("query-chip-edit"));
     expect(await screen.findByTestId("advanced-query-surface")).toBeTruthy();
 
     // The sidebar switches to another saved view: navigate to view B.

@@ -1,16 +1,24 @@
 // @vitest-environment jsdom
-import type { BuilderTree, SavedQuery } from "@loctt/contracts";
+import type { Filter } from "@loctt/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ViewFormDialog } from "./ViewFormDialog.tsx";
+import { ViewFormDialog, type ViewFormTarget } from "./ViewFormDialog.tsx";
 
 /**
- * ViewFormDialog is now builder-first (Ken's ruling, Stage 2): "New
- * filter" opens the VISUAL QueryBuilder, NOT a raw DSL box, and saves
- * structured `conditions`. These pin exactly that.
+ * K102. A saved view stores an ORDERED list of filters, each carrying its
+ * own `kind`, and the dialog renders each one BY THAT STORED KIND:
+ *
+ *  - `{kind:"simple"}` → a DROPDOWN ROW (field / operator / value), always.
+ *  - `{kind:"advanced"}` → query text.
+ *
+ * Ken's complaint is the reason these exist: *"there's this fucking
+ * obsession with the QUERY... the dumb filters will go back to rendering
+ * with the dumb filters in the UI"*, and *"i dont want things to swap
+ * positions or whatever."* So the guards below are: kind decides the
+ * rendering, order is preserved, and editing never reorders.
  */
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -22,18 +30,28 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 let fetchMock: ReturnType<typeof vi.fn<(...args: never[]) => Promise<Response>>>;
 
+const WORKFLOW = {
+  statuses: [
+    { key: "backlog", label: "Backlog" },
+    { key: "in_progress", label: "In progress" },
+  ],
+  priorities: [{ key: "high", label: "High" }],
+  task_types: [{ key: "bug", label: "Bug" }],
+  custom_fields: [],
+};
+
 beforeEach(() => {
   fetchMock = vi.fn<(...args: never[]) => Promise<Response>>();
   fetchMock.mockImplementation((url, init) => {
     const u = String(url);
     if (u.includes("/api/query/validate")) return Promise.resolve(jsonResponse({ valid: true }));
     if (u.endsWith("/api/views") && (init as RequestInit | undefined)?.method === "POST") {
-      return Promise.resolve(jsonResponse({ id: "vNew", name: "n", query: "q" }, 201));
+      return Promise.resolve(jsonResponse({ id: "vNew", name: "n", filters: [] }, 201));
     }
     if (u.includes("/api/views/") && (init as RequestInit | undefined)?.method === "PUT") {
-      return Promise.resolve(jsonResponse({ id: "v1", name: "n", query: "q" }));
+      return Promise.resolve(jsonResponse({ id: "v1", name: "n", filters: [] }));
     }
-    if (u.includes("/api/workflow")) return Promise.resolve(jsonResponse({ workflow: {} }));
+    if (u.includes("/api/workflow")) return Promise.resolve(jsonResponse({ workflow: WORKFLOW }));
     // Entity pickers (projects/users/labels/milestones/sprints) — empty.
     return Promise.resolve(jsonResponse({ items: [] }));
   });
@@ -69,182 +87,276 @@ function writeCalls(method: string) {
     .map(c => ({ url: String(c[0]), body: parseBody(c[1] as RequestInit | undefined) }));
 }
 
-/** Fill a freshly-added leaf as `title = something` (a text-kind leaf). */
-function fillTitleLeaf(value: string): void {
-  fireEvent.change(screen.getByTestId("qb-field"), { target: { value: "title" } });
-  fireEvent.change(screen.getByTestId("qb-op"), { target: { value: "=" } });
-  fireEvent.change(screen.getByTestId("qb-value"), { target: { value } });
+function target(filters: Filter[]): ViewFormTarget {
+  return { id: "v1", name: "Existing", filters };
 }
 
-describe("ViewFormDialog — builder-first (Stage 2)", () => {
-  it("renders the VISUAL builder by default in create mode, not a bare DSL textarea", async () => {
-    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
+/** The rendered rows, in DOM order. */
+function rows(): HTMLElement[] {
+  return screen.queryAllByTestId("view-filter-row");
+}
 
-    // The visual builder is present…
-    await screen.findByTestId("query-builder");
-    // …and the raw DSL editor is NOT the default surface. Red-proof: with
-    // the old AdvancedQueryEditor-only dialog this element WAS present, so
-    // this assertion goes red if the dialog reverts to text-first.
-    expect(screen.queryByTestId("advanced-query-editor")).toBeNull();
-    expect(screen.queryByTestId("dsl-input")).toBeNull();
+describe("ViewFormDialog — simple filters render as dropdown rows (K102)", () => {
+  it("renders a stored {kind:'simple'} filter as a DROPDOWN ROW, not as query text", async () => {
+    render(
+      <ViewFormDialog
+        existing={target([{ kind: "simple", field: "status", op: "in", values: ["backlog"] }])}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
+
+    await screen.findByTestId("view-filter-field-0");
+
+    // THE load-bearing assertion (Ken's complaint): the row is three
+    // pickers. The field select holds the stored field, the operator
+    // select the stored operator.
+    const field = screen.getByTestId<HTMLSelectElement>("view-filter-field-0");
+    expect(field.tagName).toBe("SELECT");
+    expect(field.value).toBe("status");
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-op-0").value).toBe("in");
+
+    // The row is marked simple, and NO query textarea exists for it.
+    expect(rows()[0]?.getAttribute("data-row-kind")).toBe("simple");
+    expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
+
+    // The value picker is the SAME FilterDropdown the top filter bar
+    // renders — labelled by the field, with the selection count.
+    expect(screen.getByRole("button", { name: "Filter Status" })).toBeTruthy();
   });
 
-  it("reveals the raw DSL editor when Advanced is toggled, and back again", async () => {
-    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
-    await screen.findByTestId("query-builder");
+  it("renders a stored {kind:'advanced'} filter as query TEXT", async () => {
+    render(
+      <ViewFormDialog
+        existing={target([{ kind: "advanced", query: 'has_link("is_blocked_by")' }])}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
 
-    fireEvent.click(screen.getByTestId("view-switch-to-advanced"));
-    await screen.findByTestId("advanced-query-editor");
+    const box = await screen.findByTestId<HTMLTextAreaElement>("view-filter-query-0");
+    expect(box.value).toBe('has_link("is_blocked_by")');
+    expect(rows()[0]?.getAttribute("data-row-kind")).toBe("advanced");
+    // And it is NOT decomposed into pickers.
+    expect(screen.queryByTestId("view-filter-field-0")).toBeNull();
+  });
+
+  it("never renders a merged DSL preview of the whole view", async () => {
+    render(
+      <ViewFormDialog
+        existing={target([
+          { kind: "simple", field: "status", op: "in", values: ["backlog"] },
+          { kind: "advanced", query: "priority = high" },
+        ])}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
+    await screen.findByTestId("view-filter-field-0");
+
+    // The old dialog rendered a live "Query …" string for the whole view.
+    // K102 removed the concept: there is no single query for a view.
+    expect(screen.queryByTestId("view-qb-validation")).toBeNull();
     expect(screen.queryByTestId("query-builder")).toBeNull();
+    expect(document.body.textContent).not.toContain("status IN");
+  });
+});
 
-    // The toggle is round-trip: an empty query is renderable, so "Switch
-    // to visual" returns to the builder.
-    fireEvent.click(screen.getByTestId("view-switch-to-builder"));
-    await screen.findByTestId("query-builder");
+describe("ViewFormDialog — order (Ken: 'i dont want things to swap positions')", () => {
+  const THREE: Filter[] = [
+    { kind: "simple", field: "status", op: "in", values: ["backlog"] },
+    { kind: "advanced", query: "priority = high" },
+    { kind: "simple", field: "task_type", op: "in", values: ["bug"] },
+  ];
+
+  it("renders [simple, advanced, simple] in exactly that order", async () => {
+    render(<ViewFormDialog existing={target(THREE)} onClose={() => {}} />, { wrapper: wrapper() });
+    await screen.findByTestId("view-filter-field-0");
+
+    expect(rows().map(r => r.getAttribute("data-row-kind"))).toEqual([
+      "simple",
+      "advanced",
+      "simple",
+    ]);
   });
 
-  it("POSTs structured conditions (not a query string) on save", async () => {
-    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
-    await screen.findByTestId("query-builder");
+  it("editing the MIDDLE row does not reorder the list", async () => {
+    render(<ViewFormDialog existing={target(THREE)} onClose={() => {}} />, { wrapper: wrapper() });
+    const box = await screen.findByTestId<HTMLTextAreaElement>("view-filter-query-1");
 
-    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "My open bugs" } });
-    fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fillTitleLeaf("login");
+    fireEvent.change(box, { target: { value: "priority = low" } });
+
+    // Still in the same positions — the edited row stayed at index 1.
+    expect(rows().map(r => r.getAttribute("data-row-kind"))).toEqual([
+      "simple",
+      "advanced",
+      "simple",
+    ]);
+    expect(screen.getByTestId<HTMLTextAreaElement>("view-filter-query-1").value)
+      .toBe("priority = low");
+    // The rows either side are untouched.
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-2").value).toBe("task_type");
+  });
+
+  it("removing row N removes exactly that row, leaving the others in order", async () => {
+    render(<ViewFormDialog existing={target(THREE)} onClose={() => {}} />, { wrapper: wrapper() });
+    await screen.findByTestId("view-filter-field-0");
+
+    // Remove the MIDDLE row.
+    fireEvent.click(screen.getByTestId("view-filter-remove-1"));
+
+    expect(rows().map(r => r.getAttribute("data-row-kind"))).toEqual(["simple", "simple"]);
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-1").value).toBe("task_type");
+    // The advanced row is gone entirely.
+    expect(screen.queryByTestId("view-filter-query-1")).toBeNull();
+  });
+
+  it("saves the filters in the AUTHORED order", async () => {
+    render(<ViewFormDialog existing={target(THREE)} onClose={() => {}} />, { wrapper: wrapper() });
+    await screen.findByTestId("view-filter-field-0");
+
+    fireEvent.click(screen.getByTestId("view-form-save"));
+    await waitFor(() => { expect(writeCalls("PUT").length).toBe(1); });
+
+    const [put] = writeCalls("PUT");
+    expect(put?.body?.filters).toEqual(THREE);
+  });
+});
+
+describe("ViewFormDialog — adding filters", () => {
+  it("starts a CREATE in the simple picker, not in a DSL box", async () => {
+    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
+
+    await screen.findByTestId("view-filter-field-0");
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]?.getAttribute("data-row-kind")).toBe("simple");
+    // The raw DSL editor is NOT the default surface.
+    expect(screen.queryByTestId("advanced-query-editor")).toBeNull();
+    expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
+  });
+
+  it("'+ Add filter' APPENDS a simple row at the end", async () => {
+    render(
+      <ViewFormDialog
+        existing={target([{ kind: "advanced", query: "priority = high" }])}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
+    await screen.findByTestId("view-filter-query-0");
+
+    fireEvent.click(screen.getByTestId("view-add-filter"));
+
+    // Appended — the existing advanced row stays FIRST.
+    expect(rows().map(r => r.getAttribute("data-row-kind"))).toEqual(["advanced", "simple"]);
+    expect(screen.getByTestId<HTMLTextAreaElement>("view-filter-query-0").value)
+      .toBe("priority = high");
+  });
+
+  it("'+ Add advanced query' appends an advanced row and is visually subordinate", async () => {
+    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
+    await screen.findByTestId("view-filter-field-0");
+
+    const addFilter = screen.getByTestId("view-add-filter");
+    const addAdvanced = screen.getByTestId("view-add-advanced");
+    // Opt-in and subordinate: the primary add is the picker. The advanced
+    // action must not be a primary-weight button (K102 — the DSL is not
+    // what the eye should land on).
+    expect(addFilter.className).not.toEqual(addAdvanced.className);
+    expect(addAdvanced.className).not.toContain("bg-accent");
+
+    fireEvent.click(addAdvanced);
+    expect(rows().map(r => r.getAttribute("data-row-kind"))).toEqual(["simple", "advanced"]);
+  });
+});
+
+describe("ViewFormDialog — chrome", () => {
+  it("puts Cancel and Save at the same level, labelled 'Save'", async () => {
+    render(<ViewFormDialog existing={target([])} onClose={() => {}} />, { wrapper: wrapper() });
+    await screen.findByTestId("view-form-save");
+
+    const save = screen.getByTestId("view-form-save");
+    const cancel = screen.getByTestId("view-form-cancel");
+    // Ken: "why is it on a different level from 'Cancel'? And the text
+    // should be 'Save'".
+    expect(save.textContent).toBe("Save");
+    expect(save.parentElement).toBe(cancel.parentElement);
+  });
+
+  it("carries the archived scope as a view PROPERTY, not as a filter row", async () => {
+    render(
+      <ViewFormDialog
+        existing={{ id: "v1", name: "E", filters: [], archivedScope: "all" }}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
+    const control = await screen.findByTestId<HTMLSelectElement>("view-form-archived-scope");
+    // Seeded from the view…
+    expect(control.value).toBe("all");
+    // …and it is NOT one of the removable filter rows: no row carries it,
+    // so it cannot be deleted along with a filter (K107 + K102).
+    for (const r of rows()) expect(r.textContent).not.toContain("Archived");
+    expect(screen.getByTestId("view-form-archived-scope").closest("[data-testid='view-filter-row']"))
+      .toBeNull();
+
+    fireEvent.change(control, { target: { value: "archived" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
-    await waitFor(() => { expect(writeCalls("POST").length).toBe(1); });
-    const [post] = writeCalls("POST");
-    if (post === undefined) throw new Error("no POST call");
-    expect(post.url).toContain("/api/views");
-    // The load-bearing assertion (right layer): the body carries a
-    // structured `conditions` tree, not merely a `query` string.
-    expect(post.body?.name).toBe("My open bugs");
-    expect(post.body?.conditions).toBeDefined();
-    const conditions = post.body?.conditions as BuilderTree;
-    expect(conditions.kind).toBe("group");
-    // and it contains the leaf we authored.
-    const asGroup = conditions as Extract<BuilderTree, { kind: "group" }>;
-    const leaf = asGroup.children.find(
-      (c): c is Extract<BuilderTree, { kind: "leaf" }> => c.kind === "leaf" && c.field === "title",
+    await waitFor(() => { expect(writeCalls("PUT").length).toBe(1); });
+    expect(writeCalls("PUT")[0]?.body?.archivedScope).toBe("archived");
+  });
+
+  it("does not drop a stored icon when the view is edited (K104 field)", async () => {
+    render(
+      <ViewFormDialog
+        existing={{ id: "v1", name: "E", filters: [], icon: "bug" }}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
     );
-    expect(leaf).toBeDefined();
-    expect(leaf?.op).toBe("=");
+    await screen.findByTestId("view-form-save");
+    fireEvent.click(screen.getByTestId("view-form-save"));
+
+    await waitFor(() => { expect(writeCalls("PUT").length).toBe(1); });
+    expect(writeCalls("PUT")[0]?.body?.icon).toBe("bug");
   });
 
-  it("seeds the builder from the existing view's conditions in edit mode", async () => {
-    const existing: Pick<SavedQuery, "id" | "name" | "query" | "conditions"> = {
-      id: "v1",
-      name: "Backlog",
-      query: "status = backlog",
-      conditions: {
-        kind: "leaf",
-        field: "status",
-        op: "=",
-        value: { type: "string", value: "backlog" },
-      },
-    };
-    render(<ViewFormDialog existing={existing} onClose={() => {}} />, { wrapper: wrapper() });
-
-    // Opens the VISUAL builder (renderable conditions), pre-filled from
-    // the stored tree — the field picker shows `status`, not a DSL box.
-    await screen.findByTestId("query-builder");
-    expect(screen.queryByTestId("advanced-query-editor")).toBeNull();
-    await waitFor(() => {
-      expect(screen.getByTestId<HTMLSelectElement>("qb-field").value).toBe("status");
-    });
-  });
-
-  it("opens Advanced with a note when the existing conditions can't be shown in the builder", async () => {
-    // A has_link view (the seeded `blocked` default does this) is not
-    // renderable, so edit falls back to Advanced text with the reason.
-    const existing: Pick<SavedQuery, "id" | "name" | "query" | "conditions"> = {
-      id: "vb",
-      name: "Blocked",
-      query: 'has_link("is_blocked_by")',
-      conditions: { kind: "has_link", linkKind: "is_blocked_by" },
-    };
-    render(<ViewFormDialog existing={existing} onClose={() => {}} />, { wrapper: wrapper() });
-
-    await screen.findByTestId("advanced-query-editor");
-    expect(screen.getByTestId("view-advanced-refuse-note")).toBeTruthy();
-    // The DSL box is seeded from the derived query.
-    expect(screen.getByTestId<HTMLTextAreaElement>("dsl-input").value).toContain("has_link");
-  });
-
-  it("preserves an in-progress condition across a text↔visual round-trip (no silent loss)", async () => {
+  it("blocks Save while a started filter is unfinished, and drops untouched blank rows", async () => {
     render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
-    await screen.findByTestId("query-builder");
+    await screen.findByTestId("view-filter-field-0");
+    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Mine" } });
 
-    // Author a completed condition.
-    fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fillTitleLeaf("login");
-
-    // Switch to text, then straight back to visual without editing the DSL.
-    fireEvent.click(screen.getByTestId("view-switch-to-advanced"));
-    await screen.findByTestId("advanced-query-editor");
-    // The completed condition IS carried into the text box (red-proof: with
-    // the pre-fix safeSerialize this could still be present when there was
-    // no empty group; the empty-group case below is the harder one).
-    expect(screen.getByTestId<HTMLTextAreaElement>("dsl-input").value).toContain("login");
-
-    fireEvent.click(screen.getByTestId("view-switch-to-builder"));
-    await screen.findByTestId("query-builder");
-
-    // The row survived the round-trip — field/op/value all intact.
-    await waitFor(() => {
-      expect(screen.getByTestId<HTMLSelectElement>("qb-field").value).toBe("title");
-    });
-    expect(screen.getByTestId<HTMLSelectElement>("qb-op").value).toBe("=");
-    expect(screen.getByTestId<HTMLInputElement>("qb-value").value).toBe("login");
-  });
-
-  it("does NOT blank out completed conditions when a half-built nested group is present (toggle data-loss)", async () => {
-    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
-    await screen.findByTestId("query-builder");
-
-    // A completed condition AND an empty "+ Group" the user just added and
-    // has not filled — the exact state Ken hit. Pre-fix, safeSerialize threw
-    // on the empty group and returned "", so switching to text showed a
-    // BLANK box: the completed `title = login` was silently discarded.
-    fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fillTitleLeaf("login");
-    fireEvent.click(screen.getByTestId("qb-add-group"));
-
-    fireEvent.click(screen.getByTestId("view-switch-to-advanced"));
-    await screen.findByTestId("advanced-query-editor");
-
-    // Red-proof: this is empty under the old code (safeSerialize → "").
-    const dsl = screen.getByTestId<HTMLTextAreaElement>("dsl-input");
-    expect(dsl.value).toContain("login");
-    expect(dsl.value.trim().length).toBeGreaterThan(0);
-
-    // And switching back restores the FULL builder state, including the
-    // empty group the text couldn't express (tree preserved, not re-parsed).
-    fireEvent.click(screen.getByTestId("view-switch-to-builder"));
-    await screen.findByTestId("query-builder");
-    await waitFor(() => {
-      expect(screen.getByTestId<HTMLSelectElement>("qb-field").value).toBe("title");
-    });
-    // The empty nested group is still there (2 children at the root: the
-    // leaf's row and the group card).
-    expect(screen.getAllByTestId("query-builder-group").length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("refuses to save an unparseable Advanced-mode DSL (VUE-11)", async () => {
-    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
-    await screen.findByTestId("query-builder");
-    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Bad" } });
-
-    fireEvent.click(screen.getByTestId("view-switch-to-advanced"));
-    await screen.findByTestId("advanced-query-editor");
-    // A genuinely unparseable query.
-    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "status = = =" } });
-
-    // Save is disabled and no request goes out.
+    // An untouched blank row does NOT block: Save is live and the row is
+    // simply not stored.
     const save = screen.getByTestId<HTMLButtonElement>("view-form-save");
-    expect(save.disabled).toBe(true);
-    fireEvent.click(save);
-    await screen.findByTestId("view-advanced-parse-error");
-    expect(writeCalls("POST").length).toBe(0);
+    expect(save.disabled).toBe(false);
+
+    // Choosing a field with no value is a STARTED filter — that blocks,
+    // because saving it would discard the choice the user just made.
+    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "status" } });
+    expect(screen.getByTestId<HTMLButtonElement>("view-form-save").disabled).toBe(true);
+  });
+
+  it("clears the values when the field changes, so a row never holds another field's values", async () => {
+    render(
+      <ViewFormDialog
+        existing={target([{ kind: "simple", field: "status", op: "in", values: ["backlog"] }])}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
+    await screen.findByTestId("view-filter-field-0");
+    // One value selected on `status`.
+    expect(within(screen.getByRole("button", { name: "Filter Status" })).getByText("· 1"))
+      .toBeTruthy();
+
+    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "priority" } });
+
+    // A `backlog` status key is not a priority key — it must not carry over.
+    const picker = screen.getByRole("button", { name: "Filter Priority" });
+    expect(picker.textContent).not.toContain("· 1");
   });
 });

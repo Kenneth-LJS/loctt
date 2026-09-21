@@ -1,23 +1,38 @@
 /**
- * The query-condition tree — core's structured representation of a query.
+ * The query-condition tree — the visual query builder's EDITING MODEL.
  *
- * Two audiences share ONE type ({@link BuilderTree}) but use different
- * entry points, and it is important to keep them apart:
+ * ## Why this lives in the web client, not in core (K102 aftermath)
  *
- * ## 1. Stored saved-view conditions (total, lossless)
+ * It used to live in `@loctt/core/query/builderTree.js`, because a saved
+ * view once STORED its filter as a {@link BuilderTree} and derived its
+ * DSL `query` string from it. K102 replaced that storage entirely: a view
+ * now holds an ordered `filters` array, and core keeps only what query
+ * EXECUTION needs. So core dropped the module — correctly.
  *
- * A saved view stores its filter as a {@link BuilderTree} and derives its
- * DSL `query` string from it. For that the tree must be able to hold
- * EVERY construct the parser accepts — including `not`, `has_link(...)`
- * and `link_count(...)` — so {@link queryToConditions} and
- * {@link builderTreeToQuery} form a TOTAL, lossless round-trip over the
- * whole grammar (only a genuine parse error is refused). The serializer's
- * ONLY permitted transformation is whitespace/spacing normalization: it
- * must NOT switch `= A` ↔ `in (A)`, must NOT canonicalize a list to a
- * negation, must NOT reorder values or invert operators — it re-emits the
- * user's own form, respaced.
+ * What K102 did not need to drop, and what an over-eager cleanup deleted
+ * anyway, is the visual builder that happened to import the same type. A
+ * `BuilderTree` was never a storage format; it is the shape the builder
+ * form edits, parsed from and serialized back to the list's `q` URL
+ * param. `AdvancedQuerySurface` edits ONLY `q` — it never touched saved
+ * views — so the builder and K102's storage change were always
+ * independent. Reinstating the model HERE, web-client-local, restores the
+ * builder while leaving K102's core change completely untouched.
  *
- * ## 2. The visual query builder's renderable subset (UI-facing)
+ * ## Two entry points, kept apart
+ *
+ * ### 1. The total, lossless round-trip
+ *
+ * {@link queryToConditions} and {@link builderTreeToQuery} form a TOTAL
+ * round-trip over the whole grammar — including `not`, `has_link(...)`
+ * and `link_count(...)` — refusing only a genuine parse error. The
+ * serializer's ONLY permitted transformation is whitespace/spacing
+ * normalization: it must NOT switch `= A` ↔ `in (A)`, must NOT
+ * canonicalize a list to a negation, must NOT reorder values or invert
+ * operators — it re-emits the user's own form, respaced. The builder
+ * relies on that: opening a `q` and applying it with no edits must leave
+ * the query byte-identical.
+ *
+ * ### 2. The visual builder's renderable subset (UI-facing)
  *
  * The visual builder (K83) renders a tree of AND/OR groups over leaf
  * comparisons, and deliberately refuses to render `not`, the link
@@ -25,12 +40,33 @@
  * {@link queryToBuilderTree} is that refusing entry point: it parses a
  * DSL string and returns the tree only when every node is renderable,
  * otherwise `{ ok: false, reason }`. This renderability check is SEPARATE
- * from the round-trip above and must stay separate — a stored view may
- * legitimately hold a `has_link` the visual builder cannot show (the
- * seeded `blocked` default view does exactly that).
+ * from the round-trip above and must stay separate — a hand-typed `q` may
+ * legitimately hold a `has_link` the visual builder cannot show, and the
+ * surface must fall back to the text editor rather than misrepresent it.
  *
  * The result shape mirrors `dslToSearch.ts`'s discriminated
  * `{ ok }`/`{ expressible }` precedent: refuse rather than approximate.
+ *
+ * ## On `parenthesized` (core's presentation metadata)
+ *
+ * Core's `QueryNode` carries an optional `parenthesized?: number` — a
+ * count of the paren pairs the AUTHOR wrote, so `queryNodeToDsl` can
+ * preserve a clarity paren. This tree DROPS it, deliberately.
+ *
+ * It could not be preserved meaningfully even if we added a field: this
+ * tree FLATTENS same-operator and/or chains into n-ary groups, so the
+ * nodes an authored paren sat on frequently cease to exist. More to the
+ * point, the visual builder edits STRUCTURE, not text — the user is
+ * moving conditions between AND/OR groups, where "how many parens were
+ * typed around this" has no referent on screen.
+ *
+ * Dropping it is safe, not merely tolerable: {@link builderTreeToQuery}
+ * re-parenthesizes from PRECEDENCE alone (a nested group whose operator
+ * differs from its parent's), so the emitted DSL always reparses to the
+ * same meaning. The only observable effect is that a purely decorative
+ * paren the user typed is not echoed back after a builder round-trip —
+ * and the surface only opens the builder on a query it can represent in
+ * the first place.
  *
  * ## Renderable subset (agent decision A1/A2, recorded decisions.md §8)
  *
@@ -53,10 +89,14 @@
  * - anything else outside the subset above.
  */
 
-import type { ComparisonOp, QueryNode, QueryValue } from "./parser.js";
-import { parseQuery } from "./parser.js";
-import { dslAtom } from "./serialize.js";
-import { tokenize } from "./tokenizer.js";
+// Per-file subpaths, NOT the `@loctt/core` barrel: the barrel drags
+// node:path/sharp into the browser bundle (see dslToSearch.ts's parser.js
+// import note, A37). These three subpaths are exported by core's
+// package.json; nothing here needs anything core does not already publish.
+import type { ComparisonOp, QueryNode, QueryValue } from "@loctt/core/query/parser.js";
+import { parseQuery } from "@loctt/core/query/parser.js";
+import { dslAtom } from "@loctt/core/query/serialize.js";
+import { tokenize } from "@loctt/core/query/tokenizer.js";
 
 /**
  * A `link_count(kind?)` call on the left-hand side of a comparison,
@@ -66,10 +106,11 @@ import { tokenize } from "./tokenizer.js";
  */
 export interface LinkCountCall {
   readonly name: "link_count";
-  // `| undefined` on the optionals so this type is byte-identical to the
-  // contracts mirror (`LinkCountCallSchema`), whose zod output carries it
-  // under `exactOptionalPropertyTypes`; the two must stay interchangeable
-  // (a stored `SavedQuery.conditions` flows straight into these functions).
+  // `| undefined` on the optional, so a value read off a parsed
+  // `QueryNode` assigns here cleanly under `exactOptionalPropertyTypes`.
+  // (This used to also have to match a contracts zod mirror,
+  // `LinkCountCallSchema`, because a saved view stored its conditions as
+  // this tree; K102 removed that storage and the mirror with it.)
   readonly kind?: string | undefined;
 }
 
@@ -174,8 +215,13 @@ export function unrenderableTreeReason(tree: BuilderTree): string | null {
 /**
  * Recursively converts an AST node to a total {@link BuilderTree},
  * flattening same-operator and/or chains into n-ary groups. This is
- * LOSSLESS and never refuses a node — every parser node kind maps to a
- * tree kind. (A parse error is caught by the caller.)
+ * LOSSLESS over query MEANING and never refuses a node — every parser
+ * node kind maps to a tree kind. (A parse error is caught by the caller.)
+ *
+ * Each case names the fields it carries, so core's presentation-only
+ * `parenthesized` count is dropped here rather than smuggled through a
+ * spread — see the note at the top of this file for why that is the
+ * right call for a structural editor, and why it cannot change meaning.
  */
 function nodeToTree(node: QueryNode): BuilderTree {
   switch (node.type) {

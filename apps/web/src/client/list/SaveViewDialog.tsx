@@ -1,4 +1,6 @@
-import { queryToConditions } from "@loctt/core/query/builderTree.js";
+// Imported by subpath, NOT the barrel: the barrel drags node:path/sharp
+// into the browser bundle (see buildDsl.ts / dslToSearch.ts, A37).
+import { filterToSummary } from "@loctt/core/query/filters.js";
 import { useState } from "react";
 
 import { useCreateView } from "../api/hooks/useCreateView.ts";
@@ -6,15 +8,25 @@ import type { ListSearch } from "../router/listSearch.ts";
 import { Button } from "../ui/Button.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { TextField } from "../ui/TextField.tsx";
-import { buildConditionsFromSearch } from "./buildConditions.ts";
-import { buildDslFromSearch } from "./buildDsl.ts";
+import { archivedScopeFromSearch, buildFiltersFromSearch } from "./buildFilters.ts";
+
+/** How the archived scope reads in the summary list. */
+const SCOPE_LABEL: Readonly<Record<string, string>> = {
+  archived: "Archived tasks only",
+  all: "Active and archived tasks",
+};
 
 /**
- * Basic-mode "Save as view" dialog (M1.3). Names the current filter
- * set and saves it as a query view (`POST /api/views`) whose DSL is
- * derived from the active filters. The advanced raw-DSL editor is M4 —
- * here the query is shown read-only so the user sees what they're
- * saving, plus the current sort is carried over.
+ * "Save as view" dialog. Names the current filter set and saves it as a
+ * view (`POST /api/views`) whose filters are the active filters, stored
+ * as authored (K102).
+ *
+ * What it shows the user is a HUMAN-READABLE list of the filters being
+ * saved — one row per filter — not the DSL. Ken, on the old read-only
+ * `Query (from current filters)` code block: *"there's this fucking
+ * obsession with the QUERY. QUERY IS ADVANCED SHIT... average people dont
+ * need to see the fucking DSL QUERY."* The only row that shows query text
+ * is an advanced filter, because that IS what the user typed.
  */
 export function SaveViewDialog({
   search,
@@ -25,12 +37,10 @@ export function SaveViewDialog({
 }) {
   const [name, setName] = useState("");
   const createView = useCreateView();
-  // Structure is the source of truth (Stage 2): build the conditions tree
-  // from the active filters and SEND that. The `query` string is only for
-  // the read-only preview below — the server derives its own `query` from
-  // the conditions, so what is stored and what is previewed agree.
-  const conditions = buildConditionsFromSearch(search, queryToConditions);
-  const query = buildDslFromSearch(search);
+  // The filters as authored — this is exactly what gets stored. Nothing
+  // is merged into a query string on the way out.
+  const filters = buildFiltersFromSearch(search);
+  const archivedScope = archivedScopeFromSearch(search);
 
   const sort =
     search.sort !== undefined
@@ -40,10 +50,17 @@ export function SaveViewDialog({
   const submit = (): void => {
     if (name.trim().length === 0) return;
     createView.mutate(
-      { name: name.trim(), conditions, ...(sort ? { sort } : {}) },
+      {
+        name: name.trim(),
+        filters,
+        ...(sort ? { sort } : {}),
+        ...(archivedScope !== undefined ? { archivedScope } : {}),
+      },
       { onSuccess: onClose },
     );
   };
+
+  const scopeLabel = archivedScope !== undefined ? SCOPE_LABEL[archivedScope] : undefined;
 
   return (
     <Modal title="Save as view" onClose={onClose}>
@@ -61,12 +78,41 @@ export function SaveViewDialog({
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
-          Query (from current filters)
-          <code className="block max-h-24 overflow-y-auto whitespace-pre-wrap rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-2 text-[0.8571rem] text-text-secondary">
-            {query}
-          </code>
-        </label>
+        <div className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
+          <span>Filters</span>
+          {filters.length === 0 && scopeLabel === undefined ? (
+            <p
+              className="text-[0.8571rem] text-text-tertiary"
+              data-testid="save-view-no-filters"
+            >
+              No filters — this view will show every task.
+            </p>
+          ) : (
+            <ul
+              className="flex flex-col gap-1 rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-2"
+              data-testid="save-view-filter-summary"
+            >
+              {filters.map((f, i) => (
+                <li
+                  // Filters have no id and order is meaningful, so the
+                  // index IS the identity here; the list is never
+                  // reordered or spliced while mounted.
+                  key={i}
+                  className="text-[0.8571rem] text-text-secondary"
+                >
+                  {f.kind === "advanced" ? (
+                    <code className="whitespace-pre-wrap">{f.query}</code>
+                  ) : (
+                    filterToSummary(f)
+                  )}
+                </li>
+              ))}
+              {scopeLabel !== undefined ? (
+                <li className="text-[0.8571rem] text-text-tertiary">{scopeLabel}</li>
+              ) : null}
+            </ul>
+          )}
+        </div>
 
         {createView.isError ? (
           <p className="text-[0.8571rem] text-danger-fg">
@@ -83,7 +129,7 @@ export function SaveViewDialog({
             onClick={submit}
             disabled={name.trim().length === 0 || createView.isPending}
           >
-            {createView.isPending ? "Saving…" : "Save view"}
+            {createView.isPending ? "Saving…" : "Save"}
           </Button>
         </div>
       </div>

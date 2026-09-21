@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { type BuilderTree,builderTreeToQuery } from "@loctt/core/query/builderTree.js";
 import { act,cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { type BuilderTree,builderTreeToQuery } from "./builderTree.ts";
 import { buildBuilderConfig, type BuilderConfig,QueryBuilder } from "./QueryBuilder.tsx";
 
 /**

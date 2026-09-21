@@ -155,8 +155,14 @@ describe("MCP config-list archived scope (K107)", () => {
   });
 
   it("list_views hides archived by default; archived/all widen the scope", async () => {
-    const live = idOf((await executeTool(root, "create_view", { name: "live", query: "status = backlog" })).content[0]?.text ?? "");
-    const gone = idOf((await executeTool(root, "create_view", { name: "gone", query: "status = done" })).content[0]?.text ?? "");
+    const live = idOf((await executeTool(root, "create_view", {
+      name: "live",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["backlog"] }],
+    })).content[0]?.text ?? "");
+    const gone = idOf((await executeTool(root, "create_view", {
+      name: "gone",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["done"] }],
+    })).content[0]?.text ?? "");
     await executeTool(root, "archive_view", { view: gone });
 
     const active = parse<Array<{ id: string }>>(

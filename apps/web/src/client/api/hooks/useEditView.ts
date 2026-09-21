@@ -1,20 +1,19 @@
-import type { BuilderTree, EditViewRequest, SavedQuery } from "@loctt/contracts";
+import type { EditViewRequest, SavedQuery } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
 
 /**
- * Edit-view request body, extended (Stage 2) with structured
- * `conditions` — the contracts `EditViewRequest` is frozen, and the
- * server accepts either `conditions` OR `query`. Mirrors the server's
- * `EditViewRequestWithConditions`.
+ * Edit-view request body. As with create, K102 unified the shape across
+ * surfaces, so the contracts type is used directly. `filters` replaces
+ * the whole ordered list; omitting it leaves the view's filters alone.
  */
-export type EditViewBody = EditViewRequest & { readonly conditions?: BuilderTree };
+export type EditViewBody = EditViewRequest;
 
 /**
- * Renames a saved view and/or edits its query via `PUT /api/views/:id`
+ * Renames a saved view and/or edits its filters via `PUT /api/views/:id`
  * (VUE-41 · core `editView`). On success the views query is invalidated
- * so the sidebar and the Saved-views panel pick up the new name/query
+ * so the sidebar and the Saved-views panel pick up the new name/filters
  * without a reload.
  *
  * The server route already exists (`handleUpdateView`); this is only the

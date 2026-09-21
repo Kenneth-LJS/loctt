@@ -31,19 +31,19 @@ export const QuerySortSchema = z.object({
 export type QuerySort = z.infer<typeof QuerySortSchema>;
 
 /**
- * Structured query conditions for a saved view (Stage 1 of "saved views
- * store structured conditions").
+ * Query value/operator mirrors.
  *
- * These schemas MIRROR core's `BuilderTree` / `QueryValue` / `ComparisonOp`
- * types (packages/core/src/query/builderTree.ts + parser.ts) exactly —
- * core OWNS the TypeScript types; contracts owns the runtime (zod) shape,
- * the same split as `SavedQuerySchema`/`SavedQuery`. If the core type
- * gains a node kind or value kind, these must gain the matching case.
+ * These schemas MIRROR core's `QueryValue` / `ComparisonOp` types
+ * (packages/core/src/query/parser.ts) exactly — core OWNS the TypeScript
+ * types; contracts owns the runtime (zod) shape, the same split as
+ * `SavedQuerySchema`/`SavedQuery`. If a core type gains a value kind,
+ * these must gain the matching case.
  *
- * The tree is TOTAL over the query grammar: it can hold every construct
- * the parser accepts (`not`, `has_link`, `link_count`, date functions),
- * so a view's stored `conditions` losslessly captures its DSL and the
- * `query` string is derived from it.
+ * K102 removed the `BuilderTree` AST mirror that used to live here: a
+ * saved view no longer stores a condition tree or a derived DSL string,
+ * only its ordered `filters[]` (see `FilterSchema`). `ComparisonOp` and
+ * `QueryValue` remain because a simple filter names an operator and the
+ * evaluator still speaks these values.
  */
 
 /** Mirrors core's `ComparisonOp`. */
@@ -118,53 +118,70 @@ export const QueryValueSchema: z.ZodType<QueryValue> = z.lazy(() =>
   ]),
 );
 
-/** Mirrors core's `LinkCountCall`. */
-export const LinkCountCallSchema = z.object({
-  name: z.literal("link_count"),
-  kind: z.string().optional(),
-}).strict();
-export interface LinkCountCall {
-  readonly name: "link_count";
-  readonly kind?: string | undefined;
-}
-
 /**
- * Mirrors core's `BuilderTree`. Recursive via `z.lazy` on the `group`
- * children and the `not` child. The `has_link` relationship kind is
- * `linkKind` (not `kind`) because `kind` is the union discriminant — the
- * exact same field name as the core type.
+ * A single filter on a saved view (K102).
+ *
+ * A View is an ORDERED LIST of these, and every filter ANDs together. The
+ * union is DISCRIMINATED — a "dumb" filter authored through the dropdown
+ * picker and a query filter the human typed are genuinely different
+ * stored shapes, not one shape with a flag:
+ *
+ *  - `simple`   — field + operator + value(s). Carries NO query string at
+ *                 all, so it cannot degrade into one. A reopened view
+ *                 renders it as the dropdown row because that is the only
+ *                 thing it can render as.
+ *  - `advanced` — the DSL string the human typed. Carries no field/op/
+ *                 values.
+ *
+ * The kind is RECORDED, never inferred: there is no parse-and-guess step
+ * on read, which is what makes "filters swap position / come back as DSL
+ * text" structurally impossible rather than merely avoided. Array order is
+ * the authored order, preserved on read and write.
+ *
+ * There is deliberately NO derived canonical `query` field on the view —
+ * merging the list into one DSL is precisely what K102 removes. Execution
+ * composes an AST in memory at call time and discards it.
  */
-export type BuilderTree =
-  | { kind: "group"; op: "and" | "or"; children: BuilderTree[] }
-  | { kind: "not"; child: BuilderTree }
-  | { kind: "has_link"; linkKind?: string | undefined; target?: string | undefined }
-  | { kind: "leaf"; field: string; op: ComparisonOp; value: QueryValue; call?: LinkCountCall | undefined };
+export const SimpleFilterSchema = z.object({
+  kind: z.literal("simple"),
+  field: z.string().min(1),
+  op: ComparisonOpSchema,
+  /**
+   * The selected value(s). A multi-select picker yields several; a
+   * single-value operator yields one. `is empty` / `is not empty` take
+   * none, so the array may be empty for those.
+   */
+  values: z.array(z.string()),
+}).strict();
+export type SimpleFilter = z.infer<typeof SimpleFilterSchema>;
 
-export const BuilderTreeSchema: z.ZodType<BuilderTree> = z.lazy(() =>
-  z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("group"),
-      op: z.enum(["and", "or"]),
-      children: z.array(BuilderTreeSchema),
-    }).strict(),
-    z.object({
-      kind: z.literal("not"),
-      child: BuilderTreeSchema,
-    }).strict(),
-    z.object({
-      kind: z.literal("has_link"),
-      linkKind: z.string().optional(),
-      target: z.string().optional(),
-    }).strict(),
-    z.object({
-      kind: z.literal("leaf"),
-      field: z.string(),
-      op: ComparisonOpSchema,
-      value: QueryValueSchema,
-      call: LinkCountCallSchema.optional(),
-    }).strict(),
-  ]),
-);
+export const AdvancedFilterSchema = z.object({
+  kind: z.literal("advanced"),
+  /**
+   * The DSL as authored, save for FORMATTING: on write it is parsed and
+   * re-emitted, which normalises whitespace. Nothing semantic is touched —
+   * no operator rewriting, no negation flipping, no value or term
+   * reordering. Ken, K102: *"you may normalise spacing, dont edit anything
+   * else."*
+   *
+   * Parentheses are KEPT as authored and ADDED where precedence needs
+   * them: `(a or b)` at top level stays parenthesised, `((x))` keeps both
+   * pairs, `a and (b or c)` is re-emitted intact, and an unwritten pair
+   * appears only where the text would otherwise reparse to a different
+   * tree. Ken, K102: *"i think we should store parens as needed to prevent
+   * ambiguity or whatever, but if the user adds more parens for clarity,
+   * we should keep."* The result is idempotent — re-saving a view does not
+   * drift its text.
+   */
+  query: z.string().min(1),
+}).strict();
+export type AdvancedFilter = z.infer<typeof AdvancedFilterSchema>;
+
+export const FilterSchema = z.discriminatedUnion("kind", [
+  SimpleFilterSchema,
+  AdvancedFilterSchema,
+]);
+export type Filter = z.infer<typeof FilterSchema>;
 
 /** Which top-level view a saved query is authored for. */
 export const SavedViewModeSchema = z.enum(["list", "board", "timeline"]);
@@ -214,20 +231,22 @@ export const SavedQuerySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   /**
-   * The DSL string is a DERIVED field: it is regenerated from
-   * `conditions` on every write by a spacing-only serializer and is never
-   * independently trusted. It stays in the stored shape (and required) so
-   * hand-reading `queries.yaml` and existing readers still work.
+   * The view's filters, in authored order — the SOLE source of truth for
+   * what it matches (K102). All filters AND together. Replaces the former
+   * `query` + `conditions` pair: there is no derived canonical DSL, and
+   * nothing reconstructs one. May be empty (a view that matches
+   * everything within its archived scope).
    */
-  query: z.string().min(1),
-  /**
-   * The structured conditions the view filters by — the source of truth
-   * the `query` string is derived from. Required (greenfield; no stored
-   * data to migrate).
-   */
-  conditions: BuilderTreeSchema,
+  filters: z.array(FilterSchema),
   sort: z.array(QuerySortSchema).optional(),
   display: SavedViewDisplaySchema.optional(),
+  /**
+   * The view's archived SCOPE (K107) — a property of the view, never a
+   * filter term. Absent means the default (`active`).
+   */
+  archivedScope: ArchivedScopeSchema.optional(),
+  /** Optional icon (K104 supplies the picker; the field lands here). */
+  icon: z.string().min(1).optional(),
   archived: z.boolean().optional(),
 }).strict();
 export type SavedQuery = z.infer<typeof SavedQuerySchema>;
@@ -255,14 +274,20 @@ export type SavedQuery = z.infer<typeof SavedQuerySchema>;
  * `queries.yaml` write silently strips a broken sibling's optional fields
  * (Phase Z finding C2, the residual loss inside K28).
  *
- * This is only for per-ENTRY DSL failures. A whole-file YAML failure, a
- * missing `queries` array, a missing `id`/`name`/`query`, or a duplicate
+ * This is only for per-ENTRY filter failures. A whole-file YAML failure, a
+ * missing `queries` array, a missing `id`/`name`, or a duplicate
  * id is object-fatal and still throws `QueriesConfigError`.
  */
 export const BrokenSavedQuerySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  query: z.string().min(1),
+  /**
+   * A human-readable rendering of whatever the entry held, so a surface
+   * can still show what the view was trying to be. Best-effort and
+   * display-only — a broken entry's filters did not validate, so this is
+   * never parsed back. The authoritative bytes are in `rawText`.
+   */
+  summary: z.string(),
   error: z.string().min(1),
   position: z.number().int().nonnegative().optional(),
   index: z.number().int().nonnegative(),
@@ -270,52 +295,14 @@ export const BrokenSavedQuerySchema = z.object({
 }).strict();
 export type BrokenSavedQuery = z.infer<typeof BrokenSavedQuerySchema>;
 
-/**
- * A saved view whose stored `conditions` block was ABSENT or malformed
- * but whose `query` still parses, so the loader DERIVED a fresh
- * `conditions` tree from the query on load rather than failing the entry.
- * The entry is otherwise a fully valid `SavedQuery` — it lives in
- * `QueriesConfig.queries` like any other; this record is only a load-time
- * diagnostic so a surface (and `loctt doctor`) can tell the user the view
- * was migrated and will self-heal on the next write.
- *
- * Predates the greenfield decision that `conditions` is required (A217–
- * A219): a `queries.yaml` written before that ruling has `query` but no
- * `conditions`. Deriving on load (rather than throwing) is the migration
- * path — the derived conditions persist the next time the file is written
- * (the serializer already emits `conditions`), so the file self-heals.
- *
- * `reason` says WHY it was migrated ("conditions missing" vs the zod
- * message when a `conditions` block was present but did not validate), and
- * `index` is the entry's original position in the `queries:` array, so a
- * message can name `queries[N]` the way the other diagnostics do.
- */
-export const MigratedSavedQuerySchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  reason: z.string().min(1),
-  index: z.number().int().nonnegative(),
-}).strict();
-export type MigratedSavedQuery = z.infer<typeof MigratedSavedQuerySchema>;
-
 export const QueriesConfigSchema = z.object({
   queries: z.array(SavedQuerySchema),
   /**
-   * Per-entry DSL failures, if any. Omitted (not `[]`) when every entry
+   * Per-entry filter failures, if any. Omitted (not `[]`) when every entry
    * parsed, so existing consumers that read only `queries` are
    * unaffected and "no broken views" stays distinguishable from "did not
    * look". Never written back to disk — it is a load-time diagnostic.
    */
   broken: z.array(BrokenSavedQuerySchema).optional(),
-  /**
-   * Per-entry `conditions` migrations, if any — views whose `conditions`
-   * were derived from their `query` on load because the stored block was
-   * absent or malformed. These entries ARE in `queries` (valid, runnable);
-   * this list is purely so `doctor`/a surface can report "migrated, will
-   * persist on next write". Omitted (not `[]`) when nothing migrated, and
-   * never written back to disk — the derived conditions are written as an
-   * ordinary `conditions` block, so a re-load finds nothing to migrate.
-   */
-  migrated: z.array(MigratedSavedQuerySchema).optional(),
 }).strict();
 export type QueriesConfig = z.infer<typeof QueriesConfigSchema>;

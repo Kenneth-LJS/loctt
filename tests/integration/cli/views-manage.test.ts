@@ -1,4 +1,8 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 import { runCli } from "../adapters/cli-spawn.js";
 import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
@@ -12,10 +16,13 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
  * through the spawned binary, the same path a user runs.
  */
 describe("CLI views management (spawned binary)", () => {
-  it("create then list shows the view; edit changes it", async () => {
+  it("create with a simple --filter then list shows it; edit changes it", async () => {
     await withTmpLoctt(async ({ root }) => {
+      // K102: `--filter "field op value"` authors a SIMPLE filter, the
+      // preferred CLI path — a view made here renders as dropdown rows in
+      // the web picker rather than as opaque DSL.
       const create = await runCli(
-        ["views", "create", "open-work", "--query", "status = backlog"],
+        ["views", "create", "open-work", "--filter", "status = backlog"],
         { cwd: root },
       );
       expect(create.exitCode).toBe(0);
@@ -24,10 +31,11 @@ describe("CLI views management (spawned binary)", () => {
       const list = await runCli(["views"], { cwd: root });
       expect(list.exitCode).toBe(0);
       expect(list.stdout).toContain("open-work");
+      // The listed summary is rendered from the filters at display time.
       expect(list.stdout).toContain("status = backlog");
 
       const edit = await runCli(
-        ["views", "edit", "open-work", "--name", "renamed", "--query", "status = done"],
+        ["views", "edit", "open-work", "--name", "renamed", "--filter", "status = done"],
         { cwd: root },
       );
       expect(edit.exitCode).toBe(0);
@@ -39,10 +47,64 @@ describe("CLI views management (spawned binary)", () => {
     });
   });
 
+  it("stores simple and advanced filters together, in the order typed (K102)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      // The load-bearing K102 guarantee: filters are stored AS AUTHORED —
+      // mixed kinds, in argv order, never merged into one DSL string.
+      const create = await runCli(
+        [
+          "views", "create", "mixed",
+          "--filter", "status = backlog",
+          "--query", 'has_link("is_blocked_by")',
+          "--filter", "priority = high",
+        ],
+        { cwd: root },
+      );
+      expect(create.exitCode).toBe(0);
+
+      const raw = await readFile(
+        path.join(root, ".loctt/config/queries.yaml"),
+        "utf8",
+      );
+      const parsed = parseYaml(raw) as {
+        queries: { name: string; filters: { kind: string }[] }[];
+      };
+      const view = parsed.queries.find(q => q.name === "mixed");
+      expect(view).toBeDefined();
+      // Three filters, each keeping its own kind, in the authored order.
+      expect(view?.filters.map(f => f.kind)).toEqual(["simple", "advanced", "simple"]);
+      // The simple ones carry NO query string — that is what makes them
+      // render back as dropdown rows rather than as DSL text.
+      expect(view?.filters[0]).not.toHaveProperty("query");
+      expect(view?.filters[2]).not.toHaveProperty("query");
+    });
+  });
+
+  it("normalises an advanced filter's spacing and nothing else", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      // Ken: "you may normalise spacing, dont edit anything else."
+      const create = await runCli(
+        ["views", "create", "spaced", "--query", "status=backlog"],
+        { cwd: root },
+      );
+      expect(create.exitCode).toBe(0);
+
+      const raw = await readFile(
+        path.join(root, ".loctt/config/queries.yaml"),
+        "utf8",
+      );
+      const parsed = parseYaml(raw) as {
+        queries: { name: string; filters: { kind: string; query?: string }[] }[];
+      };
+      const view = parsed.queries.find(q => q.name === "spaced");
+      expect(view?.filters[0]?.query).toBe("status = backlog");
+    });
+  });
+
   it("stores and renders a multi-key sort", async () => {
     await withTmpLoctt(async ({ root }) => {
       const create = await runCli(
-        ["views", "create", "sorted", "--query", "status = backlog", "--sort", "priority:desc,created:asc"],
+        ["views", "create", "sorted", "--filter", "status = backlog", "--sort", "priority:desc,created:asc"],
         { cwd: root },
       );
       expect(create.exitCode).toBe(0);
@@ -52,7 +114,7 @@ describe("CLI views management (spawned binary)", () => {
     });
   });
 
-  it("rejects a malformed query on create with a usage/runtime error, writing nothing", async () => {
+  it("rejects a malformed advanced query on create with a usage/runtime error, writing nothing", async () => {
     await withTmpLoctt(async ({ root }) => {
       const create = await runCli(
         ["views", "create", "broken", "--query", "status = = ="],
@@ -72,7 +134,7 @@ describe("CLI views management (spawned binary)", () => {
     // marker. This replaces the pre-K107 assertion that a plain list showed
     // the archived view inline.
     await withTmpLoctt(async ({ root }) => {
-      await runCli(["views", "create", "v", "--query", "status = backlog"], { cwd: root });
+      await runCli(["views", "create", "v", "--filter", "status = backlog"], { cwd: root });
 
       const arch = await runCli(["views", "archive", "v"], { cwd: root });
       expect(arch.exitCode).toBe(0);
@@ -93,7 +155,7 @@ describe("CLI views management (spawned binary)", () => {
 
   it("delete removes the view with --yes; a missing ref is a usage error", async () => {
     await withTmpLoctt(async ({ root }) => {
-      await runCli(["views", "create", "doomed", "--query", "status = backlog"], { cwd: root });
+      await runCli(["views", "create", "doomed", "--filter", "status = backlog"], { cwd: root });
 
       const del = await runCli(["views", "delete", "doomed", "--yes"], { cwd: root });
       expect(del.exitCode).toBe(0);
@@ -110,7 +172,7 @@ describe("CLI views management (spawned binary)", () => {
   it("rejects an unknown flag rather than silently ignoring it", async () => {
     await withTmpLoctt(async ({ root }) => {
       const res = await runCli(
-        ["views", "create", "x", "--query", "status = backlog", "--bogus", "y"],
+        ["views", "create", "x", "--filter", "status = backlog", "--bogus", "y"],
         { cwd: root },
       );
       expect(res.exitCode).toBe(2);

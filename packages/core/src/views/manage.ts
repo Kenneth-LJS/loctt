@@ -1,5 +1,4 @@
-import type { QueriesConfig, SavedQuery, WorkflowConfig } from "@loctt/contracts";
-import type { BuilderTree } from "@loctt/contracts";
+import type { ArchivedScope, Filter, QueriesConfig, SavedQuery, WorkflowConfig } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import {
@@ -7,9 +6,7 @@ import {
   saveQueriesConfig,
 } from "../config/queries.js";
 import { loadWorkflowConfig } from "../config/workflow.js";
-import { conditionsToDsl, queryToConditions } from "../query/builderTree.js";
-import { parseQuery } from "../query/parser.js";
-import { tokenize } from "../query/tokenizer.js";
+import { filtersToNode, normalizeFilters } from "../query/filters.js";
 import { validateQuery } from "../query/validate.js";
 import { withStateLock } from "../state/index.js";
 
@@ -36,75 +33,53 @@ export function findView(config: QueriesConfig, ref: string): SavedQuery {
 }
 
 /**
- * Rejects a saved-view query that cannot be parsed or references
+ * Rejects a saved view whose filters cannot be executed or reference
  * something that does not exist.
  *
- * Validating on write matters more here than for an ad-hoc query.
- * `loadQueriesConfig` rejects the ENTIRE file when one entry is
- * malformed, so a single bad view does not merely fail to run — it
- * takes every other saved view with it on the next read. A view is
- * also written once and run many times, often by someone other than
- * its author.
+ * Validating on write matters more here than for an ad-hoc query. A view
+ * is written once and run many times, often by someone other than its
+ * author, and a filter that cannot execute makes the view useless at
+ * every call site rather than at one prompt.
+ *
+ * Validation runs against the COMPOSED AST (`filtersToNode`) — the same
+ * in-memory composition execution uses — so what is validated is exactly
+ * what will run. The AST is discarded here; only the filter list is
+ * stored (K102).
  *
  * Workflow config is optional: without it, field names are still
  * checked and enum *values* are deferred rather than guessed at.
  */
-async function assertQueryValid(locttDir: string, query: string): Promise<void> {
+async function assertFiltersValid(locttDir: string, filters: readonly Filter[]): Promise<void> {
   let workflow: WorkflowConfig | undefined;
   try {
     workflow = await loadWorkflowConfig(locttDir);
   } catch {
     // No usable workflow config — validate what we can without it.
   }
+  // `filtersToNode` throws FilterError on an unparseable advanced filter
+  // or an uncombinable simple one; both are "this view is invalid".
+  let node;
   try {
-    validateQuery(parseQuery(tokenize(query)), workflow ? { workflow } : {});
+    node = filtersToNode(filters);
   } catch (err) {
-    throw new ViewError(`invalid query: ${(err as Error).message}`);
+    throw new ViewError(`invalid filter: ${(err as Error).message}`);
   }
-}
-
-/**
- * Resolve a view's filter into the `{ query, conditions }` pair the stored
- * shape needs, deriving whichever the caller did not supply.
- *
- * - `conditions` given → `query` is DERIVED from it by the spacing-only
- *   serializer (conditions are the source of truth). Any `query` the
- *   caller also passed is ignored — the derived string is authoritative.
- * - only `query` given (the CLI/MCP raw-DSL path, wired in a later stage) →
- *   `conditions` are DERIVED by parsing the DSL. If the DSL does not
- *   parse we REJECT rather than store a view with no structured form. With
- *   the total BuilderTree, every construct the parser accepts is
- *   representable, so the only rejection here is a genuine parse error;
- *   `assertQueryValid` (the caller) additionally checks the DSL semantics.
- *
- * Exactly one of the two must be present.
- */
-function resolveViewFilter(
-  input: { readonly conditions?: BuilderTree; readonly query?: string },
-): { query: string; conditions: BuilderTree } {
-  if (input.conditions !== undefined) {
-    return { conditions: input.conditions, query: conditionsToDsl(input.conditions) };
+  // An empty filter list is valid — it matches everything in scope.
+  if (node === undefined) return;
+  try {
+    validateQuery(node, workflow ? { workflow } : {});
+  } catch (err) {
+    throw new ViewError(`invalid filter: ${(err as Error).message}`);
   }
-  if (input.query !== undefined) {
-    const res = queryToConditions(input.query);
-    if (!res.ok) {
-      throw new ViewError(`invalid query: ${res.reason}`);
-    }
-    // Re-derive the query from the parsed conditions so what we store is
-    // exactly what the conditions serialize to (spacing normalized) — the
-    // stored `query` is never independently trusted.
-    return { conditions: res.tree, query: conditionsToDsl(res.tree) };
-  }
-  throw new ViewError("a view needs either conditions or a query");
 }
 
 export interface CreateViewInput {
   readonly name: string;
-  /** The DSL string. Optional when `conditions` is supplied. */
-  readonly query?: string;
-  /** Structured conditions. Optional when `query` is supplied. */
-  readonly conditions?: BuilderTree;
+  /** The view's filters, in authored order. May be empty. */
+  readonly filters: readonly Filter[];
   readonly sort?: SavedQuery["sort"];
+  readonly archivedScope?: ArchivedScope;
+  readonly icon?: string;
 }
 
 /** Creates a new saved view. Generates a stable ulid. */
@@ -112,16 +87,17 @@ export async function createView(
   locttDir: string,
   input: CreateViewInput,
 ): Promise<SavedQuery> {
-  const { query, conditions } = resolveViewFilter(input);
-  await assertQueryValid(locttDir, query);
+  await assertFiltersValid(locttDir, input.filters);
   return withStateLock(locttDir, async () => {
     const config = await loadQueriesConfig(locttDir);
     const created: SavedQuery = {
       id: ulid(),
       name: input.name,
-      query,
-      conditions,
+      // Spacing-only normalization; order and shape are as authored.
+      filters: normalizeFilters(input.filters),
       ...(input.sort !== undefined ? { sort: input.sort } : {}),
+      ...(input.archivedScope !== undefined ? { archivedScope: input.archivedScope } : {}),
+      ...(input.icon !== undefined ? { icon: input.icon } : {}),
     };
     await saveQueriesConfig(locttDir, {
       queries: [...config.queries, created],
@@ -133,9 +109,16 @@ export async function createView(
 
 export interface EditViewInput {
   readonly name?: string;
-  readonly query?: string;
-  readonly conditions?: BuilderTree;
+  /**
+   * Replaces the WHOLE ordered filter list. Omit to leave the view's
+   * filters untouched — there is no partial-filter patch, because order
+   * is meaningful (K102), so a caller sends the list it wants.
+   */
+  readonly filters?: readonly Filter[];
   readonly sort?: SavedQuery["sort"] | null;
+  readonly archivedScope?: ArchivedScope;
+  /** `null` clears the icon; `undefined` leaves it unchanged. */
+  readonly icon?: string | null;
 }
 
 export async function editView(
@@ -143,18 +126,8 @@ export async function editView(
   ref: string,
   changes: EditViewInput,
 ): Promise<SavedQuery> {
-  // Recompute the {query, conditions} pair when the filter changes.
-  // `conditions` wins (query is derived); a raw-DSL edit derives the
-  // conditions. An edit that touches neither leaves both as-is.
-  const filterChanged = changes.conditions !== undefined || changes.query !== undefined;
-  const nextFilter = filterChanged
-    ? resolveViewFilter({
-        ...(changes.conditions !== undefined ? { conditions: changes.conditions } : {}),
-        ...(changes.query !== undefined ? { query: changes.query } : {}),
-      })
-    : undefined;
-  if (nextFilter !== undefined) {
-    await assertQueryValid(locttDir, nextFilter.query);
+  if (changes.filters !== undefined) {
+    await assertFiltersValid(locttDir, changes.filters);
   }
   return withStateLock(locttDir, async () => {
     const config = await loadQueriesConfig(locttDir);
@@ -162,14 +135,28 @@ export async function editView(
     const updated: SavedQuery = {
       id: existing.id,
       name: changes.name ?? existing.name,
-      query: nextFilter?.query ?? existing.query,
-      conditions: nextFilter?.conditions ?? existing.conditions,
+      filters: changes.filters !== undefined
+        ? normalizeFilters(changes.filters)
+        : existing.filters,
       ...(changes.sort === null
         ? {}
         : changes.sort !== undefined
           ? { sort: changes.sort }
           : existing.sort !== undefined
             ? { sort: existing.sort }
+            : {}),
+      ...(existing.display !== undefined ? { display: existing.display } : {}),
+      ...(changes.archivedScope !== undefined
+        ? { archivedScope: changes.archivedScope }
+        : existing.archivedScope !== undefined
+          ? { archivedScope: existing.archivedScope }
+          : {}),
+      ...(changes.icon === null
+        ? {}
+        : changes.icon !== undefined
+          ? { icon: changes.icon }
+          : existing.icon !== undefined
+            ? { icon: existing.icon }
             : {}),
       ...(existing.archived === true ? { archived: true } : {}),
     };
@@ -200,9 +187,11 @@ export async function unarchiveView(locttDir: string, ref: string): Promise<void
     const cleared: SavedQuery = {
       id: existing.id,
       name: existing.name,
-      query: existing.query,
-      conditions: existing.conditions,
+      filters: existing.filters,
       ...(existing.sort !== undefined ? { sort: existing.sort } : {}),
+      ...(existing.display !== undefined ? { display: existing.display } : {}),
+      ...(existing.archivedScope !== undefined ? { archivedScope: existing.archivedScope } : {}),
+      ...(existing.icon !== undefined ? { icon: existing.icon } : {}),
     };
     const next = config.queries.map(q => (q.id === existing.id ? cleared : q));
     await saveQueriesConfig(locttDir, { queries: next, ...(config.broken ? { broken: config.broken } : {}) });

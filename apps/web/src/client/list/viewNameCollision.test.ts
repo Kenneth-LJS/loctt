@@ -6,7 +6,7 @@ import { checkViewNameCollision } from "./viewNameCollision.ts";
 /** VUE-20: a colliding view name is flagged before the write. */
 
 const view = (id: string, name: string): SavedQuery =>
-  ({ id, name, query: "status = backlog" }) as SavedQuery;
+  ({ id, name, filters: [{ kind: "simple", field: "status", op: "in", values: ["backlog"] }] });
 
 const EXISTING = [view("v1", "overdue"), view("v2", "My bugs")];
 

@@ -8,8 +8,7 @@ import { detectMachineTimezone, loadCalendarConfig } from "../config/calendar.js
 import { parseQueriesConfig } from "../config/queries.js";
 import { parseWorkflowConfig } from "../config/workflow.js";
 import { resolveLocttDir } from "../paths/index.js";
-import { parseQuery } from "../query/parser.js";
-import { tokenize } from "../query/tokenizer.js";
+import { filtersToNode } from "../query/filters.js";
 import { validateQuery } from "../query/validate.js";
 import { parseState } from "../state/state.js";
 import { initLoctt } from "./init.js";
@@ -76,9 +75,11 @@ describe("initLoctt", () => {
     // so this test alone catches an empty/degraded seed.
     expect(queries.queries.length).toBeGreaterThan(0);
     for (const q of queries.queries) {
+      const node = filtersToNode(q.filters);
+      if (node === undefined) continue; // no filters: matches everything, nothing to validate
       expect(
-        () => validateQuery(parseQuery(tokenize(q.query)), { workflow }),
-        `seeded query "${q.name}" (${q.query}) is invalid against the seeded workflow`,
+        () => validateQuery(node, { workflow }),
+        `seeded query "${q.name}" is invalid against the seeded workflow`,
       ).not.toThrow();
     }
   });

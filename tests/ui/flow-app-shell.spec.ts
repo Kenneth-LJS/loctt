@@ -607,7 +607,8 @@ test.describe("XS — the UI and the CLI mean the same things", () => {
     await expect(page.getByText("Archived elsewhere")).toBeHidden();
 
     // And visible, badged, once archived rows are asked for.
-    await page.getByLabel("Show archived").check();
+    await page.getByTestId("view-actions-menu").click();
+    await page.getByTestId("view-actions-archived-scope").selectOption("all");
     await expect(page.getByText("Archived elsewhere")).toBeVisible();
     await expect(
       page.getByRole("row", { name: /Archived elsewhere/ }),

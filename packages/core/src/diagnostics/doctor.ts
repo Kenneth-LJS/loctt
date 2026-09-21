@@ -207,33 +207,19 @@ export async function* runDoctorStream(
     }
   }
 
-  // Check queries.yaml. Beyond parse success, surface the two per-entry
-  // load-time signals the loader now produces:
-  //  - migrated: a view whose `conditions` block was absent/malformed and
-  //    was DERIVED from its `query` on load. The view works and self-heals
-  //    on the next write; report it (warn) so the user can rewrite/heal it.
-  //  - broken: a view recoverable from neither its `query` nor its
-  //    `conditions`. Kept as a marker (per-view degradation), reported so
-  //    the user can find and fix it.
+  // Check queries.yaml. Beyond parse success, surface the per-entry
+  // load-time signal the loader produces: a view whose stored `filters`
+  // did not validate. It is kept as a marker (per-view degradation) with
+  // its original text preserved, and reported so the user can find and
+  // fix it. (K102 removed the `migrated` signal along with the
+  // conditions-derivation path it described.)
   const queriesPath = getQueriesConfigPath(locttDir);
   if (!(await fileExists(queriesPath))) {
     yield ({ name: "queries.yaml", status: "warn", message: "missing — saved views unavailable", fix: "restore-missing" });
   } else {
     try {
       const queriesConfig = await loadQueriesConfig(locttDir);
-      const migrated = queriesConfig.migrated ?? [];
       const brokenViews = queriesConfig.broken ?? [];
-      if (migrated.length > 0) {
-        const sample = migrated.slice(0, 3).map(m => `${m.name} (${m.reason})`).join("; ");
-        const more = migrated.length > 3 ? ` (+${migrated.length - 3} more)` : "";
-        yield ({
-          name: "queries.yaml",
-          status: "warn",
-          message:
-            `${migrated.length} saved view(s) had conditions derived from their query: ${sample}${more} `
-            + `— they will persist on the next write (edit/save each to heal now)`,
-        });
-      }
       if (brokenViews.length > 0) {
         const sample = brokenViews.slice(0, 3).map(b => `${b.name}: ${b.error}`).join("; ");
         const more = brokenViews.length > 3 ? ` (+${brokenViews.length - 3} more)` : "";
@@ -241,11 +227,11 @@ export async function* runDoctorStream(
           name: "queries.yaml",
           status: "warn",
           message:
-            `${brokenViews.length} saved view(s) could not be loaded (neither query nor conditions is usable): `
-            + `${sample}${more} — kept as-is; fix the query or conditions to restore`,
+            `${brokenViews.length} saved view(s) could not be loaded (their filters are unreadable): `
+            + `${sample}${more} — kept as-is; fix the filters to restore`,
         });
       }
-      if (migrated.length === 0 && brokenViews.length === 0) {
+      if (brokenViews.length === 0) {
         yield ({ name: "queries.yaml", status: "ok", message: "valid" });
       }
     } catch (err) {

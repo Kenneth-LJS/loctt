@@ -1,19 +1,14 @@
-import type { BuilderTree, CreateViewRequest, SavedQuery } from "@loctt/contracts";
+import type { CreateViewRequest, SavedQuery } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
 
 /**
- * Create-view request body, extended (Stage 2) with structured
- * `conditions`. The contracts `CreateViewRequest` is frozen at
- * `{name,query,sort}`, and the server accepts either `conditions` OR
- * `query` (core derives the other), so the web sends `conditions` while
- * making `query` optional. The server-side schema mirror is
- * `CreateViewRequestWithConditions` in server.ts.
+ * Create-view request body. K102 made this the SAME shape every surface
+ * sends — an ordered `filters` list — so there is no web-specific
+ * extension any more and the contracts type is used directly.
  */
-export type CreateViewBody =
-  & Omit<CreateViewRequest, "query">
-  & { readonly query?: string; readonly conditions?: BuilderTree };
+export type CreateViewBody = CreateViewRequest;
 
 /**
  * Creates a saved view via `POST /api/views`. On success the views

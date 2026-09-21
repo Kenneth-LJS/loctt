@@ -1,18 +1,30 @@
 // @verifies K83 — the visual query builder's core: AST ⇄ BuilderTree and
 // the renderability predicate (refuse rather than approximate).
+// Core by per-file subpath, never the barrel (A37 — the barrel drags
+// node:path/sharp into the browser bundle). The tree model itself is
+// web-client-local since K102; see builderTree.ts's header.
+import type { QueryNode } from "@loctt/core/query/parser.js";
+import { parseQuery } from "@loctt/core/query/parser.js";
+import { tokenize } from "@loctt/core/query/tokenizer.js";
 import { describe, expect, it } from "vitest";
 
-import { builderTreeToQuery, conditionsToDsl, queryToBuilderTree, queryToConditions } from "./builderTree.js";
-import type { QueryNode } from "./parser.js";
-import { parseQuery } from "./parser.js";
-import { tokenize } from "./tokenizer.js";
+import { builderTreeToQuery, conditionsToDsl, queryToBuilderTree, queryToConditions } from "./builderTree.ts";
 
 /**
  * Normalizes an AST to a canonical shape for semantic comparison,
- * dropping `position` (a serialize/reparse won't preserve byte offsets)
- * and flattening left-nested and/or chains (so `a and b and c` and any
- * re-association compare equal). This is the semantic-equality yardstick
- * the round-trip asserts against.
+ * flattening left-nested and/or chains (so `a and b and c` and any
+ * re-association compare equal) and dropping the two PRESENTATION-ONLY
+ * fields a serialize/reparse cannot be expected to reproduce:
+ *
+ *  - `position` — a byte offset into the ORIGINAL text; re-emitting with
+ *    normalized spacing moves every offset.
+ *  - `parenthesized` — the count of paren pairs the author wrote. The
+ *    builder tree has no slot for it (it flattens the very nodes an
+ *    authored paren sat on), so a round-trip through the builder drops a
+ *    decorative paren by design. Comparing it here would assert that the
+ *    builder preserves typography, which is not what these cases claim;
+ *    what they claim is that the query still MEANS the same thing.
+ *    Neither the evaluator nor the validator reads this field.
  */
 function normalize(node: QueryNode): unknown {
   switch (node.type) {
@@ -31,11 +43,17 @@ function normalize(node: QueryNode): unknown {
       return { type: node.type, parts };
     }
     case "comparison": {
-      const { position: _p, ...rest } = node;
+      const { position: _p, parenthesized: _paren, ...rest } = node;
       return rest;
     }
-    default:
-      return node;
+    case "not": {
+      const { parenthesized: _paren, ...rest } = node;
+      return { ...rest, operand: normalize(node.operand) };
+    }
+    case "has_link": {
+      const { position: _p, parenthesized: _paren, ...rest } = node;
+      return rest;
+    }
   }
 }
 

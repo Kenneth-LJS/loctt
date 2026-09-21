@@ -1,21 +1,37 @@
-import type { QueriesConfig, SavedQuery, Task, WorkflowConfig } from "@loctt/contracts";
+import type { ComparisonOp, QueriesConfig, SavedQuery, Task, WorkflowConfig } from "@loctt/contracts";
 import { describe, expect,it } from "vitest";
 
 import { QueriesConfigError } from "../config/queries.js";
-import { queryToConditions } from "./builderTree.js";
 import { buildListContext, listTasks, listTasksPaginated, resolveView } from "./list.js";
 import { QueryValidationError } from "./validate.js";
 
 /**
- * Build a SavedQuery fixture, deriving `conditions` from the DSL so these
- * `listTasks`/`resolveView` fixtures satisfy the (required) conditions
- * field without hand-authoring a tree — these tests exercise list/view
- * resolution, not the conditions shape.
+ * Build a SavedQuery fixture from a single simple filter — most of these
+ * `listTasks`/`resolveView` fixtures only need one `field op values`
+ * predicate, so this keeps the table below readable. Use `filters`
+ * directly (or `advancedView` below) for anything more elaborate.
  */
-function view(q: Omit<SavedQuery, "conditions">): SavedQuery {
-  const res = queryToConditions(q.query);
-  if (!res.ok) throw new Error(`test fixture DSL does not parse: ${q.query}`);
-  return { ...q, conditions: res.tree };
+function view(
+  q: { id: string; name: string; field: string; op: ComparisonOp; values: string[]; sort?: SavedQuery["sort"]; archivedScope?: SavedQuery["archivedScope"] },
+): SavedQuery {
+  return {
+    id: q.id,
+    name: q.name,
+    filters: [{ kind: "simple", field: q.field, op: q.op, values: q.values }],
+    ...(q.sort !== undefined ? { sort: q.sort } : {}),
+    ...(q.archivedScope !== undefined ? { archivedScope: q.archivedScope } : {}),
+  };
+}
+
+/** Build a SavedQuery fixture from a single advanced (raw DSL) filter. */
+function advancedView(q: { id: string; name: string; query: string; sort?: SavedQuery["sort"]; archivedScope?: SavedQuery["archivedScope"] }): SavedQuery {
+  return {
+    id: q.id,
+    name: q.name,
+    filters: [{ kind: "advanced", query: q.query }],
+    ...(q.sort !== undefined ? { sort: q.sort } : {}),
+    ...(q.archivedScope !== undefined ? { archivedScope: q.archivedScope } : {}),
+  };
 }
 
 const config: WorkflowConfig = {
@@ -39,13 +55,13 @@ const queriesConfig: QueriesConfig = {
     view({
       id: "01HSV0000000000000RECENT",
       name: "recent-open",
-      query: "status != done",
+      field: "status", op: "!=", values: ["done"],
       sort: [{ field: "updated_at", direction: "desc" }],
     }),
     view({
       id: "01HSV0000000000000BYPRIORITY",
       name: "by-priority",
-      query: "status != done",
+      field: "status", op: "!=", values: ["done"],
       sort: [{ field: "priority", direction: "desc" }],
     }),
   ],
@@ -75,7 +91,7 @@ const tasks: Task[] = [
 describe("resolveView", () => {
   it("finds a view by name", () => {
     const view = resolveView(queriesConfig, "recent-open");
-    expect(view?.query).toBe("status != done");
+    expect(view?.filters).toEqual([{ kind: "simple", field: "status", op: "!=", values: ["done"] }]);
   });
 
   it("returns undefined for unknown view", () => {
@@ -349,9 +365,19 @@ describe("listTasks", () => {
       expect(warned).toBe(false);
     });
 
-    it("does not inject archived filter when using a saved view", () => {
+    // K102 BEHAVIOUR CHANGE: pre-K102, running a saved view EXEMPTED the
+    // call from archived scoping entirely — "views respected as
+    // authored", because a view's stored `query` string could only
+    // express scope as an `archived != true` filter term, which the
+    // seed deliberately did not include. Under K102 a view stores its
+    // scope as its OWN `archivedScope` field, not a filter term, so
+    // running a view is no longer exempt — it resolves to that field
+    // (defaulting to "active") exactly like an ad hoc call. This test
+    // used to assert the OLD exemption (that the archived not_started
+    // task leaked through); it now asserts the NEW default-active rule.
+    it("defaults an unscoped view to archivedScope 'active' (no exemption) — K102 changed this", () => {
       const viewConfig: QueriesConfig = {
-        queries: [view({ id: "01HSV0000000000000VIEW", name: "all-not-started", query: "status = not_started" })],
+        queries: [view({ id: "01HSV0000000000000VIEW", name: "all-not-started", field: "status", op: "=", values: ["not_started"] })],
       };
       const result = listTasks({
         tasks: archivedTasks,
@@ -359,7 +385,50 @@ describe("listTasks", () => {
         queriesConfig: viewConfig,
         workflowConfig: config,
       });
-      // View is respected as authored — includes the archived not_started task
+      // Archived T-2 is now hidden by the view's default "active" scope.
+      expect(result.map(t => t.frontmatter.key).sort()).toEqual(["T-1"]);
+    });
+
+    it("a view's own archivedScope field is honoured when the caller does not override it", () => {
+      const viewConfig: QueriesConfig = {
+        queries: [
+          view({
+            id: "01HSV0000000000000VIEWALL",
+            name: "all-not-started-scoped-all",
+            field: "status", op: "=", values: ["not_started"],
+            archivedScope: "all",
+          }),
+        ],
+      };
+      const result = listTasks({
+        tasks: archivedTasks,
+        options: { view: "all-not-started-scoped-all" },
+        queriesConfig: viewConfig,
+        workflowConfig: config,
+      });
+      // The view's own scope ("all") is applied, so the archived
+      // not_started task is included.
+      expect(result.map(t => t.frontmatter.key).sort()).toEqual(["T-1", "T-2"]);
+    });
+
+    it("an explicit caller archivedScope overrides the view's own scope", () => {
+      const viewConfig: QueriesConfig = {
+        queries: [
+          view({
+            id: "01HSV0000000000000VIEWACTIVE",
+            name: "not-started-active",
+            field: "status", op: "=", values: ["not_started"],
+            archivedScope: "active",
+          }),
+        ],
+      };
+      const result = listTasks({
+        tasks: archivedTasks,
+        options: { view: "not-started-active", archivedScope: "all" },
+        queriesConfig: viewConfig,
+        workflowConfig: config,
+      });
+      // Caller's explicit "all" wins over the view's own "active".
       expect(result.map(t => t.frontmatter.key).sort()).toEqual(["T-1", "T-2"]);
     });
   });
@@ -394,7 +463,7 @@ describe("listTasks", () => {
       // query is the source of truth — surfaces would conflate the
       // two if they were AND-merged silently.
       const viewConfig: QueriesConfig = {
-        queries: [view({ id: "01HSV0000000000000ALLOPEN", name: "all-open", query: "status != done" })],
+        queries: [view({ id: "01HSV0000000000000ALLOPEN", name: "all-open", field: "status", op: "!=", values: ["done"] })],
       };
       const result = listTasks({
         tasks: multiProjectTasks,
@@ -498,7 +567,7 @@ describe("listTasks — semantic query validation", () => {
     // A view referencing a since-deleted custom field used to work.
     // Breaking `--view` outright would regress existing trackers.
     const staleView: QueriesConfig = {
-      queries: [view({
+      queries: [advancedView({
         id: "01HSV0000000000000STALE",
         name: "stale",
         query: "fields.deleted_field = x",
@@ -608,7 +677,7 @@ describe("listTasks — view + ad hoc query", () => {
   // the user's own typing, so a typo in it must still throw rather
   // than being downgraded to a warning because a view was named.
   const staleView: QueriesConfig = {
-    queries: [view({
+    queries: [advancedView({
       id: "01HSV0000000000000STALE2",
       name: "stale",
       query: "fields.deleted_field = x",
@@ -634,6 +703,49 @@ describe("listTasks — view + ad hoc query", () => {
       onWarning: err => warnings.push(err),
     })).not.toThrow();
     expect(warnings).toHaveLength(1);
+  });
+
+  // K102 BEHAVIOUR CHANGE: pre-K102, an ad-hoc `--query` REPLACED a
+  // named view's query when both were present. Now the view's composed
+  // filters and the ad-hoc query are ANDed together — both must match.
+  it("ANDs the view's filters with an ad-hoc query rather than replacing them", () => {
+    const viewConfig: QueriesConfig = {
+      queries: [view({
+        id: "01HSV0000000000000ANDVIEW",
+        name: "not-done",
+        field: "status", op: "!=", values: ["done"],
+      })],
+    };
+    // View alone (status != done) matches T-1, T-2, T-4. Adding an
+    // ad-hoc query for priority = high must narrow it further, not
+    // replace the view's own predicate outright.
+    const result = listTasks({
+      tasks,
+      options: { view: "not-done", query: "priority = high" },
+      queriesConfig: viewConfig,
+      workflowConfig: config,
+    });
+    expect(result.map(t => t.frontmatter.key)).toEqual(["T-2"]);
+  });
+
+  it("an ad-hoc query that contradicts the view's filters matches nothing (proves AND, not replace)", () => {
+    // If the ad-hoc query REPLACED the view (the old behaviour), this
+    // would return T-3 (the only status = done task). Under AND, the
+    // view's own `status != done` rules T-3 out too, so nothing matches.
+    const viewConfig: QueriesConfig = {
+      queries: [view({
+        id: "01HSV0000000000000ANDVIEW2",
+        name: "not-done-2",
+        field: "status", op: "!=", values: ["done"],
+      })],
+    };
+    const result = listTasks({
+      tasks,
+      options: { view: "not-done-2", query: "status = done" },
+      queriesConfig: viewConfig,
+      workflowConfig: config,
+    });
+    expect(result).toEqual([]);
   });
 });
 

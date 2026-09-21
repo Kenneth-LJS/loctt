@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { initLoctt, lookupByKey, resolveLocttDir, serializeQueriesConfig } from "@loctt/core";
-import { queryToConditions } from "@loctt/core/query/builderTree.js";
 import type { MockInstance } from "vitest";
 import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1418,17 +1417,18 @@ describe("CLI list — stale saved view warning", () => {
     await initLoctt(root);
     // A view referencing a custom field that doesn't exist — the
     // shape a tracker ends up in after the field is deleted.
-    // A saved view now carries structured `conditions` (a required field);
-    // derive it from the DSL exactly as the API does, so the fixture is
-    // valid and the test reaches the unknown-custom-field warning it asserts.
-    const staleQuery = "fields.deleted_field = x";
-    const staleParsed = queryToConditions(staleQuery);
-    if (!staleParsed.ok) throw new Error("fixture query does not parse");
+    // K102: a saved view stores an ordered `filters[]` list, not a `query`
+    // DSL string or a derived `conditions` tree. A single advanced filter
+    // carrying the stale DSL reaches the same unknown-custom-field warning.
     await writeFile(
       join(root, ".loctt", "config", "queries.yaml"),
       serializeQueriesConfig({
         queries: [
-          { id: "01HSV0000000000000STALE3", name: "stale", query: staleQuery, conditions: staleParsed.tree },
+          {
+            id: "01HSV0000000000000STALE3",
+            name: "stale",
+            filters: [{ kind: "advanced", query: "fields.deleted_field = x" }],
+          },
         ],
       }),
       "utf-8",
@@ -1458,7 +1458,9 @@ describe("CLI list — stale saved view warning", () => {
       "queries:\n"
       + "  - id: 01HSV0000000000000FINE01\n"
       + "    name: fine\n"
-      + "    query: status != done\n",
+      + "    filters:\n"
+      + "      - kind: advanced\n"
+      + "        query: status != done\n",
       "utf-8",
     );
     process.argv = ["node", "loctt", "list", "--view", "fine"];

@@ -119,7 +119,7 @@ import {
   filterByName,
   filterForExport,
   filterProjects,
-  findLossyConstructs,
+  filtersToScannableText,  findLossyConstructs,
   findProjectBySlug,
   FsAccessError,
   getAttachmentPath,
@@ -1855,27 +1855,25 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleCreateView: RouteHandler = async ({ req, res, locttDir }) => {
-    // Web sends STRUCTURED `conditions` (a BuilderTree); the DSL `query`
-    // is derived by core from it. The contracts request schema now carries
-    // both `conditions` and an optional `query` (Stage-3 hoist), shared by
-    // all three surfaces: core's `resolveViewFilter` accepts conditions OR
-    // a query and rejects neither. A client that still sends only `query`
-    // (the CLI/MCP path, or a defensive web client) works unchanged — core
-    // derives conditions.
+    // K102: every surface sends the SAME shape — an ordered `filters`
+    // list, each entry either a simple field/op/values filter or an
+    // advanced DSL string. There is no web-sends-structure /
+    // CLI-sends-DSL split any more, and no derived query string.
     const r = await parseJsonBodyWithSchema(req, res, CreateViewRequestSchema);
     try {
       const created = await createView(locttDir, {
         name: r.name,
-        ...(r.conditions !== undefined ? { conditions: r.conditions } : {}),
-        ...(r.query !== undefined ? { query: r.query } : {}),
+        filters: r.filters,
         ...(r.sort !== undefined ? { sort: r.sort } : {}),
+        ...(r.archivedScope !== undefined ? { archivedScope: r.archivedScope } : {}),
+        ...(r.icon !== undefined ? { icon: r.icon } : {}),
       });
       json(res, created, 201);
     } catch (err) {
       // ViewError is core's own user-facing text (a bad query, a
       // duplicate name), so it is the headline verbatim per ERR-6.
       if (err instanceof ViewError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "query" });
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "filters" });
         return;
       }
       throw err;
@@ -1884,9 +1882,9 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateView: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
-    // As with create, the shared contracts schema carries both `conditions`
-    // and `query`. A filter edit sends `conditions` and core derives
-    // `query`; a raw-DSL edit sends `query` and core derives `conditions`.
+    // As with create, one shared shape. `filters` replaces the WHOLE
+    // ordered list when present; omitting it leaves the view's filters
+    // untouched (order is meaningful, so there is no partial patch).
     const r = await parseJsonBodyWithSchema(req, res, EditViewRequestSchema);
     try {
       // Drop explicitly-`undefined` keys so we're passing
@@ -1895,14 +1893,15 @@ export function createWebApp(options: WebAppOptions) {
       // sort: null case ("clear sort") is preserved.
       const updated = await editView(locttDir, ref, {
         ...(r.name !== undefined ? { name: r.name } : {}),
-        ...(r.conditions !== undefined ? { conditions: r.conditions } : {}),
-        ...(r.query !== undefined ? { query: r.query } : {}),
+        ...(r.filters !== undefined ? { filters: r.filters } : {}),
         ...(r.sort !== undefined ? { sort: r.sort } : {}),
+        ...(r.archivedScope !== undefined ? { archivedScope: r.archivedScope } : {}),
+        ...(r.icon !== undefined ? { icon: r.icon } : {}),
       });
       json(res, updated);
     } catch (err) {
       if (err instanceof ViewError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "query" });
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "filters" });
         return;
       }
       throw err;
@@ -4158,13 +4157,14 @@ export function createWebApp(options: WebAppOptions) {
 
     // CMT-10: the "Mentions me" built-in resolves to
     // `comment_mentions = currentUser()`. Load comment mentions only when
-    // the effective query (or a resolved saved view's query) references
-    // the field, so ordinary lists do no comment I/O.
+    // the effective query (or a resolved saved view's filters) references
+    // the field, so ordinary lists do no comment I/O. A view contributes
+    // one scannable string per filter (K102).
     const listViewQuery = view !== undefined && queriesConfig !== undefined
-      ? resolveView(queriesConfig, view)?.query
-      : undefined;
+      ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+      : [];
     const listCtx = await resolveCommentMentionsContext(
-      locttDir, tasks, buildListContext(tasks), [effectiveQuery, listViewQuery],
+      locttDir, tasks, buildListContext(tasks), [effectiveQuery, ...listViewQuery],
     );
 
     let result;
@@ -4232,7 +4232,7 @@ export function createWebApp(options: WebAppOptions) {
             broken_view: {
               id: brokenView.id,
               name: brokenView.name,
-              query: brokenView.query,
+              summary: brokenView.summary,
               error: brokenView.error,
               ...(brokenView.position !== undefined ? { position: brokenView.position } : {}),
             },
@@ -4358,10 +4358,10 @@ export function createWebApp(options: WebAppOptions) {
     };
     // CMT-10: gate the comment-mention scan on the query, as the list does.
     const exportViewQuery = view !== undefined && queriesConfig !== undefined
-      ? resolveView(queriesConfig, view)?.query
-      : undefined;
+      ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+      : [];
     const exportCtx = await resolveCommentMentionsContext(
-      locttDir, tasks, buildListContext(tasks), [effectiveQuery, exportViewQuery],
+      locttDir, tasks, buildListContext(tasks), [effectiveQuery, ...exportViewQuery],
     );
     const result = listTasks({
       tasks,

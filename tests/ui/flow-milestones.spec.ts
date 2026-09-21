@@ -442,7 +442,7 @@ test.describe("MSL — the milestones view", () => {
     await expect(page.locator(`[data-milestone-id="${alpha}"]`)).toHaveCount(0);
 
     // Revealed by the affordance.
-    await page.getByTestId("milestones-show-archived").check();
+    await page.getByTestId("milestones-archived-scope").selectOption("all");
     await expect(page.locator(`[data-milestone-id="${alpha}"]`)).toHaveCount(1);
 
     // Without unarchiving it: the file still says archived.
