@@ -9,6 +9,7 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { type CustomFieldDialogResult,CustomFieldEditDialog } from "./CustomFieldEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
+import { RowActions } from "./RowActions.tsx";
 import { enumSortBasis } from "./workflowEdits.ts";
 import { collectionKeys, entryChangedOnDisk } from "./workflowForms.ts";
 import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
@@ -328,26 +329,14 @@ function FieldRow({
           {field.searchable ? "searchable" : "not searchable"}
         </span>
 
-        <span className="ml-auto flex gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            testId={`custom-field-edit-${field.key}`}
-            disabled={disabled}
-            onClick={onEdit}
-          >
-            Edit
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            testId={`custom-field-delete-${field.key}`}
-            disabled={disabled}
-            onClick={onDelete}
-            className="text-danger-fg"
-          >
-            Delete
-          </Button>
+        <span className="ml-auto">
+          <RowActions
+            label={`Actions for custom field "${field.label}"`}
+            actions={[
+              { label: "Edit", testId: `custom-field-edit-${field.key}`, disabled, onSelect: onEdit },
+              { label: "Delete", testId: `custom-field-delete-${field.key}`, danger: true, disabled, onSelect: onDelete },
+            ]}
+          />
         </span>
       </div>
 

@@ -258,7 +258,9 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
     // The label is a read-out span, not an <input> that auto-saves on blur.
     const label = screen.getByTestId("statuses-label-todo");
     expect(label.tagName.toLowerCase()).not.toBe("input");
-    // The Edit control opens the dialog.
+    // The Edit control opens the dialog. Row actions live behind a kebab
+    // (K105 affordance rule): open it, then the Edit item is present.
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "To do"/ }));
     expect(screen.getByTestId("statuses-edit-todo")).toBeTruthy();
   });
 
@@ -268,6 +270,7 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
     render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
     await screen.findByTestId("statuses-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "In progress" } });
@@ -288,6 +291,7 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
     render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
     await screen.findByTestId("statuses-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "In progress" } });
@@ -312,6 +316,7 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
     render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
     await screen.findByTestId("statuses-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "In progress" } });
@@ -340,6 +345,7 @@ describe("EnumCollectionPanel — edit preserves presentational fields", () => {
     render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
     await screen.findByTestId("statuses-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "In progress" } });
@@ -475,6 +481,7 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     render(<CustomFieldsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("custom-fields-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Story points"/ }));
     fireEvent.click(screen.getByTestId("custom-field-edit-story_points"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     // SET-16: the type control is DISABLED (not merely validated on submit).
@@ -493,6 +500,7 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     render(<CustomFieldsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("custom-fields-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Story points"/ }));
     fireEvent.click(screen.getByTestId("custom-field-edit-story_points"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Points" } });
@@ -515,6 +523,7 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     render(<CustomFieldsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("custom-fields-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Size"/ }));
     fireEvent.click(screen.getByTestId("custom-field-edit-size"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     // Change the field label and one value's label — nothing else.
@@ -579,6 +588,7 @@ describe("Part A — icon + color on statuses (create + edit)", () => {
     render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
     await screen.findByTestId("statuses-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.click(within(dialog).getByTestId("statuses-entry-icon"));
@@ -704,6 +714,7 @@ describe("Part C1 — custom-field task_types scope (create + edit)", () => {
     render(<CustomFieldsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("custom-fields-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Story points"/ }));
     fireEvent.click(screen.getByTestId("custom-field-edit-story_points"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope"));

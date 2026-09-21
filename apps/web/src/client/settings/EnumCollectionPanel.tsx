@@ -10,6 +10,7 @@ import { Button } from "../ui/Button.tsx";
 import { type EntryDialogResult,EntryEditDialog } from "./EntryEditDialog.tsx";
 import { type RemapChoice,RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
+import { RowActions } from "./RowActions.tsx";
 import { renumberPriorities, reorder, setDefaultStatus } from "./workflowEdits.ts";
 import {
   buildPriority,
@@ -425,27 +426,20 @@ function RowFields({
         {String(count)} task{count === 1 ? "" : "s"}
       </span>
 
-      <Button
-        variant="secondary"
-        size="sm"
-        testId={`${collection}-edit-${row.key}`}
-        disabled={disabled}
-        onClick={onEdit}
-      >
-        Edit
-      </Button>
-
-      <Button
-        variant="secondary"
-        size="sm"
-        testId={`${collection}-delete-${row.key}`}
-        disabled={disabled || onlyRow}
-        onClick={onDelete}
-        {...(onlyRow ? { title: `A tracker needs at least one ${NOUN[collection]}.` } : {})}
-        className="text-danger-fg"
-      >
-        Delete
-      </Button>
+      <RowActions
+        label={`Actions for ${NOUN[collection]} "${row.label}"`}
+        actions={[
+          { label: "Edit", testId: `${collection}-edit-${row.key}`, disabled, onSelect: onEdit },
+          {
+            label: "Delete",
+            testId: `${collection}-delete-${row.key}`,
+            danger: true,
+            disabled: disabled || onlyRow,
+            ...(onlyRow ? { title: `A tracker needs at least one ${NOUN[collection]}.` } : {}),
+            onSelect: onDelete,
+          },
+        ]}
+      />
     </div>
   );
 }
