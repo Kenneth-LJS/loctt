@@ -453,3 +453,46 @@ describe("CreateUserForm avatar (Part C3)", () => {
     expect(posts.some(p => p.isFile)).toBe(false);
   });
 });
+
+describe("UsersPanel — archived separation + self-user note (U24/U25)", () => {
+  const CAROL_ARCHIVED = {
+    id: "u-carol", name: "Carol", email: "carol@example.com", timezone: "UTC", archived: true,
+  };
+  function stubWithArchived(): void {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> => {
+      const urlStr = String(url);
+      if (urlStr.includes("/api/user/current")) return Promise.resolve(jsonResponse(BOB));
+      if (urlStr.includes("/api/users")) {
+        return Promise.resolve(jsonResponse({
+          items: [ALICE, BOB, CAROL_ARCHIVED], total: 3, offset: 0, limit: 100,
+        }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+  }
+
+  it("hides archived users until the toggle is on (U25)", async () => {
+    stubWithArchived();
+    render(<UsersPanel />, { wrapper: wrapper() });
+    // Active users show; the archived one does not, by default.
+    await screen.findByTestId("user-row-u-alice");
+    expect(screen.queryByTestId("user-row-u-carol")).toBeNull();
+    // Toggling reveals it.
+    fireEvent.click(screen.getByTestId("users-show-archived"));
+    expect(await screen.findByTestId("user-row-u-carol")).toBeTruthy();
+  });
+
+  it("does not render an inline self-user note that reflows the row (U24)", async () => {
+    stubWithArchived();
+    render(<UsersPanel />, { wrapper: wrapper() });
+    // BOB is the current user (self). The reason lives as the disabled
+    // Archive button's tooltip + an sr-only note — NOT a visible inline
+    // paragraph that changes the row height.
+    const note = await screen.findByTestId("user-archive-blocked-u-bob");
+    expect(note.className).toContain("sr-only");
+    // The disabled Archive button carries the reason as its tooltip.
+    const archiveBtn = screen.getByTestId("user-archive-u-bob");
+    expect(archiveBtn.hasAttribute("disabled")).toBe(true);
+    expect(archiveBtn.getAttribute("title")).toMatch(/cannot archive/i);
+  });
+});

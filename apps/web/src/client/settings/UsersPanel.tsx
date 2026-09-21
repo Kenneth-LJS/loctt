@@ -15,6 +15,7 @@ import {
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
@@ -676,16 +677,21 @@ function UserRowActions({
           Delete
         </Button>
       </div>
+      {/* U24: the self-user reason is a TOOLTIP on the disabled
+          Archive/Delete buttons (their `title` above), not an inline note.
+          The old `<p>` reflowed the row to a taller height (Ken's report);
+          a hidden description keeps it available to assistive tech without
+          changing the row's height. `aria-describedby` on the buttons is
+          not wired here because each button already carries the reason in
+          its `title`/accessible name; this span is a belt-and-braces
+          screen-reader affordance kept off-layout. */}
       {isSelf && (
-        <p
+        <span
           data-testid={`user-archive-blocked-${user.id}`}
-          className={[
-            "mt-1 max-w-[16rem] text-[0.7857rem] text-text-tertiary",
-            align === "end" ? "ml-auto" : "",
-          ].join(" ")}
+          className="sr-only"
         >
-          You cannot archive the user you are acting as. Switch users first.
-        </p>
+          You cannot archive or delete the user you are acting as. Switch users first.
+        </span>
       )}
     </div>
   );
@@ -703,6 +709,9 @@ export function UsersPanel() {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<UserProfile | null>(null);
   const [editing, setEditing] = useState<UserProfile | null>(null);
+  // U25: archived users are separated behind a toggle, like the other
+  // entity lists (milestones/sprints/labels), rather than interleaved.
+  const [showArchived, setShowArchived] = useState(false);
 
   if (users.isError) {
     return (
@@ -721,10 +730,27 @@ export function UsersPanel() {
 
   const items = users.data?.items ?? [];
   const currentId = current.data?.id;
+  // U25: split active from archived. Active always shows; archived only
+  // behind the toggle. `visible` is what the table/cards iterate.
+  const activeItems = items.filter(u => u.archived !== true);
+  const archivedItems = items.filter(u => u.archived === true);
+  const visible = showArchived ? [...activeItems, ...archivedItems] : activeItems;
 
   return (
     <div data-testid="settings-users">
-      <h1 className="mb-1 text-lg font-semibold">Users</h1>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold">Users</h1>
+        {archivedItems.length > 0 && (
+          <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
+            <Checkbox
+              data-testid="users-show-archived"
+              checked={showArchived}
+              onChange={e => { setShowArchived(e.target.checked); }}
+            />
+            Show archived ({archivedItems.length})
+          </label>
+        )}
+      </div>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Identities that can be assigned work and attributed activity.
       </p>
@@ -740,7 +766,7 @@ export function UsersPanel() {
           </tr>
         </thead>
         <tbody>
-          {items.map(u => {
+          {visible.map(u => {
             const isSelf = u.id === currentId;
             const qual = qualifier(u, items);
             return (
@@ -797,7 +823,7 @@ export function UsersPanel() {
           only the layout differs. */}
       {isNarrow && (
         <ul className="flex flex-col gap-2" data-testid="user-cards">
-          {items.map(u => {
+          {visible.map(u => {
             const isSelf = u.id === currentId;
             const qual = qualifier(u, items);
             return (
