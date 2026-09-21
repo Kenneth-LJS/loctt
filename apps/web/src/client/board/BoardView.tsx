@@ -13,6 +13,7 @@ import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { FilterBar } from "../list/FilterBar.tsx";
 import { buildLookups } from "../list/lookups.ts";
+import { useScopeTitle } from "../list/useScopeTitle.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -48,6 +49,8 @@ import { useBoardDrag } from "./useBoardDrag.ts";
  */
 export function BoardView() {
   const search = useSearch({ from: "/board" });
+  // K-title rule: scope-aware title (view/project name, else "Board").
+  const title = useScopeTitle(search, "Board");
   const navigate = useNavigate({ from: "/board" });
   const createTask = useCreateTask();
 
@@ -296,6 +299,43 @@ export function BoardView() {
 
   return (
     <div className="flex h-full flex-col gap-3 p-4" data-testid="board">
+      {/* K-title rule: the page title anchors the screen ABOVE the toolbar
+          (was below it — Ken's bug). The chips bar is its own row below the
+          filter bar. The board's two board-level controls — "+ Add task"
+          (NEW-1) and the options overflow (K100) — sit in the title's
+          actions slot. Title text is the active scope (view/project) or
+          "Board". */}
+      <PageHeader
+        title={title}
+        testId="board-header"
+        actions={
+          // NEW-1's board entry point. BRD-40's "+ Add task" lives
+          // inside the `total === 0` empty state, so on any board that
+          // actually has tasks there was no way to open the modal from
+          // here at all — NEW-1's test passed only because it never
+          // seeded. This is board-level, not per-column, deliberately:
+          // M3.1 built per-column controls and removed them because a
+          // column still rendered for a status `workflow.yaml` no
+          // longer declares would carry a create control, which is what
+          // broke BRD-42.
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              testId="board-add-task"
+              onClick={() => { createTask.open(); }}
+            >
+              + Add task
+            </Button>
+            {/* K100: board config is discoverable from the board. Both are
+                whole-surface editors (columns = whole-document draft, card
+                layout = whole-surface pref), so both are DEEP LINKS,
+                labelled as navigation — never in-place edits from a view. */}
+            <BoardOptionsMenu />
+          </>
+        }
+      />
+
       {/* The shared filter bar (cross-view scope fix, Ken 2026-09-20):
           the board reads the same URL filter vocabulary as the list
           (BRD-1/BRD-14), so it mounts the same bar the list does. Refresh
@@ -385,44 +425,6 @@ export function BoardView() {
           longer declares. Surfaced here, naming both, rather than as a
           console warning the user never sees (P7). */}
       <ColumnDriftBanner columns={columns} />
-
-      {/* The titled header (Ken 2026-09-20). The "Board" h1 gives the
-          view the same titled top row the other list-like views have.
-          The chips bar is its own row below rather than in the actions
-          slot: it wraps to many pills (up to one per column) and would
-          crush the title on a phone if it shared the row. The board's
-          two board-level controls — "+ Add task" (NEW-1) and the
-          options overflow (K100) — sit in the actions slot. */}
-      <PageHeader
-        title="Board"
-        testId="board-header"
-        actions={
-          // NEW-1's board entry point. BRD-40's "+ Add task" lives
-          // inside the `total === 0` empty state, so on any board that
-          // actually has tasks there was no way to open the modal from
-          // here at all — NEW-1's test passed only because it never
-          // seeded. This is board-level, not per-column, deliberately:
-          // M3.1 built per-column controls and removed them because a
-          // column still rendered for a status `workflow.yaml` no
-          // longer declares would carry a create control, which is what
-          // broke BRD-42.
-          <>
-            <Button
-              variant="secondary"
-              size="sm"
-              testId="board-add-task"
-              onClick={() => { createTask.open(); }}
-            >
-              + Add task
-            </Button>
-            {/* K100: board config is discoverable from the board. Both are
-                whole-surface editors (columns = whole-document draft, card
-                layout = whole-surface pref), so both are DEEP LINKS,
-                labelled as navigation — never in-place edits from a view. */}
-            <BoardOptionsMenu />
-          </>
-        }
-      />
 
       <ChipsBar
         columns={columns}

@@ -32,6 +32,7 @@ import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
 import {
   AssigneeCell,
@@ -48,6 +49,7 @@ import { clearedSearch, FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
+import { useScopeTitle } from "./useScopeTitle.ts";
 import { useSelection } from "./useSelection.ts";
 
 /**
@@ -129,6 +131,9 @@ function escapeTaskKey(key: string): string {
 export function ListView() {
   const search = useSearch({ from: "/list" });
   const navigate = useNavigate({ from: "/list" });
+  // K-title rule: the title reflects the active scope (saved view name, or
+  // a single scoped project's name), falling back to the screen name.
+  const title = useScopeTitle(search, "List");
   // Below `sm`, render the stacked-card layout instead of the table
   // (UX eval #3). Conditional render, not CSS toggle, so the task list is
   // never in the DOM twice.
@@ -711,6 +716,10 @@ export function ListView() {
 
   return (
     <div className="flex flex-col gap-3 p-4">
+      {/* K-title rule: the page title anchors the screen ABOVE the toolbar,
+          on every task view. The text is the active scope (view/project) or
+          "List". */}
+      <PageHeader title={title} testId="list-page-header" />
       {/* FilterBar owns the whole toolbar row now — the filters (left) AND
           the view-action cluster (Export/Save, top-right). The manual refresh
           button was removed (Q4: refresh on focus/visibility, not a button);

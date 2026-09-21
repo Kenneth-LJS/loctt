@@ -14,6 +14,7 @@ import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { buildGroupingCatalog, type GroupEntry } from "../grouping/catalog.ts";
 import { GroupByPicker } from "../grouping/GroupByPicker.tsx";
 import { FilterBar } from "../list/FilterBar.tsx";
+import { useScopeTitle } from "../list/useScopeTitle.ts";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
@@ -60,6 +61,8 @@ const TIMELINE_PAGE_SIZE = 200;
 export function TimelineView() {
   const search = useSearch({ from: "/timeline" });
   const navigate = useNavigate({ from: "/timeline" });
+  // K-title rule: scope-aware title (view/project name, else "Timeline").
+  const title = useScopeTitle(search, "Timeline");
 
   const params = useMemo(
     () => ({ ...tasksParamsFromSearch(search), limit: TIMELINE_PAGE_SIZE }),
@@ -527,7 +530,7 @@ export function TimelineView() {
           wraps and collapses into a "More" menu at phone width, and
           hoisting it into the header would fight that responsive
           behaviour. This is a title row, not a toolbar restructure. */}
-      <PageHeader title="Timeline" testId="timeline-header" />
+      <PageHeader title={title} testId="timeline-header" />
 
       {/* The shared list filter bar, so `/timeline` filters the same way
           `/list` does (assignee, milestone, status, saved views, …). The
