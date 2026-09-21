@@ -107,8 +107,15 @@ async function renderDetail(id: string) {
     path: "/milestones",
     component: () => <div data-testid="list-stub">list</div>,
   });
+  // K105: the kebab's "Manage milestones" navigates here; a stub route
+  // keeps that navigation from erroring in the test router.
+  const settingsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/$section",
+    component: () => <div data-testid="settings-stub">settings</div>,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([detailRoute, listRoute]),
+    routeTree: rootRoute.addChildren([detailRoute, listRoute, settingsRoute]),
     history: createMemoryHistory({ initialEntries: [`/milestones/${id}`] }),
   });
 
@@ -125,21 +132,27 @@ afterEach(() => {
   PUTS.length = 0;
 });
 
-describe("MilestoneDetail — header Edit affordance (K100)", () => {
-  it("opens the shared dialog prefilled, and Save issues the update", async () => {
+describe("MilestoneDetail — header kebab affordance (K105)", () => {
+  it("edit lives in a '⋯' kebab (not a text button) and opens the shared dialog prefilled; Save issues the update", async () => {
     MILESTONES = [
       { id: "ms_1", name: "Beta launch", target_date: "2026-07-01", progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 } },
     ];
     await renderDetail("ms_1");
 
-    // The page renders read-only: no dialog, an Edit control labelled by
-    // the milestone name.
-    const edit = await screen.findByTestId("milestone-detail-edit");
-    expect(edit.getAttribute("aria-label")).toBe("Edit Beta launch");
+    // K105: the point-of-use edit affordance is an icon kebab, whose
+    // trigger carries the milestone-named aria-label — never a text
+    // "Edit" button. Nothing is open yet, so the Edit MenuItem is not in
+    // the DOM until the kebab is opened.
+    const kebab = await screen.findByTestId("milestone-detail-actions");
+    expect(kebab.getAttribute("aria-label")).toBe("Milestone actions for Beta launch");
+    expect(kebab.getAttribute("aria-haspopup")).toBe("menu");
+    expect(screen.queryByTestId("milestone-detail-edit")).toBeNull();
     expect(screen.queryByTestId("milestone-edit-dialog")).toBeNull();
 
-    // Clicking Edit opens the SHARED dialog, prefilled from the milestone.
-    fireEvent.click(edit);
+    // Open the kebab, click "Edit milestone" → the SHARED dialog opens
+    // prefilled from the milestone.
+    fireEvent.click(kebab);
+    fireEvent.click(await screen.findByTestId("milestone-detail-edit"));
     const dialog = await screen.findByTestId("milestone-edit-dialog");
     expect(dialog).toBeTruthy();
     const nameInput = screen.getByTestId<HTMLInputElement>("milestone-name-input");
@@ -158,5 +171,31 @@ describe("MilestoneDetail — header Edit affordance (K100)", () => {
 
     // The dialog closes on success.
     await waitFor(() => { expect(screen.queryByTestId("milestone-edit-dialog")).toBeNull(); });
+  });
+
+  it("retires the standalone 'Manage all milestones…' prose link; reaching Settings is a kebab MenuItem", async () => {
+    MILESTONES = [
+      { id: "ms_1", name: "Beta launch", target_date: "2026-07-01", progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 } },
+    ];
+    await renderDetail("ms_1");
+
+    // K105: the always-visible "Manage all milestones…" text link is
+    // gone. The manage affordance exists only inside the kebab, and only
+    // once it is opened.
+    await screen.findByTestId("milestone-detail-actions");
+    const manageBefore = screen.queryByTestId("milestone-detail-manage");
+    expect(manageBefore).toBeNull();
+    expect(screen.queryByText(/manage all milestones/i)).toBeNull();
+
+    // The breadcrumb back to the list is navigation, not a settings link,
+    // so it stays.
+    expect(screen.getByTestId("milestone-detail-back")).toBeTruthy();
+
+    // Open the kebab → "Manage milestones" is a MenuItem that navigates
+    // to Settings → Milestones.
+    fireEvent.click(screen.getByTestId("milestone-detail-actions"));
+    const manage = await screen.findByTestId("milestone-detail-manage");
+    fireEvent.click(manage);
+    expect(await screen.findByTestId("settings-stub")).toBeTruthy();
   });
 });

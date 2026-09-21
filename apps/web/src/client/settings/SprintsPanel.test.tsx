@@ -69,6 +69,9 @@ beforeEach(() => {
     if (u.includes("/api/sprints/") && method === "DELETE") {
       return Promise.resolve(jsonResponse({ deleted: "sp_active", affectedTaskCount: 0 }));
     }
+    if (u.includes("/api/sprints/") && method === "PUT") {
+      return Promise.resolve(jsonResponse({ id: "sp_active", name: "Active one", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" }));
+    }
     return Promise.resolve(jsonResponse(SPRINTS));
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -112,11 +115,24 @@ function writeCalls(method: string) {
     .map(c => ({ url: String(c[0]), body: parseBody(c[1] as RequestInit | undefined) }));
 }
 
-describe("SprintsPanel — create (SPR-40)", () => {
+/**
+ * K105: create no longer has an inline form on the panel — it opens the
+ * shared `SprintEditDialog` (mode="create"), the same dialog the per-row
+ * Edit action opens. Each test opens the dialog first. The field testids
+ * (`sprint-create-name/start/end/state/goal/submit`) are unchanged, so
+ * these tests assert the same requests through the new surface.
+ */
+function openCreateDialog(): void {
+  fireEvent.click(screen.getByTestId("sprint-create-open"));
+}
+
+describe("SprintsPanel — create (SPR-40 / K105)", () => {
   // @verifies SPR-40
   it("POSTs name, dates and state to /api/sprints", async () => {
     renderPanel();
     await screen.findByTestId("sprints-list");
+    openCreateDialog();
+    await screen.findByTestId("sprint-create-dialog");
 
     fireEvent.change(screen.getByTestId("sprint-create-name"), { target: { value: "Sprint Z" } });
     fireEvent.change(screen.getByTestId("sprint-create-start"), { target: { value: "2026-07-01" } });
@@ -140,6 +156,8 @@ describe("SprintsPanel — create (SPR-40)", () => {
   it("POSTs the goal when one is entered on create", async () => {
     renderPanel();
     await screen.findByTestId("sprints-list");
+    openCreateDialog();
+    await screen.findByTestId("sprint-create-dialog");
 
     fireEvent.change(screen.getByTestId("sprint-create-name"), { target: { value: "Sprint G" } });
     fireEvent.change(screen.getByTestId("sprint-create-start"), { target: { value: "2026-07-01" } });
@@ -157,6 +175,8 @@ describe("SprintsPanel — create (SPR-40)", () => {
   it("omits goal from the POST when the field is left blank", async () => {
     renderPanel();
     await screen.findByTestId("sprints-list");
+    openCreateDialog();
+    await screen.findByTestId("sprint-create-dialog");
 
     fireEvent.change(screen.getByTestId("sprint-create-name"), { target: { value: "Sprint N" } });
     fireEvent.change(screen.getByTestId("sprint-create-start"), { target: { value: "2026-07-01" } });
@@ -173,6 +193,8 @@ describe("SprintsPanel — create (SPR-40)", () => {
   it("keeps Create disabled until the name and both dates are filled", async () => {
     renderPanel();
     await screen.findByTestId("sprints-list");
+    openCreateDialog();
+    await screen.findByTestId("sprint-create-dialog");
     const submit = screen.getByTestId<HTMLButtonElement>("sprint-create-submit");
     expect(submit.disabled).toBe(true);
     fireEvent.change(screen.getByTestId("sprint-create-name"), { target: { value: "Z" } });
@@ -180,6 +202,69 @@ describe("SprintsPanel — create (SPR-40)", () => {
     fireEvent.change(screen.getByTestId("sprint-create-start"), { target: { value: "2026-07-01" } });
     fireEvent.change(screen.getByTestId("sprint-create-end"), { target: { value: "2026-07-14" } });
     expect(submit.disabled).toBe(false);
+  });
+});
+
+/**
+ * K105: the per-row Edit action opens the same shared `SprintEditDialog` in
+ * mode="edit". These assert that (a) the panel now offers edit at all —
+ * before K105 metadata editing lived only on the detail route — and (b) it
+ * sends a combined PUT of only the changed fields (A147) to /api/sprints/:id.
+ *
+ * Red-proof: remove the `sprint-edit` action (or the `editing &&
+ * <SprintEditDialog mode="edit" …>` block) from SprintsPanel and the dialog
+ * never opens, so `findByTestId("sprint-edit-dialog")` times out. Send every
+ * field instead of only the changed one and the "PUTs only the changed
+ * field" body assertion goes red.
+ */
+describe("SprintsPanel — edit (K105)", () => {
+  // @verifies K105
+  it("opens the shared SprintEditDialog prefilled from the row's sprint", async () => {
+    renderPanel();
+    await screen.findByTestId("sprints-list");
+
+    openSprintAction("sprint-edit");
+    await screen.findByTestId("sprint-edit-dialog");
+
+    // Prefilled from sp_active, not blank like a create.
+    expect(screen.getByTestId<HTMLInputElement>("sprint-create-name").value).toBe("Active one");
+    expect(screen.getByTestId<HTMLInputElement>("sprint-create-start").value).toBe("2026-06-01");
+    expect(screen.getByTestId<HTMLInputElement>("sprint-create-end").value).toBe("2026-06-14");
+    // The primary button is Save (edit), never "Edit".
+    expect(screen.getByTestId("sprint-save").textContent).toContain("Save");
+  });
+
+  // @verifies K105 / A147
+  it("PUTs only the changed field to /api/sprints/:id", async () => {
+    renderPanel();
+    await screen.findByTestId("sprints-list");
+
+    openSprintAction("sprint-edit");
+    await screen.findByTestId("sprint-edit-dialog");
+
+    // Change only the name.
+    fireEvent.change(screen.getByTestId("sprint-create-name"), { target: { value: "Renamed sprint" } });
+    fireEvent.click(screen.getByTestId("sprint-save"));
+
+    await waitFor(() => { expect(writeCalls("PUT").length).toBe(1); });
+    const [put] = writeCalls("PUT");
+    if (put === undefined) throw new Error("no PUT call");
+    expect(put.url).toContain("/api/sprints/sp_active");
+    // Only the changed field is in the body (A147 combined patch).
+    expect(put.body).toEqual({ name: "Renamed sprint" });
+  });
+
+  // @verifies K105 / A147
+  it("closes without a PUT when nothing changed", async () => {
+    renderPanel();
+    await screen.findByTestId("sprints-list");
+
+    openSprintAction("sprint-edit");
+    await screen.findByTestId("sprint-edit-dialog");
+    fireEvent.click(screen.getByTestId("sprint-save"));
+
+    await waitFor(() => { expect(screen.queryByTestId("sprint-edit-dialog")).toBeNull(); });
+    expect(writeCalls("PUT").length).toBe(0);
   });
 });
 

@@ -29,6 +29,7 @@ import { DEFAULT_SECTION } from "../settings/sections.ts";
 import { readSidebarGroups, resolveSidebarOrder } from "../settings/sidebarGroups.ts";
 import { SidebarGroupsPanel } from "../settings/SidebarGroupsPanel.tsx";
 import { readSidebarPins } from "../settings/sidebarPins.ts";
+import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
 import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 import { Chip } from "../ui/Chip.tsx";
@@ -1601,6 +1602,8 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
   // MilestoneDef is looked up from live data, so an external edit shows.
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingMilestone = items.find(m => m.id === editingId) ?? null;
+  // K105: "+ New milestone" opens the shared MilestoneEditDialog in place.
+  const [creating, setCreating] = useState(false);
   return (
     <>
     <SectionShell id="milestones" label="Milestones" collapsed={collapsed}>
@@ -1625,9 +1628,14 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
       ) : null}
       {items.map(m => {
         const row = (
+          // K105 / U14 merge: a milestone click goes to the milestone
+          // DETAIL page (/milestones/$id) — the superset surface (progress
+          // + the milestone's task table + in-place edit) — NOT the generic
+          // filtered list (/list?milestone=), so the sidebar and the "All
+          // milestones" list reach the same one UI.
           <Link
-            to="/list"
-            search={prev => ({ ...clearSort(prev), milestone: [m.id] })}
+            to="/milestones/$id"
+            params={{ id: m.id }}
             title={m.name}
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
@@ -1652,9 +1660,26 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
         );
       })}
 
+      {/* K105: "+ New milestone" opens the shared dialog in place, mirroring
+          "+ New project" / "+ New view" — not a deep link to Settings. */}
+      {!collapsed && !failed ? (
+        <button
+          type="button"
+          data-testid="sidebar-new-milestone"
+          title="New milestone"
+          onClick={() => { setCreating(true); }}
+          className="w-full text-left no-underline"
+        >
+          <ItemShell collapsed={collapsed} title="New milestone">
+            <span className="w-4 shrink-0 text-center text-accent">+</span>
+            <span className="truncate text-accent">New milestone</span>
+          </ItemShell>
+        </button>
+      ) : null}
+
     </SectionShell>
 
-      {/* Dialog outside SectionShell so collapsing never unmounts it. */}
+      {/* Dialogs outside SectionShell so collapsing never unmounts one. */}
       {/* K100: the shared editor, mounted fresh on open so it seeds from
           the current milestone. */}
       {editingMilestone !== null ? (
@@ -1662,6 +1687,12 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
           mode="edit"
           existing={editingMilestone}
           onClose={() => { setEditingId(null); }}
+        />
+      ) : null}
+      {creating ? (
+        <MilestoneEditDialog
+          mode="create"
+          onClose={() => { setCreating(false); }}
         />
       ) : null}
     </>
@@ -1713,7 +1744,12 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
     s => s.archived !== true && s.state !== "completed",
   );
   const failed = hasFailed(sprints);
+  // K105: edit + create happen in place via the shared SprintEditDialog.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingSprint = (sprints.data?.items ?? []).find(s => s.id === editingId) ?? null;
+  const [creating, setCreating] = useState(false);
   return (
+    <>
     <SectionShell id="sprints" label="Sprints" collapsed={collapsed}>
       {/* The /sprints overview (all sprints, including completed ones) was
           reachable only by URL — the group's rows filter the list to one
@@ -1771,11 +1807,45 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
             data-sprint-row={s.id}
           >
             {row}
-            <SprintRowActions sprint={s} />
+            <SprintRowActions sprint={s} onEdit={() => { setEditingId(s.id); }} />
           </div>
         );
       })}
+
+      {/* K105: "+ New sprint" opens the shared dialog in place — not the
+          Settings page. */}
+      {!collapsed && !failed ? (
+        <button
+          type="button"
+          data-testid="sidebar-new-sprint"
+          title="New sprint"
+          onClick={() => { setCreating(true); }}
+          className="w-full text-left no-underline"
+        >
+          <ItemShell collapsed={collapsed} title="New sprint">
+            <span className="w-4 shrink-0 text-center text-accent">+</span>
+            <span className="truncate text-accent">New sprint</span>
+          </ItemShell>
+        </button>
+      ) : null}
+
     </SectionShell>
+
+      {/* Dialogs outside SectionShell so collapsing never unmounts one. */}
+      {editingSprint !== null ? (
+        <SprintEditDialog
+          mode="edit"
+          existing={editingSprint}
+          onClose={() => { setEditingId(null); }}
+        />
+      ) : null}
+      {creating ? (
+        <SprintEditDialog
+          mode="create"
+          onClose={() => { setCreating(false); }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -1790,13 +1860,21 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
  * `/sprints/$key` is keyed by the sprint's ULID (route decision V3), so
  * `key` is `sprint.id`.
  */
-function SprintRowActions({ sprint }: { readonly sprint: SprintDef }) {
+function SprintRowActions({
+  sprint,
+  onEdit,
+}: {
+  readonly sprint: SprintDef;
+  readonly onEdit: () => void;
+}) {
   const navigate = useNavigate();
   return (
     <RowActions
       size="sm"
       label={`Actions for sprint "${sprint.name}"`}
       actions={[
+        // K105: edit in place via the shared dialog (was navigate-only).
+        { label: "Edit…", testId: "sidebar-sprint-edit", onSelect: onEdit },
         {
           label: "Open sprint",
           testId: "sidebar-sprint-open",
@@ -1820,6 +1898,8 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
   // id is held; the current LabelDef is looked up from live data.
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingLabel = items.find(l => l.id === editingId) ?? null;
+  // K105: "+ New label" opens the shared LabelEditDialog in place.
+  const [creating, setCreating] = useState(false);
   return (
     <>
     <SectionShell id="labels" label="Labels" collapsed={collapsed}>
@@ -1856,9 +1936,25 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
         );
       })}
 
+      {/* K105: "+ New label" opens the shared dialog in place. */}
+      {!collapsed && !failed ? (
+        <button
+          type="button"
+          data-testid="sidebar-new-label"
+          title="New label"
+          onClick={() => { setCreating(true); }}
+          className="w-full text-left no-underline"
+        >
+          <ItemShell collapsed={collapsed} title="New label">
+            <span className="w-4 shrink-0 text-center text-accent">+</span>
+            <span className="truncate text-accent">New label</span>
+          </ItemShell>
+        </button>
+      ) : null}
+
     </SectionShell>
 
-      {/* Dialog outside SectionShell so collapsing never unmounts it. */}
+      {/* Dialogs outside SectionShell so collapsing never unmounts one. */}
       {/* K100: the shared editor, mounted fresh on open so it seeds from
           the current label. */}
       {editingLabel !== null ? (
@@ -1866,6 +1962,13 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
           mode="edit"
           existing={editingLabel}
           onClose={() => { setEditingId(null); }}
+        />
+      ) : null}
+      {creating ? (
+        <LabelEditDialog
+          mode="create"
+          existingLabels={labels.data?.items ?? []}
+          onClose={() => { setCreating(false); }}
         />
       ) : null}
     </>

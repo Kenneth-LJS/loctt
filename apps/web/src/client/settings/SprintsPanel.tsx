@@ -3,28 +3,30 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
-import { useArchiveSprint, useCountedSprints, useCreateSprint, useDeleteSprint } from "../api/hooks/useDataMutations.ts";
+import { useArchiveSprint, useCountedSprints, useDeleteSprint } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
-import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { Select } from "../ui/Select.tsx";
-import { TextField } from "../ui/TextField.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
+import { SprintEditDialog } from "./SprintEditDialog.tsx";
 
 /**
  * Settings → Data → Sprints (SPR-40).
  *
- * Full management: **create**, **delete** (with remap of referencing
+ * Full management: **create** and **edit** (both via the shared
+ * {@link SprintEditDialog} — K105), **delete** (with remap of referencing
  * tasks), the burndown link, and the archived split. The panel was
- * read-and-navigate before; SPR-40 brings it to CLI parity for the
- * lifecycle operations the CLI already had.
+ * read-and-navigate before; SPR-40 brought it to CLI parity for the
+ * lifecycle operations, and K105 folds the create form and the per-row
+ * edit into the one dialog the sidebar can also render, so the sprint form
+ * exists in exactly one place.
  *
- * The sprint detail route (M4.7) still owns *metadata* editing (name,
- * dates, goal, state) behind its own Edit control (SPR-8) — this panel
- * does not duplicate that, only the list-level lifecycle.
+ * The sprint detail route (M4.7) still carries metadata editing inline via
+ * `SprintMetaHeader` for the burndown page; both surfaces now go through
+ * the same `useUpdateSprintMeta` combined-patch hook (A147), so they cannot
+ * write different shapes.
  *
  * The detail route's `$key` segment is filled with the sprint's ULID:
  * `SprintDef` has no user-facing key, which is why V3 settled the
@@ -37,9 +39,6 @@ const STATE_LABEL: Record<string, string> = {
   future: "Future",
 };
 
-const STATES = ["active", "completed", "future"] as const;
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 /** A sprint the list returns, with its reference count from `?counts=true`. */
 type CountedSprint = SprintDef & { readonly taskCount?: number };
 
@@ -51,6 +50,7 @@ function SprintRow({ sprint, all }: {
   const archive = useArchiveSprint();
   const navigate = useNavigate();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editing, setEditing] = useState(false);
   const count = sprint.taskCount ?? 0;
   const archived = sprint.archived === true;
 
@@ -89,13 +89,14 @@ function SprintRow({ sprint, all }: {
       </span>
 
       {/* Row lifecycle actions collapse into a kebab so they never
-          overflow the row on a narrow pane (responsive GROUP A). Burndown
-          (navigation), Archive/Unarchive, and Delete. Metadata editing
-          (name/dates/goal/state) still lives on the detail route (SPR-8). */}
+          overflow the row on a narrow pane (responsive GROUP A). Edit
+          (name/dates/goal/state, via the shared dialog — K105), Burndown
+          (navigation), Archive/Unarchive, and Delete. */}
       <div className="shrink-0">
         <RowActions
           label={`Actions for sprint ${sprint.name}`}
           actions={[
+            { label: "Edit…", testId: "sprint-edit", onSelect: () => { setEditing(true); } },
             { label: "Open burndown", testId: "sprint-burndown-link", onSelect: () => { void navigate({ to: "/sprints/$key", params: { key: sprint.id } }); } },
             {
               label: archived ? "Unarchive" : "Archive",
@@ -107,6 +108,16 @@ function SprintRow({ sprint, all }: {
           ]}
         />
       </div>
+
+      {editing && (
+        // K100/K105: the same shared dialog the panel's create uses — the
+        // sprint edit form lives in exactly one place.
+        <SprintEditDialog
+          mode="edit"
+          existing={sprint}
+          onClose={() => { setEditing(false); }}
+        />
+      )}
 
       {confirmingDelete && (
         // SPR-40 / parity with `sprint delete`: a referenced sprint
@@ -196,13 +207,8 @@ function BrokenSprintRow({ entry, onRepair, repairing }: {
 
 export function SprintsPanel() {
   const sprints = useCountedSprints();
-  const create = useCreateSprint();
 
-  const [name, setName] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [state, setState] = useState<(typeof STATES)[number]>("active");
-  const [goal, setGoal] = useState("");
+  const [creating, setCreating] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
   // K100 archived-row anchor. A deep link to an archived sprint
@@ -254,108 +260,33 @@ export function SprintsPanel() {
   // hidden, so a hand edit that breaks one does not read as "deleted".
   const broken = sprints.data.broken ?? [];
 
-  const datesOk = ISO_DATE_RE.test(start) && ISO_DATE_RE.test(end);
-  const canCreate = name.trim().length > 0 && datesOk && !create.isPending;
-
   return (
     <div data-testid="sprints-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Sprints
       </h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Open a sprint to edit its dates, goal and state, and see its burndown.
+        Create, edit and delete sprints here, or open one for its burndown.
       </p>
 
-      {/* SPR-40: create a sprint. `state` offers exactly the three SPR-7
-          states; core rejects an end before start, attributed to `end`. */}
-      <form
-        data-testid="sprint-create-form"
-        className="mb-2 flex flex-wrap items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!canCreate) return;
-          create.mutate(
-            {
-              name: name.trim(),
-              start_date: start,
-              end_date: end,
-              state,
-              // `goal` is optional free text; omit it when blank so the
-              // stored sprint has no empty goal key.
-              ...(goal.trim().length > 0 ? { goal: goal.trim() } : {}),
-            },
-            { onSuccess: () => { setName(""); setStart(""); setEnd(""); setState("active"); setGoal(""); } },
-          );
-        }}
-      >
-        <label className="flex min-w-[180px] flex-1 flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
-          Name
-          <TextField
-            data-testid="sprint-create-name"
-            size="sm"
-            value={name}
-            placeholder="New sprint"
-            onChange={e => { setName(e.target.value); }}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
-          Start
-          <TextField
-            data-testid="sprint-create-start"
-            type="date"
-            size="sm"
-            value={start}
-            onChange={e => { setStart(e.target.value); }}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
-          End
-          <TextField
-            data-testid="sprint-create-end"
-            type="date"
-            size="sm"
-            value={end}
-            onChange={e => { setEnd(e.target.value); }}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
-          State
-          <Select
-            data-testid="sprint-create-state"
-            size="sm"
-            value={state}
-            onChange={e => { setState(e.target.value as (typeof STATES)[number]); }}
-          >
-            {STATES.map(s => (
-              <option key={s} value={s}>{STATE_LABEL[s]}</option>
-            ))}
-          </Select>
-        </label>
-        {/* SPR-8/SPR-28: `goal` is optional free text. The edit surface
-            (SprintMetaHeader) always had a goal field; the create form did
-            not — a sprint could only gain a goal after creation. */}
-        <label className="flex basis-full flex-col gap-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
-          Goal
-          <textarea
-            data-testid="sprint-create-goal"
-            value={goal}
-            placeholder="What this sprint is for (optional)"
-            rows={2}
-            onChange={e => { setGoal(e.target.value); }}
-            className="rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem] normal-case tracking-normal text-text-primary"
-          />
-        </label>
-        <Button variant="primary" size="sm" type="submit" testId="sprint-create-submit" disabled={!canCreate}>
-          Create
+      {/* SPR-40/K105: create runs through the shared SprintEditDialog — the
+          same dialog the per-row Edit action opens, so the create and edit
+          forms cannot drift. */}
+      <div className="mb-4">
+        <Button
+          variant="secondary"
+          testId="sprint-create-open"
+          onClick={() => { setCreating(true); }}
+        >
+          New sprint
         </Button>
-      </form>
+      </div>
 
-      {create.isError && (
-        <Callout tone="danger" role="alert" testId="sprint-create-error" className="mb-3">
-          <span>
-            {create.error instanceof ApiError ? create.error.message : "Could not create the sprint."}
-          </span>
-        </Callout>
+      {creating && (
+        <SprintEditDialog
+          mode="create"
+          onClose={() => { setCreating(false); }}
+        />
       )}
 
       {activeItems.length === 0 && broken.length === 0

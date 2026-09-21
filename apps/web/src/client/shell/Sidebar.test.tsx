@@ -346,6 +346,30 @@ describe("Sidebar", () => {
     expect(screen.queryByText("Sprint 11")).toBeNull();
   });
 
+  it("'+ New milestone' opens the shared create dialog in place (K105)", async () => {
+    await renderSidebarAt("/list");
+    const btn = await screen.findByTestId("sidebar-new-milestone");
+    expect(screen.queryByTestId("milestone-create-name")).toBeNull();
+    fireEvent.click(btn);
+    expect(await screen.findByTestId("milestone-create-name")).not.toBeNull();
+  });
+
+  it("'+ New label' opens the shared create dialog in place (K105)", async () => {
+    await renderSidebarAt("/list");
+    const btn = await screen.findByTestId("sidebar-new-label");
+    expect(screen.queryByTestId("label-create-name")).toBeNull();
+    fireEvent.click(btn);
+    expect(await screen.findByTestId("label-create-name")).not.toBeNull();
+  });
+
+  it("'+ New sprint' opens the shared create dialog in place (K105)", async () => {
+    await renderSidebarAt("/list");
+    const btn = await screen.findByTestId("sidebar-new-sprint");
+    expect(screen.queryByTestId("sprint-create-name")).toBeNull();
+    fireEvent.click(btn);
+    expect(await screen.findByTestId("sprint-create-name")).not.toBeNull();
+  });
+
   /**
    * @verifies ONB-10
    *
@@ -1404,12 +1428,23 @@ describe("Sidebar cross-view filter scope (2026-09-20)", () => {
     expect(web.startsWith("/list")).toBe(true);
   });
 
-  it("a milestone link stays on /list even from the board", async () => {
-    // Milestone/sprint/label/saved-view links are list-shaped and are NOT
-    // route-aware — they always target /list.
+  it("a milestone link targets the milestone detail page (U14 merge)", async () => {
+    // U14/K105: a sidebar milestone now opens the milestone DETAIL page
+    // (/milestones/$id) — the superset surface — so the sidebar and the
+    // "All milestones" list reach the same one UI. It used to target
+    // /list?milestone=; that behavior was the bug this merge fixes.
     await renderShellAt("/board");
     const milestone = hrefOf(await screen.findByText("v1.0"));
-    expect(milestone.startsWith("/list")).toBe(true);
+    expect(milestone.startsWith("/milestones/")).toBe(true);
+    expect(milestone.startsWith("/list")).toBe(false);
+  });
+
+  it("a sprint/label link stays on /list", async () => {
+    // Sprints and labels remain list-shaped filters (a label is not a
+    // page); only milestones gained a detail destination (U14).
+    await renderShellAt("/board");
+    const label = hrefOf(await screen.findByText("frontend"));
+    expect(label.startsWith("/list")).toBe(true);
   });
 });
 

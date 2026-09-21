@@ -1,4 +1,4 @@
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
 import { useCalendar } from "../api/hooks/useCalendar.ts";
@@ -14,9 +14,11 @@ import { buildLookups } from "../list/lookups.ts";
 // an edit from the detail page cannot drift from an edit anywhere else.
 // Reading a settings/ component is allowed; this file does not edit it.
 import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
-import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
 import type { MilestoneWithProgress } from "./model.ts";
 import { EXCLUDE_DISCARDED_QUERY, isOverdue, progressState } from "./model.ts";
 import { ProgressReadout } from "./ProgressReadout.tsx";
@@ -54,6 +56,7 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
   const calendar = useCalendar();
   const info = useInfo();
   const workflow = useWorkflow();
+  const navigate = useNavigate();
   const search = useSearch({ from: "/milestones/$id" });
 
   // K100: read-by-default, edit-behind-Edit — the header opens the shared
@@ -169,25 +172,18 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
       data-milestone-id={milestone.id}
       className="flex h-full flex-col gap-3 overflow-auto p-4"
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <Link
-          to="/milestones"
-          data-testid="milestone-detail-back"
-          className="text-[0.8571rem] text-text-tertiary no-underline hover:underline"
-        >
-          ← All milestones
-        </Link>
-        {/* K100 groundwork: a deep link to the milestones view, where the
-            full roster (create, archive, delete, reorder) lives — the
-            detail page only edits this one milestone's name and date. */}
-        <Link
-          to="/milestones"
-          data-testid="milestone-detail-manage"
-          className="text-[0.8571rem] text-text-tertiary no-underline hover:underline"
-        >
-          Manage all milestones…
-        </Link>
-      </div>
+      {/* K105: the breadcrumb back to the list is navigation, not a
+          settings link, so it stays. The retired "Manage all milestones…"
+          text link is gone — reaching the global Settings panel (for
+          roster-level actions the edit dialog does not own: reorder,
+          remap-delete) now lives in the header kebab below. */}
+      <Link
+        to="/milestones"
+        data-testid="milestone-detail-back"
+        className="self-start text-[0.8571rem] text-text-tertiary no-underline hover:underline"
+      >
+        ← All milestones
+      </Link>
 
       <header className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-surface p-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -233,21 +229,57 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
             >
               {formatWorkspaceDate(milestone.target_date, calendar.data)}
             </span>
-            {/* K100: an in-place Edit on the detail header, mirroring
-                SprintMetaHeader's read-by-default → Edit control, but
-                opening the shared MilestoneEditDialog instead of
-                header-inline fields. The label names the milestone so the
-                accessible name is unambiguous when several controls read
-                "Edit" (P-4 / WCAG AA). */}
-            <Button
-              variant="secondary"
-              size="sm"
-              testId="milestone-detail-edit"
-              aria-label={`Edit ${milestone.name}`}
-              onClick={() => { setEditing(true); }}
+            {/* K105: the detail header carries TWO actions — edit this
+                milestone (the shared dialog) and reach the global
+                Settings panel for the roster-level actions the dialog
+                does not own (reorder, remap-delete). Multiple actions →
+                a "⋯" kebab of MenuItems, never a text "Edit" button. The
+                trigger's aria-label names the milestone so it is
+                unambiguous when several header controls exist (P-4 /
+                WCAG AA). */}
+            <Menu
+              align="end"
+              aria-label={`Milestone actions for ${milestone.name}`}
+              trigger={({ toggle, ...triggerProps }) => (
+                <IconButton
+                  {...triggerProps}
+                  size="sm"
+                  testId="milestone-detail-actions"
+                  aria-label={`Milestone actions for ${milestone.name}`}
+                  onClick={toggle}
+                >
+                  <Icon name="more" />
+                </IconButton>
+              )}
             >
-              Edit
-            </Button>
+              {({ close }) => (
+                <>
+                  <MenuItem
+                    testId="milestone-detail-edit"
+                    onSelect={() => {
+                      setEditing(true);
+                      close();
+                    }}
+                  >
+                    <Icon name="edit" />
+                    Edit milestone
+                  </MenuItem>
+                  <MenuItem
+                    testId="milestone-detail-manage"
+                    onSelect={() => {
+                      void navigate({
+                        to: "/settings/$section",
+                        params: { section: "milestones" },
+                      });
+                      close();
+                    }}
+                  >
+                    <Icon name="settings" />
+                    Manage milestones
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
           </div>
         </div>
 
