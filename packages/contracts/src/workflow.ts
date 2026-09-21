@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { HexColor } from "./brands.js";
+import { EntityColorSchema } from "./color.js";
 import { BrokenEntrySchema } from "./health.js";
 
 /**
@@ -40,7 +40,7 @@ export const StatusDefSchema = z.object({
   category: StatusCategorySchema,
   default: z.boolean().optional(),
   icon: IconStringSchema.optional(),
-  color: HexColor.optional(),
+  color: EntityColorSchema.optional(),
 }).strict();
 export type StatusDef = z.infer<typeof StatusDefSchema>;
 
@@ -64,7 +64,7 @@ export const PriorityDefSchema = z.object({
   label: z.string().min(1),
   value: z.number().optional(),
   icon: IconStringSchema.optional(),
-  color: HexColor.optional(),
+  color: EntityColorSchema.optional(),
 }).strict();
 export type PriorityDef = z.infer<typeof PriorityDefSchema>;
 
@@ -73,7 +73,7 @@ export const TaskTypeDefSchema = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
   icon: IconStringSchema.optional(),
-  color: HexColor.optional(),
+  color: EntityColorSchema.optional(),
 }).strict();
 export type TaskTypeDef = z.infer<typeof TaskTypeDefSchema>;
 
@@ -135,7 +135,7 @@ export const RelationshipDefSchema = z.object({
   graph: RelationshipGraphSchema.optional(),
   ranked: z.boolean().optional(),
   icon: IconStringSchema.optional(),
-  color: HexColor.optional(),
+  color: EntityColorSchema.optional(),
 }).strict().superRefine((rel, ctx) => {
   const kind = rel.kind ?? "directional";
   if (kind === "symmetric") {
@@ -225,7 +225,7 @@ export const CustomFieldValueDefSchema = z.object({
   label: z.string().min(1),
   value: z.number().optional(),
   icon: IconStringSchema.optional(),
-  color: HexColor.optional(),
+  color: EntityColorSchema.optional(),
 }).strict();
 export type CustomFieldValueDef = z.infer<typeof CustomFieldValueDefSchema>;
 

@@ -1,6 +1,7 @@
 import type {
   BoardsConfig,
   CustomFieldDef,
+  EntityColor,
   EstimationConfig,
   PriorityDef,
   RelationshipDef,
@@ -984,7 +985,11 @@ function serializeWorkflowConfigAsYaml(config: WorkflowConfig): string {
  * Keeps every serializer's spread list short and consistent.
  */
 function iconColorSpread(
-  o: { icon?: string | undefined; color?: string | undefined },
+  // K103: `color` is an `EntityColor` — a bare hex string, a
+  // `{light, dark}` pair, or a `{palette: id}` reference. The spread
+  // passes it through whole, so all three serialize as-is; only the
+  // annotation needed widening.
+  o: { icon?: string | undefined; color?: EntityColor | undefined },
 ): Record<string, unknown> {
   return {
     ...(o.icon !== undefined ? { icon: o.icon } : {}),

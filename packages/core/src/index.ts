@@ -110,6 +110,18 @@ export {
 export { loadOptionalConfigs } from "./config/index.js";
 export { filterByName, filterProjects, isBlankQuery } from "./config/index.js";
 export { brokenEntriesToPlain, collectValidEntries } from "./config/index.js";
+export type {
+  ColorResolution,
+  ColorResolveFailure,
+  PaletteEntry,
+} from "./config/index.js";
+export {
+  BUILTIN_PALETTE,
+  getPaletteEntry,
+  isKnownPaletteId,
+  resolveEntityColor,
+  resolveEntityColorOr,
+} from "./config/index.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./config/index.js";
 export {
   ArchivedReferenceError,
