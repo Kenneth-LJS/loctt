@@ -14,6 +14,7 @@ import { relativeTime, shortDate } from "../list/format.ts";
 import type { ListLookups } from "../list/lookups.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { resolveRowColors, useColorMode } from "../ui/entityColor.ts";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { customFieldRows } from "./editors/CustomFields.tsx";
 import { DateField } from "./editors/DateField.tsx";
@@ -175,21 +176,23 @@ export function MetaPanel({
       ? currentUser
       : undefined;
 
-  const statusOptions = (workflow?.statuses ?? []).map(s => ({
-    key: s.key,
-    label: s.label,
-    ...(s.color !== undefined ? { color: s.color } : {}),
-  }));
-  const priorityOptions = (workflow?.priorities ?? []).map(p => ({
-    key: p.key,
-    label: p.label,
-    ...(p.color !== undefined ? { color: p.color } : {}),
-  }));
-  const typeOptions = (workflow?.task_types ?? []).map(t => ({
-    key: t.key,
-    label: t.label,
-    ...(t.color !== undefined ? { color: t.color } : {}),
-  }));
+  // K103: the picker dots take one hex each, so each stored colour is
+  // resolved for the active theme here. `resolveRowColors` drops the
+  // key when it cannot resolve, which is the "no colour" signal
+  // `OptionPicker` already handles.
+  const colorMode = useColorMode();
+  const statusOptions = resolveRowColors(
+    (workflow?.statuses ?? []).map(s => ({ key: s.key, label: s.label, color: s.color })),
+    colorMode,
+  );
+  const priorityOptions = resolveRowColors(
+    (workflow?.priorities ?? []).map(p => ({ key: p.key, label: p.label, color: p.color })),
+    colorMode,
+  );
+  const typeOptions = resolveRowColors(
+    (workflow?.task_types ?? []).map(t => ({ key: t.key, label: t.label, color: t.color })),
+    colorMode,
+  );
 
   // TSK-12's fourth bullet: fields scoped to a task type appear only
   // for that type, and changing the type updates the set without a
@@ -473,6 +476,7 @@ export function MetaPanel({
           values: fm.fields ?? {},
           onSet,
           onUnset,
+          colorMode,
         }).map(row => (
           <Row
             {...rowShared}

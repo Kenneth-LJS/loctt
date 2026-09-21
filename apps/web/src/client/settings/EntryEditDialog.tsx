@@ -1,12 +1,13 @@
-import type { PriorityDef, StatusDef, TaskTypeDef } from "@loctt/contracts";
+import type { EntityColor, PriorityDef, StatusDef, TaskTypeDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { ColorInput, isValidHexColor } from "../ui/ColorInput.tsx";
+import { ColorHexAlias, ColorPicker } from "../ui/ColorPicker.tsx";
 import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
+import { isValidEntityColor } from "../ui/entityColor.ts";
 import { IconPicker } from "../ui/IconPicker.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -52,7 +53,8 @@ export interface EntryDialogResult {
   readonly makeDefault?: boolean;
   /** Optional presentational fields (undefined = none). */
   readonly icon?: string | undefined;
-  readonly color?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }
 
 export function EntryEditDialog({
@@ -91,7 +93,9 @@ export function EntryEditDialog({
   // Presentational fields — seeded from the row on edit so an unrelated
   // edit does not drop them, editable on both create and edit.
   const [icon, setIcon] = useState<string | undefined>(initial?.icon);
-  const [color, setColor] = useState(initial?.color ?? "");
+  // K103: the colour is now the stored `EntityColor` itself, not a hex
+  // string being typed. `undefined` is "no colour".
+  const [color, setColor] = useState<EntityColor | undefined>(initial?.color);
 
   // On create, the key tracks the label until the user edits the key
   // directly — the same derive-then-detach behaviour project slugs use.
@@ -102,7 +106,10 @@ export function EntryEditDialog({
       ? validateNewEntry({ key: effectiveKey, label }, existingKeys)
       : (label.trim().length === 0 ? { label: "A label is required." } : {});
 
-  const colorOk = isValidHexColor(color);
+  // K103: the swatch picker itself can only produce shapes the schema
+  // accepts, but the hex alias beside it still takes free text, so the
+  // gate stays — a malformed colour must not reach the wire.
+  const colorOk = isValidEntityColor(color);
   const canSubmit = hasNoProblems(problems) && colorOk && !pending;
 
   const submit = (): void => {
@@ -113,7 +120,7 @@ export function EntryEditDialog({
       ...(isStatus ? { category } : {}),
       ...(isStatus ? { makeDefault } : {}),
       icon: icon !== undefined && icon.trim().length > 0 ? icon.trim() : undefined,
-      color: color.trim().length > 0 ? color.trim() : undefined,
+      color,
     });
   };
 
@@ -229,11 +236,21 @@ export function EntryEditDialog({
 
         <div className="block">
           <span className="mb-1 block text-text-secondary">Colour</span>
-          <ColorInput
+          <ColorPicker
+            value={color}
+            onChange={setColor}
+            testId={`${collection}-entry-color-picker`}
+            ariaLabel={`Colour for the ${noun}`}
+          />
+          {/* The hex alias keeps the original `-entry-color` testid
+              addressable, so the tests (and the e2e suite) that set a
+              colour by typing still drive real behaviour. It is
+              `sr-only` — the visible control is the picker. */}
+          <ColorHexAlias
             value={color}
             onChange={setColor}
             testId={`${collection}-entry-color`}
-            ariaLabel={`Colour for the ${noun}`}
+            ariaLabel={`Colour hex for the ${noun}`}
           />
         </div>
 

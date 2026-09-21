@@ -1,6 +1,7 @@
 import type {
   CustomFieldDef,
   CustomFieldType,
+  EntityColor,
   PriorityDef,
   RelationshipDef,
   StatusDef,
@@ -51,7 +52,8 @@ export interface EntryDraft {
    * drops the field off the stored row.
    */
   readonly icon?: string | undefined;
-  readonly color?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }
 
 export interface EntryProblems {
@@ -111,7 +113,8 @@ export function buildStatus(draft: {
   readonly label: string;
   readonly category: StatusDef["category"];
   readonly icon?: string | undefined;
-  readonly color?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }): StatusDef {
   return {
     key: draft.key.trim(),
@@ -127,13 +130,20 @@ export function buildStatus(draft: {
  * (which rejects a blank icon and a malformed colour) never sees one.
  */
 function presentational(
-  draft: { readonly icon?: string | undefined; readonly color?: string | undefined },
-): { icon?: string; color?: string } {
-  const out: { icon?: string; color?: string } = {};
+  draft: { readonly icon?: string | undefined; readonly color?: EntityColor | undefined },
+): { icon?: string; color?: EntityColor } {
+  const out: { icon?: string; color?: EntityColor } = {};
   const icon = draft.icon?.trim();
-  const color = draft.color?.trim();
   if (icon !== undefined && icon.length > 0) out.icon = icon;
-  if (color !== undefined && color.length > 0) out.color = color;
+  // K103: a colour is no longer necessarily a string, so it cannot be
+  // trimmed. The only "empty" values are `undefined` and an empty
+  // single hex; the object shapes are never empty. Trimming an object
+  // was a type error here, but the same pattern elsewhere widened
+  // through inference and silently produced `[object Object]`.
+  const color = draft.color;
+  if (color !== undefined && !(typeof color === "string" && color.trim().length === 0)) {
+    out.color = typeof color === "string" ? color.trim() : color;
+  }
   return out;
 }
 
@@ -172,7 +182,8 @@ export interface RelationshipDraft {
    * knows the fields it renders.
    */
   readonly icon?: string | undefined;
-  readonly color?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }
 
 export function buildRelationship(draft: RelationshipDraft): RelationshipDef {
@@ -250,7 +261,8 @@ export interface CustomFieldDraft {
      * label does not wipe its icon/color.
      */
     readonly icon?: string | undefined;
-    readonly color?: string | undefined;
+    /** K103: one of the three colour shapes, not a hex string. */
+    readonly color?: EntityColor | undefined;
   }[];
 }
 

@@ -2,6 +2,7 @@ import type { LabelDef } from "@loctt/contracts";
 import { useCallback, useRef, useState } from "react";
 
 import { Combobox, type ComboboxOption } from "../../ui/Combobox.tsx";
+import { resolveForMode, useColorMode } from "../../ui/entityColor.ts";
 import { Icon } from "../../ui/Icon.tsx";
 
 /**
@@ -80,6 +81,11 @@ export function LabelsField({
   // "bug" would let a second "bug" be created.
   const [raw, setRaw] = useState<readonly LabelDef[]>([]);
   const seq = useRef(0);
+  // K103: the option dots need one hex each, so the mode is read once
+  // here and the rows are resolved through core. It is a `useCallback`
+  // dependency because a theme flip has to re-map the dots — a stale
+  // closure would keep painting the previous theme's halves.
+  const mode = useColorMode();
 
   const onQuery = useCallback(async (q: string): Promise<readonly ComboboxOption[]> => {
     const mine = ++seq.current;
@@ -91,9 +97,11 @@ export function LabelsField({
       .map(l => ({
         key: l.id,
         label: l.name,
-        color: l.color ?? "var(--color-text-tertiary)",
+        // An unresolvable colour falls back to the same tertiary token a
+        // colourless label already used, so the dot is still drawn.
+        color: resolveForMode(l.color, mode) ?? "var(--color-text-tertiary)",
       }));
-  }, [searchLabels]);
+  }, [searchLabels, mode]);
   const search = { onQuery, placeholder: "Find or create…" };
 
   const byId = new Map(all.map(l => [l.id, l]));
@@ -174,7 +182,7 @@ export function LabelsField({
                   key={id}
                   data-testid="label-pill"
                   className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[0.7857rem]"
-                  style={pillStyle(def?.color)}
+                  style={pillStyle(resolveForMode(def?.color, mode))}
                 >
                   <span className="truncate">
                     {def?.name ?? "unresolved — not in the current config"}

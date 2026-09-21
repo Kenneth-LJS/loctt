@@ -1,10 +1,10 @@
-import type { CustomFieldDef, CustomFieldType } from "@loctt/contracts";
+import type { CustomFieldDef, CustomFieldType, EntityColor } from "@loctt/contracts";
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { ColorInput } from "../ui/ColorInput.tsx";
+import { ColorHexAlias, ColorPicker } from "../ui/ColorPicker.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
@@ -57,7 +57,8 @@ interface ValueRow {
   readonly value?: number;
   /** Presentational fields the dialog does not edit — carried through. */
   readonly icon?: string | undefined;
-  readonly color?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }
 
 export interface CustomFieldDialogResult {
@@ -380,11 +381,18 @@ export function CustomFieldEditDialog({
                     clearTestId={`custom-field-dialog-value-icon-clear-${i}`}
                     ariaLabel={`Value icon ${i + 1}`}
                   />
-                  <ColorInput
-                    value={v.color ?? ""}
-                    onChange={next => { updateValue(i, { color: next.trim() === "" ? undefined : next }); }}
-                    testId={`custom-field-dialog-value-color-${i}`}
+                  <ColorPicker
+                    value={v.color}
+                    onChange={next => { updateValue(i, { color: next }); }}
+                    testId={`custom-field-dialog-value-color-picker-${i}`}
                     ariaLabel={`Value colour ${i + 1}`}
+                  />
+                  {/* Keeps the original testid addressable — see EntryEditDialog. */}
+                  <ColorHexAlias
+                    value={v.color}
+                    onChange={next => { updateValue(i, { color: next }); }}
+                    testId={`custom-field-dialog-value-color-${i}`}
+                    ariaLabel={`Value colour hex ${i + 1}`}
                   />
                   <IconButton
                     variant="secondary"

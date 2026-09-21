@@ -2,10 +2,10 @@ import type { EntityColor } from "@loctt/contracts";
 import { BUILTIN_PALETTE, getPaletteEntry } from "@loctt/core";
 import { useState } from "react";
 
-import { Menu } from "./Menu.tsx";
-import { TextField } from "./TextField.tsx";
 import { cn } from "./cn.ts";
 import { colorShape, resolveForMode, useColorMode } from "./entityColor.ts";
+import { Menu } from "./Menu.tsx";
+import { TextField } from "./TextField.tsx";
 
 /**
  * K103 — the entity colour picker.

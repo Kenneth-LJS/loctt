@@ -1,4 +1,4 @@
-import type { LabelDef, MilestoneDef, ProjectDef, SidebarGroupId, SprintDef, UserSettings } from "@loctt/contracts";
+import type { EntityColor, LabelDef, MilestoneDef, ProjectDef, SidebarGroupId, SprintDef, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { createContext, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useRef, useState } from "react";
@@ -33,6 +33,7 @@ import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
 import { type BrokenViewContext, ViewFormDialog, type ViewFormTarget } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 import { Chip } from "../ui/Chip.tsx";
+import { useResolvedColor } from "../ui/entityColor.ts";
 import { Icon, type IconName } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { ICON } from "../ui/icons.ts";
@@ -716,6 +717,25 @@ function ColorDot({ color }: { color?: string | undefined }) {
       style={{ background: color ?? "var(--text-tertiary)" }}
     />
   );
+}
+
+/**
+ * `ColorDot` for a STORED entity colour (K103's three shapes) rather
+ * than a CSS token.
+ *
+ * `ColorDot` itself keeps its `string` contract because most of its
+ * callers pass a `var(--…)` token, which is not an `EntityColor` and
+ * must not be run through the resolver. Only the label row holds a
+ * user-configured colour, so the resolution is a thin wrapper rather
+ * than a widened prop — a widened prop would have accepted a token and
+ * a stored colour interchangeably, which is how a CSS var ends up
+ * being asked which palette entry it is.
+ *
+ * An unresolvable colour yields `undefined`, and `ColorDot`'s own
+ * tertiary default then applies — the dot stays visible.
+ */
+function EntityColorDot({ color }: { color?: EntityColor | undefined }) {
+  return <ColorDot color={useResolvedColor(color)} />;
 }
 
 /* ---------- groups ---------- */
@@ -1954,7 +1974,7 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
             <ItemShell collapsed={collapsed} title={l.name}>
-              <ColorDot color={l.color} />
+              <EntityColorDot color={l.color} />
               {!collapsed ? <span className="truncate">{l.name}</span> : null}
             </ItemShell>
           </Link>

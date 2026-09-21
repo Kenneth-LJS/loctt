@@ -1,4 +1,4 @@
-import type { CalendarConfig, CustomFieldDef, ProjectDef, WorkflowConfig } from "@loctt/contracts";
+import type { CalendarConfig, CustomFieldDef, EntityColor, ProjectDef, WorkflowConfig } from "@loctt/contracts";
 import { customFieldsForType } from "@loctt/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -32,6 +32,7 @@ import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { resolveRowColors, useColorMode } from "../ui/entityColor.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
@@ -1003,22 +1004,25 @@ function EnumField({
 }: {
   readonly label: string;
   readonly testid: string;
-  readonly defs: readonly { key: string; label: string; color?: string | undefined }[];
+  // K103: `color` is the three-shape `EntityColor`, not a hex string.
+  // Narrowing it back to `string` here is what let the workflow defs
+  // through unresolved before.
+  readonly defs: readonly { key: string; label: string; color?: EntityColor | undefined }[];
   readonly value: string | undefined;
   readonly onSelect: (key: string) => void;
   readonly onClear: () => void;
 }) {
+  const colorMode = useColorMode();
   return (
     <Field label={label}>
       <div data-testid={`create-${testid}`}>
         <OptionPicker
           label={label}
           value={value}
-          options={defs.map(d => ({
-            key: d.key,
-            label: d.label,
-            ...(d.color !== undefined ? { color: d.color } : {}),
-          }))}
+          options={resolveRowColors(
+            defs.map(d => ({ key: d.key, label: d.label, color: d.color })),
+            colorMode,
+          )}
           onSelect={onSelect}
           onClear={onClear}
           clearLabel="None"
