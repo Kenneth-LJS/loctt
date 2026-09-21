@@ -25,6 +25,7 @@ import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { AvatarCropper } from "./AvatarCropper.tsx";
 import { AvatarRejected, type DecodedImage, decodeImageFile } from "./prepareAvatar.ts";
+import { RowActions } from "./RowActions.tsx";
 import { UserDeleteDialog } from "./UserDeleteDialog.tsx";
 import { supportedTimezones } from "./workflowEdits.ts";
 
@@ -608,12 +609,11 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
 }
 
 /**
- * The Edit / Archive / Delete action group for one user row, shared by the
- * table (>= sm) and the mobile card (< sm). The three buttons live in a
- * flex row with `whitespace-nowrap` so they stay together on one line and
- * never wrap mid-word or stack raggedly (Ken's report). The self-user note
- * sits below, width-capped, so it wraps to a tidy block instead of a tall
- * single-word column.
+ * One user row's secondary actions, collapsed into the shared `RowActions`
+ * kebab (U26 / K105: a row's actions are a "⋯" menu of MenuItems, never a
+ * spread of text buttons). Edit / Archive / Delete keep their testids as
+ * MenuItem ids. Archiving or deleting the acting user is disabled with the
+ * reason on the (still-listed) item, plus an sr-only note (U24).
  */
 function UserRowActions({
   user,
@@ -633,58 +633,42 @@ function UserRowActions({
 }) {
   return (
     <div className={align === "end" ? "text-right" : "text-left"}>
-      <div className={[
-        "flex items-center gap-1 whitespace-nowrap",
-        align === "end" ? "justify-end" : "justify-start",
-      ].join(" ")}>
-        {/* PRU-47: the row is read-only; identity fields are edited in a
-            per-row Edit dialog. */}
-        <Button
-          variant="ghost"
-          testId={`user-edit-${user.id}`}
-          onClick={onEdit}
-        >
-          Edit
-        </Button>
-        {/* PRU-26: archiving yourself is disabled, not error-on-click, and
-            the reason is on the control. */}
-        <Button
-          variant="ghost"
-          testId={`user-archive-${user.id}`}
-          disabled={isSelf}
-          {...(isSelf
-            ? { title: "You cannot archive the user you are acting as. Switch to another user first." }
-            : {})}
-          onClick={onArchive}
-        >
-          {user.archived === true ? "Unarchive" : "Archive"}
-        </Button>
-        {/* PRU-42: delete is the permanent path, offered beside archive.
-            Disabled for the active user for the same reason archive is —
-            core refuses to delete whoever you are acting as. A ghost
-            button with danger-token text (not a filled danger fill) keeps
-            it visually in-line with Edit/Archive as before. */}
-        <Button
-          variant="ghost"
-          testId={`user-delete-${user.id}`}
-          disabled={isSelf}
-          {...(isSelf
-            ? { title: "You cannot delete the user you are acting as. Switch to another user first." }
-            : {})}
-          onClick={onDelete}
-          className="text-danger-fg"
-        >
-          Delete
-        </Button>
+      <div className={align === "end" ? "flex justify-end" : "flex justify-start"}>
+        <RowActions
+          align={align}
+          label={`Actions for user "${user.name ?? user.id}"`}
+          actions={[
+            // PRU-47: identity fields are edited in a per-row Edit dialog.
+            { label: "Edit…", testId: `user-edit-${user.id}`, onSelect: onEdit },
+            {
+              // PRU-26: archiving yourself is disabled (not error-on-click),
+              // with the reason on the item.
+              label: user.archived === true ? "Unarchive" : "Archive",
+              testId: `user-archive-${user.id}`,
+              onSelect: onArchive,
+              disabled: isSelf,
+              title: isSelf
+                ? "You cannot archive the user you are acting as. Switch to another user first."
+                : undefined,
+            },
+            {
+              // PRU-42: permanent delete, disabled for the acting user for
+              // the same reason (core refuses to delete whoever you are).
+              label: "Delete…",
+              testId: `user-delete-${user.id}`,
+              danger: true,
+              onSelect: onDelete,
+              disabled: isSelf,
+              title: isSelf
+                ? "You cannot delete the user you are acting as. Switch to another user first."
+                : undefined,
+            },
+          ]}
+        />
       </div>
-      {/* U24: the self-user reason is a TOOLTIP on the disabled
-          Archive/Delete buttons (their `title` above), not an inline note.
-          The old `<p>` reflowed the row to a taller height (Ken's report);
-          a hidden description keeps it available to assistive tech without
-          changing the row's height. `aria-describedby` on the buttons is
-          not wired here because each button already carries the reason in
-          its `title`/accessible name; this span is a belt-and-braces
-          screen-reader affordance kept off-layout. */}
+      {/* U24: the self-user reason is on the disabled menu items (their
+          `title`) plus this sr-only note — never an inline paragraph that
+          reflows the row to a taller height (Ken's report). */}
       {isSelf && (
         <span
           data-testid={`user-archive-blocked-${user.id}`}

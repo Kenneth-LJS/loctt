@@ -125,7 +125,10 @@ function stubHappyPath(): void {
   });
 }
 
+// U26/K105: a user row's actions are now a "⋯" kebab (RowActions). Open it
+// first, then click the Edit MenuItem — the item testids are unchanged.
 async function openAliceEditDialog(): Promise<void> {
+  fireEvent.click(await screen.findByRole("button", { name: 'Actions for user "Alice"' }));
   const edit = await screen.findByTestId("user-edit-u-alice");
   fireEvent.click(edit);
   await screen.findByTestId("user-edit-dialog-u-alice");
@@ -367,6 +370,7 @@ describe("UsersPanel Edit dialog (PRU-47)", () => {
     });
 
     render(<UsersPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByRole("button", { name: 'Actions for user "Zed"' }));
     fireEvent.click(await screen.findByTestId("user-edit-u-notz"));
     await screen.findByTestId("user-edit-dialog-u-notz");
 
@@ -471,6 +475,19 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
     });
   }
 
+  it("collapses row actions into a kebab, not text buttons (U26)", async () => {
+    stubWithArchived();
+    render(<UsersPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("user-row-u-alice");
+    // No Edit action is visible until the kebab opens.
+    expect(screen.queryByTestId("user-edit-u-alice")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for user "Alice"' }));
+    // The kebab reveals Edit / Archive / Delete as menu items.
+    expect(await screen.findByTestId("user-edit-u-alice")).toBeTruthy();
+    expect(screen.getByTestId("user-archive-u-alice")).toBeTruthy();
+    expect(screen.getByTestId("user-delete-u-alice")).toBeTruthy();
+  });
+
   it("hides archived users until the toggle is on (U25)", async () => {
     stubWithArchived();
     render(<UsersPanel />, { wrapper: wrapper() });
@@ -485,14 +502,19 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
   it("does not render an inline self-user note that reflows the row (U24)", async () => {
     stubWithArchived();
     render(<UsersPanel />, { wrapper: wrapper() });
-    // BOB is the current user (self). The reason lives as the disabled
-    // Archive button's tooltip + an sr-only note — NOT a visible inline
-    // paragraph that changes the row height.
+    // BOB is the current user (self). The reason lives as an sr-only note
+    // (kept off-layout) plus the disabled Archive menu item's tooltip —
+    // NOT a visible inline paragraph that changes the row height.
     const note = await screen.findByTestId("user-archive-blocked-u-bob");
     expect(note.className).toContain("sr-only");
-    // The disabled Archive button carries the reason as its tooltip.
-    const archiveBtn = screen.getByTestId("user-archive-u-bob");
-    expect(archiveBtn.hasAttribute("disabled")).toBe(true);
-    expect(archiveBtn.getAttribute("title")).toMatch(/cannot archive/i);
+    // Open Bob's kebab; the Archive item is disabled and carries the reason.
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for user "Bob"' }));
+    const archiveItem = await screen.findByTestId("user-archive-u-bob");
+    // A disabled RowActions item is inert (opacity-50) with the reason on
+    // its inner span's title.
+    expect(archiveItem.className).toContain("opacity-50");
+    expect(archiveItem.textContent).toMatch(/archive/i);
+    const titled = archiveItem.querySelector("[title]");
+    expect(titled?.getAttribute("title")).toMatch(/cannot archive/i);
   });
 });
