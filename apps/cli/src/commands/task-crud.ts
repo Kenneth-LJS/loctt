@@ -42,7 +42,7 @@ import {
 
 import type { HistoryDisplayContext } from "../format/history.js";
 import { formatHistoryEntry } from "../format/history.js";
-import { getArg, getNonNegativeIntArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, getNonNegativeIntArg, hasFlag, parseArchivedScope, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, UsageError } from "../runtime/errors.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
@@ -271,7 +271,7 @@ export async function list(args: string[], root: string): Promise<void> {
       ...(limit !== undefined ? { limit } : {}),
       ...(sort !== undefined ? { sort } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-      includeArchived: hasFlag(args, "--archived"),
+      archivedScope: parseArchivedScope(args),
       ...(today !== undefined ? { today } : {}),
       ...(now !== undefined ? { now } : {}),
       ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),

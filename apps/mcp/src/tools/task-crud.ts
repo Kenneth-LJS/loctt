@@ -11,7 +11,7 @@
  * atomic.
  */
 
-import type { WorkflowConfig } from "@loctt/contracts";
+import type { ArchivedScope, WorkflowConfig } from "@loctt/contracts";
 import { effectiveInverseKey, isSymmetricRelationship } from "@loctt/contracts";
 import {
   bodyToken,
@@ -197,13 +197,13 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "list_tasks",
-    description: "List tasks with optional query, view, and limit. Archived tasks are hidden by default; pass include_archived=true to include them. Saved views are respected as authored — they are not modified by this flag.",
+    description: "List tasks with optional query, view, and limit. Archived tasks are hidden by default (archived='active'); pass archived='archived' for only-archived or archived='all' for both. Saved views are respected as authored — they are not modified by this flag.",
     inputSchema: {
       query: z.string().optional().describe("Ad hoc query string"),
       view: z.string().optional().describe("Named saved view"),
       project: z.string().optional().describe("Filter to a specific project. AND-merges with `query` if both are supplied."),
       limit: z.number().optional().describe(`Max results (default ${DEFAULT_LIST_LIMIT})`),
-      include_archived: z.boolean().optional().describe("If true, include archived tasks (default false). Ignored when a query already mentions `archived` or when a saved view is used."),
+      archived: z.enum(["active", "archived", "all"]).optional().describe("Archived scope (K107): 'active' (default, hide archived), 'archived' (only archived), 'all' (both). Ignored when a query already mentions `archived` (the query's term wins) or when a saved view is used."),
       sort: z.string().optional().describe("Field to order by, e.g. priority, due_date, updated_at. Priority orders by its configured value, not alphabetically."),
       direction: z.enum(["asc", "desc"]).optional().describe("Sort direction (default asc)."),
       offset: z.number().optional().describe("Rows to skip, for paging past the first `limit`."),
@@ -224,7 +224,7 @@ export const TOOLS: readonly ToolDef[] = [
       const baseQuery = args["query"] as string | undefined;
       const view = args["view"] as string | undefined;
       const limit = args["limit"] as number | undefined;
-      const includeArchived = args["include_archived"] as boolean | undefined;
+      const archivedScope = args["archived"] as ArchivedScope | undefined;
       // Core supported both from the start; only the web exposed them,
       // so an agent wanting "the highest-priority open task" had to
       // fetch everything and order it itself (QRY-C4).
@@ -253,7 +253,7 @@ export const TOOLS: readonly ToolDef[] = [
           // would return the same first `limit` rows (QRY-C5).
           ...(sortField !== undefined ? { sort: [{ field: sortField, direction }] } : {}),
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-          ...(includeArchived !== undefined ? { includeArchived } : {}),
+          ...(archivedScope !== undefined ? { archivedScope } : {}),
           ...(today !== undefined ? { today } : {}),
           ...(now !== undefined ? { now } : {}),
           ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
@@ -366,7 +366,9 @@ export const TOOLS: readonly ToolDef[] = [
           ...(baseQuery !== undefined ? { query: baseQuery } : {}),
           ...(view !== undefined ? { view } : {}),
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-          includeArchived,
+          // filterForExport applies the archived filter below (parity with
+          // the web + CLI export), so the query filter is left open (K107).
+          archivedScope: "all",
           ...(today !== undefined ? { today } : {}),
           ...(now !== undefined ? { now } : {}),
           ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),

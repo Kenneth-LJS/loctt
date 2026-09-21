@@ -13747,8 +13747,22 @@ DSL query. Audit and align every user-facing string across web/CLI/MCP/docs to
 this (e.g. sidebar section, "Save as view", "Edit view", "Add filter").
 
 **Migration.** Greenfield — saved-view data has no real users. Change the
-on-disk `queries.yaml` schema freely; the demo tracker is re-seeded and the
-broken `blocked` demo view removed. No migrate-on-load code.
+on-disk `queries.yaml` schema freely. No migrate-on-load code.
+
+**Seed (Ken, 2026-09-21).** *"we don't ship a demo."* `loctt init` seeds no
+demo content: the broken `blocked` view is removed, and the seed is trimmed
+to sensible defaults only (audited under K107's sweep / a seed audit), not
+demo data. The archived default comes from K107's scope flag, not a stored
+`archived != true` filter.
+
+**CLI/MCP authoring (Ken, 2026-09-21).** Both surfaces author the SAME
+mixed, stackable filter list as the web — simple filters AND advanced DSL,
+in one view — *with a preference for simple filters* so a CLI/MCP-created
+view still renders cleanly and editably in the web picker rather than
+opaque DSL. Not advanced-only.
+
+**Icon (K104 hook).** Add the optional `icon` field to `SavedQuery` in this
+schema change (the picker UI is K104, designed separately — see K104).
 
 **Sequencing.** Ken: do the small UI polish + get the web client type-checking
 green first (see the tsconfig gate gap below), commit, THEN take on this
@@ -13879,6 +13893,73 @@ this general component with `searchable={false}`.
 (K102/K103/K104) — do deliberately, one at a time, not half-built. The
 native-component audit in flight feeds the migration list.
 
+### K107 · `archived` is a first-class tri-state query scope, default `false`, consistent across ALL archivable entities
+
+**Ken's ruling (2026-09-21).** Sequenced BEFORE K102 (which builds on the
+clean model).
+
+**The model.** `archived` stops being a magic filter/DSL term you must
+remember to add, and becomes a first-class **scope flag** on a query/list
+call. **Values (Ken, 2026-09-21): the string literals `active` / `archived`
+/ `all`** (chosen over `false`/`true`/`all` to avoid the false-vs-absent
+ambiguity across JSON/URL/CLI):
+- **`active`** — hide archived (the DEFAULT everywhere, every call).
+- **`archived`** — only archived.
+- **`all`** — both.
+
+This applies **to the 7 archivable entities: tasks, saved views,
+milestones, sprints, labels, projects, users** (Ken confirmed). It does
+**NOT** apply to the workflow config objects (statuses, priorities,
+task_types, relationships, custom fields) — those are not archivable; their
+lifecycle is delete-with-remap-or-refuse (WF-DELETE). Every list of an
+archivable entity defaults to `active` and takes an explicit scope to show
+archived. NB (audit correction): only Sprints + Users panels have a "Show
+archived" toggle today; Milestones/Labels/Projects/Views panels and ALL
+sidebars have none — K107 adds the control everywhere.
+
+**DSL `archived` field (Ken, 2026-09-21).** KEEP `archived` as a queryable
+DSL field (so `archived = true and status = done` stays expressible), but
+REMOVE the auto-injection of `archived != true`. Precedence: **when a
+task query explicitly mentions `archived`, the scope resolves to `all` for
+that call** — the user's own term decides, no double-filter.
+
+**Conflict warning (Ken, 2026-09-21).** When an explicit `archived` scope
+flag CONFLICTS with an `archived` term in the query — e.g. `--archived
+active` (or the default) alongside a query containing `archived = true` —
+emit a **warning** on CLI/MCP (and, where it applies, the UI) rather than
+silently resolving it. The precedence rule above still applies (the term
+wins, scope→all), but the conflict is surfaced so the result isn't
+mysterious. A non-conflicting mention (query says `archived` and the flag
+is `all` or unset) is not a conflict and warns nothing.
+
+**Core (audit).** Add a canonical `listX({scope})` per entity in core (most
+have none today — each surface re-implements the filter); all surfaces call
+it. `resolve*ByName`/`findProject`'s existing `includeArchived` (mutation
+targeting, not listing) is LEFT ALONE.
+
+**Wire shape.** One CLI flag spelling (`--archived active|archived|all`,
+retire `--all`), one MCP param (`archived`, on the shared config-list
+schema so all list_* inherit it), one web query param
+(`?archived=active|archived|all`), replacing today's split
+`--archived`/`--all`, `include_archived`/absent, `?archived`/`?include_archived`.
+UI: a tri-state control (replacing the two boolean toggles), added to every
+archivable list incl. the sidebars.
+
+**Approach: audit first.** A read-only audit maps how each archivable
+entity handles the archived dimension today (query flag? filter term? UI
+toggle? default? core function param?), surfaces the inconsistencies, and a
+unified plan is agreed before implementing. Then implement across core +
+CLI + MCP + web.
+
+**Interaction with K102.** Saved-view filters therefore never contain an
+`archived` term; a view carries the archived scope as this flag. The task
+DSL's `archived` field is reconciled during the audit (kept as queryable,
+or removed in favour of the flag — a call the audit informs).
+
+**Tri-state, not boolean** (Ken's explicit choice over hide/show).
+
+**Status: RULED, audit pending.** No code yet.
+
 ### K104 · Icon editor = Lucide icons + common-emoji list + free emoji input
 
 **Ken's ruling (2026-09-21).** An entity's icon is chosen from one of:
@@ -13888,7 +13969,15 @@ native-component audit in flight feeds the migration list.
 saved-view icon editor first (the surface Ken named) and is the shared icon
 picker for every entity that has an icon (K103's sibling — icon + colour are
 authored by shared reusable components). Ties into K102 (saved views gain an
-icon) and K103 (colour palette). **Status: RECORDED, not built.** Open
+icon) and K103 (colour palette). **Picker design (Ken, 2026-09-21): a UI designer designs the picker.** Open
+questions to resolve in that design: a searcher? a dialog (and does a dialog
+stack on top of the entity's own edit dialog)? or a Select-with-grid (like an
+emoji picker, but a combined grid of Lucide icons + emojis)? Ken's leaning:
+an emoji-picker-style grid combining Lucide icons + emojis, where **icons can
+take the palette / free-form colour (K103) but emojis cannot** (an emoji
+carries its own colour). Get a design call before building.
+
+**Status: RECORDED, not built.** Open
 sub-question when built: does adopting Lucide replace or coexist with the
 hand-rolled `ui/Icon` set (the affordance icons — chevrons, close, kebab)?
 — resolve at build time; likely Lucide for *user-pickable entity* icons,

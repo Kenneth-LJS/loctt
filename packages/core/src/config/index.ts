@@ -1,3 +1,4 @@
+export { applyArchivedScope } from "./archived-scope.js";
 export type {
   ArchivedGuardConfigs,
   ArchivedGuardField,

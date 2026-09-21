@@ -6,6 +6,23 @@ import { TimelineGroupingSchema, TimelineZoomSchema } from "./workflow.js";
 export const SortDirectionSchema = z.enum(["asc", "desc"]);
 export type SortDirection = z.infer<typeof SortDirectionSchema>;
 
+/**
+ * The archived-scope for any list of an archivable entity (K107) — tasks,
+ * saved views, milestones, sprints, labels, projects, users. A first-class
+ * scope, not a magic filter term:
+ * - `active`   — hide archived (the DEFAULT everywhere, every call).
+ * - `archived` — only archived.
+ * - `all`      — both.
+ *
+ * String literals (not `boolean | "all"`) so the value is unambiguous
+ * across JSON bodies, URL params, CLI flags, and stored view fields.
+ */
+export const ArchivedScopeSchema = z.enum(["active", "archived", "all"]);
+export type ArchivedScope = z.infer<typeof ArchivedScopeSchema>;
+
+/** The default scope — hide archived — applied when a caller passes none. */
+export const DEFAULT_ARCHIVED_SCOPE: ArchivedScope = "active";
+
 /** A single sort specifier in a saved query. */
 export const QuerySortSchema = z.object({
   field: z.string().min(1),
