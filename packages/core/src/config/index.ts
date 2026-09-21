@@ -20,6 +20,18 @@ export {
   saveCalendarConfig,
   serializeCalendarConfig,
 } from "./calendar.js";
+export type {
+  ColorResolution,
+  ColorResolveFailure,
+  PaletteEntry,
+} from "./color.js";
+export {
+  BUILTIN_PALETTE,
+  getPaletteEntry,
+  isKnownPaletteId,
+  resolveEntityColor,
+  resolveEntityColorOr,
+} from "./color.js";
 export { brokenEntriesToPlain, collectValidEntries } from "./health.js";
 export {
   getLabelsConfigPath,

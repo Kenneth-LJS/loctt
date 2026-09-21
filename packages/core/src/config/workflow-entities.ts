@@ -39,11 +39,11 @@ import type {
   BoardColumnDef,
   CustomFieldDef,
   CustomFieldValueDef,
+  EntityColor,
   EstimationConfig,
   EstimationScale,
   EstimationUnit,
   EstimationWeights,
-  HexColor,
   IconString,
   PriorityDef,
   RelationshipDef,
@@ -80,7 +80,7 @@ export class WorkflowEntityError extends LocttError {
 /** Optional icon/color shared by status/priority/task_type/relationship/field-value. */
 export interface IconColorInput {
   readonly icon?: IconString;
-  readonly color?: HexColor;
+  readonly color?: EntityColor;
 }
 
 /**
@@ -108,9 +108,9 @@ async function mutateWorkflow(
  * Builds the icon/color spread for a create/edit input, dropping keys the
  * caller did not set so the serializer omits them.
  */
-function iconColorFields(input: { icon?: IconString | undefined; color?: HexColor | undefined }): {
+function iconColorFields(input: { icon?: IconString | undefined; color?: EntityColor | undefined }): {
   icon?: IconString;
-  color?: HexColor;
+  color?: EntityColor;
 } {
   return {
     ...(input.icon !== undefined ? { icon: input.icon } : {}),
@@ -123,9 +123,9 @@ function iconColorFields(input: { icon?: IconString | undefined; color?: HexColo
  * field; `undefined` leaves it as-is. Returns the merged icon/color slots.
  */
 function mergeIconColor(
-  existing: { icon?: IconString | undefined; color?: HexColor | undefined },
-  changes: { icon?: IconString | null | undefined; color?: HexColor | null | undefined },
-): { icon?: IconString; color?: HexColor } {
+  existing: { icon?: IconString | undefined; color?: EntityColor | undefined },
+  changes: { icon?: IconString | null | undefined; color?: EntityColor | null | undefined },
+): { icon?: IconString; color?: EntityColor } {
   const icon =
     changes.icon === null ? undefined
     : changes.icon !== undefined ? changes.icon
@@ -310,7 +310,7 @@ export interface EditStatusChanges {
   /** Set this status as the default (clearing others). Cannot un-set here. */
   readonly default?: boolean;
   readonly icon?: IconString | null;
-  readonly color?: HexColor | null;
+  readonly color?: EntityColor | null;
 }
 
 /**
@@ -401,7 +401,7 @@ export async function createPriority(locttDir: string, input: CreatePriorityInpu
 export interface EditPriorityChanges {
   readonly label?: string;
   readonly icon?: IconString | null;
-  readonly color?: HexColor | null;
+  readonly color?: EntityColor | null;
 }
 
 /**
@@ -483,7 +483,7 @@ export async function createTaskType(locttDir: string, input: CreateTaskTypeInpu
 export interface EditTaskTypeChanges {
   readonly label?: string;
   readonly icon?: IconString | null;
-  readonly color?: HexColor | null;
+  readonly color?: EntityColor | null;
 }
 
 /** Edits a task type's label/icon/color. `key` is immutable. */
@@ -581,7 +581,7 @@ export interface EditRelationshipChanges {
   readonly graph?: RelationshipGraph;
   readonly ranked?: boolean;
   readonly icon?: IconString | null;
-  readonly color?: HexColor | null;
+  readonly color?: EntityColor | null;
 }
 
 /**
@@ -788,7 +788,7 @@ export async function addFieldValue(
 export interface EditFieldValueChanges {
   readonly label?: string;
   readonly icon?: IconString | null;
-  readonly color?: HexColor | null;
+  readonly color?: EntityColor | null;
 }
 
 /** Edits an enum value's label/icon/color. Its `key` is immutable. */

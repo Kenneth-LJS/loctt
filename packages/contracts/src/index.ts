@@ -12,6 +12,21 @@ export {
   CalendarConfigSchema,
   HolidayDefSchema,
 } from "./calendar.js";
+export type {
+  ColorMode,
+  DoubleColor,
+  EntityColor,
+  PaletteColorRef,
+} from "./color.js";
+export {
+  ColorModeSchema,
+  DoubleColorSchema,
+  EntityColorSchema,
+  isDoubleColor,
+  isPaletteColorRef,
+  isSingleColor,
+  PaletteColorRefSchema,
+} from "./color.js";
 export type { BrokenEntry } from "./health.js";
 export { BrokenEntrySchema } from "./health.js";
 export type { HistoryEntry, HistoryKind } from "./history.js";
