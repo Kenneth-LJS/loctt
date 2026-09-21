@@ -2678,6 +2678,26 @@ test.describe("A11Y — colour and focus visibility", () => {
         await page.evaluate(() => document.documentElement.classList.contains("dark")),
       ).toBe(theme === "dark");
 
+      // The focus ring's colour is TRANSITIONED: every control carries
+      // `transition-colors`, whose property list includes `outline-color`.
+      // Reading `getComputedStyle` in the same tick as `.focus()` samples
+      // the animation MID-FLIGHT — it returns the colour being
+      // transitioned *from* (the control's previous outline, i.e. its own
+      // text colour) rather than the settled `--text-primary`.
+      //
+      // That is what made this spec report `ring rgb(255,255,255) —
+      // 1.00:1` on the header's primary button: the app's CSS is correct
+      // and settles at `#0f172a`, but the measurement never waited for it.
+      // Two separate attempts to "fix" the CSS failed because there was
+      // nothing wrong with it.
+      //
+      // Disabling transitions for the scan measures the resting state,
+      // which is what WCAG's 3:1 is about — a ring a user looks at, not a
+      // frame of its fade-in.
+      await page.addStyleTag({
+        content: "*, *::before, *::after { transition: none !important; animation: none !important; }",
+      });
+
       const weak = await page.evaluate(() => {
         const parse = (css: string): [number, number, number, number] | null => {
           const m = /rgba?\(([^)]+)\)/.exec(css);

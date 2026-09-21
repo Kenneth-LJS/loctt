@@ -349,51 +349,44 @@ the tests to go green would have destroyed the only signal.
   branch) already had the right pattern, so `Modal` was converged on it
   rather than growing a second one.
 
-**A11Y-16 — I GOT THIS WRONG TWICE; THE E2E TEST IS RIGHT.**
+**A11Y-16 — RESOLVED. It was a TEST defect; the app's CSS was correct
+the whole time.**
 
-*Final state: the test FAILS in both themes*, reporting
-`button"New task" ring rgb(255, 255, 255) — 1.00:1`. It is a real defect
-and is NOT fixed.
+Three wrong diagnoses preceded the right one, which is the useful part of
+this entry:
 
-The history is worth keeping, because it is a lesson about trusting a
-component-level measurement over the gate:
-1. An agent reported it (1.00:1 light, 1.07:1 dark) as a `currentColor`
-   fallback from a Tailwind layer-precedence problem.
-2. A second agent measured **16.14:1 / 19.67:1** in a real Chromium with
-   the button's classes and declared it a non-reproduction, reasoning
-   that `--text-primary` IS near-white in dark mode so the reading was a
-   coincidence — and that the test scans `main`/`aside` only, which the
-   `<header>` is not inside.
-3. **I recorded that non-reproduction as fact.** The full e2e run then
-   failed on exactly this, in LIGHT mode, naming that button.
+1. An agent reported an invisible ring (1.00:1) and blamed a Tailwind
+   layer-precedence override.
+2. A second agent measured **16.14:1** on a hand-built copy of the button
+   and called it a non-reproduction. **I recorded that as fact.**
+3. The gate then failed on exactly that button, so I reversed and
+   recorded it as a real, unfixed defect — and tried two CSS fixes
+   (moving `:focus-visible` outside `@layer base`, then splitting the
+   shorthand into longhands). **Neither worked, because there was nothing
+   wrong with the CSS.** Both were reverted.
 
-Where (2) went wrong: measuring the button in isolation, with its classes
-applied by hand, is not the same as measuring the button the app renders
-in the DOM the app builds. The scope argument was also not decisive — the
-test finds a `button` with the accessible name "New task" reachable from
-`main`/`aside`, and a desktop-width probe at rest found none, so the
-element is present under conditions the probe did not reproduce.
+**The actual cause**, found by probing the live page instead of the
+stylesheet: every control carries `transition-colors`, whose property
+list includes `outline-color`. The spec read `getComputedStyle` in the
+same tick as `.focus()`, sampling the transition MID-FLIGHT — so it got
+the colour being transitioned *from* (the button's own white text) rather
+than the settled value. Measured directly:
 
-**What a real fix needs:** run the A11Y-16 spec itself, read which
-element it names, and diagnose THAT element in THAT state — not a
-hand-built copy of it. **Left unfixed and RED rather than closed on a
-measurement that disagrees with the gate.**
+```
+immediate = rgb(255, 255, 255)     <- what the test saw
+settled   = rgb(15, 23, 42)        <- #0f172a, the intended --text-primary
+```
 
-**(superseded note kept for the record)** Reported as an
-invisible focus ring on the header's New-task button (1.00:1 light,
-1.07:1 dark), diagnosed as the `:focus-visible` rule falling back to
-`currentColor`. It does not reproduce. Driving a real Chromium against
-the built CSS with the button's actual classes, focused by keyboard so
-`:focus-visible` genuinely matches: **16.14:1 in light, 19.67:1 in
-dark.** The original reading of `rgb(255,255,255)` was taken in DARK
-mode, where `--text-primary` IS `#F4F4F3` — so a near-white outline is
-the rule working, not a fallback, and it only *looked* like `currentColor`
-because the button's text is also white. Verified independently:
-`tokens.css` sets `--text-primary: #0F172A` light / `#F4F4F3` dark.
-Additionally the A11Y-16 e2e test scans `main`/`aside` only — the header
-is not in its scope, so this button could not have been failing it. **No
-CSS was changed.** If A11Y-16 is genuinely red, the cause is a control
-inside `main`/`aside` and needs re-diagnosis.
+**Fix:** the spec disables transitions before scanning, so it measures
+the resting ring — which is what a 3:1 contrast requirement is about. All
+four A11Y-16 tests pass.
+
+**The lesson, and why all three earlier readings failed:** two of them
+measured a *reconstruction* of the button rather than the button, and the
+third (mine) trusted the gate's number without asking what the number was
+measuring. A red gate proves something is wrong; it does not prove the
+PRODUCT is wrong. The cheapest check was a six-line probe of the live
+page, and it should have come first.
 
 **STILL UNVERIFIED** (being worked, or not yet checked): TSK-18
 (rich→raw toggle swallowed after typing), A11Y-9 (back-navigation does
