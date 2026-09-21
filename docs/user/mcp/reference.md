@@ -131,6 +131,7 @@ tools.
 | `get_workflow_config` | The valid statuses, priorities, task types, relationships, and custom fields, each with its key and label. Call before writing any enum field. |
 | `get_workflow_key_usage` | How many tasks reference each workflow key. Call before proposing a deletion from the workflow config. |
 | `get_calendar` | Timezone, working days, and holidays (read-only; configured in the UI). |
+| `list_palette_colors` | The built-in palette: every entry's `id` plus its `light` and `dark` values. Call before writing a `{"palette": "<id>"}` color — the ids are a fixed built-in set, so do not guess them. |
 | `list_views` | Saved views (address a view by id — names are not unique). Returns each view's ordered `filters` plus a display-only `summary`. Takes `archived` (`active` default hides archived, `archived` = only archived, `all` = both); broken views are always returned. |
 
 ### Tasks
@@ -275,7 +276,7 @@ Every config-entity list (`list_labels`, `list_milestones`, `list_sprints`,
 
 | Family | List | Create key params | Notable |
 |---|---|---|---|
-| Labels | `list_labels` | `name`, `color` | `list_labels` takes `q`, `limit`, `offset`, `archived`. `delete_label` remaps or drops the label from every task. |
+| Labels | `list_labels` | `name`, `color` | `list_labels` takes `q`, `limit`, `offset`, `archived`. `delete_label` remaps or drops the label from every task. `color` takes any of the three shapes — see [Colors](#colors). |
 | Milestones | `list_milestones` | `name`, `target_date` | `list_milestones` takes `q`, `limit`, `offset`, `archived`, `progress`; `{progress:true}` adds done/total per milestone. |
 | Sprints | `list_sprints` | `name`, `start_date`, `end_date`, `state`, `goal` | `list_sprints` takes `q`, `limit`, `offset`, `archived`, `progress`. `get_sprint_burndown` returns the burndown series. |
 
@@ -315,6 +316,38 @@ Per-user settings and sidebar layout have their own read/write tools:
 | `list_config_values` | All known config keys with values, types, and descriptions. |
 | `get_workflow_key_usage` | Task counts per workflow key (see Discovery). |
 
+### Colors
+
+Every entity that carries a color — a label, status, priority, task
+type, relationship, or custom-field enum value — accepts **three
+shapes**. MCP speaks JSON, so the accepted input *is* the stored wire
+form: a value read out of `get_workflow_config` or `list_labels` can be
+written straight back unchanged.
+
+| Shape | JSON value | Meaning |
+|---|---|---|
+| Single | `"#1e6fcb"` | One color, used in **both** light and dark mode. |
+| Per-mode | `{"light": "#CC6600", "dark": "#F0A868"}` | An explicit color per mode. Both keys are required. |
+| Palette | `{"palette": "teal"}` | A reference to a built-in palette entry, which carries its own light/dark pair. |
+
+This applies to `color` on `create_label` / `edit_label`, to
+`fields.color` on `edit_workflow_entity`, and to `color` inside each
+entry of `fields.values[]` when seeding an enum field.
+
+**Call `list_palette_colors` before using a palette reference.** The ids
+are a fixed built-in set defined by LocTT, not by the tracker, and they
+appear in no other tool's output — guessing one produces an entity that
+renders as a neutral color. An unknown id is stored rather than
+rejected, so a guess fails quietly rather than loudly.
+
+**A palette reference is live.** The stored value is the id, never a
+resolved hex, so an entity set to `{"palette": "teal"}` follows the
+palette if the palette changes.
+
+On an edit, pass `null` to clear a color. A malformed color (for example
+`{"light": "#CC6600"}` with no `dark`) is rejected with an error naming
+the three shapes — it is never partially written.
+
 ### Workflow configuration (editing)
 
 The read side is `get_workflow_config` (see Discovery) — like `list_views`,
@@ -333,7 +366,8 @@ entity key — required for `edit`/`delete`, and the **new** key on
 required only for `entity: "custom_field_value"`); `fields` (the
 create/edit payload, whose shape depends on the entity — `label`,
 `category`, `icon`, `color`, `kind`, `inverse`, `type`, `multi`,
-`task_types`, `statuses`, `wip`, `values`, …); `remap_to` (delete-in-use
+`task_types`, `statuses`, `wip`, `values`, … — `color` takes any of the
+three shapes in [Colors](#colors)); `remap_to` (delete-in-use
 target key, or `null` to clear the value from every task); `order` (the
 full ordered key list, for `reorder`); `confirm` (must be `true` for
 `delete`, matching every other `delete_*` tool).

@@ -38,6 +38,7 @@
 import type {
   CustomFieldDef,
   CustomFieldValueDef,
+  EntityColor,
   EstimationScale,
   EstimationUnit,
   RelationshipGraph,
@@ -78,6 +79,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { COLOR_INPUT_DOC, parseColorValue } from "../runtime/color.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { errorResult, text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -228,24 +230,44 @@ function enumStr<T extends string>(
   return v as T;
 }
 
-/** icon/color for a CREATE (a value or nothing — no clear semantics). */
-function iconColorCreate(fields: Fields): { icon?: string; color?: string } {
+/**
+ * icon/color for a CREATE (a value or nothing — no clear semantics).
+ *
+ * K103: `color` is read as an `EntityColor`, not a string. Before this
+ * it went through `str()`, which threw `must be a string or null` on
+ * the two object shapes — so an agent COULD NOT write a palette or
+ * per-mode colour through MCP at all, though the file format accepts
+ * both and the web picker offers them.
+ */
+function iconColorCreate(fields: Fields): { icon?: string; color?: EntityColor } {
   const icon = str(fields, "icon");
-  const color = str(fields, "color");
+  const color = colorField(fields, "color");
+  return {
+    ...(icon !== undefined ? { icon } : {}),
+    ...(color !== undefined && color !== null ? { color } : {}),
+  };
+}
+
+/** icon/color for an EDIT (null clears, absent leaves, value sets). */
+function iconColorEdit(fields: Fields): { icon?: string | null; color?: EntityColor | null } {
+  const icon = nullableStr(fields, "icon");
+  const color = colorField(fields, "color");
   return {
     ...(icon !== undefined ? { icon } : {}),
     ...(color !== undefined ? { color } : {}),
   };
 }
 
-/** icon/color for an EDIT (null clears, absent leaves, value sets). */
-function iconColorEdit(fields: Fields): { icon?: string | null; color?: string | null } {
-  const icon = nullableStr(fields, "icon");
-  const color = nullableStr(fields, "color");
-  return {
-    ...(icon !== undefined ? { icon } : {}),
-    ...(color !== undefined ? { color } : {}),
-  };
+/**
+ * Reads a colour out of `fields`: `undefined` when absent, `null` when
+ * explicitly cleared, otherwise a validated `EntityColor` of any of the
+ * three shapes. Validation is `EntityColorSchema`'s, never re-derived.
+ */
+function colorField(fields: Fields, name: string): EntityColor | null | undefined {
+  if (!(name in fields)) return undefined;
+  const v = fields[name];
+  if (v === null) return null;
+  return parseColorValue(v, `fields.${name}`, m => new FieldsError(m));
 }
 
 /** The reorder key list, from the top-level `order` arg. */
@@ -553,12 +575,15 @@ function parseFieldValueSeeds(fields: Fields): CustomFieldValueDef[] | undefined
       throw new FieldsError(`\`fields.values[${i}]\` must have string \`key\` and \`label\``);
     }
     const icon = o["icon"];
-    const color = o["color"];
+    // K103: `typeof color === "string"` here SILENTLY DROPPED a palette
+    // or per-mode colour on a seeded enum value — the field was created,
+    // minus its colour, with no error. Validate the shape instead.
+    const color = colorField(o, "color");
     return {
       key: o["key"],
       label: o["label"],
       ...(typeof icon === "string" ? { icon } : {}),
-      ...(typeof color === "string" ? { color } : {}),
+      ...(color !== undefined && color !== null ? { color } : {}),
     } as CustomFieldValueDef;
   });
 }
@@ -659,7 +684,9 @@ export const TOOLS: readonly ToolDef[] = [
       "`remap_to` (delete-in-use target: another key, or null to clear the value from every task); " +
       "`order` (the full ordered key list, for reorder); `confirm` (must be true for delete). " +
       "Keys are immutable — an `edit` cannot rename (there is no key change; a rename is delete+create). Priority `value` is never settable (derived from order — use reorder). " +
-      "Custom-field `type`/`multi` are immutable after create. Deleting an in-use status/priority/task_type/relationship/enum-value requires `remap_to`; whole custom_field and board_column deletes take no remap.",
+      "Custom-field `type`/`multi` are immutable after create. Deleting an in-use status/priority/task_type/relationship/enum-value requires `remap_to`; whole custom_field and board_column deletes take no remap. " +
+      "COLOUR (`fields.color`, and `color` inside each `fields.values[]` enum seed): " + COLOR_INPUT_DOC +
+      " On an edit, pass null to clear it.",
     inputSchema: {
       entity: z.enum(ENTITIES).describe("Which workflow entity: " + ENTITIES.join(" | ")),
       op: z.enum(OPS).describe("create | edit | delete | reorder (must be legal for the entity — see description)"),

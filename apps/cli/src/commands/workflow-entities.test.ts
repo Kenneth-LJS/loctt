@@ -296,4 +296,71 @@ describe("CLI workflow-entity editing", () => {
     const cfg = await loadWorkflowConfig(locttDir);
     expect(cfg.timeline).toMatchObject({ dependency_relationship: "blocks", default_zoom: "week" });
   });
+
+  // -------------------------------------------------------------------------
+  // K103 stage 3: --color accepts all THREE shapes, end to end.
+  //
+  // `runtime/color.test.ts` covers the parse/render functions in
+  // isolation. These prove the CLI command actually REACHES core with the
+  // parsed object — before K103 the whole path was typed `color?: string`,
+  // so a palette or per-mode value could not have survived it.
+  // -------------------------------------------------------------------------
+
+  it("status add --color palette:<id> stores a palette REFERENCE, not a resolved hex", async () => {
+    await status(["status", "add", "blocked", "--label", "Blocked", "--category", "pending", "--color", "palette:teal"], root);
+    const cfg = await loadWorkflowConfig(locttDir);
+    const added = cfg.statuses.find(s => s.key === "blocked");
+    // The stored value is the id. Ken's ruling: references are LIVE, so
+    // snapshotting teal's current hex here would be the bug.
+    expect(added?.color).toEqual({ palette: "teal" });
+    expect(added?.color).not.toBe("#0F766E");
+  });
+
+  it("priority add --color light:…,dark:… stores an explicit per-mode pair", async () => {
+    await priority(["priority", "add", "urgent", "--label", "Urgent", "--color", "light:#CC6600,dark:#F0A868"], root);
+    const cfg = await loadWorkflowConfig(locttDir);
+    expect(cfg.priorities.find(p => p.key === "urgent")?.color)
+      .toEqual({ light: "#CC6600", dark: "#F0A868" });
+  });
+
+  it("task-type edit --color replaces a hex with a palette ref, and '-' clears it", async () => {
+    await taskType(["task-type", "add", "chore", "--label", "Chore", "--color", "#123456"], root);
+    let cfg = await loadWorkflowConfig(locttDir);
+    expect(cfg.task_types.find(t => t.key === "chore")?.color).toBe("#123456");
+
+    await taskType(["task-type", "edit", "chore", "--color", "palette:blue"], root);
+    cfg = await loadWorkflowConfig(locttDir);
+    expect(cfg.task_types.find(t => t.key === "chore")?.color).toEqual({ palette: "blue" });
+
+    await taskType(["task-type", "edit", "chore", "--color", "-"], root);
+    cfg = await loadWorkflowConfig(locttDir);
+    expect(cfg.task_types.find(t => t.key === "chore")?.color).toBeUndefined();
+  });
+
+  it("status add refuses a malformed --color at the CLI layer, naming the syntax", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await runCommand(() => status(
+      ["status", "add", "bad", "--label", "Bad", "--category", "pending", "--color", "light:#CC6600"],
+      root,
+    ));
+    // Exit 2 (USAGE), not 1 (RUNTIME): a half-given per-mode pair is a
+    // mistyped flag, so it must be refused HERE with the syntax spelled
+    // out — not passed down and rejected as an opaque schema failure.
+    expect(process.exitCode).toBe(2);
+    expect(errSpy.mock.calls.flat().join(" ")).toMatch(/BOTH light: and dark:/);
+    const cfg = await loadWorkflowConfig(locttDir);
+    expect(cfg.statuses.find(s => s.key === "bad")).toBeUndefined();
+  });
+
+  it("an UNKNOWN palette id warns but still writes (field-local degradation)", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await status(["status", "add", "odd", "--label", "Odd", "--category", "pending", "--color", "palette:chartreuse"], root);
+    // Written: the value is legal on the wire and core degrades it at
+    // render time. Refusing here would mean a CLI that cannot write a
+    // colour the file format accepts.
+    const cfg = await loadWorkflowConfig(locttDir);
+    expect(cfg.statuses.find(s => s.key === "odd")?.color).toEqual({ palette: "chartreuse" });
+    // But the typo is announced rather than swallowed.
+    expect(errSpy.mock.calls.flat().join(" ")).toMatch(/chartreuse/);
+  });
 });

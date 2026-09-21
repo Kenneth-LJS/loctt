@@ -53,6 +53,11 @@ export type {
   EditTimelineChanges,
   IconColorInput,
 } from "./config/index.js";
+export type {
+  ColorResolution,
+  ColorResolveFailure,
+  PaletteEntry,
+} from "./config/index.js";
 export {
   applyWorkflowEdit,
   computeWorkflowKeyCounts,
@@ -110,11 +115,6 @@ export {
 export { loadOptionalConfigs } from "./config/index.js";
 export { filterByName, filterProjects, isBlankQuery } from "./config/index.js";
 export { brokenEntriesToPlain, collectValidEntries } from "./config/index.js";
-export type {
-  ColorResolution,
-  ColorResolveFailure,
-  PaletteEntry,
-} from "./config/index.js";
 export {
   BUILTIN_PALETTE,
   getPaletteEntry,

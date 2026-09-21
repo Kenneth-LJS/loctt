@@ -20,6 +20,7 @@ import * as labelCmd from "./commands/label.js";
 import * as mcpCmd from "./commands/mcp.js";
 import * as migrateCmd from "./commands/migrate.js";
 import * as milestoneCmd from "./commands/milestone.js";
+import * as paletteCmd from "./commands/palette.js";
 import * as projectCmd from "./commands/project.js";
 import * as schemaCmd from "./commands/schema.js";
 import * as sprintCmd from "./commands/sprint.js";
@@ -186,6 +187,10 @@ export async function main(): Promise<void> {
       case "user": await runCommand(() => userCmd.run(args, root)); break;
 
       case "label": await runCommand(() => labelCmd.run(args, root)); break;
+
+      // K103: the built-in palette is tracker-independent (it lives in
+      // core, not in .loctt/), so this needs no root and no init.
+      case "palette": await runCommand(() => { paletteCmd.run(args); return Promise.resolve(); }); break;
 
       case "milestone": await runCommand(() => milestoneCmd.run(args, root)); break;
       case "sprint":    await runCommand(() => sprintCmd.run(args, root));    break;

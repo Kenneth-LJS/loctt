@@ -1216,6 +1216,77 @@ describe("edit_workflow_entity", () => {
     expect(res.isError).toBe(true);
     expect(res.content[0]?.text ?? "").toMatch(/nothing to change/i);
   });
+
+  // -------------------------------------------------------------------------
+  // K103 stage 3: MCP accepts all THREE colour shapes as the wire form.
+  //
+  // Before this, `fields.color` went through a string-only reader: the
+  // object shapes were either REJECTED ("must be a string or null") on
+  // entity colours, or — worse — SILENTLY DROPPED on a seeded enum
+  // value, which created the field minus its colour with no error.
+  // -------------------------------------------------------------------------
+
+  it("accepts a palette REFERENCE on a status and stores the id, not a hex", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "waiting",
+      fields: { label: "Waiting", category: "pending", color: { palette: "teal" } },
+    });
+    expect(res.isError).toBeUndefined();
+    const statuses = (await workflow())["statuses"] as { key: string; color?: unknown }[];
+    // Live reference: the id is stored, never today's resolved hex.
+    expect(statuses.find(s => s.key === "waiting")?.color).toEqual({ palette: "teal" });
+  });
+
+  it("accepts an explicit per-mode pair on a priority", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "priority", op: "create", key: "urgent",
+      fields: { label: "Urgent", color: { light: "#CC6600", dark: "#F0A868" } },
+    });
+    expect(res.isError).toBeUndefined();
+    const priorities = (await workflow())["priorities"] as { key: string; color?: unknown }[];
+    expect(priorities.find(p => p.key === "urgent")?.color)
+      .toEqual({ light: "#CC6600", dark: "#F0A868" });
+  });
+
+  it("keeps a palette colour on a SEEDED enum value instead of dropping it", async () => {
+    // The seed parser used `typeof color === "string"`, so this colour
+    // vanished with no error and no way to notice from the response.
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "create", key: "area",
+      fields: {
+        label: "Area", type: "enum",
+        values: [{ key: "api", label: "API", color: { palette: "blue" } }],
+      },
+    });
+    expect(res.isError).toBeUndefined();
+    const field = ((await workflow())["custom_fields"] as { key: string; values?: { key: string; color?: unknown }[] }[])
+      .find(f => f.key === "area");
+    expect(field?.values?.find(v => v.key === "api")?.color).toEqual({ palette: "blue" });
+  });
+
+  it("rejects a malformed colour object rather than writing a partial one", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "broken",
+      fields: { label: "Broken", category: "pending", color: { light: "#CC6600" } },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/not a valid colour/i);
+    const statuses = (await workflow())["statuses"] as { key: string }[];
+    expect(statuses.find(s => s.key === "broken")).toBeUndefined();
+  });
+
+  it("list_palette_colors returns every built-in id with both mode values", async () => {
+    const res = await executeTool(root, "list_palette_colors", {});
+    expect(res.isError).toBeUndefined();
+    const parsed = JSON.parse(res.content[0]?.text ?? "{}") as {
+      colors?: { id: string; light: string; dark: string }[];
+    };
+    const teal = parsed.colors?.find(c => c.id === "teal");
+    // Exact values: an agent picks an id from here, so a listing that
+    // merely has the right shape but wrong values is still useless.
+    expect(teal).toMatchObject({ id: "teal", light: "#0F766E", dark: "#39A88F" });
+    expect((parsed.colors ?? []).length).toBeGreaterThan(1);
+  });
 });
 
 describe("MCP reconcile resolve/abandon parity", () => {
