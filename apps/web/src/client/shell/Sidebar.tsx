@@ -59,9 +59,9 @@ import { useVanishedViews } from "./useVanishedViews.ts";
  *
  * The footer USED to show the tracker's working directory; `cc534a0d`
  * removed it (and `f85e5a7e` the task count) as data a user never acts
- * on. Consequence worth knowing: nothing in the shell now identifies
- * WHICH tracker a window is showing, which is what case SHL-31 pins —
- * see `known-gaps.md`.
+ * on. Telling two `loctt ui` windows apart (SHL-11 / SHL-31) is the
+ * document title's job instead — see `useRouteAnnouncement.ts`. Nothing
+ * on the page carries it, deliberately.
  *
  * All groups read live query data. Active-item highlighting is derived
  * from the current route (and, for projects/built-ins, the active

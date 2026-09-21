@@ -90,10 +90,12 @@ config changing underneath a live session is
 - Entries whose task has been deleted do not appear (the server drops them), and do not render as broken links.
 
 ### SHL-11 · M1 · major · P4 P6
-**The sidebar footer shows the workspace label and a Settings link.** Look at the bottom of the expanded sidebar.
+**The window title names the project, and the sidebar footer holds a Settings link.** Read the browser tab / window title, then look at the bottom of the expanded sidebar.
 
-- The workspace label from `TrackerInfoResponse.cwd` renders (abbreviated form, e.g. `~/code/myapp`), so a user with two `loctt ui` windows open can tell them apart.
-- A Settings link sits alongside it and navigates to the settings route.
+- The document title is `LocTT — <project> — <view>` (e.g. `LocTT — Mobile App — Board`), so a user with two `loctt ui` windows open can tell them apart from the tab strip alone. The project named is the one the window is scoped to: the sole `?project=` filter value when exactly one is selected, otherwise the workspace's effective default.
+- When no project resolves — several projects filtered at once, a filter id naming no project, or a tracker with no default — the title falls back to `<view> · LocTT`. It never renders an empty segment or a placeholder in the project's place.
+- Nothing is added to the page for this: no workspace label, no filesystem path, no header or sidebar element.
+- A Settings link sits in the footer and navigates to the settings route.
 - The footer stays pinned to the bottom of the sidebar and does not scroll away with the groups.
 
 ### SHL-12 · M1 · major · P8
@@ -235,7 +237,7 @@ config changing underneath a live session is
 ### SHL-31 · M1 · minor · P9 P6
 **Two `loctt ui` instances for different trackers are distinguishable.** Serve two trackers on different ports and open both.
 
-- Each footer shows its own workspace label, and the labels differ.
+- Each window's title names its own project, and the two titles differ. Trackers whose projects share a name read alike — the projects are renameable, and that is the affordance for telling them apart.
 - Sidebar contents (projects, labels, counts) reflect each tracker independently.
 - Toggling the sidebar in one window does not visibly fight with the other on the next reload (whether state is shared or per-port, the behaviour is consistent and not oscillating).
 

@@ -8,10 +8,77 @@
  * returns to where the user left it.
  */
 
-import { readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { execa } from "execa";
+
+import {
+  cliEntry,
+  freePort,
+  killAndWait,
+  registerServerChild,
+  waitForReady,
+  workspaceRoot,
+} from "./fixtures/server-harness.ts";
 import { expect, test } from "./fixtures/tracker.ts";
+
+/**
+ * A second, independent tracker + server, for the one case that is
+ * about two instances at once (SHL-31).
+ *
+ * The `tracker` fixture deliberately hands each test exactly one
+ * tracker, and widening it to a pair would make every other spec pay
+ * for a server it does not use. This spins the extra one up locally
+ * instead; the caller stops it in a `finally`.
+ */
+async function spawnTracker(): Promise<{
+  root: string;
+  baseURL: string;
+  run(args: readonly string[]): Promise<string>;
+  stop(): Promise<void>;
+}> {
+  const root = await mkdtemp(path.join(workspaceRoot, "loctt-ui-second-"));
+  const run = async (args: readonly string[]): Promise<string> => {
+    const result = await execa(process.execPath, [cliEntry, ...args], {
+      cwd: root,
+      env: process.env,
+      reject: false,
+    });
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `loctt ${args.join(" ")} exited ${String(result.exitCode)}\n${result.stderr}`,
+      );
+    }
+    return result.stdout;
+  };
+
+  await run(["init"]);
+  const port = await freePort();
+  const baseURL = `http://127.0.0.1:${String(port)}`;
+  const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
+    cwd: root,
+    env: process.env,
+    reject: false,
+  });
+  const unregister = registerServerChild(child);
+
+  const stop = async (): Promise<void> => {
+    await killAndWait(child);
+    unregister();
+    await rm(root, { recursive: true, force: true }).catch((err: unknown) => {
+      console.error(`second tracker: failed to remove ${root}: ${String(err)}`);
+    });
+  };
+
+  try {
+    await waitForReady(baseURL, 15_000);
+  } catch (err) {
+    await stop();
+    throw err;
+  }
+  return { root, baseURL, run, stop };
+}
 
 test.describe("SHL — routing and history", () => {
   // @verifies SHL-15
@@ -353,30 +420,55 @@ test.describe("SHL — theme and motion", () => {
 });
 
 test.describe("SHL — scale and isolation", () => {
-  // @verifies SHL-31
-  test("SHL-31: two trackers are distinguishable by their footers", async ({
-    page,
+  // @verifies SHL-11, SHL-31
+  test("SHL-31: two trackers are distinguishable by their titles", async ({
+    browser,
     tracker,
   }) => {
-    await tracker.seed([{ title: "Alpha task" }]);
-    await page.goto(`${tracker.baseURL}/list`);
+    // The case is about *two* instances, so it needs two of them. One
+    // tracker cannot show that the titles differ — it can only show
+    // that a title exists, which is the assertion this test used to
+    // make while the case it names went unverified.
+    const second = await spawnTracker();
+    try {
+      // Each tracker's project is renamed, which is exactly the
+      // affordance Ken's ruling points at: "the user can rename the
+      // projects themselves if they want to differentiate." Both
+      // trackers start with a project named "Tasks", so without a
+      // rename the two windows legitimately read the same.
+      await tracker.run(["project", "edit", "Tasks", "--name", "Alpha Service"]);
+      await second.run(["project", "edit", "Tasks", "--name", "Beta Service"]);
 
-    // The footer names *this* workspace, abbreviated, so a user with
-    // two `loctt ui` windows can tell them apart. The label ends in
-    // the tracker's own directory name — which is what makes two
-    // instances distinguishable rather than both reading "~/code".
-    const label = await page
-      .locator("aside")
-      .locator("div.font-mono")
-      .first()
-      .textContent();
-    const tail = (label ?? "").split("/").filter(Boolean).pop() ?? "";
-    expect(tail.length).toBeGreaterThan(0);
-    expect(tracker.root).toContain(tail);
+      const contextA = await browser.newContext();
+      const contextB = await browser.newContext();
+      const pageA = await contextA.newPage();
+      const pageB = await contextB.newPage();
+      try {
+        await pageA.goto(`${tracker.baseURL}/list`);
+        await pageB.goto(`${second.baseURL}/list`);
 
-    // And it is not the full absolute path — the server abbreviates,
-    // so the response never carries the filesystem layout.
-    expect(label).not.toBe(tracker.root);
+        // The window title names the project, so the two windows are
+        // tellable apart from the tab strip alone — no file path on
+        // the page, and nothing added to the sidebar.
+        await expect(pageA).toHaveTitle("LocTT — Alpha Service — List");
+        await expect(pageB).toHaveTitle("LocTT — Beta Service — List");
+
+        // The point of the case: the labels *differ*.
+        expect(await pageA.title()).not.toBe(await pageB.title());
+
+        // Sidebar contents reflect each tracker independently.
+        const asideA = pageA.locator("aside");
+        const asideB = pageB.locator("aside");
+        await expect(asideA.getByText("Alpha Service")).toBeVisible();
+        await expect(asideB.getByText("Beta Service")).toBeVisible();
+        await expect(asideA.getByText("Beta Service")).toHaveCount(0);
+      } finally {
+        await contextA.close();
+        await contextB.close();
+      }
+    } finally {
+      await second.stop();
+    }
   });
 });
 

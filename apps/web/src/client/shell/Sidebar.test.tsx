@@ -502,22 +502,17 @@ describe("Sidebar recents (SHL-10)", () => {
 /**
  * @verifies SHL-11
  *
- * The footer names the workspace so two `loctt ui` windows are
- * distinguishable, and pins a Settings link beside it.
+ * SHL-11's footer bullet: a Settings link that navigates to the
+ * settings route. The case's other half — telling two `loctt ui`
+ * windows apart — is the document title's, and is covered in
+ * `useRouteAnnouncement.test.tsx`; nothing on the page carries it.
  */
 describe("Sidebar footer (SHL-11)", () => {
-  it("shows a Settings link and no chrome datum", async () => {
+  it("shows a Settings link pointing at the settings route", async () => {
     await renderSidebarAt("/list");
 
-    // The footer is now just the Settings link. The tracker filesystem
-    // path, the internal `next` allocator key, and the total task count
-    // were all removed (Ken's report — developer chrome / a datum a user
-    // never acts on).
     const settings = (await screen.findByText("Settings")).closest("a") as HTMLAnchorElement;
     expect(settings.getAttribute("href")).toContain("/settings/");
-    expect(screen.queryByText(/\b7 tasks\b/)).toBeNull();
-    expect(screen.queryByText("~/PDev/loctt")).toBeNull();
-    expect(screen.queryByText(/next WEB-8/)).toBeNull();
   });
 });
 

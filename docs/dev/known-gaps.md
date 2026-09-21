@@ -425,42 +425,28 @@ teaches the agent to re-run instead of fix" — the intent is right, but
 concurrency**, which teaches the same lesson by a different route. Either
 the worker count comes down or the per-worker cost does.
 
-## Three e2e tests are red on a PRODUCT decision, not a bug — Ken's call
+## The three product decisions have been ruled on and closed
 
-These cannot be fixed by code without first deciding whether the thing
-they assert should exist. Each was left RED rather than quietly retired,
-because deleting a case is a product decision an agent should not make
-alone.
+All three e2e tests that were red on a product call are now resolved.
+Recorded here only so the decisions are not re-derived later.
 
-### SHL-31 — nothing identifies which tracker a window is showing
-
-*"Two `loctt ui` instances for different trackers are distinguishable."*
-Bullet 1 wants each footer to show its own workspace label.
-
-The sidebar footer used to show the tracker's working directory;
-`cc534a0d` removed it, and `f85e5a7e` removed the task count, both as
-"a datum a user never acts on". That reasoning is sound in isolation —
-but neither commit considered the two-window disambiguation SHL-31 pins.
-The path now survives only in the init wizard and an fs advisory, so with
-two trackers open there is **no in-app way to tell which is which**.
-
-Bullets 2 and 3 (independent sidebar contents, non-oscillating sidebar
-toggle) are unaffected and still hold.
-
-**Options:** (a) restore a minimal workspace label to the footer — the
-directory's basename would do, and it is the smallest thing that
-satisfies the case; (b) retire bullet 1 and rewrite the case around what
-two windows genuinely do distinguish. **Not an agent call:** (a) partly
-reverts a deliberate decluttering, (b) narrows an accepted acceptance
-case.
-
-### TSK-69 — "clicking the rendered description enters edit"
-
-A247 deliberately removed that gesture (nested-interactive / WCAG 4.1.2:
-a click target wrapping interactive content). The case's title AND body
-are the superseded premise, so there is no honest rewrite that keeps the
-name — the edit affordance is now the explicit `body-edit` button.
-**Retire the case or re-title it around the button.**
+- **SHL-31 / SHL-11 — the workspace label.** Ken rejected restoring the
+  file path (*"is 'ugly file path' really the way to do it? i dont want
+  that"*). Ruled: use the existing PROJECT entity — *"the user can rename
+  the projects themselves if they want to differentiate"* — surfaced in
+  the document title as `LocTT — <project> — <view>`, and **nothing added
+  to the page** (*"Title only"*). No new tracker-level config, CLI
+  command or MCP tool was needed. Both cases were amended in place.
+- **The footer task-count test.** Retired entirely, per Ken's strict
+  rule: the spec and its documentation removed, no commented-out code and
+  no "retired" label. Its subject (the count) was gone, and the ERR-1
+  hazard it guarded — a `0` that lies during an outage — cannot occur
+  without a count.
+- **TSK-69.** Ken ruled re-title rather than retire. The case now asserts
+  the explicit edit affordance. Re-pointing the spec surfaced a real
+  regression A247 had left behind (nothing focused the rich editor once
+  click-to-edit was removed, so "ready to type" had silently stopped
+  being true) — fixed rather than papered over.
 
 ---
 
@@ -490,7 +476,6 @@ The six fixes in `A282` closed nine. What remains:
 |---|---|---|
 | 1,2 | A11Y-16 (light + dark) | **REAL, unfixed** — see the entry above; I twice recorded it as non-reproducing and the gate disagreed |
 | 3 | A11Y-9 back-nav focus restore | **REAL, unfixed** — `focusedTaskKey` lives in a component instance destroyed on navigation, so the restore built for A11Y-17 (refetch within a mount) does not apply across it |
-| 4 | SHL-31 | **PRODUCT DECISION** — nothing identifies which tracker a window shows, after two deliberate declutterings |
 | 6 | VUE-22 sidebar broken-view flag | **REAL, unfixed** — note the API half of the original diagnosis was checked and found WRONG; the server does return `broken`, so the remaining fault is in the sidebar's rendering, not the data |
 | 7 | PRU-26 | **click timeout on the kebab trigger** — same class as TSK-18 (an element moving or covered mid-click), not the `disabled` fix; needs the same instrumented diagnosis |
 | 8,9 | SPR-6, NEW-10 | **known flakes**, pass on re-run |

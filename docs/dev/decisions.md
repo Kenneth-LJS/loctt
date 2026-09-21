@@ -17646,6 +17646,59 @@ Grammar decisions the docs did not settle (recorded here):
 
 **To revert.** Core: `packages/core/src/config/archived-scope.ts` — narrow the constraint back to `{ readonly archived?: boolean }` (and every call site breaks again). MCP: `apps/mcp/src/runtime/config-list.ts` — drop the `archived` key from `configListInputSchema` and the `getArchivedScope` helper; `tools/{milestone,sprint,label,project,user}.ts` — drop the `applyArchivedScope(...)` line (restore `cfg.<entity>` / hand-rolled filter) and the `getArchivedScope` import; `tools/user.ts` — restore the `include_archived` param + `.filter`; `tools/views.ts` — drop the `archived` param + `applyArchivedScope`. CLI: `commands/{milestone,sprint,label,project,user,views}.ts` — restore `hasFlag(args,"--all")` + the hand-rolled `.filter` (and drop `--archived` from the ACCEPTED_FLAGS lists that gained it: sprint/label/project/user/views); `usage.ts` — restore the `list --all: include archived …` lines. Tests: delete `apps/mcp/src/tools/archived-scope.test.ts`, the "config-entity list archived scope (K107)" block in `apps/cli/src/cli.test.ts`, and revert the `list_views` default-hides assertion in `apps/mcp/src/tools/views.test.ts` (it was updated because it asserted the old show-all default). Docs: the six list rows in `docs/user/cli/reference.md` and the config-list rows + shared-`archived` note in `docs/user/mcp/reference.md`.
 
+### A283 · Two `loctt ui` windows are told apart by the PROJECT name in the document title — nothing on the page
+
+**Ken's ruling (2026-09-22).** Closes SHL-11 / SHL-31.
+
+**The problem.** `cc534a0d` removed the sidebar footer's working
+directory and `f85e5a7e` removed the task count, each reasonably ("a
+datum a user never acts on"). Neither considered that TOGETHER they left
+nothing identifying which tracker a window is showing — the two-window
+disambiguation SHL-11 states outright and SHL-31 tests.
+
+**What Ken rejected.** Restoring the path: *"is 'ugly file path' really
+the way to do it? i dont want that … you shouldnt be 'oh file path does
+the fucking job', no."* The agent's first instinct — the path satisfies
+the case text, so restore it — mistook satisfying a case for solving the
+problem.
+
+**Ruling 1 — name WHAT.** Asked whether to add a tracker-level name or
+use the existing project entity: *"use project entity. the user can
+rename the projects themselves if they want to differentiate."* This
+collapsed the design: a proposal for a new `workspace.yaml`, a CLI
+command, an MCP tool, a doctor check and a schema-reference section
+became a **web-client-only change**, because projects already have names.
+
+**Ruling 2 — WHERE.** *"Title only — nothing on the page."* The title is
+what a window-picker, tab strip and Cmd-Tab switcher show, which is where
+two windows are actually told apart. Every on-page slot considered either
+vanished with the sidebar (reintroducing the ambiguity precisely when you
+collapse it for room) or spent space in a header that had already dropped
+its wordmark once for lack of it.
+
+**Built.** `document.title` = `LocTT — <project> — <view>`, from the
+`["projects"]` query the sidebar already caches — no new request.
+
+*Resolution rule (agent call, within the ruling):* one filtered
+`?project=` → that project; else the workspace `effective_default`; else
+no project segment. A **sole-project shortcut was deliberately NOT added**
+when `effective_default` is null: the server already folds that case into
+`effective_default`, and re-deriving it client-side would be a second
+rule free to disagree with the sidebar's own active marker (SHL-5).
+**To revert that specific call:** add the shortcut in `titleProjectName`
+and accept the two sources of truth.
+
+*Fallbacks never emit an empty segment:* no project resolves →
+`<view> · LocTT` (today's format); unmatched route with a project →
+`LocTT — <project>`; neither → `LocTT`.
+
+**Cases amended in place**, per Ken's strict retirement rule — no
+"superseded" labels, no commented-out assertions. SHL-11 now states the
+title contract and keeps its Settings-link bullets; SHL-31's first bullet
+reads on titles. SHL-11 previously had NO passing coverage; it now has
+the SHL-31 spec plus two Sidebar unit tests.
+
+
 ### A282 · E2E-surfaced defect fixes — and two reported defects that did not reproduce
 
 **Date:** 2026-09-22 · **Lane:** `apps/web/src/client/**`.
