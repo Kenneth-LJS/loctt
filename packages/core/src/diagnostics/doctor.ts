@@ -26,10 +26,30 @@ import { checkDataIntegrity } from "./integrity.js";
 
 export type CheckStatus = "ok" | "warn" | "error";
 
+/**
+ * The programmatic repair that resolves a finding, when one exists. Only a
+ * small minority of findings are safely auto-fixable, and they cluster into
+ * exactly two whole-tracker actions:
+ *
+ * - `"rebuild-index"` — `rebuildKeyIndex`: rewrites the derived key↔id
+ *   index (stale/orphan entries, target-missing). Idempotent, cache-only.
+ * - `"restore-missing"` — `initLoctt({repair:true})`: recreates missing
+ *   core config/state files with defaults (existence-guarded; never
+ *   overwrites surviving data).
+ *
+ * This is a core fact — which finding a given repair actually resolves —
+ * exposed as data so every surface (web buttons, CLI, MCP) gates on it
+ * instead of pattern-matching the human `message` (K-diagnostics-repair).
+ * Absent for the ~85% of findings that need a human decision or hand-edit.
+ */
+export type DiagnosticFix = "rebuild-index" | "restore-missing";
+
 export interface DiagnosticCheck {
   readonly name: string;
   readonly status: CheckStatus;
   readonly message: string;
+  /** The programmatic repair for this finding, when one exists. */
+  readonly fix?: DiagnosticFix;
 }
 
 export interface DoctorOptions {
@@ -152,7 +172,7 @@ export async function* runDoctorStream(
 
   // Check config directory
   if (!(await fileExists(getConfigDir(locttDir)))) {
-    yield { name: "config directory", status: "error", message: "missing .loctt/config/" };
+    yield { name: "config directory", status: "error", message: "missing .loctt/config/", fix: "restore-missing" };
   } else {
     yield { name: "config directory", status: "ok", message: "exists" };
   }
@@ -168,7 +188,7 @@ export async function* runDoctorStream(
   let workflowConfig: Awaited<ReturnType<typeof loadWorkflowConfig>> | undefined;
   const workflowPath = getWorkflowConfigPath(locttDir);
   if (!(await fileExists(workflowPath))) {
-    yield { name: "workflow.yaml", status: "error", message: "missing" };
+    yield { name: "workflow.yaml", status: "error", message: "missing", fix: "restore-missing" };
   } else {
     try {
       workflowConfig = await loadWorkflowConfig(locttDir);
@@ -197,7 +217,7 @@ export async function* runDoctorStream(
   //    the user can find and fix it.
   const queriesPath = getQueriesConfigPath(locttDir);
   if (!(await fileExists(queriesPath))) {
-    yield ({ name: "queries.yaml", status: "warn", message: "missing — saved views unavailable" });
+    yield ({ name: "queries.yaml", status: "warn", message: "missing — saved views unavailable", fix: "restore-missing" });
   } else {
     try {
       const queriesConfig = await loadQueriesConfig(locttDir);
@@ -236,7 +256,7 @@ export async function* runDoctorStream(
   // Check state.yaml
   const statePath = getStateFilePath(locttDir);
   if (!(await fileExists(statePath))) {
-    yield ({ name: "state.yaml", status: "error", message: "missing" });
+    yield ({ name: "state.yaml", status: "error", message: "missing", fix: "restore-missing" });
   } else {
     try {
       await loadState(locttDir);
@@ -251,7 +271,7 @@ export async function* runDoctorStream(
   const projectsPath = getProjectsConfigPath(locttDir);
   let projectsConfig: Awaited<ReturnType<typeof loadProjectsConfig>> | undefined;
   if (!(await fileExists(projectsPath))) {
-    yield ({ name: "projects.yaml", status: "error", message: "missing" });
+    yield ({ name: "projects.yaml", status: "error", message: "missing", fix: "restore-missing" });
   } else {
     try {
       projectsConfig = await loadProjectsConfig(locttDir);
@@ -568,6 +588,7 @@ export async function* runDoctorStream(
             name: "key index",
             status: "warn",
             message: `${parts.join("; ")} — run \`loctt doctor --rebuild-index\` to repair`,
+            fix: "rebuild-index",
           });
         } else {
           yield ({

@@ -886,6 +886,85 @@ describe("DiagnosticsPanel", () => {
     // component, which is what "no permanently spinning check" means.
     expect(capturedSignal?.aborted).toBe(true);
   });
+
+  // ── Repair buttons (K-diagnostics-repair) ────────────────────────────
+
+  it("shows a Rebuild-key-index button only when a fix:rebuild-index finding is present", async () => {
+    fetchMock.mockResolvedValue(ndjsonResponse([
+      { name: "key index", status: "warn", message: "1 stale entry", fix: "rebuild-index" },
+    ]));
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    expect(await screen.findByTestId("diagnostics-fix-rebuild-index")).toBeTruthy();
+    // No restore-missing finding → no restore button.
+    expect(screen.queryByTestId("diagnostics-fix-restore-missing")).toBeNull();
+  });
+
+  it("shows NO repair buttons when no finding carries a fix", async () => {
+    fetchMock.mockResolvedValue(ndjsonResponse([
+      { name: "workflow.yaml", status: "ok", message: "valid" },
+      { name: "relationships", status: "warn", message: "a manual finding, no fix" },
+    ]));
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("diagnostics-checks");
+    await waitFor(() => { expect(screen.queryByTestId("diagnostics-check-running")).toBeNull(); });
+    expect(screen.queryByTestId("diagnostics-repairs")).toBeNull();
+    expect(screen.queryByTestId("diagnostics-fix-rebuild-index")).toBeNull();
+    expect(screen.queryByTestId("diagnostics-fix-restore-missing")).toBeNull();
+  });
+
+  it("Rebuild key index POSTs the repair action then re-runs the doctor", async () => {
+    const posts: { url: string; body: unknown }[] = [];
+    let doctorRuns = 0;
+    fetchMock.mockImplementation((url: unknown, init?: unknown) => {
+      const u = String(url);
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (u.includes("/api/doctor/repair") && method === "POST") {
+        const raw = (init as RequestInit).body;
+        posts.push({ url: u, body: typeof raw === "string" ? JSON.parse(raw) : undefined });
+        return Promise.resolve(new Response(JSON.stringify({ action: "rebuild-index", entries: 5 }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      }
+      // /api/doctor: first run has the stale finding; after repair, clean.
+      doctorRuns += 1;
+      return Promise.resolve(doctorRuns === 1
+        ? ndjsonResponse([{ name: "key index", status: "warn", message: "1 stale entry", fix: "rebuild-index" }])
+        : ndjsonResponse([{ name: "key index", status: "ok", message: "consistent" }]));
+    });
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByTestId("diagnostics-fix-rebuild-index"));
+    await waitFor(() => { expect(posts.length).toBe(1); });
+    expect(posts[0]?.body).toEqual({ action: "rebuild-index" });
+    // Re-ran the doctor (2nd /api/doctor GET), and the repaired state has
+    // no more fixable finding → the button is gone.
+    await waitFor(() => { expect(screen.queryByTestId("diagnostics-fix-rebuild-index")).toBeNull(); });
+    expect(doctorRuns).toBeGreaterThanOrEqual(2);
+  });
+
+  it("Restore missing files confirms before POSTing", async () => {
+    const posts: unknown[] = [];
+    fetchMock.mockImplementation((url: unknown, init?: unknown) => {
+      const u = String(url);
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (u.includes("/api/doctor/repair") && method === "POST") {
+        posts.push(JSON.parse((init as RequestInit).body as string));
+        return Promise.resolve(new Response(JSON.stringify({ action: "restore-missing", created: 2 }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      }
+      return Promise.resolve(ndjsonResponse([
+        { name: "queries.yaml", status: "warn", message: "missing", fix: "restore-missing" },
+      ]));
+    });
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByTestId("diagnostics-fix-restore-missing"));
+    // A confirm appears; nothing POSTed yet.
+    await screen.findByTestId("diagnostics-restore-confirm");
+    expect(posts.length).toBe(0);
+    fireEvent.click(screen.getByTestId("diagnostics-restore-confirm-button"));
+    await waitFor(() => { expect(posts.length).toBe(1); });
+    expect(posts[0]).toEqual({ action: "restore-missing" });
+  });
 });
 
 /**

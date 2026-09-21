@@ -240,6 +240,9 @@ describe("runDoctor", () => {
     const idx = checks.find(c => c.name === "key index");
     expect(idx?.status).toBe("warn");
     expect(idx?.message).toContain("--rebuild-index");
+    // K-diagnostics-repair: the finding carries the machine-readable repair
+    // so surfaces gate a "Rebuild key index" button on data, not the prose.
+    expect(idx?.fix).toBe("rebuild-index");
   });
 
   it("rebuild-index option rebuilds the index in place", async () => {

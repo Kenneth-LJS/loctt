@@ -12,6 +12,7 @@ import type {
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
+  DoctorRepairResponse,
   ErrorCode,
   ErrorResponse,
   FieldHealth,
@@ -34,6 +35,7 @@ import {
   BulkSetRequestSchema,
   CalendarConfigSchema,
   CreateViewRequestSchema,
+  DoctorRepairRequestSchema,
   EditCommentRequestSchema,
   EditViewRequestSchema,
   InitRequestSchema,
@@ -182,6 +184,7 @@ import {
   readBurndownSeries,
   readHistoryRows,
   readRecents,
+  rebuildKeyIndex,
   recoverInterruptedPrefixRename,
   reorderBoardRank,
   ReorderError,
@@ -1671,6 +1674,48 @@ export function createWebApp(options: WebAppOptions) {
     } finally {
       res.off("close", onClose);
       if (!res.writableEnded) res.end();
+    }
+  };
+
+  const handleDoctorRepair: RouteHandler = async ({ req, res, locttDir }) => {
+    // The two safe, programmatic repairs the doctor's `fix` field points a
+    // finding at (K-diagnostics-repair). Both are whole-tracker, idempotent
+    // or existence-guarded, and already the CLI/MCP repair paths:
+    //  - "rebuild-index"  → rebuildKeyIndex: rewrites the derived key↔id
+    //    index (stale/orphan/target-missing). Idempotent, cache-only.
+    //  - "restore-missing" → initLoctt({repair:true}): recreates missing
+    //    core config/state files with defaults; never overwrites survivors.
+    // Deliberately NOT a blanket "repair all" — core has no such function
+    // and ~85% of findings need a human decision or hand-edit.
+    const r = await parseJsonBodyWithSchema(req, res, DoctorRepairRequestSchema);
+    if (r === undefined) return;
+    try {
+      if (r.action === "rebuild-index") {
+        const index = await rebuildKeyIndex(locttDir);
+        const entries = Object.keys(index.entries).length;
+        json(res, { action: r.action, entries } satisfies DoctorRepairResponse);
+        return;
+      }
+      // restore-missing: gap-fill only. `initLoctt` with repair recreates
+      // whatever core file is absent and leaves surviving data untouched.
+      const result = await initLoctt(root, { repair: true });
+      json(res, { action: r.action, created: result.created.length } satisfies DoctorRepairResponse);
+    } catch (err) {
+      // Both paths write under .loctt/; a raw fs errno is a knowable cause
+      // (ERR-31) — name it and say nothing was partially applied beyond
+      // what the existence-guarded repair already wrote.
+      const errno = (err as NodeJS.ErrnoException).code;
+      error(
+        res,
+        `The repair did not complete: ${err instanceof Error ? err.message : "unknown error"}.`,
+        500,
+        {
+          code: "io_failed",
+          data_state: "not_saved",
+          recovery: { kind: "reload" },
+          ...(typeof errno === "string" ? { detail: errno } : {}),
+        },
+      );
     }
   };
 
@@ -5600,6 +5645,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/migrate/plan", handler: handleMigratePlan },
     { method: "POST", pattern: "/api/migrate", handler: handleMigrate },
     { method: "GET", pattern: "/api/doctor", handler: handleDoctor },
+    { method: "POST", pattern: "/api/doctor/repair", handler: handleDoctorRepair },
     { method: "GET", pattern: "/api/integrity", handler: handleIntegrity },
     { method: "GET", pattern: "/api/config", handler: handleConfig },
     { method: "GET", pattern: CONFIG_KEY_RE, handler: handleGetConfigKey },

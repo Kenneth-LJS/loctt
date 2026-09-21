@@ -430,6 +430,21 @@ export interface DoctorCheckResponse {
   readonly name: string;
   readonly status: "ok" | "warn" | "error";
   readonly message: string;
+  /**
+   * The programmatic repair for this finding, when one exists — mirrors
+   * core's `DiagnosticCheck.fix` (K-diagnostics-repair). The Diagnostics
+   * panel gates its repair buttons on this rather than parsing `message`.
+   */
+  readonly fix?: "rebuild-index" | "restore-missing";
+}
+
+/** Response for `POST /api/doctor/repair`. */
+export interface DoctorRepairResponse {
+  readonly action: "rebuild-index" | "restore-missing";
+  /** rebuild-index: the number of key-index entries after the rebuild. */
+  readonly entries?: number;
+  /** restore-missing: the number of files recreated. */
+  readonly created?: number;
 }
 
 /**
