@@ -203,3 +203,13 @@ export const EditCommentRequestSchema = z.object({
   body: z.string().min(1),
 }).strict();
 export type EditCommentRequest = z.infer<typeof EditCommentRequestSchema>;
+
+/**
+ * Body of `POST /api/doctor/repair` — the one programmatic repair action to
+ * run (K-diagnostics-repair). Mirrors a finding's `fix` value: not a blanket
+ * "repair all" (core has no such action).
+ */
+export const DoctorRepairRequestSchema = z.object({
+  action: z.enum(["rebuild-index", "restore-missing"]),
+}).strict();
+export type DoctorRepairRequest = z.infer<typeof DoctorRepairRequestSchema>;

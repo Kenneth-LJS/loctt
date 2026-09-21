@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 
 /**
@@ -21,26 +23,31 @@ import { ErrorState } from "../ui/ErrorState.tsx";
  * Navigating away aborts the fetch via the controller in the effect
  * cleanup, so nothing is left permanently spinning (bullet 3).
  *
- * A `DiagnosticCheck` is `{name, status, message}` and nothing more:
- * core carries no structured field for the affected file or the
- * remedy, both of which live inside `message`. So this panel renders
- * the message verbatim rather than reformatting it — reformatting
- * would be the UI inventing structure core does not have, and would
- * drift from the CLI's wording the moment either changed.
+ * A `DiagnosticCheck` carries `{name, status, message}` plus an optional
+ * `fix` (K-diagnostics-repair): the message still holds the affected file
+ * and the human remedy, so this panel renders it verbatim rather than
+ * reformatting it, but `fix` is the machine-readable signal for which of
+ * the two programmatic repairs (if any) resolves the finding.
  *
- * **Rebuild stays CLI-only** (XS-41, and M4.3's ticket text). The key
- * index check's own message names `--rebuild-index`; this panel adds
- * no button for it, because `runDoctorStream`'s `rebuildIndex` option
- * is not reachable through `GET /api/doctor` and a button that cannot
- * work is exactly what XS-41 forbids.
+ * **Contextual repair buttons** (K-diagnostics-repair, revising the old
+ * "rebuild stays CLI-only" rule). There are exactly two safe programmatic
+ * repairs — rebuild the key index, and restore missing core files — and
+ * they cover only a small minority of findings. So this panel shows a
+ * top-level button PER ACTION, gated on whether a finding tagged with that
+ * `fix` is present in the current run — not a per-row Fix column (dead on
+ * ~85% of rows). The buttons render only when they can act, which is what
+ * XS-41 requires; the ~85% of manual findings keep their message + copyable
+ * command and get no button.
  */
 
 type CheckStatus = "ok" | "warn" | "error";
+type DiagnosticFix = "rebuild-index" | "restore-missing";
 
 interface DiagnosticCheck {
   readonly name: string;
   readonly status: CheckStatus;
   readonly message: string;
+  readonly fix?: DiagnosticFix;
 }
 
 /** CLI commands a check's message may point at, made copyable. */
@@ -186,12 +193,55 @@ export function DiagnosticsPanel() {
     };
   }, [run]);
 
+  // ── Repair (K-diagnostics-repair) ──────────────────────────────────
+  // Which repair actions the current findings call for, and running one.
+  const [repairing, setRepairing] = useState<DiagnosticFix | undefined>(undefined);
+  const [repairError, setRepairError] = useState<string | undefined>(undefined);
+  // A confirm is only needed for restore-missing (it writes default files);
+  // rebuild-index is idempotent and runs immediately.
+  const [confirmRestore, setConfirmRestore] = useState(false);
+
+  const runRepair = useCallback((action: DiagnosticFix): void => {
+    setRepairError(undefined);
+    setRepairing(action);
+    void (async () => {
+      try {
+        const res = await fetch("/api/doctor/repair", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Loctt-Client": "web" },
+          body: JSON.stringify({ action }),
+        });
+        if (!res.ok) {
+          const detail = await res.json().catch(() => undefined) as { message?: string } | undefined;
+          throw new Error(detail?.message ?? `repair failed (${String(res.status)})`);
+        }
+        // Success: re-run the doctor to reflect the repaired state, rather
+        // than leaving the stale list next to a toast.
+        run();
+      } catch (err) {
+        setRepairError(err instanceof Error ? err.message : "The repair did not complete.");
+      } finally {
+        setRepairing(undefined);
+        setConfirmRestore(false);
+      }
+    })();
+  }, [run]);
+
   const isRunning = phase === "running";
   const counts = {
     ok: checks.filter(c => c.status === "ok").length,
     warn: checks.filter(c => c.status === "warn").length,
     error: checks.filter(c => c.status === "error").length,
   };
+  // A repair button shows only when a finding tagged with its `fix` is
+  // present — the button renders only when it can act (XS-41).
+  const canRebuildIndex = checks.some(c => c.fix === "rebuild-index");
+  const canRestoreMissing = checks.some(c => c.fix === "restore-missing");
+  // The files restore-missing would recreate, named for the confirm body.
+  const missingFiles = checks
+    .filter(c => c.fix === "restore-missing")
+    .map(c => c.name)
+    .join(", ");
 
   return (
     <div data-testid="diagnostics-panel">
@@ -273,6 +323,45 @@ export function DiagnosticsPanel() {
             {counts.warn === 1 ? "" : "s"} · {String(counts.error)} failed
             {isRunning ? " · running…" : phase === "failed" ? " · run did not finish" : ""}
           </p>
+
+          {/* K-diagnostics-repair: contextual repair actions — each shows
+              only when a finding it can fix is present, so a rendered button
+              can always act (XS-41). Manual findings get no button. */}
+          {(canRebuildIndex || canRestoreMissing) && (
+            <div data-testid="diagnostics-repairs" className="mb-3 flex flex-wrap gap-2">
+              {canRebuildIndex && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  testId="diagnostics-fix-rebuild-index"
+                  disabled={repairing !== undefined || isRunning}
+                  onClick={() => { runRepair("rebuild-index"); }}
+                >
+                  {repairing === "rebuild-index" ? "Rebuilding…" : "Rebuild key index"}
+                </Button>
+              )}
+              {canRestoreMissing && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  testId="diagnostics-fix-restore-missing"
+                  disabled={repairing !== undefined || isRunning}
+                  onClick={() => { setRepairError(undefined); setConfirmRestore(true); }}
+                >
+                  {repairing === "restore-missing" ? "Restoring…" : "Restore missing files"}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {repairError !== undefined && (
+            <Callout tone="danger" role="alert" testId="diagnostics-repair-error" className="mb-3">
+              {repairError} No files were changed except as noted. Reload and
+              try again, or run the equivalent <code className="font-mono">loctt</code> command in a terminal.
+            </Callout>
+          )}
           <ul className="m-0 list-none p-0" data-testid="diagnostics-checks">
             {/*
               Keyed by index, not by name. `runDoctor` pushes one
@@ -338,6 +427,28 @@ export function DiagnosticsPanel() {
             )}
           </ul>
         </>
+      )}
+
+      {confirmRestore && (
+        <ConfirmDialog
+          title="Restore missing files?"
+          testId="diagnostics-restore-confirm"
+          confirmTestId="diagnostics-restore-confirm-button"
+          variant="primary"
+          confirmLabel={repairing === "restore-missing" ? "Restoring…" : "Restore"}
+          confirmDisabled={repairing !== undefined}
+          body={
+            <>
+              This recreates the missing core file{missingFiles.includes(",") ? "s" : ""}
+              {missingFiles.length > 0 ? <> (<span className="font-medium">{missingFiles}</span>)</> : null}{" "}
+              with default values. Existing files and all your tasks are left
+              untouched.
+            </>
+          }
+          {...(repairError !== undefined ? { error: repairError } : {})}
+          onConfirm={() => { runRepair("restore-missing"); }}
+          onCancel={() => { setConfirmRestore(false); }}
+        />
       )}
     </div>
   );

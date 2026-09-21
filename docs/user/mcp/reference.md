@@ -340,7 +340,7 @@ web UI (Settings → Sync), or MCP:
 | Tool | Purpose | Key params |
 |---|---|---|
 | `info` | Prose summary of the tracker. | — |
-| `doctor` | Diagnostic checks; `rebuild_index` rebuilds the key cache. | `rebuild_index` |
+| `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index` or `restore-missing`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data). | `rebuild_index`, `restore_missing` |
 | `init` | Bootstrap a new tracker. | `prefix`, `project_label`, `no_docs`, `timezone` |
 | `migrate_schema` | Preview (`confirm:false`) or apply (`confirm:true`) a schema upgrade. | `confirm` |
 | `backup` | Whole-tracker JSONL backup. Requires `confirm`. | `output`, `no_history`, `split_bytes`, `confirm` |

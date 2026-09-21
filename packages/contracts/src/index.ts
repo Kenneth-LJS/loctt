@@ -109,6 +109,7 @@ export type {
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
+  DoctorRepairResponse,
   ErrorCode,
   ErrorDataState,
   ErrorItemFailure,
@@ -133,6 +134,7 @@ export type {
 } from "./service.js";
 export type {
   CreateViewRequest,
+  DoctorRepairRequest,
   EditViewRequest,
   InitRequest,
   PutWorkflowRequest,
@@ -145,6 +147,7 @@ export {
   BulkMoveRequestSchema,
   BulkSetRequestSchema,
   CreateViewRequestSchema,
+  DoctorRepairRequestSchema,
   EditCommentRequestSchema,
   EditViewRequestSchema,
   InitRequestSchema,

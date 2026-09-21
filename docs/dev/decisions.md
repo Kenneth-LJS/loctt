@@ -13895,6 +13895,56 @@ hand-rolled `ui/Icon` set (the affordance icons — chevrons, close, kebab)?
 keep the tiny hand-rolled set for *affordances* to avoid a heavy dep on the
 core chrome.
 
+### A275 · Diagnostics repair — two contextual buttons + a structured `fix` field, not a per-row Fix column
+
+**Ticket:** Ken's Diagnostics-repair request · **Date:** 2026-09-21 ·
+**Decided by:** the `pm` agent, on Ken's explicit delegation ("get ui agent
+to reason and make the call").
+
+**Situation.** The web Diagnostics panel (`/api/doctor`) was read-only.
+Ken hit a "stale key-index entries … run `loctt doctor --rebuild-index`"
+finding and asked for a repair button — and whether every row should have a
+one-click Fix (a rightmost column) or not ("ONLY if we consistently need
+buttons on a lot of the rows").
+
+**The reality.** A verified audit found only ~2 of ~46 doctor finding types
+are safely programmatically fixable, clustering into exactly two
+whole-tracker actions: `rebuild-index` (`rebuildKeyIndex`, idempotent) and
+`restore-missing` (`initLoctt({repair:true})`, existence-guarded gap-fill).
+~85% of findings need a human decision or a hand-edit.
+
+**Decided.** Two **contextual top-level buttons** ("Rebuild key index",
+"Restore missing files"), each shown only when a finding tagged with its
+`fix` is present — NOT a per-row Fix column (dead on ~85% of rows, and the
+pattern K105 has been removing). A finding's fixability is a **structured
+`fix?: "rebuild-index" | "restore-missing"` field on core's
+`DiagnosticCheck`** (and `DoctorCheckResponse`), set at the relevant yield
+sites, so every surface gates on data instead of parsing the human message.
+Rebuild-index runs immediately (idempotent); restore-missing is
+confirm-gated (it writes default files) and names the files it will
+recreate. Either action re-runs the doctor on success. Manual findings keep
+their message + copyable `loctt …` command unchanged. This revises the old
+"rebuild stays CLI-only / a button that cannot work is what XS-41 forbids"
+rule: the button now renders only when the endpoint can fulfil it, which is
+what XS-41 actually requires.
+
+**What was built.** Core: `DiagnosticFix` type + `fix` on `DiagnosticCheck`,
+tagged at the key-index-stale and missing-core-file yields. Contracts:
+`fix` on `DoctorCheckResponse`, new `DoctorRepairRequestSchema` +
+`DoctorRepairResponse`. Web: `POST /api/doctor/repair {action}` →
+`rebuildKeyIndex` / `initLoctt({repair:true})`; DiagnosticsPanel gains the
+two contextual buttons + restore confirm + re-run-on-success.
+MCP: `doctor` tool gains `restore_missing` (rebuild_index already existed)
+and surfaces `fix` in its output — 3-surface parity (CLI already had
+`doctor --rebuild-index` + `init --repair`). Docs: MCP reference updated.
+Tests: core `fix` assertion, web repair-button tests (contextual gating,
+POST-then-re-run, confirm-before-POST) — all red-proven.
+
+**To revert.** Remove `fix`/`DiagnosticFix` from `doctor.ts` + its yield
+tags; remove `POST /api/doctor/repair` + the buttons/confirm from the web;
+remove `restore_missing` + `fix` output from the MCP `doctor` tool; revert
+the contract `fix`/`DoctorRepair*` additions and the MCP reference row.
+
 ### A199 · REL-16 inline image render — a separate `?inline=1` serve path, raw bytes, `<img>` sandbox (implements K95)
 
 **Ticket:** REL-16 bullet 1 · **Date:** 2026-09-17 · **Implements:** K95.
