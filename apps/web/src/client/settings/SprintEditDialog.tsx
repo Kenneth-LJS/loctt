@@ -11,6 +11,7 @@ import { DialogActions } from "../ui/Dialog.tsx";
 import { Field } from "../ui/Field.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { Select } from "../ui/Select.tsx";
+import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -204,14 +205,13 @@ export function SprintEditDialog(props: SprintDialogProps) {
           label="Goal"
           hint="Optional — what this sprint is for"
         >
-          <textarea
+          <TextArea
             aria-label={isEdit ? "Sprint goal" : "New sprint goal"}
             data-testid="sprint-create-goal"
             value={goal}
             rows={2}
             placeholder="What this sprint is for (optional)"
             onChange={e => { setGoal(e.target.value); }}
-            className="rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem] text-text-primary"
           />
         </Field>
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useTaskSearch } from "../api/hooks/useTaskSearch.ts";
 import { StatusBadge } from "../list/cells.tsx";
 import { Select } from "../ui/Select.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import type { LinkKindOption } from "./group.ts";
 import { linkKindOptions } from "./group.ts";
 
@@ -130,9 +131,10 @@ export function LinkPicker({
       <label htmlFor="link-target" className="sr-only">
         Search for a task to link to {selfKey}
       </label>
-      <input
+      <TextField
         id="link-target"
         data-testid="link-target"
+        type="search"
         autoFocus
         value={query}
         placeholder="Search by key or title…"
@@ -146,7 +148,6 @@ export function LinkPicker({
             onCancel();
           }
         }}
-        className="w-full rounded border border-border-subtle bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
       />
 
       {trimmed.length > 0 && (

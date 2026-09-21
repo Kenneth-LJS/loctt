@@ -101,13 +101,15 @@ export function MilestoneEditDialog(props: MilestoneDialogProps) {
 
         <label className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
           Target date
-          <input
+          <TextField
             type="date"
             aria-label={isEdit ? "Target date" : "New milestone target date"}
             data-testid={isEdit ? "milestone-date-input" : "milestone-create-date"}
             value={date}
+            invalid={!dateOk}
+            fullWidth={false}
+            className="w-48"
             onChange={e => { setDate(e.target.value); }}
-            className="w-48 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
           />
         </label>
 

@@ -7,6 +7,7 @@ import { useUpdateSprintMeta } from "../api/hooks/useSprintDetail.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Select } from "../ui/Select.tsx";
+import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -418,13 +419,13 @@ export function SprintMetaHeader({ sprint, foldReadMeta = false }: Props) {
       <label className="flex flex-col gap-1">
         <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">Goal</span>
         {/* SPR-25: a multi-paragraph goal scrolls inside a bounded box. */}
-        <textarea
+        <TextArea
           data-testid="sprint-meta-goal"
           value={editing.goal}
           rows={2}
           placeholder="No goal set — describe what this sprint is for."
           onChange={e => setField("goal", e.target.value)}
-          className="max-h-32 w-full resize-y overflow-auto rounded-md border border-border-default bg-bg-surface px-2 py-1 text-[0.9286rem] text-text-primary"
+          className="max-h-32 resize-y overflow-auto"
         />
         {errorFor("goal") !== null && (
           <span
