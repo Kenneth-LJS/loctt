@@ -8,6 +8,7 @@ import { Chip } from "./Chip.tsx";
 import { cn } from "./cn.ts";
 import { ICON } from "./icons.ts";
 import { Select } from "./Select.tsx";
+import { TextArea } from "./TextArea.tsx";
 import { TextField } from "./TextField.tsx";
 
 afterEach(cleanup);
@@ -186,6 +187,40 @@ describe("TextField", () => {
     render(<TextField leadingIcon={ICON.more} placeholder="find2" />);
     const wrapper = screen.getByPlaceholderText("find2").parentElement as HTMLElement;
     expect(wrapper.className).toContain("w-full");
+  });
+});
+
+describe("TextArea", () => {
+  it("renders a textarea with the shared border/radius tokens", () => {
+    render(<TextArea placeholder="notes" />);
+    const el = screen.getByPlaceholderText("notes");
+    expect(el.tagName).toBe("TEXTAREA");
+    expect(el.className).toContain("border-border-default");
+    expect(el.className).toContain("rounded-md");
+    expect(el.className).toContain("placeholder:text-text-tertiary");
+    expect(el.className).toContain("w-full");
+  });
+
+  it("wires invalid to aria-invalid AND the danger border together", () => {
+    render(<TextArea invalid placeholder="bad" />);
+    const el = screen.getByPlaceholderText("bad");
+    expect(el.getAttribute("aria-invalid")).toBe("true");
+    expect(el.className).toContain("aria-invalid:border-danger-fg");
+  });
+
+  it("does not set aria-invalid when valid, and forwards ref/testid", () => {
+    const ref = createRef<HTMLTextAreaElement>();
+    render(<TextArea ref={ref} data-testid="ta" placeholder="ok" />);
+    expect(screen.getByPlaceholderText("ok").getAttribute("aria-invalid")).toBeNull();
+    expect(ref.current).toBeInstanceOf(HTMLTextAreaElement);
+    expect(screen.getByTestId("ta").tagName).toBe("TEXTAREA");
+  });
+
+  it("drops w-full when fullWidth is false so a caller's width class applies", () => {
+    render(<TextArea fullWidth={false} className="max-h-32" placeholder="bounded" />);
+    const cls = screen.getByPlaceholderText("bounded").className;
+    expect(cls).not.toContain("w-full");
+    expect(cls).toContain("max-h-32");
   });
 });
 
