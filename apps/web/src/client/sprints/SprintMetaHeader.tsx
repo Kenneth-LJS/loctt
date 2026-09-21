@@ -6,7 +6,7 @@ import type { SprintMetaPatch } from "../api/hooks/useSprintDetail.ts";
 import { useUpdateSprintMeta } from "../api/hooks/useSprintDetail.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
-import { Select } from "../ui/Select.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
@@ -376,20 +376,18 @@ export function SprintMetaHeader({ sprint, foldReadMeta = false }: Props) {
           onChange={v => setField("end_date", v)}
         />
 
-        <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
           <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">State</span>
           {/* SPR-7: exactly these three. No blank option, no "archived". */}
-          <Select
-            data-testid="sprint-meta-state"
+          <SelectCombobox
+            testId="sprint-meta-state"
             size="sm"
             value={editing.state}
+            aria-label="State"
             aria-describedby={errorFor("state") !== null ? "sprint-meta-state-problem" : undefined}
-            onChange={e => setField("state", e.target.value)}
-          >
-            {STATES.map(s => (
-              <option key={s} value={s}>{STATE_LABELS[s]}</option>
-            ))}
-          </Select>
+            onChange={v => setField("state", v)}
+            options={STATES.map(s => ({ value: s, label: STATE_LABELS[s] }))}
+          />
           {/* SPR-37: a rejected state transition anchors here, next to the
               control it is about — never under End date. */}
           {errorFor("state") !== null && (
@@ -404,7 +402,7 @@ export function SprintMetaHeader({ sprint, foldReadMeta = false }: Props) {
                 && " Your change was not saved; the previous value is still in place."}
             </span>
           )}
-        </label>
+        </div>
 
         {sprint.archived === true && (
           <span

@@ -6,11 +6,11 @@ import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ColorInput } from "../ui/ColorInput.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { IconPicker } from "../ui/IconPicker.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
-import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
   buildCustomField,
@@ -241,18 +241,17 @@ export function CustomFieldEditDialog({
 
         <label className="block">
           <span className="mb-1 block text-text-secondary">Type</span>
-          <Select
+          <SelectCombobox
             size="sm"
-            data-testid="custom-field-dialog-type"
+            testId="custom-field-dialog-type"
             value={type}
             // SET-16: disabled on edit, not validated-on-submit.
             disabled={mode === "edit"}
             aria-describedby={mode === "edit" ? "custom-field-dialog-type-lock" : undefined}
-            onChange={e => { setType(e.target.value as CustomFieldType); }}
+            onChange={v => { setType(v as CustomFieldType); }}
             aria-label="Field type"
-          >
-            {TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-          </Select>
+            options={TYPES.map(t => ({ value: t, label: TYPE_LABEL[t] }))}
+          />
         </label>
 
         <label className="flex items-center gap-2 text-text-secondary">

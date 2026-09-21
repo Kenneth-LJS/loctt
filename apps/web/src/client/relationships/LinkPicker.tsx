@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { useTaskSearch } from "../api/hooks/useTaskSearch.ts";
 import { StatusBadge } from "../list/cells.tsx";
-import { Select } from "../ui/Select.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import type { LinkKindOption } from "./group.ts";
 import { linkKindOptions } from "./group.ts";
@@ -109,23 +109,24 @@ export function LinkPicker({
       className="rounded-md border border-border-default bg-bg-surface-raised p-3"
     >
       <div className="mb-2 flex items-center gap-2">
-        <label
-          htmlFor="link-kind"
+        {/* A <span>, not a <label htmlFor>: the control is a button, which
+            `htmlFor` does not name — it is referenced by aria-labelledby
+            instead, which keeps the same visible text as the name. */}
+        <span
+          id="link-kind-label"
           className="text-[0.8571rem] font-medium text-text-secondary"
         >
           Kind
-        </label>
-        <Select
+        </span>
+        <SelectCombobox
           size="sm"
-          id="link-kind"
-          data-testid="link-kind"
+          testId="link-kind"
           value={kind}
-          onChange={e => { setKind(e.target.value); }}
-        >
-          {options.map(o => (
-            <option key={o.key} value={o.key}>{o.label}</option>
-          ))}
-        </Select>
+          onChange={setKind}
+          aria-labelledby="link-kind-label"
+          listLabel="Kind"
+          options={options.map(o => ({ value: o.key, label: o.label }))}
+        />
       </div>
 
       <label htmlFor="link-target" className="sr-only">

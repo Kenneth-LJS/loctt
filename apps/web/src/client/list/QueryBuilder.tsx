@@ -9,10 +9,15 @@ import { useMemo } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { Combobox, ComboboxButton, type ComboboxOption, type ComboboxSearch } from "../ui/Combobox.tsx";
+import {
+  Combobox,
+  ComboboxButton,
+  type ComboboxOption,
+  type ComboboxSearch,
+  SelectCombobox,
+} from "../ui/Combobox.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import type { BuilderTree } from "./builderTree.ts";
 // The component derives the live `q` preview from the same serializer the
@@ -728,37 +733,31 @@ function LeafRow({
       className="flex flex-wrap items-center gap-1.5 rounded bg-bg-surface/60 px-1 py-0.5"
     >
       {/* Field picker */}
-      <Select
+      <SelectCombobox
         size="sm"
         className="w-[9.5rem] shrink-0"
-        data-testid="qb-field"
+        testId="qb-field"
         aria-label="Field"
         value={node.field}
-        onChange={e => { onFieldChange(e.target.value); }}
-      >
-        {/* An out-of-config field still needs to show as the current
-            selection rather than silently snapping to the first option. */}
-        {fieldDef === undefined && (
-          <option value={node.field}>{node.field}</option>
-        )}
-        {fields.map(f => (
-          <option key={f.field} value={f.field}>{f.label}</option>
-        ))}
-      </Select>
+        onChange={onFieldChange}
+        options={[
+          // An out-of-config field still needs to show as the current
+          // selection rather than silently snapping to the first option.
+          ...(fieldDef === undefined ? [{ value: node.field, label: node.field }] : []),
+          ...fields.map(f => ({ value: f.field, label: f.label })),
+        ]}
+      />
 
       {/* Operator picker — filtered to the field kind's renderable ops. */}
-      <Select
+      <SelectCombobox
         size="sm"
         className="w-[8.5rem] shrink-0"
-        data-testid="qb-op"
+        testId="qb-op"
         aria-label="Operator"
         value={node.op}
-        onChange={e => { onOpChange(e.target.value as ComparisonOp); }}
-      >
-        {ops.map(op => (
-          <option key={op} value={op}>{OP_LABELS[op]}</option>
-        ))}
-      </Select>
+        onChange={v => { onOpChange(v as ComparisonOp); }}
+        options={ops.map(op => ({ value: op, label: OP_LABELS[op] }))}
+      />
 
       {/* Value control — omitted entirely for presence ops. It fills the
           remaining width of the row so every row's value column aligns. */}
@@ -956,17 +955,18 @@ function ValueControl({
 
   if (kind === "boolean") {
     return (
-      <Select
+      <SelectCombobox
         size="sm"
         className="w-full"
-        data-testid="qb-value"
+        testId="qb-value"
         aria-label="Value"
         value={value.type === "boolean" ? String(value.value) : "false"}
-        onChange={e => { onChange({ type: "boolean", value: e.target.value === "true" }); }}
-      >
-        <option value="true">true</option>
-        <option value="false">false</option>
-      </Select>
+        onChange={v => { onChange({ type: "boolean", value: v === "true" }); }}
+        options={[
+          { value: "true", label: "true" },
+          { value: "false", label: "false" },
+        ]}
+      />
     );
   }
 

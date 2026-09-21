@@ -5,7 +5,7 @@ import { ApiError } from "../api/client.ts";
 import { useSaveWorkflowCollection } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { Select } from "../ui/Select.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { validateEstimation } from "./workflowEdits.ts";
 import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
@@ -128,45 +128,48 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
         </span>
       </label>
 
-      <label className="grid gap-1">
+      {/* A <div>, not a <label>: the control is a button, which a wrapping
+          <label> does not name — the accessible name comes from the
+          explicit aria-label below instead. */}
+      <div className="grid gap-1">
         <span className="text-text-secondary">Unit</span>
-        <Select
-          data-testid="estimation-unit"
+        <SelectCombobox
+          testId="estimation-unit"
           value={draft.unit}
-          onChange={e => { patch({ unit: e.target.value as EstimationConfig["unit"] }); }}
+          onChange={v => { patch({ unit: v as EstimationConfig["unit"] }); }}
           className="w-56"
-        >
-          {UNITS.map(u => <option key={u} value={u}>{UNIT_LABEL[u]}</option>)}
-        </Select>
-      </label>
+          aria-label="Unit"
+          options={UNITS.map(u => ({ value: u, label: UNIT_LABEL[u] }))}
+        />
+      </div>
 
-      <label className="grid gap-1">
+      <div className="grid gap-1">
         <span className="text-text-secondary">
           Scale
           <span className="ml-1 text-text-tertiary">
             — which values an estimate may take.
           </span>
         </span>
-        <Select
-          data-testid="estimation-scale"
+        <SelectCombobox
+          testId="estimation-scale"
           value={draft.scale ?? "free"}
-          onChange={e => {
-            const v = e.target.value as (typeof SCALES)[number];
+          onChange={v => {
+            const next = v as (typeof SCALES)[number];
             setDraft(prev => {
               // "free" is the implicit default — drop the key rather than
               // storing it, so a workflow.yaml the CLI wrote round-trips.
-              if (v === "free") {
+              if (next === "free") {
                 const { scale: _scale, ...rest } = prev;
                 return rest;
               }
-              return { ...prev, scale: v };
+              return { ...prev, scale: next };
             });
           }}
           className="w-56"
-        >
-          {SCALES.map(s => <option key={s} value={s}>{SCALE_LABEL[s]}</option>)}
-        </Select>
-      </label>
+          aria-label="Scale"
+          options={SCALES.map(s => ({ value: s, label: SCALE_LABEL[s] }))}
+        />
+      </div>
 
       <label className="grid gap-1">
         <span className="text-text-secondary">

@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { comboOptions, comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { ViewFormDialog, type ViewFormTarget } from "./ViewFormDialog.tsx";
 
 /**
@@ -109,12 +110,18 @@ describe("ViewFormDialog — simple filters render as dropdown rows (K102)", () 
     await screen.findByTestId("view-filter-field-0");
 
     // THE load-bearing assertion (Ken's complaint): the row is three
-    // pickers. The field select holds the stored field, the operator
-    // select the stored operator.
-    const field = screen.getByTestId<HTMLSelectElement>("view-filter-field-0");
-    expect(field.tagName).toBe("SELECT");
-    expect(field.value).toBe("status");
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-op-0").value).toBe("in");
+    // pickers. The field picker holds the stored field, the operator
+    // picker the stored operator.
+    //
+    // K106 made these listbox dropdowns rather than native <select>s, so
+    // what is pinned is that the control IS a dropdown — a button opening
+    // a listbox — and not a text input, which is the distinction the case
+    // is about.
+    const field = screen.getByTestId("view-filter-field-0");
+    expect(field.tagName).toBe("BUTTON");
+    expect(field.getAttribute("aria-haspopup")).toBe("listbox");
+    expect(comboValue("view-filter-field-0")).toBe("status");
+    expect(comboValue("view-filter-op-0")).toBe("in");
 
     // The row is marked simple, and NO query textarea exists for it.
     expect(rows()[0]?.getAttribute("data-row-kind")).toBe("simple");
@@ -160,6 +167,30 @@ describe("ViewFormDialog — simple filters render as dropdown rows (K102)", () 
     expect(screen.queryByTestId("query-builder")).toBeNull();
     expect(document.body.textContent).not.toContain("status IN");
   });
+
+  it("offers a stored field the catalog does not know as its raw token", async () => {
+    // A view filtering on a custom field that has since been removed. The
+    // row must render what the file says rather than silently resetting to
+    // blank — so the token is BOTH the current value and a real option.
+    //
+    // Asserting the value alone would not catch a dropped option: the
+    // trigger's `data-value` echoes the draft state either way. That is a
+    // regression a native <select>'s `.value` used to rule out for free.
+    render(
+      <ViewFormDialog
+        existing={target([
+          { kind: "simple", field: "fields.severity", op: "in", values: ["sev1"] },
+        ])}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
+    await screen.findByTestId("view-filter-field-0");
+
+    expect(comboValue("view-filter-field-0")).toBe("fields.severity");
+    expect(comboOptions("view-filter-field-0"))
+      .toContainEqual({ value: "fields.severity", label: "fields.severity" });
+  });
 });
 
 describe("ViewFormDialog — order (Ken: 'i dont want things to swap positions')", () => {
@@ -195,8 +226,8 @@ describe("ViewFormDialog — order (Ken: 'i dont want things to swap positions')
     expect(screen.getByTestId<HTMLTextAreaElement>("view-filter-query-1").value)
       .toBe("priority = low");
     // The rows either side are untouched.
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-2").value).toBe("task_type");
+    expect(comboValue("view-filter-field-0")).toBe("status");
+    expect(comboValue("view-filter-field-2")).toBe("task_type");
   });
 
   it("removing row N removes exactly that row, leaving the others in order", async () => {
@@ -207,8 +238,8 @@ describe("ViewFormDialog — order (Ken: 'i dont want things to swap positions')
     fireEvent.click(screen.getByTestId("view-filter-remove-1"));
 
     expect(rows().map(r => r.getAttribute("data-row-kind"))).toEqual(["simple", "simple"]);
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-1").value).toBe("task_type");
+    expect(comboValue("view-filter-field-0")).toBe("status");
+    expect(comboValue("view-filter-field-1")).toBe("task_type");
     // The advanced row is gone entirely.
     expect(screen.queryByTestId("view-filter-query-1")).toBeNull();
   });
@@ -336,7 +367,7 @@ describe("ViewFormDialog — chrome", () => {
 
     // Choosing a field with no value is a STARTED filter — that blocks,
     // because saving it would discard the choice the user just made.
-    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "status" } });
+    pickCombo("view-filter-field-0", "status");
     expect(screen.getByTestId<HTMLButtonElement>("view-form-save").disabled).toBe(true);
   });
 
@@ -353,7 +384,7 @@ describe("ViewFormDialog — chrome", () => {
     expect(within(screen.getByRole("button", { name: "Filter Status" })).getByText("· 1"))
       .toBeTruthy();
 
-    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "priority" } });
+    pickCombo("view-filter-field-0", "priority");
 
     // A `backlog` status key is not a priority key — it must not carry over.
     const picker = screen.getByRole("button", { name: "Filter Priority" });

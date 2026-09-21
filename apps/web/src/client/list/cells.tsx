@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 
 import type { WireHealth } from "../health/fieldHealth.ts";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
+import { useResolvedColor } from "../ui/entityColor.ts";
 
 /**
  * Cell renderers for the list table. Each takes an already-resolved
@@ -71,12 +72,20 @@ const PRIORITY_DOT_CLASS: Record<string, string> = {
 };
 
 export function PriorityCell({ def, raw, health }: { def: PriorityDef | undefined; raw: string | undefined; health?: WireHealth | undefined }) {
+  // K103: the stored colour is one of three shapes, so it is resolved
+  // for the active theme before it can reach CSS. Hooks run before the
+  // early returns below — a conditional hook would break the rules of
+  // hooks the moment `raw` changes between renders.
+  const dotColor = useResolvedColor(def?.color);
   if (raw === undefined && health !== undefined) return <BrokenValue health={health} />;
   if (raw === undefined) return <Dash />;
   // Prefer the workflow's own colour; else fall back to a key-based
   // dot class so the common critical/high/medium/low keys still tint.
-  const dotStyle = def?.color ? { background: def.color } : undefined;
-  const dotClass = def?.color ? "" : PRIORITY_DOT_CLASS[raw] ?? "bg-text-tertiary";
+  // An unresolvable colour (an unknown palette id) lands here as
+  // `undefined` and takes the key-based fallback, so the dot still
+  // tints rather than going blank.
+  const dotStyle = dotColor !== undefined ? { background: dotColor } : undefined;
+  const dotClass = dotColor !== undefined ? "" : PRIORITY_DOT_CLASS[raw] ?? "bg-text-tertiary";
   // LST-27: a priority the workflow no longer declares is flagged, not
   // rendered as an ordinary value. Same treatment as an unknown status
   // (BLK-29) — a config change that orphaned rows is invisible
@@ -160,6 +169,9 @@ function BrokenValue({ health }: { health: WireHealth }) {
 }
 
 export function TypeBadge({ def, raw, health }: { def: TaskTypeDef | undefined; raw: string | undefined; health?: WireHealth | undefined }) {
+  // K103: resolved for the active theme before reaching CSS, and above
+  // the early returns so the hook order is stable.
+  const tint = useResolvedColor(def?.color);
   // A whole-field fault lifted the value out of frontmatter: render the
   // raw text + marker rather than a dash that hides it.
   if (raw === undefined && health !== undefined) return <BrokenValue health={health} />;
@@ -168,7 +180,7 @@ export function TypeBadge({ def, raw, health }: { def: TaskTypeDef | undefined; 
   return (
     <span
       className="inline-flex items-center rounded-md border border-border-default px-1.5 py-0.5 text-[0.8571rem] text-text-secondary"
-      style={def?.color ? { borderColor: def.color, color: def.color } : undefined}
+      style={tint !== undefined ? { borderColor: tint, color: tint } : undefined}
     >
       {def?.label ?? raw}
       {/* An element-level fault can co-exist with a present value
@@ -301,11 +313,18 @@ function LabelPill({
   const named = "name" in label ? label : undefined;
   // Only a real hex reaches CSS. `${color}22` on "notahex" is not
   // a colour, so the pill rendered unstyled — MSL-22 requires a
-  // defined neutral fallback instead, and the schema rejects
-  // non-hex, so anything else here is config drift.
-  const color = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(named?.color ?? "")
-    ? named?.color
-    : undefined;
+  // defined neutral fallback instead.
+  //
+  // K103: this used to re-implement the hex rule as a local regex.
+  // Post-K103 a colour is also `{light,dark}` or `{palette:id}`, and a
+  // regex over those objects matches nothing — every palette and
+  // per-mode label would have fallen through to the neutral default,
+  // silently losing its colour. That is the exact bug core had to fix
+  // in `dropInvalidColor`: a hand-rolled copy of a schema rule becomes
+  // data loss the moment the schema widens. Resolution is core's now,
+  // and it already returns `undefined` for anything it cannot resolve,
+  // which is the same neutral-fallback signal this needs.
+  const color = useResolvedColor(named?.color);
   const Pill = onFilter ? "button" : "span";
   return (
     <Pill

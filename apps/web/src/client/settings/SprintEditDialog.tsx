@@ -7,10 +7,10 @@ import { useUpdateSprintMeta } from "../api/hooks/useSprintDetail.ts";
 import { attributeSprintError } from "../sprints/SprintMetaHeader.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { Field } from "../ui/Field.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
-import { Select } from "../ui/Select.tsx";
 import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
@@ -182,16 +182,13 @@ export function SprintEditDialog(props: SprintDialogProps) {
             />
           </Field>
           <Field label="State">
-            <Select
+            <SelectCombobox
               aria-label={isEdit ? "Sprint state" : "New sprint state"}
-              data-testid="sprint-create-state"
+              testId="sprint-create-state"
               value={state}
-              onChange={e => { setState(e.target.value as SprintState); }}
-            >
-              {STATES.map(s => (
-                <option key={s} value={s}>{STATE_LABEL[s]}</option>
-              ))}
-            </Select>
+              onChange={v => { setState(v as SprintState); }}
+              options={STATES.map(s => ({ value: s, label: STATE_LABEL[s] }))}
+            />
           </Field>
         </div>
 

@@ -5,10 +5,10 @@ import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ColorInput, isValidHexColor } from "../ui/ColorInput.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { IconPicker } from "../ui/IconPicker.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
-import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { isSymmetric } from "./workflowEdits.ts";
 import {
@@ -238,15 +238,14 @@ export function RelationshipEditDialog({
 
         <label className="block">
           <span className="mb-1 block text-text-secondary">Graph constraint</span>
-          <Select
+          <SelectCombobox
             size="sm"
-            data-testid="relationships-entry-graph"
+            testId="relationships-entry-graph"
             value={graph ?? "none"}
-            onChange={e => { setGraph(e.target.value as RelationshipDef["graph"]); }}
+            onChange={v => { setGraph(v as RelationshipDef["graph"]); }}
             aria-label="Graph constraint"
-          >
-            {GRAPHS.map(g => <option key={g} value={g}>{GRAPH_LABEL[g]}</option>)}
-          </Select>
+            options={GRAPHS.map(g => ({ value: g, label: GRAPH_LABEL[g] }))}
+          />
         </label>
 
         <label className="flex items-center gap-2 text-text-secondary">

@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { comboOptions, comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { TimelinePanel } from "./TimelinePanel.tsx";
 
 /**
@@ -88,23 +89,23 @@ describe("TimelinePanel", () => {
     });
     render(<TimelinePanel />, { wrapper: wrapper() });
 
-    const zoom = await screen.findByTestId<HTMLSelectElement>("timeline-default-zoom");
-    expect(zoom.value).toBe("month");
+    await screen.findByTestId("timeline-default-zoom");
+    expect(comboValue("timeline-default-zoom")).toBe("month");
     // Grouping is no longer a native <select> — it is the shared
     // searchable GroupByPicker, whose selected value is exposed on the
     // trigger as `data-value` (asserting `.value` here was asserting the
     // pre-redesign control).
     expect(screen.getByTestId("timeline-default-grouping").getAttribute("data-value")).toBe("milestone");
     expect(screen.getByTestId<HTMLInputElement>("timeline-show-arrows").checked).toBe(false);
-    expect(screen.getByTestId<HTMLSelectElement>("timeline-dependency-relationship").value).toBe("blocks");
+    expect(comboValue("timeline-dependency-relationship")).toBe("blocks");
   });
 
   it("saves the edited defaults, PUTting the whole document with only the timeline block changed", async () => {
     const { putBodies } = mockWorkflow({ ...BASE, timeline: { default_zoom: "week" } });
     render(<TimelinePanel />, { wrapper: wrapper() });
 
-    const zoom = await screen.findByTestId<HTMLSelectElement>("timeline-default-zoom");
-    fireEvent.change(zoom, { target: { value: "day" } });
+    await screen.findByTestId("timeline-default-zoom");
+    pickCombo("timeline-default-zoom", "day");
     // Open the GroupByPicker and click the option row (the redesigned
     // control; `fireEvent.change` on a <select> no longer applies).
     fireEvent.click(screen.getByTestId("timeline-default-grouping"));
@@ -131,7 +132,14 @@ describe("TimelinePanel", () => {
     // The warning is shown...
     expect(await screen.findByTestId("timeline-dependency-unresolvable")).toBeTruthy();
     // ...the dangling value is still selected (not silently dropped)...
-    expect(screen.getByTestId<HTMLSelectElement>("timeline-dependency-relationship").value).toBe("depends_on");
+    expect(comboValue("timeline-dependency-relationship")).toBe("depends_on");
+    // ...and it is genuinely OFFERED, labelled as defunct, so the user can
+    // see and change it. `data-value` alone echoes the draft state and
+    // would read "depends_on" even with the option dropped — a native
+    // <select>'s `.value` could not, so asserting only the value above
+    // stopped covering A31/TML-34 the moment the control became a button.
+    expect(comboOptions("timeline-dependency-relationship"))
+      .toContainEqual({ value: "depends_on", label: "depends_on — no longer defined" });
     // ...and Save is NOT blocked — the dangle is preserved on the wire (A31).
     fireEvent.click(screen.getByTestId("timeline-save"));
     await waitFor(() => { expect(putBodies.length).toBe(1); });
@@ -143,8 +151,8 @@ describe("TimelinePanel", () => {
     const { putBodies } = mockWorkflow({ ...BASE, timeline: { dependency_relationship: "blocks" } });
     render(<TimelinePanel />, { wrapper: wrapper() });
 
-    const dep = await screen.findByTestId<HTMLSelectElement>("timeline-dependency-relationship");
-    fireEvent.change(dep, { target: { value: "" } });
+    await screen.findByTestId("timeline-dependency-relationship");
+    pickCombo("timeline-dependency-relationship", "");
     fireEvent.click(screen.getByTestId("timeline-save"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });

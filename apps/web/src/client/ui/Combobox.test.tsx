@@ -33,7 +33,7 @@ function renderSingle(props: {
   options: readonly ComboboxOption[];
   value?: string | undefined;
   search?: { onQuery: (q: string) => Promise<readonly ComboboxOption[]> } | undefined;
-  filterable?: boolean | undefined;
+  searchable?: boolean | undefined;
   onSubmitQuery?: ((q: string) => void) | undefined;
 }) {
   const onSelect = vi.fn();
@@ -44,7 +44,7 @@ function renderSingle(props: {
       value={props.value}
       onSelect={onSelect}
       search={props.search}
-      filterable={props.filterable}
+      searchable={props.searchable}
       onSubmitQuery={props.onSubmitQuery}
       listTestId="list"
       searchTestId="search"
@@ -92,12 +92,12 @@ describe("Combobox — search box rule (A211)", () => {
     expect(current.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("`filterable` overrides the threshold in both directions", () => {
-    renderSingle({ options: opts(3), filterable: true });
+  it("`searchable` overrides the threshold in both directions", () => {
+    renderSingle({ options: opts(3), searchable: true });
     fireEvent.click(screen.getByTestId("trigger"));
     expect(screen.getByTestId("search")).toBeTruthy();
     cleanup();
-    renderSingle({ options: opts(30), filterable: false });
+    renderSingle({ options: opts(30), searchable: false });
     fireEvent.click(screen.getByTestId("trigger"));
     expect(screen.queryByTestId("search")).toBeNull();
   });
@@ -230,7 +230,7 @@ describe("Combobox — disabled options", () => {
           { key: "a", label: "Alpha", disabled: true, suffix: "(archived)" },
           { key: "b", label: "Beta" },
         ]}
-        filterable
+        searchable
         value={undefined}
         onSelect={onSelect}
         disabledReason="Archived milestones cannot be newly assigned."

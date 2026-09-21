@@ -10,6 +10,7 @@ import {
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { SprintsPanel } from "./SprintsPanel.tsx";
 
 /**
@@ -153,7 +154,7 @@ describe("SprintsPanel — create (SPR-40 / K105)", () => {
     fireEvent.change(screen.getByTestId("sprint-create-name"), { target: { value: "Sprint Z" } });
     fireEvent.change(screen.getByTestId("sprint-create-start"), { target: { value: "2026-07-01" } });
     fireEvent.change(screen.getByTestId("sprint-create-end"), { target: { value: "2026-07-14" } });
-    fireEvent.change(screen.getByTestId("sprint-create-state"), { target: { value: "future" } });
+    pickCombo("sprint-create-state", "future");
     fireEvent.click(screen.getByTestId("sprint-create-submit"));
 
     await waitFor(() => { expect(writeCalls("POST").length).toBe(1); });
