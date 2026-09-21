@@ -1085,7 +1085,11 @@ export function ListView() {
                         {cell}
                       </th>
                     ) : (
-                      <td key={col.id} data-col={col.id} className="align-middle">
+                      <td
+                        key={col.id}
+                        data-col={col.id}
+                        className={"align-middle" + (col.id === "title" ? " " + TITLE_CELL : "")}
+                      >
                         {cell}
                       </td>
                     );
@@ -1298,6 +1302,38 @@ export function ListView() {
   );
 }
 
+/**
+ * LST-20: the title cell is the one that absorbs the leftover width.
+ *
+ * The table is `w-full` with the browser's default `table-layout: auto`,
+ * so every column is sized from its own content. A 400-character
+ * unbroken title therefore asked for ~400 characters of column, the
+ * table grew past its wrapper, and the whole list scrolled sideways —
+ * taking the adjacent columns with it, which is exactly what the case
+ * forbids.
+ *
+ * The previous guard was `max-w-[42ch]` on the inner span. That is a
+ * magic number pretending to be a layout rule: 42ch is ~354px, which
+ * still overflowed by 66px at the tested viewport (measured), and any
+ * narrower value only moves the breakpoint — the next viewport, font
+ * size or column set breaks it again.
+ *
+ * `max-w-0` + `w-full` is the layout rule instead:
+ *
+ *  - `max-width: 0` makes this cell's *intrinsic* contribution to the
+ *    table's preferred width zero, so the auto layout sizes every other
+ *    column from its own content first and the title never inflates the
+ *    table. ("Adjacent columns retain their widths.")
+ *  - `width: 100%` then hands the title whatever horizontal space is
+ *    actually left over — it is the flexible column, at any viewport,
+ *    rather than a fixed `ch` count that happens to fit one.
+ *
+ * The inner span's `truncate` clips to that computed width and puts the
+ * ellipsis at the real column boundary. Nothing here touches the stored
+ * value; the full string stays on `title=` for hover.
+ */
+const TITLE_CELL = "w-full max-w-0";
+
 function Cell({
   colId,
   task,
@@ -1393,13 +1429,15 @@ function Cell({
       const shown = task.title ?? task.key;
       // LST-20: an unbroken 400-char title had nothing to stop it, so
       // it widened the column and scrolled the whole table sideways.
+      // The cap lives on the `<td>` (`TITLE_CELL`), not here: this span
+      // only has to stay inside whatever width the cell was given.
       // Truncation is visual only — `title` puts the full string on
       // hover and the stored value is untouched.
       return (
         <span
           title={titleHealth?.error ?? task.title ?? task.key}
           className={[
-            "flex max-w-[42ch] items-center gap-1 truncate font-medium",
+            "flex max-w-full items-center gap-1 truncate font-medium",
             task.title === undefined ? "italic text-text-tertiary" : "text-text-primary",
           ].join(" ")}
         >

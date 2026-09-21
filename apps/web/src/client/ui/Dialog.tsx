@@ -54,15 +54,19 @@ export function Dialog({
     <Modal
       title={title}
       onClose={onClose}
+      // SET-8: the actions go in Modal's footer slot, so they sit below
+      // the scrolling body and stay reachable however tall the content
+      // is. `bodyProps` carries the testid onto the element wrapping
+      // body AND footer, keeping `within(getByTestId(dialog))` able to
+      // find the action buttons as before.
+      {...(actions !== undefined && actions !== null ? { footer: actions } : {})}
+      {...(testId !== undefined ? { bodyProps: { "data-testid": testId } } : {})}
       {...(returnFocusTo !== undefined ? { returnFocusTo } : {})}
     >
-      <div {...(testId !== undefined ? { "data-testid": testId } : {})}>
-        {description !== undefined && description !== null ? (
-          <p className="mb-3 text-body text-text-secondary">{description}</p>
-        ) : null}
-        {children}
-        {actions !== undefined && actions !== null ? actions : null}
-      </div>
+      {description !== undefined && description !== null ? (
+        <p className="mb-3 text-body text-text-secondary">{description}</p>
+      ) : null}
+      {children}
     </Modal>
   );
 }

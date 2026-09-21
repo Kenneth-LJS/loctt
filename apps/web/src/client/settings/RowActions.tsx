@@ -15,9 +15,12 @@ import { Menu, MenuItem } from "../ui/Menu.tsx";
  * `aria-haspopup="menu"` semantics. The trigger is a >=44px button with an
  * accessible label naming the row it acts on (WCAG 2.5.5 tap target).
  *
- * A disabled action stays listed (so the menu's contents are stable) but
- * is inert and dimmed, carrying its reason as a `title` — matching how the
- * inline buttons communicated "you cannot archive yourself".
+ * A disabled action stays listed (so the menu's contents are stable) and
+ * is genuinely `disabled` (A11Y-31): the native attribute, so it exposes
+ * the `disabled` property and implicit `aria-disabled`, refuses focus, and
+ * leaves the roving arrow-key order. Its reason rides on the button's own
+ * `title`, which browsers surface as the accessible description — not on
+ * an inner span, where it would be a pointer tooltip and nothing more.
  */
 
 export interface RowAction {
@@ -77,15 +80,30 @@ export function RowActions({
             <MenuItem
               key={a.testId ?? `${a.label}-${i}`}
               {...(a.testId !== undefined ? { testId: a.testId } : {})}
-              // A disabled action is inert: no onSelect, dimmed, reason on
-              // hover. Kept in the list so the menu's shape doesn't shift.
-              {...(a.disabled ? {} : { onSelect: () => { close(); a.onSelect(); } })}
-              className={[
-                a.danger ? "text-danger-fg hover:bg-danger-bg hover:text-danger-fg" : "",
-                a.disabled ? "cursor-not-allowed opacity-50" : "",
-              ].join(" ")}
+              // A disabled action is genuinely disabled (A11Y-31): the
+              // native attribute, so it carries the `disabled` property
+              // and implicit `aria-disabled`, refuses focus, and drops out
+              // of the menu's roving arrow-key order. Dropping `onSelect`
+              // and dimming it — what this did before — left a control
+              // that announced as actionable and did nothing.
+              disabled={a.disabled ?? false}
+              // The reason goes on the BUTTON, so it is the item's
+              // accessible description rather than a pointer tooltip on an
+              // inner span that assistive tech never reads.
+              {...(a.disabled === true && a.title !== undefined ? { title: a.title } : {})}
+              onSelect={() => { close(); a.onSelect(); }}
+              className={
+                // Danger tint only while the item is live — a disabled row
+                // is greyed, and `MenuItem` already owns that treatment.
+                // These are separate branches because the class list is
+                // concatenated, not conflict-resolved (see `cn`): emitting
+                // both would leave CSS order to pick a colour.
+                a.danger === true && a.disabled !== true
+                  ? "text-danger-fg hover:bg-danger-bg hover:text-danger-fg"
+                  : ""
+              }
             >
-              <span {...(a.disabled && a.title !== undefined ? { title: a.title } : {})}>{a.label}</span>
+              {a.label}
             </MenuItem>
           ))}
         </>

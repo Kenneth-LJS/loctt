@@ -519,11 +519,18 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
     // Open Bob's kebab; the Archive item is disabled and carries the reason.
     fireEvent.click(screen.getByRole("button", { name: 'Actions for user "Bob"' }));
     const archiveItem = await screen.findByTestId("user-archive-u-bob");
-    // A disabled RowActions item is inert (opacity-50) with the reason on
-    // its inner span's title.
-    expect(archiveItem.className).toContain("opacity-50");
+    // A disabled RowActions item is REALLY disabled (A11Y-31): the native
+    // attribute, so it exposes the disabled property and refuses focus —
+    // not merely dimmed-and-unresponsive.
+    //
+    // This assertion previously read the title off `archiveItem
+    // .querySelector("[title]")`, i.e. off an inner `<span>`. That was
+    // asserting the bug: a `title` on a child is a pointer tooltip on
+    // that child and is never the button's accessible description, which
+    // is exactly what A11Y-31's second bullet asks for. The reason now
+    // lives on the button itself.
+    expect(archiveItem).toHaveProperty("disabled", true);
     expect(archiveItem.textContent).toMatch(/archive/i);
-    const titled = archiveItem.querySelector("[title]");
-    expect(titled?.getAttribute("title")).toMatch(/cannot archive/i);
+    expect(archiveItem.getAttribute("title")).toMatch(/cannot archive/i);
   });
 });

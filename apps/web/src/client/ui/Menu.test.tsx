@@ -81,6 +81,115 @@ describe("Menu keyboard navigation", () => {
 });
 
 /**
+ * A disabled MenuItem is genuinely disabled (A11Y-31).
+ *
+ * The third bullet: "a control that is inert but announces as
+ * actionable is a defect". The previous spelling dropped `onSelect` and
+ * added `opacity-50`, which left a button with no `disabled` property,
+ * no `aria-disabled`, still in the focus order, and its reason on an
+ * inner `<span>` where it is a pointer tooltip rather than the button's
+ * accessible description.
+ *
+ * Each test below asserts what the USER gets — the focus order, the
+ * described-by text, whether activation does anything — not merely that
+ * a prop was forwarded.
+ */
+describe("MenuItem disabled", () => {
+  function renderWithDisabled(onSelect = vi.fn()) {
+    render(
+      <Menu
+        aria-label="Actions"
+        trigger={({ toggle, ...rest }) => (
+          <button type="button" onClick={toggle} {...rest}>Open</button>
+        )}
+      >
+        {() => (
+          <>
+            <MenuItem>Edit…</MenuItem>
+            <MenuItem
+              disabled
+              title="A tracker must have at least one project."
+              onSelect={onSelect}
+            >
+              Delete
+            </MenuItem>
+            <MenuItem>Duplicate</MenuItem>
+          </>
+        )}
+      </Menu>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    return { onSelect };
+  }
+
+  it("exposes the disabled state to assistive tech rather than only dimming", () => {
+    renderWithDisabled();
+    const del = screen.getByRole("menuitem", { name: /Delete/ });
+    // The native property, not an aria attribute painted on — this is
+    // what carries the implicit `aria-disabled` to the a11y tree.
+    expect(del).toHaveProperty("disabled", true);
+  });
+
+  it("refuses focus, so it never announces as an actionable stop", () => {
+    renderWithDisabled();
+    const del = screen.getByRole("menuitem", { name: /Delete/ });
+    del.focus();
+    expect(document.activeElement).not.toBe(del);
+  });
+
+  it("carries its reason on the BUTTON, where it is the accessible description", () => {
+    renderWithDisabled();
+    const del = screen.getByRole("menuitem", { name: /Delete/ });
+    // On the button itself. A `title` on an inner span is a pointer
+    // tooltip on that span and is never the button's description.
+    expect(del.getAttribute("title")).toMatch(/at least one project/i);
+  });
+
+  it("is skipped by arrow-key roving so the keyboard cursor never lands on it", () => {
+    renderWithDisabled();
+    const menu = screen.getByRole("menu");
+    const edit = screen.getByRole("menuitem", { name: "Edit…" });
+    const dup = screen.getByRole("menuitem", { name: "Duplicate" });
+    edit.focus();
+    // ArrowDown from the first ENABLED item skips the disabled one
+    // entirely and lands on the next enabled item.
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(dup);
+  });
+
+  it("does not run its action when activated", () => {
+    const { onSelect } = renderWithDisabled();
+    const del = screen.getByRole("menuitem", { name: /Delete/ });
+    fireEvent.click(del);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("an item left enabled is unaffected: focusable, described by nothing, and it fires", () => {
+    // The negative control. Without this, every assertion above would
+    // also pass against a MenuItem that disabled *everything*.
+    const onSelect = vi.fn();
+    render(
+      <Menu
+        aria-label="Actions"
+        trigger={({ toggle, ...rest }) => (
+          <button type="button" onClick={toggle} {...rest}>Open</button>
+        )}
+      >
+        {() => <MenuItem onSelect={onSelect}>Edit…</MenuItem>}
+      </Menu>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    const edit = screen.getByRole("menuitem", { name: "Edit…" });
+    expect(edit).toHaveProperty("disabled", false);
+    expect(edit.getAttribute("title")).toBeNull();
+    edit.focus();
+    expect(document.activeElement).toBe(edit);
+    fireEvent.click(edit);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
  * Portalling + viewport-aware placement (MENU-PORTAL).
  *
  * The panel renders into `document.body` and is positioned with

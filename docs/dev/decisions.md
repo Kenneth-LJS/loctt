@@ -17635,6 +17635,96 @@ Grammar decisions the docs did not settle (recorded here):
 
 **To revert.** Core: `packages/core/src/config/archived-scope.ts` — narrow the constraint back to `{ readonly archived?: boolean }` (and every call site breaks again). MCP: `apps/mcp/src/runtime/config-list.ts` — drop the `archived` key from `configListInputSchema` and the `getArchivedScope` helper; `tools/{milestone,sprint,label,project,user}.ts` — drop the `applyArchivedScope(...)` line (restore `cfg.<entity>` / hand-rolled filter) and the `getArchivedScope` import; `tools/user.ts` — restore the `include_archived` param + `.filter`; `tools/views.ts` — drop the `archived` param + `applyArchivedScope`. CLI: `commands/{milestone,sprint,label,project,user,views}.ts` — restore `hasFlag(args,"--all")` + the hand-rolled `.filter` (and drop `--archived` from the ACCEPTED_FLAGS lists that gained it: sprint/label/project/user/views); `usage.ts` — restore the `list --all: include archived …` lines. Tests: delete `apps/mcp/src/tools/archived-scope.test.ts`, the "config-entity list archived scope (K107)" block in `apps/cli/src/cli.test.ts`, and revert the `list_views` default-hides assertion in `apps/mcp/src/tools/views.test.ts` (it was updated because it asserted the old show-all default). Docs: the six list rows in `docs/user/cli/reference.md` and the config-list rows + shared-`archived` note in `docs/user/mcp/reference.md`.
 
+### A282 · E2E-surfaced defect fixes — and two reported defects that did not reproduce
+
+**Date:** 2026-09-22 · **Lane:** `apps/web/src/client/**`.
+
+**Situation.** Repairing the e2e specs after the K106 picker migration
+took the suite from 155 failures to 19, and the 19 were left RED on
+purpose as defect markers. Six were fixed here. **Two of the ten
+originally reported did not reproduce** — recorded below, because
+fixing something that is not broken is the more expensive mistake.
+
+**TSK-18 — the rich→raw toggle was swallowed after typing. Not an event
+bug; a LAYOUT one.** The brief's lead (a blur-ordering problem, by
+analogy with TSK-59) was wrong, and the agent said so rather than
+building to it. Instrumenting the real browser showed the blur guard was
+innocent (`contained=true`) and that **no `click` event fired at all**:
+pressing the toggle blurs the rich surface → `flush()` →
+`SaveIndicator`'s label goes "Unsaved changes" → "Saving…"/"Saved", the
+label narrows, and because the toggle is pushed right with `ml-auto` past
+a `flex-1` toolbar, the button slid **52px right between mousedown and
+mouseup**. Mouseup landed on the wrapper, so the browser synthesised no
+click. The second press worked because the label had settled.
+
+*Fix:* the three ordinary labels now share ONE css-grid cell with the
+inactive ones `invisible`, so the box is always as wide as the longest
+label **as the browser measures it** — no px constant to drift. A
+`sr-only` `aria-live` node carries the changing text, because a stack of
+static labels would otherwise leave the indicator silent to a screen
+reader; a live region announces content, not attributes.
+
+**LST-20 — a 400-char title widened the table by 66px.** The guard was
+`max-w-[42ch]` on the inner span: a magic ~354px that is simply still too
+wide, and any smaller value just moves the breakpoint. *Fix:* the title
+`<td>` carries `w-full max-w-0`. `max-width:0` zeroes its intrinsic
+contribution so every other column sizes from its own content first;
+`width:100%` then hands it whatever is left, at ANY viewport. The `ch`
+cap is gone.
+
+**GIT-9 — the ULID tiebreak was not stated.** Commit `cc534a0d` (Ken's)
+deliberately dropped the ULIDs from the rekey preview as "meaningless
+internal ids" and reworded the tiebreak — but the replacement named no
+rule at all. The rule was checked against `previewRekey` in
+`core/src/git/reconcile.ts` rather than paraphrased: ascending
+`localeCompare` on `id`, `sorted[0]` keeps the key, so the **lower ULID
+wins**.
+
+*Judgement call, flagged not buried:* the case says "shows both ULIDs",
+while Ken's commit removed them as clutter. Resolved by naming the rule
+in the prose and putting the two values behind a collapsed native
+`<details>`, rendered only when `tiebreak === "ulid"` — satisfying the
+case without reverting his call, and only on the path where the ULIDs
+explain something. **To revert to always-visible:** drop the `<details>`
+wrapper. Ken may prefer that; it is a one-line change.
+
+**A11Y-31 / PRU-26 / PRU-33 — "disabled" kebab items were not disabled.**
+`MenuItem` had no `disabled` prop; `RowActions` faked it by dropping
+`onSelect` and dimming, leaving the button focusable with its reason on
+an inner `<span>` (so never the accessible description). Now a native
+`disabled` — the IDL property and implicit `aria-disabled` come free, the
+existing `:not([disabled])` roving query excludes it automatically, and
+the reason sits on the button. Matches `Dropdown`'s existing idiom rather
+than inventing one.
+
+**SET-8 — the custom-field dialog's Save was unreachable below 720px.**
+`Modal`'s panel had no `max-h` and no scroll region, and the overlay
+centres an over-tall card, so both ends leave the viewport with nothing
+to scroll. `Sheet` (the mobile branch) already had the correct pattern,
+so `Modal` was CONVERGED on it rather than growing a second one.
+
+**TWO CLAIMS THAT DID NOT REPRODUCE.**
+- **A11Y-16** (invisible focus ring, reported 1.00:1) — measured in a
+  real Chromium against the built CSS, focused by keyboard so
+  `:focus-visible` genuinely matches: **16.14:1 light, 19.67:1 dark.**
+  The original `rgb(255,255,255)` reading was taken in DARK mode, where
+  `--text-primary` IS `#F4F4F3`; it only looked like a `currentColor`
+  fallback because the button's text is also white. Verified against
+  `tokens.css`. No CSS changed.
+- **VUE-22** (broken views "never reach the client") — `handleListViews`
+  spreads `broken`, `ViewsConfig` declares it, and a live probe returned
+  `broken: ["Busted"]`.
+
+*Both came with a file, a line number and a measurement.* The lesson for
+the next agent: a confidently-reported defect is a claim, not a fact, and
+the cheapest moment to check is before the fix.
+
+**A FOURTH green test asserting a bug.** `UsersPanel.test.tsx` read the
+disabled reason off `querySelector("[title]")` — explicitly pinning the
+inner-span placement that IS the A11Y-31 defect, with a comment saying
+so. Updated in place.
+
+
 ### A281 · K106 step 1 — `Select` call sites onto `SelectCombobox`, and the `.value`→`data-value` assertion trap
 
 **Ticket:** K106 step 1 · **Date:** 2026-09-21 · **Lane:**

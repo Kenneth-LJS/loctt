@@ -336,15 +336,43 @@ the tests to go green would have destroyed the only signal.
   regression we introduced**, and the portal migration's blast radius was
   wider than the dropdown call sites.
 
-**CLAIMED BY THE AGENT, NOT YET VERIFIED** (worth checking before acting
-— see the correction below for why):
-A11Y-16 (invisible focus ring on the header's New-task button),
-A11Y-31/PRU-26/PRU-33 (`MenuItem` has no `disabled` prop, so "disabled"
-kebab actions take focus and announce as actionable), TSK-18 (rich→raw
-toggle swallowed after typing), A11Y-9 (back-navigation does not restore
-row focus), SET-8 (custom-field dialog Save off-screen below 720px),
-LST-20 (400-char title overflows the table by 66px), GIT-9 (ULID
-tiebreak not stated).
+**SINCE VERIFIED AND FIXED:**
+- **A11Y-31 / PRU-26 / PRU-33** — confirmed: `MenuItem` had no `disabled`
+  prop at all, and `RowActions` faked it by dropping `onSelect` and
+  dimming, leaving the button focusable with its reason on an inner
+  `<span>`. Now a native `disabled` (so the IDL property and implicit
+  `aria-disabled` come for free), excluded from roving focus by the
+  existing `:not([disabled])` query, reason on the button itself.
+- **SET-8** — confirmed structurally: `Modal`'s panel had no `max-h` and
+  no scroll region, and the overlay centres an over-tall card so both
+  ends leave the viewport with nothing to scroll. `Sheet` (the mobile
+  branch) already had the right pattern, so `Modal` was converged on it
+  rather than growing a second one.
+
+**A SECOND CLAIM CHECKED AND FOUND WRONG — A11Y-16.** Reported as an
+invisible focus ring on the header's New-task button (1.00:1 light,
+1.07:1 dark), diagnosed as the `:focus-visible` rule falling back to
+`currentColor`. It does not reproduce. Driving a real Chromium against
+the built CSS with the button's actual classes, focused by keyboard so
+`:focus-visible` genuinely matches: **16.14:1 in light, 19.67:1 in
+dark.** The original reading of `rgb(255,255,255)` was taken in DARK
+mode, where `--text-primary` IS `#F4F4F3` — so a near-white outline is
+the rule working, not a fallback, and it only *looked* like `currentColor`
+because the button's text is also white. Verified independently:
+`tokens.css` sets `--text-primary: #0F172A` light / `#F4F4F3` dark.
+Additionally the A11Y-16 e2e test scans `main`/`aside` only — the header
+is not in its scope, so this button could not have been failing it. **No
+CSS was changed.** If A11Y-16 is genuinely red, the cause is a control
+inside `main`/`aside` and needs re-diagnosis.
+
+**STILL UNVERIFIED** (being worked, or not yet checked): TSK-18
+(rich→raw toggle swallowed after typing), A11Y-9 (back-navigation does
+not restore row focus), LST-20 (400-char title overflows the table),
+GIT-9 (ULID tiebreak not stated).
+
+*Two of ten reported defects have now turned out not to reproduce
+(VUE-22, A11Y-16). A confidently-reported defect with a file:line and a
+measurement is still a claim, not a fact.*
 
 **ONE CLAIM CHECKED AND FOUND WRONG.** The agent reported VUE-22 as
 "dead code — `/api/views` returns a flat `{queries: […]}` so

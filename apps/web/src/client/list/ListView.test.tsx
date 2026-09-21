@@ -276,6 +276,64 @@ describe("ListView", () => {
     expect(titleCell.textContent).toContain("WEB-9");
   });
 
+  // @verifies LST-20
+  /**
+   * A 400-character unbroken title must not widen the table.
+   *
+   * jsdom has no layout engine, so the overflow itself cannot be
+   * measured here — the e2e spec (`LST-20: a 400-character title
+   * truncates without scrolling the table`) is what measures it, and it
+   * failed by 66px before this. What CAN be pinned below that gate is
+   * the rule the measurement depends on: the title cell's width must be
+   * derived from the table, never from its own content.
+   *
+   * `max-width: 0` is what makes the cell's intrinsic contribution zero,
+   * so the auto table layout sizes every other column first and the
+   * title takes only the leftover (`width: 100%`). The old guard was a
+   * `max-w-[42ch]` on the inner span — content-derived, ~354px, and so
+   * still 66px too wide at the tested viewport. A narrower `ch` value
+   * would only move the breakpoint, which is why the assertion below
+   * rejects ANY `ch`/`px` cap rather than a particular one.
+   */
+  it("LST-20: bounds a pathological title against the table, not against its own content", async () => {
+    const long = "x".repeat(400);
+    TASKS_OVERRIDE = {
+      items: [{
+        id: "01TASKCCCC0000000000000000",
+        key: "WEB-11",
+        project: "p_web",
+        title: long,
+        status: "in_progress",
+        created_at: "2026-06-01T00:00:00.000Z",
+        updated_at: "2026-06-07T00:00:00.000Z",
+      }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    };
+    await mountList("", "In progress");
+    const row = screen.getByText("In progress").closest("tr") as HTMLElement;
+    const titleCell = row.querySelector('[data-col="title"]') as HTMLElement;
+
+    // The cell absorbs the leftover width and contributes nothing to the
+    // table's preferred width.
+    expect(titleCell.className).toContain("max-w-0");
+    expect(titleCell.className).toContain("w-full");
+
+    // And nothing inside it re-introduces a content-derived cap — a
+    // `max-w-[NNch]` or `max-w-[NNpx]` anywhere in the subtree is exactly
+    // the magic number this replaces, and would put the breakpoint back.
+    const capped = [titleCell, ...titleCell.querySelectorAll("*")]
+      .map(el => (el as HTMLElement).className)
+      .filter(c => typeof c === "string" && /max-w-\[\d+(?:\.\d+)?(?:ch|px|rem)\]/.test(c));
+    expect(capped).toEqual([]);
+
+    // Truncation is visual only: the stored value is untouched and the
+    // whole string is on hover (the case's second bullet).
+    expect(titleCell.textContent).toBe(long);
+    expect(row.querySelector(`[title="${long}"]`)).not.toBeNull();
+  });
+
   // @verifies A137 / A137.1 (per-row health marker in the list)
   // @verifies DEG-31 (UX-11: a corrupt task also carries a marker in the List view)
   it("marks a degraded field on a row that carries health", async () => {

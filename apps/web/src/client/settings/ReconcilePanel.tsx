@@ -152,7 +152,8 @@ export function ReconcilePanel() {
  * keeper, and the planned new key — then waits for an explicit confirm.
  * Nothing is renumbered until the user clicks Confirm rekey.
  */
-function RekeyPreview({ plan, confirm, onConfirmed }: {
+/** Exported for unit tests (GIT-8/GIT-9); rendered only by `ReconcilePanel`. */
+export function RekeyPreview({ plan, confirm, onConfirmed }: {
   readonly plan: RekeyPlan;
   readonly confirm: ReturnType<typeof useConfirmRekey>;
   readonly onConfirmed: (r: ConfirmRekeyResponse) => void;
@@ -182,21 +183,58 @@ function RekeyPreview({ plan, confirm, onConfirmed }: {
               <span data-testid="git-rekey-collided-key">{l.key}</span> collided —
               {" "}renumbering to <span data-testid="git-rekey-new-key">{l.newKey ?? "(unavailable)"}</span>
             </div>
-            {/* The internal task ids (ULIDs) were removed here — they
-                identify nothing to a person. The human key is already in
-                the header line above; the created dates are what let a
-                user recognise which task is which. (Ken's report.) */}
+            {/* The internal task ids (ULIDs) are not in the prose — they
+                identify nothing to a person, and the human key is already
+                in the header line above while the created dates are what
+                let a user recognise which task is which. (Ken's report.)
+                They ARE still reachable, in the collapsed disclosure
+                below, because GIT-9 turns on being able to check the
+                decision: when the timestamps tie, the ULIDs are the only
+                two values that explain the outcome, and a rule the user
+                cannot check against the inputs is not a reason. */}
             <div className="mt-1 text-text-secondary">
               The task created {fmt(l.keeperCreatedAt)} keeps the key.
             </div>
             <div className="text-text-secondary">
               The task created {fmt(l.loserCreatedAt)} is renumbered.
             </div>
-            <div className="mt-1 text-text-tertiary">
+            <div data-testid="git-rekey-tiebreak" className="mt-1 text-text-tertiary">
               {l.tiebreak === "created_at"
                 ? "The earlier task keeps the key."
-                : "Both were created at the same time, so the tie was broken automatically."}
+                : /* GIT-9: "the tie was broken automatically" said only
+                     that something decided — not what, and not that the
+                     answer is the same on every machine. Naming the rule
+                     is the point of the case: the ULIDs are sortable and
+                     already fixed on disk, so the lower one winning is
+                     what makes a second clone reconciling the same two
+                     tasks reach the same keeper. */
+                  "Both were created at the same instant, so the tie was broken on the "
+                  + "tasks’ internal IDs (ULIDs): the lower ULID keeps the key. The IDs "
+                  + "are already fixed, so every clone reconciling these two tasks picks "
+                  + "the same keeper."}
             </div>
+            {l.tiebreak === "ulid" && (
+              /* Collapsed by default: the values matter only to someone
+                 checking the decision, and an always-on pair of 26-char
+                 ULIDs is the clutter Ken's report removed. Native
+                 `<details>` — keyboard-operable for free, same pattern as
+                 the sync log in GitSyncPanel. */
+              <details data-testid="git-rekey-ulids" className="mt-1 text-text-tertiary">
+                <summary className="cursor-pointer select-none">
+                  Show the IDs that decided it
+                </summary>
+                <dl className="mt-1 grid grid-cols-[auto,1fr] gap-x-2">
+                  <dt>Keeps the key</dt>
+                  <dd data-testid="git-rekey-keeper-id" className="font-mono break-all">
+                    {l.keeperId}
+                  </dd>
+                  <dt>Renumbered</dt>
+                  <dd data-testid="git-rekey-loser-id" className="font-mono break-all">
+                    {l.loserId}
+                  </dd>
+                </dl>
+              </details>
+            )}
           </li>
         ))}
       </ul>

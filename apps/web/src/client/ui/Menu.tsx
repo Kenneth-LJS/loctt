@@ -191,12 +191,39 @@ export function Menu({
   );
 }
 
-/** A single clickable row inside a Menu panel. */
+/**
+ * A single clickable row inside a Menu panel.
+ *
+ * ## `disabled` is a real `disabled`, not a dimmed no-op (A11Y-31)
+ *
+ * An unavailable action used to be expressed by dropping `onSelect` and
+ * adding `opacity-50`. That is the exact failure A11Y-31's third bullet
+ * names: the control is inert but *announces as actionable* — no
+ * `disabled` property, no `aria-disabled`, still focusable, so a screen
+ * reader user activates it and nothing happens.
+ *
+ * So it carries the native attribute, which gives all three properties
+ * at once: the `disabled` IDL property, the implicit `aria-disabled`,
+ * and removal from the tab/focus order. The roving-focus query in `Menu`
+ * above already excludes `:not([disabled])`, so a disabled item also
+ * drops out of arrow-key travel without any further wiring.
+ *
+ * `title` is the reason, and it belongs on the **button**, not on an
+ * inner `<span>`. A `title` on a child is a pointer tooltip on that
+ * child and nothing more; on the button itself every current browser
+ * also exposes it as the accessible *description* when no other
+ * description source exists — which is what A11Y-31's second bullet
+ * asks for. This matches `Dropdown`'s disabled option exactly, which
+ * already spells `disabled={…}` + `title={disabled ? reason : undefined}`
+ * on the row button.
+ */
 export function MenuItem({
   children,
   onSelect,
   className,
   testId,
+  disabled = false,
+  title,
 }: {
   readonly children: ReactNode;
   readonly onSelect?: () => void;
@@ -210,16 +237,27 @@ export function MenuItem({
    * own `<button>` and forwards nothing.
    */
   readonly testId?: string;
+  /** Inert and announced as such. See the note above. */
+  readonly disabled?: boolean | undefined;
+  /**
+   * Why the item is unavailable, on the button so it is the accessible
+   * description and not merely a hover tooltip on a child span.
+   */
+  readonly title?: string | undefined;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
+      disabled={disabled}
+      title={title}
       onClick={onSelect}
       {...(testId !== undefined ? { "data-testid": testId } : {})}
       className={[
         "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem]",
-        "text-text-secondary hover:bg-bg-muted hover:text-text-primary",
+        disabled
+          ? "cursor-not-allowed text-text-disabled opacity-50"
+          : "text-text-secondary hover:bg-bg-muted hover:text-text-primary",
         className ?? "",
       ].join(" ")}
     >
