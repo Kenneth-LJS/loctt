@@ -125,3 +125,35 @@ inconsistency; the sprint board still defaults to hiding archived
 (active), which honours K107's default. If a genuine "archived-only"
 sprint board is ever wanted, `deriveSprintColumns` needs an
 `ArchivedScope` option and the view needs the shared control.
+
+## `data-value` assertions are weaker than the `.value` reads they replaced
+
+K106 step 1 migrated 18 native `<select>` call sites onto
+`SelectCombobox`, which meant porting ~16 test assertions from
+`getByTestId<HTMLSelectElement>(…).value` to a `data-value` attribute.
+
+**The two are not equivalent, and the difference is silent.** A native
+`<select>`'s `.value` could only ever report a value that had a matching
+`<option>` — the DOM guaranteed it. `data-value` echoes the component's
+draft state, so it reports the stored token whether or not that option is
+actually offered to the user. Every ported assertion therefore still
+passes while testing strictly less than it used to.
+
+This was caught because three "escape hatch" branches — which keep a
+stored-but-unknown value selectable — could each be DELETED with the
+suite staying green: `TimelinePanel`'s dangling dependency (A31/TML-34),
+`ViewFormDialog`'s removed custom field, and `QueryBuilder`'s
+out-of-config field. Two of the three had never been covered at all; that
+gap predates K106 and the migration merely exposed it.
+
+All three now assert the option is **offered** (`comboOptions()`) and not
+merely echoed (`comboValue()`), and are red-proven.
+
+**The gap that remains:** nothing enforces this pairing. `data-value` is
+now the standard assertion across the web client, so any future
+`Select`→`Combobox` port — or any new `SelectCombobox` call site with an
+escape-hatch branch — can reintroduce exactly this weakening without a
+single test going red. **Rule of thumb: a `comboValue()` assertion about
+a stored-but-possibly-unknown value is incomplete without a
+`comboOptions()` assertion beside it.** A lint rule or a shared helper
+that asserts both at once would close it properly; neither exists yet.
