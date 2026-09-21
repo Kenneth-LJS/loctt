@@ -202,7 +202,10 @@ describe("saved views are addressable (QRY-C6)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("list_views", {});
+        // K107: list_views defaults to hiding archived; pass archived:"all"
+        // to include the archived "retired" view (this test checks the full
+        // set incl. the archived flag).
+        const result = await client.callTool("list_views", { archived: "all" });
         const views = JSON.parse(result.content[0]?.text ?? "[]") as Array<{
           id?: string;
           name: string;

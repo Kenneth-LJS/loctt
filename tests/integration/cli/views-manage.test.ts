@@ -65,14 +65,23 @@ describe("CLI views management (spawned binary)", () => {
     });
   });
 
-  it("archive hides with a marker; unarchive restores", async () => {
+  it("archive hides it by default; --archived all shows it with a marker; unarchive restores (K107)", async () => {
+    // K107 changed the default: a plain `views` list now HIDES archived
+    // views (scope active). The archived view is reachable via
+    // `--archived all` (or `--archived archived`), where it carries the
+    // marker. This replaces the pre-K107 assertion that a plain list showed
+    // the archived view inline.
     await withTmpLoctt(async ({ root }) => {
       await runCli(["views", "create", "v", "--query", "status = backlog"], { cwd: root });
 
       const arch = await runCli(["views", "archive", "v"], { cwd: root });
       expect(arch.exitCode).toBe(0);
+      // Default scope hides the archived view entirely.
       let list = await runCli(["views"], { cwd: root });
-      expect(list.stdout).toMatch(/v\b.*\(archived\)/);
+      expect(list.stdout).not.toMatch(/v\b.*\(archived\)/);
+      // Showing all reveals it, with the archived marker.
+      const all = await runCli(["views", "--archived", "all"], { cwd: root });
+      expect(all.stdout).toMatch(/v\b.*\(archived\)/);
 
       const un = await runCli(["views", "unarchive", "v"], { cwd: root });
       expect(un.exitCode).toBe(0);

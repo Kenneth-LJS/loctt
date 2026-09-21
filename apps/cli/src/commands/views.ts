@@ -70,7 +70,11 @@ function parseSort(raw: string | undefined): QuerySort[] | null | undefined {
  */
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
-  const sub = args[1];
+  // A flag in the subcommand slot means no subcommand was given — e.g.
+  // `loctt views --archived all` is the bare LIST with a scope flag, not a
+  // subcommand named "--archived". Treat a leading `--flag` as "list".
+  const subToken = args[1];
+  const sub = subToken !== undefined && subToken.startsWith("--") ? undefined : subToken;
   const locttDir = resolveLocttDir(root);
 
   // Bare `loctt views` keeps its historical meaning: list. `list` is
