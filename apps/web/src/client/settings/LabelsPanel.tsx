@@ -10,6 +10,7 @@ import {
 import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { useResolvedColor } from "../ui/entityColor.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { hashDeepLinkPresent } from "./deepLinkHash.ts";
@@ -53,6 +54,12 @@ function LabelRow({ label, count, allLabels }: {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const archived = label.archived === true;
+  // K103: the swatch takes one hex, resolved for the active theme.
+  // `data-label-color` reports the SAME resolved value it paints —
+  // before this it interpolated the stored value, so a palette or
+  // per-mode colour published `[object Object]` to both the attribute
+  // and the CSS.
+  const swatch = useResolvedColor(label.color);
 
   return (
     <li
@@ -66,9 +73,9 @@ function LabelRow({ label, count, allLabels }: {
       <span
         aria-hidden="true"
         data-testid="label-swatch"
-        data-label-color={label.color ?? ""}
+        data-label-color={swatch ?? ""}
         className="h-4 w-4 shrink-0 rounded-full border border-border-subtle"
-        style={{ backgroundColor: label.color ?? "transparent" }}
+        style={{ backgroundColor: swatch ?? "transparent" }}
       />
 
       <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">

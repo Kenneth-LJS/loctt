@@ -7,6 +7,7 @@ import { useUpdateLabel } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
+import { useResolvedColor } from "../ui/entityColor.ts";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
@@ -57,7 +58,22 @@ export function LabelEditDialog(props: LabelDialogProps) {
   const create = useCreateLabel();
 
   const [name, setName] = useState(isEdit ? props.existing.name : "");
-  const [color, setColor] = useState(isEdit ? (props.existing.color ?? "") : "");
+  // K103 / stage-2 LIMIT. A label's colour is an `EntityColor` on READ
+  // (the schema widened), but the whole label WRITE path is still typed
+  // `color?: string`: `useCreateLabel`/`useUpdateLabel`, the
+  // `/api/labels` handlers, and `CreateLabelInput` / `editLabel` in
+  // `packages/core/src/labels/manage.ts`. Core is stage-1 territory and
+  // was not widened for labels the way `workflow-entities.ts` was, so
+  // this dialog can only write shape 1 (a bare hex).
+  //
+  // It therefore stays a hex field rather than getting the swatch
+  // picker: a picker offering palette and per-mode colours here would
+  // produce values this path silently narrows to `string`, which is the
+  // `[object Object]` class of bug this ticket exists to remove.
+  // Seeding resolves through core so an already-stored palette or
+  // per-mode colour is shown as its current hex rather than stringified.
+  const seeded = useResolvedColor(isEdit ? props.existing.color : undefined);
+  const [color, setColor] = useState(seeded ?? "");
   const [acknowledgedDuplicate, setAcknowledgedDuplicate] = useState(false);
 
   const colorOk = isValidColor(color);

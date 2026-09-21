@@ -1,4 +1,4 @@
-import type { PriorityDef, StatusDef, TaskTypeDef, WorkflowConfig } from "@loctt/contracts";
+import type { EntityColor, PriorityDef, StatusDef, TaskTypeDef, WorkflowConfig } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -221,7 +221,11 @@ function CollectionEditor({
     // undefined value clears the key rather than leaving the stored one.
     const target = dialog.row;
     const withPresentational = <T extends Row>(base: T): T => {
-      const { icon: _icon, color: _color, ...rest } = base as T & { icon?: string; color?: string };
+      // K103: the annotation exists only to name the two keys being
+      // stripped; `color` is an `EntityColor`, and calling it `string`
+      // here described the old shape while the values flowing through
+      // were already objects.
+      const { icon: _icon, color: _color, ...rest } = base as T & { icon?: string; color?: EntityColor };
       return {
         ...rest,
         ...(result.icon !== undefined ? { icon: result.icon } : {}),

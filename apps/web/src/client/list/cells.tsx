@@ -10,8 +10,8 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { createPortal } from "react-dom";
 
 import type { WireHealth } from "../health/fieldHealth.ts";
-import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { useResolvedColor } from "../ui/entityColor.ts";
+import { UserAvatar } from "../ui/UserAvatar.tsx";
 
 /**
  * Cell renderers for the list table. Each takes an already-resolved

@@ -1,5 +1,5 @@
 import type { EntityColor } from "@loctt/contracts";
-import { isDoubleColor, isPaletteColorRef } from "@loctt/contracts";
+import { EntityColorSchema, isDoubleColor, isPaletteColorRef } from "@loctt/contracts";
 import { resolveEntityColorOr } from "@loctt/core";
 
 import { useTheme } from "../theme/useTheme.ts";
@@ -118,6 +118,21 @@ export function resolveRowColors<T extends { readonly color?: EntityColor | unde
  * theme. The picker needs the distinction because the three shapes are
  * three different editing experiences.
  */
+/**
+ * Whether a colour is one the server will accept — asked of the
+ * CONTRACT SCHEMA, never of a local regex.
+ *
+ * `undefined` (no colour) is valid. Everything else is handed to
+ * `EntityColorSchema`, so this answer cannot drift from the one the
+ * server gives: widening the union widens this automatically. A hand-
+ * rolled hex test here is the `dropInvalidColor` / `cells.tsx` bug
+ * waiting to happen again — it would start rejecting palette and
+ * per-mode colours the moment they became valid.
+ */
+export function isValidEntityColor(color: EntityColor | undefined): boolean {
+  return color === undefined || EntityColorSchema.safeParse(color).success;
+}
+
 export type ColorShape = "palette" | "double" | "single";
 
 export function colorShape(color: EntityColor): ColorShape {

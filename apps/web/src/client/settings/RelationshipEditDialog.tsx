@@ -1,12 +1,13 @@
-import type { RelationshipDef } from "@loctt/contracts";
+import type { EntityColor, RelationshipDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { ColorInput, isValidHexColor } from "../ui/ColorInput.tsx";
+import { ColorHexAlias, ColorPicker } from "../ui/ColorPicker.tsx";
 import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
+import { isValidEntityColor } from "../ui/entityColor.ts";
 import { IconPicker } from "../ui/IconPicker.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -80,7 +81,8 @@ export function RelationshipEditDialog({
   // create and edit. Previously these were carried straight from `initial`
   // (survived a round-trip) but had no control; now they are set here.
   const [icon, setIcon] = useState<string | undefined>(initial?.icon);
-  const [color, setColor] = useState(initial?.color ?? "");
+  // K103: the stored `EntityColor` itself; `undefined` is "no colour".
+  const [color, setColor] = useState<EntityColor | undefined>(initial?.color);
 
   const effectiveKey = mode === "create" && !keyTouched ? keyFromLabel(label) : key;
 
@@ -93,7 +95,7 @@ export function RelationshipEditDialog({
     graph,
     ranked,
     icon: icon !== undefined && icon.trim().length > 0 ? icon.trim() : undefined,
-    color: color.trim().length > 0 ? color.trim() : undefined,
+    color,
   };
 
   const problems =
@@ -112,7 +114,7 @@ export function RelationshipEditDialog({
   const canSubmit = hasNoProblems(problems)
     && problems.inverse === undefined
     && problems.inverse_label === undefined
-    && isValidHexColor(color)
+    && isValidEntityColor(color)
     && !pending;
 
   const submit = (): void => {
@@ -272,11 +274,18 @@ export function RelationshipEditDialog({
 
         <div className="block">
           <span className="mb-1 block text-text-secondary">Colour</span>
-          <ColorInput
+          <ColorPicker
+            value={color}
+            onChange={setColor}
+            testId="relationships-entry-color-picker"
+            ariaLabel="Colour for the relationship"
+          />
+          {/* Keeps the original testid addressable — see EntryEditDialog. */}
+          <ColorHexAlias
             value={color}
             onChange={setColor}
             testId="relationships-entry-color"
-            ariaLabel="Colour for the relationship"
+            ariaLabel="Colour hex for the relationship"
           />
         </div>
 
