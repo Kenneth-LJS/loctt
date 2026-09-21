@@ -39,6 +39,7 @@ export {
   ProjectsConfigSchema,
 } from "./projects.js";
 export type {
+  ArchivedScope,
   BoardGrouping,
   BrokenSavedQuery,
   BuilderTree,
@@ -56,10 +57,12 @@ export type {
   SortDirection,
 } from "./query.js";
 export {
+  ArchivedScopeSchema,
   BoardGroupingSchema,
   BrokenSavedQuerySchema,
   BuilderTreeSchema,
   ComparisonOpSchema,
+  DEFAULT_ARCHIVED_SCOPE,
   LinkCountCallSchema,
   MigratedSavedQuerySchema,
   QueriesConfigSchema,

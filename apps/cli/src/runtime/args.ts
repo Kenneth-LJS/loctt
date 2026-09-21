@@ -17,6 +17,9 @@
  *   not coerced or treated as missing.
  */
 
+import type { ArchivedScope } from "@loctt/contracts";
+import { DEFAULT_ARCHIVED_SCOPE } from "@loctt/contracts";
+
 import { UsageError } from "./errors.js";
 
 /**
@@ -242,4 +245,29 @@ export function getNonNegativeIntArg(
     throw new UsageError(`${flag} must be a non-negative integer`);
   }
   return value;
+}
+
+/**
+ * The archived scope (K107) for a list command, from `--archived
+ * <active|archived|all>`. Bare `--archived` (no value) means `all` — the
+ * back-compat spelling from when `--archived` was a boolean "include
+ * archived" flag. `--all` is accepted as a deprecated alias for
+ * `--archived all` (the config-entity list commands used it). Absent →
+ * the default `active` (hide archived).
+ *
+ * An unrecognized value throws a UsageError rather than silently
+ * defaulting, so a typo (`--archived activ`) surfaces.
+ */
+export function parseArchivedScope(args: string[]): ArchivedScope {
+  const hasAll = args.includes("--all");
+  const raw = getArg(args, "--archived");
+  const bareArchived = raw === undefined && args.includes("--archived");
+
+  if (bareArchived || hasAll) return "all";
+  if (raw === undefined) return DEFAULT_ARCHIVED_SCOPE;
+  if (raw === "active" || raw === "archived" || raw === "all") return raw;
+  throw new UsageError(
+    `invalid value for --archived: ${JSON.stringify(raw)}. `
+    + `Expected one of: active, archived, all (or bare --archived for all).`,
+  );
 }

@@ -145,6 +145,7 @@ export {
 export {
   getLabelsConfigPath,
   LabelsConfigError,
+  applyArchivedScope,
   labelsConfigExists,
   loadLabelsConfig,
   parseLabelsConfig,

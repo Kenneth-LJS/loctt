@@ -1,4 +1,5 @@
-import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
+import type { ArchivedScope, QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
+import { DEFAULT_ARCHIVED_SCOPE } from "@loctt/contracts";
 
 import { QueriesConfigError } from "../config/queries.js";
 import { listComments } from "../task/comments.js";
@@ -28,13 +29,21 @@ export interface ListOptions {
   /** Maximum number of results. Defaults to {@link DEFAULT_LIST_LIMIT}. */
   readonly limit?: number;
   /**
-   * If true, include archived tasks in the results.
-   * If false (default), an `archived != true` filter is ANDed onto the
-   * effective query — unless the user-provided query already mentions
-   * `archived`, in which case the user's intent is preserved.
-   * Saved views (`view`) are never modified — they are respected as authored.
+   * The archived scope (K107). `active` (default) hides archived tasks by
+   * ANDing `archived != true` onto the effective query; `archived` shows
+   * ONLY archived (`archived = true`); `all` applies no archived filter.
+   *
+   * Precedence: when the user-provided query already mentions `archived`,
+   * the user's term wins and NO scope filter is injected — the scope
+   * effectively resolves to `all` for that call. When that happens under a
+   * non-`all` requested scope it is a CONFLICT, surfaced via
+   * {@link ListOptions.onArchivedConflict} rather than silently resolved.
+   *
+   * Saved views (`view`) are respected as authored — the scope is not
+   * injected into a view's own query here (a view carries its own scope
+   * once K102 lands; today a view's stored query decides).
    */
-  readonly includeArchived?: boolean;
+  readonly archivedScope?: ArchivedScope;
   /**
    * Project filter. When set, only tasks with this project key are
    * returned. Applied as a post-query filter against `frontmatter.project`
@@ -88,6 +97,16 @@ export interface ListTasksOptions {
    * problem. Ad hoc queries throw instead.
    */
   readonly onWarning?: (err: QueryValidationError) => void;
+  /**
+   * Called when the requested {@link ListOptions.archivedScope} conflicts
+   * with an explicit `archived` term in the user's query (e.g. scope
+   * `active` but the query says `archived = true`). The user's term wins
+   * (scope resolves to `all` for the call); this callback lets a surface
+   * warn that the flag was overridden rather than resolving it silently
+   * (K107). Not called when the scope is `all`, or when the query does not
+   * mention `archived`.
+   */
+  readonly onArchivedConflict?: (scope: ArchivedScope) => void;
 }
 
 /** Context provider for building EvalContext per task. */
@@ -287,13 +306,25 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     }
   }
 
-  // Hide archived tasks by default. Saved views are respected as authored,
-  // and explicit user queries that mention `archived` are left untouched.
-  if (!options.includeArchived && !usedView) {
-    if (!queryStr) {
-      queryStr = "archived != true";
-    } else if (!queryMentionsArchived(queryStr)) {
-      queryStr = `(${queryStr}) and archived != true`;
+  // Archived scope (K107). Saved views are respected as authored (the scope
+  // is not injected into a view's own query). For ad-hoc queries:
+  //  - `active`   → AND `archived != true` (hide archived) — the default.
+  //  - `archived` → AND `archived = true`  (only archived).
+  //  - `all`      → inject nothing.
+  // When the user's own query mentions `archived`, their term wins and
+  // nothing is injected; if the requested scope was not `all`, that is a
+  // conflict surfaced via `onArchivedConflict` (the flag was overridden).
+  const scope: ArchivedScope = options.archivedScope ?? DEFAULT_ARCHIVED_SCOPE;
+  if (!usedView && scope !== "all") {
+    const mentions = queryStr !== undefined && queryMentionsArchived(queryStr);
+    if (mentions) {
+      // User's term wins; report the conflict rather than double-filtering.
+      opts.onArchivedConflict?.(scope);
+    } else {
+      const term = scope === "active" ? "archived != true" : "archived = true";
+      queryStr = queryStr === undefined || queryStr === ""
+        ? term
+        : `(${queryStr}) and ${term}`;
     }
   }
 
