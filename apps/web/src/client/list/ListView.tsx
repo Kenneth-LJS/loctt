@@ -9,6 +9,7 @@ import {
   useProjects,
   useSprints,
   useUsers,
+  useViews,
 } from "../api/hooks/sidebarData.ts";
 import {
   describeBulkResult,
@@ -23,6 +24,7 @@ import { buildQueryString, DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFe
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { fieldView } from "../health/fieldHealth.ts";
+import { MAIN_CONTENT_ID } from "../shell/SkipLink.tsx";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import type { EstimationShape } from "../task/estimation.ts";
 import { estimationShape } from "../task/estimation.ts";
@@ -149,6 +151,11 @@ export function ListView() {
   // cells resolve milestone and sprint through their own columns.
   const milestones = useMilestones();
   const sprints = useSprints();
+  // VUE-22: the broken-view banner shows the YAML still on disk, and
+  // `rawText` is carried on the views config rather than on the tasks
+  // response. Same cached `["views"]` query the sidebar reads, so this
+  // adds no fetch.
+  const views = useViews();
   const workflow = useWorkflow();
   const info = useInfo();
   const userSettings = useUserSettings();
@@ -277,12 +284,21 @@ export function ListView() {
   // is what makes that visible rather than a silent widening.
   const missingView = pages[pages.length - 1]?.missing_view;
   // VUE-22: the URL named a saved view that is present in queries.yaml
-  // but whose query no longer parses. The server returns the parse error
-  // and its position rather than 500-ing or silently widening; this
-  // renders that as a deliberate error state (not an empty result) and
-  // offers to open the advanced editor pre-populated with the broken
-  // query so it can be repaired in place.
+  // but whose filters no longer validate. The server returns the parse
+  // error rather than 500-ing or silently widening; this renders that as
+  // a deliberate error state, not an empty result.
+  //
+  // K102 removed repair-in-place: the only client write path is a typed
+  // `EditViewRequest`, which cannot express arbitrary YAML. So the banner
+  // shows the bytes still on disk and points at the panel that offers the
+  // guarded Replace… flow — it no longer offers to "fix this in the
+  // editor", which seeded the advanced box from a `query` field the
+  // server has never sent.
   const brokenView = pages[pages.length - 1]?.broken_view;
+  // The raw YAML lives on the views config, not on the tasks response —
+  // `broken_view` is a per-request diagnostic, `broken` is the loader's
+  // record of the file. Matching by id is what ties the two together.
+  const brokenViewRaw = views.data?.broken?.find(b => b.id === brokenView?.id)?.rawText;
   // VUE-21: core raises a warning when a query names a field that no
   // longer exists, and the CLI and MCP both print it. The web dropped
   // it, so a saved view filtering on a deleted custom field answered
@@ -408,9 +424,28 @@ export function ListView() {
     if (table === null) return;
     const key = takeOpenedTask();
     if (key === null) return;
-    // Do not fight a focus the user has already placed since arriving
+    // Do not fight a focus the USER has already placed since arriving
     // back on the list.
-    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    //
+    // `#main-content` is not such a focus. A11Y-45 bullet 2 parks focus
+    // on the main landmark after every route change, and that handler
+    // runs on this same navigation — so by the time this effect sees
+    // `document.activeElement` it is the landmark, never `document.body`.
+    // Treating that as "the user placed it" is what made this restore
+    // dead code: the key was taken, the guard returned, and focus stayed
+    // at the top of the document — exactly what A11Y-9 bullet 5 forbids.
+    //
+    // The two rules are not in conflict, they are general and specific:
+    // A11Y-45 parks focus at the top of the new view when nothing better
+    // is known, and A11Y-9 knows something better for this one arrival.
+    // So the landmark counts as "unclaimed" here, alongside body and a
+    // detached/null activeElement.
+    const active = document.activeElement;
+    const unclaimed =
+      active === null
+      || active === document.body
+      || active.id === MAIN_CONTENT_ID;
+    if (!unclaimed) return;
     const anchor = table.querySelector<HTMLElement>(
       `[data-task-key="${escapeTaskKey(key)}"]`,
     );
@@ -795,30 +830,46 @@ export function ListView() {
             The saved view <code>{brokenView.name}</code> could
             not be run: its query no longer parses.
           </p>
-          <p className="mt-1">
+          {/* The loader's message. It names the offending position
+              itself — a character offset when it has one, otherwise the
+              failing path (`[0].op must be one of: …`), which is what a
+              shape failure can honestly point at. `position` is rendered
+              as well only when it exists; asserting it always does would
+              be asserting an optional field. */}
+          <p data-testid="broken-view-error" className="mt-1">
             {brokenView.error}
             {brokenView.position !== undefined
               ? <> (at position <span data-testid="broken-view-position">{brokenView.position}</span>)</>
               : null}
           </p>
-          <p className="mt-1 text-[0.7857rem] text-text-secondary">{brokenView.query}</p>
-          <button
-            type="button"
-            data-testid="broken-view-fix"
-            onClick={() => {
-              void navigate({
-                search: prev => ({
-                  ...prev,
-                  view: undefined,
-                  q: brokenView.query,
-                  edit: true,
-                }),
-              });
-            }}
-            className="mt-1 underline hover:text-text-primary"
+          {/* VUE-22 bullet 3: the entry's original YAML, so the text the
+              user wrote is visible and they can fix the file by hand and
+              keep it. This is the only surviving record of what they
+              meant — describing it without showing it is not actionable
+              (the same reason SavedViewsPanel renders `rawText`). */}
+          {brokenViewRaw !== undefined && (
+            <pre
+              data-testid="broken-view-raw"
+              className="m-0 mt-1 overflow-x-auto rounded bg-bg-muted px-2 py-1 font-mono text-[0.7857rem] text-text-secondary"
+            >
+              {brokenViewRaw}
+            </pre>
+          )}
+          {/* K102 removed repair-in-place, so this points at the one
+              surface that can actually act: Saved views, where Replace…
+              sits behind an explicit confirmation. The button this
+              replaced seeded the advanced editor from `broken_view.query`
+              — a field the server never sent — so it opened the editor
+              blank and silently dropped the user's YAML. */}
+          <Link
+            to="/settings/$section"
+            params={{ section: "saved-views" }}
+            hash={`row-${brokenView.id}`}
+            data-testid="broken-view-manage"
+            className="mt-1 inline-block underline hover:text-text-primary"
           >
-            Fix this view in the editor
-          </button>
+            Fix it in the file, or replace it in Saved views
+          </Link>
         </div>
       )}
       {missingView !== undefined && (

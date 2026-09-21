@@ -4785,15 +4785,26 @@ test.describe("VUE — saving a view (M1.3)", () => {
 
     await tracker.seed([{ title: "Alpha" }, { title: "Beta" }]);
 
-    // Append a view whose query will not parse — the case's own "hand
+    // Append a view whose FILTERS will not load — the case's own "hand
     // edit" of queries.yaml. It sits *after* the two default views, so
     // its blast radius (or lack of one) is visible against them.
+    //
+    // The break has to be one the LOADER rejects. This previously wrote
+    // `{kind: advanced, query: "status = = done"}`, which is a perfectly
+    // shape-valid advanced filter: `parseQueriesConfig` runs the filters
+    // through `FilterSchema` and never parses the DSL string, so that
+    // entry loaded into `queries` as healthy and nothing was ever marked
+    // broken. The DSL only fails later, when the view is run. A bad `op`
+    // on a simple filter is rejected by the schema, which is what puts
+    // the entry in `broken` with its `rawText` — the state this case is
+    // about.
     const queries = path.join(tracker.root, ".loctt", "config", "queries.yaml");
     const before = await readFile(queries, "utf8");
     await writeFile(
       queries,
       `${before.trimEnd()}\n  - id: 01M2BROKENVIEW0000000000001\n    name: Busted\n`
-      + `    filters:\n      - kind: advanced\n        query: "status = = done"\n`,
+      + `    filters:\n      - kind: simple\n        field: status\n        op: "= ="\n`
+      + `        values:\n          - done\n`,
       "utf8",
     );
 
@@ -4816,16 +4827,27 @@ test.describe("VUE — saving a view (M1.3)", () => {
     const banner = page.getByTestId("broken-view");
     await expect(banner).toBeVisible();
     await expect(banner).toContainText(/Busted/);
-    await expect(page.getByTestId("broken-view-position")).toBeVisible();
+    // The offending position, as the loader can honestly report it. A
+    // Zod shape failure has no character offset, so it names the failing
+    // path inside the message instead — `[0].op`, the first filter's
+    // operator. `broken-view-position` is the separate offset span and is
+    // rendered only when there IS one; requiring it here would assert an
+    // optional field rather than the case's "with the offending position".
+    await expect(page.getByTestId("broken-view-error")).toContainText("[0].op");
     // Not an empty result masquerading as "no matches".
     await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
 
-    // Bullet 3: the advanced editor opens pre-populated with the broken
-    // query so it can be repaired in place.
-    await page.getByTestId("broken-view-fix").click();
-    const dsl = page.getByTestId("dsl-input");
-    await expect(dsl).toBeVisible();
-    await expect(dsl).toHaveValue("status = = done");
+    // Bullet 3 (as amended by K102): the entry's original YAML is shown,
+    // so the text the user wrote is visible and they can fix the file by
+    // hand and keep it. Repair-in-place is gone — the only client write
+    // path is a typed `EditViewRequest`, which cannot express arbitrary
+    // YAML — so the banner shows the bytes and points at Saved views,
+    // where Replace… sits behind an explicit confirmation.
+    const raw = page.getByTestId("broken-view-raw");
+    await expect(raw).toBeVisible();
+    await expect(raw).toContainText("name: Busted");
+    await expect(raw).toContainText("op: = =");
+    await expect(page.getByTestId("broken-view-manage")).toBeVisible();
 
     expect(pageErrors).toEqual([]);
   });

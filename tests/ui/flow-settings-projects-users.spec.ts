@@ -31,9 +31,16 @@ import { expect, test } from "./fixtures/tracker.ts";
  * keeps this addressing the right one.
  *
  * Returns the item so a caller can assert on it (text, disabled) as well
- * as click it. The menu is left OPEN — callers either click the item or
- * assert and then move on, and the next `rowMenuItem` reopens from
- * scratch.
+ * as click it. A caller that only ASSERTS leaves the menu open, so this
+ * dismisses any menu already open before opening the one it was asked
+ * for. That is not tidiness — the portalled panel is `position: fixed`
+ * and sized to its content, and it lands directly over the rows beneath
+ * the one it belongs to: with ken's menu open, `elementFromPoint` at the
+ * next row's kebab returns ken's "Edit…" item, and a click on that kebab
+ * never lands. A real user's click there hits `Menu`'s outside-click
+ * handler and closes the menu, so Playwright's "wait until actionable"
+ * is the right model of a real second click only once the first menu is
+ * gone. Escape is the same close path without a stray click.
  */
 async function rowMenuItem(
   page: import("@playwright/test").Page,
@@ -42,7 +49,14 @@ async function rowMenuItem(
 ): Promise<import("@playwright/test").Locator> {
   const row = page.getByTestId(rowTestId);
   const kebab = row.getByRole("button", { name: /^Actions for / });
-  if ((await kebab.getAttribute("aria-expanded")) !== "true") await kebab.click();
+  if ((await kebab.getAttribute("aria-expanded")) !== "true") {
+    const openMenu = page.locator('[role="menu"]');
+    if (await openMenu.count() > 0) {
+      await page.keyboard.press("Escape");
+      await expect(openMenu).toHaveCount(0);
+    }
+    await kebab.click();
+  }
   return page.getByTestId(itemTestId);
 }
 
@@ -894,8 +908,23 @@ test.describe("PRU — the users panel", () => {
     const other = page.locator('[data-self="false"]').first();
     const otherId = (await other.getAttribute("data-testid"))?.replace("user-row-", "") ?? "";
     await rowAction(page, `user-row-${otherId}`, `user-archive-${otherId}`);
+
+    // The panel's scope (K107) defaults to `active`, so a user that really
+    // archived LEAVES this list — that departure is the outcome, and
+    // asserting `data-archived="true"` on the still-`active` row would be
+    // asserting a state the scope filter makes unobservable (it passed
+    // only by racing the refetch that removes the row).
+    await expect(page.getByTestId(`user-row-${otherId}`)).toHaveCount(0);
+
+    // Widening the scope shows the same row, now marked archived — which
+    // separates "archived" from "vanished / failed to render".
+    await page.getByTestId("users-archived-scope").selectOption("all");
     await expect(page.getByTestId(`user-row-${otherId}`))
       .toHaveAttribute("data-archived", "true");
+
+    // And the block on self still stands after a successful sibling
+    // archive, so the panel is not merely broken for everyone.
+    await expect(await rowMenuItem(page, `user-row-${selfId}`, `user-archive-${selfId}`)).toBeDisabled();
   });
 
   // @verifies PRU-23

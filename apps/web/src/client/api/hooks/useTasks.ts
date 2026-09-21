@@ -59,15 +59,29 @@ interface TasksPage {
   readonly missing_view?: string;
   /**
    * The saved view the URL asked for is present in `queries.yaml` but its
-   * query no longer parses (VUE-22 / P7). Unlike `missing_view`, the view
-   * is not gone — it is broken — so the surface shows the parse error at
-   * its position rather than a widened unfiltered result, and pre-fills
-   * the advanced editor with `query` so it can be repaired in place.
+   * filters no longer validate (VUE-22 / P7). Unlike `missing_view`, the
+   * view is not gone — it is broken — so the surface shows the parse
+   * error rather than a widened unfiltered result.
+   *
+   * This mirrors exactly what the route emits (`server.ts`, the
+   * `broken_view` spread): `id`, `name`, `summary`, `error`, and
+   * `position` only when the loader had one. It previously also declared
+   * a required `query`, which the server has never sent — the field read
+   * `undefined` at runtime while typechecking as a `string`, which is how
+   * the banner came to render an empty paragraph and hand `q: undefined`
+   * to the editor. `rawText` is deliberately NOT here: it lives on
+   * `/api/views`' `broken` entries, which is where a surface reads the
+   * bytes still on disk.
+   *
+   * `position` is a character offset and the loader only has one for a
+   * failure that carries it; a Zod shape failure names its path inside
+   * `error` instead (`[0].op must be one of: …`). So a surface must treat
+   * it as genuinely optional rather than assume every broken view has one.
    */
   readonly broken_view?: {
     readonly id: string;
     readonly name: string;
-    readonly query: string;
+    readonly summary?: string;
     readonly error: string;
     readonly position?: number;
   };

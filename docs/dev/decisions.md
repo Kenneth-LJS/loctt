@@ -14089,6 +14089,17 @@ it. Neither can happen by accident.
   showing the text. It now renders `rawText` and offers `Replace…`
   through the same guarded dialog — labelled "Replace…", not "Edit…",
   because that is what it does.
+
+*Correction (2026-09-22).* This entry originally implied the LIST's
+broken-view banner was untouched and correct. It was not. Its client type
+declared `broken_view.query` as a REQUIRED `string` that the server has
+never sent, so the banner rendered an empty paragraph and its "Fix this
+view in the editor" button opened the advanced editor with
+`q: undefined` — a blank box. That button was also a leftover of the
+repair-in-place flow this very entry removed. Fixed: the type matches the
+payload, the banner shows `rawText`, and it links to the guarded
+`Replace…` flow. See `known-gaps.md` for the full chain, including the
+spec fixture that was never actually broken and so masked all of it.
 - VUE-22 untouched: the broken row stays visible and actionable.
 
 **A green test was asserting the bug.** `Sidebar.test.tsx` contained

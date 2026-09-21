@@ -505,3 +505,81 @@ The six fixes in `A282` closed nine. What remains:
 
 So: **3 real defects, 3 product decisions, 2 flakes, 2 counted twice**
 (A11Y-16 runs per theme).
+
+
+## VUE-22 — the spec was testing a view that was never broken
+
+Found while closing the last three e2e failures (2026-09-22). Three
+layers of wrongness, each masking the next:
+
+**1. The test's fixture was not broken.** The spec hand-edited a view to
+`{kind: "advanced", query: "status = = done"}` and expected it to load as
+`broken`. It does not: `parseQueriesConfig` populates `broken` from
+**`FilterSchema` SHAPE validation**, and never parses the DSL. A
+shape-valid advanced filter holding malformed DSL loads as HEALTHY — the
+bad query only fails at RUN time. The fixture now uses a bad `op` on a
+simple filter, which the schema does reject.
+
+*This also corrects a claim I made earlier in this file:* I probed
+`/api/views` against a hand-broken tracker, saw `broken: ["Busted"]`, and
+concluded "the data reaches the client, so the fault is in the sidebar's
+rendering". My probe used a genuinely shape-invalid entry; the SPEC's did
+not. Both observations were right about their own fixture — I generalised
+mine onto the spec's without checking they were the same thing.
+
+**2. A client type was lying.** `broken_view.query` was declared
+`readonly query: string` — REQUIRED — in the hand-written client type,
+and the server **has never sent it** (it sends `id`, `name`, `summary`,
+`error`; verified at `server.ts:4248-4251`). So it typechecked as a
+`string` and read `undefined` at runtime: the banner rendered an empty
+paragraph, and its "Fix this view in the editor" button handed
+`q: undefined` to the advanced editor, opening it blank. A hand-written
+mirror of a server payload is exactly the hand-rolled-copy hazard that
+has now bitten four times this session, in a new disguise — the copy was
+of a SHAPE rather than a rule.
+
+**3. The banner never implemented the case's third bullet** (show the
+stored `rawText`), though `SavedViewsPanel` does it correctly.
+
+All three fixed client-side. The banner now renders `rawText` from the
+already-cached `["views"]` query and links to Saved views' guarded
+`Replace…` flow — which is functional, since `K102-broken-repair`
+Option A landed in `c2318872` and `editView`/`deleteView` resolve through
+`findViewOrBroken`. (The agent that did this work flagged that path as
+still broken; it was reading the decision entry's pre-build text rather
+than the code. Verified working on a real tracker.)
+
+## A11Y-9 and PRU-26 — both were the guard, not the feature
+
+**A11Y-9 (app bug, but not the reported one).** The reported cause — a
+`focusedTaskKey` ref dying on unmount, needing a sessionStorage bridge —
+was wrong: **that bridge already exists and works**, and a probe showed
+the key correctly stashed and consumed. The real fault was the restore
+effect's own guard, `if (activeElement !== null && activeElement !==
+body) return`. `useRouteAnnouncement` (A11Y-45) parks focus on
+`#main-content` after every route change, including this one, so
+`activeElement` was the landmark and never `body` — the guard read that
+as "the user placed focus" and stood down, having already consumed the
+key. A11Y-45 and A11Y-9 are general-vs-specific rather than in conflict;
+the landmark now counts as unclaimed.
+
+**PRU-26 (test bug, two of them).** Not the `disabled` fix. A trace showed
+one user's open menu sitting directly over the next user's kebab —
+`elementFromPoint` returned the wrong item. The `rowMenuItem` helper's
+docstring claimed "the next call reopens from scratch", true before K106
+portalled the panel to `document.body` and false after; it now dismisses
+an open menu first. That exposed a second: the spec asserted
+`data-archived="true"` on the row, but the panel's scope defaults to
+`active`, so an archived user LEAVES the list — it only ever passed by
+racing the refetch.
+
+## A red-proof can produce a FALSE GREEN over a stale bundle
+
+While red-proving A11Y-9, the agent's first attempt showed the test still
+passing with the fix removed. Cause: `npm run build` had failed on an
+unused-import error, so the spec ran the PREVIOUS bundle. The proof was
+meaningless.
+
+**Rule:** an e2e red-proof must check the BUILD's exit status, not just
+the test result. A green test over a stale bundle proves nothing, and
+looks exactly like a test that does not work.
