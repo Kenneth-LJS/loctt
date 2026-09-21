@@ -27,7 +27,7 @@ import {
   exportTasksToCSV,
   exportTasksToJSON,
   filterForExport,
-  getCurrentUser,
+  filtersToScannableText,  getCurrentUser,
   listTasks,
   loadAllTasksDetailed,
   loadArchivedGuardConfigs,
@@ -238,10 +238,10 @@ export const TOOLS: readonly ToolDef[] = [
       const warnings: string[] = [];
       // CMT-10: load comment mentions only when the query references them.
       const listViewQuery = view !== undefined && queriesConfig !== undefined
-        ? resolveView(queriesConfig, view)?.query
-        : undefined;
+        ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+        : [];
       const listCtx = await resolveCommentMentionsContext(
-        locttDir, tasks, buildListContext(tasks), [baseQuery, listViewQuery],
+        locttDir, tasks, buildListContext(tasks), [baseQuery, ...listViewQuery],
       );
       const result = listTasks({
         tasks,
@@ -355,10 +355,10 @@ export const TOOLS: readonly ToolDef[] = [
       const warnings: string[] = [];
       // CMT-10: gate the comment-mention scan on the query, as list_tasks does.
       const exportViewQuery = view !== undefined && queriesConfig !== undefined
-        ? resolveView(queriesConfig, view)?.query
-        : undefined;
+        ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+        : [];
       const exportCtx = await resolveCommentMentionsContext(
-        locttDir, tasks, buildListContext(tasks), [baseQuery, exportViewQuery],
+        locttDir, tasks, buildListContext(tasks), [baseQuery, ...exportViewQuery],
       );
       const result = listTasks({
         tasks,

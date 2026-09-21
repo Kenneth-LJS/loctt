@@ -343,7 +343,11 @@ export { tokenize, TokenizeError } from "./query/index.js";
 // The single tokenizer-checked DSL atom quoter. Exported so every
 // producer — including the web server, whose private copy under-quotes
 // grammar-colliding bare values — can share one round-trip-safe quoter.
-export { dslAtom } from "./query/index.js";
+export { dslAtom, queryNodeToDsl } from "./query/index.js";
+// K102: a saved view stores an ordered filter list; these turn it into
+// something runnable (an in-memory AST), readable (a display summary),
+// or scannable, and normalize it for storage (spacing only).
+export { FilterError, filtersToNode, filtersToScannableText, filtersToSummary, filterToNode, filterToSummary, normalizeFilter, normalizeFilters } from "./query/index.js";
 export { QUERYABLE_FIELDS, QueryValidationError, validateQuery } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";

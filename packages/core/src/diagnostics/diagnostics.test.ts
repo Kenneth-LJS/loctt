@@ -171,35 +171,48 @@ describe("runDoctor", () => {
     expect(checks.find(c => c.name === "list-view.yaml references")).toBeUndefined();
   });
 
-  it("warns when a saved view had its conditions derived from the query (migrated)", async () => {
-    // Red-proof: before the migration path, loadQueriesConfig threw on a
-    // conditions-less entry and this check reported an error, not a warn.
+  // K102 removed the `query`/`conditions` derivation path along with the
+  // `migrated` signal that reported it. There is no migration anymore: a
+  // legacy `query`-only entry (no `filters`) is an unrecognized-key
+  // failure at the object-fatal loader schema (`.strict()`), not a
+  // per-view degradation — so it now surfaces as a queries.yaml PARSE
+  // ERROR, not a warn. Confirmed directly against
+  // `parseQueriesConfig`: it throws `queries[0] has unrecognized key(s):
+  // "query"` for exactly this fixture. Recording this here instead of
+  // deleting the case outright, since "a legacy file now hard-fails
+  // instead of warning" is a real behaviour change future readers of this
+  // file should not have to rediscover.
+  it("reports a parse error for a legacy query-only entry (no filters) — no migration path anymore", async () => {
     const { writeFile } = await import("node:fs/promises");
     const { getQueriesConfigPath, resolveLocttDir } = await import("../paths/index.js");
     await initLoctt(root);
     const locttDir = resolveLocttDir(root);
-    // A pre-`conditions` (legacy) entry: query, no conditions block.
+    // A pre-K102 (legacy) entry: `query`, no `filters` array. `filters` is
+    // the only stored form now, so this key is simply unrecognized.
     await writeFile(
       getQueriesConfigPath(locttDir),
       `queries:\n  - id: 01HQ00000000000000000LEGACY\n    name: legacy\n    query: status = backlog\n`,
       "utf-8",
     );
     const checks = await runDoctor(root);
-    const q = checks.find(c => c.name === "queries.yaml" && c.status === "warn");
-    expect(q?.message).toContain("derived from their query");
-    expect(q?.message).toContain("legacy");
-    // A migrated view is recoverable, so it must not be an error.
-    expect(checks.find(c => c.name === "queries.yaml" && c.status === "error")).toBeUndefined();
+    const q = checks.find(c => c.name === "queries.yaml");
+    expect(q?.status).toBe("error");
+    expect(q?.message).toContain("parse error");
   });
 
-  it("warns when a saved view is broken (neither query nor conditions usable)", async () => {
+  it("warns when a saved view's filters are unreadable (per-view degradation)", async () => {
+    // Per north-star principle 5: one entry whose `filters` do not
+    // validate must not blank the whole catalog. Unlike the legacy
+    // `query`-only case above, an unrecognized *value* inside a
+    // present-but-broken `filters` array degrades that one entry to
+    // `broken` while the file still loads.
     const { writeFile } = await import("node:fs/promises");
     const { getQueriesConfigPath, resolveLocttDir } = await import("../paths/index.js");
     await initLoctt(root);
     const locttDir = resolveLocttDir(root);
     await writeFile(
       getQueriesConfigPath(locttDir),
-      `queries:\n  - id: 01HQ000000000000000DBLBAD\n    name: double-broken\n    query: "status =="\n    conditions:\n      kind: not-a-real-kind\n`,
+      `queries:\n  - id: 01HQ000000000000000DBLBAD\n    name: double-broken\n    filters:\n      - kind: not-a-real-kind\n`,
       "utf-8",
     );
     const checks = await runDoctor(root);

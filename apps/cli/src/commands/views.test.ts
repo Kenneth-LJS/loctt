@@ -8,16 +8,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { run } from "./views.js";
 
 /**
- * @verifies Stage-3 CLI parity for structured saved-view conditions —
+ * @verifies K102 CLI parity for the ordered `filters[]` list —
  * "a capability in core is not done until CLI and MCP have it".
  *
- * A view created through the CLI (DSL-in via `--query`) must land in
- * queries.yaml with a populated structured `conditions` tree, exactly as
- * a web-authored view does, because the stored schema requires it and all
- * three surfaces must produce the same shape. The CLI passes the raw DSL
- * to core's `createView`, which derives+validates the conditions; these
- * tests prove that path is actually reached and that a garbage DSL is
- * rejected rather than stored.
+ * A saved view no longer stores a `query` DSL string or a derived
+ * `conditions` tree (that premise is deleted by K102). It stores an
+ * ORDERED `filters[]` array: `--filter` authors a SIMPLE filter (no query
+ * text at all — it stays editable as dropdown rows in the web picker),
+ * `--query` authors an ADVANCED filter (raw DSL), and the two are
+ * REPEATABLE and interleave in the order typed. These tests prove the CLI
+ * actually reaches core's `createView` with that shape, in that order,
+ * and that a garbage `--query` is rejected rather than stored.
  */
 describe("CLI saved-view conditions parity", () => {
   let root: string;
@@ -32,32 +33,51 @@ describe("CLI saved-view conditions parity", () => {
     vi.restoreAllMocks();
   });
 
-  it("create --query stores a populated membership `conditions` tree and round-trips the query", async () => {
-    await run(["views", "create", "open-work", "--query", "status in (backlog, in_progress)"], root);
+  it("create --filter stores a simple filter carrying no query key", async () => {
+    await run(["views", "create", "open-work", "--filter", "status = backlog,in_progress"], root);
 
     const config = await loadQueriesConfig(resolveLocttDir(root));
     const view = config.queries.find(q => q.name === "open-work");
     expect(view).toBeDefined();
 
-    // The parity requirement: conditions is populated and structured (a
-    // membership leaf), not merely a query string. This is the assertion
-    // the red-proof breaks.
-    expect(view!.conditions).toEqual({
-      kind: "leaf",
-      field: "status",
-      op: "in",
-      value: {
-        type: "list",
-        values: [
-          { type: "string", value: "backlog" },
-          { type: "string", value: "in_progress" },
-        ],
-      },
-    });
+    expect(view!.filters).toEqual([
+      { kind: "simple", field: "status", op: "=", values: ["backlog", "in_progress"] },
+    ]);
+    // A simple filter carries no query text at all.
+    expect(view!.filters[0]).not.toHaveProperty("query");
+  });
 
-    // The stored `query` is the spacing-normalized regeneration of the
-    // membership form — `in (...)`, not `= a` — so the DSL round-trips.
-    expect(view!.query).toBe("status in (backlog, in_progress)");
+  it("create --query stores an advanced filter with the spacing-normalized DSL", async () => {
+    await run(["views", "create", "membership", "--query", "status in (backlog, in_progress)"], root);
+
+    const config = await loadQueriesConfig(resolveLocttDir(root));
+    const view = config.queries.find(q => q.name === "membership");
+    expect(view).toBeDefined();
+
+    expect(view!.filters).toEqual([
+      { kind: "advanced", query: "status in (backlog, in_progress)" },
+    ]);
+  });
+
+  it("mixed --filter/--query/--filter stores exactly three filters, kinds in argv order", async () => {
+    await run([
+      "views", "create", "mixed",
+      "--filter", "status = backlog",
+      "--query", "priority = high",
+      "--filter", "assignee is empty",
+    ], root);
+
+    const config = await loadQueriesConfig(resolveLocttDir(root));
+    const view = config.queries.find(q => q.name === "mixed");
+    expect(view).toBeDefined();
+
+    expect(view!.filters).toHaveLength(3);
+    expect(view!.filters.map(f => f.kind)).toEqual(["simple", "advanced", "simple"]);
+    expect(view!.filters).toEqual([
+      { kind: "simple", field: "status", op: "=", values: ["backlog"] },
+      { kind: "advanced", query: "priority = high" },
+      { kind: "simple", field: "assignee", op: "is empty", values: [] },
+    ]);
   });
 
   it("rejects an unparseable --query (no view written)", async () => {

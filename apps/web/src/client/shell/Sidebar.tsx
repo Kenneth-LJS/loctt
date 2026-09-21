@@ -1,4 +1,4 @@
-import type { LabelDef, MilestoneDef, ProjectDef, SavedQuery, SidebarGroupId, SprintDef, UserSettings } from "@loctt/contracts";
+import type { LabelDef, MilestoneDef, ProjectDef, SidebarGroupId, SprintDef, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { createContext, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useRef, useState } from "react";
@@ -30,7 +30,7 @@ import { readSidebarGroups, resolveSidebarOrder } from "../settings/sidebarGroup
 import { SidebarGroupsPanel } from "../settings/SidebarGroupsPanel.tsx";
 import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
-import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
+import { type BrokenViewContext, ViewFormDialog, type ViewFormTarget } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 import { Chip } from "../ui/Chip.tsx";
 import { Icon, type IconName } from "../ui/Icon.tsx";
@@ -1261,18 +1261,32 @@ function SavedFiltersGroup({
   // group host Edit… and Delete… launched from a row's kebab as well as
   // the "+ New filter…" create.
   //
-  // Edit accepts a `SavedQuery` or the `{id,name,query}` picked from a
+  // Edit accepts a `SavedQuery` or an entry picked from a
   // `BrokenSavedQuery` (VUE-22's fix path) — the two are not assignable to
   // one another, so the edit target is stored as the minimal shape
-  // `ViewFormDialog` actually reads. `conditions` is carried when present
-  // (a valid view) so the dialog seeds the visual builder from structure;
-  // a broken view omits it and the dialog opens Advanced on the raw query.
-  type EditTarget = Pick<SavedQuery, "id" | "name" | "query"> & {
-    readonly conditions?: SavedQuery["conditions"];
-  };
+  // `ViewFormDialog` actually reads (K102: id + name + the ordered
+  // `filters`, plus the view's archived scope and icon so an edit never
+  // drops them).
+  //
+  // A BROKEN view's stored filters did not validate, so there is nothing
+  // faithful to seed: the picker opens EMPTY. That much is a deliberate
+  // K102 consequence — the dialog has no raw-DSL mode, and showing
+  // filters we could not load would be inventing them.
+  //
+  // What does NOT follow is that Save may then write that empty list
+  // over the entry. The broken entry's full original YAML survives on
+  // disk in `rawText` and is re-emitted verbatim by every unrelated
+  // write (P-11 / K28 / Phase-Z-C2); a plain `editView` from here
+  // replaced it with `filters: []`, so the single control offered to
+  // repair the entry was the only thing that could destroy it. The edit
+  // dialog therefore carries the broken context (`brokenContext` below):
+  // it shows the parse error and the on-disk text, and holds Save inert
+  // until the user explicitly confirms the replacement. Discarding
+  // recoverable text stays possible — it is just never accidental.
+  type EditTarget = ViewFormTarget;
   const [dialog, setDialog] = useState<
     | { mode: "create" }
-    | { mode: "edit"; view: EditTarget }
+    | { mode: "edit"; view: EditTarget; broken?: BrokenViewContext }
     | { mode: "delete"; view: EditTarget }
     | null
   >(null);
@@ -1492,14 +1506,32 @@ function SavedFiltersGroup({
               size="sm"
               label={`Actions for saved filter "${v.name}"`}
               actions={[
-                // VUE-22's fix path: Edit… opens the editor pre-populated
-                // from the BrokenSavedQuery. Its raw `{id,name,query}` is
-                // not a SavedQuery (a broken entry has no `sort`/`display`
-                // and cannot be one), so only those three fields are passed.
-                { label: "Edit…", testId: "broken-view-edit", onSelect: () => { setDialog({ mode: "edit", view: { id: v.id, name: v.name, query: v.query } }); } },
+                // VUE-22's fix path: Edit… opens the dialog on the broken
+                // entry's id + name with NO filters (K102 — its stored
+                // filters did not load, so there is nothing faithful to
+                // seed), AND with the broken context so the dialog can
+                // show the parse error plus the YAML still on disk and
+                // require an explicit confirmation before it replaces it.
+                // Passing `broken` is what stops Edit → Save from
+                // silently overwriting `rawText` with an empty list.
+                {
+                  label: "Edit…",
+                  testId: "broken-view-edit",
+                  onSelect: () => {
+                    setDialog({
+                      mode: "edit",
+                      view: { id: v.id, name: v.name, filters: [] },
+                      broken: {
+                        error: v.error,
+                        rawText: v.rawText,
+                        ...(v.position !== undefined ? { position: v.position } : {}),
+                      },
+                    });
+                  },
+                },
                 // No Pin: a broken view is being fixed, not promoted. Delete
                 // removes it from queries.yaml like any other.
-                { label: "Delete…", testId: "broken-view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: { id: v.id, name: v.name, query: v.query } }); } },
+                { label: "Delete…", testId: "broken-view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: { id: v.id, name: v.name, filters: [] } }); } },
               ]}
             />
           </div>
@@ -1551,13 +1583,17 @@ function SavedFiltersGroup({
           ViewFormDialog (existing ⇒ edit, VUE-40/VUE-41); delete routes
           through DeleteViewDialog. */}
       {dialog?.mode === "create" ? (
-        // Create mode: empty name + query with the advanced query editor,
-        // so a view created from the sidebar carries a typed query (VUE-40)
-        // rather than the fixed `archived != true` of the old dialog.
+        // Create mode: empty name + one blank simple-filter row, so a
+        // view created from the sidebar starts in the human-readable
+        // picker (K102) rather than in a DSL box.
         <ViewFormDialog onClose={() => { setDialog(null); }} />
       ) : null}
       {dialog?.mode === "edit" ? (
-        <ViewFormDialog existing={dialog.view} onClose={() => { setDialog(null); }} />
+        <ViewFormDialog
+          existing={dialog.view}
+          {...(dialog.broken !== undefined ? { broken: dialog.broken } : {})}
+          onClose={() => { setDialog(null); }}
+        />
       ) : null}
       {dialog?.mode === "delete" ? (
         <DeleteViewDialog

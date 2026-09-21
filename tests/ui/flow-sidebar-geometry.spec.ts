@@ -172,9 +172,9 @@ test.describe("SBG — sidebar geometry (real browser)", () => {
     await tracker.seed([{ title: "Alpha task" }]);
     await page.goto(`${tracker.baseURL}/list`);
 
-    // The default tracker's queries.yaml ships two user views —
-    // `recent-open` and `blocked` — each rendered as a saved-filter row
-    // with a kebab labelled `Actions for saved filter "<name>"`.
+    // The default tracker's queries.yaml ships one user view,
+    // `recent-open`, rendered as a saved-filter row with a kebab
+    // labelled `Actions for saved filter "<name>"`.
     const kebab = page.getByRole("button", {
       name: 'Actions for saved filter "recent-open"',
     });

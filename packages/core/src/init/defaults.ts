@@ -1,9 +1,8 @@
-import type { BuilderTree, SavedQuery } from "@loctt/contracts";
+import type { SavedQuery } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import { serializeQueriesConfig } from "../config/queries.js";
 import { slugifyName } from "../projects/slug.js";
-import { queryToConditions } from "../query/builderTree.js";
 
 /**
  * Default workflow.yaml content seeded on `loctt init`.
@@ -113,44 +112,24 @@ timeline:
 }
 
 /**
- * Derive the structured `conditions` for a seeded view from its DSL. The
- * DSL is the authored intent; `conditions` are generated from it (and, via
- * `serializeQueriesConfig`, the written `query` is re-derived from the
- * conditions — so the two are guaranteed to agree). A parse failure here
- * is a bug in the seed DSL, not user input, so it throws.
+ * Default queries.yaml content.
  *
- * The `blocked` view uses `has_link("is_blocked_by")`, which the extended
- * BuilderTree represents structurally — this is what proves the extension.
+ * K102 (Ken): *"we don't ship a demo."* `loctt init` seeds NO demo
+ * content — the former `blocked` view (which shipped broken) is gone, and
+ * what remains is one sensible default, not a showcase.
+ *
+ * `recent-open` carries a single simple filter. It does NOT carry an
+ * `archived != true` filter: hiding archived rows is the VIEW'S SCOPE
+ * (K107), which defaults to `active`, not a filter term the user has to
+ * see and cannot safely delete.
  */
-function seedConditions(dsl: string): BuilderTree {
-  const res = queryToConditions(dsl);
-  if (!res.ok) {
-    throw new Error(`default view DSL does not parse: ${dsl} — ${res.reason}`);
-  }
-  return res.tree;
-}
-
-/** Default queries.yaml content. */
 export function defaultQueriesYaml(): string {
-  const recentOpenDsl = "archived != true and status != done";
-  const blockedDsl = 'archived != true and has_link("is_blocked_by")';
   const queries: SavedQuery[] = [
     {
       id: ulid(),
       name: "recent-open",
-      query: recentOpenDsl,
-      conditions: seedConditions(recentOpenDsl),
+      filters: [{ kind: "simple", field: "status", op: "!=", values: ["done"] }],
       sort: [{ field: "updated_at", direction: "desc" }],
-    },
-    {
-      id: ulid(),
-      name: "blocked",
-      query: blockedDsl,
-      conditions: seedConditions(blockedDsl),
-      sort: [
-        { field: "priority", direction: "desc" },
-        { field: "updated_at", direction: "desc" },
-      ],
     },
   ];
   return serializeQueriesConfig({ queries });

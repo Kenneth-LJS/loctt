@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { initLoctt, lookupByKey, resolveLocttDir, serializeQueriesConfig } from "@loctt/core";
-import { queryToConditions } from "@loctt/core/query/builderTree.js";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { executeTool,getTools } from "./index.js";
@@ -808,17 +807,121 @@ describe("MCP executeTool", () => {
   });
 });
 
+/**
+ * @verifies K102 on the MCP surface — a saved view is an ORDERED filter
+ * list, and that list is what crosses the tool boundary in both
+ * directions.
+ *
+ * The old surface took a `query` DSL string and handed back a derived
+ * `conditions` tree. Both are gone. What replaces them has two properties
+ * an agent depends on and neither the core tests nor the tool's own types
+ * can assert from here: that the array survives the round trip in the
+ * order it was authored (never merged, never reordered), and that the
+ * display-only `summary` is additive — it must not have crept back in as
+ * a storable field under a new name.
+ */
+describe("saved views — K102 filter list over MCP", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-mcp-k102-"));
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // Deliberately authored so a merge-and-canonicalize step would reorder
+  // it: an advanced filter sits BETWEEN two simple ones. Any
+  // implementation that grouped simple filters together, or folded the
+  // list into one DSL string, would not return this array unchanged.
+  // The advanced fragment is written already-normalized (no redundant
+  // outer parens, single spaces) so this fixture asserts ORDER only. The
+  // spacing normalization core applies is its own contract and is tested
+  // there; encoding it here would just make this test brittle to it.
+  const FILTERS = [
+    { kind: "simple", field: "task_type", op: "=", values: ["bug"] },
+    { kind: "advanced", query: "priority = high or priority = critical" },
+    { kind: "simple", field: "status", op: "!=", values: ["done"] },
+  ];
+
+  it("create_view round-trips the filter list in the authored order", async () => {
+    const created = await executeTool(root, "create_view", {
+      name: "interleaved",
+      filters: FILTERS,
+    });
+    expect(created.isError).toBeUndefined();
+    const view = JSON.parse(created.content[0]?.text ?? "") as {
+      id: string; filters: unknown;
+    };
+    expect(view.filters).toEqual(FILTERS);
+
+    // And the same list comes back out of list_views, not a re-derived one.
+    const list = await executeTool(root, "list_views", {});
+    const entries = JSON.parse(list.content[0]?.text ?? "") as Array<{
+      id: string; filters?: unknown; summary?: string;
+    }>;
+    const listed = entries.find(e => e.id === view.id);
+    expect(listed).toBeDefined();
+    expect(listed!.filters).toEqual(FILTERS);
+  });
+
+  it("list_views carries a display-only summary and no query/conditions field", async () => {
+    await executeTool(root, "create_view", { name: "shaped", filters: FILTERS });
+    const list = await executeTool(root, "list_views", {});
+    const entry = (JSON.parse(list.content[0]?.text ?? "") as Array<Record<string, unknown>>)[0];
+    expect(entry).toBeDefined();
+    // Present, non-empty, and a string an agent can show a user.
+    expect(typeof entry!["summary"]).toBe("string");
+    expect(entry!["summary"] as string).not.toHaveLength(0);
+    // The two fields K102 removed must not come back. A view has no
+    // canonical DSL and no condition tree; an agent that saw either
+    // would reasonably try to edit through it.
+    expect(entry).not.toHaveProperty("query");
+    expect(entry).not.toHaveProperty("conditions");
+  });
+
+  it("edit_view replaces the whole list; omitting filters leaves them untouched", async () => {
+    const created = await executeTool(root, "create_view", {
+      name: "before",
+      filters: FILTERS,
+    });
+    const id = (JSON.parse(created.content[0]?.text ?? "") as { id: string }).id;
+
+    // Omitted → untouched. (A handler that defaulted absent filters to []
+    // would silently empty the view, which matches everything.)
+    const renamed = await executeTool(root, "edit_view", { view: id, name: "after" });
+    expect(renamed.isError).toBeUndefined();
+    const afterRename = JSON.parse(renamed.content[0]?.text ?? "") as {
+      name: string; filters: unknown;
+    };
+    expect(afterRename.name).toBe("after");
+    expect(afterRename.filters).toEqual(FILTERS);
+
+    // Supplied → replaces the WHOLE list, not appended or merged into it.
+    const replacement = [
+      { kind: "simple", field: "status", op: "=", values: ["backlog"] },
+    ];
+    const edited = await executeTool(root, "edit_view", {
+      view: id,
+      filters: replacement,
+    });
+    const afterEdit = JSON.parse(edited.content[0]?.text ?? "") as { filters: unknown };
+    expect(afterEdit.filters).toEqual(replacement);
+  });
+});
+
 describe("list_tasks — stale saved view warning", () => {
   let root: string;
 
-  // A saved view now carries structured `conditions` (a required field);
-  // derive them from the DSL exactly as core does on write, so the fixture
-  // stays valid without hand-authoring the tree shape.
+  // K102: a saved view stores an ordered `filters[]` list — no `query`
+  // string and no `conditions` tree. The fixture needs a view whose
+  // filters reference a field that does not exist, and the shortest
+  // honest way to author arbitrary DSL is a single `advanced` filter.
   function queriesYaml(id: string, name: string, query: string): string {
-    const parsed = queryToConditions(query);
-    if (!parsed.ok) throw new Error(`fixture query does not parse: ${query}`);
     return serializeQueriesConfig({
-      queries: [{ id, name, query, conditions: parsed.tree }],
+      queries: [{ id, name, filters: [{ kind: "advanced", query }] }],
     });
   }
 

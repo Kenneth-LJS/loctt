@@ -174,11 +174,33 @@ ships; do not fold the multi-sort bullets back here.*
 - Other saved views continue to work.
 
 ### VUE-22 · M4 · major · P7
-**A saved view whose query no longer parses after a hand edit is flagged, not hidden.**
+**A saved view whose filters no longer load after a hand edit is flagged, not hidden.**
 - The sidebar still lists the view, marked as broken.
 - Clicking it shows the parse error with the offending position rather than an empty list.
-- The advanced editor opens pre-populated with the broken query so it can be repaired in place.
+- The broken entry's original YAML (`rawText`) is shown to the user, so the
+  text they wrote is visible and they can fix the file by hand and keep it.
 - Other views and the rest of the sidebar render normally.
+
+> **Amended (K102, 2026-09-21).** This case previously read "the advanced
+> editor opens pre-populated with the broken query so it can be repaired
+> in place". That is no longer satisfiable and was amended rather than
+> left to be silently contradicted by the code: the only client write
+> path is a typed `EditViewRequest`, which cannot express arbitrary YAML,
+> so repair-in-place would require a second unvalidated author of
+> `queries.yaml`. Showing the text and letting the user fix the file (or
+> deliberately replace the entry — VUE-42) replaces it. See the
+> `K102-broken` entry in `decisions.md`.
+
+### VUE-42 · M4 · major · P7
+**Replacing a broken saved view cannot happen by accident.** From a broken
+view's row in the sidebar or the Saved-views panel:
+- The action is labelled "Replace…", not "Edit…", because replacement is
+  what it does.
+- The dialog shows the parse error and the on-disk YAML read-only, above
+  the (empty) filter picker.
+- Save is INERT until an explicit confirmation is ticked; with it
+  unticked, no write reaches the server at all.
+- Declining or closing the dialog leaves the stored `rawText` byte-identical.
 
 ### VUE-23 · M4 · minor · P9
 **A very long DSL query stays editable.** A 2,000-character query.

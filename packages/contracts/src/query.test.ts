@@ -1,89 +1,178 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AdvancedFilterSchema,
   BrokenSavedQuerySchema,
-  BuilderTreeSchema,
+  FilterSchema,
   SavedQuerySchema,
+  SimpleFilterSchema,
 } from "./query.js";
 
-/** A minimal valid conditions tree, reused across cases. */
-const leafConditions = {
-  kind: "leaf" as const,
-  field: "status",
-  op: "=" as const,
-  value: { type: "string" as const, value: "done" },
-};
-
-describe("SavedQuerySchema requires conditions", () => {
-  it("rejects a saved view with no conditions", () => {
-    const res = SavedQuerySchema.safeParse({
-      id: "01ID",
-      name: "v",
-      query: "status = done",
-      // conditions omitted
-    });
-    expect(res.success).toBe(false);
-  });
-
-  it("accepts a saved view carrying a conditions tree", () => {
-    const res = SavedQuerySchema.safeParse({
-      id: "01ID",
-      name: "v",
-      query: "status = done",
-      conditions: leafConditions,
+describe("SimpleFilterSchema", () => {
+  it("accepts a well-formed simple filter", () => {
+    const res = SimpleFilterSchema.safeParse({
+      kind: "simple",
+      field: "status",
+      op: "=",
+      values: ["done"],
     });
     expect(res.success).toBe(true);
   });
 
-  it("rejects a conditions tree with an unknown node kind (strict discriminant)", () => {
-    const res = SavedQuerySchema.safeParse({
-      id: "01ID",
-      name: "v",
+  it("allows an empty values array (is empty / is not empty operators)", () => {
+    const res = SimpleFilterSchema.safeParse({
+      kind: "simple",
+      field: "due_date",
+      op: "is empty",
+      values: [],
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("rejects a stray `query` key (strict — cannot carry both shapes)", () => {
+    const res = SimpleFilterSchema.safeParse({
+      kind: "simple",
+      field: "status",
+      op: "=",
+      values: ["done"],
       query: "status = done",
-      conditions: { kind: "frobnik", foo: 1 },
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it("rejects an unknown comparison operator", () => {
+    const res = SimpleFilterSchema.safeParse({
+      kind: "simple",
+      field: "status",
+      op: "===",
+      values: ["done"],
     });
     expect(res.success).toBe(false);
   });
 });
 
-describe("BuilderTreeSchema mirrors the extended core type", () => {
-  it("validates a nested group of leaves", () => {
-    const tree = {
-      kind: "group",
-      op: "and",
-      children: [
-        leafConditions,
-        { kind: "group", op: "or", children: [leafConditions] },
-      ],
-    };
-    expect(BuilderTreeSchema.safeParse(tree).success).toBe(true);
+describe("AdvancedFilterSchema", () => {
+  it("accepts a well-formed advanced filter", () => {
+    const res = AdvancedFilterSchema.safeParse({
+      kind: "advanced",
+      query: "status = done",
+    });
+    expect(res.success).toBe(true);
   });
 
-  it("validates the extended kinds: not / has_link / link_count leaf", () => {
-    expect(BuilderTreeSchema.safeParse({ kind: "not", child: leafConditions }).success).toBe(true);
-    expect(BuilderTreeSchema.safeParse({ kind: "has_link", linkKind: "blocks", target: "T-10" }).success).toBe(true);
-    expect(BuilderTreeSchema.safeParse({
-      kind: "leaf",
-      field: "link_count",
-      op: ">",
-      value: { type: "number", value: 2 },
-      call: { name: "link_count", kind: "child" },
-    }).success).toBe(true);
+  it("rejects an empty query string", () => {
+    const res = AdvancedFilterSchema.safeParse({ kind: "advanced", query: "" });
+    expect(res.success).toBe(false);
   });
 
-  it("validates a date_fn value with an offset", () => {
-    expect(BuilderTreeSchema.safeParse({
-      kind: "leaf",
-      field: "due_date",
-      op: ">=",
-      value: { type: "date_fn", fn: "endOfWeek", offset: { sign: 1, n: 1, unit: "w" } },
-    }).success).toBe(true);
+  it("rejects field/op/values on an advanced filter (strict)", () => {
+    const res = AdvancedFilterSchema.safeParse({
+      kind: "advanced",
+      query: "status = done",
+      field: "status",
+      op: "=",
+      values: ["done"],
+    });
+    expect(res.success).toBe(false);
+  });
+});
+
+describe("FilterSchema discriminates simple vs advanced", () => {
+  it("accepts a simple filter via the union", () => {
+    const res = FilterSchema.safeParse({
+      kind: "simple",
+      field: "priority",
+      op: "in",
+      values: ["high", "urgent"],
+    });
+    expect(res.success).toBe(true);
   });
 
-  it("rejects an unknown comparison operator", () => {
-    expect(BuilderTreeSchema.safeParse({
-      kind: "leaf", field: "status", op: "===", value: { type: "string", value: "x" },
-    }).success).toBe(false);
+  it("accepts an advanced filter via the union", () => {
+    const res = FilterSchema.safeParse({ kind: "advanced", query: 'text ~ "init"' });
+    expect(res.success).toBe(true);
+  });
+
+  it("rejects an unknown discriminant", () => {
+    const res = FilterSchema.safeParse({ kind: "bogus", field: "status" });
+    expect(res.success).toBe(false);
+  });
+
+  it("rejects a filter mixing both shapes (no field on advanced, no query on simple)", () => {
+    const res = FilterSchema.safeParse({
+      kind: "advanced",
+      query: "status = done",
+      field: "status",
+    });
+    expect(res.success).toBe(false);
+  });
+});
+
+describe("SavedQuerySchema", () => {
+  const baseFilters = [
+    { kind: "simple" as const, field: "status", op: "=" as const, values: ["done"] },
+  ];
+
+  it("accepts the new filters[] shape", () => {
+    const res = SavedQuerySchema.safeParse({
+      id: "01ID",
+      name: "v",
+      filters: baseFilters,
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("accepts an empty filters array (a view matching everything in scope)", () => {
+    const res = SavedQuerySchema.safeParse({
+      id: "01ID",
+      name: "v",
+      filters: [],
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("accepts a mix of simple and advanced filters, order preserved", () => {
+    const filters = [
+      { kind: "simple" as const, field: "status", op: "=" as const, values: ["done"] },
+      { kind: "advanced" as const, query: 'text ~ "init"' },
+    ];
+    const res = SavedQuerySchema.safeParse({ id: "01ID", name: "v", filters });
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.filters).toEqual(filters);
+    }
+  });
+
+  it("rejects a saved view with no filters key at all", () => {
+    const res = SavedQuerySchema.safeParse({ id: "01ID", name: "v" });
+    expect(res.success).toBe(false);
+  });
+
+  it("rejects the old `query` DSL string shape (removed by K102)", () => {
+    const res = SavedQuerySchema.safeParse({
+      id: "01ID",
+      name: "v",
+      query: "status = done",
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it("rejects the old `conditions` BuilderTree shape (removed by K102)", () => {
+    const res = SavedQuerySchema.safeParse({
+      id: "01ID",
+      name: "v",
+      conditions: { kind: "leaf", field: "status", op: "=", value: { type: "string", value: "done" } },
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it("rejects a filters array containing an invalid filter", () => {
+    const res = SavedQuerySchema.safeParse({
+      id: "01ID",
+      name: "v",
+      filters: [{ kind: "bogus" }],
+    });
+    expect(res.success).toBe(false);
   });
 });
 
@@ -96,22 +185,16 @@ describe("BrokenSavedQuerySchema rawText passthrough (K28 / Phase Z C2)", () => 
     const rawText = [
       "id: 01BAD",
       "name: broken",
-      "query: status ==",
+      "filters:",
+      "  - kind: bogus",
       "some_future_field: kept",
-      "conditions:",
-      "  kind: leaf",
-      "  field: status",
-      "  op: '='",
-      "  value:",
-      "    type: string",
-      "    value: x",
     ].join("\n");
 
     const parsed = BrokenSavedQuerySchema.safeParse({
       id: "01BAD",
       name: "broken",
-      query: "status ==",
-      error: "parse error",
+      summary: "(unreadable filters)",
+      error: "filters: invalid discriminator",
       index: 0,
       rawText,
     });
@@ -126,9 +209,21 @@ describe("BrokenSavedQuerySchema rawText passthrough (K28 / Phase Z C2)", () => 
     const parsed = BrokenSavedQuerySchema.safeParse({
       id: "01BAD",
       name: "broken",
+      summary: "(unreadable filters)",
+      error: "parse error",
+      index: 0,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects a broken entry still carrying the old `query` field (replaced by `summary`)", () => {
+    const parsed = BrokenSavedQuerySchema.safeParse({
+      id: "01BAD",
+      name: "broken",
       query: "status ==",
       error: "parse error",
       index: 0,
+      rawText: "id: 01BAD\nname: broken\nquery: status ==",
     });
     expect(parsed.success).toBe(false);
   });

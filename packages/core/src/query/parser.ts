@@ -10,12 +10,33 @@ export type ComparisonOp =
   // is uniform.
   | "is empty" | "is not empty";
 
+/**
+ * How many explicit `(` … `)` pairs the author wrote directly around a
+ * node, recorded by {@link parseQuery} and re-emitted by `queryNodeToDsl`.
+ *
+ * Ken, K102: *"i think we should store parens as needed to prevent
+ * ambiguity or whatever, but if the user adds more parens for clarity, we
+ * should keep."* Precedence alone cannot honour the second half — a
+ * clarity paren leaves no trace in a bare AST, so `(a or b)` came back as
+ * `a or b`. The count lives on the node so the serializer can emit
+ * `max(authored, precedence-requires)` pairs.
+ *
+ * PRESENTATION METADATA ONLY. Nothing in the evaluator or the validator
+ * reads it — both switch on `node.type` alone — and dropping it changes
+ * no result. Optional (and `| undefined`, for
+ * `exactOptionalPropertyTypes`) so hand-built ASTs elsewhere stay valid.
+ */
+export interface Parenthesized {
+  /** Authored `(` … `)` pairs around this node; absent means none. */
+  parenthesized?: number | undefined;
+}
+
 export type QueryNode =
   // `position` is the offset of the field token, carried so semantic
   // validation (validateQuery) can point at the offending field the
   // same way TokenizeError/ParseError point at syntax problems.
   // Optional so hand-built ASTs in tests don't have to fake offsets.
-  | {
+  | ({
       type: "comparison";
       field: string;
       op: ComparisonOp;
@@ -28,7 +49,7 @@ export type QueryNode =
        * ignores this reads no value rather than a wrong one.
        */
       call?: { readonly name: "link_count"; readonly kind?: string };
-    }
+    } & Parenthesized)
   /**
    * `has_link()` / `has_link(kind)` / `has_link(kind, target)`.
    *
@@ -43,10 +64,10 @@ export type QueryNode =
    * sub-field names, so a workspace may name a relationship `type`,
    * `target` or `count` without colliding with the grammar.
    */
-  | { type: "has_link"; kind?: string; target?: string; position?: number }
-  | { type: "and"; left: QueryNode; right: QueryNode }
-  | { type: "or"; left: QueryNode; right: QueryNode }
-  | { type: "not"; operand: QueryNode };
+  | ({ type: "has_link"; kind?: string; target?: string; position?: number } & Parenthesized)
+  | ({ type: "and"; left: QueryNode; right: QueryNode } & Parenthesized)
+  | ({ type: "or"; left: QueryNode; right: QueryNode } & Parenthesized)
+  | ({ type: "not"; operand: QueryNode } & Parenthesized);
 
 export type QueryValue =
   | { type: "string"; value: string }
@@ -173,7 +194,10 @@ class Parser {
       this.advance();
       const node = this.parseOr();
       this.expect("RPAREN");
-      return node;
+      // Record the authored pair so the serializer can re-emit a paren the
+      // user wrote for clarity (see {@link Parenthesized}). Nested pairs
+      // accumulate, so `((x))` counts two and round-trips as written.
+      return { ...node, parenthesized: (node.parenthesized ?? 0) + 1 };
     }
 
     // Must be a comparison: field op value, or a function call.

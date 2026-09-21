@@ -831,7 +831,7 @@ test.describe("SPR — sprints overview", () => {
   });
 
   // @verifies SPR-40
-  test("SPR-40: the overview hides archived sprints until the show-archived toggle is on", async ({
+  test("SPR-40: the overview hides archived sprints until the archived-scope control is set to show them", async ({
     tracker,
     page,
   }) => {
@@ -852,7 +852,7 @@ test.describe("SPR — sprints overview", () => {
     const yamlBefore = await readFile(
       path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",
     );
-    await page.getByTestId("sprints-show-archived").check();
+    await page.getByTestId("sprints-archived-scope").selectOption("all");
     await expect(page.getByTestId(`sprint-column-${retiredId}`)).toBeVisible();
     const yamlAfter = await readFile(
       path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",

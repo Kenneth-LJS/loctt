@@ -22,9 +22,9 @@
       "types": "./dist/users/sidebarGroups.d.ts",
       "import": "./dist/users/sidebarGroups.js"
     },
-    "./query/builderTree.js": {
-      "types": "./dist/query/builderTree.d.ts",
-      "import": "./dist/query/builderTree.js"
+    "./query/filters.js": {
+      "types": "./dist/query/filters.d.ts",
+      "import": "./dist/query/filters.js"
     },
     "./query/parser.js": {
       "types": "./dist/query/parser.d.ts",

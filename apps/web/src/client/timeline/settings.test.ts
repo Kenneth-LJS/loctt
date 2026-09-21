@@ -43,7 +43,7 @@ function wf(timeline?: WorkflowConfig["timeline"], relationships: { key: string 
 }
 
 function view(display: SavedQuery["display"]): SavedQuery {
-  return { id: "v1", name: "V", query: "true", display } as SavedQuery;
+  return { id: "v1", name: "V", filters: [], display };
 }
 
 describe("resolveZoom", () => {

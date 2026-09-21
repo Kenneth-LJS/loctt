@@ -69,12 +69,11 @@ let SETTINGS: Record<string, unknown> = {};
 /** Saved views returned by /api/views, per-test (SHL-32). */
 // `conditions` optional: a valid view carries it (edit seeds the builder
 // from it); fixtures that only exercise listing/pin/delete may omit it.
-let VIEWS: { id: string; name: string; query: string; archived?: boolean; conditions?: unknown }[] = [
+let VIEWS: { id: string; name: string; filters: unknown[]; archived?: boolean }[] = [
   {
     id: "v_mine",
     name: "My open bugs",
-    query: "status = backlog",
-    conditions: { kind: "leaf", field: "status", op: "=", value: { type: "string", value: "backlog" } },
+    filters: [{ kind: "simple", field: "status", op: "in", values: ["backlog"] }],
   },
 ];
 
@@ -82,7 +81,8 @@ let VIEWS: { id: string; name: string; query: string; archived?: boolean; condit
 let BROKEN_VIEWS: {
   id: string;
   name: string;
-  query: string;
+  /** K102: a broken entry carries a display-only `summary`, not a query. */
+  summary: string;
   error: string;
   index: number;
   rawText: string;
@@ -268,8 +268,7 @@ afterEach(() => {
   VIEWS = [{
     id: "v_mine",
     name: "My open bugs",
-    query: "status = backlog",
-    conditions: { kind: "leaf", field: "status", op: "=", value: { type: "string", value: "backlog" } },
+    filters: [{ kind: "simple", field: "status", op: "in", values: ["backlog"] }],
   }];
   BROKEN_VIEWS = [];
   SETTINGS = {};
@@ -832,15 +831,15 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
   it("explains the removal inline, naming the view, without an alert", async () => {
     // First load: the view exists and is remembered.
     VIEWS = [
-      { id: "v_mine", name: "My open bugs", query: "x" },
-      { id: "v_gone", name: "Release blockers", query: "y" },
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_gone", name: "Release blockers", filters: [] },
     ];
     await renderSidebarAt("/list");
     expect(await screen.findByText("Release blockers")).toBeTruthy();
     cleanup();
 
     // The user edits queries.yaml and refreshes.
-    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    VIEWS = [{ id: "v_mine", name: "My open bugs", filters: [] }];
     await renderSidebarAt("/list");
 
     const notice = await screen.findByText(/Release blockers.*was removed/);
@@ -856,14 +855,14 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
 
   it("stays dismissed once dismissed", async () => {
     VIEWS = [
-      { id: "v_mine", name: "My open bugs", query: "x" },
-      { id: "v_gone", name: "Release blockers", query: "y" },
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_gone", name: "Release blockers", filters: [] },
     ];
     await renderSidebarAt("/list");
     await screen.findByText("Release blockers");
     cleanup();
 
-    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    VIEWS = [{ id: "v_mine", name: "My open bugs", filters: [] }];
     await renderSidebarAt("/list");
     const dismiss = await screen.findByLabelText(/Dismiss: Release blockers/);
     fireEvent.click(dismiss);
@@ -879,14 +878,14 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
 
   it("keeps explaining across a second refresh, until dismissed", async () => {
     VIEWS = [
-      { id: "v_mine", name: "My open bugs", query: "x" },
-      { id: "v_gone", name: "Release blockers", query: "y" },
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_gone", name: "Release blockers", filters: [] },
     ];
     await renderSidebarAt("/list");
     await screen.findByText("Release blockers");
     cleanup();
 
-    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    VIEWS = [{ id: "v_mine", name: "My open bugs", filters: [] }];
     await renderSidebarAt("/list");
     expect(await screen.findByText(/Release blockers.*was removed/)).toBeTruthy();
     cleanup();
@@ -900,7 +899,7 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
   });
 
   it("says nothing on a first-ever load, when nothing is remembered", async () => {
-    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    VIEWS = [{ id: "v_mine", name: "My open bugs", filters: [] }];
     await renderSidebarAt("/list");
     await screen.findByText("My open bugs");
     expect(screen.queryByText(/was removed/)).toBeNull();
@@ -911,8 +910,8 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
     // as removed because a request errored would be the same ERR-1
     // conflation one layer up.
     VIEWS = [
-      { id: "v_mine", name: "My open bugs", query: "x" },
-      { id: "v_gone", name: "Release blockers", query: "y" },
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_gone", name: "Release blockers", filters: [] },
     ];
     await renderSidebarAt("/list");
     await screen.findByText("Release blockers");
@@ -986,21 +985,22 @@ describe("Sidebar groups customization (SHL-45)", () => {
     // Enabled: no `disabled` attribute (the old stub hardcoded one).
     expect(btn.hasAttribute("disabled")).toBe(false);
     fireEvent.click(btn);
-    // VUE-40 + Stage 2: the sidebar entry opens the same create dialog the
-    // panel uses — now the VISUAL builder (Ken's ruling), NOT a raw DSL
-    // box and NOT the read-only "Save as view" dialog that hard-codes
-    // `archived != true`.
+    // VUE-40 + K102: the sidebar entry opens the same create dialog the
+    // panel uses — the human-readable FILTER PICKER, NOT a raw DSL box,
+    // NOT the AST builder, and NOT the read-only "Save as view" dialog
+    // that hard-codes `archived != true`.
     await screen.findByTestId("view-create-dialog");
-    screen.getByTestId("query-builder");
+    screen.getByTestId("view-filter-field-0");
+    expect(screen.queryByTestId("query-builder")).toBeNull();
     expect(screen.queryByTestId("advanced-query-editor")).toBeNull();
   });
 
-  it("sidebar + New filter POSTs structured conditions, not the fixed archived filter", async () => {
+  it("sidebar + New filter POSTs an ordered filters list, not the fixed archived filter", async () => {
     // @verifies VUE-40 — the sidebar bullet the case leads with. The old
     // wiring opened SaveViewDialog with `search={}`, so every view saved
     // from the sidebar was `archived != true` and the user could not build
-    // a filter. Stage 2: the sidebar reaches the builder and POSTs the
-    // structured conditions authored there.
+    // a filter. K102: the sidebar reaches the filter picker and POSTs the
+    // ordered filters authored there.
     await renderSidebarAt("/list");
     const posts: { url: string; body: unknown }[] = [];
     const realFetch = globalThis.fetch;
@@ -1009,7 +1009,7 @@ describe("Sidebar groups customization (SHL-45)", () => {
       if ((init?.method ?? "GET") === "POST" && url.includes("/api/views")) {
         const raw = init?.body;
         posts.push({ url, body: typeof raw === "string" ? JSON.parse(raw) : undefined });
-        return Promise.resolve(new Response(JSON.stringify({ id: "vNew", name: "n", query: "q" }), {
+        return Promise.resolve(new Response(JSON.stringify({ id: "vNew", name: "n", filters: [] }), {
           status: 201, headers: { "Content-Type": "application/json" },
         }));
       }
@@ -1017,19 +1017,19 @@ describe("Sidebar groups customization (SHL-45)", () => {
     });
 
     fireEvent.click(screen.getByTestId("sidebar-new-filter"));
-    await screen.findByTestId("query-builder");
+    await screen.findByTestId("view-filter-field-0");
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "My typed view" } });
-    fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(screen.getByTestId("qb-field"), { target: { value: "title" } });
-    fireEvent.change(screen.getByTestId("qb-op"), { target: { value: "=" } });
-    fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "bug" } });
+    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "title" } });
+    fireEvent.change(screen.getByTestId("view-filter-value-0"), { target: { value: "bug" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
     await waitFor(() => { expect(posts.length).toBe(1); });
-    const body = posts[0]?.body as { name: string; conditions?: unknown };
+    const body = posts[0]?.body as { name: string; filters?: unknown };
     expect(body.name).toBe("My typed view");
-    expect(body.conditions).toBeDefined();
+    expect(body.filters).toEqual([
+      { kind: "simple", field: "title", op: "~", values: ["bug"] },
+    ]);
     // Never the SaveViewDialog default derived from an empty search.
     expect(JSON.stringify(posts[0]?.body)).not.toContain("archived != true");
   });
@@ -1065,7 +1065,7 @@ describe("Sidebar saved-filter row actions", () => {
         calls.push({ method, url, body: typeof raw === "string" ? JSON.parse(raw) : undefined });
         if (url.includes("/api/query/validate")) return Promise.resolve(json({ valid: true }));
         if (url.includes("/api/views/") && method === "PUT") {
-          return Promise.resolve(json({ id: "v_mine", name: "n", query: "q" }));
+          return Promise.resolve(json({ id: "v_mine", name: "n", filters: [] }));
         }
         if (url.includes("/api/views/") && method === "DELETE") {
           const id = decodeURIComponent(url.split("/api/views/")[1]?.split("?")[0] ?? "");
@@ -1105,13 +1105,12 @@ describe("Sidebar saved-filter row actions", () => {
     fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
     fireEvent.click(screen.getByTestId("view-edit"));
     await screen.findByTestId("view-edit-dialog");
-    // Stage 2: a valid view opens the builder, seeded from its conditions
-    // (not the DSL string). Prefilled name, and the builder shows `status`.
-    await screen.findByTestId("query-builder");
+    // K102: a valid view opens as DROPDOWN ROWS seeded from its stored
+    // filters. Prefilled name, and the first row shows `status`.
+    await screen.findByTestId("view-filter-field-0");
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("My open bugs");
-    await waitFor(() => {
-      expect(screen.getByTestId<HTMLSelectElement>("qb-field").value).toBe("status");
-    });
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
+    expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
@@ -1119,10 +1118,12 @@ describe("Sidebar saved-filter row actions", () => {
     await waitFor(() => {
       const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/views/v_mine"));
       expect(puts.length).toBe(1);
-      const body = puts[0]?.body as { name: string; conditions?: unknown };
+      const body = puts[0]?.body as { name: string; filters?: unknown };
       expect(body.name).toBe("Renamed");
-      // The edit carries structured conditions, not a DSL string.
-      expect(body.conditions).toBeDefined();
+      // The edit carries the ordered filters, unchanged by the rename.
+      expect(body.filters).toEqual([
+        { kind: "simple", field: "status", op: "in", values: ["backlog"] },
+      ]);
     });
   });
 
@@ -1204,7 +1205,7 @@ describe("Sidebar saved-filter row actions", () => {
 
   it("a broken-view row offers Edit but not Pin", async () => {
     BROKEN_VIEWS = [
-      { id: "v_bad", name: "Bad view", query: "not a query", error: "parse error", index: 1, rawText: "id: v_bad" },
+      { id: "v_bad", name: "Bad view", summary: "not a query", error: "parse error", index: 1, rawText: "id: v_bad" },
     ];
     await renderSidebarAt("/list");
     await screen.findByText("Bad view");
@@ -1217,26 +1218,108 @@ describe("Sidebar saved-filter row actions", () => {
     expect(screen.queryByText("Unpin")).toBeNull();
   });
 
-  it("Edit on a broken row opens the dialog prefilled from the broken entry", async () => {
-    BROKEN_VIEWS = [
-      { id: "v_bad", name: "Bad view", query: "broken dsl", error: "parse error", index: 1, rawText: "id: v_bad" },
-    ];
+  /**
+   * The broken-view repair path, and the data-loss defect it used to be.
+   *
+   * A broken entry's full original YAML survives on disk in `rawText` and
+   * is re-emitted verbatim by every unrelated write (P-11 / K28 /
+   * Phase-Z-C2). Edit… seeds an EMPTY picker (K102 — the stored filters
+   * did not load, so there is nothing faithful to seed), and Save used to
+   * fire a plain `editView`, replacing that preserved text with
+   * `filters: []`. The one control offered to repair the entry was the
+   * only thing in the product that could destroy it.
+   *
+   * The test below that previously asserted "opens on an empty picker"
+   * was GREEN while that held, because an empty picker is exactly what
+   * the destructive path looks like from the outside. It was asserting
+   * the bug. It is replaced by these three.
+   */
+  const BROKEN_ONE = {
+    id: "v_bad",
+    name: "Bad view",
+    summary: "broken dsl",
+    error: "filters[0].op is not a comparison operator",
+    index: 1,
+    rawText: "id: v_bad\nname: Bad view\nfilters:\n  - kind: simple\n    field: status\n    op: WAT\n    values: [done]\nsort:\n  - field: priority\n    dir: desc\n",
+  };
+
+  /**
+   * Renders, then opens the broken row's Edit dialog, capturing writes in
+   * between. `captureWrites` must come AFTER `renderSidebarAt` — the
+   * latter installs its own fetch stub and would drop the spy.
+   */
+  async function openBrokenEdit(): Promise<{ calls: { method: string; url: string; body: unknown }[] }> {
     await renderSidebarAt("/list");
     await screen.findByText("Bad view");
-
+    const captured = captureWrites();
     fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
     fireEvent.click(screen.getByTestId("broken-view-edit"));
     await screen.findByTestId("view-edit-dialog");
+    await screen.findByTestId("view-filter-field-0");
+    return captured;
+  }
+
+  // @verifies VUE-42
+  it("Edit on a broken row will NOT save an empty filter list over the preserved text", async () => {
+    // THE regression guard for the data-loss defect. Everything a user
+    // could do to trigger the old overwrite — open Edit, click Save —
+    // must issue NO write at all while the replacement is unconfirmed.
+    BROKEN_VIEWS = [BROKEN_ONE];
+    const { calls } = await openBrokenEdit();
+
+    const save = screen.getByTestId<HTMLButtonElement>("view-form-save");
+    expect(save.disabled).toBe(true);
+    fireEvent.click(save);
+
+    // Give any in-flight mutation a chance to land before asserting none
+    // did — a false green here would be indistinguishable from the fix.
+    await waitFor(() => { expect(screen.getByTestId("view-edit-dialog")).toBeTruthy(); });
+    expect(calls.filter(c => c.url.includes("/api/views/"))).toEqual([]);
+  });
+
+  // @verifies VUE-22, VUE-42
+  it("Edit on a broken row shows the parse error and the YAML still on disk", async () => {
+    // The user hand-edited the file; the only honest thing to show them
+    // is what they wrote plus why it did not load. An empty picker alone
+    // implies the view had no filters — it had filters that did not load.
+    BROKEN_VIEWS = [BROKEN_ONE];
+    await openBrokenEdit();
+
+    expect(screen.getByTestId("view-form-broken-error").textContent)
+      .toContain("filters[0].op is not a comparison operator");
+    expect(screen.getByTestId<HTMLTextAreaElement>("view-form-broken-raw").value)
+      .toBe(BROKEN_ONE.rawText);
+    // Still the empty picker for the rebuild (K102), and still no DSL box.
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("Bad view");
-    expect(screen.getByTestId<HTMLTextAreaElement>("dsl-input").value).toBe("broken dsl");
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("");
+    expect(screen.queryByTestId("dsl-input")).toBeNull();
+  });
+
+  it("replaces a broken view only after the user confirms the text will be discarded", async () => {
+    // Discarding recoverable text stays possible — it must just be a
+    // deliberate act. Ticking the confirmation is that act.
+    BROKEN_VIEWS = [BROKEN_ONE];
+    const { calls } = await openBrokenEdit();
+
+    fireEvent.click(screen.getByTestId("view-form-confirm-replace"));
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLButtonElement>("view-form-save").disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByTestId("view-form-save"));
+
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/views/v_bad"));
+      expect(puts.length).toBe(1);
+      expect(puts[0]?.body).toMatchObject({ name: "Bad view", filters: [] });
+    });
   });
 
   it("hides an archived view from the sidebar", async () => {
     // @verifies VUE-25 (sidebar half) — archived views stay in queries.yaml
     // but must not appear in the sidebar, like every other group.
     VIEWS = [
-      { id: "v_mine", name: "My open bugs", query: "x" },
-      { id: "v_old", name: "Archived thing", query: "y", archived: true },
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_old", name: "Archived thing", filters: [], archived: true },
     ];
     await renderSidebarAt("/list");
     await screen.findByText("My open bugs");

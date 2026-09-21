@@ -1,11 +1,9 @@
 import type { WorkflowConfig } from "@loctt/contracts";
-import type { BuilderTree } from "@loctt/core/query/builderTree.js";
-// The per-file subpath, NOT the barrel: the barrel drags node:path/sharp
-// into the browser bundle (see dslToSearch.ts's parser.js import). The
-// component derives the live `q` preview from the same core serializer
-// the DSL editor round-trips through, so builder and text share one
-// grammar rather than two that agree by coincidence.
-import { builderTreeToQuery } from "@loctt/core/query/builderTree.js";
+// `ComparisonOp`/`QueryValue` come from core by per-file subpath, NOT the
+// barrel: the barrel drags node:path/sharp into the browser bundle (see
+// dslToSearch.ts's parser.js import, A37). The tree model itself is
+// web-client-local — K102 removed it from core along with the saved-view
+// storage that once used it; see builderTree.ts's header.
 import type { ComparisonOp, QueryValue } from "@loctt/core/query/parser.js";
 import { useMemo } from "react";
 
@@ -16,6 +14,11 @@ import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import type { BuilderTree } from "./builderTree.ts";
+// The component derives the live `q` preview from the same serializer the
+// surface applies through, so the preview and the applied query share one
+// grammar rather than two that agree by coincidence.
+import { builderTreeToQuery } from "./builderTree.ts";
 
 /**
  * The visual query builder's FORM (K83, step 2) — a controlled renderer

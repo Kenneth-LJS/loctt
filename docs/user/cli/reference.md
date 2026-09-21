@@ -400,26 +400,82 @@ List saved views, or manage them with a subcommand.
 | Subcommand | Synopsis | Description |
 |---|---|---|
 | `list` | `loctt views list [--archived <active\|archived\|all>]` | List saved views (the default). `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). Broken views are always shown. |
-| `create` | `loctt views create <name> --query "<dsl>" [--sort …]` | Create a view. |
-| `edit` | `loctt views edit <name\|id> [--name] [--query] [--sort]` | Change a view. `--sort -` clears the sort. |
+| `create` | `loctt views create <name> [--filter "…"]… [--query "<dsl>"]… [--sort …] [--archived <scope>] [--icon <icon>]` | Create a view. |
+| `edit` | `loctt views edit <name\|id> [--name <new>] [--filter "…"]… [--query "<dsl>"]… [--sort …\|-] [--archived <scope>] [--icon <icon>]` | Change a view. `--sort -` clears the sort. |
 | `archive` / `unarchive` | `loctt views archive <name\|id>` | Hide or restore a view. |
 | `delete` | `loctt views delete <name\|id> [--yes]` | Permanently delete a view. |
 
-`--sort` is a comma-separated list of `field[:asc|:desc]` (a bare field
-sorts ascending).
+`list` prints one line per view, `<name>  <summary>`, with a
+`[sort: …]` suffix when the view has a sort and ` (archived)` when it is
+archived. The summary is a readable rendering of the view's filters — it
+is for display only, and is not something you can paste back in as input.
+
+#### Building a view's filters
+
+A view is an **ordered list of filters that all AND together**. You build
+that list with `--filter` and `--query`:
+
+- `--filter "field op value"` — one simple filter row.
+- `--query "<dsl>"` — one advanced filter holding a DSL fragment.
+
+**Both flags are repeatable, and they interleave in the order you type
+them.** That order is exactly what gets stored — the list is never merged
+into a single query string and never reordered.
+
+Prefer `--filter`. A simple filter reopens as an editable dropdown row in
+the web UI; a `--query` filter shows there as opaque DSL. Use `--query`
+only for what a simple filter cannot express — parentheses, `or`, or mixed
+boolean nesting.
+
+`--filter` grammar is `"field op value"`. Operators are `=`, `!=`, `<`,
+`<=`, `>`, `>=`, `~`, `in`, `not in`, `is empty`, `is not empty`. Values
+are comma-separated for multi-value filters, and the postfix operators take
+no value at all:
 
 ```bash
-loctt views create "My open bugs" --query "type = bug and status != done" --sort priority:desc
+loctt views create "My open bugs" \
+  --filter "task_type = bug" \
+  --filter "status != done" \
+  --query "(due_date < today or priority = high)" \
+  --sort priority:desc
 ```
 ```
 Created view "My open bugs" (id 01J…)
 ```
 
-A view stores its filter as structured *conditions*, and the `query`
-string you see on `views list` is regenerated from them — it is
-spacing-normalized, not a verbatim copy of what you typed. So
-`--query "status=a"` is stored and shown back as `status = a`. An
-unparseable `--query` is rejected on write, not saved.
+```bash
+loctt views create "Triage" \
+  --filter "status = backlog,in_progress" \
+  --filter "assignee is empty"
+```
+
+`--sort` is a comma-separated list of `field[:asc|:desc]` (a bare field
+sorts ascending). On `edit`, `--sort -` clears the sort.
+
+On `edit`, supplying any `--filter`/`--query` **replaces the view's whole
+filter list** — there is no partial patch, because the order is meaningful.
+Pass the full set you want. Supplying neither flag leaves the existing
+filters untouched.
+
+A `--query` fragment is validated on write, so an unparseable one is
+rejected rather than saved. It is stored **spacing**-normalized:
+`--query "status=a"` comes back as `status = a`. Only spacing changes —
+nothing else about the text is rewritten.
+
+#### `--archived` means two different things
+
+The same flag name carries a different meaning per subcommand:
+
+| Subcommand | Meaning |
+|---|---|
+| `views list --archived <scope>` | Scopes **the listing** — which saved views are shown (`active` hides archived views, `archived` shows only those, `all` shows both). |
+| `views create --archived <scope>` / `views edit --archived <scope>` | Sets **the view's own scope** — a stored field on the view controlling whether *the view itself* looks at active, archived, or all tasks when it runs. It is **not** a filter. |
+
+So `loctt views create "Done work" --archived all` creates a view that
+searches archived tasks too; it says nothing about whether that view is
+hidden from `views list`. Use `views archive` for that.
+
+`--icon <icon>` sets an optional display icon on the view.
 
 ---
 

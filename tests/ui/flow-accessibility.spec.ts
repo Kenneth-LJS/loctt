@@ -1373,24 +1373,26 @@ test.describe("A11Y — state exposure", () => {
     await collapse.click();
     await expect(collapse).toHaveAttribute("aria-expanded", "true");
 
-    // "Show archived". Second bullet: it "announces its current state,
-    // so a user cannot be unknowingly filtered" — the case's point is
-    // that a user must be able to tell whether archived rows are being
-    // hidden from them.
+    // The archived-scope control (K107 replaced the "Show archived"
+    // checkbox with a tri-state select). Second bullet: it "announces
+    // its current state, so a user cannot be unknowingly filtered" — the
+    // case's point is that a user must be able to tell whether archived
+    // rows are being hidden from them.
     //
     // Third bullet: "a toggle rendered as a checkbox announces
-    // checked". `getByRole("checkbox")` resolves the browser's own
-    // semantics, and `toBeChecked` reads the state a reader would
-    // announce.
-    const archived = page.getByRole("checkbox", { name: /Show archived/i });
-    await expect(archived).not.toBeChecked();
-    await archived.check();
-    await expect(archived).toBeChecked();
+    // checked" — for the select, the equivalent is that its accessible
+    // value reflects the current scope. `getByRole("combobox")` resolves
+    // the browser's own semantics for a `<select>`.
+    await page.getByTestId("view-actions-menu").click();
+    const archived = page.getByRole("combobox", { name: "Archived scope" });
+    await expect(archived).toHaveValue("active");
+    await archived.selectOption("all");
+    await expect(archived).toHaveValue("all");
 
-    // And the state is real, not decorative: checking it changed the
-    // query. Without this the test would pass against a checkbox that
+    // And the state is real, not decorative: changing it changed the
+    // query. Without this the test would pass against a control that
     // announces correctly and filters nothing.
-    await expect(page).toHaveURL(/archived=true/);
+    await expect(page).toHaveURL(/archived=all/);
   });
 
   // @verifies A11Y-31
@@ -2780,7 +2782,7 @@ test.describe("A11Y — colour and focus visibility", () => {
       { title: "Archived task", fields: { status: "backlog", priority: "low" } },
     ]);
     await tracker.run(["archive", String(archived)]);
-    await page.goto(`${tracker.baseURL}/list?archived=true`);
+    await page.goto(`${tracker.baseURL}/list?archived=all`);
     await expect(page.getByText("Live task")).toBeVisible();
 
     const liveRow = page.locator("tbody tr").filter({ hasText: String(live) });

@@ -2,7 +2,6 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { serializeQueriesConfig } from "@loctt/core";
-import { queryToConditions } from "@loctt/core/query/builderTree.js";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../adapters/cli-spawn.js";
@@ -161,35 +160,32 @@ describe("documented DSL constructs (spawned binary)", () => {
 
 /**
  * Two views sharing a name, plus an archived one. Built through core's
- * serializer so each entry carries the structured `conditions` the schema
- * now requires (an entry without it no longer parses) — the same shape
- * the API writes; a hand-typed YAML string would drift from it.
+ * serializer so each entry carries the ordered `filters` list the schema
+ * requires (K102) — the same shape the API writes; a hand-typed YAML
+ * string would drift from it.
+ *
+ * `overdue` and `retired` use ADVANCED filters because their DSL
+ * (`due_date < today`) is not expressible as a simple field/op/values
+ * filter; the `status = backlog` one is simple, which is also what the
+ * surfaces should prefer.
  */
-function cond(query: string) {
-  const parsed = queryToConditions(query);
-  if (!parsed.ok) throw new Error(`fixture query does not parse: ${query}`);
-  return parsed.tree;
-}
 const QUERIES_YAML = serializeQueriesConfig({
   queries: [
     {
       id: "01M0AAAAAAAAAAAAAAAAAAAAA1",
       name: "overdue",
-      query: "due_date < today",
-      conditions: cond("due_date < today"),
+      filters: [{ kind: "advanced", query: "due_date < today" }],
       sort: [{ field: "priority", direction: "desc" }],
     },
     {
       id: "01M0AAAAAAAAAAAAAAAAAAAAA2",
       name: "overdue",
-      query: "status = backlog",
-      conditions: cond("status = backlog"),
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["backlog"] }],
     },
     {
       id: "01M0AAAAAAAAAAAAAAAAAAAAA3",
       name: "retired",
-      query: "status = done",
-      conditions: cond("status = done"),
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["done"] }],
       archived: true,
     },
   ],

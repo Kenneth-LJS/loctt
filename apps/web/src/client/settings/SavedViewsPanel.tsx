@@ -1,4 +1,7 @@
 import type { ArchivedScope, SavedQuery } from "@loctt/contracts";
+// Per-file subpath, NOT the barrel: the barrel drags node:path into the
+// browser bundle (A37).
+import { filtersToSummary } from "@loctt/core/query/filters.js";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -13,7 +16,7 @@ import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { RowActions } from "./RowActions.tsx";
-import { ViewFormDialog } from "./ViewFormDialog.tsx";
+import { type BrokenViewContext, ViewFormDialog, type ViewFormTarget } from "./ViewFormDialog.tsx";
 
 /**
  * Settings → Data → Saved views (VUE-25, VUE-26, VUE-27, VUE-36,
@@ -49,6 +52,7 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
   const unarchive = useUnarchiveView();
   const [confirming, setConfirming] = useState(false);
   const archived = view.archived === true;
+  const summary = filtersToSummary(view.filters);
 
   return (
     <li
@@ -72,17 +76,20 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
         )}
       </span>
       {/*
-        VUE-26: the query is shown exactly as the file holds it, so a
-        view the CLI wrote is visibly the same view. Order-last on mobile
-        so it wraps to a full-width line below the name+actions; capped on
-        desktop. `min-w-0` lets it truncate rather than force the row wide.
+        VUE-26: what the view matches, shown exactly as the file holds it,
+        so a view the CLI wrote is visibly the same view. K102: a view no
+        longer stores a query string, so the row renders the shared
+        display-only summary of its ordered filters — computed here, never
+        persisted and never parsed back. Order-last on mobile so it wraps
+        to a full-width line below the name+actions; capped on desktop.
+        `min-w-0` lets it truncate rather than force the row wide.
       */}
       <code
         data-testid="view-query"
         className="order-last min-w-0 w-full shrink truncate rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary sm:order-none sm:w-auto sm:max-w-80"
-        title={view.query}
+        title={summary}
       >
-        {view.query}
+        {summary}
       </code>
 
       {/* VUE-41: rename + edit-query, on active views. An archived view
@@ -169,8 +176,18 @@ export function SavedViewsPanel() {
   // VUE-40 (create) and VUE-41 (edit) share one dialog: `null` closed,
   // `{ mode: "create" }` a new view, `{ mode: "edit", view }` a rename /
   // edit-query of an existing one.
+  //
+  // A broken entry can also be opened here, and when it is, the dialog
+  // gets its `broken` context: the parse error plus the YAML still on
+  // disk in `rawText`, with Save held inert behind an explicit
+  // confirmation. This panel never had a plain Edit on a broken row, so
+  // it never carried the sidebar's silent-overwrite defect — but it also
+  // showed the user nothing they could act on beyond "go edit the file",
+  // without showing them the file. Same dialog, same guard.
   const [dialog, setDialog] = useState<
-    { mode: "create" } | { mode: "edit"; view: SavedQuery } | null
+    | { mode: "create" }
+    | { mode: "edit"; view: ViewFormTarget; broken?: BrokenViewContext }
+    | null
   >(null);
 
   if (views.isError) {
@@ -262,6 +279,9 @@ export function SavedViewsPanel() {
       {dialog !== null && (
         <ViewFormDialog
           {...(dialog.mode === "edit" ? { existing: dialog.view } : {})}
+          {...(dialog.mode === "edit" && dialog.broken !== undefined
+            ? { broken: dialog.broken }
+            : {})}
           onClose={() => { setDialog(null); }}
         />
       )}
@@ -299,11 +319,13 @@ export function SavedViewsPanel() {
                     Broken
                   </h2>
                   <p className="mb-2 text-[0.8571rem] text-text-secondary">
-                    These views are still in the file, but their query no longer
-                    parses. Fix them from the list view or by hand in{" "}
+                    These views are still in the file, and LocTT has not
+                    changed them. Their original text is shown below — fix
+                    it by hand in{" "}
                     <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                       .loctt/config/queries.yaml
-                    </code>.
+                    </code>{" "}
+                    to keep what you wrote, or replace the view here.
                   </p>
                   <ul className="m-0 list-none p-0" data-testid="saved-views-broken-list">
                     {broken.map(b => (
@@ -320,11 +342,46 @@ export function SavedViewsPanel() {
                             (broken)
                           </span>
                         </span>
-                        <code className="text-[0.8571rem] text-text-secondary">{b.query}</code>
+                        <code className="text-[0.8571rem] text-text-secondary">{b.summary}</code>
                         <span className="text-[0.8571rem] text-danger-fg">
                           {b.error}
                           {b.position !== undefined ? ` (at position ${String(b.position)})` : ""}
                         </span>
+                        {/* The bytes still on disk. This is the only
+                            surviving record of what the user meant, so it
+                            is shown rather than described — "fix it in the
+                            file" is not actionable advice without it. */}
+                        <pre
+                          data-testid={`view-broken-raw-${b.id}`}
+                          className="m-0 mt-1 overflow-x-auto rounded bg-bg-muted px-2 py-1 font-mono text-[0.7857rem] text-text-secondary"
+                        >
+                          {b.rawText}
+                        </pre>
+                        <div className="mt-1">
+                          {/* Deliberately labelled "Replace…", not
+                              "Edit…": whatever is built in the dialog
+                              REPLACES the text above, and the dialog
+                              makes the user confirm that before it will
+                              save. */}
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            testId={`view-broken-replace-${b.id}`}
+                            onClick={() => {
+                              setDialog({
+                                mode: "edit",
+                                view: { id: b.id, name: b.name, filters: [] },
+                                broken: {
+                                  error: b.error,
+                                  rawText: b.rawText,
+                                  ...(b.position !== undefined ? { position: b.position } : {}),
+                                },
+                              });
+                            }}
+                          >
+                            Replace…
+                          </Button>
+                        </div>
                       </li>
                     ))}
                   </ul>

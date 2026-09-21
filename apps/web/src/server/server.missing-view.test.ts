@@ -40,21 +40,15 @@ describe("GET /api/tasks with a deleted saved view", () => {
       body: JSON.stringify({ title: "a task" }),
     });
     // A queries.yaml with one view that is *not* the one asked for.
+    // K102: a view stores an ordered `filters` list, not `query`/`conditions`.
     await writeFile(
       join(root, ".loctt", "config", "queries.yaml"),
-      // `conditions` is now required (Stage 1); it is the structured
-      // form of the same `status.category = active` DSL.
       "queries:\n"
       + "  - id: v_live\n"
       + "    name: Live view\n"
-      + "    query: 'status.category = active'\n"
-      + "    conditions:\n"
-      + "      kind: leaf\n"
-      + "      field: status.category\n"
-      + "      op: '='\n"
-      + "      value:\n"
-      + "        type: string\n"
-      + "        value: active\n",
+      + "    filters:\n"
+      + "      - kind: advanced\n"
+      + "        query: status.category = active\n",
       "utf8",
     );
   });

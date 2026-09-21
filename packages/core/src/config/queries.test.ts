@@ -1,39 +1,46 @@
+
+import type { Filter } from "@loctt/contracts";
 import { describe, expect,it } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-import { queryToConditions } from "../query/builderTree.js";
 import { parseQueriesConfig, QueriesConfigError, serializeQueriesConfig } from "./queries.js";
 import { YamlSyntaxError } from "./yaml-coerce.js";
 
 /**
- * A `conditions:` YAML block derived from a DSL query, indented to sit
- * under a `queries:` list item. `conditions` is a required field on a
- * saved view (it is the source of truth the `query` string is derived
- * from), so every VALID fixture entry needs one; these tests exercise
- * sort/display/broken-entry behavior, not the conditions shape, so we
- * derive a matching tree from the DSL rather than hand-author it.
+ * A `filters:` YAML block, indented to sit under a `queries:` list item.
+ * K102: a saved view's SOLE source of truth is its ordered `filters[]` —
+ * there is no `query`/`conditions` pair any more. These tests exercise
+ * sort/display/broken-entry behavior, not the filter shape itself, so a
+ * small helper builds a matching block from a plain filter list.
  */
-function conditionsBlock(dsl: string, indent = "    "): string {
-  const res = queryToConditions(dsl);
-  if (!res.ok) throw new Error(`fixture DSL does not parse: ${dsl}`);
-  const yaml = stringifyYaml({ conditions: res.tree }).trimEnd();
+function filtersBlock(filters: Filter[], indent = "    "): string {
+  const yaml = stringifyYaml({ filters }).trimEnd();
   return yaml.split("\n").map(line => indent + line).join("\n");
+}
+
+/** A single simple `status = <value>` filter, the common case in fixtures. */
+function statusFilter(value: string): Filter[] {
+  return [{ kind: "simple", field: "status", op: "=", values: [value] }];
 }
 
 const CANONICAL_YAML = `
 queries:
   - id: 01HQ000000000000000000000A
     name: recent-open
-    query: archived != true and status != done
-${conditionsBlock("archived != true and status != done")}
+${filtersBlock([
+    { kind: "simple", field: "archived", op: "!=", values: ["true"] },
+    { kind: "simple", field: "status", op: "!=", values: ["done"] },
+  ])}
     sort:
       - field: updated_at
         direction: desc
 
   - id: 01HQ000000000000000000000B
     name: blocked
-    query: archived != true and status = blocked
-${conditionsBlock("archived != true and status = blocked")}
+${filtersBlock([
+    { kind: "simple", field: "archived", op: "!=", values: ["true"] },
+    { kind: "simple", field: "status", op: "=", values: ["blocked"] },
+  ])}
     sort:
       - field: priority
         direction: desc
@@ -42,8 +49,7 @@ ${conditionsBlock("archived != true and status = blocked")}
 
   - id: 01HQ000000000000000000000C
     name: init-work
-    query: text ~ "init"
-${conditionsBlock('text ~ "init"')}
+${filtersBlock([{ kind: "advanced", query: 'text ~ "init"' }])}
     sort:
       - field: key
         direction: asc
@@ -57,14 +63,17 @@ describe("parseQueriesConfig", () => {
     expect(config.queries[0]).toMatchObject({
       id: "01HQ000000000000000000000A",
       name: "recent-open",
-      query: 'archived != true and status != done',
+      filters: [
+        { kind: "simple", field: "archived", op: "!=", values: ["true"] },
+        { kind: "simple", field: "status", op: "!=", values: ["done"] },
+      ],
       sort: [{ field: "updated_at", direction: "desc" }],
     });
     expect(config.queries[1]?.sort).toHaveLength(2);
     expect(config.queries[2]).toMatchObject({
       id: "01HQ000000000000000000000C",
       name: "init-work",
-      query: 'text ~ "init"',
+      filters: [{ kind: "advanced", query: 'text ~ "init"' }],
       sort: [{ field: "key", direction: "asc" }],
     });
   });
@@ -74,8 +83,7 @@ describe("parseQueriesConfig", () => {
 queries:
   - id: 01HQ000000000000000000000Z
     name: all
-    query: archived != true
-${conditionsBlock("archived != true")}
+${filtersBlock([{ kind: "simple", field: "archived", op: "!=", values: ["true"] }])}
 `;
     const config = parseQueriesConfig(yaml);
     expect(config.queries[0]?.sort).toBeUndefined();
@@ -86,18 +94,30 @@ ${conditionsBlock("archived != true")}
     expect(config.queries).toEqual([]);
   });
 
+  it("allows an entry with no filters key at all (empty list, not an error)", () => {
+    const yaml = `
+queries:
+  - id: 01HQ0000000000000000NOFILT
+    name: everything
+`;
+    const config = parseQueriesConfig(yaml);
+    expect(config.queries).toHaveLength(1);
+    expect(config.queries[0]?.filters).toEqual([]);
+    expect(config.broken).toBeUndefined();
+  });
+
   it("throws on missing queries array", () => {
     expect(() => parseQueriesConfig("{}")).toThrow(QueriesConfigError);
     expect(() => parseQueriesConfig("{}")).toThrow("queries is required (expected array)");
   });
 
   it("throws on missing query id", () => {
-    const yaml = `queries:\n  - name: x\n    query: status = open`;
+    const yaml = `queries:\n  - name: x\n${filtersBlock(statusFilter("open"))}`;
     expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
   });
 
   it("throws on missing query name", () => {
-    const yaml = `queries:\n  - id: 01HQ000000000000000000000Y\n    query: status = open`;
+    const yaml = `queries:\n  - id: 01HQ000000000000000000000Y\n${filtersBlock(statusFilter("open"))}`;
     expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
     expect(() => parseQueriesConfig(yaml)).toThrow("queries[0].name is required (expected string)");
   });
@@ -107,7 +127,7 @@ ${conditionsBlock("archived != true")}
 queries:
   - id: 01HQ000000000000000000000Y
     name: bad
-    query: status = open
+${filtersBlock(statusFilter("open"))}
     sort:
       - field: key
         direction: sideways
@@ -122,20 +142,18 @@ queries:
     expect(() => parseQueriesConfig("42")).toThrow(QueriesConfigError);
   });
 
-  // VUE-22 / north-star principle 5. This test previously asserted that
-  // one unparseable entry threw and took down the whole config — the bug
-  // the fix removes. A per-ENTRY DSL failure now degrades to a broken
-  // marker; the throw is reserved for object-fatal problems (see the
-  // "throws" tests above, which still stand).
+  // VUE-22 / north-star principle 5. A per-ENTRY bad `filters` block
+  // degrades to a broken marker; the throw is reserved for object-fatal
+  // problems (see the "throws" tests above, which still stand).
   describe("per-entry degradation (VUE-22)", () => {
     // @verifies DEG-22
-    it("collects an unparseable query as a broken marker instead of throwing", () => {
+    it("collects an entry with an invalid filters block as a broken marker instead of throwing", () => {
       const yaml = `
 queries:
   - id: 01HQ000000000000000000000Y
     name: broken
-    query: "status =="
-${conditionsBlock("status = x")}
+    filters:
+      - kind: bogus
 `;
       // @verifies VUE-22
       const config = parseQueriesConfig(yaml);
@@ -144,13 +162,30 @@ ${conditionsBlock("status = x")}
       expect(config.broken?.[0]).toMatchObject({
         id: "01HQ000000000000000000000Y",
         name: "broken",
-        query: "status ==",
+        summary: "(unreadable filters)",
         index: 0,
       });
-      // The parser's own message and the offending position are carried
-      // so a surface can mark the fault in place.
+      // The validator's own message is carried so a surface can explain
+      // what is wrong, and the raw YAML is preserved for a hand fix.
       expect(config.broken?.[0]?.error).toBeTruthy();
-      expect(typeof config.broken?.[0]?.position).toBe("number");
+      expect(config.broken?.[0]?.rawText).toContain("bogus");
+    });
+
+    it("also degrades when filters is not a list at all", () => {
+      const yaml = `
+queries:
+  - id: 01HQ0000000000000000NOTLST
+    name: not-a-list
+    filters: "not-a-list"
+`;
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries).toHaveLength(0);
+      expect(config.broken).toHaveLength(1);
+      expect(config.broken?.[0]).toMatchObject({
+        id: "01HQ0000000000000000NOTLST",
+        name: "not-a-list",
+        summary: "(unreadable filters)",
+      });
     });
 
     it("keeps a healthy entry sitting next to a broken one (one bad row never blanks the view)", () => {
@@ -158,12 +193,11 @@ ${conditionsBlock("status = x")}
 queries:
   - id: 01HQ00000000000000000000OK
     name: ok
-    query: status = backlog
-${conditionsBlock("status = backlog")}
+${filtersBlock(statusFilter("backlog"))}
   - id: 01HQ0000000000000000000BAD
     name: broken
-    query: "status = = done"
-${conditionsBlock("status = x")}
+    filters:
+      - kind: bogus
 `;
       // @verifies VUE-22
       const config = parseQueriesConfig(yaml);
@@ -181,23 +215,22 @@ ${conditionsBlock("status = x")}
       // broken view silently deleted that view). K28: a config write must
       // preserve an untouched degraded sibling, byte-value-for-value. The
       // broken entry round-trips: it re-serializes as an ordinary query
-      // whose `query` string still does not parse, so re-loading re-sorts
+      // whose `filters` still does not validate, so re-loading re-sorts
       // it back into `broken` — never lost.
       const yaml = `
 queries:
   - id: 01HQ00000000000000000000OK
     name: ok
-    query: status = backlog
-${conditionsBlock("status = backlog")}
+${filtersBlock(statusFilter("backlog"))}
   - id: 01HQ0000000000000000000BAD
     name: broken
-    query: "status = = done"
-${conditionsBlock("status = x")}
+    filters:
+      - kind: bogus
 `;
       const config = parseQueriesConfig(yaml);
       const serialized = serializeQueriesConfig(config);
-      // The broken entry's query text survives verbatim (K27 value-preserved).
-      expect(serialized).toContain("status = = done");
+      // The broken entry's raw filters text survives verbatim.
+      expect(serialized).toContain("kind: bogus");
       const roundTripped = parseQueriesConfig(serialized);
       expect(roundTripped.queries).toHaveLength(1);
       // The broken entry is still present after a round-trip, not dropped.
@@ -207,22 +240,21 @@ ${conditionsBlock("status = x")}
 
     // @verifies DEG-24
     // Phase Z finding C2: the K28 preserve-on-write closed the loss of the
-    // whole entry, but the broken carrier only re-emitted {id,name,query} —
-    // a broken view's `sort`/`display`/`archived` (all schema-valid; only
-    // the DSL failed) were silently dropped on any unrelated write. This
-    // asserts they survive a save byte-value-for-value and the entry stays
-    // in `broken` (its DSL still does not parse — never promoted to valid).
+    // whole entry, but the broken carrier must re-emit ALL of its
+    // schema-valid optional fields, not just {id,name} — a broken view's
+    // `sort`/`display`/`archived` (only the filters failed) must survive a
+    // save byte-value-for-value and the entry must stay in `broken` (its
+    // filters still do not validate — never promoted to valid).
     it("PRESERVES a broken entry's sort/display/archived on write (Phase Z C2)", () => {
       const yaml = `
 queries:
   - id: 01HQ00000000000000000000OK
     name: ok
-    query: status = backlog
-${conditionsBlock("status = backlog")}
+${filtersBlock(statusFilter("backlog"))}
   - id: 01HQ0000000000000000000BAD
     name: broken
-    query: "status = = done"
-${conditionsBlock("status = x")}
+    filters:
+      - kind: bogus
     archived: true
     sort:
       - field: created_at
@@ -232,18 +264,18 @@ ${conditionsBlock("status = x")}
       group_by: priority
 `;
       const config = parseQueriesConfig(yaml);
-      // The broken entry carries all its optional fields, unparsed DSL and all.
+      // The broken entry carries all its optional fields, unparsed filters and all.
       expect(config.broken).toHaveLength(1);
 
       // An unrelated write (any create/edit/archive/delete rewrites the file).
       const serialized = serializeQueriesConfig(config);
       const roundTripped = parseQueriesConfig(serialized);
 
-      // Still broken — its DSL does not parse, so it never promotes to valid.
+      // Still broken — its filters do not validate, so it never promotes to valid.
       expect(roundTripped.queries).toHaveLength(1);
       expect(roundTripped.broken).toHaveLength(1);
       const revived = roundTripped.broken?.[0];
-      expect(revived).toMatchObject({ id: "01HQ0000000000000000000BAD", name: "broken", query: "status = = done" });
+      expect(revived).toMatchObject({ id: "01HQ0000000000000000000BAD", name: "broken" });
 
       // The optional fields survive. They are not on BrokenSavedQuery, so
       // re-parse the serialized YAML and inspect the raw `bad` entry.
@@ -259,150 +291,14 @@ ${conditionsBlock("status = x")}
 queries:
   - id: 01HQ000000000000000000DUPE
     name: a
-    query: status = backlog
-${conditionsBlock("status = backlog")}
+${filtersBlock(statusFilter("backlog"))}
   - id: 01HQ000000000000000000DUPE
     name: b
-    query: "status =="
-${conditionsBlock("status = x")}
+    filters:
+      - kind: bogus
 `;
       expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
       expect(() => parseQueriesConfig(yaml)).toThrow(/duplicate query id/);
-    });
-  });
-
-  // The `conditions` migration path. A view written before `conditions`
-  // was required (A217–A219) has a `query` and no `conditions`; a hand
-  // edit can leave a malformed one. The loader must DERIVE `conditions`
-  // from the `query` rather than reject the whole file, and only degrade
-  // to a broken marker when neither side is recoverable.
-  describe("conditions migration path", () => {
-    // @verifies DEG-25
-    it("derives conditions from the query when the block is MISSING (no throw)", () => {
-      // Red-proof: with the old strict loader schema, this threw
-      // "conditions is required (expected object)" — object-fatal.
-      const yaml = `
-queries:
-  - id: 01HQ00000000000000000LEGACY
-    name: legacy
-    query: status != done and archived != true
-`;
-      const config = parseQueriesConfig(yaml);
-      expect(config.queries).toHaveLength(1);
-      // The derived tree matches exactly what queryToConditions produces.
-      const derived = queryToConditions("status != done and archived != true");
-      expect(derived.ok).toBe(true);
-      if (derived.ok) {
-        expect(config.queries[0]?.conditions).toEqual(derived.tree);
-      }
-      // Reported as migrated so a surface / doctor can tell the user.
-      expect(config.migrated).toHaveLength(1);
-      expect(config.migrated?.[0]).toMatchObject({
-        id: "01HQ00000000000000000LEGACY",
-        name: "legacy",
-        index: 0,
-      });
-      expect(config.migrated?.[0]?.reason).toMatch(/missing/);
-      // Not broken — it is a fully valid, runnable view.
-      expect(config.broken).toBeUndefined();
-    });
-
-    // @verifies DEG-25
-    it("derives conditions from the query when the block is MALFORMED (no throw)", () => {
-      // Red-proof: the old loader rejected the whole file on a `conditions`
-      // that does not validate against BuilderTreeSchema.
-      const yaml = `
-queries:
-  - id: 01HQ0000000000000000MALFRM
-    name: malformed
-    query: status = backlog
-    conditions:
-      kind: not-a-real-kind
-      whatever: 3
-`;
-      const config = parseQueriesConfig(yaml);
-      expect(config.queries).toHaveLength(1);
-      const derived = queryToConditions("status = backlog");
-      expect(derived.ok).toBe(true);
-      if (derived.ok) {
-        expect(config.queries[0]?.conditions).toEqual(derived.tree);
-      }
-      expect(config.migrated).toHaveLength(1);
-      expect(config.migrated?.[0]?.reason).toMatch(/invalid/);
-    });
-
-    // @verifies DEG-25
-    it("persists the derived conditions on the next write (self-heals)", () => {
-      // Red-proof: if derivation did not run, this would throw on load and
-      // never reach serialize; if the derived tree were not stored on the
-      // valid entry, the re-serialized YAML would carry no conditions block
-      // and re-loading would migrate AGAIN (never healing).
-      const yaml = `
-queries:
-  - id: 01HQ00000000000000000LEGACY
-    name: legacy
-    query: status = in_progress
-`;
-      const config = parseQueriesConfig(yaml);
-      const serialized = serializeQueriesConfig(config);
-      // The written entry now carries a conditions block.
-      expect(serialized).toContain("conditions:");
-      // Re-loading finds nothing to migrate — the file has healed.
-      const roundTripped = parseQueriesConfig(serialized);
-      expect(roundTripped.queries).toHaveLength(1);
-      expect(roundTripped.migrated).toBeUndefined();
-      const derived = queryToConditions("status = in_progress");
-      if (derived.ok) {
-        expect(roundTripped.queries[0]?.conditions).toEqual(derived.tree);
-      }
-    });
-
-    // @verifies DEG-25
-    it("degrades to a broken marker when conditions are unusable AND the query does not parse (per-view, not whole-file)", () => {
-      // Red-proof: without per-view degradation this either threw on the
-      // bad conditions (object-fatal) or lost the sibling healthy view.
-      const yaml = `
-queries:
-  - id: 01HQ00000000000000000000OK
-    name: ok
-    query: status = backlog
-${conditionsBlock("status = backlog")}
-  - id: 01HQ000000000000000DBLBAD
-    name: double-broken
-    query: "status =="
-    conditions:
-      kind: not-a-real-kind
-`;
-      const config = parseQueriesConfig(yaml);
-      // The healthy sibling still loads.
-      expect(config.queries).toHaveLength(1);
-      expect(config.queries[0]).toMatchObject({ id: "01HQ00000000000000000000OK", name: "ok" });
-      // The doubly-broken one degrades to a marker, not a throw.
-      expect(config.broken).toHaveLength(1);
-      expect(config.broken?.[0]).toMatchObject({
-        id: "01HQ000000000000000DBLBAD",
-        name: "double-broken",
-        query: "status ==",
-        index: 1,
-      });
-      // Not counted as migrated — it could not be recovered.
-      expect(config.migrated).toBeUndefined();
-    });
-
-    it("a legacy queries.yaml (no conditions anywhere) loads whole, none broken", () => {
-      const yaml = `
-queries:
-  - id: 01HQ0000000000000000LEGCY1
-    name: one
-    query: status = backlog
-  - id: 01HQ0000000000000000LEGCY2
-    name: two
-    query: priority = high
-`;
-      const config = parseQueriesConfig(yaml);
-      expect(config.queries).toHaveLength(2);
-      expect(config.broken).toBeUndefined();
-      expect(config.migrated).toHaveLength(2);
     });
   });
 
@@ -417,8 +313,7 @@ queries:
 queries:
   - id: 01HX0000000000000000000001
     name: sprint-12-timeline
-    query: sprint = S-12
-${conditionsBlock("sprint = S-12")}
+${filtersBlock([{ kind: "simple", field: "sprint", op: "=", values: ["S-12"] }])}
     display:
       mode: timeline
       zoom: month
@@ -438,8 +333,10 @@ ${conditionsBlock("sprint = S-12")}
 queries:
   - id: 01HX0000000000000000000002
     name: my-bugs
-    query: assignee = me and task_type = bug
-${conditionsBlock("assignee = me and task_type = bug")}
+${filtersBlock([
+        { kind: "simple", field: "assignee", op: "=", values: ["me"] },
+        { kind: "simple", field: "task_type", op: "=", values: ["bug"] },
+      ])}
     sort:
       - field: priority
         direction: desc
@@ -459,8 +356,7 @@ ${conditionsBlock("assignee = me and task_type = bug")}
 queries:
   - id: 01HX0000000000000000000003
     name: by-assignee
-    query: archived != true
-${conditionsBlock("archived != true")}
+${filtersBlock([{ kind: "simple", field: "archived", op: "!=", values: ["true"] }])}
     display:
       mode: board
       group_by: assignee
@@ -476,8 +372,7 @@ ${conditionsBlock("archived != true")}
 queries:
   - id: 01HX0000000000000000000004
     name: plain
-    query: archived != true
-${conditionsBlock("archived != true")}
+${filtersBlock([{ kind: "simple", field: "archived", op: "!=", values: ["true"] }])}
 `;
       const config = parseQueriesConfig(yaml);
       expect(config.queries[0]?.display).toBeUndefined();
@@ -488,8 +383,7 @@ ${conditionsBlock("archived != true")}
 queries:
   - id: 01HX0000000000000000000006
     name: rt
-    query: archived != true
-${conditionsBlock("archived != true")}
+${filtersBlock([{ kind: "simple", field: "archived", op: "!=", values: ["true"] }])}
     display:
       mode: timeline
       zoom: day
@@ -505,8 +399,7 @@ ${conditionsBlock("archived != true")}
 queries:
   - id: 01HX0000000000000000000005
     name: bad
-    query: archived != true
-${conditionsBlock("archived != true")}
+${filtersBlock([{ kind: "simple", field: "archived", op: "!=", values: ["true"] }])}
     display:
       mode: list
       unknown_key: foo

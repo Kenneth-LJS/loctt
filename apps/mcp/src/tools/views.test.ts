@@ -32,7 +32,7 @@ describe("MCP saved-view management", () => {
   it("create_view then list_views shows it", async () => {
     const created = await executeTool(root, "create_view", {
       name: "open-work",
-      query: "status = backlog",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["backlog"] }],
     });
     expect(created.isError).toBeUndefined();
     const id = idOf(created.content[0]?.text ?? "");
@@ -45,48 +45,10 @@ describe("MCP saved-view management", () => {
     expect(body).toContain(id);
   });
 
-  it("create_view then list_views returns the derived structured `conditions`", async () => {
-    // @verifies Stage-3 MCP parity for structured saved-view conditions.
-    // The agent supplies DSL only; core derives the structured form and
-    // both create_view's return and list_views must surface it, so an
-    // agent introspecting a view sees the same tree the web builder edits.
-    const created = await executeTool(root, "create_view", {
-      name: "membership",
-      query: "status in (backlog, in_progress)",
-    });
-    expect(created.isError).toBeUndefined();
-    const createdView = JSON.parse(created.content[0]?.text ?? "") as {
-      id: string; conditions: unknown;
-    };
-    const expectedConditions = {
-      kind: "leaf",
-      field: "status",
-      op: "in",
-      value: {
-        type: "list",
-        values: [
-          { type: "string", value: "backlog" },
-          { type: "string", value: "in_progress" },
-        ],
-      },
-    };
-    expect(createdView.conditions).toEqual(expectedConditions);
-
-    const list = await executeTool(root, "list_views", {});
-    const entries = JSON.parse(list.content[0]?.text ?? "") as Array<{
-      id: string; conditions?: unknown;
-    }>;
-    const listed = entries.find(e => e.id === createdView.id);
-    expect(listed).toBeDefined();
-    // The parity assertion the red-proof breaks: list_views carries the
-    // structured conditions, not just the DSL string.
-    expect(listed!.conditions).toEqual(expectedConditions);
-  });
-
   it("create_view stores a multi-key sort", async () => {
     const created = await executeTool(root, "create_view", {
       name: "sorted",
-      query: "status = backlog",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["backlog"] }],
       sort: [{ field: "priority", direction: "desc" }, { field: "created", direction: "asc" }],
     });
     expect(created.isError).toBeUndefined();
@@ -97,10 +59,10 @@ describe("MCP saved-view management", () => {
     ]);
   });
 
-  it("create_view rejects a malformed query with an actionable error, not a server fault", async () => {
+  it("create_view rejects a malformed advanced filter with an actionable error, not a server fault", async () => {
     const bad = await executeTool(root, "create_view", {
       name: "broken",
-      query: "status = = =",
+      filters: [{ kind: "advanced", query: "status = = =" }],
     });
     expect(bad.isError).toBe(true);
     // ViewError text reaches the agent (isKnownDomainError), not an
@@ -109,10 +71,10 @@ describe("MCP saved-view management", () => {
     expect(list.content[0]?.text ?? "").not.toContain("broken");
   });
 
-  it("edit_view changes name, query, and sort; sort:null clears it", async () => {
+  it("edit_view changes name, filters, and sort; sort:null clears it", async () => {
     const created = await executeTool(root, "create_view", {
       name: "before",
-      query: "status = backlog",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["backlog"] }],
       sort: [{ field: "priority", direction: "desc" }],
     });
     const id = idOf(created.content[0]?.text ?? "");
@@ -120,14 +82,16 @@ describe("MCP saved-view management", () => {
     const edited = await executeTool(root, "edit_view", {
       view: id,
       name: "after",
-      query: "status = done",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["done"] }],
     });
     expect(edited.isError).toBeUndefined();
     const parsed = JSON.parse(edited.content[0]?.text ?? "") as {
-      name: string; query: string; sort?: unknown;
+      name: string; filters: unknown; sort?: unknown;
     };
     expect(parsed.name).toBe("after");
-    expect(parsed.query).toBe("status = done");
+    expect(parsed.filters).toEqual([
+      { kind: "simple", field: "status", op: "=", values: ["done"] },
+    ]);
     // sort omitted → unchanged.
     expect(parsed.sort).toEqual([{ field: "priority", direction: "desc" }]);
 
@@ -137,7 +101,10 @@ describe("MCP saved-view management", () => {
   });
 
   it("archive_view then unarchive_view toggles the flag; archived stays runnable by id", async () => {
-    const created = await executeTool(root, "create_view", { name: "v", query: "status = backlog" });
+    const created = await executeTool(root, "create_view", {
+      name: "v",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["backlog"] }],
+    });
     const id = idOf(created.content[0]?.text ?? "");
 
     const archived = await executeTool(root, "archive_view", { view: id });
@@ -159,7 +126,10 @@ describe("MCP saved-view management", () => {
   });
 
   it("delete_view requires confirm:true and then removes the view", async () => {
-    const created = await executeTool(root, "create_view", { name: "doomed", query: "status = backlog" });
+    const created = await executeTool(root, "create_view", {
+      name: "doomed",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["backlog"] }],
+    });
     const id = idOf(created.content[0]?.text ?? "");
 
     const refused = await executeTool(root, "delete_view", { view: id });

@@ -540,7 +540,7 @@ test.describe("TSK — task detail read shell", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(listRow(page, "Untouched task")).toHaveCount(1);
     await expect(listRow(page, "Archivable task")).toHaveCount(0);
-    await page.goto(`${tracker.baseURL}/list?archived=true`);
+    await page.goto(`${tracker.baseURL}/list?archived=all`);
     await expect(listRow(page, "Archivable task")).toHaveCount(1);
 
     // Unarchive from the same menu restores it in place.

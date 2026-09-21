@@ -1458,7 +1458,7 @@ test.describe("BLK — archive undo", () => {
   });
 
   // @verifies BLK-10
-  test("BLK-10: the archived tasks are visible under Show archived", async ({
+  test("BLK-10: the archived tasks are visible under the archived-scope control", async ({
     page,
     tracker,
   }) => {
@@ -1470,7 +1470,8 @@ test.describe("BLK — archive undo", () => {
     await page.getByRole("button", { name: "Archive", exact: true }).click();
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByRole("checkbox", { name: "Show archived" }).check();
+    await page.getByTestId("view-actions-menu").click();
+    await page.getByTestId("view-actions-archived-scope").selectOption("all");
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
     // With a badge, not a dimmed row: opacity alone is invisible to a
     // screen reader and to anyone the contrast drop does not reach.
@@ -1923,7 +1924,8 @@ test.describe("BLK — refused and stale writes", () => {
     await tracker.run(["archive", String(seeded[0])]);
 
     await page.goto(`${tracker.baseURL}/list`);
-    await page.getByRole("checkbox", { name: "Show archived" }).check();
+    await page.getByTestId("view-actions-menu").click();
+    await page.getByTestId("view-actions-archived-scope").selectOption("all");
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
     await page.getByRole("checkbox", { name: "Select all on this page" }).check();
 
@@ -4032,7 +4034,7 @@ test.describe("LST — the filter bar (M1.3)", () => {
   });
 
   // @verifies LST-12
-  test("LST-12: Show archived toggles the param on and off, and marks the rows", async ({
+  test("LST-12: the archived-scope control toggles the param on and off, and marks the rows", async ({
     page,
     tracker,
   }) => {
@@ -4043,16 +4045,18 @@ test.describe("LST — the filter bar (M1.3)", () => {
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
     await expect(page).not.toHaveURL(/archived/);
 
-    await page.getByRole("checkbox", { name: "Show archived" }).check();
-    await expect(page).toHaveURL(/archived=true/);
+    await page.getByTestId("view-actions-menu").click();
+    const scope = page.getByTestId("view-actions-archived-scope");
+    await scope.selectOption("all");
+    await expect(page).toHaveURL(/archived=all/);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
     // Marked, so an archived row is distinguishable from a live one.
     await expect(
       page.locator("tbody tr").filter({ hasText: "Gone" }),
     ).toContainText("Archived");
 
-    // Off removes the param rather than writing archived=false.
-    await page.getByRole("checkbox", { name: "Show archived" }).uncheck();
+    // Back to active removes the param rather than writing archived=active.
+    await scope.selectOption("active");
     await expect(page).not.toHaveURL(/archived/);
   });
 
@@ -4137,13 +4141,16 @@ test.describe("LST — URL params that could lie (M1.3)", () => {
 
     for (const falsey of ["false", "0"]) {
       await page.goto(`${tracker.baseURL}/list?archived=${falsey}`);
-      // A coerced-boolean parse turning "false" into true is exactly
-      // what this case exists to catch.
+      // An unrecognized scope value falling back to "active" (rather
+      // than being coerced into "all") is exactly what this case exists
+      // to catch.
       await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
       await expect(page.locator("tbody")).not.toContainText("Gone");
-      // The toggle's visual state agrees with the result set.
-      await expect(page.getByRole("checkbox", { name: "Show archived" }))
-        .not.toBeChecked();
+      // The control's visual state agrees with the result set.
+      await page.getByTestId("view-actions-menu").click();
+      await expect(page.getByTestId("view-actions-archived-scope"))
+        .toHaveValue("active");
+      await page.keyboard.press("Escape");
     }
   });
 
@@ -4606,7 +4613,8 @@ test.describe("VUE — saving a view (M1.3)", () => {
     const before = await readFile(queries, "utf8");
     await writeFile(
       queries,
-      `${before.trimEnd()}\n  - id: 01M1GHOSTFIELD00000000001\n    name: By squad\n    query: "fields.squad = alpha"\n`,
+      `${before.trimEnd()}\n  - id: 01M1GHOSTFIELD00000000001\n    name: By squad\n`
+      + `    filters:\n      - kind: advanced\n        query: "fields.squad = alpha"\n`,
       "utf8",
     );
     // Now delete the field the view depends on.
@@ -4648,9 +4656,9 @@ test.describe("VUE — saving a view (M1.3)", () => {
       { title: "Bug", fields: { status: "in_progress" } },
       { title: "Other" },
     ]);
-    // The two default views are already in queries.yaml, so a
-    // malformed write shows up as *their* loss rather than only as a
-    // missing new entry.
+    // The default view is already in queries.yaml, so a malformed write
+    // shows up as *its* loss rather than only as a missing new entry.
+    // (K102 trimmed the seed to one view — Ken: "we don't ship a demo.")
     const before = await tracker.run(["views"]);
     expect(before).toContain("recent-open");
 
@@ -4659,7 +4667,7 @@ test.describe("VUE — saving a view (M1.3)", () => {
 
     await page.getByRole("button", { name: /Save as view/i }).click();
     await page.getByRole("textbox").first().fill("my-open-bugs");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     // The sidebar picks it up without a restart.
     await expect(page.getByRole("link", { name: "my-open-bugs" })).toBeVisible();
@@ -4696,7 +4704,7 @@ test.describe("VUE — saving a view (M1.3)", () => {
 
     await page.getByRole("button", { name: /Save as view/i }).click();
     await page.getByRole("textbox").first().fill("keys-not-labels");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     // The sidebar picks the new view up without a restart, which is
     // also the settle signal for reading the file below.
     await expect(page.getByRole("link", { name: "keys-not-labels" })).toBeVisible();
@@ -4728,7 +4736,8 @@ test.describe("VUE — saving a view (M1.3)", () => {
     const before = await readFile(queries, "utf8");
     await writeFile(
       queries,
-      `${before.trimEnd()}\n  - id: 01M2BROKENVIEW0000000000001\n    name: Busted\n    query: "status = = done"\n`,
+      `${before.trimEnd()}\n  - id: 01M2BROKENVIEW0000000000001\n    name: Busted\n`
+      + `    filters:\n      - kind: advanced\n        query: "status = = done"\n`,
       "utf8",
     );
 
@@ -4792,7 +4801,7 @@ test.describe("VUE — saving a view (M1.3)", () => {
       `${before.trimEnd()}\n`
         + `  - id: 01M2CLIADDED000000000000001\n`
         + `    name: cli-added\n`
-        + `    query: text ~ "alpha"\n`
+        + `    filters:\n      - kind: advanced\n        query: text ~ "alpha"\n`
         + `    sort:\n      - field: key\n        direction: asc\n`,
       "utf8",
     );
@@ -4847,7 +4856,7 @@ test.describe("VUE — saving a view (M1.3)", () => {
       `${before.trimEnd()}\n`
         + `  - id: 01M2CONCURRENTA00000000001\n`
         + `    name: view-a\n`
-        + `    query: text ~ "bug"\n`,
+        + `    filters:\n      - kind: advanced\n        query: text ~ "bug"\n`,
       "utf8",
     );
 
@@ -4856,7 +4865,7 @@ test.describe("VUE — saving a view (M1.3)", () => {
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
     await page.getByRole("button", { name: /Save as view/i }).click();
     await page.getByRole("textbox").first().fill("view-b");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("link", { name: "view-b" })).toBeVisible();
 
     // Both A and B survive — asserted off disk, and the default views
@@ -4970,7 +4979,8 @@ test.describe("XS — UI/CLI parity (M1.3)", () => {
     await writeFile(
       cfg,
       `${await readFile(cfg, "utf8")}  - id: 01M0HANDWRITTEN00000000000\n`
-      + `    name: hand-written\n    query: status = backlog\n`,
+      + `    name: hand-written\n`
+      + `    filters:\n      - kind: simple\n        field: status\n        op: "="\n        values:\n          - backlog\n`,
       "utf8",
     );
 
@@ -5309,7 +5319,7 @@ test.describe("The last of M1.3", () => {
 
     await page.getByRole("button", { name: /Save as view/i }).click();
     await page.getByRole("textbox").first().fill("from-ui");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("link", { name: "from-ui" })).toBeVisible();
 
     // On disk, not in browser storage — so it survives a restart and
@@ -5458,7 +5468,7 @@ test.describe("Closing out M1.3", () => {
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
     await page.getByRole("button", { name: /Save as view/i }).click();
     await page.getByRole("textbox").first().fill("by-priority");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("link", { name: "by-priority" })).toBeVisible();
 
     // Persisted as field + direction, not as a URL fragment.
@@ -5487,7 +5497,7 @@ test.describe("Closing out M1.3", () => {
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
     await page.getByRole("button", { name: /Save as view/i }).click();
     await page.getByRole("textbox").first().fill("open-work");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();

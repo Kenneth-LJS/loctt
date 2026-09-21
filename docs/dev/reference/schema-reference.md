@@ -482,50 +482,64 @@ implying it governs the other two surfaces. See decision A56.
 
 ## queries.yaml
 
-Located at `.loctt/config/queries.yaml`. Defines saved query views. `id` is the stable reference; `name` is just a display label and can be renamed without breaking pinning. Each query string is parsed through the DSL at load time. A single entry whose `query` does not parse degrades to a `broken` marker (kept out of `queries`, surfaced by `doctor`) rather than failing the whole file — only object-fatal problems (a whole-file YAML error, a missing `queries` array, a missing `id`/`name`/`query`, or a duplicate `id`) reject the config.
+Located at `.loctt/config/queries.yaml`. Defines saved views. `id` is the stable reference; `name` is just a display label and can be renamed without breaking pinning. A single entry whose `filters` do not validate degrades to a `broken` marker (kept out of `queries`, surfaced by `doctor`, and re-emitted verbatim by every write so nothing is lost) rather than failing the whole file — only object-fatal problems (a whole-file YAML error, a missing `queries` array, a missing `id`/`name`, or a duplicate `id`) reject the config.
 
-A view's filter is stored twice: as a structured `conditions` tree (the
-source of truth) and as a `query` string. The `query` is **derived** from
-`conditions` on every write by a spacing-only serializer — it is never a
-rewrite of the user's form, only a spacing-normalized regeneration, so
-`status=a` is stored as `status = a`. All three surfaces (web builder,
-CLI `--query`, MCP `query`) produce this same pair: the web sends
-`conditions` and core derives the string; the CLI/MCP send the DSL and
-core parses it into `conditions`, rejecting unparseable DSL on write.
+**A view is an ordered list of filters (K102).** Each filter is either a
+*simple* filter (field + operator + values, authored through the dropdown
+picker) or an *advanced* filter (a DSL string the human typed). A view may
+mix both and hold several of either; **all filters AND together**.
+
+The list is stored **as authored** — order preserved, each filter keeping
+its own form. It is never merged into one DSL string, never reordered and
+never transformed. The union is *discriminated*, so a simple filter carries
+no query text and an advanced one carries no field/op/values: the kind is
+recorded, never inferred, which is what lets a reopened view render every
+filter back as the control it was authored with.
+
+There is deliberately **no derived `query` field**. Surfaces that need a
+one-line rendering (`loctt views`, MCP `list_views`) compute a summary from
+the filters at display time; it is never stored and never parsed back.
+
+An advanced filter's text is normalised on write by re-emitting it from its
+parse tree: whitespace is regularised and meaningless parentheses drop
+(`(a or b)` → `a or b`), while operators, values, term order and binding
+parentheses are untouched.
 
 ```yaml
 queries:
   - id: 01HV3JQX5R7Y8Z2N4M6P8K0T1A
     name: recent-open
-    query: archived != true and status != done
-    conditions:
-      kind: group
-      op: and
-      children:
-        - kind: leaf
-          field: archived
-          op: "!="
-          value: { type: boolean, value: true }
-        - kind: leaf
-          field: status
-          op: "!="
-          value: { type: string, value: done }
+    filters:
+      - kind: simple
+        field: status
+        op: "!="
+        values:
+          - done
     sort:
       - field: updated_at
         direction: desc
 
+  # A view mixing both kinds, stored in the order they were authored.
   - id: 01HV3JR1WV9N2K4M6P8R0T1Y3B
-    name: blocked
-    query: archived != true and has_link("is_blocked_by")
+    name: blocked-work
+    filters:
+      - kind: simple
+        field: status
+        op: in
+        values:
+          - backlog
+          - in_progress
+      - kind: advanced
+        query: has_link("is_blocked_by")
     sort:
       - field: priority
         direction: desc
-      - field: updated_at
-        direction: desc
 
+  # `archivedScope` is a property of the view, never a filter term.
   - id: 01HV3JR4Y3K8M2N5P7R9T0V2W4
     name: stale
-    query: archived = true
+    filters: []
+    archivedScope: archived
     archived: true
 ```
 
@@ -535,10 +549,31 @@ queries:
 |---|---|---|---|
 | `id` | string | yes | Stable unique identifier (ULID). Duplicate ids across queries are rejected |
 | `name` | string | yes | Display label |
-| `query` | string | yes | Query DSL string. **Derived** from `conditions` by a spacing-only serializer — spacing-normalized, never a rewrite of the user's form; never independently trusted. Kept required so hand-reading the file and older readers still work. The parser tokenizes and parses every `query` at load time; an entry that fails to parse degrades to a `broken` marker rather than rejecting the whole file. See [query-language.md](../user/common/query-language.md) |
-| `conditions` | object | yes | Structured filter tree — the source of truth the `query` string is derived from. A recursive `BuilderTree`: `group` (`op: and\|or`, `children`), `not` (`child`), `has_link` (`linkKind?`, `target?`), or `leaf` (`field`, `op`, `value`, optional `link_count` `call`). Totally covers the DSL grammar, so a view's stored form is lossless |
+| `filters` | array | yes | The view's filters, in authored order — the sole source of truth for what it matches. All filters AND together. May be empty (matches everything within the view's archived scope). An absent key reads as empty. An entry whose filters do not validate degrades to a `broken` marker rather than rejecting the whole file |
 | `sort` | array | no | Ordered list of sort specifiers |
-| `archived` | boolean | no | Hide from default lists. Still runnable by id |
+| `archivedScope` | string | no | `active` (default, hide archived) / `archived` (only archived) / `all`. A property of the view, **not** a filter term. An explicit caller scope overrides it; otherwise it applies |
+| `icon` | string | no | Optional icon for the view |
+| `archived` | boolean | no | Hide the VIEW ITSELF from default lists. Still runnable by id. (Distinct from `archivedScope`, which is about the tasks the view matches) |
+
+### `queries[].filters[]`
+
+A discriminated union on `kind`.
+
+**`kind: simple`**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | yes | Literal `simple` |
+| `field` | string | yes | The queryable field, e.g. `status`, `assignee`, `fields.<key>` |
+| `op` | string | yes | One of `=`, `!=`, `<`, `<=`, `>`, `>=`, `~`, `in`, `not in`, `is empty`, `is not empty` |
+| `values` | array | yes | Selected value(s) as strings. Several under `=` mean "any of these" (widened to `in` at execution) and under `!=` mean "none of these". Empty for the postfix `is empty` / `is not empty` operators |
+
+**`kind: advanced`**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | yes | Literal `advanced` |
+| `query` | string | yes | The DSL as authored, normalised for formatting only. See [query-language.md](../user/common/query-language.md) |
 
 ### `queries[].sort[]`
 

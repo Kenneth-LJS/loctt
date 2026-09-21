@@ -26,14 +26,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 let fetchMock: ReturnType<typeof vi.fn<(...args: never[]) => Promise<Response>>>;
 
 const ONE_VIEW = {
-  // Post-Stage-1 a saved view carries structured `conditions`; the edit
-  // dialog seeds the visual builder from it. `status = backlog` is a plain
-  // renderable leaf, so edit opens the builder (not the DSL box).
+  // K102: a saved view carries an ORDERED `filters` list and no query
+  // string. A `{kind:"simple"}` filter seeds a DROPDOWN ROW in the edit
+  // dialog — never query text.
   queries: [{
     id: "v1",
     name: "Open bugs",
-    query: "status = backlog",
-    conditions: { kind: "leaf", field: "status", op: "=", value: { type: "string", value: "backlog" } },
+    filters: [{ kind: "simple", field: "status", op: "in", values: ["backlog"] }],
   }],
 };
 
@@ -41,21 +40,21 @@ beforeEach(() => {
   fetchMock = vi.fn<(...args: never[]) => Promise<Response>>();
   fetchMock.mockImplementation((url, init) => {
     const u = String(url);
-    // The advanced editor validates the query as the user types.
+    // An advanced filter row validates its DSL as the user types.
     if (u.includes("/api/query/validate")) {
       return Promise.resolve(jsonResponse({ valid: true }));
     }
     if (u.endsWith("/api/views") && (init as RequestInit | undefined)?.method === "POST") {
-      return Promise.resolve(jsonResponse({ id: "vNew", name: "n", query: "q" }, 201));
+      return Promise.resolve(jsonResponse({ id: "vNew", name: "n", filters: [] }, 201));
     }
     if (u.includes("/api/views/") && (init as RequestInit | undefined)?.method === "PUT") {
-      return Promise.resolve(jsonResponse({ id: "v1", name: "n", query: "q" }));
+      return Promise.resolve(jsonResponse({ id: "v1", name: "n", filters: [] }));
     }
     if (u.endsWith("/api/views") || u.includes("/api/views?")) {
       return Promise.resolve(jsonResponse(ONE_VIEW));
     }
     if (u.includes("/api/workflow")) return Promise.resolve(jsonResponse({ workflow: {} }));
-    // Entity pickers the builder loads (projects/users/labels/…).
+    // Entity pickers the value dropdowns load (projects/users/labels/…).
     return Promise.resolve(jsonResponse({ items: [] }));
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -92,51 +91,56 @@ function writeCalls(method: string) {
 
 describe("SavedViewsPanel — create (VUE-40)", () => {
   // @verifies VUE-40
-  it("opens a builder-first create dialog and POSTs structured conditions", async () => {
-    // Stage 2: the create dialog opens the VISUAL builder, not the raw DSL
-    // box, and saves `conditions`. (The old test asserted the DSL box was
-    // the default and `{name,query}` was posted — the behavior Ken
-    // rejected; superseded here.)
+  it("opens the dialog on the simple-filter picker and POSTs an ordered filters list", async () => {
+    // K102: the create dialog opens the human-readable FILTER PICKER, not
+    // the visual AST builder and not a raw DSL box, and saves `filters`.
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("saved-views-list");
 
     fireEvent.click(screen.getByTestId("saved-views-new"));
-    await screen.findByTestId("query-builder");
+    await screen.findByTestId("view-filter-field-0");
+    expect(screen.queryByTestId("query-builder")).toBeNull();
     expect(screen.queryByTestId("advanced-query-editor")).toBeNull();
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "My open bugs" } });
-    fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(screen.getByTestId("qb-field"), { target: { value: "title" } });
-    fireEvent.change(screen.getByTestId("qb-op"), { target: { value: "=" } });
-    fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "login" } });
+    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "title" } });
+    fireEvent.change(screen.getByTestId("view-filter-value-0"), { target: { value: "login" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
     await waitFor(() => { expect(writeCalls("POST").length).toBe(1); });
     const [post] = writeCalls("POST");
     if (post === undefined) throw new Error("no POST call");
     expect(post.url).toContain("/api/views");
-    const body = post.body as { name: string; conditions?: unknown; query?: unknown };
+    const body = post.body as { name: string; filters?: unknown; conditions?: unknown; query?: unknown };
     expect(body.name).toBe("My open bugs");
-    expect(body.conditions).toBeDefined();
+    expect(body.filters).toEqual([
+      { kind: "simple", field: "title", op: "~", values: ["login"] },
+    ]);
+    // The pre-K102 shapes are gone from the wire entirely.
+    expect(body.conditions).toBeUndefined();
+    expect(body.query).toBeUndefined();
   });
 
   // @verifies VUE-40
-  it("keeps Create disabled until the name and at least one condition exist", async () => {
+  it("keeps Save disabled until the name exists and every started filter is finished", async () => {
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("saved-views-list");
     fireEvent.click(screen.getByTestId("saved-views-new"));
-    await screen.findByTestId("query-builder");
+    await screen.findByTestId("view-filter-field-0");
 
     const save = screen.getByTestId<HTMLButtonElement>("view-form-save");
-    // Empty builder + empty name → disabled.
+    // No name → disabled.
     expect(save.disabled).toBe(true);
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "X" } });
-    // Still disabled: no condition yet.
-    expect(save.disabled).toBe(true);
-    fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(screen.getByTestId("qb-field"), { target: { value: "title" } });
-    fireEvent.change(screen.getByTestId("qb-op"), { target: { value: "=" } });
-    fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "x" } });
+    // K102: an UNTOUCHED blank row is dropped, not a blocker — a view with
+    // no filters is legitimate (it matches everything in its scope).
+    await waitFor(() => { expect(save.disabled).toBe(false); });
+
+    // But a STARTED filter with no value blocks, because saving it would
+    // silently discard the field the user just chose.
+    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "title" } });
+    await waitFor(() => { expect(save.disabled).toBe(true); });
+    fireEvent.change(screen.getByTestId("view-filter-value-0"), { target: { value: "x" } });
     await waitFor(() => { expect(save.disabled).toBe(false); });
   });
 });
@@ -252,19 +256,20 @@ describe("SavedViewsPanel — failed archive / delete are surfaced (ERR-13)", ()
 
 describe("SavedViewsPanel — edit (VUE-41)", () => {
   // @verifies VUE-41
-  it("opens a builder-first edit dialog seeded from conditions and PUTs conditions", async () => {
+  it("opens the edit dialog seeded as DROPDOWN ROWS from the stored filters, and PUTs filters", async () => {
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("saved-views-list");
 
     fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
     fireEvent.click(screen.getByTestId("view-edit"));
-    // Renderable conditions → the visual builder, seeded from the stored
-    // tree (not the DSL string).
-    await screen.findByTestId("query-builder");
+
+    // K102's whole point: a stored `{kind:"simple"}` filter reopens as the
+    // picker row it was authored as — NOT as query text.
+    await screen.findByTestId("view-filter-field-0");
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("Open bugs");
-    await waitFor(() => {
-      expect(screen.getByTestId<HTMLSelectElement>("qb-field").value).toBe("status");
-    });
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
+    expect(screen.getByTestId<HTMLSelectElement>("view-filter-op-0").value).toBe("in");
+    expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
@@ -273,9 +278,13 @@ describe("SavedViewsPanel — edit (VUE-41)", () => {
     const [put] = writeCalls("PUT");
     if (put === undefined) throw new Error("no PUT call");
     expect(put.url).toContain("/api/views/v1");
-    const body = put.body as { name: string; conditions?: unknown };
+    const body = put.body as { name: string; filters?: unknown };
     expect(body.name).toBe("Renamed");
-    expect(body.conditions).toBeDefined();
+    // Round-tripped unchanged — an edit of the NAME must not rewrite the
+    // filters (no reordering, no operator rewriting).
+    expect(body.filters).toEqual([
+      { kind: "simple", field: "status", op: "in", values: ["backlog"] },
+    ]);
   });
 
   // @verifies VUE-41
@@ -297,8 +306,8 @@ describe("SavedViewsPanel — edit (VUE-41)", () => {
     await screen.findByTestId("saved-views-list");
     fireEvent.click(screen.getByRole("button", { name: /Actions for view/ }));
     fireEvent.click(screen.getByTestId("view-edit"));
-    await screen.findByTestId("query-builder");
-    // Rename and save through the builder; the server rejects it (400).
+    await screen.findByTestId("view-filter-field-0");
+    // Rename and save; the server rejects it (400).
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
@@ -306,5 +315,77 @@ describe("SavedViewsPanel — edit (VUE-41)", () => {
     expect(err.textContent).toContain("invalid query");
     // Dialog still open.
     expect(screen.getByTestId("view-edit-dialog")).toBeTruthy();
+  });
+});
+
+/**
+ * Broken saved views (VUE-22) in the settings panel.
+ *
+ * A hand-edited `queries.yaml` entry whose `filters` do not validate is
+ * degraded per-entry; its FULL original YAML survives on disk in
+ * `rawText` and is re-emitted verbatim by every unrelated write (P-11 /
+ * K28 / Phase-Z-C2).
+ *
+ * This panel never offered a plain Edit on a broken row, so it did not
+ * carry the sidebar's silent-overwrite defect. What it did carry is the
+ * weaker gap: it told the user to fix the file without ever showing them
+ * what is in it, and offered no in-app repair at all. Both are covered
+ * here, along with the same confirmation guard on the write.
+ */
+describe("SavedViewsPanel — broken views (VUE-22)", () => {
+  const BROKEN = {
+    id: "v_bad",
+    name: "Bad view",
+    summary: "status WAT done",
+    error: "filters[0].op is not a comparison operator",
+    index: 1,
+    rawText: "id: v_bad\nname: Bad view\nfilters:\n  - kind: simple\n    field: status\n    op: WAT\n    values: [done]\n",
+  };
+
+  function withBroken(): void {
+    fetchMock.mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.includes("/api/query/validate")) return Promise.resolve(jsonResponse({ valid: true }));
+      if (u.includes("/api/views/") && (init as RequestInit | undefined)?.method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "v_bad", name: "Bad view", filters: [] }));
+      }
+      if (u.endsWith("/api/views") || u.includes("/api/views?")) {
+        return Promise.resolve(jsonResponse({ ...ONE_VIEW, broken: [BROKEN] }));
+      }
+      if (u.includes("/api/workflow")) return Promise.resolve(jsonResponse({ workflow: {} }));
+      return Promise.resolve(jsonResponse({ items: [] }));
+    });
+  }
+
+  // @verifies VUE-22
+  it("shows the broken entry's original YAML, not just advice to go edit the file", async () => {
+    withBroken();
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+    const raw = await screen.findByTestId("view-broken-raw-v_bad");
+    // The bytes still on disk — the only surviving record of what the
+    // user meant, and what makes "fix it by hand" actionable.
+    expect(raw.textContent).toBe(BROKEN.rawText);
+  });
+
+  // @verifies VUE-42
+  it("Replace… will not write until the user confirms the text will be discarded", async () => {
+    withBroken();
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByTestId("view-broken-replace-v_bad"));
+    await screen.findByTestId("view-edit-dialog");
+
+    // The preserved text is in front of the user before any choice.
+    expect(screen.getByTestId<HTMLTextAreaElement>("view-form-broken-raw").value).toBe(BROKEN.rawText);
+
+    const save = screen.getByTestId<HTMLButtonElement>("view-form-save");
+    expect(save.disabled).toBe(true);
+    fireEvent.click(save);
+    await waitFor(() => { expect(screen.getByTestId("view-edit-dialog")).toBeTruthy(); });
+    expect(writeCalls("PUT")).toEqual([]);
+
+    // Confirmed, it writes — replacement stays possible, just deliberate.
+    fireEvent.click(screen.getByTestId("view-form-confirm-replace"));
+    fireEvent.click(screen.getByTestId("view-form-save"));
+    await waitFor(() => { expect(writeCalls("PUT").length).toBe(1); });
   });
 });

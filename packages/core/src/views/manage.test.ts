@@ -2,13 +2,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { Filter } from "@loctt/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stringify as stringifyYaml } from "yaml";
 
 import { loadQueriesConfig } from "../config/queries.js";
 import { initLoctt } from "../init/init.js";
 import { getQueriesConfigPath, resolveLocttDir } from "../paths/index.js";
-import { queryToConditions } from "../query/builderTree.js";
 import {
   archiveView,
   createView,
@@ -22,17 +21,9 @@ import {
 let root: string;
 let locttDir: string;
 
-/**
- * A `conditions:` YAML block (indented under a `queries:` list item),
- * derived from a DSL so a hand-written fixture satisfies the required
- * `conditions` field.
- */
-function conditionsYaml(dsl: string, indent = "    "): string {
-  const res = queryToConditions(dsl);
-  if (!res.ok) throw new Error(`fixture DSL does not parse: ${dsl}`);
-  const yaml = stringifyYaml({ conditions: res.tree }).trimEnd();
-  return yaml.split("\n").map(line => indent + line).join("\n") + "\n";
-}
+const statusNotDone: Filter = { kind: "simple", field: "status", op: "!=", values: ["done"] };
+const statusDone: Filter = { kind: "simple", field: "status", op: "=", values: ["done"] };
+const priorityHigh: Filter = { kind: "simple", field: "priority", op: "=", values: ["high"] };
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-views-"));
@@ -48,87 +39,85 @@ describe("createView", () => {
   it("generates a stable id", async () => {
     const view = await createView(locttDir, {
       name: "open",
-      query: "status != done",
+      filters: [statusNotDone],
     });
     expect(view.id).toMatch(/^[0-9A-Z]{26}$/);
     expect(view.name).toBe("open");
   });
 
-  it("derives the query string from structured conditions", async () => {
-    // conditions are the source of truth; `query` is derived by the
-    // spacing-only serializer. Tight spacing in the input tree comes back
-    // canonically spaced — and NOT operator-switched.
+  it("stores the filter list as authored, in order", async () => {
+    // K102: storage and execution are separate. What is stored is the
+    // ordered filter list itself — no derived query string, no
+    // conditions tree.
     const view = await createView(locttDir, {
-      name: "by-conditions",
-      conditions: {
-        kind: "leaf",
-        field: "status",
-        op: "in",
-        value: { type: "list", values: [{ type: "string", value: "backlog" }] },
-      },
+      name: "multi",
+      filters: [statusNotDone, priorityHigh],
     });
-    // `in (backlog)` stays a list, never collapsed to `= backlog`.
-    expect(view.query).toBe("status in (backlog)");
-    // The derived query is what is persisted.
+    expect(view.filters).toEqual([statusNotDone, priorityHigh]);
     const cfg = await loadQueriesConfig(locttDir);
-    expect(findView(cfg, view.id).query).toBe("status in (backlog)");
+    expect(findView(cfg, view.id).filters).toEqual([statusNotDone, priorityHigh]);
   });
 
-  it("derives conditions from a raw DSL query (the CLI/MCP path)", async () => {
-    // When only a DSL string is supplied, core parses it into structured
-    // conditions so the stored view always has both.
+  it("accepts an empty filter list (matches everything in scope)", async () => {
+    const view = await createView(locttDir, { name: "everything", filters: [] });
+    expect(view.filters).toEqual([]);
+  });
+
+  it("normalizes an advanced filter's spacing only, leaving a simple filter untouched", async () => {
+    // Ken, K102: "you may normalise spacing, dont edit anything else."
     const view = await createView(locttDir, {
-      name: "from-dsl",
-      query: "status = done and priority = high",
+      name: "spacing",
+      filters: [{ kind: "advanced", query: "status=done" }, statusNotDone],
     });
-    expect(view.conditions).toMatchObject({ kind: "group", op: "and" });
-    if (view.conditions.kind !== "group") throw new Error("expected a group");
-    expect(view.conditions.children).toHaveLength(2);
+    expect(view.filters[0]).toEqual({ kind: "advanced", query: "status = done" });
+    expect(view.filters[1]).toEqual(statusNotDone);
   });
 
-  it("derives conditions for a has_link DSL (the extended grammar)", async () => {
-    // Proves the BuilderTree extension: a raw-DSL view using has_link,
-    // which the visual builder refuses, still derives a valid conditions
-    // tree rather than being rejected.
-    const view = await createView(locttDir, {
-      name: "blocked-like",
-      query: 'archived != true and has_link("is_blocked_by")',
-    });
-    expect(view.conditions.kind).toBe("group");
-    // The derived query keeps the has_link predicate. A bare-safe name is
-    // emitted unquoted (the same quoting normalization dslAtom applies to
-    // values) — `has_link("is_blocked_by")` and `has_link(is_blocked_by)`
-    // parse identically, so this is lossless, not a form rewrite.
-    expect(view.query).toContain("has_link(is_blocked_by)");
-  });
-
-  it("rejects a syntactically invalid DSL rather than storing it", async () => {
-    // With the total BuilderTree, nothing the parser ACCEPTS is
-    // unrepresentable, so the derivation path only rejects a genuine
-    // syntax error. (There is no valid-but-unrepresentable construct left
-    // to test — the extension made the mapping total.)
+  it("rejects an advanced filter with unparseable DSL rather than storing it", async () => {
     await expect(
-      createView(locttDir, { name: "bad", query: "status == done" }),
+      createView(locttDir, { name: "bad", filters: [{ kind: "advanced", query: "status ==" }] }),
     ).rejects.toThrow(ViewError);
+  });
+
+  it("rejects a filter set that fails semantic validation", async () => {
+    await expect(
+      createView(locttDir, {
+        name: "bad-field",
+        filters: [{ kind: "simple", field: "not_a_real_field", op: "=", values: ["x"] }],
+      }),
+    ).rejects.toThrow(ViewError);
+  });
+
+  it("stores optional sort, archivedScope, and icon", async () => {
+    const view = await createView(locttDir, {
+      name: "styled",
+      filters: [statusNotDone],
+      sort: [{ field: "updated_at", direction: "desc" }],
+      archivedScope: "all",
+      icon: "star",
+    });
+    expect(view.sort).toEqual([{ field: "updated_at", direction: "desc" }]);
+    expect(view.archivedScope).toBe("all");
+    expect(view.icon).toBe("star");
   });
 });
 
 describe("findView", () => {
   it("resolves by id", async () => {
-    const created = await createView(locttDir, { name: "open", query: "status != done" });
+    const created = await createView(locttDir, { name: "open", filters: [statusNotDone] });
     const cfg = await loadQueriesConfig(locttDir);
     expect(findView(cfg, created.id).name).toBe("open");
   });
 
   it("resolves by unique name", async () => {
-    await createView(locttDir, { name: "open", query: "status != done" });
+    await createView(locttDir, { name: "open", filters: [statusNotDone] });
     const cfg = await loadQueriesConfig(locttDir);
     expect(findView(cfg, "open").name).toBe("open");
   });
 
   it("throws on ambiguous name", async () => {
-    const a = await createView(locttDir, { name: "dup", query: "status != done" });
-    await createView(locttDir, { name: "dup", query: "status = done" });
+    const a = await createView(locttDir, { name: "dup", filters: [statusNotDone] });
+    await createView(locttDir, { name: "dup", filters: [statusDone] });
     const cfg = await loadQueriesConfig(locttDir);
     expect(() => findView(cfg, "dup")).toThrow(ViewError);
     // ID still resolves cleanly.
@@ -137,20 +126,67 @@ describe("findView", () => {
 });
 
 describe("editView", () => {
-  it("updates name and query", async () => {
-    const created = await createView(locttDir, { name: "open", query: "status != done" });
+  it("updates name and filters", async () => {
+    const created = await createView(locttDir, { name: "open", filters: [statusNotDone] });
     const updated = await editView(locttDir, created.id, {
       name: "still-open",
-      query: "status = in_progress",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["in_progress"] }],
     });
     expect(updated.name).toBe("still-open");
-    expect(updated.query).toBe("status = in_progress");
+    expect(updated.filters).toEqual([{ kind: "simple", field: "status", op: "=", values: ["in_progress"] }]);
+  });
+
+  it("leaves filters untouched when omitted", async () => {
+    const created = await createView(locttDir, { name: "open", filters: [statusNotDone] });
+    const updated = await editView(locttDir, created.id, { name: "renamed" });
+    expect(updated.filters).toEqual([statusNotDone]);
+  });
+
+  it("replaces the WHOLE filter list rather than patching it", async () => {
+    const created = await createView(locttDir, { name: "multi", filters: [statusNotDone, priorityHigh] });
+    const updated = await editView(locttDir, created.id, { filters: [statusDone] });
+    expect(updated.filters).toEqual([statusDone]);
+  });
+
+  it("clears sort with null, leaves it alone when omitted", async () => {
+    const created = await createView(locttDir, {
+      name: "sorted",
+      filters: [statusNotDone],
+      sort: [{ field: "updated_at", direction: "desc" }],
+    });
+
+    const untouched = await editView(locttDir, created.id, { name: "still-sorted" });
+    expect(untouched.sort).toEqual([{ field: "updated_at", direction: "desc" }]);
+
+    const cleared = await editView(locttDir, created.id, { sort: null });
+    expect(cleared.sort).toBeUndefined();
+  });
+
+  it("clears icon with null, leaves it alone when omitted", async () => {
+    const created = await createView(locttDir, {
+      name: "iconed",
+      filters: [statusNotDone],
+      icon: "star",
+    });
+
+    const untouched = await editView(locttDir, created.id, { name: "still-iconed" });
+    expect(untouched.icon).toBe("star");
+
+    const cleared = await editView(locttDir, created.id, { icon: null });
+    expect(cleared.icon).toBeUndefined();
+  });
+
+  it("rejects a replacement filter list that fails validation", async () => {
+    const created = await createView(locttDir, { name: "open", filters: [statusNotDone] });
+    await expect(
+      editView(locttDir, created.id, { filters: [{ kind: "advanced", query: "status ==" }] }),
+    ).rejects.toThrow(ViewError);
   });
 });
 
 describe("archiveView / unarchiveView", () => {
   it("flips archived: true and back", async () => {
-    const created = await createView(locttDir, { name: "test-view", query: "status != done" });
+    const created = await createView(locttDir, { name: "test-view", filters: [statusNotDone] });
     await archiveView(locttDir, created.id);
     let cfg = await loadQueriesConfig(locttDir);
     let target = cfg.queries.find(q => q.id === created.id);
@@ -169,7 +205,7 @@ describe("archiveView / unarchiveView", () => {
 
 describe("deleteView (soft, default)", () => {
   it("sets archived: true and keeps the entry runnable by id", async () => {
-    const created = await createView(locttDir, { name: "test-view", query: "status != done" });
+    const created = await createView(locttDir, { name: "test-view", filters: [statusNotDone] });
     const before = (await loadQueriesConfig(locttDir)).queries.length;
 
     await deleteView(locttDir, created.id);
@@ -184,7 +220,7 @@ describe("deleteView (soft, default)", () => {
 
 describe("deleteView (hard)", () => {
   it("removes the entry from queries.yaml", async () => {
-    const created = await createView(locttDir, { name: "test-view", query: "status != done" });
+    const created = await createView(locttDir, { name: "test-view", filters: [statusNotDone] });
     const before = (await loadQueriesConfig(locttDir)).queries.length;
 
     await deleteView(locttDir, created.id, { hard: true });
@@ -195,7 +231,7 @@ describe("deleteView (hard)", () => {
   });
 
   it("can delete an already-archived view", async () => {
-    const created = await createView(locttDir, { name: "test-view", query: "status != done" });
+    const created = await createView(locttDir, { name: "test-view", filters: [statusNotDone] });
     const before = (await loadQueriesConfig(locttDir)).queries.length;
 
     await archiveView(locttDir, created.id);
@@ -214,26 +250,29 @@ describe("deleteView (hard)", () => {
  * `serializeQueriesConfig` never emitted `broken`, so a UI save silently
  * dropped a hand-broken entry. Each writer now carries `config.broken`
  * through.
+ *
+ * Under K102 a "broken" entry is one whose `filters` array itself fails
+ * validation (an unrecognized filter shape) — there is no more
+ * `conditions`/`query` pair to hand-corrupt, so the fixture below seeds a
+ * `filters` block with an invalid entry to produce it.
  */
 describe("view writes preserve a concurrent broken view (K28)", () => {
   /** Write a queries.yaml holding one valid and one unparseable entry. */
   async function seedWithBroken(): Promise<void> {
-    // Both entries carry a `conditions` block (a required field). Only the
-    // second's DSL is broken, so it degrades to a `broken` marker while the
-    // first loads as a valid view.
-    const keepConditions = conditionsYaml("status != done");
-    const brokenConditions = conditionsYaml("status = x");
     await writeFile(
       getQueriesConfigPath(locttDir),
       "queries:\n"
       + "  - id: 01KEEP000000000000000000AA\n"
       + "    name: keep\n"
-      + "    query: status != done\n"
-      + keepConditions
+      + "    filters:\n"
+      + "      - kind: simple\n"
+      + "        field: status\n"
+      + "        op: \"!=\"\n"
+      + "        values: [\"done\"]\n"
       + "  - id: 01BROKEN00000000000000000B\n"
       + "    name: broken-one\n"
-      + "    query: \"status ==\"\n"
-      + brokenConditions,
+      + "    filters:\n"
+      + "      - kind: not-a-real-kind\n",
       "utf-8",
     );
   }
@@ -244,7 +283,7 @@ describe("view writes preserve a concurrent broken view (K28)", () => {
     const before = await loadQueriesConfig(locttDir);
     expect(before.broken).toHaveLength(1);
 
-    await createView(locttDir, { name: "fresh", query: "priority = high" });
+    await createView(locttDir, { name: "fresh", filters: [priorityHigh] });
 
     const after = await loadQueriesConfig(locttDir);
     // The broken entry survived the write (the data-loss this guards).
