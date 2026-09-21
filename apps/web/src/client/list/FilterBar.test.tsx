@@ -191,9 +191,12 @@ describe("FilterBar", () => {
     await vi.waitFor(() => expect(search(router).status).toBeUndefined());
   });
 
-  it("toggling 'Show archived' sets the archived flag", async () => {
+  // U23: Show archived moved out of the inline toolbar into the desktop
+  // "⋯" View-options menu (asserted the OLD inline checkbox before).
+  it("toggling 'Show archived' from the View-options menu sets the archived flag", async () => {
     const router = await mountFilterBar();
-    fireEvent.click(screen.getByLabelText("Show archived"));
+    fireEvent.click(screen.getByTestId("view-actions-menu"));
+    fireEvent.click(await screen.findByTestId("view-actions-show-archived"));
     await vi.waitFor(() => expect(search(router).archived).toBe(true));
   });
 
@@ -236,14 +239,20 @@ describe("FilterBar", () => {
     expect(screen.queryByRole("button", { name: /Remove Sprint/ })).toBeNull();
   });
 
+  // U23: "Save as view" moved into the desktop "⋯" View-options menu, so
+  // its presence/absence is asserted from inside that menu (was an inline
+  // toolbar button before).
   it("hides 'Save as view' when the scope would not be reproduced by one", async () => {
     await mountScopedFilterBar();
-    expect(screen.queryByRole("button", { name: /Save as view/ })).toBeNull();
+    fireEvent.click(screen.getByTestId("view-actions-menu"));
+    expect(await screen.findByTestId("view-actions-menu")).toBeTruthy();
+    expect(screen.queryByTestId("view-actions-save-view")).toBeNull();
   });
 
   it("still shows 'Save as view' on the list, where the URL is the whole state", async () => {
     await mountFilterBar();
-    expect(screen.getByRole("button", { name: /Save as view/ })).toBeTruthy();
+    fireEvent.click(screen.getByTestId("view-actions-menu"));
+    expect(await screen.findByTestId("view-actions-save-view")).toBeTruthy();
   });
 
   // @verifies LST-53
@@ -842,7 +851,10 @@ describe("FilterBar — toolbar redesign (A210 / K97)", () => {
     expect(vf()).not.toContain("milestone");
   });
 
-  it("renders the view-action cluster (Export + Save as view) with NO manual refresh (Q4)", async () => {
+  // U23: the inline Export + Save-as-view pills collapsed into the desktop
+  // "⋯" View-options menu (this test asserted them as inline cluster
+  // buttons before).
+  it("collapses view actions (Export + Save as view) into the ⋯ menu, NO manual refresh (Q4)", async () => {
     stubFetch();
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     const rootRoute = createRootRoute();
@@ -867,8 +879,13 @@ describe("FilterBar — toolbar redesign (A210 / K97)", () => {
     const cluster = await screen.findByTestId("view-actions");
     // Q4: no manual refresh button — freshness is staleTime + focus refetch.
     expect(within(cluster).queryByRole("button", { name: "Refresh" })).toBeNull();
-    expect(within(cluster).getByRole("button", { name: "Export" })).toBeTruthy();
-    expect(within(cluster).getByRole("button", { name: /Save as view/ })).toBeTruthy();
+    // The cluster now holds a single "⋯" overflow trigger, not inline pills.
+    expect(within(cluster).getByTestId("view-actions-menu")).toBeTruthy();
+    expect(within(cluster).queryByRole("button", { name: "Export" })).toBeNull();
+    // Opening it reveals Export (its own CSV/JSON submenu) and Save as view.
+    fireEvent.click(within(cluster).getByTestId("view-actions-menu"));
+    expect(await screen.findByRole("button", { name: "Export" })).toBeTruthy();
+    expect(screen.getByTestId("view-actions-save-view")).toBeTruthy();
   });
 });
 

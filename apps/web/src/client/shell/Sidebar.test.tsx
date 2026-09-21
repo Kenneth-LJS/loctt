@@ -291,7 +291,9 @@ describe("Sidebar", () => {
     await renderSidebarAt("/list");
 
     // Group headers
-    for (const label of ["Projects", "Saved filters", "Milestones", "Sprints", "Labels", "Recently viewed"]) {
+    // "Views" was "Saved filters" — renamed per the View-vs-Filter vocab
+    // (K102): a saved thing is a "view".
+    for (const label of ["Projects", "Views", "Milestones", "Sprints", "Labels", "Recently viewed"]) {
       expect(await screen.findByText(label)).toBeTruthy();
     }
     // Project items
@@ -302,6 +304,40 @@ describe("Sidebar", () => {
     // Milestone + label
     expect(await screen.findByText("v1.0")).toBeTruthy();
     expect(await screen.findByText("frontend")).toBeTruthy();
+  });
+
+  it("collapses a section on toggle and persists it to localStorage (U22)", async () => {
+    await renderSidebarAt("/list");
+    // A label row proves the Labels section body is expanded.
+    expect(await screen.findByText("frontend")).toBeTruthy();
+    const toggle = screen.getByTestId("sidebar-section-toggle-labels");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(toggle);
+
+    // Body hidden, header still there, state reflected + persisted.
+    await waitFor(() => {
+      expect(screen.queryByText("frontend")).toBeNull();
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("Labels")).toBeTruthy();
+    const stored = window.localStorage.getItem("loctt.sidebar.collapsedSections");
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored ?? "[]")).toContain("labels");
+  });
+
+  it("restores a section's collapsed state from localStorage on mount (U22)", async () => {
+    window.localStorage.setItem(
+      "loctt.sidebar.collapsedSections",
+      JSON.stringify(["labels"]),
+    );
+    await renderSidebarAt("/list");
+    // Header renders; body does not (restored collapsed).
+    expect(await screen.findByText("Labels")).toBeTruthy();
+    expect(screen.queryByText("frontend")).toBeNull();
+    expect(
+      screen.getByTestId("sidebar-section-toggle-labels").getAttribute("aria-expanded"),
+    ).toBe("false");
   });
 
   it("hides completed sprints, shows active ones", async () => {
@@ -860,7 +896,7 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
 
     FAIL_VIEWS = true;
     await renderSidebarAt("/list");
-    await screen.findByText("Saved filters");
+    await screen.findByText("Views"); // renamed from "Saved filters" (K102 vocab)
     expect(screen.queryByText(/was removed/)).toBeNull();
   });
 });
@@ -897,14 +933,14 @@ describe("Sidebar groups customization (SHL-45)", () => {
     expect(screen.queryByText(/No labels yet/)).toBeNull();
   });
 
-  it("hides a built-in filter without removing the Saved filters group", async () => {
+  it("hides a built-in filter without removing the Views group", async () => {
     // @verifies SHL-45 — built-in filters are hideable too
     SETTINGS = { sidebar_groups: { hidden: ["overdue"] } };
     await renderSidebarAt("/list");
     await waitFor(() => {
       expect(screen.queryByText("Overdue")).toBeNull();
     });
-    screen.getByText("Saved filters");
+    screen.getByText("Views"); // renamed from "Saved filters" (K102 vocab)
     // A non-hidden filter still shows.
     screen.getByText("Assigned to me");
   });
