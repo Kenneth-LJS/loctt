@@ -14189,9 +14189,49 @@ as SEPARATE components — they become modes of one component. The native
 `<select>`s the audit finds (e.g. EstimationPanel Unit/Scale) migrate onto
 this general component with `searchable={false}`.
 
-**Status: RECORDED, not built.** Sequenced with the other big pieces
-(K102/K103/K104) — do deliberately, one at a time, not half-built. The
-native-component audit in flight feeds the migration list.
+**FINDING (2026-09-21): the ruling rests on a partly-false premise.**
+A survey before implementation found:
+
+1. **`multi` already exists** — `ui/Combobox` already has a full
+   `mode: "multi"` variant with `onToggle`/`closeOnSelect`/`hideSelected`,
+   a rendered `Checkbox` and `aria-multiselectable`, and it is tested.
+2. **`searchable` already exists as `filterable`** — plus the
+   `COMBOBOX_SEARCH_THRESHOLD` (12) default. So that part of K106 is a
+   RENAME for clarity, not new capability.
+3. **`FilterDropdown` is not a Combobox with different props — it is a
+   `Menu`.** This is the blocker. `Combobox` renders an INLINE `absolute`
+   panel (`role=listbox`, `aria-activedescendant` keyboard model).
+   `FilterDropdown` renders through `ui/Menu`, which PORTALS to
+   `document.body` with runtime-measured `position: fixed` and a
+   `menuitemcheckbox` + real-roving-focus model. The portalling is
+   load-bearing for a FIXED defect (MENU-PORTAL): an inline panel was
+   clipped by ancestor `overflow` — the sidebar's `overflow-y-auto`
+   sliced a panel in half — and could not flip or clamp at the viewport
+   edge.
+
+Folding them therefore means CHOOSING A SUBSTRATE, which is a real
+architectural call, not a prop change. Verified independently
+(`createPortal` in `Menu.tsx:9`, MENU-PORTAL rationale at `Menu.tsx:17-24`).
+
+**Ken's ruling on the substrate (2026-09-21).** Asked which is cleaner and
+more robust, Ken: *"i dont understand. which is the cleaner and more
+robust solution?"* — answered: PORTALLING is strictly more robust (inline
+has a known, already-encountered clipping failure), so the clean end
+state is the whole family on the portal. Recommended to him as TWO steps
+so the risky keyboard-model rewrite lands alone: (1) rename + migrate the
+native `Select` sites now, (2) move the Combobox family onto the portal
+as its own focused change. **Awaiting his pick between one-pass and
+two-step.**
+
+**Ken's ruling on `Select` churn (2026-09-21).** *"Do the churn; keep
+ArchivedScopeControl's native select."* So: rewrite the ~20
+`HTMLSelectElement.value` assertions onto `data-value`, migrate every
+other `Select` call site, and `ui/Select` SURVIVES solely for
+`ArchivedScopeControl`, which has a documented accessibility reason to be
+a real `<select>`. K106's "delete the superseded components" is therefore
+satisfied for `FilterDropdown` only, not `Select`.
+
+**Status: RECORDED, part-built — blocked on the substrate pick.**
 
 ### K107 · `archived` is a first-class tri-state query scope, default `false`, consistent across ALL archivable entities
 
