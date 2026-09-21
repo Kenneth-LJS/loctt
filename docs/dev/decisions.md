@@ -17415,7 +17415,125 @@ Grammar decisions the docs did not settle (recorded here):
 
 **To revert.** Core: `packages/core/src/config/archived-scope.ts` — narrow the constraint back to `{ readonly archived?: boolean }` (and every call site breaks again). MCP: `apps/mcp/src/runtime/config-list.ts` — drop the `archived` key from `configListInputSchema` and the `getArchivedScope` helper; `tools/{milestone,sprint,label,project,user}.ts` — drop the `applyArchivedScope(...)` line (restore `cfg.<entity>` / hand-rolled filter) and the `getArchivedScope` import; `tools/user.ts` — restore the `include_archived` param + `.filter`; `tools/views.ts` — drop the `archived` param + `applyArchivedScope`. CLI: `commands/{milestone,sprint,label,project,user,views}.ts` — restore `hasFlag(args,"--all")` + the hand-rolled `.filter` (and drop `--archived` from the ACCEPTED_FLAGS lists that gained it: sprint/label/project/user/views); `usage.ts` — restore the `list --all: include archived …` lines. Tests: delete `apps/mcp/src/tools/archived-scope.test.ts`, the "config-entity list archived scope (K107)" block in `apps/cli/src/cli.test.ts`, and revert the `list_views` default-hides assertion in `apps/mcp/src/tools/views.test.ts` (it was updated because it asserted the old show-all default). Docs: the six list rows in `docs/user/cli/reference.md` and the config-list rows + shared-`archived` note in `docs/user/mcp/reference.md`.
 
+### A279 · K104 icon picker design — portalled grid popover, not a stacked dialog; storage unchanged
+
+**Ticket:** K104 · **Date:** 2026-09-21 · **Decided by:** the `pm` agent, on
+Ken's explicit delegation in K104 (*"a UI designer designs the picker"*).
+
+**Situation.** K104 ruled the icon MODEL (Lucide icon / common-emoji list /
+free-typed emoji) and explicitly deferred the picker's FORM to a design
+call: *"a searcher? a dialog (and does a dialog stack)? or a
+Select-with-grid?"* Ken's lean: an emoji-picker-style grid combining
+Lucide + emoji, where icons can take a K103 colour but emojis cannot.
+`ui/IconPicker.tsx` today is a `Combobox`-based single-column searchable
+list over the 40 hand-rolled `Icon.tsx` names — no grid, no emoji, not
+built to combine two sources.
+
+**Decided — the form.** A portalled popover (`Menu`'s pattern:
+`createPortal`, runtime-measured, viewport-clamped, outside-click/Escape)
+holding a tabbed grid, triggered from a button inside `ViewFormDialog`.
+NOT a stacked dialog.
+
+**Why.** No overlay-on-overlay pattern exists anywhere in this codebase —
+`ResponsiveDialog`/`Modal`/`Sheet`/`Menu` are all single-layer, and the
+focus-trap + inert-background contracts (A11Y-14/15/34) are not written to
+nest, so a second trap would fight the first and a `Sheet`-over-`Sheet` has
+no defined mobile transition. Building nested-overlay a11y machinery for
+one picker is a new cross-cutting primitive, not a contained UI call. The
+portal is also the *more* necessary here than for `Menu`: a multi-column
+grid is wider than a listbox and would hit the same ancestor-`overflow`
+clipping that MENU-PORTAL exists to fix, inside `ViewFormDialog`'s own
+scroll container. An inline-expanding panel was rejected too: it would
+dominate an already-scrolling form and reflow every field below it.
+
+**Sub-decisions.**
+- **Search: yes, one box** filtering Lucide names AND emoji keywords at
+  once. Both sets are in the hundreds — past A211's twelve threshold
+  either way. One box, not one per tab, because a user wanting "a
+  checkmark" does not know which source has it.
+- **Source coexistence: two tabs** ("Icons" / "Emoji") sharing the search
+  box, plus a persistent free-type emoji field pinned below — always
+  visible, not a third tab, because free-typing is an escape hatch, not a
+  peer browsing mode. Tabs rather than one merged scroll: the two are
+  semantically distinct choices, and Ken's "combined grid" describes a
+  layout, not a request to interleave unrelated glyphs.
+- **Colour interaction: DISABLE-WITH-REASON, PRESERVE INERT.** Switching
+  icon→emoji disables the colour control with an inline reason ("emoji
+  carries its own colour") and KEEPS the stored colour value untouched.
+  Not cleared — P-11: clearing discards a deliberate choice, and
+  icon→emoji→icon must restore the same colour rather than force
+  re-picking. Not silently active either, since K104 says emoji take no
+  colour. This is a UI-state rule; the stored field is untouched either
+  way, so it is not a storage decision.
+- **Storage: UNCHANGED.** `icon?: string` stays as-is. Verified directly
+  in `packages/contracts/src/workflow.ts` — `IconStringSchema`'s own doc
+  already specifies the discrimination rule this design needs ("renders
+  as either a Lucide icon (when it matches a known catalog name) or
+  verbatim text (which is how emoji fallback works)"). Shape-sniff on
+  read, not a tagged union. **K104 is therefore a UI-only build, not a
+  contracts change.**
+- **Lucide scope: coexist, additive.** Adopt `lucide-react` for the
+  user-pickable ENTITY icon set only; the hand-rolled `ui/Icon.tsx`
+  affordance set (chevrons, close, kebab, drag — decorative chrome, never
+  user-choosable) is untouched. `lucide-react` is not currently a
+  dependency of any workspace (checked all five `package.json`s).
+- **Degradation: field-local.** An unknown Lucide id or malformed string
+  renders as inert verbatim text, stays selectable, is never silently
+  rewritten by an unrelated save — which is what `IconPicker` already does
+  for unknown values, and what `IconStringSchema`'s existing tolerance
+  (any non-blank string) already permits. No schema tightening, so no new
+  malformed class for `doctor`.
+
+**CLI/MCP parity.** Both already accept a bare string for `icon`, so this
+design call requires no contract work. What IS needed at build time,
+mirroring K103's palette-listing requirement: CLI/MCP should be able to
+LIST the curated pickable-icon catalog, so an agent picking an icon is not
+guessing a valid id blind.
+
+**FLAGGED for Ken, not decided.** (1) `lucide-react`'s actual gzip cost
+for this repo's bundler — confirmed absent as a dependency and small in
+principle via named-import tree-shaking, but no measured number was taken,
+and stating one unmeasured is the kind of unverified claim CLAUDE.md
+warns about. If Ken wants a budget gate before adopting, that needs a
+real measurement. (2) Whether `ui/Icon.tsx`'s affordance set itself later
+migrates to Lucide — K104 already frames this as build-time with a lean
+toward coexist; this design assumes coexistence rather than re-opening it.
+
+**To revert.** New `apps/web/src/client/ui/IconEmojiPicker.tsx` and its
+call sites replacing `IconPicker`; remove the `lucide-react` dependency
+line to revert the Lucide-scope call independently of the popover-form
+call. No contracts change to revert.
+
+**Status: DESIGN RECORDED, not built.**
+
 ### A278 · K102 web client: the BuilderTree AST surface is deleted repo-wide, not only from the view dialog
+
+> **SUPERSEDED, IN PART, THE SAME DAY (2026-09-21) — read this first.**
+> Two of the calls below were REVERSED by Ken after he reviewed them:
+>
+> 1. **The visual query builder is RESTORED.** Ken on being told it was
+>    gone: *"explain this? i dont think this is making sense."*
+>    Investigation confirmed `AdvancedQuerySurface` edits ONLY the URL `q`
+>    param and was never coupled to saved-view storage, so the deletion
+>    was collateral damage, not a consequence of K102. `BuilderTree` +
+>    `QueryBuilder` + the two-mode surface now live WEB-CLIENT-LOCAL in
+>    `apps/web/src/client/list/`, with zero core/contracts change. See
+>    the `K102-builder` entry in § 9.
+> 2. **The broken-view "empty picker" was a DATA-LOSS path** and is
+>    fixed. Opening Edit on a broken view and saving overwrote the
+>    preserved `rawText` with an empty filter list — the disk-preservation
+>    guarantee held only until the user touched the control meant to
+>    repair it. Save is now inert behind an explicit confirmation, with
+>    the parse error and on-disk YAML shown. See `K102-broken` in § 9 and
+>    case VUE-42.
+>
+> The third call (`AdvancedQueryEditor` is not reused per-row) and the
+> fourth (the active-view chip opens the dialog) STAND.
+>
+> `buildDsl.ts` / `builtinToDsl.ts` also stay deleted — rechecked on
+> restoration: `buildDslFromSearch`'s only runtime caller was
+> `SaveViewDialog`, which K102 replaced, and `builtinToDsl`'s only
+> importer was its own test.
 
 **Ticket:** K102 web-client half — the saved-view form dialog becomes an ordered simple/advanced filter picker. Lane: `apps/web/src/client/**` only. · **Date:** 2026-09-21 · **Commit:** (uncommitted; Ken integrates) · **Base:** a5bf2ac4.
 
