@@ -54,8 +54,14 @@ import { useVanishedViews } from "./useVanishedViews.ts";
  * The app's left sidebar. Renders, top to bottom: the view switcher
  * (List / Board / Timeline), then data-driven groups — Projects, Saved
  * filters (built-ins + user views + New filter), Milestones, Sprints,
- * Labels, Recently viewed — and a footer with the tracker's working
- * directory and a Settings link.
+ * Labels, Recently viewed — and a footer with a "Customize sidebar"
+ * affordance and a Settings link.
+ *
+ * The footer USED to show the tracker's working directory; `cc534a0d`
+ * removed it (and `f85e5a7e` the task count) as data a user never acts
+ * on. Consequence worth knowing: nothing in the shell now identifies
+ * WHICH tracker a window is showing, which is what case SHL-31 pins —
+ * see `known-gaps.md`.
  *
  * All groups read live query data. Active-item highlighting is derived
  * from the current route (and, for projects/built-ins, the active

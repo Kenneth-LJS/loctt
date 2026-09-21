@@ -349,7 +349,37 @@ the tests to go green would have destroyed the only signal.
   branch) already had the right pattern, so `Modal` was converged on it
   rather than growing a second one.
 
-**A SECOND CLAIM CHECKED AND FOUND WRONG — A11Y-16.** Reported as an
+**A11Y-16 — I GOT THIS WRONG TWICE; THE E2E TEST IS RIGHT.**
+
+*Final state: the test FAILS in both themes*, reporting
+`button"New task" ring rgb(255, 255, 255) — 1.00:1`. It is a real defect
+and is NOT fixed.
+
+The history is worth keeping, because it is a lesson about trusting a
+component-level measurement over the gate:
+1. An agent reported it (1.00:1 light, 1.07:1 dark) as a `currentColor`
+   fallback from a Tailwind layer-precedence problem.
+2. A second agent measured **16.14:1 / 19.67:1** in a real Chromium with
+   the button's classes and declared it a non-reproduction, reasoning
+   that `--text-primary` IS near-white in dark mode so the reading was a
+   coincidence — and that the test scans `main`/`aside` only, which the
+   `<header>` is not inside.
+3. **I recorded that non-reproduction as fact.** The full e2e run then
+   failed on exactly this, in LIGHT mode, naming that button.
+
+Where (2) went wrong: measuring the button in isolation, with its classes
+applied by hand, is not the same as measuring the button the app renders
+in the DOM the app builds. The scope argument was also not decisive — the
+test finds a `button` with the accessible name "New task" reachable from
+`main`/`aside`, and a desktop-width probe at rest found none, so the
+element is present under conditions the probe did not reproduce.
+
+**What a real fix needs:** run the A11Y-16 spec itself, read which
+element it names, and diagnose THAT element in THAT state — not a
+hand-built copy of it. **Left unfixed and RED rather than closed on a
+measurement that disagrees with the gate.**
+
+**(superseded note kept for the record)** Reported as an
 invisible focus ring on the header's New-task button (1.00:1 light,
 1.07:1 dark), diagnosed as the `:focus-visible` rule falling back to
 `currentColor`. It does not reproduce. Driving a real Chromium against
@@ -401,3 +431,84 @@ teaches the agent to re-run instead of fix" — the intent is right, but
 **the gate is currently not trustworthy at its own default
 concurrency**, which teaches the same lesson by a different route. Either
 the worker count comes down or the per-worker cost does.
+
+## Three e2e tests are red on a PRODUCT decision, not a bug — Ken's call
+
+These cannot be fixed by code without first deciding whether the thing
+they assert should exist. Each was left RED rather than quietly retired,
+because deleting a case is a product decision an agent should not make
+alone.
+
+### SHL-31 — nothing identifies which tracker a window is showing
+
+*"Two `loctt ui` instances for different trackers are distinguishable."*
+Bullet 1 wants each footer to show its own workspace label.
+
+The sidebar footer used to show the tracker's working directory;
+`cc534a0d` removed it, and `f85e5a7e` removed the task count, both as
+"a datum a user never acts on". That reasoning is sound in isolation —
+but neither commit considered the two-window disambiguation SHL-31 pins.
+The path now survives only in the init wizard and an fs advisory, so with
+two trackers open there is **no in-app way to tell which is which**.
+
+Bullets 2 and 3 (independent sidebar contents, non-oscillating sidebar
+toggle) are unaffected and still hold.
+
+**Options:** (a) restore a minimal workspace label to the footer — the
+directory's basename would do, and it is the smallest thing that
+satisfies the case; (b) retire bullet 1 and rewrite the case around what
+two windows genuinely do distinguish. **Not an agent call:** (a) partly
+reverts a deliberate decluttering, (b) narrows an accepted acceptance
+case.
+
+### "the footer does not report zero tasks during an outage"
+
+Same root cause. This guarded an ERR-1 concern — a footer count reading
+`0 tasks` during an outage looks like data loss rather than a failure —
+and `f85e5a7e` removed the count, so the surface it guards is gone. It
+should be retired **with** SHL-31, or kept if the count comes back.
+
+### TSK-69 — "clicking the rendered description enters edit"
+
+A247 deliberately removed that gesture (nested-interactive / WCAG 4.1.2:
+a click target wrapping interactive content). The case's title AND body
+are the superseded premise, so there is no honest rewrite that keeps the
+name — the edit affordance is now the explicit `body-edit` button.
+**Retire the case or re-title it around the button.**
+
+---
+
+### One test WAS rewritten, and is flagged for review
+
+**TSK-71** asserted "Escape discards the edit and writes nothing". K96
+(Ken, 2026-09-19) deliberately REVERSED that: Escape / Cmd-Enter / Cmd-S
+all exit *keeping* the text, because revert-to-last-autosave was itself
+a data-loss bug. Verified on disk that Escape now writes. The test was
+rewritten to the current contract — exits, text kept, **exactly one**
+write (preserving the original stray-second-write guard) — renamed, and
+left with a `SUPERSEDED PREMISE` note.
+
+This is the one place a test's ASSERTION was changed rather than how it
+drives the UI. Flagged because "the test disagreed with the code" is
+exactly the situation where the test is sometimes right. Here the code
+matches a recorded Ken ruling, so the test was the stale party — but that
+judgement is worth a second pair of eyes.
+
+
+## E2E final state (2026-09-22): 10 failed / 837 passed at 3 workers
+
+Down from **155** at the start of the spec repair, and **19** after it.
+The six fixes in `A282` closed nine. What remains:
+
+| # | Test | Category |
+|---|---|---|
+| 1,2 | A11Y-16 (light + dark) | **REAL, unfixed** — see the entry above; I twice recorded it as non-reproducing and the gate disagreed |
+| 3 | A11Y-9 back-nav focus restore | **REAL, unfixed** — `focusedTaskKey` lives in a component instance destroyed on navigation, so the restore built for A11Y-17 (refetch within a mount) does not apply across it |
+| 4,5 | SHL-31, "footer does not report zero tasks" | **PRODUCT DECISION** — nothing identifies which tracker a window shows, after two deliberate declutterings |
+| 6 | VUE-22 sidebar broken-view flag | **REAL, unfixed** — note the API half of the original diagnosis was checked and found WRONG; the server does return `broken`, so the remaining fault is in the sidebar's rendering, not the data |
+| 7 | PRU-26 | **click timeout on the kebab trigger** — same class as TSK-18 (an element moving or covered mid-click), not the `disabled` fix; needs the same instrumented diagnosis |
+| 8,9 | SPR-6, NEW-10 | **known flakes**, pass on re-run |
+| 10 | TSK-69 | **PRODUCT DECISION** — A247 deliberately removed the gesture the case asserts |
+
+So: **3 real defects, 3 product decisions, 2 flakes, 2 counted twice**
+(A11Y-16 runs per theme).
