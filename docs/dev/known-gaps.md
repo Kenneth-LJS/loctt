@@ -583,3 +583,46 @@ meaningless.
 **Rule:** an e2e red-proof must check the BUILD's exit status, not just
 the test result. A green test over a stale bundle proves nothing, and
 looks exactly like a test that does not work.
+
+## NEW-10 was not a flake — Escape reached past the dropdown to the modal
+
+Listed above as a "pre-existing flake, passes on re-run". It does not: it
+fails consistently in isolation. Diagnosed 2026-09-22 by probing the live
+page.
+
+**Symptom:** a 30s click timeout on `create-submit` — the same signature
+as PRU-26 and TSK-18, and the third time this shape appeared.
+
+**Cause.** The spec picks a tag, presses Escape to close the multi-select
+panel, then clicks Submit. One Escape did TWO things:
+
+```
+PROBE panelsBeforeEscape=1
+PROBE afterEscape={"panels":0,"discard":1}
+```
+
+It closed the panel AND opened the create modal's "Discard this task?"
+prompt, whose `z-[55]` overlay then covered Submit. `elementFromPoint` at
+the button's centre returned the overlay, so the click never landed.
+
+`Dropdown` already tried to prevent this — its handler calls
+`stopPropagation()` with a comment saying "the picker's Escape must not
+also close a dialog it sits inside". **That was insufficient, and the
+comment hid it.** Both `Dropdown` and `CreateTaskModal` register a
+CAPTURE listener on `document`; capture listeners on the SAME node fire
+in registration order, the modal mounts first, so the modal's handler had
+already run. `stopPropagation` only stops the walk to the next NODE — it
+cannot stop a sibling listener on the node you are already on.
+`stopImmediatePropagation` is the one that does, and is now used.
+
+**Why K106 surfaced it:** before the portal migration the panel lived
+inside the modal's subtree, so the modal's own handler could tell "this
+Escape belongs to something inside me". Portalling the panel to
+`document.body` removed that relationship. This is the second such
+fallout after TSK-59 (`BodyEditor`'s `contains(relatedTarget)` guard) —
+**both were components reasoning about containment that the portal
+silently broke.**
+
+*Process note:* this fix's red-proof was run with the build's exit status
+checked, after an earlier false green in this same batch came from a
+spec running against a stale bundle.

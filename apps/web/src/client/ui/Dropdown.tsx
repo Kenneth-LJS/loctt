@@ -311,8 +311,22 @@ export function Dropdown(props: DropdownProps) {
     if (!open) return undefined;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
-        // Capture + stop: the picker's Escape must not also close a
-        // dialog it sits inside (the create modal).
+        // The picker's Escape must not ALSO reach a dialog it sits
+        // inside (the create modal's discard prompt).
+        //
+        // `stopPropagation` is not enough. Both this and the modal
+        // register a CAPTURE listener on `document`, and capture
+        // listeners on the SAME node fire in registration order — the
+        // modal mounts first, so it runs first and
+        // `stopPropagation` (which only stops the walk to the NEXT
+        // node) comes too late to matter. One Escape closed the panel
+        // and opened "Discard this task?", which then covered the
+        // modal's Submit button — the button a user, or a spec, clicks
+        // next.
+        //
+        // `stopImmediatePropagation` is the one that stops the other
+        // listener on this same node.
+        e.stopImmediatePropagation();
         e.stopPropagation();
         close(true);
       }
