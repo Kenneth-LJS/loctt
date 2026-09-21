@@ -47,6 +47,9 @@ Commands:
                                    list [--archived <active|archived|all>]: default active
                                    hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (drops key from every task; use 'archive' for soft)
+  palette [list] [--format <table|json>]
+                                   List the built-in colour palette (ids + light/dark values)
+                                   for use as --color palette:<id>
   milestone <list|create|edit|archive|unarchive|delete> ...
                                    list [--archived <active|archived|all>]: default active
                                    hides archived (--all = deprecated alias for 'all')
@@ -61,6 +64,8 @@ Commands:
                                    Edit workflow statuses. add <key> --label --category
                                    <pending|active|completed|discarded> [--default][--icon][--color];
                                    rm <key> [--remap-to <key>]; reorder <key,key,...>
+                                   --color takes #rrggbb, palette:<id> (see 'loctt palette'),
+                                   or light:#rrggbb,dark:#rrggbb; '-' clears it on edit
   priority <list|add|edit|rm|reorder> ...
                                    Edit workflow priorities (NO --value; reorder sets value).
                                    rm <key> [--remap-to <key>]; reorder <key,key,...>

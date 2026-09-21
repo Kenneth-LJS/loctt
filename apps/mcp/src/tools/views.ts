@@ -29,6 +29,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { paletteListing } from "../runtime/color.js";
 import { getArchivedScope } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { errorResult, text } from "../runtime/errors.js";
@@ -300,6 +301,22 @@ export const TOOLS: readonly ToolDef[] = [
       const config = await loadWorkflowConfig(locttDir);
       return text(JSON.stringify(config, null, 2));
     },
+  },
+  {
+    // K103: without this an agent asked to set `{"palette": "<id>"}` has
+    // to guess the ids — they live in core and appear in no other tool's
+    // output. Read-only and tracker-independent (the palette is built in,
+    // not stored in .loctt/), so it takes no parameters. Parity: the CLI
+    // has `loctt palette`, the web app shows the swatches in its picker.
+    name: "list_palette_colors",
+    description:
+      "Returns the built-in colour palette: every entry's `id` plus its `light` and `dark` hex values. "
+      + "Call this before writing a colour as {\"palette\": \"<id>\"} on any entity (status, priority, task type, "
+      + "relationship, custom-field value, label) — the ids are a fixed built-in set, so do not guess them. "
+      + "A stored palette reference is resolved LIVE on every read, so it tracks the palette rather than "
+      + "freezing today's hex. Read-only, no parameters.",
+    inputSchema: {},
+    handler: () => Promise.resolve(text(JSON.stringify(paletteListing(), null, 2))),
   },
   {
     name: "get_calendar",

@@ -31,6 +31,7 @@
  */
 import type {
   CustomFieldDef,
+  EntityColor,
   EstimationScale,
   EstimationUnit,
   RelationshipGraph,
@@ -73,6 +74,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { COLOR_ARG_SYNTAX, formatEntityColor, parseEntityColorArg, warnUnknownPalette } from "../runtime/color.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -138,23 +140,30 @@ function enumArg<T extends string>(
  * Reads an icon/color CHANGE for an `edit`: `-` clears the field (maps to
  * `null`), an absent flag leaves it unchanged (`undefined`), any other
  * value sets it. Mirrors `label edit --color`.
+ *
+ * K103: the colour is parsed through `parseEntityColorArg`, so all three
+ * shapes (`#hex`, `palette:<id>`, `light:…,dark:…`) reach core as a
+ * typed `EntityColor` rather than a bare string the old signature
+ * silently narrowed to.
  */
-function iconColorChange(args: string[]): { icon?: string | null; color?: string | null } {
+function iconColorChange(args: string[]): { icon?: string | null; color?: EntityColor | null } {
   const icon = getArg(args, "--icon");
   const color = getArg(args, "--color");
   return {
     ...(icon !== undefined ? { icon: icon === "-" ? null : icon } : {}),
-    ...(color !== undefined ? { color: color === "-" ? null : color } : {}),
+    ...(color !== undefined
+      ? { color: color === "-" ? null : warnUnknownPalette(parseEntityColorArg(color)) }
+      : {}),
   };
 }
 
 /** Reads icon/color for a `create` (no clear semantics — a value or nothing). */
-function iconColorCreate(args: string[]): { icon?: string; color?: string } {
+function iconColorCreate(args: string[]): { icon?: string; color?: EntityColor } {
   const icon = getArg(args, "--icon");
   const color = getArg(args, "--color");
   return {
     ...(icon !== undefined ? { icon } : {}),
-    ...(color !== undefined ? { color } : {}),
+    ...(color !== undefined ? { color: warnUnknownPalette(parseEntityColorArg(color)) } : {}),
   };
 }
 
@@ -244,14 +253,14 @@ export async function status(args: string[], root: string): Promise<void> {
       for (const s of cfg.statuses) {
         const def = s.default === true ? "  (default)" : "";
         const icon = s.icon ? `  ${s.icon}` : "";
-        const color = s.color ? `  ${s.color}` : "";
+        const color = s.color !== undefined ? `  ${formatEntityColor(s.color)}` : "";
         console.log(`${s.key} (${s.category}): ${s.label}${icon}${color}${def}`);
       }
       break;
     }
     case "add": {
       await runCommand(async () => {
-        const usage = `loctt status add <key> --label <text> --category <${VALID_STATUS_CATEGORIES.join("|")}> [--default] [--icon <s>] [--color <hex>]`;
+        const usage = `loctt status add <key> --label <text> --category <${VALID_STATUS_CATEGORIES.join("|")}> [--default] [--icon <s>] [--color <${COLOR_ARG_SYNTAX}>]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -271,7 +280,7 @@ export async function status(args: string[], root: string): Promise<void> {
     }
     case "edit": {
       await runCommand(async () => {
-        const usage = `loctt status edit <key> [--label <text>] [--category <cat>] [--default] [--icon <s|->] [--color <hex|->]`;
+        const usage = `loctt status edit <key> [--label <text>] [--category <cat>] [--default] [--icon <s|->] [--color <${COLOR_ARG_SYNTAX}|->]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -322,7 +331,7 @@ export async function priority(args: string[], root: string): Promise<void> {
       for (const p of cfg.priorities) {
         const value = p.value !== undefined ? ` [${p.value}]` : "";
         const icon = p.icon ? `  ${p.icon}` : "";
-        const color = p.color ? `  ${p.color}` : "";
+        const color = p.color !== undefined ? `  ${formatEntityColor(p.color)}` : "";
         console.log(`${p.key}: ${p.label}${value}${icon}${color}`);
       }
       break;
@@ -330,7 +339,7 @@ export async function priority(args: string[], root: string): Promise<void> {
     case "add": {
       await runCommand(async () => {
         // NO --value: value is derived from list order by reorder (D20).
-        const usage = `loctt priority add <key> --label <text> [--icon <s>] [--color <hex>]`;
+        const usage = `loctt priority add <key> --label <text> [--icon <s>] [--color <${COLOR_ARG_SYNTAX}>]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -342,7 +351,7 @@ export async function priority(args: string[], root: string): Promise<void> {
     }
     case "edit": {
       await runCommand(async () => {
-        const usage = `loctt priority edit <key> [--label <text>] [--icon <s|->] [--color <hex|->]`;
+        const usage = `loctt priority edit <key> [--label <text>] [--icon <s|->] [--color <${COLOR_ARG_SYNTAX}|->]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -387,14 +396,14 @@ export async function taskType(args: string[], root: string): Promise<void> {
       const cfg = await loadWorkflowConfig(locttDir);
       for (const t of cfg.task_types) {
         const icon = t.icon ? `  ${t.icon}` : "";
-        const color = t.color ? `  ${t.color}` : "";
+        const color = t.color !== undefined ? `  ${formatEntityColor(t.color)}` : "";
         console.log(`${t.key}: ${t.label}${icon}${color}`);
       }
       break;
     }
     case "add": {
       await runCommand(async () => {
-        const usage = `loctt task-type add <key> --label <text> [--icon <s>] [--color <hex>]`;
+        const usage = `loctt task-type add <key> --label <text> [--icon <s>] [--color <${COLOR_ARG_SYNTAX}>]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -406,7 +415,7 @@ export async function taskType(args: string[], root: string): Promise<void> {
     }
     case "edit": {
       await runCommand(async () => {
-        const usage = `loctt task-type edit <key> [--label <text>] [--icon <s|->] [--color <hex|->]`;
+        const usage = `loctt task-type edit <key> [--label <text>] [--icon <s|->] [--color <${COLOR_ARG_SYNTAX}|->]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -496,7 +505,7 @@ export async function relationship(args: string[], root: string): Promise<void> 
     }
     case "add": {
       await runCommand(async () => {
-        const usage = `loctt relationship add <key> --label <text> [--kind <directional|symmetric>] [--inverse <key>] [--inverse-label <text>] [--graph <none|acyclic|tree>] [--ranked] [--icon <s>] [--color <hex>]`;
+        const usage = `loctt relationship add <key> --label <text> [--kind <directional|symmetric>] [--inverse <key>] [--inverse-label <text>] [--graph <none|acyclic|tree>] [--ranked] [--icon <s>] [--color <${COLOR_ARG_SYNTAX}>]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -521,7 +530,7 @@ export async function relationship(args: string[], root: string): Promise<void> 
     }
     case "edit": {
       await runCommand(async () => {
-        const usage = `loctt relationship edit <key> [--label <text>] [--kind <k>] [--inverse <key>] [--inverse-label <text>] [--graph <g>] [--ranked] [--icon <s|->] [--color <hex|->]`;
+        const usage = `loctt relationship edit <key> [--label <text>] [--kind <k>] [--inverse <key>] [--inverse-label <text>] [--graph <g>] [--ranked] [--icon <s|->] [--color <${COLOR_ARG_SYNTAX}|->]`;
         const key = positional(args, 2, usage);
         if (!key) throw new UsageError("missing key", usage);
         const label = getArg(args, "--label");
@@ -720,7 +729,7 @@ async function customFieldValue(args: string[], locttDir: string): Promise<void>
   switch (vsub) {
     case "add": {
       await runCommand(async () => {
-        const usage = `loctt custom-field value <field> add <key> --label <text> [--icon <s>] [--color <hex>]`;
+        const usage = `loctt custom-field value <field> add <key> --label <text> [--icon <s>] [--color <${COLOR_ARG_SYNTAX}>]`;
         const key = positional(args, 4, usage);
         if (!key) throw new UsageError("missing value key", usage);
         const label = getArg(args, "--label");
@@ -732,7 +741,7 @@ async function customFieldValue(args: string[], locttDir: string): Promise<void>
     }
     case "edit": {
       await runCommand(async () => {
-        const usage = `loctt custom-field value <field> edit <key> [--label <text>] [--icon <s|->] [--color <hex|->]`;
+        const usage = `loctt custom-field value <field> edit <key> [--label <text>] [--icon <s|->] [--color <${COLOR_ARG_SYNTAX}|->]`;
         const key = positional(args, 4, usage);
         if (!key) throw new UsageError("missing value key", usage);
         const label = getArg(args, "--label");

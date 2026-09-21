@@ -17618,8 +17618,40 @@ byte-exact.
 colour fields. A per-entity checklist beats a per-file one — the gap was
 invisible from the type errors, because the narrow type compiled fine.
 
-**Status: stages 1 + 2 BUILT + green (211 contracts, 2298 core, web 2252,
-tsc --build 0). Stage 3 (CLI + MCP + docs) in progress.**
+**STAGE 3 (CLI + MCP + docs) — BUILT.** The eight
+`restrict-template-expressions` / `no-base-to-string` lint errors were
+REAL bugs, not lint noise: each interpolated a colour straight into
+output, so a palette or double colour printed `[object Object]`. Lint
+caught the exact silent class stage 1 predicted.
+
+*Terminal render format.* A terminal has no light/dark signal, so
+resolving to one mode would be an arbitrary choice presented as fact.
+Instead each shape renders as itself, and the output round-trips as valid
+`--color` input:
+
+```
+Backend  palette:teal (#0F766E/#39A88F)
+Urgent   #1e6fcb
+Dual     light:#1e6fcb,dark:#8ab4f8
+```
+
+*CLI input syntax.* One flag expresses all three shapes:
+`--color "#1e6fcb"` (single), `--color "palette:teal"` (reference),
+`--color "light:#aaa,dark:#333"` (double). *MCP* takes the wire form
+directly as JSON, stated in the tool descriptions.
+
+*Palette listing (K103's explicit 3-surface parity requirement).*
+`loctt palette` on the CLI and `list_palette_colors` on MCP, both
+returning every id with BOTH mode values — so an agent picking a palette
+id is not guessing blind.
+
+Verified end-to-end on a real tracker: all three shapes store in their
+authored form (a bare hex stays a bare hex — no migration), and no
+surface prints `[object Object]`.
+
+**Status: K103 COMPLETE across all three surfaces + docs. Gates:
+contracts 211, core 2298, web 2252, CLI 166, MCP 116, integration 596,
+tsc --build 0, lint 0 errors.**
 
 ### A279 · K104 icon picker design — portalled grid popover, not a stacked dialog; storage unchanged
 

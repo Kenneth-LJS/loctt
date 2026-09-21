@@ -12,6 +12,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, hasFlag, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { COLOR_ARG_SYNTAX, formatEntityColor, parseEntityColorArg, warnUnknownPalette } from "../runtime/color.js";
 import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
@@ -51,7 +52,7 @@ export async function run(args: string[], root: string): Promise<void> {
       const matched = filterByName(visible, getFilterArg(args));
       const page = pageConfigList(matched, getConfigPagination(args));
       for (const l of page.items) {
-        const color = l.color ? `  ${l.color}` : "";
+        const color = l.color !== undefined ? `  ${formatEntityColor(l.color)}` : "";
         const arch = l.archived === true ? "  (archived)" : "";
         const idCol = showIds ? `\t${l.id}` : "";
         console.log(`${l.name}${idCol}${color}${arch}`);
@@ -68,14 +69,15 @@ export async function run(args: string[], root: string): Promise<void> {
         // A flag here is a mistyped name, not a name. See
         // `positional`: `--name "X"` used to create an entity
         // literally called `--name`, silently, exit 0.
-        const name = positional(args, 2, "loctt label create <name> [--color <hex>]");
+        const usage = `loctt label create <name> [--color <${COLOR_ARG_SYNTAX}>]`;
+        const name = positional(args, 2, usage);
         if (!name) {
-          throw new UsageError(
-            "missing name",
-            "loctt label create <name> [--color <hex>]",
-          );
+          throw new UsageError("missing name", usage);
         }
-        const color = getArg(args, "--color");
+        const raw = getArg(args, "--color");
+        // K103: all three shapes, not just a hex — core's
+        // `CreateLabelInput.color` is an `EntityColor`.
+        const color = raw !== undefined ? warnUnknownPalette(parseEntityColorArg(raw)) : undefined;
         const def = await createLabel(locttDir, {
           name,
           ...(color !== undefined ? { color } : {}),
@@ -86,27 +88,22 @@ export async function run(args: string[], root: string): Promise<void> {
     }
     case "edit": {
       await runCommand(async () => {
+        const usage = `loctt label edit <name|id> [--name <new-name>] [--color <${COLOR_ARG_SYNTAX}|->]`;
         const ref = args[2];
         if (!ref) {
-          throw new UsageError(
-            "missing label ref",
-            "loctt label edit <name|id> [--name <new-name>] [--color <hex|->]",
-          );
+          throw new UsageError("missing label ref", usage);
         }
         const cfg = await loadLabelsConfig(locttDir);
         const id = resolveLabelIdFromInput(cfg, ref, { includeArchived: true });
         const name = getArg(args, "--name");
         const colorArg = getArg(args, "--color");
         if (name === undefined && colorArg === undefined) {
-          throw new UsageError(
-            "nothing to change",
-            "loctt label edit <name|id> [--name <new-name>] [--color <hex|->]",
-          );
+          throw new UsageError("nothing to change", usage);
         }
         await editLabel(locttDir, id, {
           ...(name !== undefined ? { name } : {}),
           ...(colorArg !== undefined
-            ? { color: colorArg === "-" ? null : colorArg }
+            ? { color: colorArg === "-" ? null : warnUnknownPalette(parseEntityColorArg(colorArg)) }
             : {}),
         });
         console.log(`Updated label ${ref}`);

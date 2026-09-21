@@ -1,4 +1,4 @@
-import type { EntityColor, ArchivedScope, BrokenEntry, LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
+import type { ArchivedScope, BrokenEntry, EntityColor, LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";

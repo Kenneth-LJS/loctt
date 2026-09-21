@@ -4,6 +4,7 @@
  * from every task (or remaps to another id).
  */
 
+import type { EntityColor } from "@loctt/contracts";
 import {
   applyArchivedScope,
   archiveLabel,
@@ -17,6 +18,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { COLOR_INPUT_DOC, colorInputSchema, nullableColorInputSchema } from "../runtime/color.js";
 import { configListInputSchema, getArchivedScope, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
@@ -42,13 +44,17 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_label",
-    description: "Register a new label. Returns the generated id. Names are not unique; disambiguated by id.",
+    description:
+      "Register a new label. Returns the generated id. Names are not unique; disambiguated by id. "
+      + "COLOUR (`color`): " + COLOR_INPUT_DOC,
     inputSchema: {
       name: z.string(),
-      color: z.string().optional(),
+      color: colorInputSchema,
     },
     handler: async ({ locttDir }, args) => {
-      const color = args["color"] as string | undefined;
+      // K103: an `EntityColor`, not a string — the zod schema above has
+      // already validated it as one of the three shapes.
+      const color = args["color"] as EntityColor | undefined;
       const def = await createLabel(locttDir, {
         name: args["name"] as string,
         ...(color !== undefined ? { color } : {}),
@@ -58,16 +64,18 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "edit_label",
-    description: "Edit a label's display name or color. The id is immutable. `label` parameter accepts id or name.",
+    description:
+      "Edit a label's display name or color. The id is immutable. `label` parameter accepts id or name. "
+      + "COLOUR (`color`): " + COLOR_INPUT_DOC,
     inputSchema: {
       label: z.string().describe("Label id or name"),
       name: z.string().optional().describe("New name"),
-      color: z.string().nullable().optional().describe("Pass null to clear"),
+      color: nullableColorInputSchema,
     },
     handler: async ({ locttDir }, args) => {
       const cfg = await loadLabelsConfig(locttDir);
       const id = resolveLabelIdFromInput(cfg, args["label"] as string, { includeArchived: true });
-      const colorArg = args["color"] as string | null | undefined;
+      const colorArg = args["color"] as EntityColor | null | undefined;
       await editLabel(locttDir, id, {
         ...(args["name"] !== undefined ? { name: args["name"] as string } : {}),
         ...("color" in args ? { color: colorArg ?? null } : {}),

@@ -484,13 +484,15 @@ hidden from `views list`. Use `views archive` for that.
 | Subcommand | Synopsis | Notes |
 |---|---|---|
 | `list` | `loctt label list [--archived <active\|archived\|all>] [--ids] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both. `--all` is a deprecated alias for `--archived all`. `--limit` default 100, max 1000. |
-| `create` | `loctt label create <name> [--color <hex>]` | |
-| `edit` | `loctt label edit <name\|id> [--name] [--color <hex\|->]` | `--color -` clears the color. |
+| `create` | `loctt label create <name> [--color <color>]` | See [Colors](#colors) for the three `<color>` shapes. |
+| `edit` | `loctt label edit <name\|id> [--name] [--color <color\|->]` | `--color -` clears the color. |
 | `archive` / `unarchive` | `loctt label archive <name\|id>` | |
 | `delete` | `loctt label delete <name\|id> [--remap-to <other>] [--yes]` | Removes the label from every task, or remaps it. Prompts. |
 
 ```bash
 loctt label create urgent --color "#B02F17"
+loctt label create infra --color "palette:teal"
+loctt label create docs --color "light:#CC6600,dark:#F0A868"
 ```
 ```
 Created label "urgent" (id 01J…)
@@ -652,6 +654,59 @@ loctt calendar show
 
 ---
 
+## Colors
+
+Anything that carries a color — a label, status, priority, task type,
+relationship, or custom-field enum value — accepts **three shapes**, and
+`--color` spells each one differently:
+
+| Shape | `--color` value | Meaning |
+| --- | --- | --- |
+| Single | `#1e6fcb` | One color, used in **both** light and dark mode. |
+| Palette | `palette:teal` | A reference to a built-in palette entry, which carries its own light/dark pair. |
+| Per-mode | `light:#CC6600,dark:#F0A868` | An explicit color for each mode. Both halves are required; order does not matter. |
+
+A bare hex is the original format, so every file written before colors
+gained the other two shapes still works unchanged — there is no
+migration.
+
+**A palette reference is live.** `palette:teal` stores the *id*, not
+teal's current value, so if the palette changes, everything referencing
+it follows. Nothing stores a resolved hex.
+
+On `edit`, `--color -` clears the color entirely.
+
+### Listing the palette
+
+`palette:<id>` needs a valid id, so the built-in list is printed by:
+
+```bash
+loctt palette                  # id, label, light, dark — tab-separated
+loctt palette --format json    # the same entries as JSON
+loctt palette | cut -f1        # just the ids
+```
+
+An id that is not in the list is **not** rejected — it is stored, and a
+warning is printed — but it renders as a neutral color until corrected.
+
+### How colors are printed
+
+`list` has no way to know whether your terminal is light or dark, so it
+never picks a mode for you. It prints what is stored:
+
+```
+#1e6fcb                          a single color
+light:#CC6600,dark:#F0A868       a per-mode pair
+palette:teal (#0F766E/#39A88F)   a palette ref, with what it resolves to now
+palette:nosuch (unknown)         a palette id that does not exist
+```
+
+The first two are printed exactly as you would type them, so a value
+read out of `list` can be pasted straight back into `edit`. A palette
+line can be pasted back too — the trailing `(…)` is ignored.
+
+---
+
 ## Workflow configuration
 
 The workflow — statuses, priorities, task types, relationships, custom
@@ -679,8 +734,8 @@ Rules that hold across every family:
 | Subcommand | Usage | Notes |
 | --- | --- | --- |
 | `list` | `loctt status list` | Key, category, label, icon/color, default. |
-| `add` | `loctt status add <key> --label <text> --category <pending\|active\|completed\|discarded> [--default] [--icon <s>] [--color <hex>]` | |
-| `edit` | `loctt status edit <key> [--label] [--category] [--default] [--icon <s\|->] [--color <hex\|->]` | `-` clears icon/color. |
+| `add` | `loctt status add <key> --label <text> --category <pending\|active\|completed\|discarded> [--default] [--icon <s>] [--color <color>]` | |
+| `edit` | `loctt status edit <key> [--label] [--category] [--default] [--icon <s\|->] [--color <color\|->]` | `-` clears icon/color. |
 | `rm` | `loctt status rm <key> [--remap-to <key>] [--yes]` | |
 | `reorder` | `loctt status reorder <key,key,…>` | |
 
@@ -689,8 +744,8 @@ Rules that hold across every family:
 | Subcommand | Usage | Notes |
 | --- | --- | --- |
 | `list` | `loctt priority list` | Shows the derived `[value]`. |
-| `add` | `loctt priority add <key> --label <text> [--icon <s>] [--color <hex>]` | No `--value`. Appends at the bottom. |
-| `edit` | `loctt priority edit <key> [--label] [--icon <s\|->] [--color <hex\|->]` | No `--value`. |
+| `add` | `loctt priority add <key> --label <text> [--icon <s>] [--color <color>]` | No `--value`. Appends at the bottom. |
+| `edit` | `loctt priority edit <key> [--label] [--icon <s\|->] [--color <color\|->]` | No `--value`. |
 | `rm` | `loctt priority rm <key> [--remap-to <key>] [--yes]` | |
 | `reorder` | `loctt priority reorder <key,key,…>` | Sets the value from position (top = 1). |
 
@@ -699,8 +754,8 @@ Rules that hold across every family:
 | Subcommand | Usage | Notes |
 | --- | --- | --- |
 | `list` | `loctt task-type list` | |
-| `add` | `loctt task-type add <key> --label <text> [--icon <s>] [--color <hex>]` | |
-| `edit` | `loctt task-type edit <key> [--label] [--icon <s\|->] [--color <hex\|->]` | |
+| `add` | `loctt task-type add <key> --label <text> [--icon <s>] [--color <color>]` | |
+| `edit` | `loctt task-type edit <key> [--label] [--icon <s\|->] [--color <color\|->]` | |
 | `rm` | `loctt task-type rm <key> [--remap-to <key>] [--yes]` | |
 | `reorder` | `loctt task-type reorder <key,key,…>` | |
 
@@ -711,8 +766,8 @@ No `reorder` (relationships have no order).
 | Subcommand | Usage | Notes |
 | --- | --- | --- |
 | `list` | `loctt relationship list` | |
-| `add` | `loctt relationship add <key> --label <text> [--kind <directional\|symmetric>] [--inverse <key>] [--inverse-label <text>] [--graph <none\|acyclic\|tree>] [--ranked] [--icon <s>] [--color <hex>]` | |
-| `edit` | `loctt relationship edit <key> [--label] [--kind] [--inverse] [--inverse-label] [--graph] [--ranked] [--icon <s\|->] [--color <hex\|->]` | |
+| `add` | `loctt relationship add <key> --label <text> [--kind <directional\|symmetric>] [--inverse <key>] [--inverse-label <text>] [--graph <none\|acyclic\|tree>] [--ranked] [--icon <s>] [--color <color>]` | |
+| `edit` | `loctt relationship edit <key> [--label] [--kind] [--inverse] [--inverse-label] [--graph] [--ranked] [--icon <s\|->] [--color <color\|->]` | |
 | `rm` | `loctt relationship rm <key> [--remap-to <key>] [--yes]` | |
 
 ### `loctt custom-field`
@@ -728,8 +783,8 @@ be seeded with at least one value at creation via `--enum-value`
 | `add` | `loctt custom-field add <key> --label <text> --type <string\|number\|date\|boolean\|enum> [--multi] [--searchable] [--task-types a,b] [--enum-value key=label]…` | `--enum-value` required (and only allowed) for `enum`. |
 | `edit` | `loctt custom-field edit <key> [--label] [--searchable[=true\|false]] [--task-types a,b\|-]` | No `--type` / `--multi` (immutable). `--task-types -` clears the scope. |
 | `rm` | `loctt custom-field rm <key> [--yes]` | Clear-only. |
-| `value <field> add` | `loctt custom-field value <field> add <key> --label <text> [--icon <s>] [--color <hex>]` | Enum values only. |
-| `value <field> edit` | `loctt custom-field value <field> edit <key> [--label] [--icon <s\|->] [--color <hex\|->]` | |
+| `value <field> add` | `loctt custom-field value <field> add <key> --label <text> [--icon <s>] [--color <color>]` | Enum values only. |
+| `value <field> edit` | `loctt custom-field value <field> edit <key> [--label] [--icon <s\|->] [--color <color\|->]` | |
 | `value <field> rm` | `loctt custom-field value <field> rm <key> [--remap-to <key>] [--yes]` | Remap onto another value of the same field. |
 | `value <field> reorder` | `loctt custom-field value <field> reorder <key,key,…>` | |
 
