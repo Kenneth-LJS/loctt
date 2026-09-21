@@ -28,7 +28,7 @@ describe("MCP bulk archive_task (stdio)", () => {
 
         // T-1 is hidden from the default (non-archived) list; the archived
         // filter shows it.
-        const listed = await client.callTool("list_tasks", { include_archived: true });
+        const listed = await client.callTool("list_tasks", { archived: "all" });
         expect(listed.content[0]?.text ?? "").toContain("T-1");
       } finally {
         await client.close();
