@@ -118,6 +118,8 @@ async function dragCard(
   page: import("@playwright/test").Page,
   sourceKey: string,
   target: { readonly x: number; readonly y: number },
+  /** When given, the column is re-measured mid-drag — see below. */
+  targetColumnId?: string,
 ): Promise<void> {
   const card = page.getByTestId(`board-card-${sourceKey}`);
   const box = await card.boundingBox();
@@ -127,6 +129,29 @@ async function dragCard(
   // Past the threshold first, so the drag is armed before we aim.
   await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 20, { steps: 4 });
   await page.mouse.move(target.x, target.y, { steps: 12 });
+
+  // RE-MEASURE the target column now, mid-drag, if the caller named one.
+  //
+  // The drop is decided by `elementFromPoint` at the pointer
+  // (`useBoardDrag.slotAt`), and coordinates captured BEFORE the drag can
+  // be stale: lifting the card out of the flow reflows the board, so the
+  // column that was at those coordinates may have moved. Measured over
+  // repeated runs, the passing drops aimed at x≈684 and the failing ones
+  // at x≈394 — landing on the SPRINT column instead of "No sprint", so
+  // no write was issued at all (`posts=[]`). This was filed as a flake
+  // and is not one; it is a stale-coordinate bug in the helper.
+  if (targetColumnId !== undefined) {
+    const fresh = await page
+      .getByTestId(`sprint-column-${targetColumnId}`)
+      .boundingBox();
+    if (fresh !== null) {
+      await page.mouse.move(
+        fresh.x + fresh.width / 2,
+        fresh.y + fresh.height - 40,
+        { steps: 4 },
+      );
+    }
+  }
   await page.mouse.up();
 
   // Wait for the write AND the re-render it triggers, not just for the
@@ -440,7 +465,7 @@ test.describe("SPR — sprints overview", () => {
     await assign(tracker, [[String(key), "Held"]]);
 
     await page.goto(`${tracker.baseURL}/sprints`);
-    await dragCard(page, String(key), await columnPoint(page, "__no_sprint__"));
+    await dragCard(page, String(key), await columnPoint(page, "__no_sprint__"), "__no_sprint__");
 
     await expect(page.getByTestId("sprint-count-__no_sprint__")).toHaveText("1");
 

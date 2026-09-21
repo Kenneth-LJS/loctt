@@ -626,3 +626,48 @@ silently broke.**
 *Process note:* this fix's red-proof was run with the build's exit status
 checked, after an earlier false green in this same batch came from a
 spec running against a stale bundle.
+
+
+## SPR-6 was not a flake either — the drop aimed at stale coordinates
+
+Listed in two earlier entries as a "pre-existing flake, passes on
+re-run", on the strength of a note in the spec's own helper recording it
+failing 2 of 12 under load in September. **It is a real bug**, and it
+failed 2 of 3 runs in ISOLATION on an idle machine.
+
+**How it was found.** Instrumenting the page's `fetch` showed that on a
+failing run `posts=[]` — **no write request was made at all**. That ruled
+out the render race everyone (including me, twice) assumed: the helper's
+existing wait logic was never the problem, because there was nothing to
+wait for.
+
+Probing `elementFromPoint` at the drop coordinates then showed:
+
+```
+pass:  dropHit={"col":"__no_sprint__"}            target x=684.5
+fail:  dropHit={"col":"01M32WJWT8R59KC8HV1P9AG90Z"} target x=394
+```
+
+The drop was landing on the SPRINT column instead of "No sprint".
+`columnPoint` measures the target column BEFORE `dragCard` runs, and
+lifting the card out of the flow reflows the board — so by the time the
+pointer arrives, the column that was at those coordinates has moved.
+`useBoardDrag.slotAt` decides the drop by `elementFromPoint`, so it
+faithfully dropped where the test actually pointed.
+
+**Fix:** `dragCard` takes the target column id and RE-MEASURES it
+mid-drag, just before `mouse.up()`. 5 of 5 runs pass; the whole
+`flow-sprints` file passes 50/50.
+
+**Two wrong turns on the way, both mine, both from treating the symptom:**
+adding two animation frames before the assertion (3 of 4), then a
+settle-loop that waited for two equal count reads (2 of 5 — *worse*,
+because it could sample twice before the refetch even started and
+"settle" on the stale value). Neither could work, because the request was
+never sent. Tuning a wait is what you reach for when you have assumed a
+race; the cheap instrumentation that disproved the race should have come
+first.
+
+**Both "known flakes" in this suite have now turned out to be real
+bugs** (NEW-10, SPR-6). A test labelled flaky is a hypothesis about the
+test, and this file recorded that hypothesis as fact twice.
