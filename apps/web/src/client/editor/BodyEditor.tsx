@@ -252,10 +252,21 @@ function BodyEditSurface({
   const wrapperRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (mode === "rich") {
-      // The rich surface focuses itself (RichEditor's caret-at-coords
-      // effect places the caret where the user clicked, TSK-69), so
-      // nothing to do here.
-      return;
+      // The rich surface used to focus ITSELF: `RichEditor`'s
+      // caret-at-coords effect placed the caret where the user clicked
+      // the rendered body. A247 removed click-to-edit (a click target
+      // wrapping the description also wraps its links and images —
+      // nested-interactive, WCAG 4.1.2), so there are no coords to place
+      // a caret at and nothing focused the editor at all. Entering edit
+      // left focus on the "Edit" button, and the user had to click a
+      // second time before they could type — TSK-69's "ready to type"
+      // stopped being true when the gesture it assumed went away.
+      const richId = requestAnimationFrame(() => {
+        wrapperRef.current
+          ?.querySelector<HTMLElement>('[data-testid="rich-editor"]')
+          ?.focus();
+      });
+      return () => { cancelAnimationFrame(richId); };
     }
     // Raw mode: the host `<div data-testid="markdown-editor">` is not
     // itself focusable — focus CodeMirror's editable `.cm-content`

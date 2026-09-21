@@ -714,12 +714,22 @@ On opening a task with a body.
   surface is read-only until entered).
 
 ### TSK-69 · M2 · major · P1 P8
-**Clicking anywhere on the rendered description text enters edit mode.**
+**An explicit edit affordance on the description enters edit mode.**
 
-- A click on the body text (not on a link or image — see TSK-70) swaps
-  the rendered view for the editor (rich editor + toolbar, the existing
-  `BodyEditor`), ready to type.
+- Activating the description's edit control swaps the rendered view for
+  the editor (rich editor + toolbar, the existing `BodyEditor`), ready to
+  type.
 - The raw/rich toggle is available here, inside edit mode, and only here.
+
+> **Re-titled (A247, 2026-09-22).** This case read "clicking anywhere on
+> the rendered description text enters edit mode". A247 removed that
+> gesture deliberately: a click target wrapping the rendered body also
+> wraps its links and images, which is a nested-interactive violation
+> (WCAG 4.1.2) and made TSK-70's "a link opens, and does not enter edit"
+> a contradiction to resolve at runtime. The edit route is now an
+> explicit control, so the case asserts that instead — the coverage
+> (edit mode is reachable, and the raw/rich toggle lives inside it) is
+> unchanged.
 
 ### TSK-70 · M2 · major · P4 P8
 **In the rendered view, a link opens and an image opens — neither enters

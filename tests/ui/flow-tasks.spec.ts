@@ -1480,7 +1480,7 @@ test.describe("TSK — K33 read-then-edit description", () => {
   });
 
   // @verifies TSK-69
-  test("TSK-69: clicking the rendered description text enters edit, ready to type", async ({
+  test("TSK-69: the explicit edit affordance enters edit, ready to type", async ({
     page, tracker,
   }) => {
     const [key] = await tracker.seed([{ title: "Enter edit" }]);
@@ -1489,7 +1489,12 @@ test.describe("TSK — K33 read-then-edit description", () => {
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByTestId("body-rendered")).toBeVisible();
 
-    await page.getByText("Click me to edit.").click();
+    // A247 removed click-to-edit on the body text: a click target
+    // wrapping the rendered description also wraps its links and images,
+    // which is nested-interactive (WCAG 4.1.2) and made TSK-70's "a link
+    // opens and does NOT enter edit" a contradiction. The route is the
+    // explicit control; the coverage below is unchanged.
+    await page.getByTestId("body-edit").click();
 
     // The editor and the raw/rich toggle appear (and only now).
     await expect(bodyRich(page)).toBeVisible();

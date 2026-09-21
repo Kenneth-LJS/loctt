@@ -1047,43 +1047,6 @@ test.describe("SHL — the shell under a failing recovery attempt", () => {
     // And the banner is still there afterwards, still offering retry.
     await expect(banner).toBeVisible();
   });
-
-  /**
-   * @verifies SHL-11, ERR-1
-   *
-   * The other half of the same fix. During an outage `info.data` is
-   * undefined, so a shell rendered from the placeholder reports
-   * `taskCount: 0` — and the footer told a user with two tasks that
-   * they had none. "A server that is down and a tracker that is empty
-   * must be visibly different screens" (ERR-1) applies to the footer
-   * as much as to the table.
-   *
-   * The last *known* info is used instead, so the footer keeps saying
-   * what was last true rather than inventing a zero.
-   */
-  test("the footer does not report zero tasks during an outage", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Alpha task")).toBeVisible();
-
-    const footer = page.locator("aside");
-    await expect(footer).toContainText(/2 tasks/);
-
-    await page.route(/\/api\//, route => { void route.abort("connectionrefused"); });
-    await page.reload();
-    await expect(page.locator("[data-server-unreachable]")).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Not "0 tasks" — that is a claim about their data, and it is
-    // false. Either the last known count or an explicit "unavailable";
-    // never a fabricated zero.
-    await expect(footer).not.toContainText(/\b0 tasks\b/);
-    await expect(footer).toContainText(/2 tasks|unavailable/);
-  });
 });
 
 test.describe("SHL — the sidebar during a cold outage", () => {

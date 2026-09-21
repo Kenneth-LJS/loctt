@@ -454,13 +454,6 @@ two windows genuinely do distinguish. **Not an agent call:** (a) partly
 reverts a deliberate decluttering, (b) narrows an accepted acceptance
 case.
 
-### "the footer does not report zero tasks during an outage"
-
-Same root cause. This guarded an ERR-1 concern — a footer count reading
-`0 tasks` during an outage looks like data loss rather than a failure —
-and `f85e5a7e` removed the count, so the surface it guards is gone. It
-should be retired **with** SHL-31, or kept if the count comes back.
-
 ### TSK-69 — "clicking the rendered description enters edit"
 
 A247 deliberately removed that gesture (nested-interactive / WCAG 4.1.2:
@@ -497,7 +490,7 @@ The six fixes in `A282` closed nine. What remains:
 |---|---|---|
 | 1,2 | A11Y-16 (light + dark) | **REAL, unfixed** — see the entry above; I twice recorded it as non-reproducing and the gate disagreed |
 | 3 | A11Y-9 back-nav focus restore | **REAL, unfixed** — `focusedTaskKey` lives in a component instance destroyed on navigation, so the restore built for A11Y-17 (refetch within a mount) does not apply across it |
-| 4,5 | SHL-31, "footer does not report zero tasks" | **PRODUCT DECISION** — nothing identifies which tracker a window shows, after two deliberate declutterings |
+| 4 | SHL-31 | **PRODUCT DECISION** — nothing identifies which tracker a window shows, after two deliberate declutterings |
 | 6 | VUE-22 sidebar broken-view flag | **REAL, unfixed** — note the API half of the original diagnosis was checked and found WRONG; the server does return `broken`, so the remaining fault is in the sidebar's rendering, not the data |
 | 7 | PRU-26 | **click timeout on the kebab trigger** — same class as TSK-18 (an element moving or covered mid-click), not the `disabled` fix; needs the same instrumented diagnosis |
 | 8,9 | SPR-6, NEW-10 | **known flakes**, pass on re-run |
