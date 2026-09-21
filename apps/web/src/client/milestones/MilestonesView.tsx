@@ -8,9 +8,16 @@ import {
   useOrphanedMilestoneTasks,
 } from "../api/hooks/useMilestoneProgress.ts";
 import { formatWorkspaceDate, NO_TARGET_DATE } from "../dates/workspaceDate.ts";
+// K105: the "+ New milestone" affordance opens the SAME shared dialog the
+// Settings panel and the sidebar create use (mode="create"), so a
+// milestone created from this view cannot drift from one created anywhere
+// else. Reading a settings/ component is allowed; this file does not edit it.
+import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
+import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
 import type { MilestoneWithProgress, Readout } from "./model.ts";
@@ -110,6 +117,12 @@ export function MilestonesView() {
   // this is a local view toggle, not a write.
   const [showArchived, setShowArchived] = useState(false);
 
+  // K105: "+ New milestone" opens the shared create dialog in place (not
+  // a form on the Settings page). `false` is the closed state; on success
+  // the dialog invalidates the milestones query, so the new row appears
+  // here without extra wiring.
+  const [creating, setCreating] = useState(false);
+
   const all: readonly MilestoneWithProgress[] = useMemo(
     () => milestones.data?.items ?? [],
     [milestones.data],
@@ -170,37 +183,46 @@ export function MilestonesView() {
       <PageHeader
         title="Milestones"
         subtitle={
-          /* MSL-42 (UX-15): the discoverability copy. This *is* where
-             milestone progress renders, so the subhead says so plainly
-             and points at where milestones are created — closing the
-             "a view the user cannot find" gap the case is written
-             against. */
+          /* K105: the subhead describes the page — no "Manage them in
+             Settings → Milestones" pointer (Ken: useless copywriting;
+             creation now lives in the "+ New milestone" action beside the
+             title). MSL-42's discoverability is satisfied by the page
+             existing and being reachable, not by prose. */
           <p data-testid="milestones-subhead" className="text-[0.8571rem] text-text-tertiary">
-            Progress toward every milestone. Manage them in{" "}
-            <Link
-              to="/settings/$section"
-              params={{ section: "milestones" }}
-              className="underline underline-offset-2"
-            >
-              Settings → Milestones
-            </Link>
-            .
+            Progress toward every milestone, with the tasks counting toward each.
           </p>
         }
-        actions={archivedCount > 0 && (
-          // MSL-25: reveals archived milestones *in the view* without
-          // unarchiving them. A checkbox rather than a button so its
-          // state is announced, and nothing here writes to
-          // `milestones.yaml`. Migrated to the B1 `Checkbox` primitive.
-          <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
-            <Checkbox
-              data-testid="milestones-show-archived"
-              checked={showArchived}
-              onChange={e => { setShowArchived(e.target.checked); }}
-            />
-            Show archived ({archivedCount})
-          </label>
-        )}
+        actions={
+          <>
+            {archivedCount > 0 && (
+              // MSL-25: reveals archived milestones *in the view* without
+              // unarchiving them. A checkbox rather than a button so its
+              // state is announced, and nothing here writes to
+              // `milestones.yaml`. Migrated to the B1 `Checkbox` primitive.
+              <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
+                <Checkbox
+                  data-testid="milestones-show-archived"
+                  checked={showArchived}
+                  onChange={e => { setShowArchived(e.target.checked); }}
+                />
+                Show archived ({archivedCount})
+              </label>
+            )}
+            {/* K105: create is a "+ New milestone" affordance opening the
+                shared create dialog in place, mirroring the sidebar's
+                "+ New project"/"+ New view". Not a deep link to a Settings
+                form. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              testId="milestones-new"
+              onClick={() => { setCreating(true); }}
+            >
+              <Icon name="plus" />
+              New milestone
+            </Button>
+          </>
+        }
       />
 
       {/* K28 / P-5: task files that could not be read are excluded
@@ -257,20 +279,26 @@ export function MilestonesView() {
       )}
 
       {visible.length === 0 ? (
-        <p
+        // K105: the empty state gives a "+ New milestone" BUTTON that
+        // opens the shared create dialog in place — not a prose pointer to
+        // a Settings form. Its progress shows up here once created.
+        <div
           data-testid="milestones-empty"
-          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
+          className="flex flex-col items-center gap-3 rounded-md border border-border-subtle bg-bg-surface px-4 py-8 text-center"
         >
-          No milestones yet. Create one in{" "}
-          <Link
-            to="/settings/$section"
-            params={{ section: "milestones" }}
-            className="underline underline-offset-2"
+          <p className="text-[0.9286rem] text-text-tertiary">
+            No milestones yet. Create one and its progress will show up here.
+          </p>
+          <Button
+            variant="primary"
+            size="sm"
+            testId="milestones-empty-new"
+            onClick={() => { setCreating(true); }}
           >
-            Settings → Milestones
-          </Link>
-          {" "}and its progress will show up here.
-        </p>
+            <Icon name="plus" />
+            New milestone
+          </Button>
+        </div>
       ) : (
         <ul data-testid="milestones-rows" className="flex flex-col gap-2">
           {visible.map(m => (
@@ -284,6 +312,17 @@ export function MilestonesView() {
             />
           ))}
         </ul>
+      )}
+
+      {/* K105: the same shared dialog Settings and the sidebar create
+          open, in mode="create". On success it closes and invalidates the
+          milestones query, so the new milestone appears above without any
+          extra wiring here. */}
+      {creating && (
+        <MilestoneEditDialog
+          mode="create"
+          onClose={() => { setCreating(false); }}
+        />
       )}
     </div>
   );
