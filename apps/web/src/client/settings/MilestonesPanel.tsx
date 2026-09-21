@@ -1,4 +1,4 @@
-import type { BrokenEntry, MilestoneDef } from "@loctt/contracts";
+import type { ArchivedScope, BrokenEntry, MilestoneDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -7,9 +7,11 @@ import {
   useCountedMilestones,
   useDeleteMilestone,
 } from "../api/hooks/useDataMutations.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { MilestoneEditDialog } from "./MilestoneEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
@@ -224,8 +226,16 @@ function BrokenMilestoneRow({ entry, onRepair, repairing }: {
 }
 
 export function MilestonesPanel() {
-  const milestones = useCountedMilestones();
   const [creating, setCreating] = useState(false);
+  // K107: this panel had NO archived control before — archived milestones
+  // rendered inline with an `(archived)` marker. It now defaults to the
+  // `active` scope and reveals archived through the tri-state control, the
+  // server doing the filter. A deep-link hash widens the fetch to `all` so
+  // a `#row-<id>` anchor to an archived milestone still resolves (K100).
+  const [scope, setScope] = useState<ArchivedScope>("active");
+  const [hashPresent] = useState(hashDeepLinkPresent);
+  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
+  const milestones = useCountedMilestones(effectiveScope);
 
   if (milestones.isError) {
     return (
@@ -263,7 +273,7 @@ export function MilestonesPanel() {
         Progress is shown on the Milestones view, not here.
       </p>
 
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-3">
         <Button
           variant="secondary"
           testId="milestone-create-open"
@@ -271,6 +281,11 @@ export function MilestonesPanel() {
         >
           New milestone
         </Button>
+        <ArchivedScopeControl
+          testId="milestones-archived-scope"
+          value={scope}
+          onChange={setScope}
+        />
       </div>
 
       {creating && (
@@ -285,7 +300,7 @@ export function MilestonesPanel() {
             // A lone broken entry is NOT an empty list (DEG-30 / A138) —
             // the list renders below so the corrupt milestone is shown.
             <p data-testid="milestones-empty" data-milestones-state="empty" className="text-[0.9286rem] text-text-tertiary">
-              No milestones yet.
+              {scope === "archived" ? "No archived milestones." : "No milestones yet."}
             </p>
           )
         : (

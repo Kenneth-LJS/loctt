@@ -399,7 +399,7 @@ List saved views, or manage them with a subcommand.
 
 | Subcommand | Synopsis | Description |
 |---|---|---|
-| `list` | `loctt views list` | List saved views (the default). |
+| `list` | `loctt views list [--archived <active\|archived\|all>]` | List saved views (the default). `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). Broken views are always shown. |
 | `create` | `loctt views create <name> --query "<dsl>" [--sort …]` | Create a view. |
 | `edit` | `loctt views edit <name\|id> [--name] [--query] [--sort]` | Change a view. `--sort -` clears the sort. |
 | `archive` / `unarchive` | `loctt views archive <name\|id>` | Hide or restore a view. |
@@ -427,7 +427,7 @@ unparseable `--query` is rejected on write, not saved.
 
 | Subcommand | Synopsis | Notes |
 |---|---|---|
-| `list` | `loctt label list [--all] [--ids] [--filter q] [--limit n] [--offset n]` | `--all` includes archived. `--limit` default 100, max 1000. |
+| `list` | `loctt label list [--archived <active\|archived\|all>] [--ids] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both. `--all` is a deprecated alias for `--archived all`. `--limit` default 100, max 1000. |
 | `create` | `loctt label create <name> [--color <hex>]` | |
 | `edit` | `loctt label edit <name\|id> [--name] [--color <hex\|->]` | `--color -` clears the color. |
 | `archive` / `unarchive` | `loctt label archive <name\|id>` | |
@@ -446,7 +446,7 @@ Created label "urgent" (id 01J…)
 
 | Subcommand | Synopsis | Notes |
 |---|---|---|
-| `list` | `loctt milestone list [--all] [--ids] [--progress] [--filter q] [--limit n] [--offset n]` | `--progress` scans tasks for a done/total count. |
+| `list` | `loctt milestone list [--archived <active\|archived\|all>] [--ids] [--progress] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). `--progress` scans tasks for a done/total count. |
 | `create` | `loctt milestone create <name> [--target-date <YYYY-MM-DD>]` | |
 | `edit` | `loctt milestone edit <name\|id> [--name] [--target-date <date\|->] [--archived <true\|false>]` | `--target-date -` clears the date. |
 | `archive` / `unarchive` | `loctt milestone archive <name\|id>` | |
@@ -465,7 +465,7 @@ Created milestone "v1.0 Launch" (id 01J…)
 
 | Subcommand | Synopsis | Notes |
 |---|---|---|
-| `list` | `loctt sprint list [--all] [--ids] [--progress] [--filter q] [--limit n] [--offset n]` | |
+| `list` | `loctt sprint list [--archived <active\|archived\|all>] [--ids] [--progress] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). |
 | `create` | `loctt sprint create <name> --start <date> --end <date> [--state <active\|completed\|future>] [--goal <text>]` | `--state` defaults to `future`. |
 | `edit` | `loctt sprint edit <name\|id> [--name] [--start] [--end] [--state] [--goal <text\|->] [--force]` | `--goal -` clears the goal. |
 | `archive` / `unarchive` | `loctt sprint archive <name\|id>` | |
@@ -485,7 +485,7 @@ Created sprint "Sprint 12" (id 01J…)
 
 | Subcommand | Synopsis | Notes |
 |---|---|---|
-| `list` | `loctt project list [--all] [--ids] [--filter q] [--limit n] [--offset n]` | A `*` marks the workspace default. |
+| `list` | `loctt project list [--archived <active\|archived\|all>] [--ids] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). A `*` marks the workspace default. |
 | `create` | `loctt project create <name> --prefix <prefix> [--slug <slug>] [--default]` | `--default` makes it the workspace default. |
 | `edit` | `loctt project edit <name\|id> --name <new>` | |
 | `set-prefix` | `loctt project set-prefix <name\|id> <new-prefix> [--yes]` | Renames every task's key. Numbers are preserved; old keys keep resolving. Prompts with the count. |
@@ -506,7 +506,7 @@ Created project "Mobile App" (slug mobile-app, prefix MOB, id 01J…)
 
 | Subcommand | Synopsis | Notes |
 |---|---|---|
-| `list` | `loctt user list [--all] [--filter q] [--limit n] [--offset n]` | A `*` marks the current user. |
+| `list` | `loctt user list [--archived <active\|archived\|all>] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). A `*` marks the current user. |
 | `current` | `loctt user current` | Print the current user. |
 | `switch` | `loctt user switch <id-or-name>` | Change the current user. |
 | `create` | `loctt user create <name> [--email] [--timezone] [--avatar <path>] [--switch]` | `--switch` makes the new user current. |

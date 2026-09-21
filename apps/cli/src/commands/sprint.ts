@@ -1,5 +1,6 @@
 import type { SprintState } from "@loctt/contracts";
 import {
+  applyArchivedScope,
   archiveSprint,
   createSprint,
   deleteSprint,
@@ -17,7 +18,7 @@ import {
 } from "@loctt/core";
 
 import { formatNumber, pad } from "../format/value.js";
-import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, hasFlag, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
@@ -37,7 +38,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--end", "--filter", "--force", "--format", "--goal", "--ids", "--limit", "--name", "--offset", "--progress", "--remap-to", "--start", "--state", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--end", "--filter", "--force", "--format", "--goal", "--ids", "--limit", "--name", "--offset", "--progress", "--remap-to", "--start", "--state", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -45,14 +46,16 @@ export async function run(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   switch (sub) {
     case "list": {
-      const includeArchived = hasFlag(args, "--all");
+      const scope = parseArchivedScope(args);
       const showIds = hasFlag(args, "--ids");
       const showProgress = hasFlag(args, "--progress");
       const cfg = await loadSprintsConfig(locttDir);
-      // K90 order (matching the web `handleListSprints`): archived
-      // filter, then name filter, then page. Progress is computed over
-      // the paged window only, so a page's `--progress` scan is bounded.
-      const visible = cfg.sprints.filter(s => includeArchived || s.archived !== true);
+      // K90/K107 order (matching the web `handleListSprints`): archived
+      // scope, then name filter, then page. Progress is computed over the
+      // paged window only, so a page's `--progress` scan is bounded.
+      // Default scope `active` hides archived; `--archived archived|all`
+      // (and the deprecated `--all` alias) widen it.
+      const visible = applyArchivedScope(cfg.sprints, scope);
       const matched = filterByName(visible, getFilterArg(args));
       const page = pageConfigList(matched, getConfigPagination(args));
       const shown = page.items;

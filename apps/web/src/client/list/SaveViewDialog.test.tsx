@@ -58,7 +58,7 @@ function postBody(): Record<string, unknown> | undefined {
 describe("SaveViewDialog", () => {
   it("POSTs structured conditions built from the active filters", async () => {
     render(
-      <SaveViewDialog search={{ status: ["backlog"], archived: true }} onClose={() => {}} />,
+      <SaveViewDialog search={{ status: ["backlog"], archived: "all" }} onClose={() => {}} />,
       { wrapper: wrapper() },
     );
 
@@ -85,7 +85,7 @@ describe("SaveViewDialog", () => {
 
   it("previews the derived query string read-only", () => {
     render(
-      <SaveViewDialog search={{ status: ["backlog"], archived: true }} onClose={() => {}} />,
+      <SaveViewDialog search={{ status: ["backlog"], archived: "all" }} onClose={() => {}} />,
       { wrapper: wrapper() },
     );
     // The preview shows the derived DSL (membership form).

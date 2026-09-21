@@ -29,7 +29,7 @@ describe("buildDslFromSearch", () => {
   });
 
   it("uses `in (...)` for multi-value facets and maps type→task_type", () => {
-    expect(buildDslFromSearch({ type: ["bug", "feature"], archived: true })).toBe(
+    expect(buildDslFromSearch({ type: ["bug", "feature"], archived: "all" })).toBe(
       "task_type in (bug, feature)",
     );
   });
@@ -39,21 +39,32 @@ describe("buildDslFromSearch", () => {
       q: "text ~ login",
       priority: ["high"],
       labels: ["l_fe", "l_be"],
-      archived: true,
+      archived: "all",
     });
     // `q` is parsed and re-serialized by core (no blanket paren wrap);
     // facets are membership regardless of count.
     expect(dsl).toBe("text ~ login and priority in (high) and labels in (l_fe, l_be)");
   });
 
-  it("includes archived != true by default and omits it when archived is on", () => {
+  // K107: replaces the old boolean-toggle assertion. The scope is encoded
+  // into the derived DSL: absent/`active` → `archived != true`; `all` →
+  // omitted; `archived` → `archived = true`.
+  it("encodes the tri-state archived scope in the derived DSL", () => {
     expect(buildDslFromSearch({})).toBe("archived != true");
-    expect(buildDslFromSearch({ archived: true })).toBe("archived != true");
-    // ^ with nothing else active, the fallback still yields a valid query.
+    expect(buildDslFromSearch({ archived: "active" })).toBe("archived != true");
+    // `all` with nothing else active falls back to the guard so the query
+    // is still valid.
+    expect(buildDslFromSearch({ archived: "all" })).toBe("archived != true");
+    expect(buildDslFromSearch({ status: ["backlog"], archived: "all" })).toBe(
+      "status in (backlog)",
+    );
+    expect(buildDslFromSearch({ status: ["backlog"], archived: "archived" })).toBe(
+      "status in (backlog) and archived = true",
+    );
   });
 
   it("maps custom field.<key> params to fields.<key> as membership", () => {
-    const search = { "field.impact": ["p0"], archived: true } as Record<string, unknown>;
+    const search = { "field.impact": ["p0"], archived: "all" } as Record<string, unknown>;
     expect(buildDslFromSearch(search)).toBe("fields.impact in (p0)");
   });
 

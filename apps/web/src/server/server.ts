@@ -7,6 +7,7 @@ import { join as pathJoin, normalize as pathNormalize, resolve as pathResolve, s
 import { pipeline } from "node:stream/promises";
 
 import type {
+  ArchivedScope,
   BulkResponse,
   CommentResponse,
   ConfigResponse,
@@ -18,7 +19,6 @@ import type {
   FieldHealth,
   IntegritySummaryResponse,
   LinkRequest,
-  ListTasksRequest,
   MigrateResponse,
   MigrationPlanResponse,
   RecentTaskResponse,
@@ -28,6 +28,7 @@ import type {
   WorkflowUsageResponse,
 } from "@loctt/contracts";
 import {
+  ArchivedScopeSchema,
   BulkArchiveRequestSchema,
   BulkDeleteRequestSchema,
   BulkLinkRequestSchema,
@@ -46,9 +47,11 @@ import {
   PutWorkflowRequestSchema,
   ValidateQueryRequestSchema,
 } from "@loctt/contracts";
+import type { ListOptions } from "@loctt/core";
 import {
   abandonReconcile,
   appendTaskBody,
+  applyArchivedScope,
   applyReconcileDecisions,
   applyWorkflowEdit,
   ArchivedReferenceError,
@@ -1002,6 +1005,25 @@ function parsePagination(
 }
 
 /**
+ * K107: the one place the `?archived=active|archived|all` query param is
+ * parsed for every archivable-list endpoint (tasks, saved views,
+ * milestones, sprints, labels, projects, users). Replaces the old split
+ * spellings — the task list's `?archived=true` boolean and the user
+ * list's `?include_archived=true` — with the single tri-state scope.
+ *
+ * Anything absent, empty or unrecognised falls back to the default
+ * (`active`, hide archived) rather than erroring: a pasted or hand-typed
+ * URL with a bad scope is a bad filter, not a bad request, and the list
+ * must still render (same tolerance as the sort/pagination params).
+ * `applyArchivedScope` (config entities) and the task list's
+ * `archivedScope` option both take exactly this value.
+ */
+function parseArchivedScope(url: URL): ArchivedScope {
+  const parsed = ArchivedScopeSchema.safeParse(url.searchParams.get("archived"));
+  return parsed.success ? parsed.data : "active";
+}
+
+/**
  * Builds a paginated response envelope. Slices `items` by the
  * provided offset+limit and reports the unsliced total so clients
  * can render `Page X of Y` without a follow-up count call.
@@ -1731,10 +1753,18 @@ export function createWebApp(options: WebAppOptions) {
     json(res, summary satisfies IntegritySummaryResponse);
   };
 
-  const handleListViews: RouteHandler = async ({ res, locttDir }) => {
+  const handleListViews: RouteHandler = async ({ res, url, locttDir }) => {
     try {
       const cfg = await loadQueriesConfig(locttDir);
-      json(res, cfg);
+      // K107: `/api/views` honours the tri-state `?archived` scope like
+      // every other archivable list. The picker/resolver callers request
+      // `all` so an archived view stays selectable by URL; the settings
+      // panel requests its own scope; the sidebar defaults to `active`.
+      // `broken` entries carry no `archived` field and are always kept —
+      // a corrupt view is surfaced regardless of scope so it can be
+      // repaired. The rest of the config (defaults etc.) rides through.
+      const scope = parseArchivedScope(url);
+      json(res, { ...cfg, queries: applyArchivedScope(cfg.queries, scope) });
     } catch (err) {
       // VUE-36 / XS-66: a queries.yaml that will not parse must reach
       // the sidebar as a *named* failure, not as the generic 500
@@ -2091,8 +2121,13 @@ export function createWebApp(options: WebAppOptions) {
       // An unreadable task must not take down the projects panel; the
       // badge is omitted rather than shown as a wrong number.
     }
+    // K107: the choosable list honours the tri-state `?archived` scope
+    // (default active). `default`/`effective_default`/`task_counts`/drift
+    // below stay computed over the FULL config — they are workspace facts,
+    // not filtered results, exactly as `?q=` leaves them.
+    const scope = parseArchivedScope(url);
     json(res, {
-      ...paginated(filterProjects(cfg.projects, q), page.offset, page.limit),
+      ...paginated(applyArchivedScope(filterProjects(cfg.projects, q), scope), page.offset, page.limit),
       default: cfg.default ?? null,
       effective_default: effectiveDefault,
       task_counts: taskCounts,
@@ -2462,9 +2497,14 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const q = url.searchParams.get("q") ?? undefined;
+    const scope = parseArchivedScope(url);
     const cfg = await loadSprintsConfig(locttDir);
-    // K90: `?q=` name search, before the count/progress scans.
-    const counted = await withCounts(locttDir, url, "sprint", filterByName(cfg.sprints, q));
+    // K90/K107: `?q=` name search and the `?archived` scope, both applied
+    // before the count/progress scans so those run only over the window
+    // actually returned (default scope `active` hides archived).
+    const counted = await withCounts(
+      locttDir, url, "sprint", applyArchivedScope(filterByName(cfg.sprints, q), scope),
+    );
     const { items, unreadable } = await withProgress(locttDir, url, "sprint", counted);
     json(res, {
       ...paginated(items, page.offset, page.limit),
@@ -2594,9 +2634,13 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const q = url.searchParams.get("q") ?? undefined;
+    const scope = parseArchivedScope(url);
     const cfg = await loadMilestonesConfig(locttDir);
-    // K90: `?q=` name search, before the count/progress scans.
-    const counted = await withCounts(locttDir, url, "milestone", filterByName(cfg.milestones, q));
+    // K90/K107: `?q=` name search and the `?archived` scope, both applied
+    // before the count/progress scans (default scope `active`).
+    const counted = await withCounts(
+      locttDir, url, "milestone", applyArchivedScope(filterByName(cfg.milestones, q), scope),
+    );
     const { items, unreadable } = await withProgress(locttDir, url, "milestone", counted);
     json(res, {
       ...paginated(items, page.offset, page.limit),
@@ -2684,10 +2728,14 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const q = url.searchParams.get("q") ?? undefined;
+    const scope = parseArchivedScope(url);
     const cfg = await loadLabelsConfig(locttDir);
-    // K90: `?q=` name search, applied before the (expensive) usage-count
-    // scan so counts run only over the matched window.
-    const items = await withCounts(locttDir, url, "label", filterByName(cfg.labels, q));
+    // K90/K107: `?q=` name search and the `?archived` scope, applied
+    // before the (expensive) usage-count scan so counts run only over the
+    // matched window (default scope `active`).
+    const items = await withCounts(
+      locttDir, url, "label", applyArchivedScope(filterByName(cfg.labels, q), scope),
+    );
     json(res, {
       ...paginated(items, page.offset, page.limit),
       // Phase-7B: a corrupt label entry degrades; surfaced here.
@@ -2814,14 +2862,18 @@ export function createWebApp(options: WebAppOptions) {
   const handleListUsers: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
-    const includeArchived = url.searchParams.get("include_archived") === "true";
+    // K107: the tri-state `?archived` scope replaces the old
+    // `?include_archived=true` boolean. Default `active` hides archived;
+    // the pickers/resolvers that must keep an archived assignee's name
+    // visible (P-4, LST-25) request `all`.
+    const scope = parseArchivedScope(url);
     const q = url.searchParams.get("q") ?? undefined;
     const users = await loadAllUsers(locttDir);
     const current = await getCurrentUser(locttDir);
     // K90: `?q=` name search. A user with no `name` is non-matching for a
     // non-empty query (filterByName skips undefined names).
     const filtered = filterByName(
-      users.filter(u => includeArchived || u.archived !== true),
+      applyArchivedScope(users, scope),
       q,
     );
     json(res, {
@@ -4018,7 +4070,12 @@ export function createWebApp(options: WebAppOptions) {
     // the list falls back to unfiltered rows and the `broken_view` banner
     // explains why the filter did not apply.
     const view = viewMissing || brokenView !== undefined ? undefined : requestedView;
-    const includeArchived = url.searchParams.get("archived") === "true";
+    // K107: the tri-state `?archived=active|archived|all` scope (default
+    // `active`) replaces the old `?archived=true` boolean. Core applies it
+    // to the effective query; when the query itself mentions `archived`
+    // the user's term wins and `onArchivedConflict` fires (surfaced as a
+    // warning below), matching the CLI/MCP behaviour Ken specified.
+    const archivedScope = parseArchivedScope(url);
     // Fold the free-text `query` and the structured filter params
     // (project/status/priority/type/assignee/…, plus custom
     // `field.<key>`) into one DSL query, AND-ing every active filter.
@@ -4069,12 +4126,12 @@ export function createWebApp(options: WebAppOptions) {
     // passing a sentinel limit large enough to cover any tracker.
     // `total` then reflects the true matching count and the page
     // slice happens in `paginated()` below.
-    const params: ListTasksRequest = {
+    const params: ListOptions = {
       ...(effectiveQuery !== undefined ? { query: effectiveQuery } : {}),
       ...(view !== undefined ? { view } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       ...(sort !== undefined ? { sort } : {}),
-      ...(includeArchived ? { includeArchived: true } : {}),
+      archivedScope,
       ...(today !== undefined ? { today } : {}),
       ...(now !== undefined ? { now } : {}),
       ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
@@ -4121,6 +4178,19 @@ export function createWebApp(options: WebAppOptions) {
             message: err.message,
             position: err.position,
             suggestions: [...err.suggestions],
+          });
+        },
+        // K107: the requested archived scope conflicts with an explicit
+        // `archived` term in the query — the term wins (scope resolves to
+        // `all`), but the override is surfaced rather than resolved
+        // silently, so the result set isn't mysterious.
+        onArchivedConflict: (scope: ArchivedScope) => {
+          queryWarnings.push({
+            field: "archived",
+            message:
+              `The query mentions "archived", so its term decides — the "${scope}" archived filter was not applied.`,
+            position: 0,
+            suggestions: [],
           });
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
@@ -4211,13 +4281,15 @@ export function createWebApp(options: WebAppOptions) {
     // what the search could not see.
     const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
     const { workflowConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
-    const includeArchived = url.searchParams.get("archived") === "true";
+    // K107: tri-state scope (default `active`). The relationship pickers
+    // request `all` so an archived task stays findable by paste (REL-30).
+    const archivedScope = parseArchivedScope(url);
 
     const result = listTasks({
       tasks,
       options: {
         query: `text ~ ${JSON.stringify(q)}`,
-        ...(includeArchived ? { includeArchived: true } : {}),
+        archivedScope,
         ...(today !== undefined ? { today } : {}),
         ...(now !== undefined ? { now } : {}),
         ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
@@ -4246,7 +4318,13 @@ export function createWebApp(options: WebAppOptions) {
       });
       return;
     }
-    const includeArchived = url.searchParams.get("archived") === "true";
+    // K107: export mirrors the list's visible rows, so it honours the same
+    // tri-state `?archived` scope (default `active`). `filterForExport`
+    // (core) is a two-state include/exclude; `all` and `archived` both
+    // need archived rows present, and `archived` then narrows to only
+    // those below — core has no "only archived" export path to change.
+    const archivedScope = parseArchivedScope(url);
+    const includeArchived = archivedScope !== "active";
     const includeBody = url.searchParams.get("body") === "true";
     const columnsParam = url.searchParams.get("columns");
     const columns = columnsParam ? columnsParam.split(",").map(c => c.trim()).filter(Boolean) : undefined;
@@ -4269,7 +4347,7 @@ export function createWebApp(options: WebAppOptions) {
     const effectiveQuery = view !== undefined
       ? baseQuery
       : buildStructuredQuery(url, baseQuery);
-    const params: ListTasksRequest = {
+    const params: ListOptions = {
       ...(effectiveQuery !== undefined ? { query: effectiveQuery } : {}),
       ...(view !== undefined ? { view } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
@@ -4292,7 +4370,12 @@ export function createWebApp(options: WebAppOptions) {
       ...(workflowConfig !== undefined ? { workflowConfig } : {}),
       ctx: exportCtx,
     });
-    const filtered = filterForExport(result, includeArchived);
+    const withArchived = filterForExport(result, includeArchived);
+    // `archived` scope narrows to only archived rows; `active`/`all` keep
+    // what `filterForExport` returned.
+    const filtered = archivedScope === "archived"
+      ? withArchived.filter(t => t.frontmatter.archived === true)
+      : withArchived;
     const opts = {
       ...(columns ? { columns } : {}),
       ...(includeBody ? { includeBody: true } : {}),

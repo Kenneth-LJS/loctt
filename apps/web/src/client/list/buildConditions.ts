@@ -66,6 +66,11 @@ function archivedLeaf(): BuilderTree {
   return { kind: "leaf", field: "archived", op: "!=", value: { type: "boolean", value: true } };
 }
 
+/** The `archived = true` leaf, for a view saved under the `archived` scope. */
+function archivedOnlyLeaf(): BuilderTree {
+  return { kind: "leaf", field: "archived", op: "=", value: { type: "boolean", value: true } };
+}
+
 /**
  * Build the structured conditions tree from the active list filters.
  *
@@ -115,14 +120,21 @@ export function buildConditionsFromSearch(
     }
   }
 
-  if (search.archived !== true) {
+  // K107: the archived dimension is now the tri-state scope, not a boolean
+  // toggle. Until K102 lets a view carry the scope as its own flag, the
+  // scope is still encoded into the view's structured query so re-running
+  // it reproduces what the user saw: `active` (or absent) → `archived !=
+  // true`; `archived` → `archived = true`; `all` → no archived leaf.
+  if (search.archived === "archived") {
+    children.push(archivedOnlyLeaf());
+  } else if (search.archived !== "all") {
     children.push(archivedLeaf());
   }
 
   // A view with no conditions at all is meaningless (and the serializer
   // refuses an empty group), so a filter set that produced nothing —
-  // `{ archived: true }` with no other facet — falls back to the
-  // `archived != true` guard, exactly as the old string builder did.
+  // scope `all` with no other facet — falls back to the `archived != true`
+  // guard, exactly as the old string builder did.
   if (children.length === 0) {
     children.push(archivedLeaf());
   }

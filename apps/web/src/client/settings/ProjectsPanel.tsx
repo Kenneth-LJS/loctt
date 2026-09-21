@@ -1,14 +1,16 @@
-import type { ProjectDef } from "@loctt/contracts";
+import type { ArchivedScope, ProjectDef } from "@loctt/contracts";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { useProjects } from "../api/hooks/sidebarData.ts";
+import { useProjectsScoped } from "../api/hooks/sidebarData.ts";
 import { useInfoFresh } from "../api/hooks/useInfo.ts";
 import { useDeleteProject } from "../api/hooks/useProjectMutations.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { CreateProjectDialog } from "./CreateProjectDialog.tsx";
+import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { DeleteProjectDialog } from "./DeleteProjectDialog.tsx";
 import { ProjectEditDialog } from "./ProjectEditDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
@@ -154,7 +156,16 @@ function ProjectRow({
 }
 
 export function ProjectsPanel() {
-  const projects = useProjects();
+  // K107: this panel had NO archived control before — archived projects
+  // rendered inline with an `(archived)` marker. It now defaults to the
+  // `active` scope and reveals archived through the tri-state control. A
+  // deep-link hash widens the fetch to `all` so a `#row-<id>` anchor to an
+  // archived project still resolves (K100). `task_counts`/`default` stay
+  // server-computed over the full config regardless of scope.
+  const [scope, setScope] = useState<ArchivedScope>("active");
+  const [hashPresent] = useState(hashDeepLinkPresent);
+  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
+  const projects = useProjectsScoped(effectiveScope);
   // K16: the completed-rename notice rides on /api/info, the same
   // channel the schema banner uses for a server-side fact the client
   // could not otherwise know.
@@ -269,6 +280,14 @@ export function ProjectsPanel() {
         </div>
       )}
 
+      <div className="mb-3">
+        <ArchivedScopeControl
+          testId="projects-archived-scope"
+          value={scope}
+          onChange={setScope}
+        />
+      </div>
+
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
@@ -290,17 +309,21 @@ export function ProjectsPanel() {
             // teaches and points at the same create control below.
             <tr>
               <td colSpan={5} className="py-8 text-center text-[0.9286rem] text-text-tertiary">
-                <div className="flex flex-col items-center gap-3" data-testid="projects-empty">
-                  <span>No projects yet. Every task belongs to a project, so create one to get started.</span>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    testId="projects-empty-create"
-                    onClick={() => { setCreating(true); }}
-                  >
-                    New project
-                  </Button>
-                </div>
+                {scope === "archived" ? (
+                  <div data-testid="projects-empty">No archived projects.</div>
+                ) : (
+                  <div className="flex flex-col items-center gap-3" data-testid="projects-empty">
+                    <span>No projects yet. Every task belongs to a project, so create one to get started.</span>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      testId="projects-empty-create"
+                      onClick={() => { setCreating(true); }}
+                    >
+                      New project
+                    </Button>
+                  </div>
+                )}
               </td>
             </tr>
           ) : (

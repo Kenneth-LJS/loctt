@@ -17,7 +17,7 @@ describe("buildConditionsFromSearch", () => {
     // that count-based downgrade cannot come back. Red-proof: switch the
     // leaf back to `{ op: "=", value: { type: "string", value: "in_progress" } }`
     // in membershipLeaf and this goes red.
-    const tree = buildConditionsFromSearch({ status: ["in_progress"], archived: true }, parse);
+    const tree = buildConditionsFromSearch({ status: ["in_progress"], archived: "all" }, parse);
     expect(tree).toEqual({
       kind: "group",
       op: "and",
@@ -37,14 +37,14 @@ describe("buildConditionsFromSearch", () => {
   });
 
   it("preserves value order within a facet", () => {
-    const tree = buildConditionsFromSearch({ type: ["feature", "bug", "task"], archived: true }, parse);
+    const tree = buildConditionsFromSearch({ type: ["feature", "bug", "task"], archived: "all" }, parse);
     const leaf = (tree as unknown as { children: { value: { values: { value: string }[] } }[] }).children[0];
     expect(leaf?.value.values.map(v => v.value)).toEqual(["feature", "bug", "task"]);
   });
 
   it("maps type→task_type and field.<key>→fields.<key>", () => {
     const tree = buildConditionsFromSearch(
-      { type: ["bug"], "field.impact": ["p0"], archived: true } as Record<string, unknown>,
+      { type: ["bug"], "field.impact": ["p0"], archived: "all" } as Record<string, unknown>,
       parse,
     );
     const fields = (tree as { children: { field: string }[] }).children.map(c => c.field);
@@ -53,7 +53,7 @@ describe("buildConditionsFromSearch", () => {
   });
 
   it("splices the free-text q as a parsed subtree, first", () => {
-    const tree = buildConditionsFromSearch({ q: "text ~ login", archived: true }, parse) as {
+    const tree = buildConditionsFromSearch({ q: "text ~ login", archived: "all" }, parse) as {
       children: { kind: string; field?: string; op?: string }[];
     };
     const first = tree.children[0];
@@ -62,24 +62,39 @@ describe("buildConditionsFromSearch", () => {
     expect(first?.op).toBe("~");
   });
 
-  it("adds the archived guard by default and omits it when archived is on", () => {
-    const open = buildConditionsFromSearch({ status: ["backlog"] }, parse) as {
+  // K107: this replaces the old boolean-toggle assertion (default guard vs
+  // "archived on" omits it). The archived dimension is now the tri-state
+  // scope, encoded into the saved view's query so re-running reproduces
+  // what the user saw: absent/`active` → `archived != true`; `all` → no
+  // archived leaf; `archived` → `archived = true`.
+  it("encodes the tri-state archived scope into the guard leaf", () => {
+    const openDefault = buildConditionsFromSearch({ status: ["backlog"] }, parse) as {
+      children: { field: string; op?: string }[];
+    };
+    expect(openDefault.children.map(c => c.field)).toContain("archived");
+    expect(openDefault.children.find(c => c.field === "archived")?.op).toBe("!=");
+
+    const active = buildConditionsFromSearch({ status: ["backlog"], archived: "active" }, parse) as {
+      children: { field: string; op?: string }[];
+    };
+    expect(active.children.find(c => c.field === "archived")?.op).toBe("!=");
+
+    const all = buildConditionsFromSearch({ status: ["backlog"], archived: "all" }, parse) as {
       children: { field: string }[];
     };
-    expect(open.children.map(c => c.field)).toContain("archived");
+    expect(all.children.map(c => c.field)).not.toContain("archived");
 
-    const withArchived = buildConditionsFromSearch(
-      { status: ["backlog"], archived: true },
-      parse,
-    ) as { children: { field: string }[] };
-    expect(withArchived.children.map(c => c.field)).not.toContain("archived");
+    const archivedOnly = buildConditionsFromSearch({ status: ["backlog"], archived: "archived" }, parse) as {
+      children: { field: string; op?: string }[];
+    };
+    expect(archivedOnly.children.find(c => c.field === "archived")?.op).toBe("=");
   });
 
   it("falls back to the archived guard alone when nothing else is active", () => {
-    // `{ archived: true }` suppresses the guard AND has no facet, so the
-    // tree would be an empty group the serializer refuses — the fallback
-    // keeps it a valid single-condition view.
-    const tree = buildConditionsFromSearch({ archived: true }, parse) as {
+    // Scope `all` suppresses the guard AND there is no facet, so the tree
+    // would be an empty group the serializer refuses — the fallback keeps
+    // it a valid single-condition view.
+    const tree = buildConditionsFromSearch({ archived: "all" }, parse) as {
       children: { field: string; op: string }[];
     };
     expect(tree.children).toHaveLength(1);

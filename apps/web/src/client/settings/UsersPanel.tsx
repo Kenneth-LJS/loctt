@@ -1,8 +1,8 @@
-import type { UserProfile } from "@loctt/contracts";
+import type { ArchivedScope, UserProfile } from "@loctt/contracts";
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
-import { useUsers } from "../api/hooks/sidebarData.ts";
+import { useUsersScoped } from "../api/hooks/sidebarData.ts";
 import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
 import {
   useArchiveUser,
@@ -13,9 +13,9 @@ import {
   useUploadAvatar,
 } from "../api/hooks/useUserMutations.ts";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
-import { Checkbox } from "../ui/Checkbox.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
@@ -24,6 +24,7 @@ import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { AvatarCropper } from "./AvatarCropper.tsx";
+import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { AvatarRejected, type DecodedImage, decodeImageFile } from "./prepareAvatar.ts";
 import { RowActions } from "./RowActions.tsx";
 import { UserDeleteDialog } from "./UserDeleteDialog.tsx";
@@ -682,7 +683,6 @@ function UserRowActions({
 }
 
 export function UsersPanel() {
-  const users = useUsers();
   const current = useCurrentUser();
   const archive = useArchiveUser();
   const del = useDeleteUser();
@@ -693,9 +693,14 @@ export function UsersPanel() {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<UserProfile | null>(null);
   const [editing, setEditing] = useState<UserProfile | null>(null);
-  // U25: archived users are separated behind a toggle, like the other
-  // entity lists (milestones/sprints/labels), rather than interleaved.
-  const [showArchived, setShowArchived] = useState(false);
+  // K107: the tri-state archived scope replaces the U25 `showArchived`
+  // boolean. Default `active`; the control reveals `archived`/`all`, and
+  // the server filters. A deep-link hash widens the fetch to `all` so a
+  // `#row-<id>` anchor to an archived user still resolves (K100).
+  const [scope, setScope] = useState<ArchivedScope>("active");
+  const [hashPresent] = useState(hashDeepLinkPresent);
+  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
+  const users = useUsersScoped(effectiveScope);
 
   if (users.isError) {
     return (
@@ -714,26 +719,21 @@ export function UsersPanel() {
 
   const items = users.data?.items ?? [];
   const currentId = current.data?.id;
-  // U25: split active from archived. Active always shows; archived only
-  // behind the toggle. `visible` is what the table/cards iterate.
+  // K107: the server returned exactly the scope's rows. Active first, then
+  // archived, so the table/cards iterate a stable order within the scope.
   const activeItems = items.filter(u => u.archived !== true);
   const archivedItems = items.filter(u => u.archived === true);
-  const visible = showArchived ? [...activeItems, ...archivedItems] : activeItems;
+  const visible = [...activeItems, ...archivedItems];
 
   return (
     <div data-testid="settings-users">
       <div className="mb-1 flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold">Users</h1>
-        {archivedItems.length > 0 && (
-          <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
-            <Checkbox
-              data-testid="users-show-archived"
-              checked={showArchived}
-              onChange={e => { setShowArchived(e.target.checked); }}
-            />
-            Show archived ({archivedItems.length})
-          </label>
-        )}
+        <ArchivedScopeControl
+          testId="users-archived-scope"
+          value={scope}
+          onChange={setScope}
+        />
       </div>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Identities that can be assigned work and attributed activity.

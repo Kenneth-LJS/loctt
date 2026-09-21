@@ -142,11 +142,18 @@ describe("MCP saved-view management", () => {
 
     const archived = await executeTool(root, "archive_view", { view: id });
     expect(archived.isError).toBeUndefined();
-    let list = JSON.parse((await executeTool(root, "list_views", {})).content[0]?.text ?? "") as Array<{ id: string; archived?: boolean }>;
+    // K107: the default scope is `active`, so an archived view is now hidden
+    // from a plain list_views. (This assertion previously expected the
+    // archived view in the default list — it was asserting the old show-all
+    // default.) Pass `archived: "all"` to see it and confirm the flag set.
+    const defaultList = JSON.parse((await executeTool(root, "list_views", {})).content[0]?.text ?? "") as Array<{ id: string; archived?: boolean }>;
+    expect(defaultList.find(v => v.id === id)).toBeUndefined();
+    let list = JSON.parse((await executeTool(root, "list_views", { archived: "all" })).content[0]?.text ?? "") as Array<{ id: string; archived?: boolean }>;
     expect(list.find(v => v.id === id)?.archived).toBe(true);
 
     const unarchived = await executeTool(root, "unarchive_view", { view: id });
     expect(unarchived.isError).toBeUndefined();
+    // Once unarchived it is back in the default (active) list.
     list = JSON.parse((await executeTool(root, "list_views", {})).content[0]?.text ?? "") as Array<{ id: string; archived?: boolean }>;
     expect(list.find(v => v.id === id)?.archived).toBeUndefined();
   });

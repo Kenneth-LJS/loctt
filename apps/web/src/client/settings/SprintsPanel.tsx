@@ -1,11 +1,11 @@
-import type { BrokenEntry, SprintDef } from "@loctt/contracts";
+import type { ArchivedScope, BrokenEntry, SprintDef } from "@loctt/contracts";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useArchiveSprint, useCountedSprints, useDeleteSprint } from "../api/hooks/useDataMutations.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
-import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
@@ -206,27 +206,22 @@ function BrokenSprintRow({ entry, onRepair, repairing }: {
 }
 
 export function SprintsPanel() {
-  const sprints = useCountedSprints();
-
   const [creating, setCreating] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  // K107: the tri-state archived scope replaces the old `showArchived`
+  // boolean. Default `active` (hide archived); the control reveals
+  // `archived`/`all`, and the server does the filtering.
+  const [scope, setScope] = useState<ArchivedScope>("active");
 
   // K100 archived-row anchor. A deep link to an archived sprint
-  // (`#row-<id>`) targets a row that only mounts once "Show archived" is
-  // on, so `useScrollToHash` would find nothing. When the hash names a
-  // sprint currently in the archived set, auto-enable the toggle so the
-  // anchor can resolve. Additive: only ever turns the toggle ON, only
-  // when a hash is present, so it never fights a user who toggled it off
-  // with no hash in play.
+  // (`#row-<id>`) targets a row the default `active` scope does not fetch,
+  // so `useScrollToHash` would find nothing. When a hash is present we
+  // widen the fetch to `all` so the anchor can resolve. Additive: only
+  // ever widens, and only while a hash is in play, so it never fights the
+  // user's own scope choice during ordinary browsing.
   const hash = useRouterState({ select: s => s.location.hash });
-  const sprintItems = sprints.data?.items as readonly CountedSprint[] | undefined;
-  useEffect(() => {
-    if (hash === undefined || hash === "") return;
-    const id = hash.replace(/^#/, "").replace(/^row-/, "");
-    if (id === "") return;
-    const target = sprintItems?.find(s => s.id === id);
-    if (target?.archived === true) setShowArchived(true);
-  }, [hash, sprintItems]);
+  const hashPresent = hash !== undefined && hash !== "" && hash.replace(/^#/, "") !== "";
+  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
+  const sprints = useCountedSprints(effectiveScope);
 
   if (sprints.isError) {
     return (
@@ -289,12 +284,24 @@ export function SprintsPanel() {
         />
       )}
 
-      {activeItems.length === 0 && broken.length === 0
+      {/* K107: the tri-state scope replaces the "Show archived" checkbox.
+          The server returns exactly the rows the scope asks for, so the
+          panel no longer splits a fetch-all; it renders active and
+          archived blocks off whatever the current scope returned. */}
+      <div className="mb-4">
+        <ArchivedScopeControl
+          testId="sprints-archived-scope"
+          value={scope}
+          onChange={setScope}
+        />
+      </div>
+
+      {items.length === 0 && broken.length === 0
         ? (
             // A lone broken entry is NOT an empty list (DEG-30 / A138) —
             // its block renders below.
             <p data-testid="sprints-empty" data-sprints-state="empty" className="text-[0.9286rem] text-text-tertiary">
-              No sprints yet.
+              {scope === "archived" ? "No archived sprints." : "No sprints yet."}
             </p>
           )
         : activeItems.length > 0 && (
@@ -305,19 +312,9 @@ export function SprintsPanel() {
 
       {archivedItems.length > 0 && (
         <div className="mt-5">
-          <label className="flex items-center gap-2 text-[0.8571rem] text-text-secondary">
-            <Checkbox
-              data-testid="sprints-show-archived"
-              checked={showArchived}
-              onChange={e => { setShowArchived(e.target.checked); }}
-            />
-            Show archived ({archivedItems.length})
-          </label>
-          {showArchived && (
-            <ul className="m-0 mt-2 list-none p-0" data-testid="sprints-archived-list">
-              {archivedItems.map(s => <SprintRow key={s.id} sprint={s} all={items} />)}
-            </ul>
-          )}
+          <ul className="m-0 list-none p-0" data-testid="sprints-archived-list">
+            {archivedItems.map(s => <SprintRow key={s.id} sprint={s} all={items} />)}
+          </ul>
         </div>
       )}
 

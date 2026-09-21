@@ -108,3 +108,20 @@ The app-shell navigation drawer ("mobile drawer covers its own toggle"
 above) is distinct from the timeline's phone drawer, which is the shared
 `Sheet` (`role="dialog" aria-modal`, focus-trap, inert background,
 Escape / backdrop close) and has no outstanding mobile blocker.
+
+## K107 web tri-state: SprintsView board still uses a boolean toggle
+
+K107 made `archived` a tri-state scope and the web surface adopted a
+shared `ArchivedScopeControl` on the task FilterBar, all six settings
+panels, and the Milestones **view**. The Sprints **view**
+(`apps/web/src/client/sprints/SprintsView.tsx`) was deliberately left on
+its boolean `showArchived` toggle: it is a board of sprint columns, and
+`deriveSprintColumns` (`sprints/columns.ts`) takes a boolean
+`showArchived` — a tri-state "archived-only" state has no sensible board
+rendering (it would hide every active column). Converting it would mean
+either changing `columns.ts`' contract and its tests or faking a
+scope→boolean mapping that drops the third state. Left as a known
+inconsistency; the sprint board still defaults to hiding archived
+(active), which honours K107's default. If a genuine "archived-only"
+sprint board is ever wanted, `deriveSprintColumns` needs an
+`ArchivedScope` option and the view needs the shared control.

@@ -158,7 +158,11 @@ describe("GET /api/tasks (sort + pagination)", () => {
     }
   });
 
-  it("excludes archived tasks by default, includes them with archived=true", async () => {
+  // K107: the tri-state `?archived` scope replaces the old `?archived=true`
+  // boolean. `active` (default) hides archived; `all` includes them;
+  // `archived` returns only archived. (This test asserted the old boolean
+  // spelling `archived=true`.)
+  it("excludes archived tasks by default, includes them with archived=all / archived", async () => {
     const all = await list("sort=title&dir=asc");
     const apple = all.items.find(t => t.title === "Apple");
     await fetch(`${base}/api/tasks/${apple!.key}/archive`, { method: "POST", headers: csrf });
@@ -166,8 +170,21 @@ describe("GET /api/tasks (sort + pagination)", () => {
     const visible = await list("");
     expect(visible.items.map(t => t.title)).not.toContain("Apple");
 
-    const withArchived = await list("archived=true");
-    expect(withArchived.items.map(t => t.title)).toContain("Apple");
+    const withAll = await list("archived=all");
+    expect(withAll.items.map(t => t.title)).toContain("Apple");
+
+    const onlyArchived = await list("archived=archived");
+    expect(onlyArchived.items.map(t => t.title)).toContain("Apple");
+    // `archived` is ONLY archived — an active task must not appear.
+    const banana = all.items.find(t => t.title === "Banana");
+    if (banana !== undefined) {
+      expect(onlyArchived.items.map(t => t.title)).not.toContain("Banana");
+    }
+
+    // A stale `?archived=true` bookmark is no longer recognised and falls
+    // back to the default active scope — archived stays hidden.
+    const legacyBool = await list("archived=true");
+    expect(legacyBool.items.map(t => t.title)).not.toContain("Apple");
   });
 
   // K25: idempotent archive/unarchive (behavior recorded in decisions.md K25/A127; no canonical case)

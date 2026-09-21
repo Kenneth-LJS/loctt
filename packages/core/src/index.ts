@@ -143,9 +143,9 @@ export {
   saveListViewConfig,
 } from "./config/index.js";
 export {
+  applyArchivedScope,
   getLabelsConfigPath,
   LabelsConfigError,
-  applyArchivedScope,
   labelsConfigExists,
   loadLabelsConfig,
   parseLabelsConfig,

@@ -1,4 +1,4 @@
-import type { QueriesConfig,QuerySort } from "./query.js";
+import type { ArchivedScope, QueriesConfig,QuerySort } from "./query.js";
 import type { FieldHealthKind, TaskFrontmatterPublic } from "./task.js";
 import type { WorkflowConfig } from "./workflow.js";
 
@@ -67,12 +67,13 @@ export interface ListTasksRequest {
    */
   readonly project?: string;
   /**
-   * Include archived tasks. When false/omitted, core ANDs
-   * `archived != true` onto the effective query (unless the query
-   * already mentions `archived`). Drives the list view's "Show
-   * archived" toggle.
+   * Archived scope (K107): `active` (default) ANDs `archived != true`
+   * onto the effective query; `archived` shows only archived; `all`
+   * applies no archived filter. When the query already mentions
+   * `archived`, the user's term wins. Drives the list's tri-state
+   * archived-scope control.
    */
-  readonly includeArchived?: boolean;
+  readonly archived?: ArchivedScope;
 }
 
 /**

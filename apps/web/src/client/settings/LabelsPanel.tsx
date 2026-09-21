@@ -1,4 +1,4 @@
-import type { BrokenEntry, LabelDef } from "@loctt/contracts";
+import type { ArchivedScope, BrokenEntry, LabelDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -7,10 +7,12 @@ import {
   useCountedLabels,
   useDeleteLabel,
 } from "../api/hooks/useDataMutations.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { LabelEditDialog } from "./LabelEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
@@ -228,8 +230,16 @@ function BrokenLabelRow({ entry, onRepair, repairing }: {
 }
 
 export function LabelsPanel() {
-  const labels = useCountedLabels();
   const [creating, setCreating] = useState(false);
+  // K107: this panel had NO archived control before — archived labels
+  // rendered inline with an `(archived)` marker. It now defaults to the
+  // `active` scope and reveals archived through the tri-state control. A
+  // deep-link hash widens the fetch to `all` so a `#row-<id>` anchor to an
+  // archived label still resolves (K100).
+  const [scope, setScope] = useState<ArchivedScope>("active");
+  const [hashPresent] = useState(hashDeepLinkPresent);
+  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
+  const labels = useCountedLabels(effectiveScope);
 
   if (labels.isError) {
     /*
@@ -281,7 +291,7 @@ export function LabelsPanel() {
         Task counts exclude archived tasks.
       </p>
 
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-3">
         <Button
           variant="secondary"
           testId="label-create-open"
@@ -289,6 +299,11 @@ export function LabelsPanel() {
         >
           New label
         </Button>
+        <ArchivedScopeControl
+          testId="labels-archived-scope"
+          value={scope}
+          onChange={setScope}
+        />
       </div>
 
       {creating && (
@@ -305,7 +320,7 @@ export function LabelsPanel() {
             // an empty file (MSL-31's "visually distinct"). A lone broken
             // entry is NOT empty (DEG-30 / A138) — the list renders below.
             <p data-testid="labels-empty" data-labels-state="empty" className="text-[0.9286rem] text-text-tertiary">
-              No labels yet. Create one above.
+              {scope === "archived" ? "No archived labels." : "No labels yet. Create one above."}
             </p>
           )
         : (

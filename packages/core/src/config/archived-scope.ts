@@ -15,7 +15,15 @@ import { DEFAULT_ARCHIVED_SCOPE } from "@loctt/contracts";
  * Tasks are NOT filtered here — they go through the query DSL in
  * `query/list.ts`, which owns the same tri-state via `archivedScope`.
  */
-export function applyArchivedScope<T extends { readonly archived?: boolean }>(
+// The constraint carries `| undefined` deliberately. The repo compiles
+// with `exactOptionalPropertyTypes`, under which a config entity typed
+// `archived?: boolean | undefined` is NOT assignable to a constraint of
+// `archived?: boolean` — so the plain-`boolean` form made this function
+// uncallable from every real surface (CLI/MCP/web all store the field as
+// `boolean | undefined`). Widening the constraint keeps the generic `T`
+// concrete (callers get their own element type back) and changes no
+// runtime behaviour.
+export function applyArchivedScope<T extends { readonly archived?: boolean | undefined }>(
   items: readonly T[],
   scope: ArchivedScope = DEFAULT_ARCHIVED_SCOPE,
 ): T[] {

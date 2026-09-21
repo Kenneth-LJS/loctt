@@ -1,4 +1,3 @@
-export { applyArchivedScope } from "./archived-scope.js";
 export type {
   ArchivedGuardConfigs,
   ArchivedGuardField,
@@ -10,6 +9,7 @@ export {
   assertNotArchivedRelationshipTarget,
   loadArchivedGuardConfigs,
 } from "./archived-guard.js";
+export { applyArchivedScope } from "./archived-scope.js";
 export {
   CalendarConfigError,
   calendarConfigExists,

@@ -5,6 +5,7 @@
  */
 
 import {
+  applyArchivedScope,
   archiveMilestone,
   createMilestone,
   deleteMilestone,
@@ -18,7 +19,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
-import { configListInputSchema, getQ, pageConfigList } from "../runtime/config-list.js";
+import { configListInputSchema, getArchivedScope, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -39,7 +40,9 @@ export const TOOLS: readonly ToolDef[] = [
       "still report real numbers. When an unreadable task cannot be " +
       "attributed to any milestone, the response carries a top-level " +
       "`unreadable` list naming them — the totals count only the readable " +
-      "corpus, so a short total is explained rather than silent.",
+      "corpus, so a short total is explained rather than silent. "
+      + "By default archived milestones are hidden (K107); pass "
+      + "`archived: archived` for only archived or `archived: all` for both.",
     inputSchema: {
       progress: z.boolean().optional()
         .describe("Include done/total per milestone. Scans every task, so opt in only when needed."),
@@ -47,9 +50,11 @@ export const TOOLS: readonly ToolDef[] = [
     },
     handler: async ({ locttDir }, args) => {
       const cfg = await loadMilestonesConfig(locttDir);
-      // K90 order (matching the web `handleListMilestones`): name filter,
-      // then page. Progress is computed over the paged window only.
-      const milestones = pageConfigList(filterByName(cfg.milestones, getQ(args)), args);
+      // K90/K107 order (matching the web `handleListMilestones`): archived
+      // scope, then name filter, then page. Progress is computed over the
+      // paged window only.
+      const scoped = applyArchivedScope(cfg.milestones, getArchivedScope(args));
+      const milestones = pageConfigList(filterByName(scoped, getQ(args)), args);
       if (args["progress"] !== true) {
         return text(JSON.stringify({ ...cfg, milestones }, null, 2));
       }

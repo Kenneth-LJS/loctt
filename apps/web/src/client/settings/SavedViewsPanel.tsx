@@ -1,15 +1,17 @@
-import type { SavedQuery } from "@loctt/contracts";
+import type { ArchivedScope, SavedQuery } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { apiClient,ApiError } from "../api/client.ts";
-import { useViews } from "../api/hooks/sidebarData.ts";
+import { useViewsScoped } from "../api/hooks/sidebarData.ts";
 import { useDeleteView } from "../api/hooks/useDeleteView.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { RowActions } from "./RowActions.tsx";
 import { ViewFormDialog } from "./ViewFormDialog.tsx";
 
@@ -155,7 +157,15 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
 }
 
 export function SavedViewsPanel() {
-  const views = useViews();
+  // K107: default `active` (hide archived); the tri-state control reveals
+  // archived. Previously this panel showed archived always in a separate
+  // "Archived" section off a fetch-all; now the server filters by scope. A
+  // deep-link hash widens the fetch to `all` so a `#row-<id>` anchor to an
+  // archived view still resolves (K100).
+  const [scope, setScope] = useState<ArchivedScope>("active");
+  const [hashPresent] = useState(hashDeepLinkPresent);
+  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
+  const views = useViewsScoped(effectiveScope);
   // VUE-40 (create) and VUE-41 (edit) share one dialog: `null` closed,
   // `{ mode: "create" }` a new view, `{ mode: "edit", view }` a rename /
   // edit-query of an existing one.
@@ -228,14 +238,21 @@ export function SavedViewsPanel() {
         {/* VUE-40: create a saved view from the UI. This is the panel's
             entry point; the sidebar's "+ New filter" opens the same
             dialog once the Sidebar lane wires it (see handoff note). */}
-        <Button
-          variant="primary"
-          size="sm"
-          testId="saved-views-new"
-          onClick={() => { setDialog({ mode: "create" }); }}
-        >
-          + New view
-        </Button>
+        <div className="flex items-center gap-3">
+          <ArchivedScopeControl
+            testId="saved-views-archived-scope"
+            value={scope}
+            onChange={setScope}
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            testId="saved-views-new"
+            onClick={() => { setDialog({ mode: "create" }); }}
+          >
+            + New view
+          </Button>
+        </div>
       </div>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Archived views stay runnable by their URL but are hidden
@@ -252,7 +269,7 @@ export function SavedViewsPanel() {
       {all.length === 0 && broken.length === 0
         ? (
             <p data-testid="saved-views-empty" data-views-state="empty" className="text-[0.9286rem] text-text-tertiary">
-              No saved views yet.
+              {scope === "archived" ? "No archived views." : "No saved views yet."}
             </p>
           )
         : (

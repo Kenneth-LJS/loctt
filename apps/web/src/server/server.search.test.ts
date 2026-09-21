@@ -93,7 +93,11 @@ describe("GET /api/search", () => {
     await fetch(`${base}/api/tasks/${key}/archive`, { method: "POST", headers: csrf });
 
     expect((await search("q=login")).map(t => t.key)).not.toContain(key);
-    expect((await search("q=login&archived=true")).map(t => t.key)).toContain(key);
+    // K107: the tri-state scope replaces the old `archived=true` boolean.
+    expect((await search("q=login&archived=all")).map(t => t.key)).toContain(key);
+    // The stale boolean spelling is no longer recognised — it falls back
+    // to the default active scope, so the archived task stays excluded.
+    expect((await search("q=login&archived=true")).map(t => t.key)).not.toContain(key);
   });
 
   it("paginates", async () => {
