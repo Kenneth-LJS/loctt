@@ -145,6 +145,34 @@ afterEach(() => {
 });
 
 describe("ListView", () => {
+  // U13 / K-title rule
+  it("shows the screen name as the page title when nothing is scoped", async () => {
+    await mountList();
+    const header = screen.getByTestId("list-page-header");
+    expect(within(header).getByText("List")).toBeTruthy();
+  });
+
+  it("titles the page with a single scoped project's name (U13)", async () => {
+    // /api/projects stubs p_web = "Web"; scoping to it makes it the title.
+    await mountList("?project=p_web");
+    const header = screen.getByTestId("list-page-header");
+    expect(within(header).getByText("Web")).toBeTruthy();
+    expect(within(header).queryByText("List")).toBeNull();
+  });
+
+  it("keeps the project title as more filters are added (U13)", async () => {
+    // A project scope + a status filter still titles by the project — the
+    // added filter does not touch `project`.
+    await mountList("?project=p_web&status=in_progress");
+    expect(within(screen.getByTestId("list-page-header")).getByText("Web")).toBeTruthy();
+  });
+
+  it("falls back to the screen name when several projects are scoped (U13)", async () => {
+    await mountList("?project=p_web&project=p_other");
+    const header = screen.getByTestId("list-page-header");
+    expect(within(header).getByText("List")).toBeTruthy();
+  });
+
   // @verifies LST-2
   it("renders the row with resolved labels for enum/id values", async () => {
     await mountList();
