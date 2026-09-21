@@ -1,4 +1,4 @@
-import type { LabelDef } from "@loctt/contracts";
+import type { EntityColor, LabelDef } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
@@ -20,7 +20,7 @@ import { apiClient } from "../client.ts";
  */
 export function useCreateLabel() {
   const qc = useQueryClient();
-  return useMutation<LabelDef, Error, { name: string; color?: string }>({
+  return useMutation<LabelDef, Error, { name: string; color?: EntityColor }>({
     mutationFn: vars => apiClient.post<LabelDef>("/api/labels", vars),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["labels"] });

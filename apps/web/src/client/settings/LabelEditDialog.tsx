@@ -1,4 +1,4 @@
-import type { LabelDef } from "@loctt/contracts";
+import type { EntityColor, LabelDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -6,8 +6,9 @@ import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
 import { useUpdateLabel } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { ColorHexAlias, ColorPicker } from "../ui/ColorPicker.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
-import { useResolvedColor } from "../ui/entityColor.ts";
+import { isValidEntityColor } from "../ui/entityColor.ts";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
@@ -32,13 +33,6 @@ import { TextField } from "../ui/TextField.tsx";
  * (the current labels) as the duplicate-check set.
  */
 
-/** MSL-37: the format the editor accepts, stated to the user. */
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-
-function isValidColor(value: string): boolean {
-  return value === "" || HEX_RE.test(value);
-}
-
 export type LabelDialogProps =
   | {
       readonly mode: "edit";
@@ -58,25 +52,24 @@ export function LabelEditDialog(props: LabelDialogProps) {
   const create = useCreateLabel();
 
   const [name, setName] = useState(isEdit ? props.existing.name : "");
-  // K103 / stage-2 LIMIT. A label's colour is an `EntityColor` on READ
-  // (the schema widened), but the whole label WRITE path is still typed
-  // `color?: string`: `useCreateLabel`/`useUpdateLabel`, the
-  // `/api/labels` handlers, and `CreateLabelInput` / `editLabel` in
-  // `packages/core/src/labels/manage.ts`. Core is stage-1 territory and
-  // was not widened for labels the way `workflow-entities.ts` was, so
-  // this dialog can only write shape 1 (a bare hex).
+  // K103: a label's colour is a full `EntityColor` on both read AND
+  // write. The write path (`useCreateLabel`/`useUpdateLabel`, the
+  // `/api/labels` handlers, and `CreateLabelInput`/`editLabel` in core)
+  // was widened alongside this dialog, so a label can now store any of
+  // the three shapes exactly like a workflow entity — it was the one
+  // entity that could read them but not write them.
   //
-  // It therefore stays a hex field rather than getting the swatch
-  // picker: a picker offering palette and per-mode colours here would
-  // produce values this path silently narrows to `string`, which is the
-  // `[object Object]` class of bug this ticket exists to remove.
   // Seeding resolves through core so an already-stored palette or
-  // per-mode colour is shown as its current hex rather than stringified.
-  const seeded = useResolvedColor(isEdit ? props.existing.color : undefined);
-  const [color, setColor] = useState(seeded ?? "");
+  // per-mode colour renders as its current hex in the alias field.
+  const [color, setColor] = useState<EntityColor | undefined>(
+    isEdit ? props.existing.color : undefined,
+  );
   const [acknowledgedDuplicate, setAcknowledgedDuplicate] = useState(false);
 
-  const colorOk = isValidColor(color);
+  // Validity is the SCHEMA's judgement, never a local regex — a
+  // hand-rolled copy is what silently dropped colours in
+  // `dropInvalidColor` and `cells.tsx`.
+  const colorOk = color === undefined || isValidEntityColor(color);
   const trimmed = name.trim();
   const nameOk = trimmed.length > 0;
   const pending = isEdit ? update.isPending : create.isPending;
@@ -93,14 +86,14 @@ export function LabelEditDialog(props: LabelDialogProps) {
     if (blocked) return;
     if (isEdit) {
       update.mutate(
-        { id: props.existing.id, name: trimmed, color: color === "" ? null : color },
+        { id: props.existing.id, name: trimmed, color: color ?? null },
         { onSuccess: props.onClose },
       );
       return;
     }
     if (needsAck) { setAcknowledgedDuplicate(true); return; }
     create.mutate(
-      { name: trimmed, ...(color !== "" ? { color } : {}) },
+      { name: trimmed, ...(color !== undefined ? { color } : {}) },
       { onSuccess: props.onClose },
     );
   };
@@ -145,16 +138,25 @@ export function LabelEditDialog(props: LabelDialogProps) {
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
-          Colour
-          <TextField
-            aria-label={isEdit ? "Label colour" : "New label colour"}
-            data-testid={colorTestId}
+        <div className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
+          <span>Colour</span>
+          <ColorPicker
             value={color}
-            placeholder="#aabbcc"
-            onChange={e => { setColor(e.target.value); }}
+            onChange={setColor}
+            testId={isEdit ? "label-color-picker" : "label-create-color-picker"}
+            ariaLabel={isEdit ? "Label colour" : "New label colour"}
           />
-        </label>
+          {/* The hex alias keeps the original `-color-input` testid
+              addressable, so the tests (and the e2e suite) that set a
+              colour by typing still drive real behaviour. It is
+              `sr-only` — the visible control is the picker. */}
+          <ColorHexAlias
+            value={color}
+            onChange={setColor}
+            testId={colorTestId}
+            ariaLabel={isEdit ? "Label colour hex" : "New label colour hex"}
+          />
+        </div>
 
         {/*
           MSL-37: rejected at the input, naming the expected format, with
@@ -166,8 +168,8 @@ export function LabelEditDialog(props: LabelDialogProps) {
             data-testid={isEdit ? "label-color-invalid" : "label-create-color-invalid"}
             className="text-[0.8571rem] text-danger-fg"
           >
-            Colour must be a 6-digit hex value like <code>#aabbcc</code>. Leave
-            it empty for no colour.
+            Pick a palette colour, or enter a 6-digit hex value like{" "}
+            <code>#aabbcc</code>. Leave it empty for no colour.
           </p>
         )}
 

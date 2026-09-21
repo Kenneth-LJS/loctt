@@ -17,6 +17,7 @@ import type {
   ErrorCode,
   ErrorResponse,
   FieldHealth,
+  EntityColor,
   IntegritySummaryResponse,
   LinkRequest,
   MigrateResponse,
@@ -2743,7 +2744,11 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleCreateLabel: RouteHandler = async ({ req, res, locttDir }) => {
-    const r = await parseJsonBody<{ name: string; color?: string }>(req, res);
+    // K103: `color` is any of the three shapes, not just a hex string.
+    // `saveLabelsConfig` round-trips through `parseLabelsConfig`, which
+    // validates via `EntityColorSchema`, so a malformed shape is still
+    // rejected on write rather than trusted from the wire.
+    const r = await parseJsonBody<{ name: string; color?: EntityColor }>(req, res);
     try {
       const created = await createLabel(locttDir, {
         name: r.name,
@@ -2763,7 +2768,7 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateLabel: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const id = captures[0] ?? "";
-    const r = await parseJsonBody<{ name?: string; color?: string | null }>(req, res);
+    const r = await parseJsonBody<{ name?: string; color?: EntityColor | null }>(req, res);
     try {
       await editLabel(locttDir, id, {
         ...(r.name !== undefined ? { name: r.name } : {}),

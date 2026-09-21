@@ -151,9 +151,9 @@ describe("ColorPicker — what it paints", () => {
     fireEvent.click(screen.getByTestId("c"));
     // "Start from Blue and nudge it" — each well seeds from the half
     // for ITS mode, not from whichever one the theme happens to be.
-    expect((screen.getByTestId("c-custom-light") as HTMLInputElement).value)
+    expect(screen.getByTestId<HTMLInputElement>("c-custom-light").value)
       .toBe(BLUE?.light.toLowerCase());
-    expect((screen.getByTestId("c-custom-dark") as HTMLInputElement).value)
+    expect(screen.getByTestId<HTMLInputElement>("c-custom-dark").value)
       .toBe(BLUE?.dark.toLowerCase());
   });
 });

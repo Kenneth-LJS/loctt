@@ -17587,8 +17587,39 @@ already in `client/theme`.
 `core/src/config/color.ts`, and revert `dropInvalidColor` to the hex
 regex.
 
-**Status: stage 1 BUILT + green (211 contracts, 2296 core). Surfaces not
-yet migrated — see the runtime-breakage list above.**
+**A STAGE-1 GAP, FOUND IN STAGE 2 AND CLOSED.** Stage 1 widened the
+*workflow* entity writers but NOT the *label* writers:
+`CreateLabelInput.color` and `editLabel`'s `changes.color` in
+`core/src/labels/manage.ts` stayed `color?: string`, and the whole label
+write path matched (`useCreateLabel`/`useUpdateLabel` → `/api/labels`
+handlers → core).
+
+Consequence: a label could READ all three shapes but only WRITE a bare
+hex, so `LabelEditDialog` could not be given the swatch picker — anything
+it produced would be silently narrowed to `string`, which is the exact
+`[object Object]` class K103 exists to remove. Labels were the one entity
+K103 explicitly names that the feature did not actually reach.
+
+Closed by widening the whole path to `EntityColor` (core input types,
+both server handlers, both client hooks) and giving the dialog the same
+`ColorPicker` + `sr-only` `ColorHexAlias` pattern the workflow dialogs
+use, so the original `label-color-input` testid keeps driving real
+behaviour. The dialog's local `HEX_RE`/`isValidColor` were deleted in
+favour of `isValidEntityColor` — another hand-rolled copy of a schema
+rule, the same pattern that caused the `dropInvalidColor` data loss and
+the `cells.tsx` silent drop. The invalid-colour message was reworded,
+since "must be a 6-digit hex" no longer describes what is accepted.
+
+Red-proven: reinstating the narrowing (`typeof input.color === "string"`)
+turns both new `createLabel` shape tests red; source restored
+byte-exact.
+
+*Lesson for a staged rollout:* "core is done" was true for five of six
+colour fields. A per-entity checklist beats a per-file one — the gap was
+invisible from the type errors, because the narrow type compiled fine.
+
+**Status: stages 1 + 2 BUILT + green (211 contracts, 2298 core, web 2252,
+tsc --build 0). Stage 3 (CLI + MCP + docs) in progress.**
 
 ### A279 · K104 icon picker design — portalled grid popover, not a stacked dialog; storage unchanged
 

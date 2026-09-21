@@ -1,4 +1,4 @@
-import type { ArchivedScope, BrokenEntry, LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
+import type { EntityColor, ArchivedScope, BrokenEntry, LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
@@ -138,7 +138,7 @@ export function useUpdateLabel() {
   return useMutation<
     LabelDef,
     Error,
-    { id: string; name?: string; color?: string | null }
+    { id: string; name?: string; color?: EntityColor | null }
   >({
     mutationFn: ({ id, ...body }) =>
       apiClient.put<LabelDef>(`/api/labels/${encodeURIComponent(id)}`, body),
