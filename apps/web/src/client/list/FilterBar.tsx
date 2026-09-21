@@ -17,6 +17,7 @@ import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { ICON } from "../ui/icons.ts";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { Radio } from "../ui/Radio.tsx";
@@ -568,20 +569,6 @@ export function FilterBar({
     <>{visibleFilters.map(renderFilterControl)}</>
   );
 
-  const showArchivedControl = (
-    <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 text-[0.9286rem] text-text-secondary">
-      <Checkbox
-        checked={search.archived === true}
-        onChange={e =>
-          void navigate({
-            search: prev => ({ ...prev, archived: e.target.checked ? true : undefined, page: undefined }),
-          })
-        }
-      />
-      Show archived
-    </label>
-  );
-
   // The desktop "+ Add filter" affordance: a Menu listing every addable
   // filter (grouped built-in / custom, searchable when long), with the
   // "Advanced query…" escape hatch and "Save as default" at the end.
@@ -655,24 +642,82 @@ export function FilterBar({
 
         <div className="flex-1" />
 
-        {/* Right band — view actions cluster. A single aligned group so
-            Export/Save-as-view share the toolbar baseline instead of
-            floating in ListView's flex gutter. Show-archived rides here at
-            desktop width; on mobile it moves into the sheet. No manual
-            refresh button (Q4): freshness is TanStack Query staleTime +
-            focus refetch. */}
-        <div className="flex items-center gap-2" data-testid="view-actions">
-          {!isNarrow && showArchivedControl}
-          {exportTotal !== undefined && exportQueryString !== undefined && (
-            <ExportMenu total={exportTotal} queryString={exportQueryString} />
-          )}
-          {showSaveView && (
-            <Button size="md" variant="primary" onClick={() => setSaveOpen(true)}>
-              <span aria-hidden="true">{ICON.star}</span>
-              Save as view
-            </Button>
-          )}
-        </div>
+        {/* Right band — view actions. All three controls (Show archived,
+            Export, Save as view) are secondary (Ken's toolbar review, U23):
+            none is primary, so on desktop they collapse into a single "⋯"
+            overflow menu rather than three inline pills. On mobile they
+            already live in the filters Sheet, so this cluster is
+            desktop-only. No manual refresh (Q4): freshness is TanStack
+            Query staleTime + focus refetch. */}
+        {!isNarrow && (
+          <div className="flex items-center gap-2" data-testid="view-actions">
+            <Menu
+              align="end"
+              aria-label="View options"
+              trigger={({ toggle, ...aria }) => (
+                <IconButton
+                  variant="secondary"
+                  size="md"
+                  aria-label="View options"
+                  title="View options"
+                  testId="view-actions-menu"
+                  onClick={toggle}
+                  {...aria}
+                >
+                  <Icon name="more" size={16} />
+                </IconButton>
+              )}
+            >
+              {({ close }) => (
+                <>
+                  {/* Show archived: a checkable item mirroring the same
+                      navigate() the mobile sheet's checkbox writes. Kept
+                      open on toggle so the check state is visible. */}
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={search.archived === true}
+                    data-testid="view-actions-show-archived"
+                    onClick={() =>
+                      void navigate({
+                        search: prev => ({
+                          ...prev,
+                          archived: search.archived === true ? undefined : true,
+                          page: undefined,
+                        }),
+                      })
+                    }
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
+                  >
+                    {/* The check is the checked affordance; a fixed-width
+                        slot keeps the label aligned whether it shows or
+                        not. `aria-checked` above already announces state. */}
+                    <span aria-hidden="true" className="grid w-4 place-items-center">
+                      {search.archived === true ? <Icon name="check" size={14} /> : null}
+                    </span>
+                    Show archived
+                  </button>
+                  {/* Export keeps its own menu (CSV/JSON, failure + skipped
+                      status). Its popover is an inline descendant of this
+                      panel, so the parent's outside-click treats a click on
+                      it as inside and stays open. */}
+                  {exportTotal !== undefined && exportQueryString !== undefined && (
+                    <ExportMenu total={exportTotal} queryString={exportQueryString} />
+                  )}
+                  {showSaveView && (
+                    <MenuItem
+                      testId="view-actions-save-view"
+                      onSelect={() => { setSaveOpen(true); close(); }}
+                    >
+                      <span aria-hidden="true">{ICON.star}</span>
+                      Save as view
+                    </MenuItem>
+                  )}
+                </>
+              )}
+            </Menu>
+          </div>
+        )}
       </div>
 
       {isNarrow && filterSheetOpen && (

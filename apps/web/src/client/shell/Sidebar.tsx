@@ -1,7 +1,7 @@
 import type { LabelDef, MilestoneDef, ProjectDef, SavedQuery, SidebarGroupId, SprintDef, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { createContext, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
@@ -144,7 +144,16 @@ export function Sidebar({
           labels) to make that the normal case rather than the extreme
           one. Scrolling the whole column satisfies "reachable" and
           fails "pinned". */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" data-sidebar-scroll="true">
+      {/* `overflow-y-auto` also clips the X axis, so the global
+          `:focus-visible` ring (outline + 2px OUTWARD offset) on a
+          full-width row was clipped at the sidebar's left/right edges
+          (Ken's report). Draw the ring INSET for focusable rows inside the
+          scroll area so it sits within the row box instead of past it —
+          one rule for every row, not a per-row override. */}
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto [&_a:focus-visible]:[outline-offset:-2px] [&_button:focus-visible]:[outline-offset:-2px]"
+        data-sidebar-scroll="true"
+      >
         {/* ERR-34: a render throw in one group must not white-page the
             app. Each group is its own boundary, so the rest of the
             sidebar, the header and the main pane keep working.
@@ -431,6 +440,7 @@ function SidebarGroups({
   today: string;
 }) {
   const settings = useUserSettings();
+  const sectionCollapse = useSectionCollapse();
   // A failed / in-flight settings read is not a customization — fall
   // back to the default (every group, default order, all visible).
   const groups = readSidebarGroups(settings.data?.settings);
@@ -466,7 +476,7 @@ function SidebarGroups({
   };
 
   return (
-    <>
+    <SectionCollapseContext.Provider value={sectionCollapse}>
       {resolved.map(item =>
         item.hidden || !isGroupId(item.id) ? null : (
           <RegionErrorBoundary key={item.id} region={GROUP_REGION[item.id]}>
@@ -474,7 +484,7 @@ function SidebarGroups({
           </RegionErrorBoundary>
         ),
       )}
-    </>
+    </SectionCollapseContext.Provider>
   );
 }
 
@@ -510,11 +520,112 @@ function hasFailed(q: {
   return q.errorUpdatedAt > 0 && q.errorUpdatedAt >= q.dataUpdatedAt;
 }
 
-function GroupLabel({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
-  if (collapsed) return null;
+// ── Collapsible sections (U22) ───────────────────────────────────────
+
+const SECTION_COLLAPSE_KEY = "loctt.sidebar.collapsedSections";
+
+/**
+ * Per-section collapse state for the sidebar groups, persisted per browser
+ * in localStorage (Ken: "sections should be collapsible, then save which
+ * parts should be collapsed"). Returns the collapsed set and a toggler.
+ *
+ * Every read/write is wrapped: storage can throw or be absent (private
+ * mode, blocked site data, SSR/preview), and the sidebar must render fine
+ * without it — a missing value simply means "nothing collapsed".
+ */
+function useSectionCollapse(): {
+  isCollapsed: (id: string) => boolean;
+  toggle: (id: string) => void;
+} {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => {
+    try {
+      const raw = localStorage.getItem(SECTION_COLLAPSE_KEY);
+      if (raw === null) return new Set();
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? new Set(parsed.filter((x): x is string => typeof x === "string"))
+        : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const toggle = (id: string): void => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify([...next]));
+      } catch {
+        // Persistence is best-effort; the in-memory state still updates so
+        // the toggle works for this session even when storage is unavailable.
+      }
+      return next;
+    });
+  };
+
+  return { isCollapsed: (id: string) => collapsed.has(id), toggle };
+}
+
+/**
+ * Section collapse state is shared via context so the seven group
+ * components don't each grow two props — they render a `SectionShell`,
+ * which reads the toggle from here. Provided once in `SidebarGroups`.
+ */
+const SectionCollapseContext = createContext<{
+  isCollapsed: (id: string) => boolean;
+  toggle: (id: string) => void;
+}>({ isCollapsed: () => false, toggle: () => undefined });
+
+/**
+ * A sidebar group with a collapsible header (U22). Replaces the bare
+ * `GroupLabel` + wrapper `div` each group used: the header is now a real
+ * toggle (a `<button>` with a rotating chevron and
+ * `aria-expanded`/`aria-controls`), and the group's body is hidden when
+ * the section is collapsed. When the WHOLE sidebar is collapsed to icons,
+ * there is no header to click and the body renders as before (per-section
+ * collapse is a widened-sidebar affordance).
+ */
+function SectionShell({
+  id,
+  label,
+  collapsed,
+  children,
+}: {
+  readonly id: string;
+  readonly label: string;
+  /** The whole sidebar is collapsed to an icon rail. */
+  readonly collapsed: boolean;
+  readonly children: ReactNode;
+}) {
+  const { isCollapsed, toggle: onToggle } = useContext(SectionCollapseContext);
+  const sectionCollapsed = !collapsed && isCollapsed(id);
+  const bodyId = `sidebar-section-${id}`;
   return (
-    <div className="px-2.5 pb-0.5 pt-1.5 text-[0.7857rem] font-semibold uppercase tracking-[0.06em] text-text-tertiary">
-      {children}
+    <div className="flex flex-col gap-0.5">
+      {!collapsed && (
+        <button
+          type="button"
+          data-testid={`sidebar-section-toggle-${id}`}
+          aria-expanded={!sectionCollapsed}
+          aria-controls={bodyId}
+          onClick={() => onToggle(id)}
+          className="group flex items-center gap-1 rounded-md px-2.5 pb-0.5 pt-1.5 text-left text-[0.7857rem] font-semibold uppercase tracking-[0.06em] text-text-tertiary hover:text-text-secondary"
+        >
+          <Icon
+            name="chevronDown"
+            size={12}
+            className={sectionCollapsed ? "-rotate-90 transition-transform" : "transition-transform"}
+          />
+          {label}
+        </button>
+      )}
+      {!sectionCollapsed && (
+        <div id={bodyId} className="flex flex-col gap-0.5">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -872,8 +983,8 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
   const allActive = onView && activeProjects.length === 0;
 
   return (
-    <div className="flex flex-col gap-0.5">
-      <GroupLabel collapsed={collapsed}>Projects</GroupLabel>
+    <>
+    <SectionShell id="projects" label="Projects" collapsed={collapsed}>
       {failed && (
         <GroupError collapsed={collapsed} error={projects.error} onRetry={() => { void projects.refetch(); }} />
       )}
@@ -1027,6 +1138,10 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
         </button>
       ) : null}
 
+      </SectionShell>
+
+      {/* Dialogs live OUTSIDE the SectionShell so collapsing the section
+          never unmounts an open dialog. */}
       {/* K100: the shared editor, mounted fresh on open so it seeds from
           the current project. Make default / Archive live inside it. */}
       {editingProject !== null ? (
@@ -1051,7 +1166,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
           onClose={() => { setCreating(false); }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -1229,8 +1344,7 @@ function SavedFiltersGroup({
   };
 
   return (
-    <div className="flex flex-col gap-0.5">
-      <GroupLabel collapsed={collapsed}>Saved filters</GroupLabel>
+    <SectionShell id="saved-filters" label="Views" collapsed={collapsed}>
       {failed && (
         <GroupError collapsed={collapsed} error={views.error} onRetry={() => { void views.refetch(); }} />
       )}
@@ -1425,7 +1539,7 @@ function SavedFiltersGroup({
           className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left text-[0.9286rem] font-medium text-accent hover:bg-bg-muted"
         >
           <span className="w-4 shrink-0 text-center">+</span>
-          New filter…
+          New view…
         </button>
       ) : null}
 
@@ -1453,7 +1567,7 @@ function SavedFiltersGroup({
           onConfirm={() => { confirmDelete(dialog.view); }}
         />
       ) : null}
-    </div>
+    </SectionShell>
   );
 }
 
@@ -1488,8 +1602,8 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingMilestone = items.find(m => m.id === editingId) ?? null;
   return (
-    <div className="flex flex-col gap-0.5">
-      <GroupLabel collapsed={collapsed}>Milestones</GroupLabel>
+    <>
+    <SectionShell id="milestones" label="Milestones" collapsed={collapsed}>
       {/* M4.9: the group's entries filter the list to one milestone;
           this opens the milestones *progress* view, which is a
           different surface and otherwise reachable only by URL. */}
@@ -1538,6 +1652,9 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
         );
       })}
 
+    </SectionShell>
+
+      {/* Dialog outside SectionShell so collapsing never unmounts it. */}
       {/* K100: the shared editor, mounted fresh on open so it seeds from
           the current milestone. */}
       {editingMilestone !== null ? (
@@ -1547,7 +1664,7 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
           onClose={() => { setEditingId(null); }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -1597,8 +1714,7 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
   );
   const failed = hasFailed(sprints);
   return (
-    <div className="flex flex-col gap-0.5">
-      <GroupLabel collapsed={collapsed}>Sprints</GroupLabel>
+    <SectionShell id="sprints" label="Sprints" collapsed={collapsed}>
       {/* The /sprints overview (all sprints, including completed ones) was
           reachable only by URL — the group's rows filter the list to one
           sprint. Mirrors "All milestones": a top row into the overview
@@ -1659,7 +1775,7 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
           </div>
         );
       })}
-    </div>
+    </SectionShell>
   );
 }
 
@@ -1705,8 +1821,8 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingLabel = items.find(l => l.id === editingId) ?? null;
   return (
-    <div className="flex flex-col gap-0.5">
-      <GroupLabel collapsed={collapsed}>Labels</GroupLabel>
+    <>
+    <SectionShell id="labels" label="Labels" collapsed={collapsed}>
       {failed && (
         <GroupError collapsed={collapsed} error={labels.error} onRetry={() => { void labels.refetch(); }} />
       )}
@@ -1740,6 +1856,9 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
         );
       })}
 
+    </SectionShell>
+
+      {/* Dialog outside SectionShell so collapsing never unmounts it. */}
       {/* K100: the shared editor, mounted fresh on open so it seeds from
           the current label. */}
       {editingLabel !== null ? (
@@ -1749,7 +1868,7 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
           onClose={() => { setEditingId(null); }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -1797,8 +1916,7 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
   const failed = hasFailed(recents);
   if (collapsed) return null;
   return (
-    <div className="flex flex-col gap-0.5">
-      <GroupLabel collapsed={collapsed}>Recently viewed</GroupLabel>
+    <SectionShell id="recents" label="Recently viewed" collapsed={collapsed}>
       {failed && (
         <GroupError collapsed={collapsed} error={recents.error} onRetry={() => { void recents.refetch(); }} />
       )}
@@ -1825,7 +1943,7 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
           </Link>
         ))
       )}
-    </div>
+    </SectionShell>
   );
 }
 
