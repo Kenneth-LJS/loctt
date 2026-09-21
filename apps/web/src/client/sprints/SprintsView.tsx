@@ -20,9 +20,13 @@ import { useBoardDrag } from "../board/useBoardDrag.ts";
 import { buildLookups } from "../list/lookups.ts";
 import type { Progress, Readout } from "../milestones/model.ts";
 import { progressState } from "../milestones/model.ts";
+import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
+import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
 import type { CollapseOverrides } from "./collapse.ts";
 import { isExpanded, readOverrides, toggle, writeOverrides } from "./collapse.ts";
@@ -128,6 +132,9 @@ export function SprintsView() {
   // parity (A166). A local view toggle only: it never writes, and
   // `deriveSprintColumns` already took the option nothing was passing.
   const [showArchived, setShowArchived] = useState(false);
+  // K105: "+ New sprint" opens the shared dialog in place (was a prose link
+  // to the Settings page).
+  const [creating, setCreating] = useState(false);
   const archivedCount = sprintDefs.filter(s => s.archived === true).length;
 
   // SPR-39: `progress` off the `?progress=true` list, keyed by id, so the
@@ -327,14 +334,6 @@ export function SprintsView() {
         testId="sprints-header"
         actions={
           <>
-            <Link
-              to="/settings/$section"
-              params={{ section: "sprints" }}
-              data-testid="sprints-manage-link"
-              className="text-[0.8571rem] text-accent no-underline hover:underline"
-            >
-              Manage sprints in Settings →
-            </Link>
             {archivedCount > 0 && (
               // SPR-1: archived sprints appear only behind this affordance.
               // A checkbox so the state is announced; nothing here writes to
@@ -348,6 +347,28 @@ export function SprintsView() {
                 Show archived ({archivedCount})
               </label>
             )}
+            {/* K105: create in place via the shared dialog — not a prose
+                link to Settings. Roster-level actions (delete-with-remap,
+                reorder, unarchive) still live in the Settings panel, reached
+                by a proper gear button, not scattered prose. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              testId="sprints-new"
+              onClick={() => { setCreating(true); }}
+            >
+              <Icon name="plus" size={14} />
+              New sprint
+            </Button>
+            <IconButton
+              size="sm"
+              aria-label="Manage sprints in Settings"
+              title="Manage sprints in Settings"
+              testId="sprints-manage-link"
+              onClick={() => { void navigate({ to: "/settings/$section", params: { section: "sprints" } }); }}
+            >
+              <Icon name="settings" size={14} />
+            </IconButton>
           </>
         }
       />
@@ -482,16 +503,19 @@ export function SprintsView() {
       {!loading && realColumns.length === 0 && brokenSprints.length === 0 && (
         <div
           data-testid="sprints-empty"
-          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
+          className="flex flex-col items-center gap-3 rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
-          No sprints yet.{" "}
-          <button
-            type="button"
-            onClick={() => void navigate({ to: "/settings/$section", params: { section: "sprints" } })}
-            className="underline underline-offset-2 hover:text-text-primary"
+          <span>No sprints yet.</span>
+          {/* K105: create in place, not a link to Settings. */}
+          <Button
+            variant="secondary"
+            size="sm"
+            testId="sprints-empty-new"
+            onClick={() => { setCreating(true); }}
           >
-            Settings → Sprints
-          </button>
+            <Icon name="plus" size={14} />
+            New sprint
+          </Button>
         </div>
       )}
 
@@ -544,6 +568,12 @@ export function SprintsView() {
           />
         </div>
       )}
+
+      {/* K105: the shared create dialog, opened in place from "+ New
+          sprint" (header + empty state). */}
+      {creating ? (
+        <SprintEditDialog mode="create" onClose={() => { setCreating(false); }} />
+      ) : null}
     </div>
   );
 }

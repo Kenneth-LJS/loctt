@@ -13850,6 +13850,35 @@ rewritten/removed.
 mandatory manage-link and the deep-link-until-extracted fallback; K100's
 shared-editor principle otherwise stands.
 
+### K106 · One general dropdown primitive: Combobox generalized with `searchable` + `multi`/checkbox props
+
+**Ken's ruling (2026-09-21).** There are three overlapping dropdown
+implementations — `ui/Select` (themed native `<select>`), `ui/Combobox`
+(searchable single-select listbox), and `list/FilterDropdown` (bespoke
+`menuitemcheckbox` multi-select). Consolidate onto ONE general component,
+built by generalizing the Combobox (the "value-pickers over growable entity
+sets" component):
+
+- a **`searchable` boolean** — when false, no search box (covers the plain
+  `Select` case); when true, the typeahead (covers the large-set case).
+- a **`multi` / checkbox** mode — checkbox multi-select (covers
+  `FilterDropdown`'s role).
+
+So one primitive spans: plain single dropdown, searchable single, and
+multi-select-with-checkboxes. Then **refactor** the current `Select` and
+`FilterDropdown` call sites onto it and **rename** it to something general
+(not "Combobox"). Keep the a11y contracts each mode needs (listbox vs
+menuitemcheckbox roles, roving focus, A11Y-10).
+
+This supersedes the A211/A242 "Select for small / Combobox for large" split
+as SEPARATE components — they become modes of one component. The native
+`<select>`s the audit finds (e.g. EstimationPanel Unit/Scale) migrate onto
+this general component with `searchable={false}`.
+
+**Status: RECORDED, not built.** Sequenced with the other big pieces
+(K102/K103/K104) — do deliberately, one at a time, not half-built. The
+native-component audit in flight feeds the migration list.
+
 ### K104 · Icon editor = Lucide icons + common-emoji list + free emoji input
 
 **Ken's ruling (2026-09-21).** An entity's icon is chosen from one of:
