@@ -1,5 +1,20 @@
-import type { TimelineConfig, TimelineZoom, WorkflowConfig } from "@loctt/contracts";
+import type { TimelineConfig, TimelineGrouping, TimelineZoom, WorkflowConfig } from "@loctt/contracts";
+import { TimelineGroupingSchema } from "@loctt/contracts";
 import { useMemo, useState } from "react";
+
+/**
+ * The stored `default_grouping` is typed `string` (zod widens the
+ * builtin-enum ∪ `field.<key>` union to `string`), but the picker's
+ * `value` is a `TimelineGrouping`. This re-validates the stored value
+ * against the same schema — a well-formed value (including a dangling
+ * `field.<deleted>`, which the picker deliberately keeps selectable) is
+ * kept; only a genuinely malformed value falls back to "none".
+ */
+function asGrouping(value: string | undefined): TimelineGrouping {
+  return TimelineGroupingSchema.safeParse(value).success
+    ? (value as TimelineGrouping)
+    : "none";
+}
 
 import { ApiError } from "../api/client.ts";
 import { useSaveWorkflowCollection } from "../api/hooks/useWorkflowMutations.ts";
@@ -88,7 +103,7 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
         <span className="text-text-secondary">Default grouping</span>
         <GroupByPicker
           catalog={groupingCatalog}
-          value={draft.default_grouping ?? "none"}
+          value={asGrouping(draft.default_grouping)}
           onChange={g => {
             setDraft(prev => {
               if (g === "none") {

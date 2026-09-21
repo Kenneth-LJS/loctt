@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import type { TrackerInfoResponse } from "@loctt/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -60,8 +59,6 @@ let SLOW_COUNTS = false;
 /** Fails the count queries, for the unavailable-badge case. */
 let FAILED_COUNTS = false;
 
-/** Overrides the workspace label, per-test (ONB-23, SHL-19). */
-let CWD = "~/PDev/loctt";
 
 /** Makes /api/views fail, per-test (SHL-32). */
 let FAIL_VIEWS = false;
@@ -90,24 +87,6 @@ let BROKEN_VIEWS: {
   index: number;
   rawText: string;
 }[] = [];
-
-const INFO: TrackerInfoResponse = {
-  exists: true,
-  initState: "ready",
-  defaultUserName: "you",
-  taskCount: 7,
-  keyPrefix: "WEB-",
-  nextKey: "WEB-8",
-  schemaStatus: { kind: "current", version: 3 },
-  cwd: "~/PDev/loctt",
-  today: "2026-08-14",
-    timezone: "UTC",
-};
-
-/** `INFO` with the per-test workspace label applied. */
-function info(): TrackerInfoResponse {
-  return { ...INFO, cwd: CWD };
-}
 
 /** Routes a request path to a canned JSON body for the stubbed fetch. */
 function routeFetch(path: string): unknown {
@@ -286,7 +265,6 @@ afterEach(() => {
   EFFECTIVE_DEFAULT = undefined;
   PRIORITIES = undefined;
   WORKFLOW_STATUSES = [];
-  CWD = "~/PDev/loctt";
   VIEWS = [{
     id: "v_mine",
     name: "My open bugs",
@@ -1303,7 +1281,7 @@ describe("Sidebar cross-view filter scope (2026-09-20)", () => {
 
     const rootRoute = createRootRoute();
     const sidebar = () => (
-      <Sidebar collapsed={false} info={info()} currentUserId="u_ken" today="2026-06-08" />
+      <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
     );
     const routes = (["/list", "/board", "/timeline"] as const).map(path =>
       createRoute({
@@ -1710,10 +1688,20 @@ describe("Sidebar point-of-use editing (K100)", () => {
     expect(link.textContent).toMatch(/All sprints/);
   });
 
-  it("adds a '+ New project' row deep-linking to Settings", async () => {
+  it("opens the New-project dialog in place (U10 — no longer deep-links to Settings)", async () => {
+    // Was: asserted `sidebar-new-project` was a link whose href pointed at
+    // /settings/projects. U10 reversed that behavior — clicking "+ New
+    // project" now opens the shared CreateProjectDialog right there, no
+    // navigation. The old assertion was encoding the deep-link behavior
+    // Ken asked us to remove, so it is rewritten to the new contract.
     await renderSidebarAt("/list");
-    const link = await screen.findByTestId("sidebar-new-project");
-    expect(link.getAttribute("href")).toContain("/settings/projects");
+    const button = await screen.findByTestId("sidebar-new-project");
+    // It is a button now, not an anchor — there is no href to follow.
+    expect(button.getAttribute("href")).toBeNull();
+    expect(screen.queryByTestId("project-create-name")).toBeNull();
+    fireEvent.click(button);
+    // The dialog's own field proves it opened in place.
+    expect(await screen.findByTestId("project-create-name")).not.toBeNull();
   });
 });
 
@@ -1743,7 +1731,7 @@ describe("Sidebar sprint row kebab (CONFIG-5, K100)", () => {
 
     const rootRoute = createRootRoute();
     const sidebar = () => (
-      <Sidebar collapsed={false} info={info()} currentUserId="u_ken" today="2026-06-08" />
+      <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
     );
     const listRoute = createRoute({
       getParentRoute: () => rootRoute,

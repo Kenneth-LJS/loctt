@@ -61,6 +61,8 @@ export type IconName =
   | "code"
   | "codeBlock"
   | "list"
+  | "board"
+  | "timeline"
   | "listNumbered"
   | "quote"
   | "superscript"
@@ -114,6 +116,12 @@ const PATHS: Record<IconName, ReactElement> = {
   code: <path d="M6 5L3 8l3 3M10 5l3 3-3 3" />,
   codeBlock: <><rect x="2.5" y="3" width="11" height="10" rx="1" /><path d="M6.5 6.5L5 8l1.5 1.5M9.5 6.5L11 8l-1.5 1.5" /></>,
   list: <><path d="M6 4.5h7M6 8h7M6 11.5h7" /><circle cx="3.3" cy="4.5" r="0.6" /><circle cx="3.3" cy="8" r="0.6" /><circle cx="3.3" cy="11.5" r="0.6" /></>,
+  // Kanban columns — the sidebar Board view (was a hand-rolled inline SVG
+  // in Sidebar.tsx that sat off the text baseline; now a shared Icon so it
+  // aligns with every other row).
+  board: <><rect x="2.5" y="3" width="3.5" height="10" rx="0.5" /><rect x="6.75" y="3" width="3.5" height="7" rx="0.5" /><rect x="11" y="3" width="2.5" height="4.5" rx="0.5" /></>,
+  // Gantt-ish rows of varying length — the sidebar Timeline view.
+  timeline: <><path d="M2.5 4.5h7M2.5 8h11M2.5 11.5h5" /></>,
   listNumbered: <><path d="M6.5 4.5h6.5M6.5 8h6.5M6.5 11.5h6.5" /><path d="M2.6 3.2h.8v2.6M2.4 11h1.4M2.4 11c.9 0 1.4-1.3 0-1.6" /></>,
   quote: <><path d="M4 4.5h3.5v3.5A3 3 0 014 11" /><path d="M9 4.5h3.5v3.5A3 3 0 019 11" /></>,
   superscript: <><path d="M3 5l5 6M8 5l-5 6" /><path d="M11 3.5c1.5-.8 2.5 0 2.5.8 0 .9-1.2 1.2-2.5 2.2h2.7" /></>,

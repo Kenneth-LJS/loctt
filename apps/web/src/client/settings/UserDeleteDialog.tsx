@@ -149,7 +149,7 @@ export function UserDeleteDialog({
               <div className="ml-6 mb-1 grid gap-1">
                 <Combobox
                   label="Reassign those references to"
-                  options={others.map((o): ComboboxOption => ({ key: o.id, label: o.name }))}
+                  options={others.map((o): ComboboxOption => ({ key: o.id, label: o.name ?? o.id }))}
                   value={resolution.to === "" ? undefined : resolution.to}
                   onSelect={v => { setResolution({ kind: "remap", to: v }); }}
                   listTestId="user-delete-remap-list"

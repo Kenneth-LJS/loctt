@@ -230,15 +230,18 @@ export function buildBuilderConfig(input: {
       options: (input.workflow?.task_types ?? []).map(t => ({ value: t.key, label: t.label })) },
   ];
 
-  const builtins: BuilderField[] = BUILTIN_FIELDS.map(f =>
-    f.field in entityOptions
-      ? {
-          ...f,
-          options: entityOptions[f.field] ?? [],
-          ...(entitySearch[f.field] !== undefined ? { search: entitySearch[f.field] } : {}),
-        }
-      : { ...f },
-  );
+  const builtins: BuilderField[] = BUILTIN_FIELDS.map((f): BuilderField => {
+    if (!(f.field in entityOptions)) return { ...f };
+    // Bind to a local so the `!== undefined` narrowing sticks — a record
+    // index access re-widens to `EntitySearch | undefined` at each use,
+    // which exactOptionalPropertyTypes rejects for the optional `search`.
+    const search = entitySearch[f.field];
+    return {
+      ...f,
+      options: entityOptions[f.field] ?? [],
+      ...(search !== undefined ? { search } : {}),
+    };
+  });
 
   const customFields: BuilderField[] = (input.workflow?.custom_fields ?? []).map(cf => {
     const field = `fields.${cf.key}`;

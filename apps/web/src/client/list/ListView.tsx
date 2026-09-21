@@ -712,15 +712,11 @@ export function ListView() {
   return (
     <div className="flex flex-col gap-3 p-4">
       {/* FilterBar owns the whole toolbar row now — the filters (left) AND
-          the view-action cluster (Refresh/Export/Save, top-right). Refresh
-          + Export used to be rendered here as siblings in a `justify-between`
-          flex, which vertically centred them in the bar's dead space and
-          made them jump as the chip row appeared/disappeared (Ken's "refresh
-          in the middle of nowhere"). They are passed in as props so the bar
-          controls their layout without re-deriving the tasks feed. */}
+          the view-action cluster (Export/Save, top-right). The manual refresh
+          button was removed (Q4: refresh on focus/visibility, not a button);
+          Export is passed in as props so the bar controls its layout without
+          re-deriving the tasks feed. */}
       <FilterBar
-        onRefresh={() => { void tasks.refetch(); }}
-        refreshBusy={tasks.isFetching}
         exportTotal={total}
         exportQueryString={buildQueryString(params)}
       />

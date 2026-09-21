@@ -2,21 +2,15 @@ import type { ProjectDef } from "@loctt/contracts";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { ApiError } from "../api/client.ts";
 import { useProjects } from "../api/hooks/sidebarData.ts";
 import { useInfoFresh } from "../api/hooks/useInfo.ts";
-import {
-  useCreateProject,
-  useDeleteProject,
-} from "../api/hooks/useProjectMutations.ts";
+import { useDeleteProject } from "../api/hooks/useProjectMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
-import { TextField } from "../ui/TextField.tsx";
+import { CreateProjectDialog } from "./CreateProjectDialog.tsx";
 import { DeleteProjectDialog } from "./DeleteProjectDialog.tsx";
 import { ProjectEditDialog } from "./ProjectEditDialog.tsx";
-import { slugify, validateNewProject } from "./projectForm.ts";
 import { RowActions } from "./RowActions.tsx";
 
 /**
@@ -49,132 +43,6 @@ import { RowActions } from "./RowActions.tsx";
  * project *management* is about every project, so nothing here reads
  * the `?project=` search param.
  */
-
-function CreateProjectForm({
-  existing,
-  onDone,
-}: {
-  readonly existing: readonly ProjectDef[];
-  readonly onDone: () => void;
-}) {
-  const [name, setName] = useState("");
-  const [prefix, setPrefix] = useState("");
-  const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
-  const create = useCreateProject();
-
-  // PRU-19/PRU-35/PRU-36: the conflict is surfaced *before* submit,
-  // from the project list the panel already holds. No round-trip
-  // half-creates the project.
-  const problems = validateNewProject(
-    { name, prefix, slug: slugTouched ? slug : slugify(name) },
-    existing,
-  );
-  const effectiveSlug = slugTouched ? slug : slugify(name);
-  const blocked = problems.name !== undefined
-    || problems.prefix !== undefined
-    || problems.slug !== undefined
-    || name.trim().length === 0
-    || prefix.trim().length === 0;
-
-  const submit = () => {
-    if (blocked) return;
-    create.mutate(
-      {
-        name: name.trim(),
-        prefix: prefix.trim(),
-        ...(effectiveSlug.length > 0 ? { slug: effectiveSlug } : {}),
-      },
-      { onSuccess: onDone },
-    );
-  };
-
-  const serverField = create.error instanceof ApiError
-    ? create.error.envelope?.field
-    : undefined;
-  const serverMessage = create.error instanceof ApiError
-    ? create.error.envelope?.message ?? create.error.message
-    : create.error?.message;
-
-  return (
-    <div className="grid gap-3">
-      <label className="grid gap-1 text-[0.9286rem]">
-        <span className="text-text-secondary">Name</span>
-        <TextField
-          data-testid="project-create-name"
-          value={name}
-          onChange={e => { setName(e.target.value); }}
-        />
-        {problems.name !== undefined && (
-          <p role="alert" data-testid="project-create-name-problem" className="text-[0.7857rem] text-danger-fg">
-            {problems.name}
-          </p>
-        )}
-      </label>
-
-      <label className="grid gap-1 text-[0.9286rem]">
-        <span className="text-text-secondary">
-          Prefix
-          {/* PRU-5: not "permanent" (no longer true) and not silent —
-              the cost is stated. */}
-          <span className="ml-1 text-text-tertiary">
-            — changeable later only by renaming every task in the project
-          </span>
-        </span>
-        <TextField
-          data-testid="project-create-prefix"
-          value={prefix}
-          onChange={e => { setPrefix(e.target.value); }}
-        />
-        {problems.prefix !== undefined && (
-          <p role="alert" data-testid="project-create-prefix-problem" className="text-[0.7857rem] text-danger-fg">
-            {problems.prefix}
-          </p>
-        )}
-      </label>
-
-      <label className="grid gap-1 text-[0.9286rem]">
-        <span className="text-text-secondary">
-          Slug <span className="text-text-tertiary">— used in links; fixed once created</span>
-        </span>
-        <TextField
-          data-testid="project-create-slug"
-          value={effectiveSlug}
-          onChange={e => { setSlugTouched(true); setSlug(e.target.value); }}
-        />
-        {problems.slug !== undefined && (
-          <p role="alert" data-testid="project-create-slug-problem" className="text-[0.7857rem] text-danger-fg">
-            {problems.slug}
-          </p>
-        )}
-      </label>
-
-      {create.isError && (
-        <p
-          role="alert"
-          data-testid={`project-create-error${serverField !== undefined ? `-${serverField}` : ""}`}
-          className="text-[0.8571rem] text-danger-fg"
-        >
-          {serverMessage}
-        </p>
-      )}
-
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-        <Button
-          variant="primary"
-          testId="project-create-submit"
-          disabled={blocked || create.isPending}
-          onClick={submit}
-        >
-          {create.isPending ? "Creating…" : "Create project"}
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function ProjectRow({
   project,
@@ -462,9 +330,7 @@ export function ProjectsPanel() {
       </div>
 
       {creating && (
-        <ResponsiveDialog title="New project" onClose={() => { setCreating(false); }}>
-          <CreateProjectForm existing={items} onDone={() => { setCreating(false); }} />
-        </ResponsiveDialog>
+        <CreateProjectDialog existing={items} onClose={() => { setCreating(false); }} />
       )}
 
       {deleting !== undefined && (

@@ -7,7 +7,7 @@ import {
   queryToConditions,
   unrenderableTreeReason,
 } from "@loctt/core/query/builderTree.js";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   useLabels,
@@ -163,6 +163,21 @@ export function ViewFormDialog({
     }
   };
 
+  // The active mode reports its Save state up here so a SINGLE primary
+  // button can live in the footer aligned with Cancel (Ken: "Save changes"
+  // sat on a different level from Cancel). Each mode still owns its own
+  // enable/disable rules — the builder knows "incomplete", the advanced
+  // DSL knows "unparseable" — and reports whether it can save plus the
+  // CONDITIONS to save. The footer performs the mutation itself, reading
+  // the CURRENT `name` at click time — the body must NOT close over `name`
+  // (a stale closure would save the pre-rename name). `conditions` is
+  // undefined while the mode cannot save (disabled) or before the body has
+  // reported (first render), which keeps the footer Save disabled.
+  const [saveState, setSaveState] = useState<
+    { disabled: boolean; title?: string; conditions?: BuilderTree } | undefined
+  >(undefined);
+  const saveLabel = isEdit ? "Save" : "Create view";
+
   return (
     <ResponsiveDialog
       title={isEdit ? "Edit saved view" : "New saved view"}
@@ -173,11 +188,21 @@ export function ViewFormDialog({
           <Button variant="ghost" testId="view-form-cancel" onClick={onClose}>
             Cancel
           </Button>
-          {/* Save lives in the builder/advanced bodies below, which own
-              the enable/disable rules specific to each mode. A single
-              footer Save cannot know whether the builder is incomplete or
-              the advanced DSL is unparseable, so each mode renders its
-              own primary action. The footer keeps only Cancel. */}
+          <Button
+            variant="primary"
+            testId="view-form-save"
+            disabled={saveState?.disabled ?? true}
+            {...(saveState?.title !== undefined ? { title: saveState.title } : {})}
+            onClick={() => {
+              // Read the CURRENT name here (not from a captured closure) so
+              // a rename typed just before clicking Save is honoured.
+              if (saveState?.disabled !== false) return;
+              if (saveState.conditions === undefined) return;
+              doMutate(saveState.conditions);
+            }}
+          >
+            {pending ? "Saving…" : saveLabel}
+          </Button>
         </DialogActions>
       }
     >
@@ -200,6 +225,7 @@ export function ViewFormDialog({
             config={config}
             nameEmpty={nameEmpty}
             pending={pending}
+            onSaveStateChange={setSaveState}
             onSwitchToAdvanced={() => {
               // Carry the builder's query into the DSL draft so the two
               // modes show the same thing across the toggle. safeSerialize
@@ -213,8 +239,6 @@ export function ViewFormDialog({
               setTreeSnapshot({ draft: text, tree });
               setMode("advanced");
             }}
-            onSave={doMutate}
-            saveLabel={isEdit ? "Save changes" : "Create view"}
           />
         ) : (
           <AdvancedBody
@@ -223,6 +247,7 @@ export function ViewFormDialog({
             nameEmpty={nameEmpty}
             pending={pending}
             refuseReason={seed.refuseReason}
+            onSaveStateChange={setSaveState}
             onSwitchToBuilder={() => {
               // Only reachable when the live draft is renderable (the
               // control is disabled otherwise).
@@ -245,8 +270,6 @@ export function ViewFormDialog({
               setTree(asGroupRoot(parsed.tree));
               setMode("builder");
             }}
-            onSave={doMutate}
-            saveLabel={isEdit ? "Save changes" : "Create view"}
           />
         )}
 
@@ -294,6 +317,21 @@ function seedFromExisting(
   return { mode: "builder", tree: asGroupRoot(conditions), draft };
 }
 
+// ── Save state (lifted to the footer) ────────────────────────────────
+
+/**
+ * What a mode body reports up so the parent can render ONE footer Save
+ * aligned with Cancel. `disabled`/`title` drive the footer button;
+ * `conditions` is the tree to save (present only when saveable). The
+ * footer performs the mutation with the CURRENT name — the body does not
+ * close over `name`, so a rename typed just before Save is honoured.
+ */
+interface SaveState {
+  readonly disabled: boolean;
+  readonly title?: string;
+  readonly conditions?: BuilderTree;
+}
+
 // ── Builder body ─────────────────────────────────────────────────────
 
 function BuilderBody({
@@ -303,8 +341,7 @@ function BuilderBody({
   nameEmpty,
   pending,
   onSwitchToAdvanced,
-  onSave,
-  saveLabel,
+  onSaveStateChange,
 }: {
   readonly tree: BuilderTree;
   readonly onTreeChange: (tree: BuilderTree) => void;
@@ -312,8 +349,7 @@ function BuilderBody({
   readonly nameEmpty: boolean;
   readonly pending: boolean;
   readonly onSwitchToAdvanced: () => void;
-  readonly onSave: (conditions: BuilderTree) => void;
-  readonly saveLabel: string;
+  readonly onSaveStateChange: (state: SaveState) => void;
 }) {
   // The live query the builder describes, routed through the SAME
   // validate surface the inline builder uses so the error UI matches.
@@ -327,11 +363,27 @@ function BuilderBody({
 
   const disabled = nameEmpty || pending || invalid || incomplete || empty;
 
-  const save = (): void => {
-    if (disabled) return;
-    onTreeChange(tree); // no-op keep; the tree is already current
-    onSave(tree);
-  };
+  const title = empty
+    ? "Add at least one condition."
+    : incomplete
+      ? "Finish every condition before saving."
+      : invalid
+        ? scrubPosition(result.message) ?? "This query is not valid."
+        : undefined;
+
+  // Report the footer Save state up whenever the inputs to it change. The
+  // conditions to save are just the current tree; the footer performs the
+  // mutation, reading the live name at click time.
+  useEffect(() => {
+    onSaveStateChange({
+      disabled,
+      ...(title !== undefined ? { title } : {}),
+      ...(disabled ? {} : { conditions: tree }),
+    });
+    // `tree` and the derived flags cover every input; onSaveStateChange is
+    // a stable setState, so re-reporting on each change is cheap and correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled, title, tree]);
 
   return (
     <div data-testid="view-builder" className="flex min-w-0 flex-col gap-3">
@@ -358,24 +410,6 @@ function BuilderBody({
           </p>
         )}
       </div>
-
-      <div className="flex items-center justify-end gap-2 border-t border-border-subtle pt-3">
-        <Button
-          variant="primary"
-          testId="view-form-save"
-          disabled={disabled}
-          {...(empty
-            ? { title: "Add at least one condition." }
-            : incomplete
-              ? { title: "Finish every condition before saving." }
-              : invalid
-                ? { title: scrubPosition(result.message) ?? "This query is not valid." }
-                : {})}
-          onClick={save}
-        >
-          {pending ? "Saving…" : saveLabel}
-        </Button>
-      </div>
     </div>
   );
 }
@@ -389,8 +423,7 @@ function AdvancedBody({
   pending,
   refuseReason,
   onSwitchToBuilder,
-  onSave,
-  saveLabel,
+  onSaveStateChange,
 }: {
   readonly value: string;
   readonly onChange: (next: string) => void;
@@ -398,8 +431,7 @@ function AdvancedBody({
   readonly pending: boolean;
   readonly refuseReason: string | undefined;
   readonly onSwitchToBuilder: () => void;
-  readonly onSave: (conditions: BuilderTree) => void;
-  readonly saveLabel: string;
+  readonly onSaveStateChange: (state: SaveState) => void;
 }) {
   // Whether the CURRENT text can open the visual builder (renderable),
   // and whether it parses at all (saveable). These are different: a
@@ -414,10 +446,23 @@ function AdvancedBody({
 
   const disabled = nameEmpty || pending || empty || unparseable;
 
-  const save = (): void => {
-    if (disabled || !parsed.ok) return;
-    onSave(parsed.tree);
-  };
+  const title = empty
+    ? "Enter a query to save."
+    : unparseable
+      ? "This query can't be saved until it parses."
+      : undefined;
+
+  // Report the footer Save state up. The conditions to save are the parsed
+  // tree, available only when `parsed.ok` and not disabled — so an
+  // unparseable draft reports no conditions and the footer Save stays off.
+  useEffect(() => {
+    onSaveStateChange({
+      disabled,
+      ...(title !== undefined ? { title } : {}),
+      ...(!disabled && parsed.ok ? { conditions: parsed.tree } : {}),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled, title, parsed]);
 
   return (
     <div data-testid="view-advanced" className="flex flex-col gap-2">
@@ -439,7 +484,7 @@ function AdvancedBody({
         </p>
       )}
 
-      <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-3">
+      <div className="flex items-center gap-2">
         <Button
           variant="secondary"
           size="sm"
@@ -449,14 +494,6 @@ function AdvancedBody({
           onClick={() => { if (renderable.ok) onSwitchToBuilder(); }}
         >
           Switch to visual
-        </Button>
-        <Button
-          variant="primary"
-          testId="view-form-save"
-          disabled={disabled}
-          onClick={save}
-        >
-          {pending ? "Saving…" : saveLabel}
         </Button>
       </div>
     </div>
