@@ -30,7 +30,7 @@ import { TextField } from "../ui/TextField.tsx";
 import { AdvancedQuerySurface } from "./AdvancedQuerySurface.tsx";
 import { ExportMenu } from "./ExportMenu.tsx";
 import { buildFacetOptions, type FacetOptions } from "./facetOptions.ts";
-import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
+import { FilterFacet, type FilterOption } from "./FilterFacet.tsx";
 import { SaveViewDialog } from "./SaveViewDialog.tsx";
 import {
   addableFilters,
@@ -47,7 +47,7 @@ import {
  * + K97). It owns the WHOLE toolbar row:
  *
  *  - **Left band — filters.** The *resolved visible-filter set* (K97),
- *    not every facet: a FilterDropdown per visible built-in/custom-enum
+ *    not every facet: a FilterFacet per visible built-in/custom-enum
  *    field, then a subtle "+ Add filter" affordance that opens a picker
  *    of every remaining filter. Below `sm` this band collapses into a
  *    single "Filters" button + bottom Sheet.
@@ -554,7 +554,7 @@ export function FilterBar({
     if (!id.startsWith("field.")) {
       const key = id as FacetKey;
       return (
-        <FilterDropdown
+        <FilterFacet
           key={key}
           label={FACET_LABELS[key]}
           options={options[key]}
@@ -587,7 +587,7 @@ export function FilterBar({
     const cf = customFields.find(c => c.key === cfKey);
     if (cf === undefined || cf.type !== "enum" || !cf.values || cf.values.length === 0) return null;
     return (
-      <FilterDropdown
+      <FilterFacet
         key={cf.key}
         label={cf.label}
         options={cf.values.map(v => ({ value: v.key, label: v.label }))}
@@ -978,7 +978,7 @@ function AddFilterPanel({
 }) {
   const [filter, setFilter] = useState("");
   // Search once the list is long enough to scan-hunt (same threshold feel
-  // as FilterDropdown's typeahead).
+  // as the facet's typeahead).
   const searchable = addable.length >= 8;
   const q = filter.trim().toLowerCase();
   const shown = searchable && q !== ""

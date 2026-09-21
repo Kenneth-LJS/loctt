@@ -4,12 +4,11 @@ import { useState } from "react";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { ColorHexAlias, ColorPicker } from "../ui/ColorPicker.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { IconPicker } from "../ui/IconPicker.tsx";
+import { IconColorFields } from "../ui/IconColorFields.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
@@ -372,27 +371,19 @@ export function CustomFieldEditDialog({
                   {/* Per-value icon + colour (schema `icon`/`color` on a
                       CustomFieldValueDef). They round-tripped but had no
                       control — now editable on create and edit. */}
-                  <IconPicker
-                    value={v.icon}
-                    onChange={next => { updateValue(i, { icon: next }); }}
-                    testId={`custom-field-dialog-value-icon-${i}`}
-                    listTestId={`custom-field-dialog-value-icon-list-${i}`}
-                    searchTestId={`custom-field-dialog-value-icon-search-${i}`}
-                    clearTestId={`custom-field-dialog-value-icon-clear-${i}`}
-                    ariaLabel={`Value icon ${i + 1}`}
-                  />
-                  <ColorPicker
-                    value={v.color}
-                    onChange={next => { updateValue(i, { color: next }); }}
-                    testId={`custom-field-dialog-value-color-picker-${i}`}
-                    ariaLabel={`Value colour ${i + 1}`}
-                  />
-                  {/* Keeps the original testid addressable — see EntryEditDialog. */}
-                  <ColorHexAlias
-                    value={v.color}
-                    onChange={next => { updateValue(i, { color: next }); }}
-                    testId={`custom-field-dialog-value-color-${i}`}
-                    ariaLabel={`Value colour hex ${i + 1}`}
+                  <IconColorFields
+                    icon={v.icon}
+                    onIconChange={next => { updateValue(i, { icon: next }); }}
+                    color={v.color}
+                    onColorChange={next => { updateValue(i, { color: next }); }}
+                    iconTestId={`custom-field-dialog-value-icon-${i}`}
+                    iconListTestId={`custom-field-dialog-value-icon-list-${i}`}
+                    iconSearchTestId={`custom-field-dialog-value-icon-search-${i}`}
+                    iconClearTestId={`custom-field-dialog-value-icon-clear-${i}`}
+                    colorTestId={`custom-field-dialog-value-color-picker-${i}`}
+                    colorAliasTestId={`custom-field-dialog-value-color-${i}`}
+                    noun={`value ${i + 1}`}
+                    layout="inline"
                   />
                   <IconButton
                     variant="secondary"

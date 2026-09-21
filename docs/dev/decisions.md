@@ -17649,6 +17649,26 @@ Verified end-to-end on a real tracker: all three shapes store in their
 authored form (a bare hex stays a bare hex — no migration), and no
 surface prints `[object Object]`.
 
+**A PRODUCTION-BREAKING REGRESSION THIS STAGE INTRODUCED, AND THE GATE
+THAT MISSED IT.** Stage 2's `ui/entityColor.ts` and `ui/ColorPicker.tsx`
+imported the core BARREL (`from "@loctt/core"`). That is the A37 hazard:
+the barrel drags `node:path` and `sharp` into the browser bundle. Effect:
+`vite build` FAILED outright — `"resolve" is not exported by
+__vite-browser-external` — so **the client bundle could not be built at
+all**.
+
+Every unit gate stayed green while this was true: `tsc --build` 0, web
+2269 passing, lint 0 errors. Only `npm run build` caught it, and the one
+test that depends on the built bundle (`styles/colorTokens.test.ts`) was
+dismissed twice as "pre-existing, needs a build first" — by an agent and
+then by me. It was the actual signal.
+
+Fixed by adding a `./config/color.js` subpath export to core's
+`package.json` and importing through it, with the reason stated at both
+call sites. **Lesson: `npm run build` is part of the gate, not an
+afterthought — and a test that only fails without a build is not noise,
+it is the bundle's canary.**
+
 **Status: K103 COMPLETE across all three surfaces + docs. Gates:
 contracts 211, core 2298, web 2252, CLI 166, MCP 116, integration 596,
 tsc --build 0, lint 0 errors.**
@@ -17742,7 +17762,55 @@ call sites replacing `IconPicker`; remove the `lucide-react` dependency
 line to revert the Lucide-scope call independently of the popover-form
 call. No contracts change to revert.
 
-**Status: DESIGN RECORDED, not built.**
+**BUILT (2026-09-21).** Three new modules in `ui/`: `iconCatalog.ts`
+(the data layer — explicit named imports from `lucide-react`, never the
+`icons` barrel, which would defeat tree-shaking and pull all 1,848
+icons), `IconEmojiPicker.tsx` (the A279 popover — `Menu`-based portal,
+two tabs over one shared search box, pinned free-type emoji field), and
+`IconColorFields.tsx` (the paired icon+colour fields carrying the
+coupling rule, built once rather than copied into four dialogs).
+`lucideIcon()`/`isLucideIcon()` ARE the validity answer — no regex
+anywhere, per the rule that a hand-rolled copy of a validation rule is a
+data-loss bug waiting to happen (three instances of that appeared in
+K103). Catalog: **225 Lucide entries + 91 emoji.**
+
+**The colour coupling is STRUCTURAL, not a promise.**
+`colorInert = icon !== undefined && !isLucideIcon(icon)`, and the
+disabled branch of `ColorPicker` has no code path that can call
+`onChange` — so "preserve inert" cannot be violated by a later edit that
+forgets the rule. Red-proven: a mutation that clears on switch turns the
+icon→emoji→icon test red.
+
+**A279 GOT ONE THING WRONG, AND IT MATTERED.** The design assumed the 35
+hand-rolled icon names map onto Lucide. **29 do; six do not** — `alert`,
+`subtasks`, `unarchive`, `refresh`, `list-numbered`, `code-block` are not
+Lucide ids and have no aliases (verified against the catalog, not from
+memory). Dropping them would turn every `icon: alert` already sitting in
+a real `workflow.yaml` into inert text — a silent VISUAL REGRESSION on
+existing trackers, which is categorically different from degrading a
+genuinely bad value. So those six keys stay in the map pointing at their
+nearest Lucide glyph, marked `legacy`. **This is a call A279 did not
+make**, recorded here rather than left implicit in the code.
+
+**Bundle cost, measured with an honest caveat.** 25.1 KB gzip / 83 KB raw
+for the whole catalog module, via an isolated esbuild bundle. The delta
+against the real app bundle could NOT be measured: `vite build` fails in
+this tree on a pre-existing issue unrelated to K104 (`core/dist/paths`
+imports `node:path`, which rollup cannot resolve for the browser), and it
+reproduces on the baseline. A 2.1 MB figure seen initially was a stale
+`dist/` on disk, not a fresh build, and is deliberately NOT quoted. This
+closes the A279 flag only partially: the absolute module size is known,
+the app-bundle delta is not.
+
+**Testids:** none renamed. `icon-option-<id>` is preserved so the
+existing `workflowPanels.test.tsx` assertions still drive real behaviour;
+only their addressing changed (`within(dialog)` → `screen`), because the
+grid is now legitimately portalled to `document.body` — which is A279's
+whole point. `IconPicker.tsx` and its test were deleted, with every
+behaviour they asserted carried forward into `IconEmojiPicker.test.tsx`
+— a replacement, not a locked-in deletion.
+
+**Status: BUILT.**
 
 ### A278 · K102 web client: the BuilderTree AST surface is deleted repo-wide, not only from the view dialog
 

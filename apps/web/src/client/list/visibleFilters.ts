@@ -5,7 +5,7 @@ import type { FacetKey } from "./FilterBar.tsx";
 /**
  * The configurable visible-filter set (K97).
  *
- * As custom enum fields grow, FilterBar would render a FilterDropdown per
+ * As custom enum fields grow, FilterBar would render a FilterFacet per
  * field on top of the nine built-ins — 15-25+ permanent pills. K97 makes
  * the *visible* set configurable, scoped per-view with a per-user default
  * and a built-in fallback:
@@ -102,7 +102,7 @@ export function buildFilterCatalog(
     group: "builtin",
   }));
   const customEntries: FilterCatalogEntry[] = (workflow?.custom_fields ?? [])
-    // Only enum custom fields render a FilterDropdown (matching FilterBar's
+    // Only enum custom fields render a FilterFacet (matching FilterBar's
     // existing `cf.type === "enum" && cf.values` guard); the rest cannot be
     // faceted, so they are not offered.
     .filter(cf => cf.type === "enum" && cf.values && cf.values.length > 0)

@@ -296,7 +296,7 @@ function active<T extends { readonly archived?: boolean | undefined }>(
 }
 
 /**
- * A one-shot value picker. Deliberately not `FilterDropdown`: that one
+ * A one-shot value picker. Deliberately not `FilterFacet`: that one
  * is multi-select, holds a selected set, and labels itself "Filter by
  * X" — all wrong for an action that applies one value and is done.
  */

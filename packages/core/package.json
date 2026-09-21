@@ -22,6 +22,10 @@
       "types": "./dist/users/sidebarGroups.d.ts",
       "import": "./dist/users/sidebarGroups.js"
     },
+    "./config/color.js": {
+      "types": "./dist/config/color.d.ts",
+      "import": "./dist/config/color.js"
+    },
     "./query/filters.js": {
       "types": "./dist/query/filters.d.ts",
       "import": "./dist/query/filters.js"

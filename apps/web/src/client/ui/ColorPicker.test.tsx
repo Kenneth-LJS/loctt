@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { EntityColor } from "@loctt/contracts";
-import { BUILTIN_PALETTE, getPaletteEntry } from "@loctt/core";
+import { BUILTIN_PALETTE, getPaletteEntry } from "@loctt/core/config/color.js";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

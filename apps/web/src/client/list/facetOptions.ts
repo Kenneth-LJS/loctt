@@ -1,6 +1,6 @@
 import type { WorkflowConfig } from "@loctt/contracts";
 
-import type { FilterOption } from "./FilterDropdown.tsx";
+import type { FilterOption } from "./FilterFacet.tsx";
 
 /**
  * The ONE definition of "what values may a facet offer".

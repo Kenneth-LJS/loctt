@@ -4,11 +4,10 @@ import { useState } from "react";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { ColorHexAlias, ColorPicker } from "../ui/ColorPicker.tsx";
 import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { isValidEntityColor } from "../ui/entityColor.ts";
-import { IconPicker } from "../ui/IconPicker.tsx";
+import { IconColorFields } from "../ui/IconColorFields.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { isSymmetric } from "./workflowEdits.ts";
@@ -259,35 +258,20 @@ export function RelationshipEditDialog({
           Ranked — links of this type keep an explicit order.
         </label>
 
-        <div className="block">
-          <span className="mb-1 block text-text-secondary">Icon</span>
-          <IconPicker
-            value={icon}
-            onChange={setIcon}
-            testId="relationships-entry-icon"
-            listTestId="relationships-entry-icon-list"
-            searchTestId="relationships-entry-icon-search"
-            clearTestId="relationships-entry-icon-clear"
-            ariaLabel="Icon for the relationship"
-          />
-        </div>
-
-        <div className="block">
-          <span className="mb-1 block text-text-secondary">Colour</span>
-          <ColorPicker
-            value={color}
-            onChange={setColor}
-            testId="relationships-entry-color-picker"
-            ariaLabel="Colour for the relationship"
-          />
-          {/* Keeps the original testid addressable — see EntryEditDialog. */}
-          <ColorHexAlias
-            value={color}
-            onChange={setColor}
-            testId="relationships-entry-color"
-            ariaLabel="Colour hex for the relationship"
-          />
-        </div>
+        {/* K104 — see EntryEditDialog. */}
+        <IconColorFields
+          icon={icon}
+          onIconChange={setIcon}
+          color={color}
+          onColorChange={setColor}
+          iconTestId="relationships-entry-icon"
+          iconListTestId="relationships-entry-icon-list"
+          iconSearchTestId="relationships-entry-icon-search"
+          iconClearTestId="relationships-entry-icon-clear"
+          colorTestId="relationships-entry-color-picker"
+          colorAliasTestId="relationships-entry-color"
+          noun="relationship"
+        />
 
         {error !== undefined && (
           <Callout tone="danger" role="alert" testId="relationships-entry-error">

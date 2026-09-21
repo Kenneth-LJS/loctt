@@ -1,5 +1,6 @@
 import type { EntityColor } from "@loctt/contracts";
-import { BUILTIN_PALETTE, getPaletteEntry } from "@loctt/core";
+// Subpath, not the barrel — see the note in ./entityColor.ts (A37).
+import { BUILTIN_PALETTE, getPaletteEntry } from "@loctt/core/config/color.js";
 import { useState } from "react";
 
 import { cn } from "./cn.ts";
@@ -126,6 +127,8 @@ export function ColorPicker({
   testId,
   ariaLabel = "Colour",
   className,
+  disabled = false,
+  disabledReason,
 }: {
   /** The stored colour, or `undefined` for none. */
   readonly value: EntityColor | undefined;
@@ -133,6 +136,14 @@ export function ColorPicker({
   readonly testId?: string | undefined;
   readonly ariaLabel?: string | undefined;
   readonly className?: string | undefined;
+  /**
+   * K104/A279: the control is inert but the stored value is PRESERVED.
+   * Disabling never calls `onChange` — clearing on disable would discard
+   * a deliberate choice and break icon → emoji → icon restoring it.
+   */
+  readonly disabled?: boolean;
+  /** Shown inline beside a disabled control, saying why. */
+  readonly disabledReason?: string | undefined;
 }) {
   const mode = useColorMode();
   const preview = resolveForMode(value, mode);
@@ -140,6 +151,56 @@ export function ColorPicker({
     value !== undefined && colorShape(value) === "palette"
       ? (value as { palette: string }).palette
       : undefined;
+
+  const swatch = (
+    <span
+      aria-hidden="true"
+      data-testid={testId !== undefined ? `${testId}-swatch` : undefined}
+      data-color={preview ?? ""}
+      className={cn(
+        "h-4 w-4 shrink-0 rounded border border-border-subtle",
+        preview === undefined && "bg-bg-muted",
+      )}
+      style={preview !== undefined ? { backgroundColor: preview } : undefined}
+    />
+  );
+
+  if (disabled) {
+    // Inert, not cleared. The stored value still paints its swatch and
+    // still reports through `data-value`, so what is preserved is
+    // visible — and no code path here can call `onChange`.
+    return (
+      <div className={className}>
+        <button
+          type="button"
+          disabled
+          data-testid={testId}
+          data-value={currentPalette ?? preview ?? ""}
+          aria-label={ariaLabel}
+          {...(disabledReason !== undefined
+            ? { "aria-describedby": `${testId ?? "color"}-disabled-reason` }
+            : {})}
+          className={cn(
+            "inline-flex h-8 max-w-full items-center gap-2 rounded-md",
+            "border border-border-default bg-bg-surface px-2 text-left text-body",
+            "cursor-not-allowed opacity-60",
+          )}
+        >
+          {swatch}
+          <span className="min-w-0 truncate text-text-primary">{describe(value)}</span>
+        </button>
+        {disabledReason !== undefined && (
+          <span
+            id={`${testId ?? "color"}-disabled-reason`}
+            data-testid={testId !== undefined ? `${testId}-disabled-reason` : undefined}
+            className="mt-1 block text-meta text-text-tertiary"
+          >
+            {disabledReason}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={className}>
@@ -334,11 +395,18 @@ export function ColorHexAlias({
   onChange,
   testId,
   ariaLabel,
+  disabled = false,
 }: {
   readonly value: EntityColor | undefined;
   readonly onChange: (next: EntityColor | undefined) => void;
   readonly testId?: string | undefined;
   readonly ariaLabel: string;
+  /**
+   * Mirrors `ColorPicker`'s disabled state. Without this the "colour
+   * cannot apply to an emoji" rule would have a live back door: the
+   * alias would still write the value the visible control refuses.
+   */
+  readonly disabled?: boolean;
 }) {
   const mode = useColorMode();
   return (
@@ -348,6 +416,7 @@ export function ColorHexAlias({
       aria-label={ariaLabel}
       className="sr-only"
       tabIndex={-1}
+      disabled={disabled}
       value={resolveForMode(value, mode) ?? ""}
       onChange={e => {
         const raw = e.target.value.trim();

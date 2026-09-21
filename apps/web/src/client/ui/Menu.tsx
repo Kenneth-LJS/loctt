@@ -2,11 +2,12 @@ import {
   type ReactNode,
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+
+import { panelStyle, usePortalPlacement } from "./usePortalPlacement.ts";
 
 /**
  * A minimal popover menu: a trigger button and a floating panel that
@@ -14,26 +15,11 @@ import { createPortal } from "react-dom";
  * item. Used by the header's user menu in M1.1 and by the filter and
  * bulk dropdowns in later list-view tickets.
  *
- * ## Why the panel is portalled and measured
- *
  * The panel renders into `document.body` via `createPortal` and is
- * positioned with runtime-measured coordinates (`position: fixed`,
- * viewport-relative from `getBoundingClientRect`), not with CSS anchor
- * classes on an inline `absolute` child.
- *
- * A CSS-anchored inline panel had two defects (MENU-PORTAL):
- *   1. It was clipped by any ancestor with `overflow` — the sidebar's
- *      scroll container (`overflow-y-auto`) sliced the saved-filter row
- *      kebab menu, so "Edit…", "Pin to top", "Delete…" were unreadable.
- *   2. A CSS-only anchor cannot flip or clamp to the viewport, so an
- *      `align="end"` panel next to a kebab near the sidebar's right edge
- *      ran off the *left* of the viewport.
- *
- * Measuring after first paint (the same technique the label-overflow
- * popover uses in `list/cells.tsx`) is the only way to know the real
- * panel size and clamp it inside the viewport. The panel is rendered
- * off-screen for one frame so it can be measured without flashing in
- * the wrong place.
+ * positioned with runtime-measured coordinates — see
+ * `usePortalPlacement.ts` for why (MENU-PORTAL). K106 stage 2 moved that
+ * machinery into the shared hook so `ui/Dropdown` sits on the same
+ * substrate; the behaviour here is unchanged.
  */
 
 export interface MenuProps {
@@ -52,11 +38,6 @@ export interface MenuProps {
   readonly "aria-label"?: string;
 }
 
-/** Gutter kept between the panel and the viewport edge, in px. */
-const VIEWPORT_MARGIN = 8;
-/** Gap between the trigger and the panel, in px. */
-const TRIGGER_GAP = 4;
-
 export function Menu({
   trigger,
   children,
@@ -65,10 +46,10 @@ export function Menu({
   "aria-label": ariaLabel,
 }: MenuProps) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerId = useId();
+  const pos = usePortalPlacement(open, wrapRef, panelRef, align);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -98,57 +79,6 @@ export function Menu({
       document.removeEventListener("mousedown", onDocMouseDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
-
-  // Measure and place the panel after it paints. Anchors below the
-  // trigger, flips above when there is no room below, honors `align`
-  // (start → panel left to trigger left, end → panel right to trigger
-  // right), then clamps horizontally so the panel never crosses a
-  // viewport edge. The horizontal clamp is what fixes the sidebar
-  // kebab: `align="end"` next to a near-right-edge trigger would place
-  // the panel off the left of the viewport, and the clamp pulls it
-  // back in.
-  const place = (): void => {
-    const wrap = wrapRef.current?.getBoundingClientRect();
-    const panel = panelRef.current?.getBoundingClientRect();
-    if (wrap === undefined || panel === undefined) return;
-
-    let left =
-      align === "end" ? wrap.right - panel.width : wrap.left;
-    const maxLeft = window.innerWidth - VIEWPORT_MARGIN - panel.width;
-    // Clamp within [margin, maxLeft]. `Math.min` first, then a
-    // `Math.max` floor, so a panel wider than the viewport still starts
-    // at the left gutter rather than off-screen.
-    left = Math.max(VIEWPORT_MARGIN, Math.min(left, maxLeft));
-
-    let top = wrap.bottom + TRIGGER_GAP;
-    if (top + panel.height > window.innerHeight - VIEWPORT_MARGIN) {
-      const above = wrap.top - TRIGGER_GAP - panel.height;
-      top = above >= VIEWPORT_MARGIN ? above : Math.max(VIEWPORT_MARGIN, top);
-    }
-    setPos({ left, top });
-  };
-
-  useLayoutEffect(() => {
-    if (!open) {
-      setPos(null);
-      return undefined;
-    }
-    place();
-    // Keep the panel anchored as ancestors scroll or the window
-    // resizes. `capture: true` on scroll so a scrolling *ancestor*
-    // (which does not bubble its scroll event) is still heard — the
-    // sidebar's own scroll container is exactly this case.
-    const onReflow = (): void => { place(); };
-    window.addEventListener("scroll", onReflow, true);
-    window.addEventListener("resize", onReflow);
-    return () => {
-      window.removeEventListener("scroll", onReflow, true);
-      window.removeEventListener("resize", onReflow);
-    };
-    // `place` closes over `align` and the refs; `open` is the only
-    // dependency that should re-run the effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // A11Y-9/§A2: a `role="menu"` promises roving arrow-key navigation, not
@@ -250,14 +180,7 @@ export function Menu({
                 "bg-bg-surface-raised p-1 shadow-overlay",
                 panelClassName ?? "",
               ].join(" ")}
-              style={
-                // Off-screen for the first paint so it can be measured
-                // without flashing in the wrong place; once `place` has
-                // run, `pos` holds the real coordinates.
-                pos === null
-                  ? { left: 0, top: 0, visibility: "hidden" }
-                  : { left: pos.left, top: pos.top }
-              }
+              style={panelStyle(pos)}
             >
               {children({ close })}
             </div>,

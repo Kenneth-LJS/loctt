@@ -1,6 +1,10 @@
 import type { EntityColor } from "@loctt/contracts";
 import { EntityColorSchema, isDoubleColor, isPaletteColorRef } from "@loctt/contracts";
-import { resolveEntityColorOr } from "@loctt/core";
+// Imported by SUBPATH, NOT the barrel: the barrel drags node:path and
+// sharp into the browser bundle (A37). Importing it here broke
+// `vite build` outright — rollup cannot resolve `node:path` for the
+// browser, so the client bundle failed to build at all.
+import { resolveEntityColorOr } from "@loctt/core/config/color.js";
 
 import { useTheme } from "../theme/useTheme.ts";
 

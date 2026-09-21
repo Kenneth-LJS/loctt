@@ -588,7 +588,9 @@ describe("Part A — icon + color on statuses (create + edit)", () => {
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "Blocked" } });
     fireEvent.click(within(dialog).getByTestId("statuses-entry-icon"));
-    fireEvent.click(within(dialog).getByTestId("icon-option-flag"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-flag"));
     fireEvent.change(within(dialog).getByTestId("statuses-entry-color"), { target: { value: "#123456" } });
     fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
 
@@ -607,7 +609,9 @@ describe("Part A — icon + color on statuses (create + edit)", () => {
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.click(within(dialog).getByTestId("statuses-entry-icon"));
-    fireEvent.click(within(dialog).getByTestId("icon-option-star"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-star"));
     fireEvent.change(within(dialog).getByTestId("statuses-entry-color"), { target: { value: "#abcdef" } });
     fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
 
@@ -629,7 +633,9 @@ describe("Part A — icon + color on relationships (create + edit)", () => {
     fireEvent.change(within(dialog).getByTestId("relationships-entry-label"), { target: { value: "Duplicates" } });
     fireEvent.click(within(dialog).getByTestId("relationships-entry-symmetric"));
     fireEvent.click(within(dialog).getByTestId("relationships-entry-icon"));
-    fireEvent.click(within(dialog).getByTestId("icon-option-link"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-link"));
     fireEvent.change(within(dialog).getByTestId("relationships-entry-color"), { target: { value: "#0a0b0c" } });
     fireEvent.click(within(dialog).getByTestId("relationships-entry-save"));
 
@@ -650,7 +656,9 @@ describe("Part A — icon + color on relationships (create + edit)", () => {
     const dialog = await screen.findByTestId("relationships-entry-dialog");
     // WORKFLOW's `blocks` starts with icon "ban", color "#ff0000".
     fireEvent.click(within(dialog).getByTestId("relationships-entry-icon"));
-    fireEvent.click(within(dialog).getByTestId("icon-option-flag"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-flag"));
     fireEvent.click(within(dialog).getByTestId("relationships-entry-save"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });
@@ -674,7 +682,9 @@ describe("Part A — icon + color on a custom-field enum value", () => {
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-key-0"), { target: { value: "high" } });
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-label-0"), { target: { value: "High" } });
     fireEvent.click(within(dialog).getByTestId("custom-field-dialog-value-icon-0"));
-    fireEvent.click(within(dialog).getByTestId("icon-option-alert"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-alert"));
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-color-0"), { target: { value: "#ee0000" } });
     fireEvent.click(within(dialog).getByTestId("custom-field-save"));
 
@@ -697,7 +707,11 @@ describe("Part C1 — custom-field task_types scope (create + edit)", () => {
     const dialog = await screen.findByTestId("custom-field-dialog");
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Repro steps" } });
     fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope"));
-    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope-option-task"));
+    // K106 step 2: the options panel now PORTALS to document.body, so it
+    // is no longer a descendant of the dialog — the trigger still is.
+    // Addressed from `screen` rather than `within(dialog)`; the testid
+    // and the assertion are unchanged.
+    fireEvent.click(screen.getByTestId("custom-field-dialog-scope-option-task"));
     fireEvent.click(within(dialog).getByTestId("custom-field-save"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });
@@ -733,7 +747,11 @@ describe("Part C1 — custom-field task_types scope (create + edit)", () => {
     fireEvent.click(screen.getByTestId("custom-field-edit-story_points"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope"));
-    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope-option-task"));
+    // K106 step 2: the options panel now PORTALS to document.body, so it
+    // is no longer a descendant of the dialog — the trigger still is.
+    // Addressed from `screen` rather than `within(dialog)`; the testid
+    // and the assertion are unchanged.
+    fireEvent.click(screen.getByTestId("custom-field-dialog-scope-option-task"));
     fireEvent.click(within(dialog).getByTestId("custom-field-save"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });

@@ -22,6 +22,7 @@ import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
+import { IconEmojiPicker } from "../ui/IconEmojiPicker.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -188,9 +189,9 @@ export function ViewFormDialog({
    */
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [name, setName] = useState(existing?.name ?? "");
-  // K104 will build the real icon picker; the field is carried so an
-  // edit never silently drops a view's stored icon.
-  const [icon] = useState<string | undefined>(existing?.icon);
+  // K104: the icon is now editable here — this is the surface Ken named.
+  // Seeded from the stored value so an edit never silently drops it.
+  const [icon, setIcon] = useState<string | undefined>(existing?.icon);
   const [scope, setScope] = useState<ArchivedScope>(existing?.archivedScope ?? "active");
 
   // Seed ONCE from the stored filters, each row keeping its own kind. A
@@ -368,6 +369,22 @@ export function ViewFormDialog({
             placeholder="e.g. My open bugs"
           />
         </label>
+
+        {/* K104's first surface. A saved view has no `color` field, so
+            the picker stands alone here — the icon/colour coupling rule
+            lives in `IconColorFields`, for the entities that have both. */}
+        <div className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
+          Icon
+          <IconEmojiPicker
+            value={icon}
+            onChange={setIcon}
+            testId="view-form-icon"
+            listTestId="view-form-icon-list"
+            searchTestId="view-form-icon-search"
+            clearTestId="view-form-icon-clear"
+            ariaLabel="Icon for the view"
+          />
+        </div>
 
         <div className="flex flex-col gap-2" data-testid="view-filter-rows">
           <span className="text-[0.9286rem] font-medium text-text-secondary">

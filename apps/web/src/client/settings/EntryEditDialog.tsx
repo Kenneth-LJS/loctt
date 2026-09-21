@@ -4,11 +4,10 @@ import { useState } from "react";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { ColorHexAlias, ColorPicker } from "../ui/ColorPicker.tsx";
 import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { isValidEntityColor } from "../ui/entityColor.ts";
-import { IconPicker } from "../ui/IconPicker.tsx";
+import { IconColorFields } from "../ui/IconColorFields.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
@@ -221,38 +220,21 @@ export function EntryEditDialog({
           </label>
         )}
 
-        <div className="block">
-          <span className="mb-1 block text-text-secondary">Icon</span>
-          <IconPicker
-            value={icon}
-            onChange={setIcon}
-            testId={`${collection}-entry-icon`}
-            listTestId={`${collection}-entry-icon-list`}
-            searchTestId={`${collection}-entry-icon-search`}
-            clearTestId={`${collection}-entry-icon-clear`}
-            ariaLabel={`Icon for the ${noun}`}
-          />
-        </div>
-
-        <div className="block">
-          <span className="mb-1 block text-text-secondary">Colour</span>
-          <ColorPicker
-            value={color}
-            onChange={setColor}
-            testId={`${collection}-entry-color-picker`}
-            ariaLabel={`Colour for the ${noun}`}
-          />
-          {/* The hex alias keeps the original `-entry-color` testid
-              addressable, so the tests (and the e2e suite) that set a
-              colour by typing still drive real behaviour. It is
-              `sr-only` — the visible control is the picker. */}
-          <ColorHexAlias
-            value={color}
-            onChange={setColor}
-            testId={`${collection}-entry-color`}
-            ariaLabel={`Colour hex for the ${noun}`}
-          />
-        </div>
+        {/* K104: the icon picker and the colour control, with the
+            emoji-disables-colour rule between them. */}
+        <IconColorFields
+          icon={icon}
+          onIconChange={setIcon}
+          color={color}
+          onColorChange={setColor}
+          iconTestId={`${collection}-entry-icon`}
+          iconListTestId={`${collection}-entry-icon-list`}
+          iconSearchTestId={`${collection}-entry-icon-search`}
+          iconClearTestId={`${collection}-entry-icon-clear`}
+          colorTestId={`${collection}-entry-color-picker`}
+          colorAliasTestId={`${collection}-entry-color`}
+          noun={noun}
+        />
 
         {/* SET-51: a failed save is anchored here, not thrown as a toast,
             and the dialog stays open with the edit un-committed. */}

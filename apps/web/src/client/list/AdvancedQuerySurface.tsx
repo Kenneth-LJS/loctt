@@ -25,7 +25,7 @@ import {
 
 /**
  * K90 parity: the builder's entity value pickers search the server as the
- * user types, exactly as the task-meta pickers and FilterDropdown do,
+ * user types, exactly as the task-meta pickers and the filter facets do,
  * rather than filtering the capped sidebar-fetch seed lists in memory
  * (A211). These adapters map each entity's server-search result to the
  * builder's `{ value, label }` option shape, carrying an archived entity's

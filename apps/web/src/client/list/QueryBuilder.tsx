@@ -109,7 +109,7 @@ export interface BuilderField {
    * the value picker queries the server `?q=` as the user types rather than
    * filtering the capped {@link options} in memory — so a workspace past the
    * fetch window (hundreds of users/labels/milestones/sprints, A211) is
-   * searchable, matching the rest of the app (task-meta, FilterDropdown).
+   * searchable, matching the rest of the app (task-meta, the filter facets).
    * Absent for enum fields (a closed config set, never large) and the
    * free-value kinds. Returns `{ value, label }` rows already mapped, plus
    * a `disabled`/`suffix` for archived entities so they stay visible but
