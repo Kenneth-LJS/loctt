@@ -11,6 +11,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listSearchSchema } from "../router/listSearch.ts";
+import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { buildChips, type FacetKey, type FacetOptions, FilterBar } from "./FilterBar.tsx";
 
 /**
@@ -366,7 +367,7 @@ describe("FilterBar", () => {
     // behaviour Ken struck out ("QUERY IS ADVANCED SHIT"). A view built
     // from dropdowns must reopen as dropdowns.
     await screen.findByTestId("view-edit-dialog");
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
+    expect(comboValue("view-filter-field-0")).toBe("status");
     expect(screen.queryByTestId("advanced-query-surface")).toBeNull();
     // And the URL is untouched: the view is still the active one.
     expect(search(router).view).toBe("v_recent");
@@ -793,8 +794,8 @@ describe("FilterBar — Advanced surface (K83 step 3)", () => {
     fireEvent.click(screen.getByTestId("switch-to-visual"));
     await screen.findByTestId("query-builder");
     fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(screen.getByTestId("qb-field"), { target: { value: "title" } });
-    fireEvent.change(screen.getByTestId("qb-op"), { target: { value: "~" } });
+    pickCombo("qb-field", "title");
+    pickCombo("qb-op", "~");
     fireEvent.change(screen.getByTestId("qb-value"), { target: { value: "__INVALID__" } });
 
     // Once validation settles invalid, Apply is disabled...

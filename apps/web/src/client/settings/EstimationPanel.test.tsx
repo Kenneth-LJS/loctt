@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { EstimationPanel } from "./EstimationPanel.tsx";
 
 /**
@@ -76,7 +77,7 @@ describe("EstimationPanel — scale", () => {
     render(<EstimationPanel />, { wrapper: wrapper() });
     await screen.findByTestId("estimation-panel");
 
-    fireEvent.change(screen.getByTestId("estimation-scale"), { target: { value: "fibonacci" } });
+    pickCombo("estimation-scale", "fibonacci");
     fireEvent.click(screen.getByTestId("estimation-save"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });
@@ -90,8 +91,8 @@ describe("EstimationPanel — scale", () => {
     await screen.findByTestId("estimation-panel");
 
     // Seeded from the stored scale.
-    expect(screen.getByTestId<HTMLSelectElement>("estimation-scale").value).toBe("linear");
-    fireEvent.change(screen.getByTestId("estimation-scale"), { target: { value: "free" } });
+    expect(comboValue("estimation-scale")).toBe("linear");
+    pickCombo("estimation-scale", "free");
     fireEvent.click(screen.getByTestId("estimation-save"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });

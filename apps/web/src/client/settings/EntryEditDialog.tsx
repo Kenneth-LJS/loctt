@@ -5,10 +5,10 @@ import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ColorInput, isValidHexColor } from "../ui/ColorInput.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { IconPicker } from "../ui/IconPicker.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
-import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
   type EntryProblems,
@@ -192,15 +192,14 @@ export function EntryEditDialog({
         {isStatus && (
           <label className="block">
             <span className="mb-1 block text-text-secondary">Category</span>
-            <Select
+            <SelectCombobox
               size="sm"
-              data-testid={`${collection}-entry-category`}
+              testId={`${collection}-entry-category`}
               value={category}
-              onChange={e => { setCategory(e.target.value as StatusDef["category"]); }}
+              onChange={v => { setCategory(v as StatusDef["category"]); }}
               aria-label={`Category for the ${noun}`}
-            >
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </Select>
+              options={CATEGORIES.map(c => ({ value: c, label: c }))}
+            />
           </label>
         )}
 

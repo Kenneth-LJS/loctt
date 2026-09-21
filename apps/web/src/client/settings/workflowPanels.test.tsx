@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { CustomFieldsPanel } from "./CustomFieldsPanel.tsx";
 import { EnumCollectionPanel } from "./EnumCollectionPanel.tsx";
 import { RelationshipsSettingsPanel } from "./RelationshipsSettingsPanel.tsx";
@@ -165,7 +166,7 @@ describe("EnumCollectionPanel — statuses (SET-46)", () => {
     fireEvent.click(screen.getByTestId("statuses-create"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "Blocked" } });
-    fireEvent.change(within(dialog).getByTestId("statuses-entry-category"), { target: { value: "active" } });
+    pickCombo("statuses-entry-category", "active");
     fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });
@@ -215,7 +216,7 @@ describe("EnumCollectionPanel — statuses (SET-46)", () => {
       fireEvent.click(screen.getByTestId("statuses-create"));
       const dialog = await screen.findByTestId("statuses-entry-dialog");
       fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "Blocked" } });
-      fireEvent.change(within(dialog).getByTestId("statuses-entry-category"), { target: { value: "active" } });
+      pickCombo("statuses-entry-category", "active");
       fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
 
       await waitFor(() => { expect(putBodies.length).toBe(1); });
@@ -476,7 +477,7 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     fireEvent.click(screen.getByTestId("custom-fields-create"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Team" } });
-    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-type"), { target: { value: "enum" } });
+    pickCombo("custom-field-dialog-type", "enum");
     fireEvent.click(within(dialog).getByTestId("custom-field-dialog-value-add"));
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-key-0"), { target: { value: "web" } });
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-label-0"), { target: { value: "Web" } });
@@ -668,7 +669,7 @@ describe("Part A — icon + color on a custom-field enum value", () => {
     fireEvent.click(screen.getByTestId("custom-fields-create"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Severity" } });
-    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-type"), { target: { value: "enum" } });
+    pickCombo("custom-field-dialog-type", "enum");
     fireEvent.click(within(dialog).getByTestId("custom-field-dialog-value-add"));
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-key-0"), { target: { value: "high" } });
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-label-0"), { target: { value: "High" } });

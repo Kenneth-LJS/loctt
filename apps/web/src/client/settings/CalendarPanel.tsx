@@ -7,9 +7,9 @@ import { useSaveCalendar } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
   blankHoliday,
@@ -179,17 +179,16 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
 
         <fieldset className="border-0 p-0">
           <legend className="mb-1 text-text-secondary">First day of week</legend>
-          <Select
-            data-testid="calendar-first-day"
+          <SelectCombobox
+            testId="calendar-first-day"
             value={String(draft.first_day_of_week)}
-            onChange={e => {
-              setDraft(prev => ({ ...prev, first_day_of_week: Number(e.target.value) }));
+            onChange={v => {
+              setDraft(prev => ({ ...prev, first_day_of_week: Number(v) }));
             }}
             aria-label="First day of week"
             className="w-40"
-          >
-            {DAY_NAMES.map((n, i) => <option key={n} value={String(i)}>{n}</option>)}
-          </Select>
+            options={DAY_NAMES.map((n, i) => ({ value: String(i), label: n }))}
+          />
         </fieldset>
 
         <fieldset className="border-0 p-0" data-testid="calendar-working-days">

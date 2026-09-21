@@ -18,11 +18,11 @@ import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
-import { Select } from "../ui/Select.tsx";
 import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
@@ -525,13 +525,23 @@ function SimpleRow({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select
+      <SelectCombobox
         size="sm"
-        data-testid={`view-filter-field-${String(index)}`}
+        testId={`view-filter-field-${String(index)}`}
         aria-label={`Filter ${String(index + 1)} field`}
         value={filter.field}
-        onChange={e => {
-          const field = e.target.value;
+        placeholder="Choose a field…"
+        options={[
+          { value: "", label: "Choose a field…" },
+          // A stored field the catalog does not know (a removed custom
+          // field) is still offered as its raw token, so the row renders
+          // what the file says instead of silently resetting to blank.
+          ...(def === undefined && filter.field !== ""
+            ? [{ value: filter.field, label: filter.field }]
+            : []),
+          ...catalog.map(f => ({ value: f.field, label: f.label })),
+        ]}
+        onChange={field => {
           const nextDef = findField(catalog, field);
           const nextOps = opsForField(nextDef);
           // Changing the field CLEARS the values: a status key is not a
@@ -542,26 +552,24 @@ function SimpleRow({
           const op: ComparisonOp = nextOps.includes(filter.op) ? filter.op : (nextOps[0] ?? "in");
           onChange({ kind: "simple", field, op, values: [] });
         }}
-      >
-        <option value="">Choose a field…</option>
-        {/* A stored field the catalog does not know (a removed custom
-            field) is still offered as its raw token, so the row renders
-            what the file says instead of silently resetting to blank. */}
-        {def === undefined && filter.field !== "" && (
-          <option value={filter.field}>{filter.field}</option>
-        )}
-        {catalog.map(f => (
-          <option key={f.field} value={f.field}>{f.label}</option>
-        ))}
-      </Select>
+      />
 
-      <Select
+      <SelectCombobox
         size="sm"
-        data-testid={`view-filter-op-${String(index)}`}
+        testId={`view-filter-op-${String(index)}`}
         aria-label={`Filter ${String(index + 1)} operator`}
         value={filter.op}
-        onChange={e => {
-          const op = e.target.value as ComparisonOp;
+        options={[
+          // A stored op outside this field's offered set is kept as an
+          // option rather than snapping to the first — reopening a view
+          // must not rewrite what it says.
+          ...(!ops.includes(filter.op)
+            ? [{ value: filter.op, label: OP_LABEL[filter.op] ?? filter.op }]
+            : []),
+          ...ops.map(op => ({ value: op, label: OP_LABEL[op] ?? op })),
+        ]}
+        onChange={v => {
+          const op = v as ComparisonOp;
           // A valueless operator drops the values it can no longer use,
           // so the stored filter never carries dead data.
           onChange({
@@ -571,17 +579,7 @@ function SimpleRow({
             values: VALUELESS_OPS.has(op) ? [] : filter.values,
           });
         }}
-      >
-        {/* A stored op outside this field's offered set is kept as an
-            option rather than snapping to the first — reopening a view
-            must not rewrite what it says. */}
-        {!ops.includes(filter.op) && (
-          <option value={filter.op}>{OP_LABEL[filter.op] ?? filter.op}</option>
-        )}
-        {ops.map(op => (
-          <option key={op} value={op}>{OP_LABEL[op] ?? op}</option>
-        ))}
-      </Select>
+      />
 
       {needsValue && (
         def?.options !== undefined ? (

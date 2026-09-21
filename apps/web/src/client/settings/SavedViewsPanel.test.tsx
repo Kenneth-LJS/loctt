@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { SavedViewsPanel } from "./SavedViewsPanel.tsx";
 
 /**
@@ -103,7 +104,7 @@ describe("SavedViewsPanel — create (VUE-40)", () => {
     expect(screen.queryByTestId("advanced-query-editor")).toBeNull();
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "My open bugs" } });
-    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "title" } });
+    pickCombo("view-filter-field-0", "title");
     fireEvent.change(screen.getByTestId("view-filter-value-0"), { target: { value: "login" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
@@ -138,7 +139,7 @@ describe("SavedViewsPanel — create (VUE-40)", () => {
 
     // But a STARTED filter with no value blocks, because saving it would
     // silently discard the field the user just chose.
-    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "title" } });
+    pickCombo("view-filter-field-0", "title");
     await waitFor(() => { expect(save.disabled).toBe(true); });
     fireEvent.change(screen.getByTestId("view-filter-value-0"), { target: { value: "x" } });
     await waitFor(() => { expect(save.disabled).toBe(false); });
@@ -267,8 +268,8 @@ describe("SavedViewsPanel — edit (VUE-41)", () => {
     // picker row it was authored as — NOT as query text.
     await screen.findByTestId("view-filter-field-0");
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("Open bugs");
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-op-0").value).toBe("in");
+    expect(comboValue("view-filter-field-0")).toBe("status");
+    expect(comboValue("view-filter-op-0")).toBe("in");
     expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });

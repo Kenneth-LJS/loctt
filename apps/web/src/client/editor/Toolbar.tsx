@@ -35,10 +35,10 @@
 import type { Editor } from "@tiptap/react";
 import { useEditorState } from "@tiptap/react";
 
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import type { IconName } from "../ui/Icon.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
-import { Select } from "../ui/Select.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 
 /** The platform modifier symbol used in shortcut hints. */
@@ -257,19 +257,18 @@ export function Toolbar({
           it always sees the controls. */}
       {editor !== null && (
         <>
-          <Select
+          <SelectCombobox
             size="sm"
             aria-label="Block type"
-            data-testid="fmt-block-type"
+            testId="fmt-block-type"
             value={state?.level ?? "paragraph"}
-            onChange={e => { applyBlock(e.target.value); }}
+            onChange={applyBlock}
             className="mr-1"
-          >
-            <option value="paragraph">Paragraph</option>
-            {LEVELS.map(l => (
-              <option key={l} value={String(l)}>{`Heading ${l}`}</option>
-            ))}
-          </Select>
+            options={[
+              { value: "paragraph", label: "Paragraph" },
+              ...LEVELS.map(l => ({ value: String(l), label: `Heading ${l}` })),
+            ]}
+          />
 
           <Separator />
 

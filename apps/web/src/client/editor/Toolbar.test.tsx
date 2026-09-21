@@ -5,6 +5,7 @@ import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { comboOptions, comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { LOCTT_EXTENSIONS } from "./extensions.ts";
 import { fromMarkdown, toMarkdown } from "./markdown.ts";
 import { Toolbar } from "./Toolbar.tsx";
@@ -58,8 +59,7 @@ describe("Toolbar level picker — TSK-59", () => {
   // @verifies TSK-59
   it("offers Paragraph and H1–H6", () => {
     render(<Toolbar editor={ed()} />);
-    const picker = screen.getByTestId<HTMLSelectElement>("fmt-block-type");
-    const options = Array.from(picker.options).map(o => o.textContent);
+    const options = comboOptions("fmt-block-type").map(o => o.label);
     expect(options).toEqual([
       "Paragraph", "Heading 1", "Heading 2", "Heading 3",
       "Heading 4", "Heading 5", "Heading 6",
@@ -83,19 +83,19 @@ describe("Toolbar level picker — TSK-59", () => {
   it("reflects the current block's level in the picker", () => {
     ed().chain().focus().setHeading({ level: 3 }).run();
     render(<Toolbar editor={ed()} />);
-    expect((screen.getByTestId<HTMLSelectElement>("fmt-block-type")).value).toBe("3");
+    expect(comboValue("fmt-block-type")).toBe("3");
 
     cleanup();
     ed().chain().focus().setParagraph().run();
     render(<Toolbar editor={ed()} />);
-    expect((screen.getByTestId<HTMLSelectElement>("fmt-block-type")).value).toBe("paragraph");
+    expect(comboValue("fmt-block-type")).toBe("paragraph");
   });
 });
 
 describe("Toolbar block transform caret — TSK-60", () => {
   /** Picks a value in the level picker, driving `applyBlock`. */
   function pick(value: string): void {
-    fireEvent.change(screen.getByTestId("fmt-block-type"), { target: { value } });
+    pickCombo("fmt-block-type", value);
   }
 
   // @verifies TSK-60
@@ -105,7 +105,7 @@ describe("Toolbar block transform caret — TSK-60", () => {
     // The caret sits in the heading, so the editor reports it active and
     // the picker — reading the same state — shows Heading 2 at once.
     expect(ed().isActive("heading", { level: 2 })).toBe(true);
-    expect((screen.getByTestId<HTMLSelectElement>("fmt-block-type")).value).toBe("2");
+    expect(comboValue("fmt-block-type")).toBe("2");
   });
 
   // @verifies TSK-60

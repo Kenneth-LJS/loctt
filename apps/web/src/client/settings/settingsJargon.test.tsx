@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import type { WorkflowConfig } from "@loctt/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  comboOptionLabel,
+  comboOptionsText,
+  comboValues,
+} from "../ui/selectComboboxTestUtils.ts";
 import { CustomFieldEditDialog } from "./CustomFieldEditDialog.tsx";
 import { EstimationPanel } from "./EstimationPanel.tsx";
 import { RelationshipEditDialog } from "./RelationshipEditDialog.tsx";
@@ -28,12 +33,15 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-/** The visible text of the <option> for a given stored value. */
-function optionLabel(selectTestId: string, value: string): string | null {
-  const select = screen.getByTestId(selectTestId);
-  const opt = select.querySelector<HTMLOptionElement>(`option[value="${value}"]`);
-  return opt?.textContent ?? null;
-}
+/**
+ * The visible text the dropdown shows for a given stored value.
+ *
+ * K106 turned these controls from native `<select>`s into listbox
+ * dropdowns, so the options are `role="option"` buttons rather than
+ * `<option>` elements and only exist while the panel is open — the
+ * label/value pair is read through the shared helper instead.
+ */
+const optionLabel = comboOptionLabel;
 
 describe("RelationshipEditDialog — graph constraint labels are human", () => {
   function renderDialog() {
@@ -54,15 +62,12 @@ describe("RelationshipEditDialog — graph constraint labels are human", () => {
     expect(optionLabel("relationships-entry-graph", "acyclic")).toBe("No cycles allowed");
     expect(optionLabel("relationships-entry-graph", "tree")).toBe("Strict hierarchy (one parent)");
     // Red-proof: the bare tokens must not be the visible label anymore.
-    const select = screen.getByTestId("relationships-entry-graph");
-    expect(select.textContent).not.toContain("acyclic");
+    expect(comboOptionsText("relationships-entry-graph")).not.toContain("acyclic");
   });
 
   it("still stores the raw key as the option value", () => {
     renderDialog();
-    const select = screen.getByTestId<HTMLSelectElement>("relationships-entry-graph");
-    const values = Array.from(select.querySelectorAll("option")).map(o => o.value);
-    expect(values).toEqual(["none", "acyclic", "tree"]);
+    expect(comboValues("relationships-entry-graph")).toEqual(["none", "acyclic", "tree"]);
   });
 });
 
@@ -86,15 +91,13 @@ describe("CustomFieldEditDialog — type labels are human", () => {
     expect(optionLabel("custom-field-dialog-type", "date")).toBe("Date");
     expect(optionLabel("custom-field-dialog-type", "boolean")).toBe("Yes / No");
     expect(optionLabel("custom-field-dialog-type", "enum")).toBe("Choice list");
-    const select = screen.getByTestId("custom-field-dialog-type");
-    expect(select.textContent).not.toContain("boolean");
+    expect(comboOptionsText("custom-field-dialog-type")).not.toContain("boolean");
   });
 
   it("still stores the raw key as the option value", () => {
     renderDialog();
-    const select = screen.getByTestId<HTMLSelectElement>("custom-field-dialog-type");
-    const values = Array.from(select.querySelectorAll("option")).map(o => o.value);
-    expect(values).toEqual(["string", "number", "date", "boolean", "enum"]);
+    expect(comboValues("custom-field-dialog-type"))
+      .toEqual(["string", "number", "date", "boolean", "enum"]);
   });
 });
 
@@ -146,20 +149,22 @@ describe("EstimationPanel — unit labels are human", () => {
     expect(optionLabel("estimation-unit", "custom_numeric")).toBe("Custom number scale");
     expect(optionLabel("estimation-unit", "custom_enum")).toBe("Custom label scale");
     // Red-proof: the raw tokens no longer appear as visible option text.
-    const select = screen.getByTestId("estimation-unit");
-    expect(select.textContent).not.toContain("custom_numeric");
-    expect(select.textContent).not.toContain("custom_enum");
+    expect(comboOptionsText("estimation-unit")).not.toContain("custom_numeric");
+    expect(comboOptionsText("estimation-unit")).not.toContain("custom_enum");
     // ...and the stored values are still the raw keys.
-    const values = Array.from(
-      select.querySelectorAll("option"),
-    ).map(o => o.value);
-    expect(values).toContain("custom_numeric");
-    expect(values).toContain("custom_enum");
+    expect(comboValues("estimation-unit")).toContain("custom_numeric");
+    expect(comboValues("estimation-unit")).toContain("custom_enum");
   });
 
   it("does not leak custom_enum in the panel description", async () => {
     const { container } = render(<EstimationPanel />, { wrapper: wrapper() });
     await screen.findByTestId("estimation-unit");
+    expect(container.textContent).not.toContain("custom_enum");
+    // The options live in the panel, which is closed here — so the check
+    // above no longer covers them (it did while they were <option>s in a
+    // native <select>). Open it, so this still fails if the token leaks
+    // back into either the prose OR the option labels.
+    fireEvent.click(screen.getByTestId("estimation-unit"));
     expect(container.textContent).not.toContain("custom_enum");
   });
 });

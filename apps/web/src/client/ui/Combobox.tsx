@@ -31,7 +31,7 @@ import { Icon } from "./Icon.tsx";
  *     memory, and the box appears once the list crosses
  *     `COMBOBOX_SEARCH_THRESHOLD` (twelve — MSL-19's forty-label case is
  *     the motivating one; below twelve the list fits and the box is
- *     noise). `filterable` overrides the threshold either way.
+ *     noise). `searchable` overrides the threshold either way.
  *
  * ## What it carries over from `OptionPicker`
  *
@@ -133,7 +133,7 @@ interface ComboboxCommonProps {
   /** K90: server-side search. Omit for the static list. */
   readonly search?: ComboboxSearch | undefined;
   /** Client-side filtering on/off regardless of size. Ignored with `search`. */
-  readonly filterable?: boolean | undefined;
+  readonly searchable?: boolean | undefined;
   readonly searchLabel?: string | undefined;
   readonly searchPlaceholder?: string | undefined;
   readonly searchTestId?: string | undefined;
@@ -186,7 +186,7 @@ export function Combobox(props: ComboboxProps) {
     label,
     options,
     search,
-    filterable,
+    searchable,
     searchLabel,
     searchPlaceholder,
     searchTestId,
@@ -219,7 +219,7 @@ export function Combobox(props: ComboboxProps) {
   const listId = useId();
 
   const serverMode = search !== undefined;
-  const showSearch = serverMode || (filterable ?? options.length >= COMBOBOX_SEARCH_THRESHOLD);
+  const showSearch = serverMode || (searchable ?? options.length >= COMBOBOX_SEARCH_THRESHOLD);
   const trimmedQuery = query.trim();
 
   useEffect(() => {
@@ -589,13 +589,21 @@ export function ComboboxButton({
   className,
   testId,
   dataValue,
+  disabled = false,
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledBy,
+  "aria-describedby": ariaDescribedBy,
   "aria-haspopup": haspopup,
   "aria-expanded": expanded,
   "aria-controls": controls,
 }: ComboboxTriggerProps & {
   readonly size?: ComboboxButtonSize | undefined;
+  /**
+   * Matches `<select disabled>`: the trigger stays focusable-by-nothing
+   * and cannot open the list (SET-16 locks the custom-field type on edit).
+   */
+  readonly disabled?: boolean | undefined;
+  readonly "aria-describedby"?: string | undefined;
   readonly placeholder?: string | undefined;
   readonly children?: ReactNode;
   /** Layout only. */
@@ -625,18 +633,30 @@ export function ComboboxButton({
       type="button"
       data-testid={testId}
       data-value={dataValue}
+      disabled={disabled}
       aria-label={ariaLabelledBy !== undefined ? undefined : ariaLabel}
       aria-labelledby={ariaLabelledBy}
+      aria-describedby={ariaDescribedBy}
       aria-haspopup={haspopup}
       aria-expanded={expanded}
       aria-controls={controls}
       onClick={toggle}
       className={cn(
-        "relative inline-flex max-w-full items-center rounded-md border border-border-default bg-bg-surface",
-        "px-2 pr-7 text-left cursor-pointer transition-colors hover:bg-bg-muted",
+        "relative inline-flex max-w-full items-center rounded-md border border-border-default",
+        "px-2 pr-7 text-left transition-colors",
         "aria-expanded:border-border-strong",
         BUTTON_SIZE[size],
-        empty ? "text-text-tertiary" : "text-text-primary",
+        // Mirrors Select's disabled treatment. Background, colour and
+        // cursor are all chosen inside ONE branch — `cn()` concatenates and
+        // does not resolve Tailwind conflicts, so emitting `bg-bg-surface`
+        // in the base and `bg-bg-muted` here would leave both in the class
+        // list with CSS order deciding which wins.
+        disabled
+          ? "cursor-not-allowed bg-bg-muted text-text-disabled"
+          : cn(
+              "cursor-pointer bg-bg-surface hover:bg-bg-muted",
+              empty ? "text-text-tertiary" : "text-text-primary",
+            ),
         className,
       )}
     >
@@ -650,5 +670,112 @@ export function ComboboxButton({
         )}
       />
     </button>
+  );
+}
+
+// ── The select-shaped convenience wrapper (K106) ─────────────────────
+
+/**
+ * A `Combobox` in the shape the old native `<select>` had: a value, a flat
+ * option list, and an `onChange` that reports the picked key.
+ *
+ * K106 folds the plain single-select onto the one dropdown primitive. The
+ * ~18 former `Select` sites are small fixed sets, so they pass
+ * `searchable={false}`: the threshold would not fire for most of them
+ * anyway, but saying it outright keeps a list that later grows past twelve
+ * from silently sprouting a search box the site did not ask for.
+ *
+ * ## What a native `<select>` gave for free, and what replaces it
+ *
+ * - **Accessible name.** A `<select>` nested inside a `<label>` is named
+ *   implicitly; a `<button>` is not. Every caller must therefore pass
+ *   `aria-label`, or `aria-labelledby` pointing at its visible label.
+ *   `label` (the listbox's own name) falls back to `aria-label` so the
+ *   two cannot drift apart.
+ * - **`value` in the DOM.** Assert on `data-value` instead — the trigger
+ *   carries the selected key, which is the parity `ComboboxButton`'s
+ *   `dataValue` was added for.
+ * - **The mobile native picker and type-ahead** are genuinely lost; this
+ *   is the listbox's own keyboard model instead (arrows/Home/End/Enter,
+ *   Escape to close). `ArchivedScopeControl` stays on the native
+ *   `<select>` precisely to keep those for its fixed three-option set.
+ */
+export interface SelectComboboxOption {
+  readonly value: string;
+  readonly label: string;
+  readonly disabled?: boolean | undefined;
+}
+
+export interface SelectComboboxProps {
+  readonly value: string;
+  readonly options: readonly SelectComboboxOption[];
+  readonly onChange: (value: string) => void;
+  readonly size?: ComboboxButtonSize | undefined;
+  readonly disabled?: boolean | undefined;
+  readonly testId?: string | undefined;
+  /** Names both the trigger and the listbox. Omit only with `aria-labelledby`. */
+  readonly "aria-label"?: string | undefined;
+  readonly "aria-labelledby"?: string | undefined;
+  /**
+   * The listbox's own name when the trigger is named by `aria-labelledby`
+   * (whose referenced element the listbox cannot borrow). Defaults to
+   * `aria-label`.
+   */
+  readonly listLabel?: string | undefined;
+  readonly "aria-describedby"?: string | undefined;
+  /** Shown when `value` matches no option. */
+  readonly placeholder?: string | undefined;
+  /** Layout only — see the `cn()` note: this appends, it does not resolve conflicts. */
+  readonly className?: string | undefined;
+  /** Forces the search box on/off; defaults to off for these fixed sets. */
+  readonly searchable?: boolean | undefined;
+}
+
+export function SelectCombobox({
+  value,
+  options,
+  onChange,
+  size = "md",
+  disabled = false,
+  testId,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+  "aria-describedby": ariaDescribedBy,
+  listLabel,
+  placeholder = "—",
+  className,
+  searchable = false,
+}: SelectComboboxProps) {
+  const current = options.find(o => o.value === value);
+  return (
+    <Combobox
+      label={listLabel ?? ariaLabel ?? ""}
+      options={options.map(o => ({
+        key: o.value,
+        label: o.label,
+        // Omitted rather than passed as `undefined`: the repo runs with
+        // `exactOptionalPropertyTypes`.
+        ...(o.disabled === undefined ? {} : { disabled: o.disabled }),
+      }))}
+      value={current === undefined ? undefined : value}
+      onSelect={onChange}
+      searchable={searchable}
+      trigger={p => (
+        <ComboboxButton
+          {...p}
+          testId={testId}
+          dataValue={value}
+          size={size}
+          placeholder={placeholder}
+          className={className}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledBy}
+          aria-describedby={ariaDescribedBy}
+          disabled={disabled}
+        >
+          {current?.label}
+        </ComboboxButton>
+      )}
+    />
   );
 }

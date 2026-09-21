@@ -22,7 +22,7 @@ import { buildGroupingCatalog } from "../grouping/catalog.ts";
 import { GroupByPicker } from "../grouping/GroupByPicker.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { Select } from "../ui/Select.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
 
 /**
@@ -87,17 +87,17 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
 
   return (
     <div className="grid max-w-lg gap-3 text-[0.9286rem]" data-testid="timeline-panel">
-      <label className="grid gap-1">
+      <div className="grid gap-1">
         <span className="text-text-secondary">Default zoom</span>
-        <Select
-          data-testid="timeline-default-zoom"
+        <SelectCombobox
+          testId="timeline-default-zoom"
           value={draft.default_zoom ?? "week"}
-          onChange={e => { patch({ default_zoom: e.target.value as TimelineZoom }); }}
+          onChange={v => { patch({ default_zoom: v as TimelineZoom }); }}
           className="w-56"
-        >
-          {ZOOMS.map(z => <option key={z.value} value={z.value}>{z.label}</option>)}
-        </Select>
-      </label>
+          aria-label="Default zoom"
+          options={ZOOMS.map(z => ({ value: z.value, label: z.label }))}
+        />
+      </div>
 
       <label className="grid gap-1">
         <span className="text-text-secondary">Default grouping</span>
@@ -133,16 +133,15 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
         </span>
       </label>
 
-      <label id="field-dependency_relationship" className="grid gap-1">
+      <div id="field-dependency_relationship" className="grid gap-1">
         <span className="text-text-secondary">
           Dependency relationship
           <span className="ml-1 text-text-tertiary">— which link drives the arrows</span>
         </span>
-        <Select
-          data-testid="timeline-dependency-relationship"
+        <SelectCombobox
+          testId="timeline-dependency-relationship"
           value={dep}
-          onChange={e => {
-            const v = e.target.value;
+          onChange={v => {
             setDraft(prev => {
               if (v === "") {
                 const { dependency_relationship: _drop, ...rest } = prev;
@@ -152,15 +151,15 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
             });
           }}
           className="w-56"
-        >
-          <option value="">(none)</option>
-          {relationships.map(r => (
-            <option key={r.key} value={r.key}>{r.label}</option>
-          ))}
-          {/* Keep the dangling key selectable so it is visible and not
-              silently dropped when the form is saved. */}
-          {depDangling && <option value={dep}>{dep} — no longer defined</option>}
-        </Select>
+          aria-label="Dependency relationship"
+          options={[
+            { value: "", label: "(none)" },
+            ...relationships.map(r => ({ value: r.key, label: r.label })),
+            // Keep the dangling key selectable so it is visible and not
+            // silently dropped when the form is saved.
+            ...(depDangling ? [{ value: dep, label: `${dep} — no longer defined` }] : []),
+          ]}
+        />
         {depDangling && (
           <p
             data-testid="timeline-dependency-unresolvable"
@@ -171,7 +170,7 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
             draw until you pick an existing relationship (or clear this).
           </p>
         )}
-      </label>
+      </div>
 
       {save.isError && (
         <p role="alert" data-testid="workflow-save-error" className="text-[0.8571rem] text-danger-fg">

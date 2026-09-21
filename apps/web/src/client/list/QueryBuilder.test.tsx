@@ -2,6 +2,7 @@
 import { act,cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { comboValuesOf, pickComboOn } from "../ui/selectComboboxTestUtils.ts";
 import { type BuilderTree,builderTreeToQuery } from "./builderTree.ts";
 import { buildBuilderConfig, type BuilderConfig,QueryBuilder } from "./QueryBuilder.tsx";
 
@@ -71,11 +72,12 @@ function nth(testId: string, i: number): HTMLElement {
   if (el === undefined) throw new Error(`no ${testId}[${i}]`);
   return el;
 }
-function optionValues(select: HTMLElement): string[] {
-  return within(select)
-    .getAllByRole("option")
-    .map(o => (o as HTMLOptionElement).value);
-}
+/**
+ * The values a picker offers. K106 made the field/op pickers listbox
+ * dropdowns rather than native `<select>`s, so the options exist only
+ * while the panel is open — the helper opens it, reads, and closes it.
+ */
+const optionValues = comboValuesOf;
 
 /**
  * Picks a value in the Nth constrained value picker — a `Combobox`
@@ -97,14 +99,14 @@ describe("QueryBuilder", () => {
     fireEvent.click(screen.getByTestId("qb-add-condition"));
 
     // Row 0: status = done (enum picker).
-    fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
-    fireEvent.change(nth("qb-op", 0), { target: { value: "=" } });
+    pickComboOn(nth("qb-field", 0), "status");
+    pickComboOn(nth("qb-op", 0), "=");
     pickValue(0, "Done");
 
     // Row 1: title ~ "log in" — a value with a space, which dslAtom
     // quotes (a bare word would round-trip unquoted).
-    fireEvent.change(nth("qb-field", 1), { target: { value: "title" } });
-    fireEvent.change(nth("qb-op", 1), { target: { value: "~" } });
+    pickComboOn(nth("qb-field", 1), "title");
+    pickComboOn(nth("qb-op", 1), "~");
     fireEvent.change(nth("qb-value", 1), { target: { value: "log in" } });
 
     expect(b.q()).toBe('status = done and title ~ "log in"');
@@ -114,9 +116,9 @@ describe("QueryBuilder", () => {
     const b = renderBuilder();
     fireEvent.click(screen.getByTestId("qb-add-condition"));
     fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
+    pickComboOn(nth("qb-field", 0), "status");
     pickValue(0, "To do");
-    fireEvent.change(nth("qb-field", 1), { target: { value: "status" } });
+    pickComboOn(nth("qb-field", 1), "status");
     pickValue(1, "Done");
 
     expect(b.q()).toBe("status = todo and status = done");
@@ -147,7 +149,7 @@ describe("QueryBuilder", () => {
   it("constrains an enum value to config values (no arbitrary typing)", () => {
     const b = renderBuilder();
     fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
+    pickComboOn(nth("qb-field", 0), "status");
 
     // The value control is a Combobox trigger (A211 — the old test pinned
     // a native <select>, the control this replaced) offering only the two
@@ -177,7 +179,7 @@ describe("QueryBuilder", () => {
     });
     const b = renderBuilder(EMPTY, many);
     fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(nth("qb-field", 0), { target: { value: "labels" } });
+    pickComboOn(nth("qb-field", 0), "labels");
 
     fireEvent.click(nth("qb-value", 0));
     const search = screen.getByRole("combobox", { name: /search value/i });
@@ -192,8 +194,8 @@ describe("QueryBuilder", () => {
   it("hides the value control for `is empty`", () => {
     const b = renderBuilder();
     fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(nth("qb-field", 0), { target: { value: "assignee" } });
-    fireEvent.change(nth("qb-op", 0), { target: { value: "is empty" } });
+    pickComboOn(nth("qb-field", 0), "assignee");
+    pickComboOn(nth("qb-op", 0), "is empty");
 
     expect(screen.queryByTestId("qb-value")).toBeNull();
     expect(b.q()).toBe("assignee is empty");
@@ -204,18 +206,36 @@ describe("QueryBuilder", () => {
     fireEvent.click(screen.getByTestId("qb-add-condition"));
 
     // Text field: offers `~`, not ordering.
-    fireEvent.change(nth("qb-field", 0), { target: { value: "title" } });
+    pickComboOn(nth("qb-field", 0), "title");
     expect(optionValues(nth("qb-op", 0))).toContain("~");
     expect(optionValues(nth("qb-op", 0))).not.toContain("<");
 
     // Enum field: offers membership, not `~`.
-    fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
+    pickComboOn(nth("qb-field", 0), "status");
     expect(optionValues(nth("qb-op", 0))).toContain("in");
     expect(optionValues(nth("qb-op", 0))).not.toContain("~");
 
     // Date field: offers ordering.
-    fireEvent.change(nth("qb-field", 0), { target: { value: "due_date" } });
+    pickComboOn(nth("qb-field", 0), "due_date");
     expect(optionValues(nth("qb-op", 0))).toContain("<");
+  });
+
+  it("offers a field the config does not know as its raw token, rather than snapping to the first", () => {
+    // A `q` parsed from the URL can name a field the current config has no
+    // entry for (a removed custom field). The row must show that token as
+    // the selection instead of silently becoming some other field — which
+    // would rewrite the user's query behind their back.
+    //
+    // The option must be OFFERED, not merely be the trigger's data-value:
+    // `data-value` reflects the tree either way, so asserting it alone
+    // stopped covering this when the control became a button.
+    renderBuilder({
+      kind: "group",
+      op: "and",
+      children: [{ kind: "leaf", field: "fields.gone", op: "=", value: { type: "string", value: "x" } }],
+    });
+
+    expect(optionValues(nth("qb-field", 0))).toContain("fields.gone");
   });
 
   // @verifies QBLD-5
@@ -226,13 +246,13 @@ describe("QueryBuilder", () => {
     // The `text` alias (title + body substring) accepts only `~` in the
     // validator — so the builder offers only `~`, never =/!=/is empty,
     // which it would otherwise inherit from the `text` KIND.
-    fireEvent.change(nth("qb-field", 0), { target: { value: "text" } });
+    pickComboOn(nth("qb-field", 0), "text");
     expect(optionValues(nth("qb-op", 0))).toEqual(["~"]);
 
     // The sibling `title` field (same KIND, no per-field override) keeps
     // the full string set — proof the narrowing is field-specific, not a
     // regression of the whole `text` kind.
-    fireEvent.change(nth("qb-field", 0), { target: { value: "title" } });
+    pickComboOn(nth("qb-field", 0), "title");
     expect(optionValues(nth("qb-op", 0))).toContain("=");
     expect(optionValues(nth("qb-op", 0))).toContain("is empty");
   });
@@ -242,7 +262,7 @@ describe("QueryBuilder", () => {
     renderBuilder();
     fireEvent.click(screen.getByTestId("qb-add-condition"));
 
-    fireEvent.change(nth("qb-field", 0), { target: { value: "comment_mentions" } });
+    pickComboOn(nth("qb-field", 0), "comment_mentions");
     const ops = optionValues(nth("qb-op", 0));
     expect(ops).toEqual(["=", "!=", "in", "not in"]);
     // Explicitly: the presence ops its `user` kind would offer are gone.
@@ -260,7 +280,7 @@ describe("QueryBuilder", () => {
   it("lays each condition out as one row with field, operator and a filling value column", () => {
     renderBuilder();
     fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
+    pickComboOn(nth("qb-field", 0), "status");
 
     const row = screen.getByTestId("qb-leaf-row");
     // Field, operator and value all live in the one row container…
@@ -279,8 +299,8 @@ describe("QueryBuilder", () => {
   it("builds an `in (…)` list from a constrained multi-select picker", () => {
     const b = renderBuilder();
     fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
-    fireEvent.change(nth("qb-op", 0), { target: { value: "in" } });
+    pickComboOn(nth("qb-field", 0), "status");
+    pickComboOn(nth("qb-op", 0), "in");
 
     // A multi Combobox, not a checkbox wall (A211 — the old test clicked
     // bare checkboxes, the control this replaced): open once, pick twice;
@@ -334,7 +354,7 @@ describe("QueryBuilder — server-side entity value search (K90)", () => {
     try {
       const b = renderBuilder(EMPTY, serverConfig(onQuery));
       fireEvent.click(screen.getByTestId("qb-add-condition"));
-      fireEvent.change(nth("qb-field", 0), { target: { value: "assignee" } });
+      pickComboOn(nth("qb-field", 0), "assignee");
 
       // Open the value picker. In server mode the search box is ALWAYS
       // present (the list is by definition too big to fetch whole), even
@@ -368,8 +388,8 @@ describe("QueryBuilder — server-side entity value search (K90)", () => {
     try {
       const b = renderBuilder(EMPTY, serverConfig(onQuery));
       fireEvent.click(screen.getByTestId("qb-add-condition"));
-      fireEvent.change(nth("qb-field", 0), { target: { value: "assignee" } });
-      fireEvent.change(nth("qb-op", 0), { target: { value: "in" } });
+      pickComboOn(nth("qb-field", 0), "assignee");
+      pickComboOn(nth("qb-op", 0), "in");
 
       fireEvent.click(nth("qb-value", 0));
       const search = screen.getByRole("combobox", { name: /search value/i });
@@ -398,7 +418,7 @@ describe("QueryBuilder — server-side entity value search (K90)", () => {
     });
     renderBuilder(EMPTY, config);
     fireEvent.click(screen.getByTestId("qb-add-condition"));
-    fireEvent.change(nth("qb-field", 0), { target: { value: "status" } });
+    pickComboOn(nth("qb-field", 0), "status");
 
     fireEvent.click(nth("qb-value", 0));
     // Two options is a small fixed set: no search box, and nothing queried.

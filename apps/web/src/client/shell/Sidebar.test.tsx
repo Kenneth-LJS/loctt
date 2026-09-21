@@ -10,6 +10,7 @@ import {
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { Sidebar } from "./Sidebar.tsx";
 
 /**
@@ -1020,7 +1021,7 @@ describe("Sidebar groups customization (SHL-45)", () => {
     await screen.findByTestId("view-filter-field-0");
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "My typed view" } });
-    fireEvent.change(screen.getByTestId("view-filter-field-0"), { target: { value: "title" } });
+    pickCombo("view-filter-field-0", "title");
     fireEvent.change(screen.getByTestId("view-filter-value-0"), { target: { value: "bug" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
@@ -1109,7 +1110,7 @@ describe("Sidebar saved-filter row actions", () => {
     // filters. Prefilled name, and the first row shows `status`.
     await screen.findByTestId("view-filter-field-0");
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("My open bugs");
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("status");
+    expect(comboValue("view-filter-field-0")).toBe("status");
     expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
@@ -1291,7 +1292,7 @@ describe("Sidebar saved-filter row actions", () => {
       .toBe(BROKEN_ONE.rawText);
     // Still the empty picker for the rebuild (K102), and still no DSL box.
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("Bad view");
-    expect(screen.getByTestId<HTMLSelectElement>("view-filter-field-0").value).toBe("");
+    expect(comboValue("view-filter-field-0")).toBe("");
     expect(screen.queryByTestId("dsl-input")).toBeNull();
   });
 
