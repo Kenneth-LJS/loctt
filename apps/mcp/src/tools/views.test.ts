@@ -1,8 +1,8 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { initLoctt } from "@loctt/core";
+import { initLoctt, loadQueriesConfig, resolveLocttDir } from "@loctt/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { executeTool, getTools } from "../index.js";
@@ -167,5 +167,139 @@ describe("get_workflow_config description", () => {
     expect(desc).toMatch(/priorit/i);
     // Says to call it first / before writing.
     expect(desc.toLowerCase()).toMatch(/first|before/);
+  });
+});
+
+/**
+ * @verifies K102-broken-repair on the MCP surface.
+ *
+ * `replaceBroken` is MCP's spelling of the explicit opt-in. Before this,
+ * `edit_view` and `delete_view` aimed at a broken entry failed with
+ * `unknown view: <ref>` — an agent could SEE the broken view in
+ * `list_views` and had no tool that could act on it.
+ */
+describe("MCP saved-view broken repair (replaceBroken)", () => {
+  let root: string;
+  const BROKEN_ID = "01BROKEN00000000000000000B";
+
+  async function seedBroken(): Promise<void> {
+    await writeFile(
+      join(resolveLocttDir(root), "config", "queries.yaml"),
+      "queries:\n"
+      + "  - id: 01KEEP000000000000000000AA\n"
+      + "    name: keep\n"
+      + "    filters:\n"
+      + "      - kind: simple\n"
+      + "        field: status\n"
+      + "        op: \"!=\"\n"
+      + "        values: [\"done\"]\n"
+      + `  - id: ${BROKEN_ID}\n`
+      + "    name: broken-one\n"
+      + "    filters: \"not a list\"\n",
+      "utf-8",
+    );
+  }
+
+  const bytes = async (): Promise<string> =>
+    readFile(join(resolveLocttDir(root), "config", "queries.yaml"), "utf-8");
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-mcp-views-broken-"));
+    await initLoctt(root);
+    await seedBroken();
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("edit_view without replaceBroken errors, names the view, and leaves the file byte-identical", async () => {
+    const before = await bytes();
+
+    const res = await executeTool(root, "edit_view", {
+      view: BROKEN_ID,
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["done"] }],
+    });
+
+    expect(res.isError).toBe(true);
+    const msg = res.content[0]?.text ?? "";
+    expect(msg).toContain("broken-one");
+    expect(msg).toContain("replaceBroken: true");
+    expect(msg).not.toContain("unknown view");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("edit_view with replaceBroken repairs the entry, keeping its id", async () => {
+    const res = await executeTool(root, "edit_view", {
+      view: BROKEN_ID,
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["done"] }],
+      replaceBroken: true,
+    });
+
+    expect(res.isError).toBeUndefined();
+    const config = await loadQueriesConfig(resolveLocttDir(root));
+    expect(config.broken).toBeUndefined();
+    expect(config.queries.find(q => q.id === BROKEN_ID)?.filters).toEqual([
+      { kind: "simple", field: "status", op: "=", values: ["done"] },
+    ]);
+    expect(await bytes()).not.toContain("not a list");
+  });
+
+  it("delete_view with confirm but no replaceBroken errors and changes nothing", async () => {
+    const before = await bytes();
+
+    // `confirm` is the every-delete gate; it is NOT the broken-entry
+    // opt-in, and passing it alone must not be enough.
+    const res = await executeTool(root, "delete_view", { view: BROKEN_ID, confirm: true });
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toContain("replaceBroken: true");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("delete_view with confirm AND replaceBroken removes the broken entry", async () => {
+    const res = await executeTool(root, "delete_view", {
+      view: BROKEN_ID,
+      confirm: true,
+      replaceBroken: true,
+    });
+
+    expect(res.isError).toBeUndefined();
+    const config = await loadQueriesConfig(resolveLocttDir(root));
+    expect(config.broken).toBeUndefined();
+    expect(config.queries.find(q => q.id === BROKEN_ID)).toBeUndefined();
+    expect(config.queries.find(q => q.name === "keep")).toBeDefined();
+  });
+
+  it("archive_view on a broken entry errors with a clear message", async () => {
+    const before = await bytes();
+
+    const res = await executeTool(root, "archive_view", { view: BROKEN_ID });
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toContain("cannot be archived");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("a HEALTHY view still edits and deletes with no new parameter", async () => {
+    // Constraint 4: no new friction on the normal path.
+    const edited = await executeTool(root, "edit_view", {
+      view: "01KEEP000000000000000000AA",
+      name: "renamed",
+    });
+    expect(edited.isError).toBeUndefined();
+    let config = await loadQueriesConfig(resolveLocttDir(root));
+    expect(config.queries.find(q => q.name === "renamed")).toBeDefined();
+
+    const deleted = await executeTool(root, "delete_view", {
+      view: "01KEEP000000000000000000AA",
+      confirm: true,
+    });
+    expect(deleted.isError).toBeUndefined();
+    config = await loadQueriesConfig(resolveLocttDir(root));
+    expect(config.queries.find(q => q.name === "renamed")).toBeUndefined();
+    // The broken sibling was never in the way.
+    expect(config.broken).toHaveLength(1);
+    expect(await bytes()).toContain("not a list");
   });
 });

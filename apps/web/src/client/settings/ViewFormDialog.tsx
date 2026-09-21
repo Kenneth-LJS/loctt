@@ -283,7 +283,14 @@ export function ViewFormDialog({
       ...(icon !== undefined ? { icon } : {}),
     };
     if (isEdit) {
-      edit.mutate({ id: existing.id, body: common }, { onSuccess: onClose });
+      // K102-broken-repair: the tick above is the user's consent, and it
+      // has to reach the SERVER — core refuses to replace a broken
+      // entry's preserved text without it, so a dialog that only
+      // disabled its own Save button produced a rejected write, not a
+      // repair. Sent only when the target is broken; a healthy edit's
+      // body is byte-for-byte what it always was.
+      const body = isBroken ? { ...common, replaceBroken: true } : common;
+      edit.mutate({ id: existing.id, body }, { onSuccess: onClose });
     } else {
       create.mutate(common, { onSuccess: onClose });
     }

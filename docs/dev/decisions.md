@@ -14015,6 +14015,50 @@ Ken: *"we need a robust way for the new UIs to also handle when users
 hand-edit and break views."* This is the binding requirement — disk
 preservation alone is not the answer; the UI needs a real repair path.
 
+> **⚠ THIS ENTRY OVERCLAIMS — CORRECTED 2026-09-21. READ THIS FIRST.**
+>
+> A PM review challenged the premise and was RIGHT; I reproduced it
+> independently on a real tracker before accepting it.
+>
+> **The data-loss path described below never existed, and the "replace"
+> flow described as BUILT cannot succeed.** `findView`
+> (`core/src/views/manage.ts:21`) searches only `config.queries`, never
+> `config.broken` — and it has always done so, since `42d2f6a1`; K102 did
+> not change it. So `editView` and `deleteView` both throw
+> `unknown view: <ref>` for ANY entry that lives only in `broken`.
+>
+> Reproduced on a real tracker, by id and by name, on the CLI:
+> ```
+> views edit 01M0BROKENPROBE00000000AA --filter "status = done"
+>   → Error: unknown view: 01M0BROKENPROBE00000000AA
+> views edit handbroken --filter "status = done"
+>   → Error: unknown view: handbroken
+> views delete handbroken --yes
+>   → Error: unknown view: handbroken
+> ```
+> Web and MCP route through the same `editView`, so all three surfaces
+> are equally non-functional. `rawText` is never at risk because the
+> write never reaches `saveQueriesConfig` — it **fails safe, but fails
+> totally**.
+>
+> **So the real defect is the opposite of the one recorded:** not "a
+> broken view is too easy to destroy" but "**a broken view cannot be
+> repaired or deleted by any tool**". A user who opens Replace, reads the
+> warning, ticks the confirmation and clicks Save gets an opaque
+> `unknown view: 01M0…` with a raw ULID and no next action. The only
+> repair is hand-editing `queries.yaml`.
+>
+> The client-side guard below is real and does what it says — it just
+> guards a door that is already locked.
+>
+> **VUE-42's tests do not cover this.** Both assert only that Save is
+> DISABLED before the checkbox is ticked; neither ticks it and asserts
+> the outcome. Had either done so, this would have been caught before it
+> was recorded as BUILT. `known-gaps.md`'s claim that VUE-42 "has two
+> tagged tests" is therefore true but misleading, and is corrected there.
+>
+> **OPEN, and Ken's call** — see `K102-broken-repair` below.
+
 **BUILT (2026-09-21): "replace, with the original in front of you,
 behind an explicit confirmation."**
 
@@ -14059,15 +14103,163 @@ message per CLAUDE.md.
 **To revert:** drop the `broken` prop from `ViewFormDialog` and its
 forwarding in `Sidebar.tsx`/`SavedViewsPanel.tsx`.
 
-**KNOWN LIMIT — the guard is CLIENT-SIDE ONLY.** `PUT /api/views/:id`
-will still replace a broken entry with `filters: []` for any caller —
-CLI, MCP, or a hand-rolled request. The web UI no longer offers that by
-accident; the API still permits it by design. Enforcing it at the
-boundary is a core/server change and a SEPARATE decision — flagged for
-Ken, not assumed.
+**KNOWN LIMIT — SUPERSEDED.** This said the guard was client-side only
+and CLI/MCP could still replace a broken entry with `filters: []`. **They
+cannot** — `findView` rejects them first (see the correction at the top
+of this entry). The boundary question it raised is still worth answering,
+but only once a repair path exists; restated as `K102-broken-repair`.
 
-**Status: RECORDED, IN BUILD.** Stage A (contracts + core) done; CLI,
-MCP, web server, web dialog and docs done; three open defects above.
+### K102-broken-repair · a broken saved view cannot be repaired or deleted by ANY surface
+
+**Ken's ruling: Option A. Not agent-revertible.**
+
+**Situation.** `findView` (`core/src/views/manage.ts:21`) resolves a ref
+only against `config.queries`. A `BrokenSavedQuery` lives in
+`config.broken` and keeps its real id, so every write path routed through
+`findView` — `editView`, `deleteView`, `archiveView`, `unarchiveView` —
+throws `unknown view: <ref>` for it. Verified on a real tracker, by id
+AND by name; web, CLI and MCP share that call and fail identically. The
+file is left byte-identical, so this fails SAFE — but there is **no
+in-app repair path at all**, and the broken-row affordances ("Edit…",
+"Replace…", "Delete…") are dead controls promising something they cannot
+do.
+
+**What has to be decided.** Should `findView` (or a parallel resolver)
+reach into `config.broken` so a confirmed client can replace or delete a
+broken entry — and if so, what gates it on CLI and MCP, which have no
+confirmation checkbox?
+
+**Option A — widen resolution, gate every surface.** `editView`/
+`deleteView` accept a broken-entry id; a write that would discard
+`rawText` requires an explicit opt-in (`replaceBroken: true`, `--force`,
+matching MCP param). *Cost:* touches the resolver every view operation
+shares, plus flags, docs and tests on three surfaces. *Benefit:* the
+repair path the UI already advertises actually works, and preservation
+stops depending on client manners — the original boundary question, now
+aimed at code that would really exist.
+
+**Option B — no in-app repair.** Leave resolution alone and RELABEL the
+broken-row affordances so they stop promising a repair — a read-only
+"show the stored text" plus "fix `queries.yaml` by hand". *Cost:* the
+user leaves the app to recover a view. *Benefit:* zero core risk, honest
+about what the tool does.
+
+**KEN'S RULING (2026-09-22): Option A.** Widen resolution AND gate every
+surface, in one change — the UI already tells the user a repair exists,
+so B would mean walking that back.
+
+Scope that follows from the ruling:
+- A broken entry becomes addressable by id (and by unique name) for
+  `editView` and `deleteView`. `archiveView`/`unarchiveView` stay
+  unreachable: archiving a view whose filters do not load is meaningless,
+  and silently succeeding would imply the entry is healthy.
+- A write that would discard a broken entry's preserved `rawText`
+  requires an EXPLICIT opt-in: `replaceBroken: true` on the wire,
+  `--force` on the CLI, a matching MCP param. Absent it, the write is
+  rejected with a message naming the entry and what the flag does — never
+  a bare `unknown view: <ulid>`.
+- A HEALTHY view is unaffected: no flag, no new friction, identical
+  behaviour.
+- `deleteView` on a broken entry is the one case where no `rawText`
+  survives by design (delete means delete), so it takes the same explicit
+  opt-in rather than a quieter one.
+- Parity is part of the ruling, not a follow-up: CLI and MCP ship the
+  flag and the docs in the same change as core.
+
+**Why it is Ken's:** it changes what every view write path resolves
+against, and the corruption guide covers object-fatal vs field-local at
+LOAD, not write-target resolution against a corrupt record.
+
+**BUILT (2026-09-22).** `findViewOrBroken` is a SEPARATE resolver, not a
+widening of `findView` — `findView` answers "give me a runnable view",
+and every read path (running, listing, pinning) is CORRECT to refuse a
+broken ref, so widening it would have silently changed all of them. Only
+`editView` and `deleteView` opt in.
+
+Verified end to end on a real tracker: without the flag the write is
+refused and `queries.yaml` is byte-identical afterwards; with it the
+entry is replaced **keeping the same id**, so a pin or bookmark still
+resolves. `archiveView`/`unarchiveView` refuse with their own reason.
+A healthy view's edit/delete path is unchanged and needs no flag.
+
+The gate's message names the view, its id, the actual parse failure, the
+fact that the original text is preserved, and both ways forward — never
+a bare `unknown view: <ulid>`.
+
+**A GREEN TEST WAS ASSERTING A HALF-BUILT FEATURE.**
+`Sidebar.test.tsx`'s "replaces a broken view only after the user
+confirms…" DID tick the checkbox and assert the PUT body — but as
+`{name, filters: []}`, a body the server answers **400** for. It passed
+while the repair was impossible end to end. Amended, not deleted. This is
+the third instance of the pattern this session, and the most subtle: the
+earlier two asserted a capability's ABSENCE, this one asserted a request
+that could never succeed.
+
+**One deviation found and closed during integration.** As handed back,
+`--force` alone satisfied the CLI's "nothing to change" check for ANY
+ref, so `views edit <healthy> --force` became a silent no-op rewrite
+instead of a usage error — a widening of the HEALTHY path, which
+constraint 4 forbids, and one the code comment already claimed did not
+happen. Now `--force` satisfies that check only when the ref actually
+resolves to a broken entry. Red-proven at the integration layer:
+reverting it turns "`--force` alone on a HEALTHY view is still a usage
+error" red.
+
+**Status: BUILT (2026-09-22).** What exists, checked against source
+rather than against the previous status line — which claimed core was
+done while `findView` still resolved only `config.queries`, so every
+surface still answered `unknown view: <ref>` for a broken entry:
+
+- **Core** (`packages/core/src/views/manage.ts`). A SEPARATE resolver,
+  `findViewOrBroken`, searches `config.queries` then `config.broken` —
+  id first across both pools, then unique name across both (a name shared
+  between a healthy and a broken entry is ambiguous, same as two healthy
+  ones). `findView` is untouched, so every READ path — running a view,
+  listing, pinning — keeps its current, correct refusal. Only `editView`
+  and `deleteView` opt into the wider resolver. `editView` on a broken
+  ref routes to `repairBrokenView`, which requires `replaceBroken: true`
+  and writes a healthy view **keeping the entry's id** (name too, unless
+  the caller supplies one); nothing else carries over, because the old
+  fields live only inside a `rawText` that did not validate as a whole.
+  Hard `deleteView` takes the same opt-in. `archiveView`/`unarchiveView`
+  call `assertNotBrokenForArchive` and refuse with no flag available; a
+  SOFT delete is an archive, so it inherits that refusal.
+- **Gate text.** Names the view and its id, quotes the loader's reason,
+  says the original text is preserved and would be discarded, and names
+  both spellings of the opt-in. Never a bare `unknown view: <ulid>`.
+- **Surfaces.** CLI `--force` on `views edit` and `views delete` (it also
+  satisfies `edit`'s nothing-to-change check, since "replace it, filters
+  and all" is itself a change); MCP `replaceBroken` on `edit_view` and
+  `delete_view` (distinct from `confirm`, which every delete still
+  needs); `replaceBroken` on `EditViewRequestSchema` and
+  `?replaceBroken=true` on `DELETE /api/views/:ref`.
+- **Web client.** `ViewFormDialog` now SENDS `replaceBroken: true` when
+  its target is broken. This was the live half of the VUE-42 gap: the
+  confirmation checkbox existed and only disabled its own Save button, so
+  a confirmed replace reached a server that rejected it. The sidebar's
+  broken-row Delete… carries the flag through `useDeleteView`.
+- **Tests.** Core, CLI, MCP, web server and `Sidebar.test.tsx`, every one
+  red-proven, and every one asserting the FILE's bytes rather than a
+  disabled control. Each layer carries a healthy-view regression guard
+  for constraint 4.
+
+**A green test was asserting a half-built feature.** `Sidebar.test.tsx`'s
+"replaces a broken view only after the user confirms…" ticked the box and
+asserted the PUT body was `{name, filters: []}` — a body the server
+answers 400 for. It passed while the repair was impossible end to end,
+because it never checked the flag the server requires. Amended rather
+than deleted; call it out in the commit message per CLAUDE.md.
+
+**Known cosmetic effect.** `saveQueriesConfig` writes healthy queries
+first and preserved broken entries after them, so a repaired entry moves
+to the end of the healthy list in the file. A view's position is not a
+stored, user-meaningful property (no `order` field; the sidebar sorts by
+its own rules), so this is a move in the file, not a change to the view.
+
+**To revert:** drop `findViewOrBroken` and the `replaceBroken` /
+`--force` parameters, restore `findView` at the four call sites, and drop
+the flag from the dialog and `useDeleteView`. Not agent-revertible — the
+ruling is Ken's.
 
 
 ### K103 · Colours are a palette, not a hex text field — built-in light/dark palette + custom, stored as palette-ID | single | double
@@ -17792,15 +17984,31 @@ genuinely bad value. So those six keys stay in the map pointing at their
 nearest Lucide glyph, marked `legacy`. **This is a call A279 did not
 make**, recorded here rather than left implicit in the code.
 
-**Bundle cost, measured with an honest caveat.** 25.1 KB gzip / 83 KB raw
-for the whole catalog module, via an isolated esbuild bundle. The delta
-against the real app bundle could NOT be measured: `vite build` fails in
-this tree on a pre-existing issue unrelated to K104 (`core/dist/paths`
-imports `node:path`, which rollup cannot resolve for the browser), and it
-reproduces on the baseline. A 2.1 MB figure seen initially was a stale
-`dist/` on disk, not a fresh build, and is deliberately NOT quoted. This
-closes the A279 flag only partially: the absolute module size is known,
-the app-bundle delta is not.
+**Bundle cost — MEASURED, flag closed (2026-09-21).** The `vite build`
+failure that blocked this measurement was itself a regression introduced
+by K103 stage 2 (the core-barrel import, see A280); once fixed, the delta
+was measured directly by stubbing every `lucide-react` import in
+`iconCatalog.ts`, rebuilding, and restoring byte-exact:
+
+| | raw | gzip |
+|---|---|---|
+| with the catalog | 2,254 KB | **679 KB** |
+| Lucide stubbed out | 2,151 KB | **657 KB** |
+| **delta** | **+103 KB** | **+22 KB** |
+
+**+22 KB gzip for ~225 icons**, about 3% of the baseline. Tree-shaking
+works — the full 1,848-icon set would be far larger — and the icons
+genuinely ship (554 `path` and 77 `circle` elements of icon geometry are
+in the bundle). This closes the A279 flag with a real before/after diff
+rather than an estimate.
+
+*Two wrong readings were published before this one, both from bad greps
+rather than measurement:* "only 2 icons reached the bundle" (a
+`lucide-<slug>` grep that matched the package name and a CSS class) and
+"zero, the catalog did not ship" (grepping `createLucideIcon`, which the
+minifier renames). Recorded because the lesson is the point: **grep the
+artifact for the thing's DATA, not for a symbol name that minification
+can rewrite** — and a delta is only a delta when you build both sides.
 
 **Testids:** none renamed. `icon-option-<id>` is preserved so the
 existing `workflowPanels.test.tsx` assertions still drive real behaviour;

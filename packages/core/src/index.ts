@@ -586,6 +586,7 @@ export {
   deleteView,
   editView,
   findView,
+  findViewOrBroken,
   unarchiveView,
   ViewError,
 } from "./views/index.js";

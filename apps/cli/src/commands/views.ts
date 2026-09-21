@@ -7,7 +7,9 @@ import {
   deleteView,
   editView,
   filtersToSummary,
+  findViewOrBroken,
   loadOptionalConfigs,
+  loadQueriesConfig,
   resolveLocttDir,
   unarchiveView,
 } from "@loctt/core";
@@ -24,6 +26,11 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  */
 const ACCEPTED_FLAGS: readonly string[] = [
   "--all", "--archived", "--query", "--filter", "--name", "--sort", "--yes", "--icon",
+  // K102-broken-repair: the explicit opt-in to replace or delete a view
+  // whose stored filters did not load, discarding the original text
+  // queries.yaml preserves for it. Accepted by `edit` and `delete`; it
+  // does nothing to a healthy view.
+  "--force",
 ];
 
 /**
@@ -234,11 +241,24 @@ export async function run(args: string[], root: string): Promise<void> {
         // none leaves the view's existing filters untouched.
         const filters = collectFilters(args);
         const hasFilterFlags = filters.length > 0;
+        // K102-broken-repair: `--force` is itself a change on a BROKEN
+        // entry — "replace it, filters and all" — so it satisfies the
+        // nothing-to-change check there. On a HEALTHY view it changes
+        // nothing, so the check still applies and `--force` alone is a
+        // usage error rather than a no-op rewrite: the flag must not
+        // become a back door to an empty edit (constraint 4 — the
+        // healthy path is untouched by this feature).
+        const force = args.includes("--force");
+        const refIsBroken = force
+          && findViewOrBroken(
+            await loadQueriesConfig(locttDir),
+            ref,
+          ).kind === "broken";
         if (
           name === undefined && !hasFilterFlags && sort === undefined
-          && scope === undefined && icon === undefined
+          && scope === undefined && icon === undefined && !refIsBroken
         ) {
-          throw new UsageError("nothing to change", `loctt views edit <name|id> [--name <new>] [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...|-] [--archived <scope>] [--icon <icon>]`);
+          throw new UsageError("nothing to change", `loctt views edit <name|id> [--name <new>] [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...|-] [--archived <scope>] [--icon <icon>] [--force]`);
         }
         const updated = await editView(locttDir, ref, {
           ...(name !== undefined ? { name } : {}),
@@ -248,6 +268,7 @@ export async function run(args: string[], root: string): Promise<void> {
           ...(sort !== undefined ? { sort } : {}),
           ...(scope !== undefined ? { archivedScope: scope } : {}),
           ...(icon !== undefined ? { icon } : {}),
+          ...(force ? { replaceBroken: true } : {}),
         });
         console.log(`Updated view "${updated.name}" (id ${updated.id})`);
       });
@@ -270,7 +291,7 @@ export async function run(args: string[], root: string): Promise<void> {
       const ref = args[2];
       if (!ref || ref.startsWith("--")) {
         console.error(`Error: missing view ref`);
-        console.error(`Usage: loctt views delete <name|id> [--yes]`);
+        console.error(`Usage: loctt views delete <name|id> [--yes] [--force]`);
         process.exitCode = EXIT.USAGE;
         break;
       }
@@ -282,7 +303,11 @@ export async function run(args: string[], root: string): Promise<void> {
       await runCommand(async () => {
         // hard: the web's DELETE contract — DELETE means delete, not
         // archive. `views archive` is the reversible path (VUE-25).
-        await deleteView(locttDir, ref, { hard: true });
+        // `--force` is the K102-broken-repair opt-in, distinct from
+        // `--yes`: `--yes` skips the interactive prompt every hard delete
+        // has, while `--force` consents to discarding the preserved
+        // original text of a BROKEN entry. A healthy view ignores it.
+        await deleteView(locttDir, ref, { hard: true, replaceBroken: args.includes("--force") });
         console.log(`Deleted view ${ref}`);
       });
       break;

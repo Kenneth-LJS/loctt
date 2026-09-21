@@ -21,11 +21,21 @@ import { apiClient } from "../client.ts";
  */
 export function useDeleteView() {
   const qc = useQueryClient();
-  return useMutation<unknown, Error, { id: string; soft?: boolean }>({
-    mutationFn: ({ id, soft }) =>
-      apiClient.delete(
-        `/api/views/${encodeURIComponent(id)}${soft === true ? "?soft=true" : ""}`,
-      ),
+  return useMutation<unknown, Error, { id: string; soft?: boolean; replaceBroken?: boolean }>({
+    mutationFn: ({ id, soft, replaceBroken }) => {
+      // K102-broken-repair: deleting a BROKEN entry discards the original
+      // text queries.yaml preserves for it, so the server requires an
+      // explicit opt-in. A DELETE has no body, so it rides the query
+      // string. Omitted entirely for a healthy view, which is unaffected
+      // either way.
+      const params = new URLSearchParams();
+      if (soft === true) params.set("soft", "true");
+      if (replaceBroken === true) params.set("replaceBroken", "true");
+      const qs = params.toString();
+      return apiClient.delete(
+        `/api/views/${encodeURIComponent(id)}${qs === "" ? "" : `?${qs}`}`,
+      );
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["views"] });
     },

@@ -157,3 +157,155 @@ single test going red. **Rule of thumb: a `comboValue()` assertion about
 a stored-but-possibly-unknown value is incomplete without a
 `comboOptions()` assertion beside it.** A lint rule or a shared helper
 that asserts both at once would close it properly; neither exists yet.
+
+## Case coverage: 19 uncovered cases and 6 tags naming a case that does not exist
+
+`npm run cases:coverage` reports, as of 2026-09-21:
+
+```
+coverage: 1038/1057 cases tagged by 2206 @verifies tag(s).
+uncovered: 19
+✗ 6 @verifies tag(s) name a case that does not exist → CONFIG-5
+```
+
+**The six bad tags are all `CONFIG-5`**, in `PreferencesPanel.test.tsx`,
+`ProjectsPanel.test.tsx`, `Header.test.tsx` (×2) and
+`ShortcutHelpDialog.test.tsx` (×2). They come from commit `ffa0a36c`
+("Config discoverability… (CONFIG-5)"), which shipped the tests and the
+behaviour but never added `CONFIG-5` to `tests/cases/`. The tests are
+real and passing; only the case they point at is missing. Either write
+the case or retag them — do not delete the tags, which would drop the
+only record of what that work verified.
+
+**The 19 uncovered cases** cluster in three pre-existing areas, none of
+them this session's work:
+- *Schema migration* (blocker): SET-15, SET-31, SET-37, XS-36, XS-48 —
+  the migrate button, the in-progress sentinel, a partway failure, and
+  writes during a migration.
+- *Timeline M4* (major): TML-51…TML-59 — the unscheduled drawer, the
+  sticky name gutter, the mounted filter bar, cross-view filter scope,
+  the searchable group-by picker.
+- *Assorted* : ERR-32 (audit: no routine failure hits the generic
+  handler), ERR-23, VUE-12 (editing a built-in pre-populates its DSL),
+  XS-3 (a discoverable manual refresh).
+
+Recorded so the number is a known quantity rather than a surprise.
+
+**Correction (2026-09-21):** an earlier version of this paragraph cited
+VUE-42's "two tagged tests" as evidence the case is covered. Both tests
+assert only that Save is DISABLED before the confirmation is ticked;
+NEITHER ticks it and asserts the outcome. The case's live half — a
+confirmed replace actually works — is untested, and had it been tested it
+would have caught `K102-broken-repair` (a broken view cannot be repaired
+or deleted by any surface) before it was recorded as BUILT. A tagged test
+is not the same as a covering one, and a coverage tool counts tags.
+
+**CLOSED (2026-09-22) by the `K102-broken-repair` build.** The live half
+is now covered at every layer, and each test asserts the OUTCOME — the
+bytes of `queries.yaml` — rather than a control's disabled state:
+`packages/core/src/views/manage.test.ts`,
+`apps/cli/src/commands/views.test.ts`,
+`apps/mcp/src/tools/views.test.ts`,
+`apps/web/src/server/server.view-broken-repair.test.ts`, and the amended
+`Sidebar.test.tsx` case, which now asserts the PUT body carries
+`replaceBroken: true`. The prediction above was exactly right: the
+existing sidebar test ticked the box, asserted a body of
+`{name, filters: []}`, and stayed green while the server rejected that
+body with a 400.
+
+## A failed workflow load silently REMOVES every custom-field filter from the toolbar
+
+Found by a PM audit of the new surfaces (2026-09-21), confirmed by
+attempting a fix and discovering the cause is a layer deeper than it
+looks.
+
+**Symptom.** If `/api/workflow` fails or has not resolved, every
+custom-field enum filter vanishes from the filter bar. The user is told
+nothing. This is the F4/ERR-1 conflation the codebase fixes carefully for
+the BUILT-IN facets — `FilterBar.tsx` builds a `failedFacets` set and
+passes `unavailable` so the facet renders with "options could not be
+loaded" — reintroduced for the custom-field half.
+
+**Why the obvious fix does not work.** The custom-field branch of
+`renderFilterControl` does `customFields.find(...)` and `return null` when
+the field is absent, so passing `unavailable` there looks like a
+two-line change. It is not: `resolveVisibleFilters`
+(`list/visibleFilters.ts:112-135`) **filters the visible set to the
+catalog first**, and the catalog is derived from the workflow config. A
+failed load means an empty catalog, so the filter id is dropped BEFORE
+the render branch is ever reached. A fix attempted at the render layer
+produced a test that could not pass, because nothing reaches it.
+
+**What a real fix has to decide.** `resolveVisibleFilters` deliberately
+drops ids that name a since-removed custom field — that is documented and
+correct. Distinguishing "this field was deleted" from "the config could
+not be read" means giving that function a load-state signal and a third
+outcome, which changes a documented behaviour used by every filter-bar
+consumer. That is a design call, not a patch.
+
+**Severity: no data risk, user-facing confusion only.** Nothing is
+written or lost; a filter silently disappears from the toolbar and reads
+as "the field is gone". Left unfixed deliberately rather than
+half-fixed — an attempted render-layer patch was reverted.
+
+## `runDoctorStream`'s streaming test is load-sensitive and flakes under a busy machine
+
+Observed 2026-09-22 while verifying `K102-broken-repair`. Not introduced
+by that change, and not a product defect — a test-harness timing gap.
+
+**Symptom.** `packages/core/src/diagnostics/diagnostics.test.ts` →
+"resolves its first check before the whole run's I/O has finished" fails
+with `expected [ 'timer', 'first-check' ] to deeply equal
+[ 'first-check', 'timer' ]`. It failed on three consecutive full-suite
+runs while the machine was busy, then passed on the next three, and
+passes every time the file is run alone.
+
+**Why.** The test asserts an ORDERING between a `setTimeout(..., 0)`
+macrotask and the first `await it.next()`. That holds only while the
+first pull resolves within the current tick. Under load the event loop
+can service the timer first even though the producer is still correctly
+streaming — so the failure says "this machine was busy", not "the
+producer batched". The property under test (the first check arrives
+before the whole run's I/O) is real and worth covering; the *clock* is
+the wrong instrument for it.
+
+**Ruled out as the cause:** the views change. With the new
+`manage.test.ts` reverted but the new `manage.ts` in place, the suite is
+green; with 13 filler tests standing in for the new ones, also green. The
+failures did not correlate with the new code or with test count.
+
+**What a real fix has to decide.** Either make the producer's streaming
+observable without wall-clock ordering (e.g. a counter of checks
+completed at the moment the first `next()` resolves), or drop the
+ordering assertion and keep the `.loctt directory`-comes-first
+assertion, which is deterministic. Both change what the test proves, so
+it is a call about the assertion, not a patch.
+
+**Severity: no product risk.** A false red in CI only.
+
+## `diagnostics.test.ts` ordering assertion is load-sensitive (false red)
+
+`packages/core/src/diagnostics/diagnostics.test.ts` → "resolves its first
+check before the whole run's I/O has finished" failed on three
+consecutive full-suite runs during K102-broken-repair, then passed on six
+consecutive runs afterwards.
+
+The agent that hit it ruled out its own change by bisection: the new
+`manage.ts` with the ORIGINAL tests was green; 13 filler tests standing
+in for the new ones were green; the real new tests were green on six
+subsequent runs.
+
+**Cause:** the test asserts an ordering between a `setTimeout(0)` and a
+microtask, which is not guaranteed when the machine is busy — adding any
+runtime anywhere in the suite can flip it. It is a pre-existing
+false-red, not a product defect.
+
+**What a real fix must decide:** whether the property under test ("the
+first check resolves before the whole run's I/O completes") should be
+asserted against a deterministic scheduler/fake timers, or whether the
+guarantee itself is too weak to pin and the test should assert something
+coarser. Left as-is rather than silently loosened.
+
+Recorded rather than dismissed, because a test that fails under load and
+passes when idle is indistinguishable from a real intermittent bug until
+someone does the bisection.

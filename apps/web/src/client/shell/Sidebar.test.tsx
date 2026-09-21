@@ -1311,7 +1311,57 @@ describe("Sidebar saved-filter row actions", () => {
     await waitFor(() => {
       const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/views/v_bad"));
       expect(puts.length).toBe(1);
-      expect(puts[0]?.body).toMatchObject({ name: "Bad view", filters: [] });
+      // K102-broken-repair: the tick has to reach the SERVER. This test
+      // previously asserted only `{name, filters}` — a body the server
+      // REJECTS for a broken entry, so the dialog looked like it worked
+      // while every confirmed replace came back 400. Asserting the flag
+      // is what makes this a test of the repair rather than of the
+      // checkbox.
+      expect(puts[0]?.body).toMatchObject({
+        name: "Bad view",
+        filters: [],
+        replaceBroken: true,
+      });
+    });
+  });
+
+  it("deleting a broken row sends the replaceBroken opt-in the server requires", async () => {
+    // The broken row's Delete… goes through DeleteViewDialog, whose
+    // confirmation IS the explicit consent. Without carrying it to the
+    // server the delete comes back 400 and the dead control stays dead.
+    BROKEN_VIEWS = [BROKEN_ONE];
+    await renderSidebarAt("/list");
+    await screen.findByText("Bad view");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
+    fireEvent.click(screen.getByTestId("broken-view-delete"));
+    const confirm = await screen.findByTestId("delete-view-confirm");
+    fireEvent.click(confirm);
+
+    await waitFor(() => {
+      const dels = calls.filter(c => c.method === "DELETE" && c.url.includes("/api/views/v_bad"));
+      expect(dels.length).toBe(1);
+      expect(dels[0]?.url).toContain("replaceBroken=true");
+    });
+  });
+
+  it("deleting a HEALTHY view does not send replaceBroken", async () => {
+    // Constraint 4: the normal delete's request is unchanged.
+    VIEWS = [{ id: "v_ok", name: "Healthy view", filters: [] }];
+    BROKEN_VIEWS = [];
+    await renderSidebarAt("/list");
+    await screen.findByText("Healthy view");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Healthy view"' }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    fireEvent.click(await screen.findByTestId("delete-view-confirm"));
+
+    await waitFor(() => {
+      const dels = calls.filter(c => c.method === "DELETE" && c.url.includes("/api/views/v_ok"));
+      expect(dels.length).toBe(1);
+      expect(dels[0]?.url).not.toContain("replaceBroken");
     });
   });
 

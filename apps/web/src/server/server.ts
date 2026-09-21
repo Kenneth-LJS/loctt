@@ -1898,6 +1898,11 @@ export function createWebApp(options: WebAppOptions) {
         ...(r.sort !== undefined ? { sort: r.sort } : {}),
         ...(r.archivedScope !== undefined ? { archivedScope: r.archivedScope } : {}),
         ...(r.icon !== undefined ? { icon: r.icon } : {}),
+        // K102-broken-repair: the client's explicit "yes, replace the
+        // preserved original text" (the dialog's confirmation tick).
+        // Meaningless for a healthy view, which is why it is passed
+        // straight through rather than branched on here.
+        ...(r.replaceBroken !== undefined ? { replaceBroken: r.replaceBroken } : {}),
       });
       json(res, updated);
     } catch (err) {
@@ -1917,8 +1922,13 @@ export function createWebApp(options: WebAppOptions) {
     // stayed in queries.yaml and kept resolving by id. `?soft=true`
     // is the way to archive (VUE-25), which is a different intent.
     const soft = url.searchParams.get("soft") === "true";
+    // K102-broken-repair: deleting a BROKEN entry discards the original
+    // text queries.yaml preserves for it, so it takes the same explicit
+    // opt-in as a replace. A DELETE carries no body, so it rides the
+    // query string beside `soft`. No effect on a healthy view.
+    const replaceBroken = url.searchParams.get("replaceBroken") === "true";
     try {
-      await deleteView(locttDir, ref, { hard: !soft });
+      await deleteView(locttDir, ref, { hard: !soft, replaceBroken });
       json(res, { deleted: ref });
     } catch (err) {
       // A delete names no field, and re-issuing it gets the same answer

@@ -219,7 +219,11 @@ export const TOOLS: readonly ToolDef[] = [
       "leaves the view's filters untouched. To change one row, call `list_views` first, " +
       "modify that array, and send it back whole. Pass `sort: null` to clear an existing " +
       "sort and `icon: null` to clear the icon (both distinct from omitting them, which " +
-      "leaves them as-is).",
+      "leaves them as-is). A view `list_views` reported as `broken: true` can be REPAIRED " +
+      "here: its stored filters did not load, so queries.yaml still holds its original " +
+      "text, and replacing it discards that text — pass `replaceBroken: true` to consent. " +
+      "Without that flag the edit is rejected and the file is left untouched. The repaired " +
+      "view keeps the SAME id.",
     inputSchema: {
       view: z.string().describe("View id or unique name"),
       name: z.string().optional(),
@@ -230,6 +234,12 @@ export const TOOLS: readonly ToolDef[] = [
       archivedScope: z.enum(["active", "archived", "all"]).optional()
         .describe("The view's own archived scope: `active` / `archived` / `all`. Not a filter."),
       icon: z.string().nullable().optional().describe("New display icon, or null to clear it."),
+      replaceBroken: z.boolean().optional().describe(
+        "Consent to REPLACE a broken view (one `list_views` returned with `broken: true`), "
+        + "discarding the original text queries.yaml preserves for it. Required for such a "
+        + "view; ignored for a healthy one. Nothing else about the entry is carried "
+        + "forward — only its id, and its name when you do not supply one.",
+      ),
     },
     handler: async ({ locttDir }, args) => {
       const ref = args["view"] as string;
@@ -249,6 +259,11 @@ export const TOOLS: readonly ToolDef[] = [
         // absent → leave unchanged. `"sort" in args` distinguishes an
         // explicit null from an omitted key.
         ...("sort" in args ? { sort: sort ?? null } : {}),
+        // K102-broken-repair: consent to discard a broken entry's
+        // preserved original text. No effect on a healthy view.
+        ...(args["replaceBroken"] !== undefined
+          ? { replaceBroken: args["replaceBroken"] as boolean }
+          : {}),
       });
       return text(JSON.stringify(updated, null, 2));
     },
@@ -258,10 +273,17 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "Permanently remove a saved view from queries.yaml. `view` accepts an id or a " +
       "unique name. Use `archive_view` for the reversible (soft) variant. Always " +
-      "requires `confirm: true`.",
+      "requires `confirm: true`. A view `list_views` reported as `broken: true` can be " +
+      "deleted here, but only with `replaceBroken: true` as well — deleting it discards " +
+      "the original text queries.yaml still preserves for it.",
     inputSchema: {
       view: z.string().describe("View id or unique name"),
       confirm: z.boolean().optional().describe("Required: must be true to proceed"),
+      replaceBroken: z.boolean().optional().describe(
+        "Consent to delete a BROKEN view, discarding the original text queries.yaml "
+        + "preserves for it. Required for such a view; ignored for a healthy one. "
+        + "Distinct from `confirm`, which every delete needs.",
+      ),
     },
     handler: async ({ locttDir }, args) => {
       const blocked = requireConfirm(args, "delete_view");
@@ -269,7 +291,10 @@ export const TOOLS: readonly ToolDef[] = [
       const ref = args["view"] as string;
       // hard: the web's DELETE contract — DELETE means delete, not
       // archive. `archive_view` is the reversible path (VUE-25).
-      await deleteView(locttDir, ref, { hard: true });
+      await deleteView(locttDir, ref, {
+        hard: true,
+        replaceBroken: args["replaceBroken"] === true,
+      });
       return text(JSON.stringify({ deleted: ref }, null, 2));
     },
   },

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -91,5 +91,127 @@ describe("CLI saved-view conditions parity", () => {
 
     const config = await loadQueriesConfig(resolveLocttDir(root));
     expect(config.queries.find(q => q.name === "junk")).toBeUndefined();
+  });
+});
+
+/**
+ * @verifies K102-broken-repair on the CLI surface.
+ *
+ * Core gained the repair path; the ruling makes CLI parity part of the
+ * same change, not a follow-up. `--force` is the CLI's spelling of the
+ * explicit opt-in. Before this, `loctt views edit <broken>` died on
+ * `Error: unknown view: <ref>` with no way through at all.
+ */
+describe("CLI saved-view broken repair (--force)", () => {
+  let root: string;
+  const BROKEN_ID = "01BROKEN00000000000000000B";
+
+  /** queries.yaml with one healthy view and one whose filters will not load. */
+  async function seedBroken(): Promise<void> {
+    await writeFile(
+      join(resolveLocttDir(root), "config", "queries.yaml"),
+      "queries:\n"
+      + "  - id: 01KEEP000000000000000000AA\n"
+      + "    name: keep\n"
+      + "    filters:\n"
+      + "      - kind: simple\n"
+      + "        field: status\n"
+      + "        op: \"!=\"\n"
+      + "        values: [\"done\"]\n"
+      + `  - id: ${BROKEN_ID}\n`
+      + "    name: broken-one\n"
+      + "    filters: \"not a list\"\n",
+      "utf-8",
+    );
+  }
+
+  const bytes = async (): Promise<string> =>
+    readFile(join(resolveLocttDir(root), "config", "queries.yaml"), "utf-8");
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-cli-views-broken-"));
+    await initLoctt(root);
+    await seedBroken();
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+    process.exitCode = 0;
+    vi.restoreAllMocks();
+  });
+
+  it("edit without --force is refused, names the view, and leaves the file byte-identical", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const before = await bytes();
+
+    await run(["views", "edit", "broken-one", "--filter", "status = done"], root);
+
+    expect(process.exitCode).not.toBe(0);
+    const printed = errSpy.mock.calls.flat().join(" ");
+    expect(printed).toContain("broken-one");
+    expect(printed).toContain("--force");
+    expect(printed).not.toContain("unknown view");
+    // The outcome that matters: the preserved original text survived.
+    expect(await bytes()).toBe(before);
+  });
+
+  it("edit --force repairs the view in place, keeping its id", async () => {
+    await run(["views", "edit", "broken-one", "--filter", "status = done", "--force"], root);
+
+    const config = await loadQueriesConfig(resolveLocttDir(root));
+    expect(config.broken).toBeUndefined();
+    const repaired = config.queries.find(q => q.id === BROKEN_ID);
+    expect(repaired?.name).toBe("broken-one");
+    expect(repaired?.filters).toEqual([
+      { kind: "simple", field: "status", op: "=", values: ["done"] },
+    ]);
+    expect(await bytes()).not.toContain("not a list");
+  });
+
+  it("delete --yes without --force is refused and the file is byte-identical", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const before = await bytes();
+
+    await run(["views", "delete", "broken-one", "--yes"], root);
+
+    expect(process.exitCode).not.toBe(0);
+    expect(errSpy.mock.calls.flat().join(" ")).toContain("--force");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("delete --yes --force removes the broken entry and keeps the healthy one", async () => {
+    await run(["views", "delete", "broken-one", "--yes", "--force"], root);
+
+    const config = await loadQueriesConfig(resolveLocttDir(root));
+    expect(config.broken).toBeUndefined();
+    expect(config.queries.find(q => q.id === BROKEN_ID)).toBeUndefined();
+    expect(config.queries.find(q => q.name === "keep")).toBeDefined();
+  });
+
+  it("archive on a broken view is refused with a clear message", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const before = await bytes();
+
+    await run(["views", "archive", "broken-one"], root);
+
+    expect(process.exitCode).not.toBe(0);
+    expect(errSpy.mock.calls.flat().join(" ")).toContain("cannot be archived");
+    expect(await bytes()).toBe(before);
+  });
+
+  it("a HEALTHY view still edits and deletes with no flag at all", async () => {
+    // Constraint 4: the normal path takes on no new friction because a
+    // broken sibling happens to exist in the same file.
+    await run(["views", "edit", "keep", "--name", "renamed"], root);
+    let config = await loadQueriesConfig(resolveLocttDir(root));
+    expect(config.queries.find(q => q.name === "renamed")).toBeDefined();
+    expect(config.broken).toHaveLength(1);
+
+    await run(["views", "delete", "renamed", "--yes"], root);
+    config = await loadQueriesConfig(resolveLocttDir(root));
+    expect(config.queries.find(q => q.name === "renamed")).toBeUndefined();
+    // And the broken sibling is still preserved, untouched.
+    expect(config.broken).toHaveLength(1);
+    expect(await bytes()).toContain("not a list");
   });
 });

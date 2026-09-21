@@ -72,6 +72,17 @@ export const EditViewRequestSchema = z.object({
   sort: z.array(QuerySortSchema).nullable().optional(),
   archivedScope: ArchivedScopeSchema.optional(),
   icon: z.string().min(1).nullable().optional(),
+  /**
+   * Explicit opt-in to REPLACE a broken entry — one whose stored filters
+   * did not load, so `queries.yaml` still holds its original text
+   * (K102-broken-repair). Without it a write aimed at such an entry is
+   * rejected with a message naming the view and what the flag does.
+   *
+   * It has NO effect on a healthy view: the gate is on the resolved
+   * entry, never on the flag, so the ordinary edit path is unchanged
+   * whether the flag is sent or not.
+   */
+  replaceBroken: z.boolean().optional(),
 }).strict();
 export type EditViewRequest = z.infer<typeof EditViewRequestSchema>;
 

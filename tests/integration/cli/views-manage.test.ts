@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -166,6 +166,76 @@ describe("CLI views management (spawned binary)", () => {
 
       const missing = await runCli(["views", "delete"], { cwd: root });
       expect(missing.exitCode).toBe(2);
+    });
+  });
+
+  /**
+   * @verifies VUE-42
+   *
+   * K102-broken-repair. A hand-broken entry could not be repaired OR
+   * deleted by any surface — `findView` never looked in `config.broken`,
+   * so every write threw `unknown view: <id>`. The UI offered
+   * "Edit…/Replace…/Delete…" on those rows and all of them were dead.
+   *
+   * These pin the whole gate through the spawned binary: refused without
+   * `--force` with the original bytes intact, repaired with it keeping
+   * the SAME id, and — the regression guard for Ken's constraint 4 —
+   * `--force` alone on a HEALTHY view stays a usage error rather than
+   * becoming a back door to an empty edit.
+   */
+  it("refuses to replace a broken view without --force, leaving its text byte-identical", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const cfg = path.join(root, ".loctt/config/queries.yaml");
+      await writeFile(
+        cfg,
+        `${await readFile(cfg, "utf8")}  - id: 01M0BROKENINTEG0000000001\n    name: brokenone\n    filters: "not a list"\n`,
+        "utf8",
+      );
+      const before = await readFile(cfg, "utf8");
+
+      const res = await runCli(
+        ["views", "edit", "brokenone", "--filter", "status = done"],
+        { cwd: root },
+      );
+      expect(res.exitCode).not.toBe(0);
+      // The message must be actionable — not a bare `unknown view: <ulid>`.
+      const text = `${res.stdout}${res.stderr}`;
+      expect(text).toMatch(/is broken/);
+      expect(text).toMatch(/--force/);
+      // And the preserved text is untouched.
+      expect(await readFile(cfg, "utf8")).toBe(before);
+    });
+  });
+
+  it("repairs a broken view with --force, keeping the same id", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const cfg = path.join(root, ".loctt/config/queries.yaml");
+      await writeFile(
+        cfg,
+        `${await readFile(cfg, "utf8")}  - id: 01M0BROKENINTEG0000000002\n    name: fixme\n    filters: "not a list"\n`,
+        "utf8",
+      );
+
+      const res = await runCli(
+        ["views", "edit", "fixme", "--filter", "status = done", "--force"],
+        { cwd: root },
+      );
+      expect(res.exitCode).toBe(0);
+      // The SAME id survives, so a pin or bookmark still resolves.
+      expect(res.stdout).toContain("01M0BROKENINTEG0000000002");
+
+      const list = await runCli(["views"], { cwd: root });
+      expect(list.stdout).toContain("fixme  status = done");
+    });
+  });
+
+  it("--force alone on a HEALTHY view is still a usage error, not a no-op rewrite", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["views", "create", "healthy", "--filter", "status = backlog"], { cwd: root });
+
+      const res = await runCli(["views", "edit", "healthy", "--force"], { cwd: root });
+      expect(res.exitCode).toBe(2);
+      expect(`${res.stdout}${res.stderr}`).toMatch(/nothing to change/);
     });
   });
 

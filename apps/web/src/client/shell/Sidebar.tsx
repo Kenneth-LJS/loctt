@@ -1307,7 +1307,11 @@ function SavedFiltersGroup({
   const [dialog, setDialog] = useState<
     | { mode: "create" }
     | { mode: "edit"; view: EditTarget; broken?: BrokenViewContext }
-    | { mode: "delete"; view: EditTarget }
+    // `broken: true` marks a delete aimed at an entry whose stored
+    // filters did not load. Core refuses such a delete without an
+    // explicit opt-in (K102-broken-repair), because it discards the
+    // original text queries.yaml still preserves.
+    | { mode: "delete"; view: EditTarget; broken?: boolean }
     | null
   >(null);
   // VUE-25: archived views are hidden from the sidebar (they stay runnable
@@ -1354,7 +1358,7 @@ function SavedFiltersGroup({
    *    would surface a "removed because it no longer exists" notice for a
    *    deletion already confirmed.
    */
-  const confirmDelete = (view: EditTarget): void => {
+  const confirmDelete = (view: EditTarget, broken = false): void => {
     dismiss(view.id);
     if (pins.includes(view.id) && settings.data !== undefined) {
       saveSettings.mutate({
@@ -1362,7 +1366,11 @@ function SavedFiltersGroup({
         sidebar_pins: pins.filter(p => p !== view.id),
       } as UserSettings);
     }
-    del.mutate({ id: view.id });
+    // The DeleteViewDialog the user just confirmed IS the explicit
+    // opt-in a broken entry's delete requires (K102-broken-repair); the
+    // flag carries that consent to the server. Never sent for a healthy
+    // view, whose request is unchanged.
+    del.mutate({ id: view.id, ...(broken ? { replaceBroken: true } : {}) });
     setDialog(null);
   };
 
@@ -1551,7 +1559,7 @@ function SavedFiltersGroup({
                 },
                 // No Pin: a broken view is being fixed, not promoted. Delete
                 // removes it from queries.yaml like any other.
-                { label: "Delete…", testId: "broken-view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: { id: v.id, name: v.name, filters: [] } }); } },
+                { label: "Delete…", testId: "broken-view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: { id: v.id, name: v.name, filters: [] }, broken: true }); } },
               ]}
             />
           </div>
@@ -1621,7 +1629,7 @@ function SavedFiltersGroup({
           pinned={pins.includes(dialog.view.id)}
           returnFocusTo={newFilterRef}
           onCancel={() => { setDialog(null); }}
-          onConfirm={() => { confirmDelete(dialog.view); }}
+          onConfirm={() => { confirmDelete(dialog.view, dialog.broken === true); }}
         />
       ) : null}
     </SectionShell>

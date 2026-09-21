@@ -401,14 +401,50 @@ List saved views, or manage them with a subcommand.
 |---|---|---|
 | `list` | `loctt views list [--archived <active\|archived\|all>]` | List saved views (the default). `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). Broken views are always shown. |
 | `create` | `loctt views create <name> [--filter "…"]… [--query "<dsl>"]… [--sort …] [--archived <scope>] [--icon <icon>]` | Create a view. |
-| `edit` | `loctt views edit <name\|id> [--name <new>] [--filter "…"]… [--query "<dsl>"]… [--sort …\|-] [--archived <scope>] [--icon <icon>]` | Change a view. `--sort -` clears the sort. |
-| `archive` / `unarchive` | `loctt views archive <name\|id>` | Hide or restore a view. |
-| `delete` | `loctt views delete <name\|id> [--yes]` | Permanently delete a view. |
+| `edit` | `loctt views edit <name\|id> [--name <new>] [--filter "…"]… [--query "<dsl>"]… [--sort …\|-] [--archived <scope>] [--icon <icon>] [--force]` | Change a view. `--sort -` clears the sort. `--force` replaces a **broken** view (see below). |
+| `archive` / `unarchive` | `loctt views archive <name\|id>` | Hide or restore a view. Refused for a broken view. |
+| `delete` | `loctt views delete <name\|id> [--yes] [--force]` | Permanently delete a view. `--force` is required for a **broken** view. |
 
 `list` prints one line per view, `<name>  <summary>`, with a
 `[sort: …]` suffix when the view has a sort and ` (archived)` when it is
 archived. The summary is a readable rendering of the view's filters — it
 is for display only, and is not something you can paste back in as input.
+
+#### Repairing a broken view (`--force`)
+
+If you hand-edit `queries.yaml` and one entry's `filters` no longer load,
+LocTT does **not** discard it. The entry keeps its place in the file and
+`views list` shows it marked `[broken: …]` with the reason. Your original
+text stays on disk untouched by every other view write.
+
+Because that text is the only record of what you meant, replacing or
+deleting the entry needs an explicit `--force`:
+
+```bash
+# Refused — names the view, the reason, and what to do:
+loctt views edit broken-one --filter "status = done"
+
+# Replaces the stored text with the filters you give. Same view id, so
+# pins and anything else referring to it by id survive.
+loctt views edit broken-one --filter "status = done" --force
+
+# Deletes it outright — the original text does not survive.
+loctt views delete broken-one --yes --force
+```
+
+`--yes` and `--force` are different consents: `--yes` skips the
+interactive prompt every hard delete has, while `--force` is your
+agreement to discard the preserved original text.
+
+To keep the text instead, edit `queries.yaml` by hand and fix the entry
+there — LocTT never rewrites it for you.
+
+`views archive` and `views unarchive` are **refused** for a broken view:
+hiding a view whose filters do not load would suggest it still works.
+Fix it, replace it, or delete it.
+
+A healthy view is unaffected by any of this — `--force` changes nothing
+about editing or deleting one.
 
 #### Building a view's filters
 

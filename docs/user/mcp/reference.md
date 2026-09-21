@@ -201,9 +201,9 @@ starting point is a task, not a link.
 | Tool | Purpose | Key params |
 |---|---|---|
 | `create_view` | Create a saved view (filters validated on write). | `name`, `filters`, `sort`, `archivedScope`, `icon` |
-| `edit_view` | Change a view (`sort: null` clears the sort, `icon: null` clears the icon). | `view`, `name`, `filters`, `sort`, `archivedScope`, `icon` |
-| `archive_view` / `unarchive_view` | Hide or restore a view (still runnable by id when archived). | `view` |
-| `delete_view` | Permanently remove a view. Requires `confirm`. | `view`, `confirm` |
+| `edit_view` | Change a view (`sort: null` clears the sort, `icon: null` clears the icon). Also repairs a broken view. | `view`, `name`, `filters`, `sort`, `archivedScope`, `icon`, `replaceBroken` |
+| `archive_view` / `unarchive_view` | Hide or restore a view (still runnable by id when archived). Refused for a broken view. | `view` |
+| `delete_view` | Permanently remove a view. Requires `confirm`. | `view`, `confirm`, `replaceBroken` |
 
 #### The `filters` array
 
@@ -260,6 +260,35 @@ filters, **for display only** — never parse it, never store it, and never
 send it back as input. Edit a view by passing a new `filters` array. A view
 whose stored filters no longer parse comes back as `{id, name, summary,
 broken: true, error, position?}`.
+
+#### Repairing a broken view (`replaceBroken`)
+
+A view returned with `broken: true` is still in `queries.yaml` — its
+stored `filters` did not load, and its original text is preserved on disk
+untouched by every other view write. It is the only record of what the
+user meant, so **do not assume the view is empty and do not recreate it**.
+
+`edit_view` and `delete_view` can act on such a view, but only with
+`replaceBroken: true`, which is your consent to discard that preserved
+text:
+
+- `edit_view` with `replaceBroken: true` **replaces** the entry with the
+  `filters` you supply, keeping the **same id** (so pins and other by-id
+  references survive). It keeps the old `name` unless you pass a new one.
+  Nothing else of the old entry carries over.
+- `delete_view` needs both `confirm: true` (the gate on every delete) and
+  `replaceBroken: true` (consent to discard the text).
+- Without `replaceBroken`, both are rejected with a message naming the
+  view and the reason. Nothing is written.
+- `archive_view` / `unarchive_view` are **refused** outright for a broken
+  view — hiding a view whose filters do not load would imply it works.
+  There is no flag that unlocks them.
+
+Prefer telling the user their file is broken and showing them the error
+over replacing it on your own initiative; the alternative to replacing is
+that they fix `queries.yaml` by hand and keep what they wrote.
+
+`replaceBroken` has no effect on a healthy view.
 
 ### Labels, milestones, sprints
 
