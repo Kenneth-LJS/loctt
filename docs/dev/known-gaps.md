@@ -309,3 +309,67 @@ coarser. Left as-is rather than silently loosened.
 Recorded rather than dismissed, because a test that fails under load and
 passes when idle is indistinguishable from a real intermittent bug until
 someone does the bisection.
+
+## E2E-surfaced app defects (2026-09-22) — found while repairing the specs after K106
+
+Repairing the e2e specs after the `<select>`→picker migration took the
+suite from **155 failed** to **19**. The remaining failures were left RED
+on purpose: they are app defects, not migration artifacts, and weakening
+the tests to go green would have destroyed the only signal.
+
+**VERIFIED BY ME directly against the running app or the source:**
+
+- **MSL-25 — archived milestones are unreachable from the milestones
+  view.** `api/hooks/useMilestoneProgress.ts:61` requests
+  `/api/milestones?progress=true&limit=…` with **no `archived` param**,
+  while every other K107 config hook passes `archived=all`. So
+  `archivedCount` is always 0, `MilestonesView.tsx:212` never renders the
+  reveal control, and there is no route to them. Confirmed by reading the
+  hook. One-line fix.
+- **TSK-59 — opening the block-type dropdown tears down the description
+  editor. CAUSED BY THIS SESSION'S K106 WORK.** `BodyEditor`'s
+  `onWrapperBlur` guard is
+  `e.currentTarget.contains(e.relatedTarget)` (`BodyEditor.tsx:286-287`)
+  — confirmed still present. K106 step 2 portals the dropdown panel to
+  `document.body`, so focus moving into it is no longer "within the
+  wrapper" and the editor collapses to the read view. **This is a
+  regression we introduced**, and the portal migration's blast radius was
+  wider than the dropdown call sites.
+
+**CLAIMED BY THE AGENT, NOT YET VERIFIED** (worth checking before acting
+— see the correction below for why):
+A11Y-16 (invisible focus ring on the header's New-task button),
+A11Y-31/PRU-26/PRU-33 (`MenuItem` has no `disabled` prop, so "disabled"
+kebab actions take focus and announce as actionable), TSK-18 (rich→raw
+toggle swallowed after typing), A11Y-9 (back-navigation does not restore
+row focus), SET-8 (custom-field dialog Save off-screen below 720px),
+LST-20 (400-char title overflows the table by 66px), GIT-9 (ULID
+tiebreak not stated).
+
+**ONE CLAIM CHECKED AND FOUND WRONG.** The agent reported VUE-22 as
+"dead code — `/api/views` returns a flat `{queries: […]}` so
+`views.data?.broken` is always `undefined`, and a broken view renders as
+a normal healthy link". **It does not.** `handleListViews` does
+`json(res, { ...cfg, queries: … })`, which spreads `broken`; `ViewsConfig`
+declares it; and a live probe against a tracker with a hand-broken entry
+returned `broken: ["Busted"]` alongside `queries: ["recent-open"]`.
+Recorded because it is a reminder that a confidently-reported defect is a
+claim, not a fact — the other seven above are still unverified for
+exactly this reason.
+
+**Pre-existing flakes, pass on re-run:** SPR-6 (the spec's own helper
+documents the race), BLK-24, BRD-4, GIT-12, NEW-10.
+
+## The e2e suite is not trustworthy at its configured worker count
+
+The same tree produced **56** failures at the configured 5 workers, **23**
+at 3 workers, and passes the affected files clean at 1–2. Each worker
+boots a real `loctt ui` server plus a browser, and whole files the spec
+work never touched (`flow-git-*`, `flow-task-failure`) fail under that
+contention.
+
+`playwright.config.ts` sets `retries: 0` with the comment "a flaky gate
+teaches the agent to re-run instead of fix" — the intent is right, but
+**the gate is currently not trustworthy at its own default
+concurrency**, which teaches the same lesson by a different route. Either
+the worker count comes down or the per-worker cost does.

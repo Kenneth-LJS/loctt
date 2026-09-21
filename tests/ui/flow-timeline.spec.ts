@@ -61,6 +61,39 @@ async function setCustomEnumFields(
   await writeFile(file, next, "utf8");
 }
 
+/**
+ * Writes a top-level frontmatter scalar straight into a task's file.
+ *
+ * The CLI now REFUSES a due_date before its start_date ("The start date
+ * … cannot be after the due date …"), which is correct — but TML-18 is
+ * explicitly about a pair that reached disk by a **hand edit**, which is
+ * the only way such a pair can exist now. So the reversed pair is
+ * written here rather than through `loctt set`, which is what the case
+ * describes and what the degradation path has to survive.
+ */
+async function handEditTaskField(
+  root: string,
+  taskKey: string,
+  field: string,
+  value: string,
+): Promise<void> {
+  const { readdir } = await import("node:fs/promises");
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    const p = path.join(tasksDir, id, "task.md");
+    let text: string;
+    try { text = await readFile(p, "utf8"); } catch { continue; }
+    if (!new RegExp(`^key: ${taskKey}$`, "m").test(text)) continue;
+    const line = `${field}: ${value}`;
+    const next = new RegExp(`^${field}:.*$`, "m").test(text)
+      ? text.replace(new RegExp(`^${field}:.*$`, "m"), line)
+      : text.replace(/\n---\n/, `\n${line}\n---\n`);
+    await writeFile(p, next, "utf8");
+    return;
+  }
+  throw new Error(`no task file for ${taskKey}`);
+}
+
 /** Sets one enum custom-field value on a task's frontmatter, by key. */
 async function setTaskField(
   root: string,
@@ -247,7 +280,30 @@ async function expectGrouping(
   page: import("@playwright/test").Page,
   id: string,
 ): Promise<void> {
-  await expect(page.getByTestId("timeline-grouping")).toHaveAttribute("data-value", id);
+  const trigger = page.getByTestId("timeline-grouping");
+  await expect(trigger).toHaveAttribute("data-value", id);
+
+  // The other half, which `data-value` alone lost (known-gaps.md): a
+  // native `<select>`'s `.value` could only report a value that HAD a
+  // matching `<option>`, while `data-value` echoes draft state whether
+  // or not the control offers it. So also prove the value is genuinely
+  // on offer — otherwise this passes for a grouping the picker does not
+  // have, which is exactly how three escape-hatch branches were deleted
+  // with the unit suite staying green.
+  await trigger.click();
+  if (id === "none") {
+    // `none` is the pinned CLEAR row, and `Dropdown` renders that row
+    // only while something is selected — so when grouping already IS
+    // none there is correctly nothing to clear. What has to hold here is
+    // that the picker is a real, populated control rather than an empty
+    // one that would make any `data-value` claim vacuous.
+    await expect(page.getByTestId("timeline-grouping-options")
+      .getByRole("option")).not.toHaveCount(0);
+  } else {
+    await expect(page.getByTestId(`timeline-grouping-opt-${id}`)).toHaveCount(1);
+  }
+  await page.keyboard.press("Escape");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
 }
 
 async function chooseGrouping(
@@ -288,15 +344,26 @@ test.describe("TML — timeline view", () => {
     await setTimelineConfig(tracker.root, "timeline:\n  default_zoom: month");
 
     // A saved view authored for the timeline at day zoom.
+    //
+    // Written in the CURRENT view shape: a structured `filters:` block
+    // and a ULID id. The legacy `query:` scalar this used to seed was
+    // removed with structured conditions (`9c673e71`/`596725fe`), and
+    // queries.yaml now rejects the whole file over the unknown key — so
+    // the old seed made the view unreadable rather than exercising the
+    // zoom precedence this case is about.
+    const viewId = "01M2TIMELINEVIEW00000000001";
     const queriesPath = path.join(tracker.root, ".loctt", "config", "queries.yaml");
     const before = await readFile(queriesPath, "utf8");
     await writeFile(
       queriesPath,
-      `${before.trimEnd()}\n  - id: tmlview\n    name: Day view\n    query: archived != true\n    display:\n      mode: timeline\n      zoom: day\n`,
+      `${before.trimEnd()}\n  - id: ${viewId}\n    name: Day view\n`
+      + `    filters:\n      - kind: simple\n        field: archived\n        op: "!="\n`
+      + `        values:\n          - "true"\n`
+      + `    display:\n      mode: timeline\n      zoom: day\n`,
       "utf8",
     );
 
-    await page.goto(`${tracker.baseURL}/timeline?view=tmlview`);
+    await page.goto(`${tracker.baseURL}/timeline?view=${viewId}`);
     await expect(page.getByTestId("timeline-zoom-day")).toHaveAttribute("aria-pressed", "true");
 
     // Changing the zoom updates the URL but must NOT rewrite
@@ -308,7 +375,7 @@ test.describe("TML — timeline view", () => {
     await expect.poll(async () => readFile(queriesPath, "utf8")).toBe(savedBefore);
 
     // Reopening the view returns to day.
-    await page.goto(`${tracker.baseURL}/timeline?view=tmlview`);
+    await page.goto(`${tracker.baseURL}/timeline?view=${viewId}`);
     await expect(page.getByTestId("timeline-zoom-day")).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -1217,9 +1284,12 @@ test.describe("TML — timeline edge cases (section B)", () => {
   // @verifies TML-18
   test("TML-18: a due_date before start_date is flagged, not drawn backwards", async ({ page, tracker }) => {
     const [bad, good] = await tracker.seed([{ title: "Reversed" }, { title: "Normal" }]);
-    // Via the CLI, which permits the pair — the case says "hand-edit".
-    await tracker.run(["set", bad as string, "start_date", "2026-03-10"]);
-    await tracker.run(["set", bad as string, "due_date", "2026-03-04"]);
+    // The case says "hand-edit", and that is now the only way this pair
+    // can exist: `loctt set` rejects a due_date before its start_date.
+    // Written straight to the file, which is what the timeline has to
+    // degrade against.
+    await handEditTaskField(tracker.root, bad as string, "start_date", "2026-03-10");
+    await handEditTaskField(tracker.root, bad as string, "due_date", "2026-03-04");
     await tracker.run(["set", good as string, "start_date", "2026-03-02"]);
     await tracker.run(["set", good as string, "due_date", "2026-03-06"]);
 
@@ -2363,7 +2433,12 @@ test.describe("TML — remaining section B cases (M3.3b)", () => {
     }));
     expect(metrics.scrollH).toBeGreaterThan(metrics.clientH);
 
-    const header = page.getByTestId("timeline-header");
+    // Scoped to the chart's scroll container: `timeline-header` is
+    // carried by BOTH the chart's sticky date-header row and the page's
+    // `PageHeader` (the latter added by `6b7ac9dc`). This case is about
+    // the sticky one — the page title never scrolls either, so an
+    // unscoped locator could pass against the wrong element.
+    const header = page.getByTestId("timeline-scroll").getByTestId("timeline-header");
     const headerTopBefore = await header.evaluate(el => el.getBoundingClientRect().top);
     await scroll.evaluate(el => { el.scrollTop = 400; });
     // A last row that only exists if all 60 laid out: scroll reaches it.

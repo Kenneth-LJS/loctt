@@ -285,6 +285,16 @@ function BodyEditSurface({
    */
   const onWrapperBlur = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    // A dropdown this editor owns (the block-type picker) PORTALS its
+    // panel to `document.body`, so focus moving into it is not "within
+    // the wrapper" even though it is within the editor's own UI. Without
+    // this, opening the block-type dropdown tore the editor down and the
+    // transform never applied (TSK-59) — a regression from K106 step 2's
+    // portal migration, whose blast radius reached past the dropdown
+    // call sites to every component that used containment to mean
+    // "still mine".
+    const related = e.relatedTarget as Element | null;
+    if (related?.closest("[data-dropdown-panel]") != null) return;
     // The conflict dialog is part of the edit flow; a blur while it is
     // open must not tear the editor down — flush is suppressed by the
     // hook while a conflict is open, so just keep the editor.

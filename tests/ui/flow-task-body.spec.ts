@@ -98,11 +98,24 @@ async function enterEdit(page: Page): Promise<void> {
   const editing = page.getByTestId("body-editor").getByTestId("rich-editor");
   const rawEditing = page.getByTestId("body-editor").getByTestId("markdown-editor");
   if (await editing.count() > 0 || await rawEditing.count() > 0) return;
-  // Otherwise wait for the rendered view to mount on this (possibly cold)
-  // load before clicking it — a bare count() check races the navigation.
-  const rendered = page.getByTestId("body-rendered");
-  await rendered.waitFor({ state: "visible" });
-  await rendered.click();
+  // Otherwise wait for the read view to mount on this (possibly cold)
+  // load, then use its explicit Edit button — a bare count() check races
+  // the navigation.
+  //
+  // The gesture is `body-edit`, not a click on the rendered text: A247
+  // deliberately removed click-to-edit from the content region so the
+  // `<a>` and `<img>` inside a description are reachable and are not
+  // nested inside an interactive ancestor (WCAG 4.1.2). An empty body
+  // shows `body-rendered-placeholder`, which is its own button.
+  await page.getByTestId("body-editor").waitFor({ state: "visible" });
+  const placeholder = page.getByTestId("body-rendered-placeholder");
+  if (await placeholder.count() > 0) {
+    await placeholder.click();
+    return;
+  }
+  const edit = page.getByTestId("body-edit");
+  await edit.waitFor({ state: "visible" });
+  await edit.click();
 }
 
 /** Types into whichever surface is showing (entering edit first). */
@@ -675,13 +688,23 @@ test.describe("TSK — the body editor", () => {
   });
 
   // @verifies TSK-71
-  test("TSK-71: Escape cancels — discards the edit and does NOT write it", async ({
+  test("TSK-71: Escape exits the editor keeping the text, and writes it exactly once", async ({
     page, tracker,
   }) => {
-    // Fix-review HIGH #2: Escape called onLeave() unconditionally, and the
-    // editor's unmount-flush then WROTE the pending edit — so Escape
-    // "saved" instead of cancelling. Escape must discard the in-editor edit
-    // (revert to last-saved) and write nothing.
+    // SUPERSEDED PREMISE — recorded rather than quietly rewritten.
+    //
+    // This case used to assert "Escape discards the edit and writes
+    // nothing". K96 (Ken, 2026-09-19) deliberately REVERSED that: there
+    // is no discard gesture, and Escape / Cmd-Enter / Cmd-S all EXIT
+    // KEEPING the text. The rationale is in `editor/BodyEditor.tsx` —
+    // revert-to-last-autosave silently threw away everything typed in
+    // the idle window since, which was the data-loss bug the editor
+    // review found.
+    //
+    // The durable requirement underneath is unchanged and is what is
+    // asserted now: Escape leaves the editor, the user's text is NOT
+    // lost, and the exit produces exactly ONE write (the old bug was a
+    // stray second write from the unmount flush).
     const key = onlyKey(await tracker.seed([{ title: "Escape cancels" }]));
     await tracker.run(["body", key, "--set", "Original body.\n"]);
     const writes: string[] = [];
@@ -695,14 +718,24 @@ test.describe("TSK — the body editor", () => {
     await typeInBody(page, " Escaped edit.");
     await page.keyboard.press("Escape");
 
-    // Back to the rendered view showing the LAST-SAVED body, not the edit.
+    // Back to the rendered read view — Escape leaves the editor.
+    await expect(page.getByTestId("body-rendered")).toBeVisible();
+    await expect(page.getByTestId("body-editor").getByTestId("rich-editor"))
+      .toHaveCount(0);
+
+    // The text is kept, on screen and on disk — nothing the user typed
+    // is lost, which is the whole point of the reversal.
     await expect(page.getByTestId("body-rendered")).toContainText("Original body.");
-    await expect(page.getByTestId("body-rendered")).not.toContainText("Escaped edit.");
-    // Give any stray write a moment; there must be none, and disk is clean.
-    await page.waitForTimeout(300);
-    expect(writes).toEqual([]);
-    expect(await bodyOnDisk(tracker.root, key)).not.toContain("Escaped edit.");
-    expect(await bodyOnDisk(tracker.root, key)).toContain("Original body.");
+    await expect(page.getByTestId("body-rendered")).toContainText("Escaped edit.");
+    await expect
+      .poll(async () => bodyOnDisk(tracker.root, key))
+      .toContain("Escaped edit.");
+
+    // Exactly ONE write. The bug this case was originally written for was
+    // a SECOND, stray write from the unmount flush; that half still has
+    // to hold, and a count is what catches it.
+    await page.waitForTimeout(500);
+    expect(writes, writes.join("\n")).toHaveLength(1);
   });
 
   // @verifies TSK-40

@@ -1417,6 +1417,13 @@ test.describe("A11Y — state exposure", () => {
     // Wait for the panel's own table to render before selecting the row
     // control, so the assertion is not racing an empty list.
     await expect(page.getByRole("columnheader", { name: "Name" })).toBeVisible();
+    // The row's actions moved behind a `RowActions` kebab (U26/K105):
+    // the Delete item only exists while the menu is open, and since
+    // K106 step 2 the panel is portalled to `document.body`, so it is
+    // located from `page`. The trigger is scoped to `main` because the
+    // sidebar carries a same-named `Actions for project "Tasks"` button.
+    await page.getByRole("main")
+      .getByRole("button", { name: /^Actions for project / }).first().click();
     const del = page.locator('[data-testid^="project-delete-"]');
     await expect(del).toHaveCount(1);
 
@@ -1909,16 +1916,29 @@ test.describe("A11Y — drag affordances have keyboard alternatives", () => {
     await handle.focus();
     await expect(handle).toBeFocused();
 
+    // REL-15's pickup model: an arrow moves the row VISUALLY (a buffered
+    // pickup, so Escape is a true cancel with no write), and the single
+    // rerank is committed on Enter. Pressing only ArrowUp therefore
+    // reorders the screen and leaves the file untouched — which is why
+    // the reload assertion below needs the commit.
     await handle.press("ArrowUp");
 
-    // First bullet, first half: the row moved. Asserted on the
-    // rendered order, and then on disk — a visual swap that never
-    // reached a file is the failure this catches.
+    // First bullet, first half: the row moved on screen...
     await expect(rows.nth(0)).toHaveAttribute("data-target", secondId);
 
-    // First bullet, second half: "with the new position announced."
+    // ...and it is announced while picked up, before any write.
     await expect(page.getByTestId("reorder-announcement"))
       .toContainText(`${b ?? ""} moved to position 1 of 2`);
+
+    // Drop: the one write leaves here, and the drop is announced too.
+    const reranked = page.waitForResponse(
+      r => r.url().includes("/rerank") && r.request().method() === "POST",
+      { timeout: 15_000 },
+    );
+    await handle.press("Enter");
+    await reranked;
+    await expect(page.getByTestId("reorder-announcement"))
+      .toContainText(`${b ?? ""} dropped at position 1 of 2`);
 
     // The far end agrees, and survives a reload.
     await page.reload();
@@ -2074,12 +2094,19 @@ test.describe("A11Y — layered dismissal", () => {
     await picker.focus();
     await page.keyboard.press("Enter");
     // The dropdown is the topmost layer now.
-    await expect(dialog.getByTestId("meta-options-project")).toBeVisible();
+    //
+    // K106 step 2: the listbox PANEL is portalled to `document.body`, so
+    // it is no longer a descendant of the dialog — only the trigger is.
+    // Scoped to `page` for that reason. The layered-Escape proof is
+    // untouched: the dialog is still asserted visible after the first
+    // Escape, and focus still returns to the trigger INSIDE it.
+    const options = page.getByTestId("meta-options-project");
+    await expect(options).toBeVisible();
     await expect(picker).toHaveAttribute("aria-expanded", "true");
 
     // First Esc: the dropdown goes, the modal stays.
     await page.keyboard.press("Escape");
-    await expect(dialog.getByTestId("meta-options-project")).toBeHidden();
+    await expect(options).toBeHidden();
     // The modal is still open — this is the assertion the case is
     // really about. A single Escape handler on `document` would have
     // closed both, and only this line would catch it.
@@ -3009,9 +3036,22 @@ test.describe("A11Y — focus through change", () => {
           : el.closest("main") !== null ? "main"
           : "other";
         // A stable-enough identity for one stop, to detect the wrap.
+        //
+        // `aria-label` is part of the identity: several header controls
+        // are now icon-only with no text and no testid (the brand pass
+        // and the responsive header), so without it two DIFFERENT
+        // buttons collapse to the same key (`BUTTON||`), the walk reads
+        // that as having wrapped, and it breaks inside the header —
+        // recording one region instead of three and failing against the
+        // app's correct tab order.
         return {
           region,
-          id: `${el.tagName}|${el.getAttribute("data-testid") ?? ""}|${(el.textContent ?? "").trim().slice(0, 20)}`,
+          id: [
+            el.tagName,
+            el.getAttribute("data-testid") ?? "",
+            el.getAttribute("aria-label") ?? "",
+            (el.textContent ?? "").trim().slice(0, 20),
+          ].join("|"),
         };
       });
       if (stop.region === "body" || stop.region === "other") continue;

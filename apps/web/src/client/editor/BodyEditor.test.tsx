@@ -183,6 +183,36 @@ describe("BodyEditor — K33 two-state orchestration", () => {
     expect(screen.getByTestId("body-rendered")).toBeTruthy();
   });
 
+  // @verifies TSK-59
+  it("TSK-59: focus moving into a PORTALLED dropdown panel is not a leave", () => {
+    renderEditor();
+    fireEvent.click(screen.getByTestId("body-edit"));
+    const surface = screen.getByTestId("rich-editor");
+    surface.focus();
+
+    // The block-type picker is a `Dropdown`, whose panel is portalled to
+    // `document.body` (MENU-PORTAL). So the panel is NOT a descendant of
+    // the editor wrapper, and the old `wrapper.contains(relatedTarget)`
+    // guard read "focus left the editor" — tearing the editor down the
+    // moment the user opened the picker, so the transform never applied.
+    const panel = document.createElement("div");
+    panel.setAttribute("data-dropdown-panel", "");
+    const row = document.createElement("button");
+    panel.appendChild(row);
+    document.body.appendChild(panel);
+
+    act(() => {
+      fireEvent.blur(screen.getByTestId("body-editor"), { relatedTarget: row });
+    });
+
+    // The editor is STILL open — it did not flush or fall back to the
+    // read view just because focus entered its own dropdown.
+    expect(screen.getByTestId("rich-editor")).toBeTruthy();
+    expect(screen.queryByTestId("body-rendered")).toBeNull();
+
+    document.body.removeChild(panel);
+  });
+
   // @verifies TSK-48
   it("TSK-48: a failed save keeps the editor open on the unsaved text, not a stale render", () => {
     currentState = { kind: "failed", message: "not saved" };

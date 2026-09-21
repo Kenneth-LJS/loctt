@@ -69,12 +69,20 @@ test("GIT-1: enable discloses what it does, then writes git.enabled/branch to sy
   await expect(disabled).toBeVisible();
   await expect(disabled).toContainText("LocTT works fully without it");
 
-  // Enable states — before running — the dedicated branch, the temporary
-  // worktree, and the gitignore guarantee.
+  // Enable states — before running — the dedicated branch, the safety
+  // guarantee the temporary worktree provides, and the gitignore
+  // guarantee.
+  //
+  // `5cdb0349` ("friendly labels") rewrote this copy in plain language:
+  // it no longer names the "temporary worktree" mechanism, it states the
+  // property that mechanism exists to give — that your own working files
+  // and the branch you have checked out are never touched or switched.
+  // That is the user-facing half of the case's bullet, so it is what is
+  // asserted; naming the implementation was never the point.
   await page.getByTestId("git-enable").click();
   const confirm = page.getByTestId("git-enable-confirm");
   await expect(confirm).toContainText("loctt");
-  await expect(confirm).toContainText("temporary worktree");
+  await expect(confirm).toContainText(/never touched or switched/i);
   await expect(confirm).toContainText("local/");
   await expect(confirm).toContainText(".current-user");
   await expect(confirm).toContainText("users/<id>/settings.yaml");

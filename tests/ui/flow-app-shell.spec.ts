@@ -677,6 +677,9 @@ test.describe("BLK — export with an unreadable task", () => {
     await expect(page.getByText("Readable one")).toBeVisible();
 
     const download = page.waitForEvent("download");
+    // Export moved into the list toolbar's "View options" overflow menu
+    // (`053cf571`); its trigger only exists while that menu is open.
+    await page.getByTestId("view-actions-menu").click();
     await page.getByRole("button", { name: /Export/ }).click();
     await page.getByRole("menuitem", { name: /CSV/ }).click();
 
@@ -729,7 +732,15 @@ test.describe("SHL — a config file broken by hand", () => {
     // The M1 gate's F4 third strand: the filter presented a broken
     // config as an empty one, which is ERR-1's conflation one layer
     // down. An absence and a failure must not look alike.
-    await page.getByRole("button", { name: "Label", exact: false }).first().click();
+    // Label is not in the default visible facet set (K97/A210), so it
+    // has to be ADDED before its pill exists — without this, the
+    // `name: "Label"` match landed on the sidebar's "Labels" section
+    // toggle and merely collapsed it.
+    await page.getByTestId("add-filter").click();
+    await page.getByTestId("add-filter-labels").click();
+    await page.getByRole("button", { name: "Filter Label", exact: true }).click();
+    // K106 step 2: the facet panel is portalled to `document.body`, so
+    // it is read from `page` rather than from the toolbar's subtree.
     const menu = page.getByRole("menu");
     await expect(menu).toContainText(/could not be loaded/i);
     await expect(menu).not.toContainText("No options");
@@ -781,14 +792,14 @@ test.describe("SHL — narrow viewports", () => {
       ).toBeLessThanOrEqual(doc.clientWidth);
     }
 
-    // The table still scrolls within its own container: the fix is a
-    // header that fits, not a table that was clipped.
-    const table = page.locator("table").first();
-    const tb = await table.evaluate(el => {
-      const c = el.parentElement;
-      return c === null ? null : { client: c.clientWidth, scroll: c.scrollWidth };
-    });
-    expect(tb?.scroll ?? 0).toBeGreaterThan(tb?.client ?? 0);
+    // The rows are still fully readable: the fix is a header that fits,
+    // not content that was clipped. Below `sm` the table is replaced by
+    // a stacked card per task (`abceb888`), so there is no table to
+    // scroll — the content reflows instead, which is the stronger form
+    // of the same requirement and is already implied by the
+    // no-horizontal-pan assertion above.
+    await expect(page.getByTestId("task-cards")).toBeVisible();
+    await expect(page.locator('[data-testid^="task-card-"]').first()).toBeVisible();
   });
 
   test("the full header returns at desktop width", async ({ page, tracker }) => {
@@ -799,7 +810,10 @@ test.describe("SHL — narrow viewports", () => {
 
     // What narrow drops, wide keeps — the labels are hidden by a
     // breakpoint, not deleted.
-    await expect(page.getByText("TaskTracker")).toBeVisible();
+    // The wordmark is "LocTT" since the brand pass (`d8268292`); it is
+    // `hidden sm:inline`, so this asserts exactly what the case means —
+    // the label is dropped by a breakpoint, not deleted.
+    await expect(page.getByText("LocTT", { exact: true })).toBeVisible();
     await expect(page.getByLabel("New task")).toContainText("New task");
     await expect(page.getByLabel("Search tasks")).toBeVisible();
   });

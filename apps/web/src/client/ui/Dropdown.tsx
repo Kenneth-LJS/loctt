@@ -582,6 +582,15 @@ export function Dropdown(props: DropdownProps) {
   const panel = (
     <div
       ref={panelRef}
+      // MENU-PORTAL fallout: the panel is portalled to `document.body`,
+      // so a component that opens a Dropdown can no longer recognise
+      // "focus moved into my own dropdown" with
+      // `wrapper.contains(relatedTarget)` — the panel is not a
+      // descendant. `BodyEditor` relied on exactly that and tore its
+      // editor down when the block-type dropdown opened (TSK-59). This
+      // marker lets any such owner ask "is this node inside SOME
+      // dropdown panel?" without reaching into our refs.
+      data-dropdown-panel=""
       onKeyDown={menuMode ? onMenuKeyDown : undefined}
       {...(menuMode
         ? { role: "menu" as const, "aria-label": `Filter by ${label}` }

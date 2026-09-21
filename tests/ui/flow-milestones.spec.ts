@@ -25,6 +25,41 @@ import path from "node:path";
 
 import { expect, test } from "./fixtures/tracker.ts";
 
+/**
+ * Clicks a milestone/label row's kebab action (Edit… / Archive / Delete).
+ *
+ * These rows put their per-row actions behind the shared `RowActions`
+ * kebab (U26/K105): the items only exist while the menu is open, and
+ * since K106 step 2 the panel is PORTALLED to `document.body`, so it is
+ * no longer a descendant of `row`. The kebab trigger IS still in the
+ * row, which is what keeps this addressing the right row.
+ */
+async function rowAction(
+  page: import("@playwright/test").Page,
+  row: import("@playwright/test").Locator,
+  itemTestId: string,
+): Promise<void> {
+  await row.getByRole("button", { name: /^Actions for / }).click();
+  await page.getByTestId(itemTestId).click();
+}
+
+/**
+ * Asserts the label a row's kebab action currently shows, then closes
+ * the menu again so the surrounding test sees no state change.
+ */
+async function expectRowActionText(
+  page: import("@playwright/test").Page,
+  row: import("@playwright/test").Locator,
+  itemTestId: string,
+  text: string,
+): Promise<void> {
+  const kebab = row.getByRole("button", { name: /^Actions for / });
+  await kebab.click();
+  await expect(page.getByTestId(itemTestId)).toHaveText(text);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId(itemTestId)).toHaveCount(0);
+}
+
 /** The milestones in `milestones.yaml`, paired id → name. */
 async function readMilestones(root: string): Promise<{ id: string; name: string }[]> {
   const text = await readFile(
@@ -610,15 +645,22 @@ test.describe("MSL — the milestones view", () => {
 
     await page.goto(`${tracker.baseURL}/milestones`);
 
-    // The discoverability copy names the reachable management location
-    // and links to it — closing UX-15's "a view you cannot find" gap.
+    // SUPERSEDED PREMISE. This asserted that the copy points at
+    // Settings → Milestones. K105 (`d25b2105`) deliberately removed that
+    // deep link: management is in place here now — "the '+ New
+    // milestone' affordance opening the shared create dialog … Not a
+    // deep link to a Settings form" (`milestones/MilestonesView.tsx`).
+    //
+    // The durable requirement — UX-15's "a view you cannot find" gap:
+    // the view must say what it is FOR and offer the management action —
+    // is what is asserted now.
     const subhead = page.getByTestId("milestones-subhead");
     await expect(subhead).toBeVisible();
-    await expect(subhead).toContainText("Settings");
-    const link = subhead.getByRole("link", { name: /Settings . Milestones/i });
-    await expect(link).toBeVisible();
-    await link.click();
-    await expect(page).toHaveURL(/\/settings\/milestones$/);
+    await expect(subhead).toContainText(/progress toward every milestone/i);
+
+    // And the management action is right here, opening in place.
+    await page.getByTestId("milestones-new").click();
+    await expect(page.getByTestId("milestone-create-dialog")).toBeVisible();
   });
 
   // @verifies MSL-38
@@ -802,7 +844,7 @@ test("MSL-13: an unreferenced milestone confirms without a remap picker", async 
   const orphanRow = page.locator('[data-testid^="milestone-row-"]')
     .filter({ has: page.locator('[data-milestone-refcount="0"]') });
   await expect(orphanRow).toHaveCount(1);
-  await orphanRow.getByTestId("milestone-delete").click();
+  await rowAction(page, orphanRow, "milestone-delete");
   await expect(page.getByTestId("remap-choice")).toHaveCount(0);
   await page.getByRole("button", { name: /cancel/i }).click();
 
@@ -811,7 +853,7 @@ test("MSL-13: an unreferenced milestone confirms without a remap picker", async 
   // assertion above.
   const usedRow = page.locator('[data-testid^="milestone-row-"]')
     .filter({ hasText: "Used" });
-  await usedRow.getByTestId("milestone-delete").click();
+  await rowAction(page, usedRow, "milestone-delete");
   await expect(page.getByTestId("remap-choice")).toHaveCount(1);
 });
 
@@ -877,6 +919,9 @@ test("MSL-8: creating a label writes a valid entry and labels.yaml still parses 
   await page.goto(`${tracker.baseURL}/settings/labels`);
   await expect(page.getByTestId("labels-list")).toBeVisible();
 
+  // K105: creation is a dialog opened from the panel, not an inline form.
+  await page.getByTestId("label-create-open").click();
+  await expect(page.getByTestId("label-create-dialog")).toBeVisible();
   await page.getByTestId("label-create-name").fill("Backend");
   await page.getByTestId("label-create-color").fill("#1e6fcb");
   await page.getByTestId("label-create-submit").click();
@@ -939,7 +984,7 @@ test("MSL-9: recolouring a label updates surfaces and keeps every reference", as
   await page.goto(`${tracker.baseURL}/settings/labels`);
   const row = page.getByTestId(`label-row-${labelId}`);
   await expect(row).toBeVisible();
-  await row.getByTestId("label-edit").click();
+  await rowAction(page, row, "label-edit");
   const colorInput = row.getByTestId("label-color-input");
   await colorInput.fill("#00aa55");
   await row.getByTestId("label-save").click();
@@ -1005,7 +1050,7 @@ test("MSL-14: editing a milestone's target date persists, re-sorts, and clears c
     "data-milestone-date",
     "none",
   );
-  await row.getByTestId("milestone-edit").click();
+  await rowAction(page, row, "milestone-edit");
   await row.getByTestId("milestone-date-input").fill("2025-01-01");
   await row.getByTestId("milestone-save").click();
   await expect(row.getByTestId("milestone-date-input")).toHaveCount(0);
@@ -1029,7 +1074,7 @@ test("MSL-14: editing a milestone's target date persists, re-sorts, and clears c
 
   // Clearing returns to the undated presentation, NOT a 1970 epoch.
   await page.goto(`${tracker.baseURL}/settings/milestones`);
-  await row.getByTestId("milestone-edit").click();
+  await rowAction(page, row, "milestone-edit");
   await row.getByTestId("milestone-date-input").fill("");
   await row.getByTestId("milestone-save").click();
   await expect(row.getByTestId("milestone-date-input")).toHaveCount(0);
@@ -1081,19 +1126,27 @@ test("the milestones panel archives and unarchives without hiding the row", asyn
   await expect(row).toHaveAttribute("data-milestone-archived", "false");
 
   // Archive: one click, no typed confirmation (it is reversible).
-  await row.getByTestId("milestone-archive-toggle").click();
+  //
+  // K107 made the panel's list scope-driven: the archived row leaves the
+  // default "active" scope rather than staying in place with a marker.
+  // The case's point — archived is a REVERSIBLE state, not a deletion,
+  // and the row is still reachable — is asserted by revealing it under
+  // "all" and reading the marker there.
+  await rowAction(page, row, "milestone-archive-toggle");
+  await expect(row).toHaveCount(0);
+  await page.getByTestId("milestones-archived-scope").selectOption("all");
   await expect(row).toHaveAttribute("data-milestone-archived", "true");
   await expect(row.getByTestId("milestone-archived-marker")).toBeVisible();
-  await expect(row.getByTestId("milestone-archive-toggle")).toHaveText("Unarchive");
+  await expectRowActionText(page, row, "milestone-archive-toggle", "Unarchive");
   // Far end: the flag reached milestones.yaml.
   await expect.poll(async () =>
     readFile(path.join(tracker.root, ".loctt", "config", "milestones.yaml"), "utf8"),
   ).toMatch(/archived:\s*true/);
 
   // Unarchive reverses it, and the flag leaves disk.
-  await row.getByTestId("milestone-archive-toggle").click();
+  await rowAction(page, row, "milestone-archive-toggle");
   await expect(row).toHaveAttribute("data-milestone-archived", "false");
-  await expect(row.getByTestId("milestone-archive-toggle")).toHaveText("Archive");
+  await expectRowActionText(page, row, "milestone-archive-toggle", "Archive");
   await expect.poll(async () =>
     readFile(path.join(tracker.root, ".loctt", "config", "milestones.yaml"), "utf8"),
   ).not.toMatch(/archived:\s*true/);
@@ -1177,7 +1230,7 @@ test("MSL-28: concurrent CLI and UI label renames do not clobber each other", as
   await tracker.run(["label", "edit", idA, "--name", "alpha-renamed"]);
 
   // The UI renames B and saves.
-  await rowB.getByTestId("label-edit").click();
+  await rowAction(page, rowB, "label-edit");
   await rowB.getByTestId("label-name-input").fill("beta-renamed");
   await rowB.getByTestId("label-save").click();
   await expect(rowB.getByTestId("label-name-input")).toHaveCount(0);

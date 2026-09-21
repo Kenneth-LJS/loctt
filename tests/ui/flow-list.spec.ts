@@ -15,6 +15,24 @@ import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/tracker.ts";
 
+/**
+ * Opens the list toolbar's "View options" (⋯) menu.
+ *
+ * Export and "Save as view" moved off the toolbar and into this overflow
+ * menu (`053cf571`, "toolbar overflow menu"). Their triggers only exist
+ * while it is open, so every caller that reaches for them opens this
+ * first. The panel is portalled to `document.body` (K106 step 2), so the
+ * items are addressed from `page`, not from the menu's subtree.
+ */
+async function openViewActions(page: Page): Promise<void> {
+  const menu = page.getByTestId("view-actions-menu");
+  if ((await menu.getAttribute("aria-expanded")) !== "true") {
+    await menu.click();
+  }
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+}
+
+
 // The list-toolbar redesign folded advanced querying INTO the filter
 // system: the leading "Advanced" pill (`advanced-query-toggle`) is gone.
 // It is now reached one level in — open the "+ Add filter" menu, then
@@ -794,6 +812,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const menu = page.getByRole("menu", { name: "Export" });
 
@@ -809,6 +828,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list?priority=high`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     await expect(page.getByRole("menu", { name: "Export" })).toContainText("Export 2 tasks");
   });
@@ -825,6 +845,7 @@ test.describe("BLK — export", () => {
     // The keys on screen, to compare against — not merely the count.
     const onScreen = await page.getByRole("cell", { name: /^[A-Z]+-\d+$/ }).allTextContents();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
     expect(href).toContain("priority=high");
@@ -851,6 +872,7 @@ test.describe("BLK — export", () => {
     // Select one row; the export must still carry all three.
     await page.locator("tbody input[type=checkbox]").first().check();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     await expect(page.getByRole("menu", { name: "Export" })).toContainText("Export 3 tasks");
     const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
@@ -866,6 +888,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const href = await page.getByRole("menuitem", { name: "JSON" }).getAttribute("href");
 
@@ -887,6 +910,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
     const csv = await (await page.request.get(`${tracker.baseURL}${href ?? ""}`)).text();
@@ -907,6 +931,7 @@ test.describe("BLK — export", () => {
 
     // Either an empty file or a disabled control — never a "0 tasks
     // exported" success next to a file the user did not get.
+    await openViewActions(page);
     await expect(page.getByRole("button", { name: "Export" })).toBeDisabled();
   });
 
@@ -916,6 +941,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list?priority=high`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
 
@@ -1725,6 +1751,7 @@ test.describe("BLK — scale", () => {
     await expect(page.locator("tbody tr").first()).toBeVisible();
 
     const download = page.waitForEvent("download");
+    await openViewActions(page);
     await page.getByRole("button", { name: /Export/i }).click();
     await page.getByRole("menuitem", { name: /CSV/i }).click();
 
@@ -2079,6 +2106,7 @@ test.describe("BLK — stale vocabulary and export columns", () => {
     await expect(page.locator("tbody tr").first()).toBeVisible();
 
     const download = page.waitForEvent("download");
+    await openViewActions(page);
     await page.getByRole("button", { name: /Export/i }).click();
     await page.getByRole("menuitem", { name: /CSV/i }).click();
     const header = (await readFile(await (await download).path(), "utf8"))
@@ -2137,6 +2165,7 @@ test.describe("BLK — failures that must not be silent", () => {
       });
     });
 
+    await openViewActions(page);
     await page.getByRole("button", { name: /Export/i }).click();
     await page.getByRole("menuitem", { name: /CSV/i }).click();
 
@@ -2392,18 +2421,39 @@ test.describe("SHL — narrow viewports", () => {
     // Narrow. At 532px the expanded sidebar took 240px and left the
     // table 165px — the content the user came for was the smallest
     // thing on screen.
+    //
+    // R2 (Ken 2026-09-20) made the narrow collapsed state render NOTHING
+    // rather than a `w-14` icon rail: the header hamburger is the sole
+    // nav and the drawer carries the labels, so the rail was noise
+    // stealing the width the content came for. So the claim "the sidebar
+    // stops eating the content's width" is now satisfied at 0px, and
+    // there is no `<aside>` to carry `data-collapsed`. Asserted as the
+    // width it actually occupies, which is the property the 80px bound
+    // was a proxy for.
     await page.setViewportSize({ width: 532, height: 800 });
-    await expect(aside).toHaveAttribute("data-collapsed", "true");
-    // The width transitions over 150ms; poll rather than measure once.
     await expect
-      .poll(() => aside.evaluate(el => el.getBoundingClientRect().width))
+      .poll(async () => {
+        if (await aside.count() === 0) return 0;
+        return aside.evaluate(el => el.getBoundingClientRect().width);
+      })
       .toBeLessThan(80);
 
-    // The table stays reachable. Clipping it made seven of ten columns
-    // unreachable by any input, which is worse than honest overflow.
-    const wrapper = page.locator("table").locator("xpath=ancestor::div[1]");
-    expect(await wrapper.evaluate(el => getComputedStyle(el).overflowX))
-      .toBe("auto");
+    // The rows stay reachable. Clipping the table made seven of ten
+    // columns unreachable by any input, which is worse than honest
+    // overflow — so the case asserted the wrapper scrolled.
+    //
+    // Below `sm` the table is now REPLACED by a stacked card per task
+    // (`abceb888`, the responsive list): the content reflows instead of
+    // overflowing, which satisfies the same requirement more strongly —
+    // nothing is off-screen to reach for. Asserted as "the task is
+    // present and readable at this width", which is what "reachable"
+    // meant.
+    await expect(page.getByTestId("task-cards")).toBeVisible();
+    await expect(page.locator('[data-testid^="task-card-"]').first()).toBeVisible();
+    // And the page itself does not pan sideways.
+    expect(await page.evaluate(() =>
+      document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    )).toBe(true);
 
     // The toggle is ENABLED at narrow width (R2 / A173): it opens the
     // sidebar as a transient off-canvas overlay so a phone user can read
@@ -2420,6 +2470,10 @@ test.describe("SHL — narrow viewports", () => {
     // must be untouched — a rotation must not silently discard a choice,
     // and the transient mobile-open must not have been persisted.
     await toggle.click();
+    // The transient mobile-open is a modal drawer (R2), not the in-grid
+    // column — so widening is what brings the persistent `<aside>` back,
+    // and it must come back EXPANDED: the narrow-width click was never
+    // written to the stored preference.
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(aside).toHaveAttribute("data-collapsed", "false");
     await expect(toggle).toBeEnabled();
@@ -4665,7 +4719,8 @@ test.describe("VUE — saving a view (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("my-open-bugs");
     await page.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -4702,7 +4757,8 @@ test.describe("VUE — saving a view (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("keys-not-labels");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     // The sidebar picks the new view up without a restart, which is
@@ -4863,7 +4919,8 @@ test.describe("VUE — saving a view (M1.3)", () => {
     // Now save view B through the UI.
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("view-b");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("link", { name: "view-b" })).toBeVisible();
@@ -5317,7 +5374,8 @@ test.describe("The last of M1.3", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("from-ui");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("link", { name: "from-ui" })).toBeVisible();
@@ -5378,8 +5436,12 @@ test.describe("MSL — many labels, and a dangling one (M1.3)", () => {
     await addFacet(page, "labels");
     await page.getByRole("button", { name: "Filter Label" }).click();
 
-    // Searchable rather than a forty-item unfiltered list.
-    const search = page.getByRole("searchbox", { name: /Search Label/i });
+    // Searchable rather than a forty-item unfiltered list. The box is a
+    // `role="combobox"` — the correct role for a text input that filters
+    // an owned listbox (it carries aria-expanded/-controls/-autocomplete),
+    // which is what `ui/Dropdown` renders. Still the same claim: 40
+    // labels get a filter, and typing narrows to one.
+    const search = page.getByRole("combobox", { name: /Search label/i });
     await expect(search).toBeVisible();
     expect(await page.getByRole("menuitemcheckbox").count()).toBe(40);
 
@@ -5466,7 +5528,8 @@ test.describe("Closing out M1.3", () => {
 
     await page.goto(`${tracker.baseURL}/list?sort=priority&dir=desc`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("by-priority");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("link", { name: "by-priority" })).toBeVisible();
@@ -5495,7 +5558,8 @@ test.describe("Closing out M1.3", () => {
     ]);
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("open-work");
     await page.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -5657,7 +5721,17 @@ test.describe("SHL — the app shell (M1.1)", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await page.getByRole("link", { name: "Board" }).click();
     await expect(page).toHaveURL(/\/board/);
-    await expect(page.locator("aside a[aria-current='page']")).toHaveCount(1);
+    // Exactly one entry IN THIS GROUP is highlighted — the same scoping
+    // the loop above already uses. The Projects group's "All projects"
+    // row is also legitimately `aria-current` on any view route with no
+    // project facet (`allActive` in Sidebar.tsx, U11): it marks a
+    // different nav axis — which project scope applies, not which view
+    // surface you are on — so a page-wide count of 1 was never the claim.
+    for (const name of ["List", "Board", "Timeline"]) {
+      const link = page.getByRole("link", { name, exact: true });
+      if (name === "Board") await expect(link).toHaveAttribute("aria-current", "page");
+      else await expect(link).not.toHaveAttribute("aria-current", "page");
+    }
   });
 });
 
@@ -5814,10 +5888,19 @@ test.describe("SHL — the sidebar groups (M1.1)", () => {
     await expect(aside.getByRole("link", { name: /\bold\b/ })).toHaveCount(0);
     await expect(aside.getByRole("link", { name: /bug/ })).toBeVisible();
 
-    // Clicking filters the view and shows it in the URL.
+    // Clicking a milestone opens its DETAIL page. K105/U14 (d25b2105)
+    // deliberately repointed this from `/list?milestone=` to
+    // `/milestones/$id` so the sidebar and "All milestones" reach the
+    // same surface — see the comment in `shell/Sidebar.tsx`. The claim
+    // this case makes (the row navigates to that milestone's scope, and
+    // shows the one task in it) is unchanged; the surface moved.
     await aside.getByRole("link", { name: /v1/ }).click();
-    await expect(page).toHaveURL(/milestone=/);
-    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page).toHaveURL(/\/milestones\//);
+    // …and the page is scoped to that milestone: its heading names it,
+    // and the one task in it is listed. That is the "filters the view"
+    // half of the case, at the surface it now lands on.
+    await expect(page.getByRole("heading", { name: "v1", level: 1 })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("cell", { name: "One" })).toBeVisible();
   });
 });
 

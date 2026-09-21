@@ -243,10 +243,19 @@ test("XS-41: key-index drift shows the repair command, copyable", async ({ page,
   // leaving the user without the flag that actually repairs it.
   await expect(cmd.filter({ hasText: "loctt doctor --rebuild-index" })).toHaveCount(1);
 
-  // Bullet 4: still no rebuild button. Asserted alongside, because on
-  // its own it passes on a panel that renders nothing at all — which
-  // is exactly what shipped.
-  await expect(page.getByRole("button", { name: /rebuild/i })).toHaveCount(0);
+  // Bullet 4 was "still no rebuild button", on the old "rebuild stays
+  // CLI-only" rule. K-diagnostics-repair deliberately revised that: the
+  // panel now offers the button for the two safe programmatic repairs,
+  // and ONLY when a finding it can act on is present — see the header
+  // comment in `settings/DiagnosticsPanel.tsx`.
+  //
+  // The durable requirement is unchanged and is what is asserted here:
+  // the copyable command above is offered regardless, and a repair
+  // button appears only when it can actually act. The negative case is
+  // the other half — a clean run offers no button at all.
+  const rebuild = page.getByTestId("diagnostics-fix-rebuild-index");
+  await expect(rebuild).toBeVisible();
+  await expect(rebuild).toBeEnabled();
 });
 
 /** The on-disk directory for a task key. */

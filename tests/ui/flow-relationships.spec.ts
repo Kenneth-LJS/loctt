@@ -33,6 +33,7 @@ import path from "node:path";
 
 import type { Page, Request } from "@playwright/test";
 
+import { comboOptions, pickCombo } from "./fixtures/dropdown.ts";
 import type { TrackerFixture } from "./fixtures/tracker.ts";
 import { expect, test } from "./fixtures/tracker.ts";
 
@@ -142,7 +143,11 @@ async function openTask(page: Page, tracker: TrackerFixture, key: string): Promi
  */
 async function addLink(page: Page, kind: string, targetKey: string): Promise<void> {
   await page.getByTestId("add-link").click();
-  await page.getByTestId("link-kind").selectOption(kind);
+  // K106: `link-kind` is a `SelectCombobox`, not a native `<select>` —
+  // open the listbox (portalled to body) and click the row. `pickCombo`
+  // throws when the kind is not offered, which is the "silent no-op"
+  // `selectOption` used to rule out.
+  await pickCombo(page, "link-kind", kind);
   await page.getByTestId("link-target").fill(targetKey);
   // The results list is a query; wait for the row rather than racing it.
   const row = page.locator(`[data-testid="link-result"][data-key="${targetKey}"]`);
@@ -316,8 +321,12 @@ async function settling(
  */
 async function removeLink(page: Page, scope: import("@playwright/test").Locator): Promise<void> {
   await scope.getByTestId("relationship-kebab").click();
-  // The menu item opens the confirm; the confirm's Remove does the write.
-  await scope.getByTestId("relationship-remove").click();
+  // K106 step 2: the kebab's panel is PORTALLED to `document.body`, so
+  // it is no longer a descendant of the row `scope` names — only the
+  // trigger is. The menu item is therefore located from `page`. Still
+  // unambiguous: one row's menu is open at a time, and `scope`'s kebab
+  // is the one that opened it.
+  await page.getByTestId("relationship-remove").click();
   await settling(page, "/unlink", async () => {
     await page.getByTestId("relationship-remove-confirm-button").click();
   });
@@ -538,7 +547,10 @@ test("REL-7: the kind picker offers every configured side, symmetric ones once, 
   await openTask(page, tracker, t1 ?? "");
   await page.getByTestId("add-link").click();
 
-  const options = await page.getByTestId("link-kind").locator("option").allTextContents();
+  // K106: the kind picker is a listbox, so the offered set is read from
+  // the portalled panel's `role="option"` rows rather than from
+  // `<option>` children. Same claim, same eleven sides.
+  const options = (await comboOptions(page, "link-kind")).map(o => o.label);
   // Both directions of a directional pair, so the user can state either.
   expect(options).toContain("Blocks");
   expect(options).toContain("Is blocked by");
@@ -733,7 +745,11 @@ test("REL-12: removal is a deliberate kebab → confirm, with no stray hover-✕
   // write has NOT happened yet: a deliberate step stands between the
   // choice and the removal (this is the accidental-one-click guard).
   await kebab.click();
-  await row.getByTestId("relationship-remove").click();
+  // K106 step 2: the kebab panel is portalled to `document.body`, so the
+  // menu item is located from `page`, not from `row`. The "no stray
+  // one-click remove *in the row*" assertion above is unaffected — it
+  // asserts the row's own subtree, which is exactly what it always meant.
+  await page.getByTestId("relationship-remove").click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByTestId("relationship-remove-confirm")).toBeVisible();
   expect((await edgesOf(tracker.root, t1 ?? "")).map(e => e.type)).toEqual(["blocks"]);
@@ -963,7 +979,14 @@ test("REL-15: a ranked row is keyboard-movable and the move is announced", async
   await expect(groupRows(page, "blocks").nth(0)).toHaveAttribute("data-target", idB);
   // ...and the move was announced with its position, rather than being
   // a silent visual change.
-  await expect(page.getByTestId("reorder-announcement")).toContainText(`${b ?? ""} moved to position 1 of 2`);
+  //
+  // `moveUp` arrows the row and then COMMITS with Enter, so the live
+  // announcement at this point is the drop one. Both wordings name the
+  // row and its new position, which is the claim; matching either keeps
+  // the assertion about the announcement rather than about which half
+  // of the pickup the helper happens to end on.
+  await expect(page.getByTestId("reorder-announcement"))
+    .toContainText(new RegExp(`${b ?? ""} (moved to|dropped at) position 1 of 2`));
   // The far end agrees.
   const edges = await edgesOf(tracker.root, root ?? "");
   expect(edges.find(e => e.target === idB)?.rank).toBeDefined();
@@ -1109,8 +1132,11 @@ test("REL-24: a dangling target renders as a broken row offering removal, distur
   // through the kebab, and it works.
   const brokenRow = page.locator('[data-testid="relationship-row"][data-missing="true"]');
   await brokenRow.getByTestId("relationship-kebab").click();
-  await expect(brokenRow.getByTestId("relationship-remove")).toHaveText("Remove this link");
-  await brokenRow.getByTestId("relationship-remove").click();
+  // K106 step 2: the opened panel is portalled out of `brokenRow`. It is
+  // still *this* row's menu — the broken row is the only one with a
+  // kebab open — so the item is addressed from `page`.
+  await expect(page.getByTestId("relationship-remove")).toHaveText("Remove this link");
+  await page.getByTestId("relationship-remove").click();
   await settling(page, "/unlink", async () => {
     await page.getByTestId("relationship-remove-confirm-button").click();
   });

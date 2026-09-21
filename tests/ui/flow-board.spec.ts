@@ -17,6 +17,19 @@ import path from "node:path";
 import { expect, test } from "./fixtures/tracker.ts";
 
 /**
+ * A board column, as a selector.
+ *
+ * Deliberately `[data-column-id]` rather than the old
+ * `[data-testid^='board-column-']` prefix match: the per-column kebab and
+ * its items now carry `board-column-menu-<id>`, `board-column-hide-<id>`,
+ * `board-column-wip-<id>` and `board-column-edit-<id>`, all of which that
+ * prefix also matched — so every count came back doubled. The attribute
+ * is on the column container alone and cannot drift the same way.
+ */
+const BOARD_COLUMN = "[data-column-id]";
+
+
+/**
  * Replaces the `statuses:` block of a tracker's workflow.yaml.
  *
  * Line-based rather than a YAML round-trip so the rest of the file —
@@ -194,7 +207,7 @@ test.describe("BRD — board view", () => {
 
     await page.goto(`${tracker.baseURL}/board`);
 
-    const columns = page.locator("[data-testid^='board-column-']");
+    const columns = page.locator(BOARD_COLUMN);
     await expect(columns).toHaveCount(6);
 
     // Declaration order, left to right — not alphabetical (which would
@@ -226,7 +239,7 @@ test.describe("BRD — board view", () => {
 
     // Reloading reproduces the same board.
     await page.reload();
-    await expect(page.locator("[data-testid^='board-column-']")).toHaveCount(6);
+    await expect(page.locator(BOARD_COLUMN)).toHaveCount(6);
   });
 
   // @verifies BRD-2
@@ -266,7 +279,7 @@ test.describe("BRD — board view", () => {
     await page.goto(`${tracker.baseURL}/board`);
 
     // Three columns, not six.
-    await expect(page.locator("[data-testid^='board-column-']")).toHaveCount(3);
+    await expect(page.locator(BOARD_COLUMN)).toHaveCount(3);
 
     // The column's own label, not any status label.
     const flight = page.getByTestId("board-column-doing");
@@ -278,7 +291,7 @@ test.describe("BRD — board view", () => {
     await expect(flight.getByTestId("board-card-T-2")).toBeVisible();
 
     // Column order follows the array, not status declaration order.
-    await expect(page.locator("[data-testid^='board-column-'] header")).toHaveText([
+    await expect(page.locator("[data-column-id] header")).toHaveText([
       /To do/,
       /In flight/,
       /Shipped/,
@@ -311,7 +324,7 @@ test.describe("BRD — board view", () => {
     await page.getByTestId("board-chip-backlog").click();
     await expect(page.getByTestId("board-column-backlog")).toHaveCount(0);
     // …while the remaining columns stay.
-    await expect(page.locator("[data-testid^='board-column-']")).toHaveCount(3);
+    await expect(page.locator(BOARD_COLUMN)).toHaveCount(3);
 
     // The chip stays, in an "off" state, so the column can come back.
     await expect(page.getByTestId("board-chip-backlog")).toBeVisible();
@@ -548,7 +561,7 @@ test.describe("BRD — board view", () => {
 
     await page.goto(`${tracker.baseURL}/board`);
 
-    await expect(page.locator("[data-testid^='board-column-']")).toHaveCount(20);
+    await expect(page.locator(BOARD_COLUMN)).toHaveCount(20);
 
     // Each column keeps a readable minimum width — titles are not
     // truncated to two characters.
@@ -577,13 +590,13 @@ test.describe("BRD — board view", () => {
 
     await page.goto(`${tracker.baseURL}/board`);
 
-    const columns = page.locator("[data-testid^='board-column-']");
+    const columns = page.locator(BOARD_COLUMN);
     await expect(columns).toHaveCount(1);
 
     // Left-aligned at a sane maximum width, with the rest of the board
     // area empty — not one full-width slab of cards.
     const { colWidth, boardWidth } = await page.evaluate(() => {
-      const col = document.querySelector("[data-testid^='board-column-']");
+      const col = document.querySelector("[data-column-id]");
       const board = document.querySelector("[data-testid='board']");
       return {
         colWidth: col?.getBoundingClientRect().width ?? 0,
@@ -683,7 +696,7 @@ test.describe("BRD — board view", () => {
     await page.goto(`${tracker.baseURL}/board`);
 
     // Two separate columns — keys are the identity.
-    await expect(page.locator("[data-testid^='board-column-']")).toHaveCount(2);
+    await expect(page.locator(BOARD_COLUMN)).toHaveCount(2);
 
     // Cards route to the column matching their stored key, not the
     // first label match.
@@ -720,7 +733,7 @@ test.describe("BRD — board view", () => {
 
     // Column widths stay uniform regardless of label length.
     const widths = await page
-      .locator("[data-testid^='board-column-']")
+      .locator(BOARD_COLUMN)
       .evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().width)));
     expect(new Set(widths).size).toBe(1);
 
@@ -814,7 +827,7 @@ test.describe("BRD — board view", () => {
     // The card does not grow past its column, and does not widen it.
     const { cardW, colW } = await page.evaluate(() => {
       const c = document.querySelector("[data-testid='board-card-T-1']");
-      const col = document.querySelector("[data-testid^='board-column-']");
+      const col = document.querySelector("[data-column-id]");
       return {
         cardW: c?.getBoundingClientRect().width ?? 0,
         colW: col?.getBoundingClientRect().width ?? 0,
@@ -875,7 +888,7 @@ test.describe("BRD — board view", () => {
     await expect(empty.getByRole("button", { name: /Add task/ })).toBeVisible();
 
     // Columns still render, so the workflow shape stays visible.
-    await expect(page.locator("[data-testid^='board-column-']")).toHaveCount(4);
+    await expect(page.locator(BOARD_COLUMN)).toHaveCount(4);
   });
 
   // @verifies ONB-11
@@ -897,8 +910,8 @@ test.describe("BRD — board view", () => {
 
     // A tracker configured with seven statuses shows seven empty
     // columns, labelled from workflow.yaml.
-    await expect(page.locator("[data-testid^='board-column-']")).toHaveCount(7);
-    await expect(page.locator("[data-testid^='board-column-'] header")).toHaveText([
+    await expect(page.locator(BOARD_COLUMN)).toHaveCount(7);
+    await expect(page.locator("[data-column-id] header")).toHaveText([
       /One/, /Two/, /Three/, /Four/, /Five/, /Six/, /Seven/,
     ]);
 
@@ -1053,7 +1066,7 @@ test.describe("BRD — board view", () => {
 
     // It does not silently render 1:1 columns as though nothing were
     // wrong.
-    await expect(page.locator("[data-testid^='board-column-']")).toHaveCount(0);
+    await expect(page.locator(BOARD_COLUMN)).toHaveCount(0);
   });
 
   // @verifies BRD-46
