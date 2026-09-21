@@ -141,6 +141,20 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+describe("WorkflowPanelFrame — config path (SET-3)", () => {
+  /** @verifies SET-3 — the panel names the file it reflects. This had
+   * regressed to a vague "changes appear after you refresh" line that
+   * dropped the path entirely; the frame now shows the usage path. */
+  it("shows the config file path the panel reflects", async () => {
+    mockWorkflow();
+    render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
+    const foot = await screen.findByTestId("workflow-config-path");
+    expect(foot.textContent).toContain("/abs/.loctt/config/workflow.yaml");
+    // The old vague copy is gone.
+    expect(foot.textContent).not.toMatch(/after you refresh/i);
+  });
+});
+
 describe("EnumCollectionPanel — statuses (SET-46)", () => {
   /** @verifies SET-46 */
   it("creates a status: the Create dialog PUTs the augmented document in file order", async () => {

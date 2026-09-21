@@ -174,8 +174,12 @@ export function WorkflowPanelFrame({
         path: usage.data?.path ?? ".loctt/config/workflow.yaml",
         usage: usage.data,
       })}
+      {/* SET-3: name the file this panel reflects. This had regressed to a
+          vague "changes appear after you refresh" line (Ken's "useless
+          copywriting") that also dropped the path SET-3 requires — restored
+          to the actual config path. */}
       <p data-testid="workflow-config-path" className="mt-6 text-[0.7857rem] text-text-tertiary">
-        Changes made outside the app appear here after you refresh.
+        Stored in <code className="text-text-secondary">{usage.data?.path ?? ".loctt/config/workflow.yaml"}</code>
       </p>
     </div>
   );
