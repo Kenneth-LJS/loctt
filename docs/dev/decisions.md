@@ -17415,6 +17415,181 @@ Grammar decisions the docs did not settle (recorded here):
 
 **To revert.** Core: `packages/core/src/config/archived-scope.ts` — narrow the constraint back to `{ readonly archived?: boolean }` (and every call site breaks again). MCP: `apps/mcp/src/runtime/config-list.ts` — drop the `archived` key from `configListInputSchema` and the `getArchivedScope` helper; `tools/{milestone,sprint,label,project,user}.ts` — drop the `applyArchivedScope(...)` line (restore `cfg.<entity>` / hand-rolled filter) and the `getArchivedScope` import; `tools/user.ts` — restore the `include_archived` param + `.filter`; `tools/views.ts` — drop the `archived` param + `applyArchivedScope`. CLI: `commands/{milestone,sprint,label,project,user,views}.ts` — restore `hasFlag(args,"--all")` + the hand-rolled `.filter` (and drop `--archived` from the ACCEPTED_FLAGS lists that gained it: sprint/label/project/user/views); `usage.ts` — restore the `list --all: include archived …` lines. Tests: delete `apps/mcp/src/tools/archived-scope.test.ts`, the "config-entity list archived scope (K107)" block in `apps/cli/src/cli.test.ts`, and revert the `list_views` default-hides assertion in `apps/mcp/src/tools/views.test.ts` (it was updated because it asserted the old show-all default). Docs: the six list rows in `docs/user/cli/reference.md` and the config-list rows + shared-`archived` note in `docs/user/mcp/reference.md`.
 
+### A281 · K106 step 1 — `Select` call sites onto `SelectCombobox`, and the `.value`→`data-value` assertion trap
+
+**Ticket:** K106 step 1 · **Date:** 2026-09-21 · **Lane:**
+`apps/web/src/client/**`.
+
+**What shipped.** `filterable` → `searchable` on `ui/Combobox` (pure
+rename; no production call site passed it, and the `??` override
+semantics are byte-identical). 18 native-`<select>` call sites across 12
+files migrated onto a new `SelectCombobox` wrapper with
+`searchable={false}`. A wrapper rather than 18 inline `Combobox`es
+because the a11y contract below has to hold identically everywhere.
+**Zero testids renamed.**
+
+Per Ken: *"Do the churn; keep ArchivedScopeControl's native select."* So
+`ui/Select` SURVIVES for that one site, and K106's "delete the superseded
+components" is satisfied for `FilterDropdown` only — which step 1 does
+NOT touch (see `K106` in § 9 for the deferred substrate call).
+
+**⚠ THE TRAP: `.value` → `data-value` SILENTLY WEAKENS ASSERTIONS.**
+This is the load-bearing finding and it generalises well past K106.
+
+A native `<select>`'s `.value` **could only report a value that had a
+matching `<option>`** — the DOM enforced it. `data-value` echoes the
+component's draft state, so it reports the stored token whether or not
+the option is actually offered. A straight port of an assertion from one
+to the other therefore keeps passing while testing strictly less.
+
+Concretely: three "escape hatch" branches keep a stored-but-unknown value
+selectable — `TimelinePanel`'s dangling dependency (A31/TML-34),
+`ViewFormDialog`'s removed custom field, `QueryBuilder`'s out-of-config
+field. **Deleting any of them left the suite GREEN** after the port.
+
+This is the repo's own "code outgrew a good test" case: nobody wrote a
+bad test, the substrate changed underneath good ones. Fixed by asserting
+the option is **offered**, not merely echoed — a `comboOptions()` helper
+alongside `comboValue()`. Independently red-proven at integration: with
+`ViewFormDialog`'s hatch deleted, "offers a stored field the catalog does
+not know as its raw token" goes red; source restored byte-exact and
+16/16 green after.
+
+**Two of those three hatches were NEVER covered** — that gap predates
+K106; the migration only made it visible. Since `data-value` is now the
+standard assertion in this codebase, **any future `Select`→`Combobox`
+port must pair a value assertion with an options assertion**, or it
+quietly asserts nothing about availability.
+
+**What the migrated sites genuinely lost.** The mobile native picker and
+native type-ahead, replaced by the listbox keyboard model — which is
+exactly why `ArchivedScopeControl` keeps its real `<select>`. Also
+implicit labelling: seven sites wrapped the control in a `<label>` and
+`LinkPicker` used `<label htmlFor>`, neither of which names a `<button>`;
+those became explicit `aria-label`/`aria-labelledby`, with a `listLabel`
+prop because the listbox cannot borrow an `aria-labelledby` target.
+`ComboboxButton` also gained `disabled` (SET-16 locks the custom-field
+type on edit) and `aria-describedby` (SprintMetaHeader's error anchor).
+
+**`cn()` trap avoided:** `ComboboxButton`'s disabled state picks
+background, colour and cursor inside ONE branch, so `bg-bg-surface` and
+`bg-bg-muted` can never both land in the class list.
+
+**Incidental finding.** `apps/web/src/client/ui/Combobox.tsx` contains
+654 NUL bytes at HEAD, unrelated to this work — `grep` treats the file as
+binary; use `git diff --text`.
+
+**To revert.** Restore the 18 call sites to `ui/Select`, delete
+`SelectCombobox` + `ui/selectComboboxTestUtils.ts`, rename `searchable`
+back to `filterable`, and revert the assertion helpers to `.value` reads
+(accepting that this re-weakens the three hatch assertions).
+
+**Status: step 1 BUILT + green (web client 1848, was 1846).**
+
+### A280 · K103 stage 1 — colour wire shapes (bare hex stays valid), and the `dropInvalidColor` data-loss fix
+
+**Ticket:** K103 stage 1 (contracts + core) · **Date:** 2026-09-21 ·
+**Lane:** `packages/contracts/src/**` + `packages/core/src/**`.
+
+**The wire shapes.** K103 ruled a colour is one of three shapes. Ken
+delegated the storage infrastructure (*"let an engineer decide on the
+infra for this"*). Decided:
+
+| Shape | Wire form |
+|---|---|
+| single | a bare hex string `"#1e6fcb"` |
+| double | `{ light, dark }` |
+| palette | `{ palette: "<id>" }` |
+
+**Why bare hex for `single`:** it IS the existing on-disk format, so every
+existing `workflow.yaml`/`labels.yaml` parses untouched — **no migration,
+no file rewrite, no reformatting of hand-written hex.** Shape 2's own
+definition ("one value used for both modes") is exactly what a stored hex
+already means.
+
+`z.union`, NOT `z.discriminatedUnion`: the arms are not all objects
+sharing a literal tag, and adding a tag would mean writing it into every
+user's file. Discrimination is still unambiguous rather than
+order-dependent — a string cannot match an object arm, and **both object
+arms are `.strict()`**, so a hybrid `{palette, light, dark}` matches
+NEITHER. Pinned by a test, red-proven by swapping `.strict()` for
+`.passthrough()`.
+
+**Palette values are SOURCED, not invented.** Seven entries in
+`core/config/color.ts`, every value copied literally from
+`apps/web/src/client/styles/tokens.css` — `teal` ← `--accent` (the K99
+brand), plus the harmonised status/priority/feedback tokens. Copied rather
+than imported because core has no DOM and CLI/MCP need them with no
+browser. A test pins `teal` to the K99 values so drift goes red.
+
+**Palette references are LIVE, per Ken's explicit pick.** Nothing caches a
+resolved hex onto a reference; red-proven by a mutation that snapshots.
+A well-shaped reference to a MISSING id is KEPT on load and degrades only
+at resolve time — dropping it would destroy the user's value over a
+palette entry they might re-add.
+
+**Degradation.** `resolveEntityColor(color, mode)` returns
+`{ok:false, failure:{reason:"unknown_palette_id", …}}` and never throws;
+`resolveEntityColorOr` is the lenient variant. Field-local per the
+corruption guide, following the MSL-22 precedent.
+
+**A P1 DATA-LOSS BUG FOUND AND FIXED.** `dropInvalidColor` in
+`core/config/labels.ts` tested the hex regex DIRECTLY. Post-K103 that
+would have **silently deleted every palette and double colour on load** —
+the schema would accept the new shapes, and this function would strip
+them anyway. Now delegates to `EntityColorSchema`, so the contract is the
+single judge of validity. Red-proven: reverting it turns 3 tests red.
+*Lesson:* a hand-rolled copy of a schema rule is a silent data-loss
+hazard the moment the schema widens.
+
+**⚠ PARTLY TYPE-CAUGHT, PARTLY SILENT — verify with `tsc --build`, not
+the per-project check.** The stage-1 agent reported "all three apps
+typecheck with 0 errors". That was measured with per-project
+`tsc --noEmit` and is WRONG for the monorepo: `npx tsc --build --force`
+surfaces **36 real errors across 18 files** (e.g.
+`CreateTaskModal.tsx:521`, where a `StatusDef[]` with the widened `color`
+no longer satisfies a `color?: string` prop). Corrected here rather than
+left standing, because "the apps are clean" would have sent the next
+reader looking only for runtime bugs.
+
+So the type system DOES catch a good share of the migration. What it does
+NOT catch is the subset where the new object shapes flow through
+`string | undefined` inference points that widen silently, or get
+interpolated into a template string. Those sites mishandle a palette or
+double colour at RUNTIME — rendering `[object Object]`, or dropping the
+colour entirely — with a clean compile. Both classes below:
+
+- `web/list/cells.tsx:306` **re-implements the hex regex** → rejects all
+  palette/double colours to `undefined` (the same class of bug as
+  `dropInvalidColor`, in the UI). Also `cells.tsx:78,171`.
+- `web/task/editors/LabelsField.tsx:94,177`, `web/shell/Sidebar.tsx:1957`
+  (`ColorDot`), `web/task/editors/OptionPicker.tsx:153` — pass `color`
+  straight into CSS.
+- `web/ui/ColorInput.tsx` + `isValidHexColor`, consumed by
+  `EntryEditDialog`, `RelationshipEditDialog`, `LabelEditDialog`,
+  `CustomFieldEditDialog:384`, `workflowForms.ts:134` (`.trim()` on a
+  possible object).
+- CLI `commands/label.ts:54`, `commands/workflow-entities.ts`
+  (~247/325/390) — interpolate colour into output.
+- MCP `tools/label.ts`; `web/server/server.ts:2750,2770` pass-through.
+
+Web additionally needs a mode signal to call the resolver; the theme is
+already in `client/theme`.
+
+**New exports.** From `@loctt/core`: `BUILTIN_PALETTE`, `getPaletteEntry`,
+`isKnownPaletteId`, `resolveEntityColor`, `resolveEntityColorOr`,
+`PaletteEntry`, `ColorResolution`, `ColorResolveFailure`. From
+`@loctt/contracts`: `EntityColor`, `ColorMode`, `isSingleColor`,
+`isDoubleColor`, `isPaletteColorRef` and the schemas.
+
+**To revert.** Restore `color: HexColor.optional()` on the 6 fields (5 in
+`workflow.ts`, 1 in `labels.ts`), delete `contracts/src/color.ts` and
+`core/src/config/color.ts`, and revert `dropInvalidColor` to the hex
+regex.
+
+**Status: stage 1 BUILT + green (211 contracts, 2296 core). Surfaces not
+yet migrated — see the runtime-breakage list above.**
+
 ### A279 · K104 icon picker design — portalled grid popover, not a stacked dialog; storage unchanged
 
 **Ticket:** K104 · **Date:** 2026-09-21 · **Decided by:** the `pm` agent, on
