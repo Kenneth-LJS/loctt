@@ -14294,13 +14294,20 @@ AND expose a way to **list the built-in palette** (IDs + light/dark values)
 so an agent/CLI can pick a valid palette ID — 3-surface parity.
 
 **Interim (Ken's call).** Leave the current hex text field in place until the
-full palette model lands — no throwaway intermediate picker.
+full palette model lands — no throwaway intermediate picker. *(Superseded
+by the build: the palette model landed, so the hex field is gone.)*
 
 **Applies to** every entity colour picker: labels, statuses, priorities,
 task_types, relationships, enum values, custom fields. (Extends A260, which
 shipped icon+color controls as text/simple inputs.)
 
-**Status: RECORDED, not built.**
+**Status: BUILT (2026-09-21/22), all three stages + docs.** See A280 for
+the wire shapes and the stage-by-stage detail. Contracts + core
+(`config/color.ts`, the one resolver), web (`ui/ColorPicker`,
+`ui/entityColor.ts` — the hex text field is gone), CLI + MCP (the three
+shapes on write, `loctt palette` / `list_palette_colors` for parity), and
+the label write path, which was the one entity that could read the new
+shapes but not write them.
 
 ### K102-seq · Sequencing — free to re-order, completeness is the constraint
 
@@ -14352,9 +14359,13 @@ two-destinations bug fixed (sidebar row → `/milestones/$id`, not `/list`).
 Milestones.", "Progress is shown on the Milestones view, not here.", etc.) is
 rewritten/removed.
 
-**Status: RULED, build in progress.** Supersedes the K100 bullets on the
-mandatory manage-link and the deep-link-until-extracted fallback; K100's
-shared-editor principle otherwise stands.
+**Status: BUILT (2026-09-21), committed in two sweeps.** Sidebar
+"+ New milestone/label/sprint" dialogs, the milestone sidebar/detail
+merge, a shared `SprintEditDialog`, kebab `RowActions` replacing text
+"Edit" buttons across Users / CustomFields / workflow-enum rows, sprints
+created in place, and the Settings prose links removed. Supersedes the
+K100 bullets on the mandatory manage-link and the deep-link-until-
+extracted fallback; K100's shared-editor principle otherwise stands.
 
 ### K106 · One general dropdown primitive: Combobox generalized with `searchable` + `multi`/checkbox props
 
@@ -14423,7 +14434,21 @@ other `Select` call site, and `ui/Select` SURVIVES solely for
 a real `<select>`. K106's "delete the superseded components" is therefore
 satisfied for `FilterDropdown` only, not `Select`.
 
-**Status: RECORDED, part-built — blocked on the substrate pick.**
+**Status: BUILT (2026-09-21/22), both steps.** Step 1 folded the 18
+native `<select>` call sites onto `SelectCombobox` (A281). Ken then made
+the substrate pick — portalled, and as a SEPARATE change so an a11y
+regression would be attributable — and step 2 merged everything onto
+`ui/Dropdown` with `usePortalPlacement` shared with `Menu`. The three
+a11y models were NOT flattened: single/multi keep listbox semantics,
+`menu` is a third declared mode keeping `menuitemcheckbox` + roving
+focus, because ~30 e2e assertions depend on each. `ui/Select` survives
+for `ArchivedScopeControl` alone, per Ken.
+
+*Fallout worth remembering:* portalling the panels broke every component
+that used `wrapper.contains(relatedTarget)` to mean "focus is still
+mine" — `BodyEditor` tore itself down when the block-type dropdown opened
+(TSK-59). Fixed with a `data-dropdown-panel` marker, but the blast radius
+was wider than the dropdown call sites.
 
 ### K107 · `archived` is a first-class tri-state query scope, default `false`, consistent across ALL archivable entities
 
@@ -14490,7 +14515,12 @@ or removed in favour of the flag — a call the audit informs).
 
 **Tri-state, not boolean** (Ken's explicit choice over hide/show).
 
-**Status: RULED, audit pending.** No code yet.
+**Status: BUILT (2026-09-21), all surfaces + docs.** Contracts
+`ArchivedScope`, core `applyArchivedScope` as the ONE shared filter,
+tasks via `query/list.ts`, CLI `--archived active|archived|all`, MCP's
+tri-state param, and the web `ArchivedScopeControl`. Known gap recorded:
+`SprintsView`'s board stays on a boolean toggle, since an archived-only
+board has no sensible column rendering. No code yet.
 
 ### K104 · Icon editor = Lucide icons + common-emoji list + free emoji input
 
@@ -14509,12 +14539,10 @@ an emoji-picker-style grid combining Lucide icons + emojis, where **icons can
 take the palette / free-form colour (K103) but emojis cannot** (an emoji
 carries its own colour). Get a design call before building.
 
-**Status: RECORDED, not built.** Open
-sub-question when built: does adopting Lucide replace or coexist with the
-hand-rolled `ui/Icon` set (the affordance icons — chevrons, close, kebab)?
-— resolve at build time; likely Lucide for *user-pickable entity* icons,
-keep the tiny hand-rolled set for *affordances* to avoid a heavy dep on the
-core chrome.
+**Status: BUILT (2026-09-21).** Design in A279, build detail in the
+`BUILT` block there. The sub-question resolved as predicted: Lucide for
+user-pickable ENTITY icons, the hand-rolled `ui/Icon` affordance set kept
+untouched — additive, not a migration. Measured cost +22 KB gzip.
 
 ### A275 · Diagnostics repair — two contextual buttons + a structured `fix` field, not a per-row Fix column
 
