@@ -191,13 +191,20 @@ describe("FilterBar", () => {
     await vi.waitFor(() => expect(search(router).status).toBeUndefined());
   });
 
-  // U23: Show archived moved out of the inline toolbar into the desktop
-  // "⋯" View-options menu (asserted the OLD inline checkbox before).
-  it("toggling 'Show archived' from the View-options menu sets the archived flag", async () => {
+  // U23 / K107: the archived control lives in the desktop "⋯" View-options
+  // menu. It is now the tri-state scope select (was a boolean "Show
+  // archived" checkable item, and before that an inline checkbox). Choosing
+  // "all" writes `?archived=all`; the default "active" is dropped.
+  it("choosing an archived scope from the View-options menu sets the URL scope", async () => {
     const router = await mountFilterBar();
     fireEvent.click(screen.getByTestId("view-actions-menu"));
-    fireEvent.click(await screen.findByTestId("view-actions-show-archived"));
-    await vi.waitFor(() => expect(search(router).archived).toBe(true));
+    const select = await screen.findByTestId("view-actions-archived-scope");
+    fireEvent.change(select, { target: { value: "all" } });
+    await vi.waitFor(() => expect(search(router).archived).toBe("all"));
+
+    // Back to the default hides archived AND drops the param from the URL.
+    fireEvent.change(select, { target: { value: "active" } });
+    await vi.waitFor(() => expect(search(router).archived).toBeUndefined());
   });
 
   it("'Clear all' removes every active filter", async () => {

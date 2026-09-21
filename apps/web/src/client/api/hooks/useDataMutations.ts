@@ -1,4 +1,4 @@
-import type { BrokenEntry, LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
+import type { ArchivedScope, BrokenEntry, LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
@@ -41,34 +41,42 @@ export interface CountedPage<T> {
  * ask on their own query key rather than making the sidebar pay for a
  * full scan on every page load.
  */
-export function useCountedLabels() {
+/**
+ * K107: the settings-panel reads take an archived scope, driven by the
+ * panel's tri-state control (default `active`). The scope is part of the
+ * query key so switching it refetches, and it is sent as `?archived=` so
+ * the server does the filtering (via `applyArchivedScope`) rather than the
+ * panel splitting a fetch-all client-side. The panels still show a broken
+ * entry regardless — `broken` is scope-independent server-side.
+ */
+export function useCountedLabels(scope: ArchivedScope = "active") {
   return useQuery({
-    queryKey: ["labels", "counted"],
+    queryKey: ["labels", "counted", scope],
     queryFn: ({ signal }) =>
       apiClient.get<CountedPage<LabelDef>>(
-        "/api/labels?counts=true&limit=500",
+        `/api/labels?counts=true&archived=${scope}&limit=500`,
         { signal },
       ),
   });
 }
 
-export function useCountedMilestones() {
+export function useCountedMilestones(scope: ArchivedScope = "active") {
   return useQuery({
-    queryKey: ["milestones", "counted"],
+    queryKey: ["milestones", "counted", scope],
     queryFn: ({ signal }) =>
       apiClient.get<CountedPage<MilestoneDef>>(
-        "/api/milestones?counts=true&limit=500",
+        `/api/milestones?counts=true&archived=${scope}&limit=500`,
         { signal },
       ),
   });
 }
 
-export function useCountedSprints() {
+export function useCountedSprints(scope: ArchivedScope = "active") {
   return useQuery({
-    queryKey: ["sprints", "counted"],
+    queryKey: ["sprints", "counted", scope],
     queryFn: ({ signal }) =>
       apiClient.get<CountedPage<SprintDef>>(
-        "/api/sprints?counts=true&limit=500",
+        `/api/sprints?counts=true&archived=${scope}&limit=500`,
         { signal },
       ),
   });

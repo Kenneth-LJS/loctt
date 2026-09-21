@@ -1,3 +1,4 @@
+import type { ArchivedScope } from "@loctt/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type MouseEvent, useMemo, useState } from "react";
 
@@ -13,8 +14,8 @@ import { formatWorkspaceDate, NO_TARGET_DATE } from "../dates/workspaceDate.ts";
 // milestone created from this view cannot drift from one created anywhere
 // else. Reading a settings/ component is allowed; this file does not edit it.
 import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
-import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -112,10 +113,12 @@ export function MilestonesView() {
   const info = useInfo();
   const navigate = useNavigate();
 
-  // MSL-25: archived milestones are excluded from the default view and
-  // revealed by an affordance that does **not** unarchive them —
-  // this is a local view toggle, not a write.
-  const [showArchived, setShowArchived] = useState(false);
+  // MSL-25 / K107: archived milestones are excluded from the default view
+  // and revealed by the shared tri-state control — a local view scope, not
+  // a write. This view computes progress + orphan diagnosis over the WHOLE
+  // list (archived included), so the scope is applied client-side to what
+  // is *displayed* rather than by refetching. Default `active`.
+  const [scope, setScope] = useState<ArchivedScope>("active");
 
   // K105: "+ New milestone" opens the shared create dialog in place (not
   // a form on the Settings page). `false` is the closed state; on success
@@ -145,9 +148,16 @@ export function MilestonesView() {
 
   const archivedCount = all.filter(m => m.archived === true).length;
 
+  // K107 client-side scope: `active` hides archived, `archived` keeps only
+  // archived, `all` keeps both — the same three the shared control emits
+  // and the server applies elsewhere.
   const visible = useMemo(
-    () => sortMilestones(all.filter(m => showArchived || m.archived !== true)),
-    [all, showArchived],
+    () => sortMilestones(all.filter(m => {
+      if (scope === "all") return true;
+      if (scope === "archived") return m.archived === true;
+      return m.archived !== true;
+    })),
+    [all, scope],
   );
 
   // The tracker's date, not the browser's: two users in different
@@ -194,19 +204,18 @@ export function MilestonesView() {
         }
         actions={
           <>
+            {/* MSL-25 / K107: the shared tri-state control reveals archived
+                milestones *in the view* without unarchiving them — nothing
+                here writes to `milestones.yaml`. Shown whenever there are
+                archived milestones to reveal; the count rides on the
+                "Archived" option. */}
             {archivedCount > 0 && (
-              // MSL-25: reveals archived milestones *in the view* without
-              // unarchiving them. A checkbox rather than a button so its
-              // state is announced, and nothing here writes to
-              // `milestones.yaml`. Migrated to the B1 `Checkbox` primitive.
-              <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
-                <Checkbox
-                  data-testid="milestones-show-archived"
-                  checked={showArchived}
-                  onChange={e => { setShowArchived(e.target.checked); }}
-                />
-                Show archived ({archivedCount})
-              </label>
+              <ArchivedScopeControl
+                testId="milestones-archived-scope"
+                value={scope}
+                onChange={setScope}
+                counts={{ archived: archivedCount }}
+              />
             )}
             {/* K105: create is a "+ New milestone" affordance opening the
                 shared create dialog in place, mirroring the sidebar's

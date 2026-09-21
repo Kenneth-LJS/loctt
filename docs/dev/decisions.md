@@ -2367,6 +2367,77 @@ the "delete_comment without confirm is rejected; confirm deletes" test in
 `apps/mcp/src/mcp.test.ts`. Note the doc reference and MCP_INSTRUCTIONS
 would then be ahead of the code again.
 
+### A276 · K107 web surface — shared tri-state control + how each caller picks its scope
+
+**Ticket:** K107 (web stage) · **Date:** 2026-09-21 · **Commit:** (this one)
+
+**The situation.** K107 (Ken, § 9) made `archived` a first-class
+tri-state scope (`active`/`archived`/`all`, default `active`) with the
+core primitives `applyArchivedScope` + the task list's `archivedScope`
+(stage 1, committed). The web surface was inconsistent: `/api/tasks`
+took `?archived=<bool>`, `/api/users` took `?include_archived`, and the
+config-list endpoints (views/milestones/sprints/labels/projects) filtered
+nothing; only Sprints + Users panels had a boolean "Show archived" toggle.
+
+**What had to be decided.** (a) One control shape; (b) whether the shared
+sidebar/picker data hooks fetch scoped or `all`; (c) how the settings
+panels' deep-link (`#row-<id>`) anchors keep resolving once the default
+scope stops fetching archived rows.
+
+**Options considered.**
+- Control: a segmented radiogroup vs a labelled `<select>`. Segmented is
+  more visible but hand-rolled a11y; the set is a fixed three.
+- Picker hooks: scope them (and add a scope arg everywhere) vs fetch
+  `all` (archived resolvable) and let each render filter. Scoping the
+  shared hooks risks a P-4 regression (an archived assignee's name no
+  longer resolving) at every value picker.
+- Deep-link: refetch-all-then-split (old behaviour) vs widen the fetch to
+  `all` only while a `#row-…` hash is present.
+
+**Decided.**
+- **Control:** one `ArchivedScopeControl` (a labelled `Select`, testid
+  `archived-scope`, `value: ArchivedScope`, `onChange`, optional
+  per-scope `counts`), reused on FilterBar + all six settings panels +
+  the Milestones view.
+- **Picker hooks fetch `all`:** the shared `useProjects/useLabels/
+  useMilestones/useSprints/useUsers/useViews` and every `searchX` request
+  `archived=all` (users was already `include_archived`), because they are
+  the value-resolver source. The sidebar nav already filters
+  `archived !== true` in its own render, so `all` never leaks archived
+  into the nav. Settings panels get their OWN scoped hooks
+  (`useCountedX(scope)`, `useUsersScoped/useProjectsScoped/useViewsScoped`)
+  defaulting `active`.
+- **Deep-link widen:** when a `#row-…` hash is present, the panel widens
+  its fetch to `all` so the anchor resolves. SprintsPanel reads the hash
+  reactively via `useRouterState` (its K100 test drives a memory
+  history); the other panels read `window.location.hash` once at mount
+  (`settings/deepLinkHash.ts`) to avoid a `RouterProvider` dependency in
+  their unit tests. This relaxes the old "reveal only when the target is
+  archived" guard to "reveal whenever a deep link is present" — a corner
+  case where resolvability beats hiding archived.
+
+**Why.** P-4 (an existing reference stays readable) is the load-bearing
+constraint and it lives at the pickers, not the panels; fetching `all`
+there is the least-surprising way to keep it. The `<select>` reuses a
+primitive and is natively accessible. The scope is encoded into a saved
+view's structured query for now (`active`→`archived != true`,
+`archived`→`archived = true`, `all`→no leaf) until K102 gives a view its
+own scope flag — this keeps "Save as view" reproducing what the user saw
+without pre-empting K102.
+
+**To revert.** Delete `apps/web/src/client/ui/ArchivedScopeControl.tsx`
+(+ test) and `apps/web/src/client/settings/deepLinkHash.ts`; restore the
+boolean `?archived`/`?include_archived` handling in
+`apps/web/src/server/server.ts` (the `parseArchivedScope` helper + its
+seven call sites) and the boolean `archived` in
+`apps/web/src/client/router/listSearch.ts` + `useTasks.ts`; revert the
+panel edits (Sprints/Users/Milestones/Labels/Projects/SavedViews) and
+MilestonesView to their boolean toggles; revert the `archived=all`
+switches in `sidebarData.ts`, `useTaskGraph.ts`; and the tri-state leaf
+logic in `list/buildConditions.ts`. SprintsView was deliberately left on
+its boolean `showArchived` (a board of columns has no meaningful
+"archived-only" state) — see known-gaps.
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the
@@ -17031,3 +17102,25 @@ Grammar decisions the docs did not settle (recorded here):
 **Gates.** `npx tsc --build` clean; `npx eslint` clean on all touched files; `npx vitest run --root apps/web` FULL — 222 files, 2106 tests green. No git; no integration/e2e (out of lane).
 
 **To revert.** `list/ListView.tsx`: remove the `queryFailed`/`tasks.isLoading` branches from the mobile `<ul>` and the `SkeletonCards` helper (restore the bare `items.length===0` mobile branch). `relationships/LinkPicker.tsx`: drop the `link-searching`/`link-search-error` blocks. `ui/ConfirmDialog.tsx`: drop the `error` prop + its `Callout` and the `Callout` import; `settings/SavedViewsPanel.tsx` + `LabelsPanel.tsx`: drop the `error=`/inline `Callout` error surfacing (+ the `Callout` imports) and the `.reset()` calls. `settings/ProjectsPanel.tsx`: restore the unguarded `items.map`. `settings/{Preferences,CardLayout,SidebarGroups,SidebarPins}Panel.tsx`: restore the plain `<p role="alert">"not saved"` lines. `task/TaskDetail.tsx` + `comments/CommentsPanel.tsx` + `activity/ActivityPanel.tsx`: swap `LoadingState`→`<p aria-busy>` (drop the `LoadingState` imports). `create/CreateTaskModal.tsx`: swap `Callout`→the hand-rolled danger `<div>` (drop the `Callout` import). Delete the new test files (`LinkPicker.test.tsx`, `loadingAnnouncements.test.tsx`, `CommentsPanel.loading.test.tsx`) and the added cases in the others.
+
+### A277 · K107 stage 2 (config-entity lists, CLI + MCP): `applyArchivedScope`'s constraint widened to `boolean | undefined` so it is actually callable
+
+**Ticket:** K107 stage 2 — the six config entities' LIST paths (saved views, milestones, sprints, labels, projects, users) on CLI + MCP. Lane: `apps/cli/src/commands/{views,milestone,sprint,label,project,user}.ts` + `usage.ts`; `apps/mcp/src/tools/{views,milestone,sprint,label,project,user}.ts` + `apps/mcp/src/runtime/config-list.ts`; their tests; `docs/user/{cli,mcp}/reference.md`. Plus ONE core signature line (see below). Tasks + `apps/web` untouched (web owned by another agent). · **Date:** 2026-09-21 · **Commit:** (uncommitted; Ken integrates) · **Base:** bde77972 (K107 stage 1).
+
+**The situation.** Stage 1 shipped core's `applyArchivedScope<T extends { readonly archived?: boolean }>(items, scope)` as the one shared filter. Wiring it into the six config-list surfaces, EVERY call site failed to compile: the repo builds with `exactOptionalPropertyTypes: true`, under which a config entity typed `archived?: boolean | undefined` is not assignable to a constraint of `archived?: boolean` ("Type 'undefined' is not assignable to type 'boolean'"). The same errors were already present at HEAD in `apps/web/src/server/server.ts`, which calls the function the same way — so the exported function was uncallable by any real surface (CLI, MCP, and web all store `archived` as `boolean | undefined`).
+
+**What had to be decided.** Fix the type at the call sites (cast each array), or widen the core constraint by one word — a core touch the task said to flag before making?
+
+**Options considered.**
+- **Cast at each call site** (`as readonly {archived?: boolean}[]`). Keeps core frozen, but scatters an unsafe cast across ~13 call sites and re-introduces exactly the per-surface drift K107 exists to remove; the cast also loses the concrete element type, breaking downstream `.id`/`.name` access.
+- **Widen the constraint to `{ readonly archived?: boolean | undefined }`.** One word in core. TypeScript itself suggests it ("Consider adding 'undefined' to the types of the target's properties"). Runtime behaviour is identical; the generic `T` stays concrete so callers get their own element type back.
+
+**Decided.** Widen the core constraint by adding `| undefined`, and record it here as a flagged core touch rather than stopping.
+
+**Why.** It is not a new core function (the task's stop-trigger) — it is a one-word correction to a stage-1 signature that was unusable under the repo's own compiler settings; a core export no surface can call is unfinished, not done (CLAUDE.md). Casting at 13 sites would be the drift K107 removes. Behaviour-preserving, so nothing downstream changes at runtime.
+
+**The behaviour change (K107's point).** Default scope is now `active` (archived HIDDEN) on every config-entity list. Previously: CLI `milestone/sprint/label/project/user list` took `--all` to reveal archived and hid by default via a hand-rolled `.filter`; but MCP `list_labels`/`list_projects` and both `list_views` (CLI + MCP) and `list_milestones`/`list_sprints` (MCP) SHOWED archived unconditionally, and MCP `list_users` used a boolean `include_archived`. Now all six default to `active` and take the tri-state scope. Surfaces that previously showed archived now hide it by default: **MCP** `list_labels`, `list_projects`, `list_milestones`, `list_sprints`, `list_views`; **CLI** `views list`. CLI adds `--archived active|archived|all` (bare `--archived`=all; `--all` kept as a deprecated alias); MCP adds `archived: z.enum([...])` on the shared `configListInputSchema` (so labels/milestones/sprints/projects/users inherit it) and a per-tool copy on `list_views` (which does not use the shared schema).
+
+**MCP param rename.** `list_users`'s boolean `include_archived` is REPLACED by the tri-state `archived`. This is a breaking tool-param rename (an agent passing `include_archived: true` now gets the `active` default instead of all archived; the equivalent is `archived: "all"`). It regenerates the MCP schema-contract snapshot (`tests/e2e/11-mcp-schema-contract.test.ts` — NOT regenerated here; Ken regenerates).
+
+**To revert.** Core: `packages/core/src/config/archived-scope.ts` — narrow the constraint back to `{ readonly archived?: boolean }` (and every call site breaks again). MCP: `apps/mcp/src/runtime/config-list.ts` — drop the `archived` key from `configListInputSchema` and the `getArchivedScope` helper; `tools/{milestone,sprint,label,project,user}.ts` — drop the `applyArchivedScope(...)` line (restore `cfg.<entity>` / hand-rolled filter) and the `getArchivedScope` import; `tools/user.ts` — restore the `include_archived` param + `.filter`; `tools/views.ts` — drop the `archived` param + `applyArchivedScope`. CLI: `commands/{milestone,sprint,label,project,user,views}.ts` — restore `hasFlag(args,"--all")` + the hand-rolled `.filter` (and drop `--archived` from the ACCEPTED_FLAGS lists that gained it: sprint/label/project/user/views); `usage.ts` — restore the `list --all: include archived …` lines. Tests: delete `apps/mcp/src/tools/archived-scope.test.ts`, the "config-entity list archived scope (K107)" block in `apps/cli/src/cli.test.ts`, and revert the `list_views` default-hides assertion in `apps/mcp/src/tools/views.test.ts` (it was updated because it asserted the old show-all default). Docs: the six list rows in `docs/user/cli/reference.md` and the config-list rows + shared-`archived` note in `docs/user/mcp/reference.md`.

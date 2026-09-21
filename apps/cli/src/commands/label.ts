@@ -1,4 +1,5 @@
 import {
+  applyArchivedScope,
   archiveLabel,
   createLabel,
   deleteLabel,
@@ -10,7 +11,7 @@ import {
   unarchiveLabel,
 } from "@loctt/core";
 
-import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, hasFlag, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
@@ -31,7 +32,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--color", "--filter", "--ids", "--limit", "--name", "--offset", "--remap-to", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--color", "--filter", "--ids", "--limit", "--name", "--offset", "--remap-to", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -39,12 +40,14 @@ export async function run(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   switch (sub) {
     case "list": {
-      const includeArchived = hasFlag(args, "--all");
+      const scope = parseArchivedScope(args);
       const showIds = hasFlag(args, "--ids");
       const cfg = await loadLabelsConfig(locttDir);
-      // K90 order (matching the web `handleListLabels`): archived filter,
-      // then name filter, then page.
-      const visible = cfg.labels.filter(l => includeArchived || l.archived !== true);
+      // K90/K107 order (matching the web `handleListLabels`): archived
+      // scope, then name filter, then page. Default scope `active` hides
+      // archived; `--archived archived|all` (and the deprecated `--all`
+      // alias) widen it.
+      const visible = applyArchivedScope(cfg.labels, scope);
       const matched = filterByName(visible, getFilterArg(args));
       const page = pageConfigList(matched, getConfigPagination(args));
       for (const l of page.items) {

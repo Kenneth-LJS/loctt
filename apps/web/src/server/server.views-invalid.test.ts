@@ -148,8 +148,12 @@ describe("saved-view delete and unarchive", () => {
       body: JSON.stringify({ name, query: "archived != true" }),
     })).json()) as { id: string };
 
+  // K107: `/api/views` defaults to the `active` scope, so an archived view
+  // is hidden from the default list. These tests verify the archive/
+  // unarchive lifecycle (the entry stays in the file, runnable by id), so
+  // they read with `archived=all` to see archived entries too.
   const listRaw = async () =>
-    (await (await fetch(`${base}/api/views`)).json()) as {
+    (await (await fetch(`${base}/api/views?archived=all`)).json()) as {
       queries: readonly { id: string; archived?: boolean }[];
     };
 

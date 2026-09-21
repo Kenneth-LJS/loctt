@@ -1,5 +1,6 @@
-import type { QuerySort } from "@loctt/contracts";
+import type { ArchivedScope, QuerySort } from "@loctt/contracts";
 import {
+  applyArchivedScope,
   archiveView,
   createView,
   deleteView,
@@ -9,7 +10,7 @@ import {
   unarchiveView,
 } from "@loctt/core";
 
-import { getArg, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -19,7 +20,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * sibling's valid flag (the PRU-C9 rule — an unrecognised flag is a
  * mistype, not a silent no-op).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--query", "--name", "--sort", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--query", "--name", "--sort", "--yes"];
 
 /**
  * Parses a `--sort` value into the `QuerySort[]` a saved view stores.
@@ -75,7 +76,11 @@ export async function run(args: string[], root: string): Promise<void> {
   // Bare `loctt views` keeps its historical meaning: list. `list` is
   // also accepted explicitly for symmetry with the entity commands.
   if (sub === undefined || sub === "list") {
-    await list(locttDir);
+    // K107: the archived scope applies to the list. Default `active`
+    // hides archived views; `--archived archived|all` (and the deprecated
+    // `--all` alias) widen it. Before K107 the list always showed archived
+    // views (marked ` (archived)`).
+    await list(locttDir, parseArchivedScope(args));
     return;
   }
 
@@ -183,14 +188,18 @@ export async function run(args: string[], root: string): Promise<void> {
  * `<name>  <query>` plus a `[sort: ...]` suffix when the view declares
  * one and an ` (archived)` marker when hidden from default lists.
  */
-async function list(locttDir: string): Promise<void> {
+async function list(locttDir: string, scope: ArchivedScope): Promise<void> {
   const { queriesConfig } = await loadOptionalConfigs(locttDir);
   const broken = queriesConfig?.broken ?? [];
   if (!queriesConfig || (queriesConfig.queries.length === 0 && broken.length === 0)) {
     console.log("No saved views.");
     return;
   }
-  for (const v of queriesConfig.queries) {
+  // K107: hide archived views by default. The scope applies only to the
+  // well-formed queries; a broken entry has no reliable `archived` field
+  // and is always listed below (a degrade the user must see).
+  const scoped = applyArchivedScope(queriesConfig.queries, scope);
+  for (const v of scoped) {
     const sortPart = v.sort && v.sort.length > 0
       ? `  [sort: ${v.sort.map(s => `${s.field} ${s.direction}`).join(", ")}]`
       : "";

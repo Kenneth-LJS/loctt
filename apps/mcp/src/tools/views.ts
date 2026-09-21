@@ -6,6 +6,7 @@
  */
 
 import {
+  applyArchivedScope,
   archiveView,
   createView,
   deleteView,
@@ -18,6 +19,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { getArchivedScope } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { errorResult, text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -35,9 +37,12 @@ const SortSchema = z.array(z.object({
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_views",
-    description: "List saved views from queries.yaml. Returns JSON [{id, name, query, conditions, sort?, archived?}]. `query` is the DSL string (regenerated, spacing-normalized) and `conditions` is its structured form — the source of truth the query is derived from. Address a view by `id`, not `name` — names are not unique, and running a view by an ambiguous name fails. Archived views are returned with `archived: true` and are still runnable by id.",
-    inputSchema: {},
-    handler: async ({ locttDir }) => {
+    description: "List saved views from queries.yaml. Returns JSON [{id, name, query, conditions, sort?, archived?}]. `query` is the DSL string (regenerated, spacing-normalized) and `conditions` is its structured form — the source of truth the query is derived from. Address a view by `id`, not `name` — names are not unique, and running a view by an ambiguous name fails. By default archived views are hidden (K107); pass `archived: archived` for only archived or `archived: all` for both. Archived views carry `archived: true` and are still runnable by id.",
+    inputSchema: {
+      archived: z.enum(["active", "archived", "all"]).optional()
+        .describe("Archived scope (K107): `active` (default) hides archived, `archived` shows only archived, `all` shows both. Broken views are always listed."),
+    },
+    handler: async ({ locttDir }, args) => {
       let config;
       try {
         config = await loadQueriesConfig(locttDir);
@@ -66,7 +71,12 @@ export const TOOLS: readonly ToolDef[] = [
       // down the whole list. An agent must see the view exists and is
       // broken — silently omitting it would let the agent recreate it
       // over the file that still holds it.
-      const good = config.queries.map(q => ({
+      // K107: hide archived views by default. The scope applies only to
+      // the well-formed queries; a broken entry has no reliable `archived`
+      // field, so it is always surfaced below (a degrade the agent must
+      // see, not filter out).
+      const scoped = applyArchivedScope(config.queries, getArchivedScope(args));
+      const good = scoped.map(q => ({
         id: q.id,
         name: q.name,
         query: q.query,

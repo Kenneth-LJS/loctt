@@ -1,4 +1,4 @@
-import type { TaskFrontmatterPublic } from "@loctt/contracts";
+import type { ArchivedScope, TaskFrontmatterPublic } from "@loctt/contracts";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import type { WireHealth } from "../../health/fieldHealth.ts";
@@ -133,7 +133,11 @@ export interface TasksQueryParams extends TasksFilters {
   readonly dir?: "asc" | "desc";
   readonly page?: number;
   readonly limit?: number;
-  readonly archived?: boolean;
+  /**
+   * K107: tri-state archived scope. Omitted means the server default
+   * (`active`, hide archived). Only `archived`/`all` change the request.
+   */
+  readonly archived?: ArchivedScope;
   /** LST-40/MSL-7: match ALL selected labels (AND) vs ANY (OR, default). */
   readonly labels_match?: "all" | "any";
 }
@@ -170,7 +174,11 @@ export function tasksParamsFromSearch(search: Partial<ListSearch>): TasksQueryPa
     ...(search.dir !== undefined ? { dir: search.dir } : {}),
     ...(search.page !== undefined ? { page: search.page } : {}),
     ...(search.limit !== undefined ? { limit: search.limit } : {}),
-    ...(search.archived === true ? { archived: true } : {}),
+    // K107: only carry a non-default scope; `active` is the server default
+    // and stays out of the params (and the URL) to keep both clean.
+    ...(search.archived !== undefined && search.archived !== "active"
+      ? { archived: search.archived }
+      : {}),
     ...(search.labels_match !== undefined ? { labels_match: search.labels_match } : {}),
   };
 }
@@ -196,7 +204,12 @@ export function buildQueryString(params: TasksQueryParams & { offset?: number })
   if (params.view !== undefined) sp.set("view", params.view);
   if (params.sort !== undefined) sp.set("sort", params.sort);
   if (params.dir !== undefined) sp.set("dir", params.dir);
-  if (params.archived === true) sp.set("archived", "true");
+  // K107: send the tri-state scope only when it is non-default. `active`
+  // is the server default, so omit it — both to keep the URL tidy and so
+  // an export link matches the list's default request byte for byte.
+  if (params.archived !== undefined && params.archived !== "active") {
+    sp.set("archived", params.archived);
+  }
   // LST-40/MSL-7: only send `labels_match=all` (the AND opt-in); `any` is
   // the server default, so omit it to keep URLs and export links tidy.
   if (params.labels_match === "all") sp.set("labels_match", "all");

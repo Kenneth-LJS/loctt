@@ -1,4 +1,5 @@
 import {
+  applyArchivedScope,
   archiveMilestone,
   createMilestone,
   deleteMilestone,
@@ -14,7 +15,7 @@ import {
   unarchiveMilestone,
 } from "@loctt/core";
 
-import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, hasFlag, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
@@ -42,14 +43,16 @@ export async function run(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   switch (sub) {
     case "list": {
-      const includeArchived = hasFlag(args, "--all");
+      const scope = parseArchivedScope(args);
       const showIds = hasFlag(args, "--ids");
       const showProgress = hasFlag(args, "--progress");
       const cfg = await loadMilestonesConfig(locttDir);
-      // K90 order (matching the web `handleListMilestones`): archived
-      // filter, then name filter, then page. Progress is computed over
-      // the paged window only, so a page's `--progress` scan is bounded.
-      const visible = cfg.milestones.filter(m => includeArchived || m.archived !== true);
+      // K90/K107 order (matching the web `handleListMilestones`): archived
+      // scope, then name filter, then page. Progress is computed over the
+      // paged window only, so a page's `--progress` scan is bounded.
+      // Default scope `active` hides archived; `--archived archived|all`
+      // (and the deprecated `--all` alias) widen it.
+      const visible = applyArchivedScope(cfg.milestones, scope);
       const matched = filterByName(visible, getFilterArg(args));
       const page = pageConfigList(matched, getConfigPagination(args));
       const shown = page.items;

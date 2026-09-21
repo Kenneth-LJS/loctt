@@ -13,6 +13,7 @@
  */
 
 import {
+  applyArchivedScope,
   archiveProject,
   createProject,
   deleteProject,
@@ -26,7 +27,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
-import { configListInputSchema, getQ, pageConfigList } from "../runtime/config-list.js";
+import { configListInputSchema, getArchivedScope, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -36,14 +37,18 @@ export const TOOLS: readonly ToolDef[] = [
     name: "list_projects",
     description:
       "List projects defined in projects.yaml. Each project carries an internal id (ULID), a display name, and an immutable task-key prefix. The workspace default is identified by id. "
+      + "By default archived projects are hidden (K107); pass `archived: archived` for only archived or `archived: all` for both. "
       + "K90: pass `q` for a case-insensitive search over name/slug/prefix, and `limit`/`offset` to page (default 100, cap 1000).",
     inputSchema: { ...configListInputSchema },
     handler: async ({ locttDir }, args) => {
       const cfg = await loadProjectsConfig(locttDir);
-      // K90 order (matching the web `handleListProjects`): name/slug/
-      // prefix filter, then page. `default` stays the workspace fact,
-      // computed over the full config, not the paged window.
-      const projects = pageConfigList(filterProjects(cfg.projects, getQ(args)), args);
+      // K90/K107 order (matching the web `handleListProjects`): archived
+      // scope, then name/slug/prefix filter, then page. Default `active`
+      // hides archived projects — before K107 this list showed them always.
+      // `default` stays the workspace fact, computed over the full config,
+      // not the paged window.
+      const scoped = applyArchivedScope(cfg.projects, getArchivedScope(args));
+      const projects = pageConfigList(filterProjects(scoped, getQ(args)), args);
       return text(JSON.stringify({
         projects,
         default: cfg.default ?? null,

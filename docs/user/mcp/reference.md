@@ -131,14 +131,14 @@ tools.
 | `get_workflow_config` | The valid statuses, priorities, task types, relationships, and custom fields, each with its key and label. Call before writing any enum field. |
 | `get_workflow_key_usage` | How many tasks reference each workflow key. Call before proposing a deletion from the workflow config. |
 | `get_calendar` | Timezone, working days, and holidays (read-only; configured in the UI). |
-| `list_views` | Saved views (address a view by id — names are not unique). Returns each view's structured `conditions` alongside its `query`. |
+| `list_views` | Saved views (address a view by id — names are not unique). Returns each view's structured `conditions` alongside its `query`. Takes `archived` (`active` default hides archived, `archived` = only archived, `all` = both); broken views are always returned. |
 
 ### Tasks
 
 | Tool | Purpose | Key params |
 |---|---|---|
 | `get_task` | One task, optionally with body and a `body_token` for safe writes. | `ref`, `include_body` (default true) |
-| `list_tasks` | Query/filter tasks. | `query`, `view`, `project`, `sort`, `direction`, `limit`, `offset`, `include_archived` |
+| `list_tasks` | Query/filter tasks. | `query`, `view`, `project`, `sort`, `direction`, `limit`, `offset`, `archived` (`active` default / `archived` / `all`) |
 | `export_tasks` | Export matching tasks as CSV or JSON (a report, not a backup). | `format`, `query`, `view`, `project`, `columns`, `include_body`, `include_archived` |
 | `create_task` | Create a task. | `title`, `project`, `status`, `priority`, `task_type`, `assignee`, `reporter`, `due_date`, `start_date`, `estimate`, `milestone`, `sprint`, `labels`, `body`, `parent` |
 | `update_task` | Set one writable field. | `ref`, `field`, `value` |
@@ -214,21 +214,27 @@ verbatim copy of the input. `list_views` returns both `query` and
 ### Labels, milestones, sprints
 
 Each family follows the same shape: `list_*` (with `q`, `limit`, `offset`,
-and `progress` for milestones/sprints), `create_*`, `edit_*`,
+the tri-state `archived` scope, and `progress` for milestones/sprints),
+`create_*`, `edit_*`,
 `archive_*` / `unarchive_*`, and `delete_*` (which requires `confirm` and
 takes an optional `remap_to`).
 
+Every config-entity list (`list_labels`, `list_milestones`, `list_sprints`,
+`list_projects`, `list_users`, and `list_views`) takes the same tri-state
+`archived` param: `active` (the default) hides archived entities,
+`archived` returns only archived, and `all` returns both.
+
 | Family | List | Create key params | Notable |
 |---|---|---|---|
-| Labels | `list_labels` | `name`, `color` | `delete_label` remaps or drops the label from every task. |
-| Milestones | `list_milestones` | `name`, `target_date` | `list_milestones({progress:true})` adds done/total per milestone. |
-| Sprints | `list_sprints` | `name`, `start_date`, `end_date`, `state`, `goal` | `get_sprint_burndown` returns the burndown series. |
+| Labels | `list_labels` | `name`, `color` | `list_labels` takes `q`, `limit`, `offset`, `archived`. `delete_label` remaps or drops the label from every task. |
+| Milestones | `list_milestones` | `name`, `target_date` | `list_milestones` takes `q`, `limit`, `offset`, `archived`, `progress`; `{progress:true}` adds done/total per milestone. |
+| Sprints | `list_sprints` | `name`, `start_date`, `end_date`, `state`, `goal` | `list_sprints` takes `q`, `limit`, `offset`, `archived`, `progress`. `get_sprint_burndown` returns the burndown series. |
 
 ### Projects
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `list_projects` | Projects, with the workspace default marked. | `q`, `limit`, `offset` |
+| `list_projects` | Projects, with the workspace default marked. | `q`, `limit`, `offset`, `archived` |
 | `create_project` | New project (unique prefix and slug). | `name`, `prefix`, `slug`, `make_default` |
 | `edit_project` | Rename a project. | `project`, `name` |
 | `set_project_prefix` | Change the prefix, renaming every task's key. Requires `confirm`. | `project`, `prefix`, `confirm` |
@@ -240,7 +246,7 @@ takes an optional `remap_to`).
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `list_users` | Registered users (current user marked). | `q`, `limit`, `offset`, `include_archived` |
+| `list_users` | Registered users (current user marked). | `q`, `limit`, `offset`, `archived` |
 | `get_current_user` | The active user's profile. | — |
 | `switch_user` | Change the active user. | `ref` |
 | `create_user` / `edit_user` | Create or edit a user (avatars via CLI/UI only). | `name`, `email`, `timezone`, … |

@@ -467,9 +467,14 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
       const urlStr = String(url);
       if (urlStr.includes("/api/user/current")) return Promise.resolve(jsonResponse(BOB));
       if (urlStr.includes("/api/users")) {
-        return Promise.resolve(jsonResponse({
-          items: [ALICE, BOB, CAROL_ARCHIVED], total: 3, offset: 0, limit: 100,
-        }));
+        // K107: honour the `?archived` scope like the endpoint, so the
+        // panel's default `active` scope hides the archived user.
+        const scope = new URL(urlStr, "http://x").searchParams.get("archived") ?? "active";
+        const all: { id: string; archived?: boolean }[] = [ALICE, BOB, CAROL_ARCHIVED];
+        const items = all.filter(u =>
+          scope === "all" ? true : scope === "archived" ? u.archived === true : u.archived !== true,
+        );
+        return Promise.resolve(jsonResponse({ items, total: items.length, offset: 0, limit: 100 }));
       }
       return Promise.resolve(jsonResponse({}));
     });
@@ -488,14 +493,18 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
     expect(screen.getByTestId("user-delete-u-alice")).toBeTruthy();
   });
 
-  it("hides archived users until the toggle is on (U25)", async () => {
+  // U25 / K107: the U25 "Show archived" checkbox is replaced by the shared
+  // tri-state scope control, and the split is now server-side. Default
+  // `active` hides the archived user; choosing "all" refetches and reveals
+  // it. (This test asserted the old boolean toggle + client-side split.)
+  it("hides archived users until the scope control reveals them (U25)", async () => {
     stubWithArchived();
     render(<UsersPanel />, { wrapper: wrapper() });
     // Active users show; the archived one does not, by default.
     await screen.findByTestId("user-row-u-alice");
     expect(screen.queryByTestId("user-row-u-carol")).toBeNull();
-    // Toggling reveals it.
-    fireEvent.click(screen.getByTestId("users-show-archived"));
+    // Choosing "all" reveals it.
+    fireEvent.change(screen.getByTestId("users-archived-scope"), { target: { value: "all" } });
     expect(await screen.findByTestId("user-row-u-carol")).toBeTruthy();
   });
 

@@ -30,21 +30,30 @@ Commands:
   info
   doctor [--rebuild-index]         Run diagnostic checks; with --rebuild-index, rebuild
                                    the key-lookup cache after out-of-band frontmatter edits
-  views                            List saved views from queries.yaml
+  views [--archived <active|archived|all>]
+                                   List saved views from queries.yaml
+                                   --archived: active (default, hides archived)
+                                   | archived (only) | all (both)
   schema                           Show the workflow config (statuses, priorities, etc.)
   project <list|create|edit|archive|unarchive|delete|set-default> ...
-                                   list --all: include archived projects
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (remap_to required if tasks exist; use 'archive' for soft)
   user <list|current|switch|create|edit|archive|unarchive|delete|settings> ...
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (use 'archive' for the reversible alternative)
   label <list|create|edit|archive|unarchive|delete> ...
-                                   list --all: include archived labels
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (drops key from every task; use 'archive' for soft)
   milestone <list|create|edit|archive|unarchive|delete> ...
-                                   list --all: include archived milestones
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (clears milestone field on tasks; use 'archive' for soft)
   sprint <list|create|edit|archive|unarchive|delete|burndown> ...
-                                   list --all: include archived sprints
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (clears sprint field on tasks; use 'archive' for soft)
                                    burndown <key> [--format <table|json>]
   calendar show                   Print the calendar config (timezone, working days, holidays)

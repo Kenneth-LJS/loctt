@@ -1,4 +1,4 @@
-import type { WorkflowConfig } from "@loctt/contracts";
+import type { ArchivedScope, WorkflowConfig } from "@loctt/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -14,8 +14,8 @@ import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import type { ListSearch } from "../router/listSearch.ts";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
-import { Checkbox } from "../ui/Checkbox.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { ICON } from "../ui/icons.ts";
@@ -152,6 +152,21 @@ export function FilterBar({
   const openEditorRequested = (search as { edit?: unknown }).edit === true;
   const [advanced, setAdvanced] = useState(openEditorRequested);
   const [draft, setDraft] = useState(query);
+
+  // K107: the archived scope lives in the URL (`?archived=…`). Absent /
+  // unknown falls back to the default `active`. Writing it back drops the
+  // param entirely for the default so the URL stays clean, and resets the
+  // page since a scope change changes the result set.
+  const archivedScope: ArchivedScope = search.archived ?? "active";
+  const setArchivedScope = (scope: ArchivedScope) => {
+    void navigate({
+      search: prev => ({
+        ...prev,
+        archived: scope === "active" ? undefined : scope,
+        page: undefined,
+      }),
+    });
+  };
 
   const projects = useProjects();
   const users = useUsers();
@@ -670,33 +685,20 @@ export function FilterBar({
             >
               {({ close }) => (
                 <>
-                  {/* Show archived: a checkable item mirroring the same
-                      navigate() the mobile sheet's checkbox writes. Kept
-                      open on toggle so the check state is visible. */}
-                  <button
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={search.archived === true}
-                    data-testid="view-actions-show-archived"
-                    onClick={() =>
-                      void navigate({
-                        search: prev => ({
-                          ...prev,
-                          archived: search.archived === true ? undefined : true,
-                          page: undefined,
-                        }),
-                      })
-                    }
-                    className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
-                  >
-                    {/* The check is the checked affordance; a fixed-width
-                        slot keeps the label aligned whether it shows or
-                        not. `aria-checked` above already announces state. */}
-                    <span aria-hidden="true" className="grid w-4 place-items-center">
-                      {search.archived === true ? <Icon name="check" size={14} /> : null}
-                    </span>
-                    Show archived
-                  </button>
+                  {/* K107: the tri-state archived scope replaces the old
+                      "Show archived" checkable item. It writes the same URL
+                      param the mobile sheet's control writes. The select is
+                      a menu descendant, so interacting with it does not
+                      trip the menu's outside-click close — the scope stays
+                      changeable with the menu open. */}
+                  <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+                    <ArchivedScopeControl
+                      label="Archived"
+                      testId="view-actions-archived-scope"
+                      value={archivedScope}
+                      onChange={setArchivedScope}
+                    />
+                  </div>
                   {/* Export keeps its own menu (CSV/JSON, failure + skipped
                       status). Its popover is an inline descendant of this
                       panel, so the parent's outside-click treats a click on
@@ -761,17 +763,17 @@ export function FilterBar({
             <Button variant="ghost" size="md" testId="advanced-open-mobile" onClick={openAdvanced}>
               Advanced query…
             </Button>
-            <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-[0.9286rem] text-text-secondary">
-              <Checkbox
-                checked={search.archived === true}
-                onChange={e =>
-                  void navigate({
-                    search: prev => ({ ...prev, archived: e.target.checked ? true : undefined, page: undefined }),
-                  })
-                }
+            {/* K107: tri-state archived scope, replacing the mobile
+                "Show archived" checkbox. Writes the same URL param. */}
+            <div className="mt-2">
+              <ArchivedScopeControl
+                label="Archived"
+                size="md"
+                testId="filters-sheet-archived-scope"
+                value={archivedScope}
+                onChange={setArchivedScope}
               />
-              Show archived
-            </label>
+            </div>
             {showSaveView && (
               <Button size="md" onClick={() => { setFilterSheetOpen(false); setSaveOpen(true); }}>
                 <span aria-hidden="true">{ICON.star}</span>

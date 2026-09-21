@@ -1593,3 +1593,155 @@ describe("project set-prefix", () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("set-prefix"));
   });
 });
+
+/**
+ * @verifies K107 — the `--archived <active|archived|all>` scope on the
+ * config-entity list commands (milestone, sprint, label, project, user,
+ * views).
+ *
+ * Default (no flag) is `active` and HIDES archived — a behavior change:
+ * before K107 these lists took `--all` to reveal archived and the views
+ * list always showed archived inline. `--archived archived` shows only
+ * archived; `--archived all` (and the deprecated `--all` alias) shows
+ * both. Filtering goes through core's `applyArchivedScope` and the flag
+ * through `parseArchivedScope`. Driven through `main()` — the same path a
+ * user's shell hits.
+ */
+describe("config-entity list archived scope (K107)", () => {
+  let root: string;
+  let originalArgv: string[];
+  let logSpy: MockInstance;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-k107-"));
+    originalArgv = process.argv;
+    vi.spyOn(process, "cwd").mockImplementation(() => root);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    process.exitCode = undefined;
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    process.argv = originalArgv;
+    vi.restoreAllMocks();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const run = async (...argv: string[]): Promise<string> => {
+    logSpy.mockClear();
+    process.argv = ["node", "loctt", ...argv];
+    await main();
+    return logSpy.mock.calls.map(c => String(c[0] ?? "")).join("\n");
+  };
+
+  // entity -> [create argv builder, archive argv builder, list argv]
+  const cases: Array<{
+    label: string;
+    create: (name: string) => string[];
+    archive: (name: string) => string[];
+    list: string[];
+  }> = [
+    {
+      label: "milestone",
+      create: n => ["milestone", "create", n],
+      archive: n => ["milestone", "archive", n],
+      list: ["milestone", "list"],
+    },
+    {
+      label: "sprint",
+      create: n => ["sprint", "create", n, "--start", "2026-01-01", "--end", "2026-01-14"],
+      archive: n => ["sprint", "archive", n],
+      list: ["sprint", "list"],
+    },
+    {
+      label: "label",
+      create: n => ["label", "create", n],
+      archive: n => ["label", "archive", n],
+      list: ["label", "list"],
+    },
+    {
+      label: "user",
+      // A freshly created user is not the active user, so it can be archived.
+      create: n => ["user", "create", n],
+      archive: n => ["user", "archive", n],
+      list: ["user", "list"],
+    },
+  ];
+
+  for (const c of cases) {
+    it(`${c.label} list defaults to active and honors --archived archived|all|--all`, async () => {
+      await run(...c.create("KeepMe"));
+      await run(...c.create("GoneAway"));
+      await run(...c.archive("GoneAway"));
+
+      // Default: archived hidden.
+      const active = await run(...c.list);
+      expect(active).toContain("KeepMe");
+      expect(active).not.toContain("GoneAway");
+
+      // Only archived.
+      const onlyArchived = await run(...c.list, "--archived", "archived");
+      expect(onlyArchived).toContain("GoneAway");
+      expect(onlyArchived).not.toContain("KeepMe");
+
+      // Both, via the tri-state value.
+      const all = await run(...c.list, "--archived", "all");
+      expect(all).toContain("KeepMe");
+      expect(all).toContain("GoneAway");
+
+      // Both, via the deprecated --all alias.
+      const alias = await run(...c.list, "--all");
+      expect(alias).toContain("KeepMe");
+      expect(alias).toContain("GoneAway");
+    });
+  }
+
+  it("project list defaults to active and honors --archived archived|all|--all", async () => {
+    // initLoctt seeds the "Tasks" project; add + archive a second one.
+    await run("project", "create", "KeepProj", "--prefix", "KEP");
+    await run("project", "create", "GoneProj", "--prefix", "GON");
+    await run("project", "archive", "GoneProj");
+
+    const active = await run("project", "list");
+    expect(active).toContain("KeepProj");
+    expect(active).not.toContain("GoneProj");
+
+    const onlyArchived = await run("project", "list", "--archived", "archived");
+    expect(onlyArchived).toContain("GoneProj");
+    expect(onlyArchived).not.toContain("KeepProj");
+
+    const all = await run("project", "list", "--archived", "all");
+    expect(all).toContain("KeepProj");
+    expect(all).toContain("GoneProj");
+
+    const alias = await run("project", "list", "--all");
+    expect(alias).toContain("GoneProj");
+  });
+
+  it("views list defaults to active and honors --archived archived|all", async () => {
+    await run("views", "create", "keep-view", "--query", "status = backlog");
+    await run("views", "create", "gone-view", "--query", "status = done");
+    await run("views", "archive", "gone-view");
+
+    const active = await run("views", "list");
+    expect(active).toContain("keep-view");
+    expect(active).not.toContain("gone-view");
+
+    const onlyArchived = await run("views", "list", "--archived", "archived");
+    expect(onlyArchived).toContain("gone-view");
+    expect(onlyArchived).not.toContain("keep-view");
+
+    const all = await run("views", "list", "--archived", "all");
+    expect(all).toContain("keep-view");
+    expect(all).toContain("gone-view");
+  });
+
+  it("rejects an invalid --archived value with a usage error", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.argv = ["node", "loctt", "label", "list", "--archived", "activ"];
+    await main();
+    expect(process.exitCode).toBe(2);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("invalid value for --archived"));
+  });
+});

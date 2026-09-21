@@ -53,8 +53,12 @@ describe("DELETE /api/projects/:id", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  async function listProjects(): Promise<{ id: string; name: string; archived?: boolean }[]> {
-    const res = await fetch(`${base}/api/projects`, { headers });
+  async function listProjects(
+    scope: "active" | "archived" | "all" = "active",
+  ): Promise<{ id: string; name: string; archived?: boolean }[]> {
+    // K107: the list defaults to the `active` scope, so a caller wanting to
+    // see archived rows must ask for `all` (or `archived`).
+    const res = await fetch(`${base}/api/projects?archived=${scope}`, { headers });
     const body = await res.json() as { items: { id: string; name: string; archived?: boolean }[] };
     return body.items;
   }
@@ -98,9 +102,13 @@ describe("DELETE /api/projects/:id", () => {
     // Archive is a legitimate outcome — it is what the case asks for
     // when `hard` is absent. Asserted so the two paths are told apart:
     // without this, a route that always hard-deleted would also pass
-    // the test above.
-    const found = (await listProjects()).find(p => p.id === id);
-    expect(found, "an archived project should still be listed").toBeDefined();
-    expect(found?.archived).toBe(true);
+    // the test above. K107: the archived project is now hidden from the
+    // DEFAULT (`active`) list, so this lists with `archived=all` to prove
+    // it was archived (still in the file) rather than hard-deleted.
+    const foundInAll = (await listProjects("all")).find(p => p.id === id);
+    expect(foundInAll, "an archived project should still be listed under scope=all").toBeDefined();
+    expect(foundInAll?.archived).toBe(true);
+    // And it is absent from the default active list — the K107 default.
+    expect((await listProjects()).find(p => p.id === id)).toBeUndefined();
   });
 });
