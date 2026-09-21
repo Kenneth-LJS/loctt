@@ -13708,6 +13708,164 @@ basis. (This closes the F1 line of work: the A225 attempt to address it via
 attach-from-the-project, and the underlying concern is now a decision, not an
 open gap.)
 
+### K102 · A View is an ordered list of Filters (simple + advanced), stored as authored — never merged into one query
+
+**Ken's ruling (2026-09-21).** Supersedes the A217/A228 single-`conditions`-tree
+model for saved views.
+
+**The model.** A **View** is a collection of **Filters**. A **Filter** is either
+a *simple filter* (field + operator + value(s), e.g. `status = in_progress`) or
+an *advanced filter* (a raw DSL query the human typed). A view holds an **ordered
+list** of filters, may mix both kinds, and may hold **multiple** advanced filters.
+**Semantics: ALL filters AND together** — a row shows only if every filter passes.
+
+**Storage rule (the load-bearing part).** Persist the filters **as authored** —
+order preserved, each filter kept in its own form. Do **not** merge them into a
+single DSL string, do **not** reorder, do **not** transform. Why: once merged you
+cannot tell which part the human typed as DSL (to keep verbatim) from what came
+from simple filters (to keep editable). Ken: *"if i take a saved view and i want
+to modify, i don't want to have to take out the DSL query … then risk breaking
+something in the view."* This extends K98's "don't turn human filters into ugly
+queries" to the storage layer, and replaces the derived-`query` cache that the
+FilterBar chip + edit dialog currently surface.
+
+**Execution (core adapts).** Core accepts the filter list and applies all filters
+conjunctively. Baseline implementation: AND the simple filters and the advanced
+queries together. Possible optimisation to **investigate** (not assumed): filter
+by the cheap simple filters first, then run advanced DSL only on survivors —
+measure before adopting.
+
+**New-view UX.** A new view **starts in the human-readable simple-filter picker**
+(dropdown fields + checked values, matching the top filter bar) — NOT the query
+builder AST, NOT starting in Advanced. Adding an advanced-query filter is an
+optional extra step. The current AND/OR/Group/Condition BuilderTree dialog is
+replaced.
+
+**Vocabulary (standardised).** **View** = a collection of filters (the saved,
+named thing). **Filter** = the filters themselves — a simple `field = value` or a
+DSL query. Audit and align every user-facing string across web/CLI/MCP/docs to
+this (e.g. sidebar section, "Save as view", "Edit view", "Add filter").
+
+**Migration.** Greenfield — saved-view data has no real users. Change the
+on-disk `queries.yaml` schema freely; the demo tracker is re-seeded and the
+broken `blocked` demo view removed. No migrate-on-load code.
+
+**Sequencing.** Ken: do the small UI polish + get the web client type-checking
+green first (see the tsconfig gate gap below), commit, THEN take on this
+rearchitecture as a focused multi-surface piece (contracts → core → CLI/MCP/UI).
+
+**Status: RECORDED, not built.** No code written for K102 yet.
+
+### K103 · Colours are a palette, not a hex text field — built-in light/dark palette + custom, stored as palette-ID | single | double
+
+**Ken's ruling (2026-09-21).**
+
+**The problem.** Entity colour (labels, statuses, priorities, task_types,
+relationships, enum values, custom fields) is authored as a raw `#aabbcc`
+**text field**. Ken: *"colour picker SHOULD NOT BE TEXT."* A hex string also
+has no light/dark awareness — one value is shown in both themes.
+
+**The model.**
+- A **built-in palette** of colours that match the app's colour scheme
+  (K99 accent family). Each palette entry has a **light-mode and a
+  dark-mode** value, so a chosen colour reads correctly in both themes.
+- Users can **add their own custom colours**, also specified **per mode**
+  (light + dark).
+- The picker is a **dropdown/palette swatch picker**, not a text input.
+
+**Core storage — a colour is one of three shapes:**
+1. **palette colour ID** — references a built-in palette entry (resolves to
+   its light/dark pair at render).
+2. **single colour** — one value used for both modes.
+3. **double colour** — an explicit `{ light, dark }` pair (a custom colour).
+
+Contracts gains this discriminated colour type; core owns the built-in
+palette definitions + validation; the design system exposes the palette as
+tokens (light/dark).
+
+**CLI/MCP.** Both accept the new colour shape (palette ID or single/double),
+AND expose a way to **list the built-in palette** (IDs + light/dark values)
+so an agent/CLI can pick a valid palette ID — 3-surface parity.
+
+**Interim (Ken's call).** Leave the current hex text field in place until the
+full palette model lands — no throwaway intermediate picker.
+
+**Applies to** every entity colour picker: labels, statuses, priorities,
+task_types, relationships, enum values, custom fields. (Extends A260, which
+shipped icon+color controls as text/simple inputs.)
+
+**Status: RECORDED, not built.**
+
+### K102-seq · Sequencing — free to re-order, completeness is the constraint
+
+**Ken's ruling (2026-09-21).** *"you can re-order, so long as everything is
+done in the end."* The order of the queued work (small UI-polish fixes, the
+K102 view rearchitecture, the K103 colour model) is at the implementer's
+discretion — optimise for clean checkpoints and avoiding multiple half-built
+rewrites at once. The binding constraint is that **all of it ships** before
+this line of work is called done; nothing on the UI-walk list or in K102/K103
+may be quietly dropped. (Supersedes any earlier stricter "NOW" / "one at a
+time, after green tree" phrasing — those were ordering preferences, not
+requirements.)
+
+### K105 · Point-of-use edit philosophy — dialogs + "+ New", no scattered Settings text links (amends K100)
+
+**Ken's ruling (2026-09-21).** Amends K100's requirement that every in-place
+editor carry a "Manage all <noun>…" deep-link and that un-extracted editors
+deep-link to Settings.
+
+**The rule now:**
+- **Editing** an entity from its point of use is always the **shared
+  ResponsiveDialog** the Settings panel also renders (K100's shared-component
+  core is kept), never by navigating to Settings.
+- **The affordance is an icon, not a text "Edit" button** (Ken, 2026-09-21):
+  - **One action** (just edit) → a single **IconButton** (pencil/edit or
+    gear glyph) with an `aria-label` + tooltip — not a `text "Edit"` button.
+  - **Several actions** (edit + archive + delete + manage…) → a **"⋯"
+    (kebab/more) menu** of MenuItems. This is the same overflow pattern as
+    the toolbar (K-toolbar): secondary/multiple actions collapse into "⋯".
+- **Creating** an entity is a **"+ New <entity>"** affordance in the sidebar
+  group (mirroring the saved-view "+ New view"), opening the shared create
+  dialog **in place** — NOT a form that lives on the Settings page.
+- **Reaching a global Settings panel** (for roster-level actions the dialog
+  does not own — reorder, remap-delete) is via a **proper entry only**: a
+  gear **IconButton** + tooltip, or a kebab **MenuItem**. The mandatory
+  "Manage all <noun>…" **text link** from K100 is **retired**; scattered
+  "…in Settings → <noun>" prose links are removed everywhere.
+- **Sprints:** create moves off the Settings page into a shared sprint
+  creator dialog opened via "+ New sprint"; per-sprint edit is in place (the
+  detail header / dialog). Whether the sprint Settings *page* is kept at all
+  is decided during the build — keep only if it owns roster-level actions
+  (reorder / remap-delete) that have no in-place home; otherwise drop it.
+
+**Scope: sweep ALL entities** — milestones, sprints, labels, projects (and
+board columns where a whole-config edit allows). Milestones also get the
+two-destinations bug fixed (sidebar row → `/milestones/$id`, not `/list`).
+
+**Bad copy** ("Progress toward every milestone. Manage them in Settings →
+Milestones.", "Progress is shown on the Milestones view, not here.", etc.) is
+rewritten/removed.
+
+**Status: RULED, build in progress.** Supersedes the K100 bullets on the
+mandatory manage-link and the deep-link-until-extracted fallback; K100's
+shared-editor principle otherwise stands.
+
+### K104 · Icon editor = Lucide icons + common-emoji list + free emoji input
+
+**Ken's ruling (2026-09-21).** An entity's icon is chosen from one of:
+(1) a **Lucide icon** (the app adopts the Lucide set for pickable icons),
+(2) a **common-emoji list** (a curated palette of frequent emoji), or
+(3) a **free-typed emoji** the user enters directly. Applies to the
+saved-view icon editor first (the surface Ken named) and is the shared icon
+picker for every entity that has an icon (K103's sibling — icon + colour are
+authored by shared reusable components). Ties into K102 (saved views gain an
+icon) and K103 (colour palette). **Status: RECORDED, not built.** Open
+sub-question when built: does adopting Lucide replace or coexist with the
+hand-rolled `ui/Icon` set (the affordance icons — chevrons, close, kebab)?
+— resolve at build time; likely Lucide for *user-pickable entity* icons,
+keep the tiny hand-rolled set for *affordances* to avoid a heavy dep on the
+core chrome.
+
 ### A199 · REL-16 inline image render — a separate `?inline=1` serve path, raw bytes, `<img>` sandbox (implements K95)
 
 **Ticket:** REL-16 bullet 1 · **Date:** 2026-09-17 · **Implements:** K95.

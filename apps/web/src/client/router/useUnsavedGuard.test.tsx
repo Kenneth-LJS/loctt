@@ -41,7 +41,7 @@ function renderApp(opts: {
     return (
       <div>
         <span data-testid="on-edit">editing</span>
-        <button type="button" onClick={() => { void navigate({ to: "/other" }); }}>
+        <button type="button" onClick={() => { void navigate({ to: "/other" as never }); }}>
           Go
         </button>
       </div>

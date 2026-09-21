@@ -13,7 +13,7 @@ import { embedMarkdownFor, uploadAsEmbeds } from "./commentAttachments.ts";
  */
 
 function result(name: string): AttachResultResponse {
-  return { name, size: 3, mime: "image/png", overwritten: false } as AttachResultResponse;
+  return { name, size: 3, overwritten: false, task_key: "T-1" };
 }
 
 describe("embedMarkdownFor", () => {

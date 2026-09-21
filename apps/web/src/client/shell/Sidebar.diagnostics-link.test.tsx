@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import type { TrackerInfoResponse } from "@loctt/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -19,19 +18,6 @@ import { Sidebar } from "./Sidebar.tsx";
  * `loctt doctor`" in a terminal. The group error now links straight to
  * Settings → Diagnostics, mirroring IntegrityBadge.
  */
-
-const INFO: TrackerInfoResponse = {
-  exists: true,
-  initState: "ready",
-  defaultUserName: "you",
-  taskCount: 7,
-  keyPrefix: "WEB-",
-  nextKey: "WEB-8",
-  schemaStatus: { kind: "current", version: 3 },
-  cwd: "~/PDev/loctt",
-  today: "2026-08-14",
-  timezone: "UTC",
-};
 
 const OK = { items: [], total: 0, offset: 0, limit: 100 };
 

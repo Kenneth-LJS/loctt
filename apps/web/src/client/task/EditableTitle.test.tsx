@@ -42,7 +42,7 @@ describe("L1 — editable title", () => {
     renderTitle({ title: "Ship the thing" });
     expect(screen.queryByTestId("task-title-input")).toBeNull();
     fireEvent.click(screen.getByTestId("task-title-edit"));
-    const input = screen.getByTestId("task-title-input");
+    const input = screen.getByTestId<HTMLInputElement>("task-title-input");
     expect(input.value).toBe("Ship the thing");
   });
 
@@ -99,7 +99,7 @@ describe("L1 — editable title", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onCommit).not.toHaveBeenCalled();
     // Still editing; the draft has snapped back to the original value.
-    const stillOpen = screen.getByTestId("task-title-input");
+    const stillOpen = screen.getByTestId<HTMLInputElement>("task-title-input");
     expect(stillOpen.value).toBe("Not blank");
   });
 
@@ -115,7 +115,7 @@ describe("L1 — editable title", () => {
     // empty box — not over the key, which would store the key as the title.
     renderTitle({ title: undefined, taskKey: "T-42" });
     fireEvent.click(screen.getByTestId("task-title-edit"));
-    expect((screen.getByTestId("task-title-input")).value).toBe("");
+    expect(screen.getByTestId<HTMLInputElement>("task-title-input").value).toBe("");
   });
 
   // @verifies L1

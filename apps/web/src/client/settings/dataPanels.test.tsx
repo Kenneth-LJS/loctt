@@ -926,7 +926,7 @@ describe("Part D — unified Label create+edit dialog", () => {
         String(c[0]).includes("/api/labels")
         && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "POST");
       expect(post).toBeDefined();
-      const body = JSON.parse((post?.[1] as RequestInit).body as string) as unknown;
+      const body = JSON.parse((post?.[1] as RequestInit | undefined)?.body as string) as unknown;
       expect(body).toEqual({ name: "feature", color: "#00ff00" });
     });
   });
@@ -1003,7 +1003,7 @@ describe("Part D — unified Milestone create+edit dialog", () => {
         String(c[0]).includes("/api/milestones")
         && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "POST");
       expect(post).toBeDefined();
-      const body = JSON.parse((post?.[1] as RequestInit).body as string) as unknown;
+      const body = JSON.parse((post?.[1] as RequestInit | undefined)?.body as string) as unknown;
       expect(body).toEqual({ name: "v2", target_date: "2026-09-30" });
     });
   });

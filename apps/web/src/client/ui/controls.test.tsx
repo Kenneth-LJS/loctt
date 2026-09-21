@@ -172,7 +172,7 @@ describe("TextField", () => {
   });
 
   it("respects fullWidth=false on the leadingIcon wrapper too", () => {
-    const { container } = render(
+    render(
       <TextField fullWidth={false} leadingIcon={ICON.more} placeholder="find" />,
     );
     // The wrapper (the input's parent span) must not force full width.

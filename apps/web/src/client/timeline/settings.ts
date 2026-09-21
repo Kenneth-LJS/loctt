@@ -113,7 +113,7 @@ export function resolveGrouping(
   input: SettingsInput,
   catalog: readonly GroupEntry[],
 ): ResolvedGrouping {
-  const layers: readonly { source: SettingSource; value: TimelineGrouping | undefined }[] = [
+  const layers: readonly { source: SettingSource; value: string | undefined }[] = [
     { source: "url", value: input.urlGrouping },
     { source: "view", value: input.view?.display?.grouping },
     { source: "workspace", value: input.workflow?.timeline?.default_grouping },

@@ -38,7 +38,7 @@ describe("buildConditionsFromSearch", () => {
 
   it("preserves value order within a facet", () => {
     const tree = buildConditionsFromSearch({ type: ["feature", "bug", "task"], archived: true }, parse);
-    const leaf = (tree as { children: { value: { values: { value: string }[] } }[] }).children[0];
+    const leaf = (tree as unknown as { children: { value: { values: { value: string }[] } }[] }).children[0];
     expect(leaf?.value.values.map(v => v.value)).toEqual(["feature", "bug", "task"]);
   });
 

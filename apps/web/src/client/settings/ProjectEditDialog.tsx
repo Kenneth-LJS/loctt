@@ -248,13 +248,15 @@ export function ProjectEditDialog({
         </label>
 
         {/* PRU-44: the prefix, with its own confirm flow — it rewrites
-            every task key, so it does not ride the name Save. */}
-        <div className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
-          <span>
-            Prefix
-            <span className="ml-1 text-text-tertiary">
-              — changing it renames every task in the project
-            </span>
+            every task key, so it does not ride the name Save. The help
+            text is a proper subtitle below the label (U9), not an em-dash
+            run-on. PrefixEdit owns its own input + Change button, so this
+            is a plain container, not a <label>/<Field> (which would
+            mis-associate the label with the wrong control). */}
+        <div className="flex flex-col gap-1">
+          <span className="text-body text-text-secondary">Prefix</span>
+          <span className="text-label text-text-tertiary">
+            Changing it renames every task in the project
           </span>
           <PrefixEdit project={project} taskCount={taskCount} others={others} />
         </div>

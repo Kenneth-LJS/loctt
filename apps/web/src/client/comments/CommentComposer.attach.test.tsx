@@ -29,7 +29,7 @@ describe("CommentComposer embedded attachments (GOAL 2)", () => {
     // Attachments panel drives. Its call is what proves the file goes to
     // the ticket's store rather than some parallel comment store.
     const mutateAsync = vi.fn((vars: { file: File }) => Promise.resolve({
-      name: vars.file.name, size: 3, mime: "image/png", overwritten: false,
+      name: vars.file.name, size: 3, overwritten: false, task_key: "T-7",
     }));
 
     let insert: ((md: string) => void) | null = null;

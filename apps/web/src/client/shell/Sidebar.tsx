@@ -19,6 +19,7 @@ import { useArchiveProject, useSetDefaultProject } from "../api/hooks/useProject
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { RegionErrorBoundary } from "../error/RegionErrorBoundary.tsx";
+import { CreateProjectDialog } from "../settings/CreateProjectDialog.tsx";
 import { DeleteViewDialog } from "../settings/DeleteViewDialog.tsx";
 import { LabelEditDialog } from "../settings/LabelEditDialog.tsx";
 import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
@@ -31,7 +32,7 @@ import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
 import { BUILTIN_FILTERS } from "../sidebar/builtinFilters.ts";
 import { Chip } from "../ui/Chip.tsx";
-import { Icon } from "../ui/Icon.tsx";
+import { Icon, type IconName } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { ICON } from "../ui/icons.ts";
 import { useInertBackground } from "../ui/Modal.tsx";
@@ -607,10 +608,10 @@ function ColorDot({ color }: { color?: string | undefined }) {
 
 /* ---------- groups ---------- */
 
-const VIEWS = [
-  { to: "/list" as const, label: "List", icon: <ListIcon /> },
-  { to: "/board" as const, label: "Board", icon: <BoardIcon /> },
-  { to: "/timeline" as const, label: "Timeline", icon: <TimelineIcon /> },
+const VIEWS: { to: "/list" | "/board" | "/timeline"; label: string; icon: IconName }[] = [
+  { to: "/list", label: "List", icon: "list" },
+  { to: "/board", label: "Board", icon: "board" },
+  { to: "/timeline", label: "Timeline", icon: "timeline" },
 ];
 
 function ViewSwitcher({ collapsed }: { collapsed: boolean }) {
@@ -632,7 +633,7 @@ function ViewSwitcher({ collapsed }: { collapsed: boolean }) {
           search={carryFilters}
         >
           <ItemShell active={pathname === v.to} collapsed={collapsed} title={v.label}>
-            <span className="shrink-0">{v.icon}</span>
+            <Icon name={v.icon} size={14} className="shrink-0" />
             {!collapsed ? <span>{v.label}</span> : null}
           </ItemShell>
         </Link>
@@ -834,6 +835,8 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
   // looked up from live data at render, so an external rename is reflected.
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingProject = items.find(p => p.id === editingId) ?? null;
+  // U10: "+ New project" opens the shared CreateProjectDialog in place.
+  const [creating, setCreating] = useState(false);
   const taskCounts = projects.data?.task_counts ?? {};
 
   // The searchable affordance appears only past the threshold, and
@@ -860,10 +863,13 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
     : filtered;
   const hiddenCount = filtered.length - visible.length;
 
-  // "All projects" is active exactly when nothing is scoped. Pinned
-  // above the (scrollable) list and the search box so it is always
-  // reachable without scrolling (PRU-21).
-  const allActive = activeProjects.length === 0;
+  // "All projects" is active exactly when nothing is scoped AND the
+  // current route is a task-listing view the project scope applies to
+  // (list/board/timeline). On /settings, /init, or a detail page there is
+  // no active scope to reflect — "no project in the URL" is true there
+  // too, but it must not light up "All projects" (U11).
+  const onView = isView(pathname);
+  const allActive = onView && activeProjects.length === 0;
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -920,7 +926,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
       ) : null}
 
       {visible.map(p => {
-        const active = activeProjects.includes(p.id);
+        const active = onView && activeProjects.includes(p.id);
         const row = (
           <Link
             to={viewTo}
@@ -1000,23 +1006,25 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
         </button>
       ) : null}
 
-      {/* "+ New project": creating a project uses the panel-local
-          CreateProjectForm (slug/prefix uniqueness checks, not extracted
-          into a shared self-contained component), so per K100 this is a
-          DEEP LINK to Settings rather than a forked inline create. */}
+      {/* "+ New project": the create form is now the shared, self-contained
+          CreateProjectDialog (it owns its own mutation + slug/prefix
+          uniqueness validation) that the Settings panel ALSO renders. Per
+          K100 this earns an in-place affordance — clicking opens the same
+          dialog directly, no navigation to Settings first (U10) — instead
+          of a deep link, and without forking a second create form. */}
       {!collapsed && !failed ? (
-        <Link
-          to="/settings/$section"
-          params={{ section: "projects" }}
+        <button
+          type="button"
           data-testid="sidebar-new-project"
           title="New project"
-          className="no-underline"
+          onClick={() => { setCreating(true); }}
+          className="w-full text-left no-underline"
         >
           <ItemShell collapsed={collapsed} title="New project">
             <span className="w-4 shrink-0 text-center text-accent">+</span>
             <span className="truncate text-accent">New project</span>
           </ItemShell>
-        </Link>
+        </button>
       ) : null}
 
       {/* K100: the shared editor, mounted fresh on open so it seeds from
@@ -1028,6 +1036,19 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
           others={items.filter(o => o.id !== editingProject.id)}
           isDefault={editingProject.id === defaultProjectId}
           onClose={() => { setEditingId(null); }}
+        />
+      ) : null}
+
+      {/* U10 / K100: the same create dialog the Settings panel renders,
+          opened directly from "+ New project" (no navigation). The
+          uniqueness check must see EVERY project — an archived project
+          still holds its prefix/slug — so this passes the unfiltered list,
+          not the `items` used for the (archived-excluding) sidebar rows,
+          matching what the Settings panel passes. */}
+      {creating ? (
+        <CreateProjectDialog
+          existing={projects.data?.items ?? []}
+          onClose={() => { setCreating(false); }}
         />
       ) : null}
     </div>
@@ -2002,15 +2023,6 @@ function clearSort(prev: Record<string, unknown>): Record<string, unknown> {
 
 /* ---------- icons ---------- */
 
-function ListIcon() {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" /></svg>;
-}
-function BoardIcon() {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><rect x="3" y="3" width="6" height="18" rx="1" /><rect x="10" y="3" width="6" height="12" rx="1" /><rect x="17" y="3" width="4" height="8" rx="1" /></svg>;
-}
-function TimelineIcon() {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="M3 6h12M3 12h18M3 18h8" /></svg>;
-}
 function SettingsIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15z" /></svg>;
 }

@@ -22,7 +22,7 @@ import type { TaskSearchHit } from "../api/hooks/useTaskSearch.ts";
  */
 
 type SearchState = {
-  data?: readonly TaskSearchHit[];
+  data?: readonly TaskSearchHit[] | undefined;
   isFetching: boolean;
   isError: boolean;
   isSuccess: boolean;

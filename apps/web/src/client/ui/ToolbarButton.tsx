@@ -35,14 +35,29 @@ export interface ToolbarButtonProps extends Omit<ButtonProps, "variant"> {
 export const TOOLBAR_ACTIVE =
   "border-accent bg-accent-muted text-accent hover:bg-accent-muted hover:text-accent";
 
+/**
+ * The secondary-variant utilities the active look must REPLACE. `cn`
+ * (deliberately) does not resolve Tailwind conflicts — it concatenates —
+ * so emitting both `bg-bg-surface`/`text-text-secondary` (from the
+ * `secondary` variant) AND `bg-accent-muted`/`text-accent` (from
+ * `TOOLBAR_ACTIVE`) leaves the winner to CSS source order, which drops
+ * the active tint entirely (the Theme picker showed all three pills flat).
+ *
+ * `overrideActive` renders the button as `ghost` when active — the ghost
+ * variant has no bg/border/text-at-rest utilities to conflict with — so
+ * `TOOLBAR_ACTIVE` is the ONLY bg/border/text on the element and always
+ * wins. Inactive keeps `secondary` (the neutral bordered pill).
+ */
 export const ToolbarButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(
   function ToolbarButton({ active = false, className, ...rest }, ref) {
     return (
       <Button
         ref={ref}
-        variant="secondary"
+        // Active → ghost (no rest-state bg/border/text to fight the
+        // accent look); inactive → secondary (the neutral pill).
+        variant={active ? "ghost" : "secondary"}
         size="md"
-        className={cn(active && TOOLBAR_ACTIVE, className)}
+        className={cn(active && "border " + TOOLBAR_ACTIVE, className)}
         {...rest}
       />
     );
