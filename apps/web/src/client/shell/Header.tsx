@@ -8,7 +8,12 @@ import { useSwitchUser } from "../api/hooks/useSwitchUser.ts";
 import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { useTheme } from "../theme/useTheme.ts";
 import { avatarPalette, initials } from "../ui/avatar.ts";
+import { LogoMark } from "../ui/brand/LogoMark.tsx";
+import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { IntegrityBadge } from "./IntegrityBadge.tsx";
 
@@ -89,8 +94,7 @@ export function Header({
     // width; the wordmark and the search stub (disabled until search
     // lands) drop below `sm`; the controls the user needs stay.
     <header className="col-span-2 flex h-12 min-w-0 items-center gap-2 border-b border-border-subtle bg-bg-surface px-3 sm:gap-3 sm:px-4">
-      <button
-        type="button"
+      <IconButton
         onClick={onToggleSidebar}
         disabled={!canToggleSidebar}
         title={canToggleSidebar ? undefined : "The sidebar stays collapsed at this width"}
@@ -102,15 +106,12 @@ export function Header({
         // button as a toggle that is "on", which reads backwards here
         // (the button is not pressed, the sidebar is open).
         aria-expanded={!sidebarCollapsed}
-        className="grid h-8 w-8 place-items-center rounded-md text-text-secondary hover:bg-bg-muted hover:text-text-primary"
       >
         <HamburgerIcon />
-      </button>
+      </IconButton>
 
       <div className="flex shrink-0 items-center gap-2 pr-1 text-[1rem] font-semibold text-text-primary sm:pr-2">
-        <span className="grid h-[22px] w-[22px] place-items-center rounded-sm bg-accent text-[0.8571rem] font-bold text-accent-contrast">
-          L
-        </span>
+        <LogoMark size={22} />
         {/* The wordmark is the first thing to go: the logo already
             identifies the app, and the controls to its right are the
             ones the user needs to reach. */}
@@ -132,20 +133,20 @@ export function Header({
       {/* NEW-1: one of the three entry points, and it goes through the
           same provider as the board's "+ Add task" and the `n`
           shortcut, so all three open the identical modal. */}
-      <button
-        type="button"
+      <Button
+        variant="primary"
         disabled={createBlocked !== undefined}
         title={createBlocked}
         onClick={() => { createTask.open(); }}
         aria-label="New task"
-        data-testid="header-new-task"
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[0.9286rem] font-medium text-accent-contrast hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 sm:px-3"
+        testId="header-new-task"
+        className="shrink-0"
       >
         <PlusIcon />
         {/* The icon carries the meaning at narrow widths; the button
             keeps its accessible name via aria-label either way. */}
         <span className="hidden sm:inline">New task</span>
-      </button>
+      </Button>
 
       <UserMenu currentUser={currentUser} identityUnknown={identityUnknown} />
     </header>
@@ -235,7 +236,7 @@ function HeaderSearch() {
       ref={containerRef}
       className="relative hidden w-full min-w-0 max-w-[280px] sm:block"
     >
-      <input
+      <TextField
         ref={inputRef}
         type="search"
         value={value}
@@ -252,7 +253,7 @@ function HeaderSearch() {
           if (e.key === "Enter") { e.preventDefault(); goToList(); }
           else if (e.key === "Escape") { setOpen(false); }
         }}
-        className="h-8 w-full rounded-md border border-border-default bg-bg-surface px-3 text-[0.9286rem] text-text-primary placeholder:text-text-tertiary focus:border-accent"
+        className="h-8"
       />
 
       {showDropdown ? (
@@ -283,7 +284,7 @@ function HeaderSearch() {
                   onClick={() => { goToTask(h.key); }}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
                 >
-                  <span className="shrink-0 font-mono text-[0.7143rem] text-text-tertiary">{h.key}</span>
+                  <span className="shrink-0 text-[0.7143rem] text-text-tertiary">{h.key}</span>
                   <span className="truncate">{h.title}</span>
                 </button>
               ))}
@@ -316,9 +317,9 @@ function HeaderSearch() {
 function ThemeToggle() {
   const { preference, setPreference } = useTheme();
   const options = [
-    { value: "light", label: "Light", glyph: "\u2600" },
-    { value: "dark", label: "Dark", glyph: "\u263e" },
-    { value: "system", label: "System", glyph: "\u25d1" },
+    { value: "light", label: "Light", icon: "sun" },
+    { value: "dark", label: "Dark", icon: "moon" },
+    { value: "system", label: "System", icon: "monitor" },
   ] as const;
   return (
     <div className="inline-flex h-8 shrink-0 items-center rounded-md bg-bg-muted p-0.5" aria-label="Theme">
@@ -331,13 +332,13 @@ function ThemeToggle() {
           aria-label={o.label}
           onClick={() => setPreference(o.value)}
           className={[
-            "h-7 rounded-[4px] px-2.5 text-[0.9286rem]",
+            "inline-flex h-7 items-center justify-center rounded-[4px] px-2.5",
             preference === o.value
               ? "bg-bg-surface text-text-primary shadow-raised"
               : "text-text-secondary",
           ].join(" ")}
         >
-          {o.glyph}
+          <Icon name={o.icon} size={16} />
         </button>
       ))}
     </div>
@@ -498,11 +499,51 @@ function UserMenu({
             </div>
           ) : null}
 
+          {/* CONFIG-5 / P4: the menu used to offer one generic "Settings"
+              link, which taught the user nothing about *where* their own
+              settings live. These are differentiated deep links to the
+              exact section that owns each concept (K100), each labelled as
+              navigation. "My profile" jumps to the current user's row via
+              the `#row-<id>` anchor UsersPanel exposes; "Customize
+              sidebar…" lands on the sidebar-groups section that owns the
+              group order/visibility (and pins live one section over). The
+              plain "Settings" link is kept as the catch-all landing. */}
           <div className="border-t border-border-subtle py-1">
+            {currentUser ? (
+              <Link
+                to="/settings/$section"
+                params={{ section: "users" }}
+                hash={`row-${currentUser.id}`}
+                onClick={close}
+                data-testid="user-menu-profile"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
+              >
+                My profile
+              </Link>
+            ) : null}
+            <Link
+              to="/settings/$section"
+              params={{ section: "preferences" }}
+              onClick={close}
+              data-testid="user-menu-preferences"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
+            >
+              My preferences
+            </Link>
+            <Link
+              to="/settings/$section"
+              params={{ section: "sidebar-groups" }}
+              onClick={close}
+              data-testid="user-menu-sidebar"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
+            >
+              Customize sidebar…
+            </Link>
             <Link
               to="/settings/$section"
               params={{ section: "users" }}
               onClick={close}
+              data-testid="user-menu-settings"
               className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
             >
               Settings

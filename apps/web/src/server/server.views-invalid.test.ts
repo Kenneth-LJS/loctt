@@ -57,8 +57,11 @@ describe("GET /api/views with an invalid queries.yaml", () => {
 
   /** @verifies VUE-36 */
   it("names the file and the offending entry in the headline, not in detail", async () => {
-    // A view missing its required `query`.
-    await corrupt("queries:\n  - id: a\n    name: b\n");
+    // A view missing its required `name`. K102 made `filters` optional
+    // at load (an absent list reads as "matches everything", not
+    // corruption), so `id`+`name`-only entries no longer fail here —
+    // `name` itself missing is still object-fatal.
+    await corrupt("queries:\n  - id: a\n");
 
     const res = await fetch(`${base}/api/views`);
     expect(res.status).toBe(400);
@@ -67,24 +70,32 @@ describe("GET /api/views with an invalid queries.yaml", () => {
     expect(body.code).toBe("config_invalid");
     // The headline itself — not `detail` — carries both facts.
     expect(body.message).toContain("queries.yaml");
-    expect(body.message).toContain("query");
+    expect(body.message).toContain("name");
     // Not the generic handler's text.
     expect(body.message).not.toContain("The server failed while handling");
   });
 
   /** @verifies XS-66 */
   it("does not tell the user to retry a malformed file", async () => {
-    await corrupt("queries:\n  - id: a\n    name: b\n");
+    await corrupt("queries:\n  - id: a\n");
     const body = await (await fetch(`${base}/api/views`)).json() as Envelope;
     // Retry re-reads the same bytes; the fix is to edit the file.
     expect(body.recovery?.kind).not.toBe("retry");
   });
 
   it("names the duplicate id when that is the violation", async () => {
+    // Both entries are otherwise schema-valid (K102: `filters` is
+    // optional at load — an absent list reads as "matches everything" —
+    // so nothing about the filter shape preempts the duplicate-id check),
+    // so the DUPLICATE-ID violation is what surfaces.
+    const filters =
+      "    filters:\n"
+      + "      - kind: advanced\n"
+      + "        query: archived != true\n";
     await corrupt(
       "queries:\n"
-      + "  - id: dup\n    name: one\n    query: 'archived != true'\n"
-      + "  - id: dup\n    name: two\n    query: 'archived != true'\n",
+      + "  - id: dup\n    name: one\n" + filters
+      + "  - id: dup\n    name: two\n" + filters,
     );
     const res = await fetch(`${base}/api/views`);
     expect(res.status).toBe(400);
@@ -134,11 +145,15 @@ describe("saved-view delete and unarchive", () => {
   const mkView = async (name: string) =>
     (await (await fetch(`${base}/api/views`, {
       method: "POST", headers: csrf,
-      body: JSON.stringify({ name, query: "archived != true" }),
+      body: JSON.stringify({ name, filters: [{ kind: "advanced", query: "archived != true" }] }),
     })).json()) as { id: string };
 
+  // K107: `/api/views` defaults to the `active` scope, so an archived view
+  // is hidden from the default list. These tests verify the archive/
+  // unarchive lifecycle (the entry stays in the file, runnable by id), so
+  // they read with `archived=all` to see archived entries too.
   const listRaw = async () =>
-    (await (await fetch(`${base}/api/views`)).json()) as {
+    (await (await fetch(`${base}/api/views?archived=all`)).json()) as {
       queries: readonly { id: string; archived?: boolean }[];
     };
 

@@ -9,6 +9,7 @@ export {
   assertNotArchivedRelationshipTarget,
   loadArchivedGuardConfigs,
 } from "./archived-guard.js";
+export { applyArchivedScope } from "./archived-scope.js";
 export {
   CalendarConfigError,
   calendarConfigExists,
@@ -19,6 +20,18 @@ export {
   saveCalendarConfig,
   serializeCalendarConfig,
 } from "./calendar.js";
+export type {
+  ColorResolution,
+  ColorResolveFailure,
+  PaletteEntry,
+} from "./color.js";
+export {
+  BUILTIN_PALETTE,
+  getPaletteEntry,
+  isKnownPaletteId,
+  resolveEntityColor,
+  resolveEntityColorOr,
+} from "./color.js";
 export { brokenEntriesToPlain, collectValidEntries } from "./health.js";
 export {
   getLabelsConfigPath,
@@ -82,6 +95,56 @@ export {
 } from "./sprints.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./validation.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./workflow.js";
+export type {
+  AddFieldValueInput,
+  CreateBoardColumnInput,
+  CreateCustomFieldInput,
+  CreatePriorityInput,
+  CreateRelationshipInput,
+  CreateStatusInput,
+  CreateTaskTypeInput,
+  EditBoardColumnChanges,
+  EditCustomFieldChanges,
+  EditEstimationChanges,
+  EditFieldValueChanges,
+  EditPriorityChanges,
+  EditRelationshipChanges,
+  EditStatusChanges,
+  EditTaskTypeChanges,
+  EditTimelineChanges,
+  IconColorInput,
+} from "./workflow-entities.js";
+export {
+  addFieldValue,
+  createBoardColumn,
+  createCustomField,
+  createPriority,
+  createRelationship,
+  createStatus,
+  createTaskType,
+  deleteBoardColumn,
+  deleteCustomField,
+  deleteFieldValue,
+  deletePriority,
+  deleteRelationship,
+  deleteStatus,
+  deleteTaskType,
+  editBoardColumn,
+  editCustomField,
+  editEstimationConfig,
+  editFieldValue,
+  editPriority,
+  editRelationship,
+  editStatus,
+  editTaskType,
+  editTimelineConfig,
+  reorderBoardColumns,
+  reorderFieldValues,
+  reorderPriorities,
+  reorderStatuses,
+  reorderTaskTypes,
+  WorkflowEntityError,
+} from "./workflow-entities.js";
 export type { WorkflowRemap } from "./workflow-write.js";
 export {
   applyWorkflowEdit,

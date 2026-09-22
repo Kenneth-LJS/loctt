@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { initLoctt, lookupByKey, resolveLocttDir } from "@loctt/core";
+import { initLoctt, lookupByKey, resolveLocttDir, serializeQueriesConfig } from "@loctt/core";
 import { afterEach,beforeEach, describe, expect, it } from "vitest";
 
 import { executeTool,getTools } from "./index.js";
@@ -329,20 +329,22 @@ describe("MCP executeTool", () => {
     });
   });
 
+  // These tools now take `refs` (bulk parity with the web); the single
+  // task is `refs: ["T-1"]`. The confirm gate is unchanged.
   it("delete_task without confirm is rejected; archive_task is the soft path", async () => {
     await executeTool(root, "create_task", { title: "to-delete" });
 
     // Without confirm: refused.
-    const refused = await executeTool(root, "delete_task", { ref: "T-1" });
+    const refused = await executeTool(root, "delete_task", { refs: ["T-1"] });
     expect(refused.isError).toBe(true);
     expect(refused.content[0]?.text).toMatch(/confirm/i);
 
     // archive_task succeeds without confirm.
-    const archived = await executeTool(root, "archive_task", { ref: "T-1" });
+    const archived = await executeTool(root, "archive_task", { refs: ["T-1"] });
     expect(archived.isError).toBeUndefined();
 
     // delete_task with confirm succeeds and removes the task entirely.
-    const deleted = await executeTool(root, "delete_task", { ref: "T-1", confirm: true });
+    const deleted = await executeTool(root, "delete_task", { refs: ["T-1"], confirm: true });
     expect(deleted.isError).toBeUndefined();
   });
 
@@ -406,6 +408,39 @@ describe("MCP executeTool", () => {
       const result = await executeTool(root, "delete_user", { ref: "Alice" });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/confirm/i);
+    });
+
+    it("delete_comment without confirm is rejected; confirm deletes", async () => {
+      // delete_comment joins the delete_* confirm-gate family: like
+      // delete_task, a call without confirm means the agent
+      // misunderstood the destructive nature.
+      await executeTool(root, "create_task", { title: "with-comment" });
+      const posted = await executeTool(root, "post_comment", {
+        ref: "T-1",
+        body: "hello",
+      });
+      const commentId = posted.content[0]?.text?.match(/comment (\S+) on/)?.[1] ?? "";
+      expect(commentId).not.toBe("");
+
+      // Without confirm: refused, and the comment survives.
+      const refused = await executeTool(root, "delete_comment", {
+        ref: "T-1",
+        comment_id: commentId,
+      });
+      expect(refused.isError).toBe(true);
+      expect(refused.content[0]?.text).toMatch(/confirm/i);
+      const stillThere = await executeTool(root, "list_comments", { ref: "T-1" });
+      expect(stillThere.content[0]?.text).toContain(commentId);
+
+      // With confirm: deleted.
+      const deleted = await executeTool(root, "delete_comment", {
+        ref: "T-1",
+        comment_id: commentId,
+        confirm: true,
+      });
+      expect(deleted.isError).toBeUndefined();
+      const gone = await executeTool(root, "list_comments", { ref: "T-1" });
+      expect(gone.content[0]?.text).not.toContain(commentId);
     });
   });
 
@@ -695,7 +730,10 @@ describe("MCP executeTool", () => {
     it("attachment with known extension includes `mime`", async () => {
       const { writeFile } = await import("node:fs/promises");
       await executeTool(root, "create_task", { title: "with png" });
-      const src = join(root, "img.png");
+      // F1 narrowing: the agent surface confines the source to the DATA
+      // DIR (.loctt/), so a legit attach stages the file there first
+      // (was join(root, …), which is now outside the safe zone).
+      const src = join(resolveLocttDir(root), "img.png");
       await writeFile(src, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
       const attachResult = await executeTool(root, "attach_file", {
         ref: "T-1",
@@ -717,7 +755,8 @@ describe("MCP executeTool", () => {
       // absence as application/octet-stream.
       const { writeFile } = await import("node:fs/promises");
       await executeTool(root, "create_task", { title: "with weird" });
-      const src = join(root, "data.xyzunknown");
+      // F1 narrowing: stage inside the data dir (.loctt/), see above.
+      const src = join(resolveLocttDir(root), "data.xyzunknown");
       await writeFile(src, "raw");
       const attachResult = await executeTool(root, "attach_file", {
         ref: "T-1",
@@ -729,6 +768,25 @@ describe("MCP executeTool", () => {
       const attachments = body["attachments"] as Array<Record<string, unknown>>;
       expect(attachments).toHaveLength(1);
       expect(attachments[0]).not.toHaveProperty("mime");
+    });
+
+    // Attach source is confined to the PROJECT ROOT (A205): a real file
+    // anywhere in the project attaches (an attachment legitimately comes
+    // from the working tree, not only from inside .loctt/ — the A225
+    // data-dir narrowing was reverted for breaking that). A path outside
+    // the root is still refused by the core confinement.
+    it("attach_file accepts a source elsewhere in the project", async () => {
+      const { writeFile } = await import("node:fs/promises");
+      await executeTool(root, "create_task", { title: "attach from project" });
+      const src = join(root, "notes.txt");
+      await writeFile(src, "a real project file");
+      const result = await executeTool(root, "attach_file", {
+        ref: "T-1",
+        source_path: src,
+      });
+      expect(result.isError).toBeUndefined();
+      const body = await getTaskJson("T-1");
+      expect((body["attachments"] as unknown[]).length).toBe(1);
     });
 
     it("body is included by default, omitted when include_body=false", async () => {
@@ -749,18 +807,130 @@ describe("MCP executeTool", () => {
   });
 });
 
+/**
+ * @verifies K102 on the MCP surface — a saved view is an ORDERED filter
+ * list, and that list is what crosses the tool boundary in both
+ * directions.
+ *
+ * The old surface took a `query` DSL string and handed back a derived
+ * `conditions` tree. Both are gone. What replaces them has two properties
+ * an agent depends on and neither the core tests nor the tool's own types
+ * can assert from here: that the array survives the round trip in the
+ * order it was authored (never merged, never reordered), and that the
+ * display-only `summary` is additive — it must not have crept back in as
+ * a storable field under a new name.
+ */
+describe("saved views — K102 filter list over MCP", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-mcp-k102-"));
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // Deliberately authored so a merge-and-canonicalize step would reorder
+  // it: an advanced filter sits BETWEEN two simple ones. Any
+  // implementation that grouped simple filters together, or folded the
+  // list into one DSL string, would not return this array unchanged.
+  // The advanced fragment is written already-normalized (no redundant
+  // outer parens, single spaces) so this fixture asserts ORDER only. The
+  // spacing normalization core applies is its own contract and is tested
+  // there; encoding it here would just make this test brittle to it.
+  const FILTERS = [
+    { kind: "simple", field: "task_type", op: "=", values: ["bug"] },
+    { kind: "advanced", query: "priority = high or priority = critical" },
+    { kind: "simple", field: "status", op: "!=", values: ["done"] },
+  ];
+
+  it("create_view round-trips the filter list in the authored order", async () => {
+    const created = await executeTool(root, "create_view", {
+      name: "interleaved",
+      filters: FILTERS,
+    });
+    expect(created.isError).toBeUndefined();
+    const view = JSON.parse(created.content[0]?.text ?? "") as {
+      id: string; filters: unknown;
+    };
+    expect(view.filters).toEqual(FILTERS);
+
+    // And the same list comes back out of list_views, not a re-derived one.
+    const list = await executeTool(root, "list_views", {});
+    const entries = JSON.parse(list.content[0]?.text ?? "") as Array<{
+      id: string; filters?: unknown; summary?: string;
+    }>;
+    const listed = entries.find(e => e.id === view.id);
+    expect(listed).toBeDefined();
+    expect(listed!.filters).toEqual(FILTERS);
+  });
+
+  it("list_views carries a display-only summary and no query/conditions field", async () => {
+    await executeTool(root, "create_view", { name: "shaped", filters: FILTERS });
+    const list = await executeTool(root, "list_views", {});
+    const entry = (JSON.parse(list.content[0]?.text ?? "") as Array<Record<string, unknown>>)[0];
+    expect(entry).toBeDefined();
+    // Present, non-empty, and a string an agent can show a user.
+    expect(typeof entry!["summary"]).toBe("string");
+    expect(entry!["summary"] as string).not.toHaveLength(0);
+    // The two fields K102 removed must not come back. A view has no
+    // canonical DSL and no condition tree; an agent that saw either
+    // would reasonably try to edit through it.
+    expect(entry).not.toHaveProperty("query");
+    expect(entry).not.toHaveProperty("conditions");
+  });
+
+  it("edit_view replaces the whole list; omitting filters leaves them untouched", async () => {
+    const created = await executeTool(root, "create_view", {
+      name: "before",
+      filters: FILTERS,
+    });
+    const id = (JSON.parse(created.content[0]?.text ?? "") as { id: string }).id;
+
+    // Omitted → untouched. (A handler that defaulted absent filters to []
+    // would silently empty the view, which matches everything.)
+    const renamed = await executeTool(root, "edit_view", { view: id, name: "after" });
+    expect(renamed.isError).toBeUndefined();
+    const afterRename = JSON.parse(renamed.content[0]?.text ?? "") as {
+      name: string; filters: unknown;
+    };
+    expect(afterRename.name).toBe("after");
+    expect(afterRename.filters).toEqual(FILTERS);
+
+    // Supplied → replaces the WHOLE list, not appended or merged into it.
+    const replacement = [
+      { kind: "simple", field: "status", op: "=", values: ["backlog"] },
+    ];
+    const edited = await executeTool(root, "edit_view", {
+      view: id,
+      filters: replacement,
+    });
+    const afterEdit = JSON.parse(edited.content[0]?.text ?? "") as { filters: unknown };
+    expect(afterEdit.filters).toEqual(replacement);
+  });
+});
+
 describe("list_tasks — stale saved view warning", () => {
   let root: string;
+
+  // K102: a saved view stores an ordered `filters[]` list — no `query`
+  // string and no `conditions` tree. The fixture needs a view whose
+  // filters reference a field that does not exist, and the shortest
+  // honest way to author arbitrary DSL is a single `advanced` filter.
+  function queriesYaml(id: string, name: string, query: string): string {
+    return serializeQueriesConfig({
+      queries: [{ id, name, filters: [{ kind: "advanced", query }] }],
+    });
+  }
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "loctt-mcp-warn-"));
     await initLoctt(root);
     await writeFile(
       join(resolveLocttDir(root), "config", "queries.yaml"),
-      "queries:\n"
-      + "  - id: 01HSV0000000000000STALE4\n"
-      + "    name: stale\n"
-      + "    query: fields.deleted_field = x\n",
+      queriesYaml("01HSV0000000000000STALE4", "stale", "fields.deleted_field = x"),
       "utf-8",
     );
   });
@@ -781,13 +951,437 @@ describe("list_tasks — stale saved view warning", () => {
   it("returns a clean body for a healthy view", async () => {
     await writeFile(
       join(resolveLocttDir(root), "config", "queries.yaml"),
-      "queries:\n"
-      + "  - id: 01HSV0000000000000FINE02\n"
-      + "    name: fine\n"
-      + "    query: status != done\n",
+      queriesYaml("01HSV0000000000000FINE02", "fine", "status != done"),
       "utf-8",
     );
     const result = await executeTool(root, "list_tasks", { view: "fine" });
     expect(JSON.stringify(result)).not.toContain("Results may be incomplete");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// edit_workflow_entity + the two singleton config tools (A265).
+// The MCP half of the A252 core / A253 CLI parity wave. These call the
+// same core `config/workflow-entities.ts` functions the web and CLI call,
+// so behaviour is identical by construction; the tests below assert the
+// MCP-layer additions: the entity/op legality matrix, the confirm gate on
+// delete, the clear-only remap rejection, and that refusals from core
+// (WorkflowEntityError) reach the agent as a clean errorResult rather than
+// a rethrown server fault.
+// ---------------------------------------------------------------------------
+
+describe("edit_workflow_entity", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-mcp-wf-"));
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  /** Parses the get_workflow_config JSON into the config object. */
+  async function workflow(): Promise<Record<string, unknown>> {
+    const res = await executeTool(root, "get_workflow_config", {});
+    expect(res.isError).toBeUndefined();
+    return JSON.parse(res.content[0]?.text ?? "{}") as Record<string, unknown>;
+  }
+
+  it("registers the three new tools", () => {
+    const names = getTools().map(t => t.name);
+    expect(names).toContain("edit_workflow_entity");
+    expect(names).toContain("set_estimation_config");
+    expect(names).toContain("set_timeline_config");
+  });
+
+  it("creates a status visible via get_workflow_config", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status",
+      op: "create",
+      key: "blocked",
+      fields: { label: "Blocked", category: "active", icon: "pause", color: "#ff0000" },
+    });
+    expect(res.isError).toBeUndefined();
+    const cfg = await workflow();
+    const statuses = cfg["statuses"] as { key: string; label: string; icon?: string; color?: string }[];
+    const created = statuses.find(s => s.key === "blocked");
+    expect(created).toBeDefined();
+    expect(created?.label).toBe("Blocked");
+    // icon/color round-trip through the create payload.
+    expect(created?.icon).toBe("pause");
+    expect(created?.color).toBe("#ff0000");
+  });
+
+  it("edits a status label", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "blocked",
+      fields: { label: "Blocked", category: "active" },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "edit", key: "blocked", fields: { label: "On hold" },
+    });
+    expect(res.isError).toBeUndefined();
+    const cfg = await workflow();
+    const statuses = cfg["statuses"] as { key: string; label: string }[];
+    expect(statuses.find(s => s.key === "blocked")?.label).toBe("On hold");
+  });
+
+  it("rejects an edit that tries to rename via a key in fields", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "blocked",
+      fields: { label: "Blocked", category: "active" },
+    });
+    // `key` inside `fields` is not a rename path — the top-level `key`
+    // identifies the target, and `fields.key` is an unknown field. The
+    // rename must be refused (keys are immutable).
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "edit", key: "blocked",
+      fields: { key: "renamed", label: "Still blocked" },
+    });
+    expect(res.isError).toBe(true);
+    const cfg = await workflow();
+    const statuses = cfg["statuses"] as { key: string }[];
+    // No status was renamed; the original key survives and no new key appeared.
+    expect(statuses.some(s => s.key === "blocked")).toBe(true);
+    expect(statuses.some(s => s.key === "renamed")).toBe(false);
+  });
+
+  it("refuses a delete without confirm even when a remap is given", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "blocked",
+      fields: { label: "Blocked", category: "active" },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "delete", key: "blocked", remap_to: "todo",
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/confirm/i);
+    // Still present — the delete did not run.
+    const cfg = await workflow();
+    expect((cfg["statuses"] as { key: string }[]).some(s => s.key === "blocked")).toBe(true);
+  });
+
+  it("refuses a delete-in-use without remap_to, succeeds with remap_to + confirm", async () => {
+    // Seed a task that holds the status so it is in use.
+    const defaultStatus = ((await workflow())["statuses"] as { key: string; default?: boolean }[])
+      .find(s => s.default)?.key ?? "todo";
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "blocked",
+      fields: { label: "Blocked", category: "active" },
+    });
+    await executeTool(root, "create_task", { title: "held" });
+    await executeTool(root, "update_task", { ref: "T-1", field: "status", value: "blocked" });
+
+    // In use, no remap: refused (with confirm, so the confirm gate is not
+    // what fires — the remap requirement is).
+    const refused = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "delete", key: "blocked", confirm: true,
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]?.text ?? "").toMatch(/in use|remap/i);
+
+    // With a remap target and confirm: succeeds, task moved to the target.
+    const ok = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "delete", key: "blocked", remap_to: defaultStatus, confirm: true,
+    });
+    expect(ok.isError).toBeUndefined();
+    const cfg = await workflow();
+    expect((cfg["statuses"] as { key: string }[]).some(s => s.key === "blocked")).toBe(false);
+    const task = await executeTool(root, "get_task", { ref: "T-1" });
+    expect(task.content[0]?.text ?? "").toContain(defaultStatus);
+  });
+
+  it("reorder changes a priority's derived value", async () => {
+    const before = (await workflow())["priorities"] as { key: string; value?: number }[];
+    expect(before.length).toBeGreaterThanOrEqual(3);
+    const keys = before.map(p => p.key);
+    // Move a MIDDLE key to the front so its list position (and therefore
+    // its renumbered value) genuinely changes — endpoints can keep their
+    // value under a swap, but an interior key that jumps to the front
+    // cannot.
+    const midIdx = 2; // keys.length >= 3 asserted above
+    const mid = keys[midIdx]!;
+    const midValueBefore = before.find(p => p.key === mid)?.value;
+    const moved = [mid, ...keys.filter(k => k !== mid)];
+
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "priority", op: "reorder", order: moved,
+    });
+    expect(res.isError).toBeUndefined();
+
+    const after = (await workflow())["priorities"] as { key: string; value?: number }[];
+    // The list order now leads with the moved key (reorder took effect)...
+    expect(after.map(p => p.key)).toEqual(moved);
+    // ...and its derived value changed (value is renumbered from order),
+    // proving the value is NOT carried over from before but recomputed.
+    expect(after.find(p => p.key === mid)?.value).not.toBe(midValueBefore);
+  });
+
+  it("rejects a priority value in fields", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "priority", op: "create", key: "urgent",
+      fields: { label: "Urgent", value: 9 },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/value/i);
+  });
+
+  it("rejects reorder for relationships (no such op)", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "relationship", op: "reorder", order: ["blocks"],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/not valid for entity "relationship"/);
+  });
+
+  it("rejects an unknown entity at the wire (strict enum)", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "nonsense", op: "create", key: "x",
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/invalid args/);
+  });
+
+  it("rejects remap_to on a whole custom_field delete (clear-only)", async () => {
+    // Two enum fields so a remap target would otherwise be plausible.
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "create", key: "team",
+      fields: { label: "Team", type: "enum", values: [{ key: "a", label: "A" }] },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "delete", key: "team", confirm: true, remap_to: "other",
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/clear-only|does not accept remap_to/i);
+    // The field survives — the rejection happened before any write.
+    const cfg = await workflow();
+    expect((cfg["custom_fields"] as { key: string }[]).some(f => f.key === "team")).toBe(true);
+  });
+
+  it("rejects an immutable type change on custom_field edit", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "create", key: "size",
+      fields: { label: "Size", type: "string" },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "edit", key: "size", fields: { type: "number" },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/type.*immutable/i);
+  });
+
+  it("round-trips an enum field value with icon and color", async () => {
+    await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "create", key: "team",
+      fields: { label: "Team", type: "enum", values: [{ key: "core", label: "Core" }] },
+    });
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field_value", op: "create", field: "team", key: "ui",
+      fields: { label: "UI", icon: "brush", color: "#00ff00" },
+    });
+    expect(res.isError).toBeUndefined();
+    const cfg = await workflow();
+    const field = (cfg["custom_fields"] as { key: string; values?: { key: string; icon?: string; color?: string }[] }[])
+      .find(f => f.key === "team");
+    const val = field?.values?.find(v => v.key === "ui");
+    expect(val?.icon).toBe("brush");
+    expect(val?.color).toBe("#00ff00");
+  });
+
+  it("round-trips estimation scale via set_estimation_config", async () => {
+    const res = await executeTool(root, "set_estimation_config", {
+      enabled: true, unit: "points", scale: "fibonacci",
+    });
+    expect(res.isError).toBeUndefined();
+    const est = (await workflow())["estimation"] as { scale?: string };
+    expect(est.scale).toBe("fibonacci");
+  });
+
+  it("round-trips estimation weights via set_estimation_config", async () => {
+    // Core only accepts weights when the unit is custom_enum, which in
+    // turn requires preset_values — set all three in one call (the
+    // singleton edit validates the whole resulting config).
+    const res = await executeTool(root, "set_estimation_config", {
+      enabled: true, unit: "custom_enum", preset_values: ["low", "high"], weights: { high: 3, low: 1 },
+    });
+    expect(res.isError).toBeUndefined();
+    const est = (await workflow())["estimation"] as { weights?: Record<string, number> };
+    expect(est.weights).toEqual({ high: 3, low: 1 });
+  });
+
+  it("set_timeline_config with no fields is a clean error, not a write", async () => {
+    const res = await executeTool(root, "set_timeline_config", {});
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/nothing to change/i);
+  });
+
+  // -------------------------------------------------------------------------
+  // K103 stage 3: MCP accepts all THREE colour shapes as the wire form.
+  //
+  // Before this, `fields.color` went through a string-only reader: the
+  // object shapes were either REJECTED ("must be a string or null") on
+  // entity colours, or — worse — SILENTLY DROPPED on a seeded enum
+  // value, which created the field minus its colour with no error.
+  // -------------------------------------------------------------------------
+
+  it("accepts a palette REFERENCE on a status and stores the id, not a hex", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "waiting",
+      fields: { label: "Waiting", category: "pending", color: { palette: "teal" } },
+    });
+    expect(res.isError).toBeUndefined();
+    const statuses = (await workflow())["statuses"] as { key: string; color?: unknown }[];
+    // Live reference: the id is stored, never today's resolved hex.
+    expect(statuses.find(s => s.key === "waiting")?.color).toEqual({ palette: "teal" });
+  });
+
+  it("accepts an explicit per-mode pair on a priority", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "priority", op: "create", key: "urgent",
+      fields: { label: "Urgent", color: { light: "#CC6600", dark: "#F0A868" } },
+    });
+    expect(res.isError).toBeUndefined();
+    const priorities = (await workflow())["priorities"] as { key: string; color?: unknown }[];
+    expect(priorities.find(p => p.key === "urgent")?.color)
+      .toEqual({ light: "#CC6600", dark: "#F0A868" });
+  });
+
+  it("keeps a palette colour on a SEEDED enum value instead of dropping it", async () => {
+    // The seed parser used `typeof color === "string"`, so this colour
+    // vanished with no error and no way to notice from the response.
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "custom_field", op: "create", key: "area",
+      fields: {
+        label: "Area", type: "enum",
+        values: [{ key: "api", label: "API", color: { palette: "blue" } }],
+      },
+    });
+    expect(res.isError).toBeUndefined();
+    const field = ((await workflow())["custom_fields"] as { key: string; values?: { key: string; color?: unknown }[] }[])
+      .find(f => f.key === "area");
+    expect(field?.values?.find(v => v.key === "api")?.color).toEqual({ palette: "blue" });
+  });
+
+  it("rejects a malformed colour object rather than writing a partial one", async () => {
+    const res = await executeTool(root, "edit_workflow_entity", {
+      entity: "status", op: "create", key: "broken",
+      fields: { label: "Broken", category: "pending", color: { light: "#CC6600" } },
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/not a valid colour/i);
+    const statuses = (await workflow())["statuses"] as { key: string }[];
+    expect(statuses.find(s => s.key === "broken")).toBeUndefined();
+  });
+
+  it("list_palette_colors returns every built-in id with both mode values", async () => {
+    const res = await executeTool(root, "list_palette_colors", {});
+    expect(res.isError).toBeUndefined();
+    const parsed = JSON.parse(res.content[0]?.text ?? "{}") as {
+      colors?: { id: string; light: string; dark: string }[];
+    };
+    const teal = parsed.colors?.find(c => c.id === "teal");
+    // Exact values: an agent picks an id from here, so a listing that
+    // merely has the right shape but wrong values is still useless.
+    expect(teal).toMatchObject({ id: "teal", light: "#0F766E", dark: "#39A88F" });
+    expect((parsed.colors ?? []).length).toBeGreaterThan(1);
+  });
+});
+
+describe("MCP reconcile resolve/abandon parity", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-mcp-reconcile-"));
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  // Parity: MCP had only the read side (get_reconcile_status); CLI/web could
+  // resolve. These cover the two write tools now closing that gap.
+  it("registers resolve_reconcile and abandon_reconcile as write-side reconcile tools", () => {
+    const names = getTools().map(t => t.name);
+    expect(names).toContain("get_reconcile_status");
+    expect(names).toContain("resolve_reconcile");
+    expect(names).toContain("abandon_reconcile");
+  });
+
+  it("resolve_reconcile is gated on confirm — without it, nothing is applied", async () => {
+    // Red-proof: delete the requireConfirm gate in the handler and this goes
+    // green while the destructive apply runs unconfirmed.
+    const res = await executeTool(root, "resolve_reconcile", {
+      decisions: [{ taskId: "01ABC", field: "title", choice: "local" }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/resolve_reconcile requires confirm: true/);
+  });
+
+  it("resolve_reconcile with confirm but no reconciliation in progress reaches core and reports it cleanly", async () => {
+    // With confirm passed, the gate is cleared and the core fn is called; a
+    // tracker with no sentinel makes core throw "no reconciliation is in
+    // progress", which the handler maps to a clean error result (not a
+    // rethrown server fault). Red-proof: change the handler to swallow/relabel
+    // it and this message assertion fails.
+    const res = await executeTool(root, "resolve_reconcile", {
+      confirm: true,
+      decisions: [{ taskId: "01ABC", field: "title", choice: "local" }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/no reconciliation is in progress/);
+  });
+
+  it("resolve_reconcile rejects a decision missing required fields (strict input validation)", async () => {
+    // choice is required; a decision without it is an invalid-args error before
+    // the handler runs. Red-proof: loosen decisionSchema and this goes green.
+    const res = await executeTool(root, "resolve_reconcile", {
+      confirm: true,
+      decisions: [{ taskId: "01ABC", field: "title" }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/invalid args for resolve_reconcile/);
+  });
+
+  it("resolve_reconcile rejects an unknown key on a decision (strict)", async () => {
+    // The decision shape is core's camelCase ReconcileDecision, byte-for-byte
+    // the CLI file, and it is .strict(): an otherwise-valid decision carrying
+    // an extra unknown key (e.g. a snake_case `task_id` alongside the required
+    // `taskId`) is rejected. This pins the strictness so a later loosening to
+    // .passthrough() can't slip an unvalidated key through. Red-proof: change
+    // decisionSchema to .passthrough() and this goes green.
+    const res = await executeTool(root, "resolve_reconcile", {
+      confirm: true,
+      decisions: [{ taskId: "01ABC", field: "title", choice: "local", task_id: "01ABC" }],
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/invalid args for resolve_reconcile/);
+  });
+
+  it("abandon_reconcile is gated on confirm", async () => {
+    // Red-proof: remove the requireConfirm gate and this goes green.
+    const res = await executeTool(root, "abandon_reconcile", {});
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? "").toMatch(/abandon_reconcile requires confirm: true/);
+  });
+
+  it("abandon_reconcile with confirm is a no-op-safe clear when none is in progress", async () => {
+    // abandonReconcile just clears the sentinel; with none present it succeeds
+    // and reports local files are unchanged. Red-proof: make the handler throw
+    // when no sentinel exists and this fails.
+    const res = await executeTool(root, "abandon_reconcile", { confirm: true });
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0]?.text ?? "").toMatch(/abandoned/i);
+    expect(res.content[0]?.text ?? "").toMatch(/unchanged/i);
+  });
+
+  it("get_reconcile_status still reads clean when no reconciliation is in progress", async () => {
+    // The read side is unchanged by adding the write tools.
+    const res = await executeTool(root, "get_reconcile_status", {});
+    expect(res.isError).toBeUndefined();
+    const parsed = JSON.parse(res.content[0]?.text ?? "{}") as { in_progress?: boolean };
+    expect(parsed.in_progress).toBe(false);
   });
 });

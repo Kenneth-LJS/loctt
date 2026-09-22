@@ -1,4 +1,5 @@
 import type {
+  ArchivedScope,
   BrokenEntry,
   BrokenSavedQuery,
   LabelDef,
@@ -97,13 +98,13 @@ export interface ProjectsPage extends Page<ProjectDef> {
   readonly default_drift?: { readonly kind: "missing"; readonly default: string };
 }
 
-interface UsersPage extends Page<UserProfile> {
+export interface UsersPage extends Page<UserProfile> {
   /** Current (active) user id, or null when no users exist. */
   readonly current: string | null;
 }
 
 /** Saved-view list: `GET /api/views` returns the raw queries.yaml. */
-interface ViewsConfig {
+export interface ViewsConfig {
   readonly queries: readonly SavedQuery[];
   /**
    * Entries present in the file whose query no longer parses (VUE-22).
@@ -113,24 +114,37 @@ interface ViewsConfig {
   readonly broken?: readonly BrokenSavedQuery[];
 }
 
+/**
+ * K107: the shared config-list hooks request `archived=all`.
+ *
+ * These are the value-picker / reference-resolver source used across the
+ * FilterBar facet dropdowns, TaskDetail, CreateTaskModal, BoardView, the
+ * timeline and the view builder — everywhere a stored reference to an
+ * archived project/label/milestone/sprint/user/view must still resolve to
+ * its NAME rather than a raw id (P-4 / LST-25). Fetching `all` keeps those
+ * references readable; the sidebar nav that also reads these hooks already
+ * filters `archived !== true` in its own render, so `all` never leaks an
+ * archived row into the nav. The settings panels do NOT use these — they
+ * fetch their own scoped queries driven by the tri-state control.
+ */
 export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
-    queryFn: ({ signal }) => apiClient.get<ProjectsPage>(`/api/projects?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
+    queryFn: ({ signal }) => apiClient.get<ProjectsPage>(`/api/projects?archived=all&limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
 export function useViews() {
   return useQuery({
     queryKey: ["views"],
-    queryFn: ({ signal }) => apiClient.get<ViewsConfig>("/api/views", { signal }),
+    queryFn: ({ signal }) => apiClient.get<ViewsConfig>("/api/views?archived=all", { signal }),
   });
 }
 
 export function useLabels() {
   return useQuery({
     queryKey: ["labels"],
-    queryFn: ({ signal }) => apiClient.get<BrokenPage<LabelDef>>(`/api/labels?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
+    queryFn: ({ signal }) => apiClient.get<BrokenPage<LabelDef>>(`/api/labels?archived=all&limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
@@ -154,7 +168,10 @@ const PICKER_SEARCH_LIMIT = 50;
  * own debounce and calls this from an effect.
  */
 export async function searchLabels(q: string): Promise<readonly LabelDef[]> {
-  const page = await apiClient.get<BrokenPage<LabelDef>>(searchUrl("/api/labels", q));
+  // K107: `archived=all` so an archived label already on a task stays
+  // visible in the picker (present-but-disabled); the caller drops it as
+  // a *new* choice. Same P-4 reasoning as `searchUsers`.
+  const page = await apiClient.get<BrokenPage<LabelDef>>(searchUrl("/api/labels", q, { archived: "all" }));
   return page.items;
 }
 
@@ -167,13 +184,15 @@ function searchUrl(path: string, q: string, extra?: Record<string, string>): str
 
 /** K90: server-side milestone search for the picker (see OptionPicker). */
 export async function searchMilestones(q: string): Promise<readonly MilestoneDef[]> {
-  const page = await apiClient.get<BrokenPage<MilestoneDef>>(searchUrl("/api/milestones", q));
+  // K107: `archived=all` — an archived milestone on a task stays resolvable.
+  const page = await apiClient.get<BrokenPage<MilestoneDef>>(searchUrl("/api/milestones", q, { archived: "all" }));
   return page.items;
 }
 
 /** K90: server-side sprint search for the picker. */
 export async function searchSprints(q: string): Promise<readonly SprintDef[]> {
-  const page = await apiClient.get<BrokenPage<SprintDef>>(searchUrl("/api/sprints", q));
+  // K107: `archived=all` — an archived sprint on a task stays resolvable.
+  const page = await apiClient.get<BrokenPage<SprintDef>>(searchUrl("/api/sprints", q, { archived: "all" }));
   return page.items;
 }
 
@@ -185,35 +204,39 @@ export async function searchSprints(q: string): Promise<readonly SprintDef[]> {
  */
 export async function searchUsers(q: string): Promise<readonly UserProfile[]> {
   const page = await apiClient.get<UsersPage>(
-    searchUrl("/api/users", q, { include_archived: "true" }),
+    // K107: `archived=all` replaces the old `include_archived=true` — same
+    // intent, one param spelling across every list.
+    searchUrl("/api/users", q, { archived: "all" }),
   );
   return page.items;
 }
 
 /** K90: server-side project search for the picker (matches name/slug/prefix). */
 export async function searchProjects(q: string): Promise<readonly ProjectDef[]> {
-  const page = await apiClient.get<ProjectsPage>(searchUrl("/api/projects", q));
+  // K107: `archived=all` — an archived project on a task stays resolvable.
+  const page = await apiClient.get<ProjectsPage>(searchUrl("/api/projects", q, { archived: "all" }));
   return page.items;
 }
 
 export function useMilestones() {
   return useQuery({
     queryKey: ["milestones"],
-    queryFn: ({ signal }) => apiClient.get<BrokenPage<MilestoneDef>>(`/api/milestones?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
+    queryFn: ({ signal }) => apiClient.get<BrokenPage<MilestoneDef>>(`/api/milestones?archived=all&limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
 export function useSprints() {
   return useQuery({
     queryKey: ["sprints"],
-    queryFn: ({ signal }) => apiClient.get<BrokenPage<SprintDef>>(`/api/sprints?limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
+    queryFn: ({ signal }) => apiClient.get<BrokenPage<SprintDef>>(`/api/sprints?archived=all&limit=${String(PICKER_PAGE_LIMIT)}`, { signal }),
   });
 }
 
 export function useUsers() {
   return useQuery({
     queryKey: ["users"],
-    // Archived users included: a task assigned to someone who has since
+    // Archived users included (K107: `archived=all`, replacing
+    // `include_archived=true`): a task assigned to someone who has since
     // been archived must still show their *name* (LST-25). Without them
     // the lookup misses and the cell falls back to a raw id, which is
     // both unreadable and a P-4 violation. Pickers filter archived out
@@ -222,7 +245,7 @@ export function useUsers() {
     // existing reference.
     queryFn: ({ signal }) =>
       apiClient.get<UsersPage>(
-        `/api/users?include_archived=true&limit=${String(PICKER_PAGE_LIMIT)}`,
+        `/api/users?archived=all&limit=${String(PICKER_PAGE_LIMIT)}`,
         { signal },
       ),
   });
@@ -232,5 +255,45 @@ export function useRecents() {
   return useQuery({
     queryKey: ["recents"],
     queryFn: ({ signal }) => apiClient.get<Page<RecentTaskResponse>>("/api/recents", { signal }),
+  });
+}
+
+/**
+ * K107: scoped reads for the settings panels that manage users / projects
+ * / saved views. Separate from the shared `useUsers`/`useProjects`/
+ * `useViews` above (which fetch `all` as the app-wide picker/resolver
+ * source): a settings panel defaults to `active` and reveals archived
+ * through its tri-state control, so its read must be scoped and keyed by
+ * scope. They share the same base query key prefix (`["users"]` etc.) so a
+ * mutation's `invalidateQueries({ queryKey: ["users"] })` drops both the
+ * picker read and every scoped panel read at once.
+ */
+export function useUsersScoped(scope: ArchivedScope = "active") {
+  return useQuery({
+    queryKey: ["users", "scoped", scope],
+    queryFn: ({ signal }) =>
+      apiClient.get<UsersPage>(
+        `/api/users?archived=${scope}&limit=${String(PICKER_PAGE_LIMIT)}`,
+        { signal },
+      ),
+  });
+}
+
+export function useProjectsScoped(scope: ArchivedScope = "active") {
+  return useQuery({
+    queryKey: ["projects", "scoped", scope],
+    queryFn: ({ signal }) =>
+      apiClient.get<ProjectsPage>(
+        `/api/projects?archived=${scope}&limit=${String(PICKER_PAGE_LIMIT)}`,
+        { signal },
+      ),
+  });
+}
+
+export function useViewsScoped(scope: ArchivedScope = "active") {
+  return useQuery({
+    queryKey: ["views", "scoped", scope],
+    queryFn: ({ signal }) =>
+      apiClient.get<ViewsConfig>(`/api/views?archived=${scope}`, { signal }),
   });
 }

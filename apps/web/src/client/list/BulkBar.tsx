@@ -9,7 +9,7 @@ import { MAX_BULK_REFS } from "@loctt/contracts";
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
-import { ICON } from "../ui/icons.ts";
+import { Icon } from "../ui/Icon.tsx";
 
 /**
  * The bulk action bar, shown once at least one row is selected.
@@ -220,7 +220,7 @@ export function BulkBar({
         aria-label="Clear selection"
         className="ml-auto"
       >
-        Clear {ICON.close}
+        Clear <Icon name="close" size={14} />
       </Button>
     </div>
   );
@@ -296,7 +296,7 @@ function active<T extends { readonly archived?: boolean | undefined }>(
 }
 
 /**
- * A one-shot value picker. Deliberately not `FilterDropdown`: that one
+ * A one-shot value picker. Deliberately not `FilterFacet`: that one
  * is multi-select, holds a selected set, and labels itself "Filter by
  * X" — all wrong for an action that applies one value and is done.
  */
@@ -340,18 +340,18 @@ function BulkPicker({
 
   return (
     <div className="relative">
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
         aria-label={label}
         aria-expanded={open}
         aria-haspopup="menu"
         disabled={disabled || (emptyReason !== undefined && options.length === 0)}
-        title={options.length === 0 ? emptyReason : undefined}
+        {...(options.length === 0 && emptyReason !== undefined ? { title: emptyReason } : {})}
         onClick={() => { setOpen(o => !o); }}
-        className="rounded-md border border-border-subtle px-2.5 py-1 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
       >
-        {label} {ICON.caretDown}
-      </button>
+        {label} <Icon name="chevronDown" size={12} />
+      </Button>
 
       {open && (
         <div

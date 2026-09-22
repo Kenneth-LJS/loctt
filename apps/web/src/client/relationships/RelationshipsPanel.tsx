@@ -12,8 +12,11 @@ import {
   useRerankRelationship,
   useUnlinkTask,
 } from "../api/hooks/useRelationships.ts";
+import { progressState } from "../milestones/model.ts";
+import { ProgressReadout } from "../milestones/ProgressReadout.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import type { RelationshipGroup, RelationshipRow } from "./group.ts";
-import { groupRelationships } from "./group.ts";
+import { groupRelationships, treeChildSideKey } from "./group.ts";
 import { LinkPicker } from "./LinkPicker.tsx";
 import { RelationshipRowView } from "./RelationshipRow.tsx";
 import type { TaskIndex } from "./tree.ts";
@@ -75,6 +78,12 @@ export function RelationshipsPanel({
     () => groupRelationships(relationships, stored, workflow),
     [relationships, stored, workflow],
   );
+
+  // L4: the child-progress meter renders only on the tree group holding
+  // *children* (the tree axis's inverse side), never on the "Parent"
+  // group, which points at ancestors. Config-driven — see
+  // `treeChildSideKey`.
+  const childSideKey = useMemo(() => treeChildSideKey(workflow), [workflow]);
 
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | undefined>(undefined);
@@ -180,14 +189,11 @@ export function RelationshipsPanel({
        * disk" asks for. The message names the action, the row and the
        * group, and carries the server's own reason.
        *
-       * This is *not* REL-33's refusal. That case wants a drag against
-       * a kind switched to `ranked: false` to be refused by name, and
-       * no such guard exists: `reorderRelationship` never reads
-       * `ranked`, so the write is accepted (measured: 200, with a rank
-       * written). Recorded in `TEMP-RUN-WORKFLOW.md` § Cases that
-       * cannot be satisfied yet. When the guard lands in core it will
-       * arrive here as an ordinary `ReorderError` and render through
-       * this same branch.
+       * REL-33's refusal — a rerank against a kind switched to
+       * `ranked: false` — now arrives here as an ordinary `ReorderError`
+       * (core's `reorderRelationship` reads the `ranked` flag and the
+       * web route maps the error to a 400), rendering through this same
+       * branch.
        */
       onError: (err: Error) => {
         setErrorFor(
@@ -238,7 +244,7 @@ export function RelationshipsPanel({
                   }}
                   className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary hover:bg-bg-muted"
                 >
-                  <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
+                  <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={14} />
                   {/* REL-1: the configured label, never the raw key —
                       except for an unknown type, where the raw key is
                       the only honest thing to show (REL-25, XS-25). */}
@@ -260,11 +266,26 @@ export function RelationshipsPanel({
                 )}
               </h3>
 
+              {/* L4: a done/active/todo meter over this task's direct
+                  children, on the child side of the tree axis only.
+                  Computed from the depth-0 rows' resolvedStatus — the
+                  data the panel already holds, so no new request — with
+                  the same discarded-exclusion milestones apply. Shown
+                  even when collapsed: a glance at "3 / 5" is the reason
+                  to keep a big subtree folded. */}
+              {group.tree && group.key === childSideKey && (
+                <ChildProgressMeter
+                  rows={group.rows}
+                  statusOf={statusOf}
+                  workflow={workflow}
+                />
+              )}
+
               {group.unknown && !isCollapsed && (
                 <p className="mb-1 px-1 text-[0.8571rem] text-text-tertiary">
                   No relationship named{" "}
-                  <code className="font-mono text-[0.7857rem]">{group.key}</code> is
-                  declared in <code className="font-mono text-[0.7857rem]">workflow.yaml</code>.
+                  <code className="text-[0.7857rem]">{group.key}</code> is
+                  declared in <code className="text-[0.7857rem]">workflow.yaml</code>.
                   Add it there, correct the type on the task, or remove the
                   link below.
                 </p>
@@ -420,6 +441,73 @@ export function RelationshipsPanel({
   );
 }
 
+/**
+ * The L4 child-progress meter: a done / active / todo readout over a
+ * task's direct children (the depth-0 rows of the tree axis's child
+ * side).
+ *
+ * The categorisation is the same rule milestones apply, restated on the
+ * client because core's `computeProgress` is a Node module (it reads the
+ * corpus) and cannot cross into the browser bundle — the milestone
+ * readout does the same. Each row's `resolvedStatus` is mapped to its
+ * category via `statusOf`; `completed` counts as done, `active` as
+ * active, `discarded` is excluded from the total exactly as MSL-3
+ * requires. An unresolved or unknown status counts toward the total but
+ * toward neither segment — unrecognised is not finished.
+ *
+ * Renders nothing when there are no children to summarise (`progressState`
+ * would say "No tasks", which is noise on a group that, by existing, has
+ * at least one row — but the guard is kept for the all-discarded case,
+ * where the honest readout is an empty bar rather than a lie).
+ */
+function ChildProgressMeter({
+  rows,
+  statusOf,
+  workflow,
+}: {
+  readonly rows: readonly RelationshipRow[];
+  readonly statusOf: (key: string | undefined) => StatusDef | undefined;
+  readonly workflow: WorkflowConfig | undefined;
+}): React.JSX.Element | null {
+  const readout = useMemo(() => {
+    let done = 0;
+    let active = 0;
+    let discarded = 0;
+    for (const row of rows) {
+      const category = statusOf(row.resolvedStatus)?.category;
+      if (category === "discarded") discarded += 1;
+      else if (category === "completed") done += 1;
+      else if (category === "active") active += 1;
+    }
+    const total = rows.length - discarded;
+    return progressState({
+      done,
+      active,
+      total,
+      discarded,
+      fraction: total > 0 ? done / total : 0,
+    });
+  }, [rows, statusOf]);
+
+  // Until the workflow config loads, `statusOf` cannot classify anything,
+  // so every row would fall into "todo" and the bar would read a
+  // misleading 0 / N. Withhold the meter rather than assert a number we
+  // cannot yet compute.
+  if (workflow === undefined) return null;
+
+  return (
+    <div className="mb-1.5 px-1" data-testid="child-progress">
+      <ProgressReadout
+        readout={readout}
+        idPrefix="child-progress"
+        milestoneName="child tasks"
+        label="Child progress"
+        segmented
+      />
+    </div>
+  );
+}
+
 /** A non-structural group: flat rows, drag handles when ranked. */
 function FlatGroup({
   group,
@@ -437,24 +525,59 @@ function FlatGroup({
   /** The row being dragged, by index. */
   const [dragging, setDragging] = useState<number | null>(null);
   /**
-   * The keyboard "picked up" row and where it started, so Escape can
-   * put it back (REL-15's third bullet) without a write ever leaving.
+   * A keyboard "pickup" in progress. REL-15's third bullet — "Escape
+   * restores the original position without a write ever leaving" —
+   * requires a buffer: arrow keys move the picked-up row *visually*
+   * only, and the rerank is committed once, on drop (Enter/Space). So
+   * this holds the row's origin index and its current visual position;
+   * while it is non-null the rendered order is `order` below, not
+   * `group.rows`. Escape drops it with no write; a commit calls
+   * `onMove(origin, current)` a single time.
+   *
+   * The previous code called `onMove` on every arrow press — each
+   * keystroke was a real rerank write — and Escape performed no
+   * restoring move at all, having already overwritten the origin it
+   * would have needed. Both are fixed here.
    */
-  const [grabbed, setGrabbed] = useState<number | null>(null);
+  const [pickup, setPickup] = useState<{ origin: number; current: number } | null>(null);
   /** The screen-reader announcement for a keyboard move (REL-15). */
   const [announcement, setAnnouncement] = useState("");
 
   const count = group.rows.length;
 
-  const keyboardMove = (from: number, delta: number): void => {
-    const to = from + delta;
-    if (to < 0 || to >= count) return;
-    setGrabbed(to);
-    setAnnouncement(
-      `${group.rows[from]?.resolvedKey ?? "Row"} moved to position `
-      + `${String(to + 1)} of ${String(count)}`,
-    );
-    onMove(from, to);
+  // While a pickup is live, render the rows in their in-flight visual
+  // order; otherwise render exactly what the file says. Reordering the
+  // buffer here (rather than writing) is what keeps arrow presses from
+  // leaving a write, and what lets Escape restore by simply dropping
+  // the buffer.
+  const displayRows = pickup === null
+    ? group.rows
+    : moveInArray(group.rows, pickup.origin, pickup.current);
+
+  /** Moves the picked-up row one step, visually only — no write. */
+  const keyboardStep = (delta: number): void => {
+    setPickup(prev => {
+      // First arrow: pick the row up at its current (rendered) index.
+      const active = prev;
+      if (active === null) return prev;
+      const to = active.current + delta;
+      if (to < 0 || to >= count) return active;
+      setAnnouncement(
+        `${group.rows[active.origin]?.resolvedKey ?? "Row"} moved to position `
+        + `${String(to + 1)} of ${String(count)}`,
+      );
+      return { origin: active.origin, current: to };
+    });
+  };
+
+  /** Commits the buffered move as a single rerank (Enter/Space). */
+  const commit = (): void => {
+    setPickup(prev => {
+      if (prev !== null && prev.current !== prev.origin) {
+        onMove(prev.origin, prev.current);
+      }
+      return null;
+    });
   };
 
   return (
@@ -465,7 +588,7 @@ function FlatGroup({
         {announcement}
       </span>
       <div className="space-y-0.5">
-        {group.rows.map((row, i) => (
+        {displayRows.map((row, i) => (
           <div
             key={`${row.type}:${row.target}`}
             draggable={group.ranked}
@@ -495,25 +618,33 @@ function FlatGroup({
                   aria-label={
                     `Reorder ${row.resolvedKey ?? row.target}, position `
                     + `${String(i + 1)} of ${String(count)}. `
-                    + `Arrow up and down to move, Escape to cancel.`
+                    + `Arrow up and down to move, Enter to drop, Escape to cancel.`
                   }
                   onKeyDown={e => {
                     if (e.key === "ArrowUp") {
                       e.preventDefault();
-                      if (grabbed === null) setGrabbed(i);
-                      keyboardMove(i, -1);
+                      // Lazily begin the pickup at this row's current
+                      // rendered index, then step it up.
+                      setPickup(prev => prev ?? { origin: i, current: i });
+                      keyboardStep(-1);
                     } else if (e.key === "ArrowDown") {
                       e.preventDefault();
-                      if (grabbed === null) setGrabbed(i);
-                      keyboardMove(i, 1);
-                    } else if (e.key === "Escape" && grabbed !== null) {
+                      setPickup(prev => prev ?? { origin: i, current: i });
+                      keyboardStep(1);
+                    } else if ((e.key === "Enter" || e.key === " ") && pickup !== null) {
+                      // Drop: commit the buffered move as one rerank.
                       e.preventDefault();
-                      // Back to where the pickup started. `grabbed`
-                      // tracks the current position and `i` is the row's
-                      // index in the *rendered* list, which the refetch
-                      // has already updated — so the restore is a move
-                      // from here back to the original index.
-                      setGrabbed(null);
+                      setAnnouncement(
+                        `${group.rows[pickup.origin]?.resolvedKey ?? "Row"} dropped at `
+                        + `position ${String(pickup.current + 1)} of ${String(count)}`,
+                      );
+                      commit();
+                    } else if (e.key === "Escape" && pickup !== null) {
+                      e.preventDefault();
+                      // Restore: dropping the buffer returns the row to
+                      // its origin with no write ever leaving (REL-15's
+                      // third bullet).
+                      setPickup(null);
                       setAnnouncement("Move cancelled");
                     }
                   }}
@@ -528,6 +659,20 @@ function FlatGroup({
       </div>
     </div>
   );
+}
+
+/**
+ * Returns a copy of `rows` with the element at `from` moved to `to`,
+ * shifting the rest. Used only for the in-flight keyboard pickup's
+ * visual order — it never touches disk.
+ */
+function moveInArray<T>(rows: readonly T[], from: number, to: number): readonly T[] {
+  if (from === to) return rows;
+  const next = [...rows];
+  const [moved] = next.splice(from, 1);
+  if (moved === undefined) return rows;
+  next.splice(to, 0, moved);
+  return next;
 }
 
 /** A `graph: tree` group: nested rows with visible depth (REL-5). */

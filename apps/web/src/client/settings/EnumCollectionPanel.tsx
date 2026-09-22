@@ -1,4 +1,4 @@
-import type { PriorityDef, StatusDef, TaskTypeDef, WorkflowConfig } from "@loctt/contracts";
+import type { EntityColor, PriorityDef, StatusDef, TaskTypeDef, WorkflowConfig } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -10,6 +10,7 @@ import { Button } from "../ui/Button.tsx";
 import { type EntryDialogResult,EntryEditDialog } from "./EntryEditDialog.tsx";
 import { type RemapChoice,RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
+import { RowActions } from "./RowActions.tsx";
 import { renumberPriorities, reorder, setDefaultStatus } from "./workflowEdits.ts";
 import {
   buildPriority,
@@ -28,7 +29,7 @@ import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
  * one shape: each is an ordered list of `{key, label, …}` where the
  * order in the file is the order everywhere else in the app, deleting
  * an in-use key demands a remap, and the key itself is immutable
- * (`docs/dev/invariants.md`) while the label is not.
+ * (`docs/dev/reference/invariants.md`) while the label is not.
  *
  * **The key is never editable after creation.** Stored task frontmatter
  * holds keys, not labels, so renaming a key in place would orphan every
@@ -137,9 +138,9 @@ function CollectionEditor({
             && entryChangedOnDisk(opts.staleBaseline, freshRows)
           ) {
             throw new ConcurrentWorkflowEditError(
-              `.loctt/config/workflow.yaml changed on disk while this dialog was `
+              `These settings changed outside the app while this dialog was `
               + `open — the ${NOUN[collection]} "${opts.staleBaseline.key}" is not `
-              + `what it was. Reload the panel to see the current file, then re-apply `
+              + `what it was. Reload the panel, then re-apply `
               + `your change. Your edit was not saved.`,
             );
           }
@@ -204,10 +205,10 @@ function CollectionEditor({
     if (dialog.mode === "create") {
       const built: Row =
         collection === "statuses"
-          ? buildStatus({ key: result.key, label: result.label, category: result.category ?? "pending" })
+          ? buildStatus({ key: result.key, label: result.label, category: result.category ?? "pending", icon: result.icon, color: result.color })
           : collection === "priorities"
-            ? buildPriority({ key: result.key, label: result.label })
-            : buildTaskType({ key: result.key, label: result.label });
+            ? buildPriority({ key: result.key, label: result.label, icon: result.icon, color: result.color })
+            : buildTaskType({ key: result.key, label: result.label, icon: result.icon, color: result.color });
       let next: readonly Row[] = [...rows, built];
       if (collection === "statuses" && result.makeDefault === true) {
         next = setDefaultStatus(next as readonly StatusDef[], built.key);
@@ -215,12 +216,27 @@ function CollectionEditor({
       commit(next, { onDone: () => { setDialog(null); } });
       return;
     }
-    // Edit: replace the row, carrying the un-editable fields through.
+    // Edit: replace the row, carrying the un-editable fields through and
+    // applying the presentational icon/colour the dialog now edits — an
+    // undefined value clears the key rather than leaving the stored one.
     const target = dialog.row;
-    const nextRow: Row =
+    const withPresentational = <T extends Row>(base: T): T => {
+      // K103: the annotation exists only to name the two keys being
+      // stripped; `color` is an `EntityColor`, and calling it `string`
+      // here described the old shape while the values flowing through
+      // were already objects.
+      const { icon: _icon, color: _color, ...rest } = base as T & { icon?: string; color?: EntityColor };
+      return {
+        ...rest,
+        ...(result.icon !== undefined ? { icon: result.icon } : {}),
+        ...(result.color !== undefined ? { color: result.color } : {}),
+      } as T;
+    };
+    const nextRow: Row = withPresentational(
       collection === "statuses"
         ? { ...(target as StatusDef), label: result.label, category: result.category ?? (target as StatusDef).category }
-        : { ...target, label: result.label };
+        : { ...target, label: result.label },
+    );
     let next = rows.map(r => (r.key === target.key ? nextRow : r));
     if (collection === "statuses" && result.makeDefault === true) {
       next = setDefaultStatus(next as readonly StatusDef[], target.key);
@@ -245,7 +261,7 @@ function CollectionEditor({
           className="mb-3 rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[0.9286rem]"
         >
           <p className="font-medium text-danger-fg">
-            The change was not saved to .loctt/config/workflow.yaml.
+            Your change wasn’t saved.
           </p>
           <p className="mt-1 text-text-secondary">{saveError}</p>
           <p className="mt-1 text-text-tertiary">
@@ -371,7 +387,7 @@ function RowFields({
       {/* The key, shown and never editable — see the header comment. */}
       <code
         data-testid={`${collection}-key-${row.key}`}
-        className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
+        className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary"
         title="A key is permanent: task files store it, so renaming it in place would orphan them."
       >
         {row.key}
@@ -389,7 +405,7 @@ function RowFields({
       {collection === "priorities" && (
         <span
           data-testid={`priorities-value-${row.key}`}
-          className="font-mono text-[0.8571rem] text-text-tertiary"
+          className="text-[0.8571rem] text-text-tertiary"
           title="Recomputed from position — lower sorts first."
         >
           value {String((row as PriorityDef).value ?? "—")}
@@ -414,26 +430,20 @@ function RowFields({
         {String(count)} task{count === 1 ? "" : "s"}
       </span>
 
-      <button
-        type="button"
-        data-testid={`${collection}-edit-${row.key}`}
-        disabled={disabled}
-        onClick={onEdit}
-        className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] disabled:opacity-40"
-      >
-        Edit
-      </button>
-
-      <button
-        type="button"
-        data-testid={`${collection}-delete-${row.key}`}
-        disabled={disabled || onlyRow}
-        onClick={onDelete}
-        title={onlyRow ? `A tracker needs at least one ${NOUN[collection]}.` : undefined}
-        className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg disabled:opacity-40"
-      >
-        Delete
-      </button>
+      <RowActions
+        label={`Actions for ${NOUN[collection]} "${row.label}"`}
+        actions={[
+          { label: "Edit", testId: `${collection}-edit-${row.key}`, disabled, onSelect: onEdit },
+          {
+            label: "Delete",
+            testId: `${collection}-delete-${row.key}`,
+            danger: true,
+            disabled: disabled || onlyRow,
+            ...(onlyRow ? { title: `A tracker needs at least one ${NOUN[collection]}.` } : {}),
+            onSelect: onDelete,
+          },
+        ]}
+      />
     </div>
   );
 }

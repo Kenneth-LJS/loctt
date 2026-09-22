@@ -1,21 +1,27 @@
-# Design decisions
+# Decision log
 
-Locked decisions for LocTT, extracted from the v1 UI planning docs before
-those were retired. Keys (`D1`, `Q4`, `CW-3`, …) are preserved so existing
-cross-references keep resolving.
+An append-only record of design decisions for LocTT: what was decided, why,
+and — for reversible ones — how to undo it. Entries carry keys (`D1`, `Q4`,
+`A208`, `K98`, …) that the rest of the docs and the code cross-reference.
 
-**What's here and what isn't.** Decisions whose outcome is visible in the
-code are *not* repeated — the code is the record, and duplicating it here
-would just create another thing to drift. What survives is the material
-that leaves no trace:
+**This is a log, not reference documentation.** How LocTT works *now* lives
+in the code and in the reference docs (`architecture.md`, `schema-reference.md`,
+`design-system.md`, `docs/user/**`). This file is the "why we chose X, and
+how to reverse it" that leaves no trace in the code otherwise. It is
+deliberately historical; do not flatten it to present-tense. New decisions
+append; superseded ones stay, marked superseded, so an old call is not
+re-applied by mistake.
 
-1. **Deliberately not built** — the "we decided against X" calls. Nothing
-   in the codebase distinguishes these from oversights, so without this
-   list someone eventually "fixes" them.
-2. **Decided but unbuilt and unticketed** — real decisions that fell out
-   of the plan. These need converting to tickets or dropping on purpose.
-3. **Superseded** — where the shipped behaviour diverged from the locked
-   decision. Recorded so the old decision isn't re-applied.
+What earns an entry — the material that would otherwise be lost:
+
+1. **Deliberately not built** — the "we decided against X" calls, so nobody
+   later "fixes" a considered omission.
+2. **Decided but unbuilt** — real decisions still awaiting a ticket or a
+   deliberate drop.
+3. **Superseded** — where shipped behaviour diverged from an earlier
+   decision, kept so the old one is not re-applied.
+4. **Reversible agent/human calls** — each with a **To revert** path, so a
+   decision made to keep moving can be walked back cleanly.
 
 ---
 
@@ -1027,8 +1033,9 @@ the same list, which is the drift SET-2's bullet is really about.
 `SectionNav` and `UnknownSection`
 (`apps/web/src/client/settings/SettingsShell.tsx`); the `built` field
 can then be dropped. The SET-2 test in
-`tests/ui/flow-settings-projects-users.spec.ts` asserts the five group
-headings, not the unbuilt entries, so it survives either way.
+`tests/ui/flow-settings-projects-users.spec.ts` asserts the group
+headings (four since A218), not the unbuilt entries, so it survives
+either way.
 
 ### A64 · The create form marks a duplicate project name without blocking it
 
@@ -2311,6 +2318,125 @@ the MSL-39/40/41 blocks in `MilestonesView.test.tsx` and the MSL-39/40/41/42
 tests in `tests/ui/flow-milestones.spec.ts`. A per-status breakdown, if
 wanted later, is a core `Progress` extension (with CLI/MCP parity), not a
 view change.
+
+### A221 · `delete_comment` joins the delete_* confirm gate
+
+**Ticket:** MCP agent-surface audit · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** Every destructive `delete_*` MCP tool (delete_task,
+delete_label, delete_milestone, delete_sprint, delete_project,
+delete_user, delete_view) takes a `confirm` flag and enforces it via
+`requireConfirm`. `delete_comment` (`apps/mcp/src/tools/comments.ts`) did
+not — it deleted unconditionally. Both the server instructions
+(MCP_INSTRUCTIONS in `apps/cli/src/commands/mcp.ts`: "delete_* tools …
+require confirm: true") and the user-facing reference
+(`docs/user/mcp/reference.md`) already documented delete_comment as
+carrying the gate, so the code was behind its own contract.
+
+**What had to be decided.** Should `delete_comment` require `confirm:
+true` like its siblings, changing its runtime behavior (a call that
+succeeded before now refuses without the flag)?
+
+**Options considered.**
+
+1. **Add the gate.** Matches every sibling, the server instructions, and
+   the published reference. Cost: a behavior change — an existing caller
+   relying on no-confirm delete now gets a refusal until it passes
+   `confirm: true`.
+2. **Leave it, fix the docs instead.** Zero behavior change. Cost: makes
+   comment deletion the one unguarded destructive tool, contradicting the
+   "delete_* require confirm" contract an agent is told to rely on, and a
+   comment delete is not recoverable (no archive_comment sibling).
+
+**Decided.** Option 1 — add the `confirm` gate, mirroring `delete_label`
+exactly (optional `confirm: boolean` in the schema, `requireConfirm`
+first in the handler, "Always requires `confirm: true`." appended to the
+description).
+
+**Why.** The gate is the agent-safety net (see `confirm.ts`): a
+destructive call without confirm means the agent misunderstood. Comment
+deletion is hard and irreversible (no soft-delete sibling), so it belongs
+in the family, not outside it. The docs already promised this, so the
+change closes doc/code drift rather than authoring a new requirement.
+
+**To revert.** In `apps/mcp/src/tools/comments.ts`: drop the
+`requireConfirm` import, the `confirm` field from `delete_comment`'s
+`inputSchema`, the two guard lines at the top of the handler, and the
+"Always requires `confirm: true`." sentence from the description. Remove
+the "delete_comment without confirm is rejected; confirm deletes" test in
+`apps/mcp/src/mcp.test.ts`. Note the doc reference and MCP_INSTRUCTIONS
+would then be ahead of the code again.
+
+### A276 · K107 web surface — shared tri-state control + how each caller picks its scope
+
+**Ticket:** K107 (web stage) · **Date:** 2026-09-21 · **Commit:** (this one)
+
+**The situation.** K107 (Ken, § 9) made `archived` a first-class
+tri-state scope (`active`/`archived`/`all`, default `active`) with the
+core primitives `applyArchivedScope` + the task list's `archivedScope`
+(stage 1, committed). The web surface was inconsistent: `/api/tasks`
+took `?archived=<bool>`, `/api/users` took `?include_archived`, and the
+config-list endpoints (views/milestones/sprints/labels/projects) filtered
+nothing; only Sprints + Users panels had a boolean "Show archived" toggle.
+
+**What had to be decided.** (a) One control shape; (b) whether the shared
+sidebar/picker data hooks fetch scoped or `all`; (c) how the settings
+panels' deep-link (`#row-<id>`) anchors keep resolving once the default
+scope stops fetching archived rows.
+
+**Options considered.**
+- Control: a segmented radiogroup vs a labelled `<select>`. Segmented is
+  more visible but hand-rolled a11y; the set is a fixed three.
+- Picker hooks: scope them (and add a scope arg everywhere) vs fetch
+  `all` (archived resolvable) and let each render filter. Scoping the
+  shared hooks risks a P-4 regression (an archived assignee's name no
+  longer resolving) at every value picker.
+- Deep-link: refetch-all-then-split (old behaviour) vs widen the fetch to
+  `all` only while a `#row-…` hash is present.
+
+**Decided.**
+- **Control:** one `ArchivedScopeControl` (a labelled `Select`, testid
+  `archived-scope`, `value: ArchivedScope`, `onChange`, optional
+  per-scope `counts`), reused on FilterBar + all six settings panels +
+  the Milestones view.
+- **Picker hooks fetch `all`:** the shared `useProjects/useLabels/
+  useMilestones/useSprints/useUsers/useViews` and every `searchX` request
+  `archived=all` (users was already `include_archived`), because they are
+  the value-resolver source. The sidebar nav already filters
+  `archived !== true` in its own render, so `all` never leaks archived
+  into the nav. Settings panels get their OWN scoped hooks
+  (`useCountedX(scope)`, `useUsersScoped/useProjectsScoped/useViewsScoped`)
+  defaulting `active`.
+- **Deep-link widen:** when a `#row-…` hash is present, the panel widens
+  its fetch to `all` so the anchor resolves. SprintsPanel reads the hash
+  reactively via `useRouterState` (its K100 test drives a memory
+  history); the other panels read `window.location.hash` once at mount
+  (`settings/deepLinkHash.ts`) to avoid a `RouterProvider` dependency in
+  their unit tests. This relaxes the old "reveal only when the target is
+  archived" guard to "reveal whenever a deep link is present" — a corner
+  case where resolvability beats hiding archived.
+
+**Why.** P-4 (an existing reference stays readable) is the load-bearing
+constraint and it lives at the pickers, not the panels; fetching `all`
+there is the least-surprising way to keep it. The `<select>` reuses a
+primitive and is natively accessible. The scope is encoded into a saved
+view's structured query for now (`active`→`archived != true`,
+`archived`→`archived = true`, `all`→no leaf) until K102 gives a view its
+own scope flag — this keeps "Save as view" reproducing what the user saw
+without pre-empting K102.
+
+**To revert.** Delete `apps/web/src/client/ui/ArchivedScopeControl.tsx`
+(+ test) and `apps/web/src/client/settings/deepLinkHash.ts`; restore the
+boolean `?archived`/`?include_archived` handling in
+`apps/web/src/server/server.ts` (the `parseArchivedScope` helper + its
+seven call sites) and the boolean `archived` in
+`apps/web/src/client/router/listSearch.ts` + `useTasks.ts`; revert the
+panel edits (Sprints/Users/Milestones/Labels/Projects/SavedViews) and
+MilestonesView to their boolean toggles; revert the `archived=all`
+switches in `sidebarData.ts`, `useTaskGraph.ts`; and the tri-state leaf
+logic in `list/buildConditions.ts`. SprintsView was deliberately left on
+its boolean `showArchived` (a board of columns has no meaningful
+"archived-only" state) — see known-gaps.
 
 ## 9. Ken's rulings, 2026-08-29
 
@@ -12497,6 +12623,13 @@ extended). Not committed — left in the working tree.
 
 ### A185 · Visual query builder — the renderable leaf subset (K83 step 1, core)
 
+> **SUPERSEDED by K102 (2026-09-21).** A saved view no longer stores a
+> `conditions` `BuilderTree` or a derived `query` string; it stores an
+> ordered `filters[]` discriminated union. The `BuilderTree` AST, its
+> contracts mirror and `queryToConditions`/`conditionsToDsl` were deleted.
+> Kept as history — do not build on this entry.
+
+
 **Ticket:** K83 (query-builder, step 1: core serializer + AST→tree +
 renderability predicate) · **Date:** 2026-09-16 · **Commit:** dacae7c
 
@@ -12584,6 +12717,13 @@ files, 59 new tests green, 387 core-query tests green, 20 web-list tests
 (buildDsl + dslToSearch) green. Not committed — left in the working tree.
 
 ### A186 · Visual query builder — Advanced-surface wiring (K83 step 3, web)
+
+> **SUPERSEDED by K102 (2026-09-21).** A saved view no longer stores a
+> `conditions` `BuilderTree` or a derived `query` string; it stores an
+> ordered `filters[]` discriminated union. The `BuilderTree` AST, its
+> contracts mirror and `queryToConditions`/`conditionsToDsl` were deleted.
+> Kept as history — do not build on this entry.
+
 
 **Ticket:** K83 (query-builder, step 3: wire `<QueryBuilder>` into
 FilterBar's Advanced surface) · **Date:** 2026-09-16 · **Commit:** 670a82b
@@ -13448,6 +13588,1023 @@ file corrupted after storage renders "as if the image wasn't there", i.e.
 the type icon, not a broken-image icon) still holds and the `<img>`
 `onerror` path provides it. Not agent-revertible.
 
+### K96 · Body/comment editor exit gesture — autosave stays, Esc/Cmd+Enter/"Done" all exit-keeping; "cancel" is dropped
+
+**Ken's ruling (2026-09-19).** A description-editor review found the exit
+gesture self-contradictory: Esc is labelled "cancel" but `cancel()` reverts
+only to the last *autosave* (`useBodyAutosave.ts:304`), so after 1.5s idle
+Esc discards nothing while claiming to. Presented with (A) keep autosave,
+make Esc/Cmd+Enter/"Done" all exit **keeping** the text and drop "cancel"
+as a concept (keeps the K2 conflict machinery intact), vs (B) real
+Save/Cancel with local buffering and autosave demoted to draft-only, Ken
+chose **(A)**.
+
+- The edit surface gains a visible **Done** control; **Esc**, **Cmd/Ctrl+
+  Enter**, blur, and Done all flush-and-exit keeping the text. There is no
+  "discard my edits" gesture in the editor (undo covers within-session
+  reverts; the conflict dialog still governs concurrent external writes).
+- TSK-71's "Escape cancels" wording is **superseded** by "Escape exits
+  keeping your text". The autosave + conflict-token machinery (K2, TSK-48,
+  XS-12) is unchanged — this only removes the false "cancel-to-last-save"
+  path. Supersedes the K33 note that left the gesture open.
+- This closes the review's data-loss finding where Esc while the conflict
+  dialog / mention menu is open discarded unsaved "mine" text: with no
+  discard path, those Esc presses must scope to the dialog/menu only.
+
+Agent-revertible only back to the pre-ruling ambiguity, which was a bug;
+effectively locked.
+
+### K97 · Configurable list filters scope: per-view, with a per-user default and a built-in fallback
+
+**Ken's ruling (2026-09-19).** As custom enum fields grow, `FilterBar`
+renders a `FilterDropdown` per field on top of the 9 built-ins — 15-25+
+permanent pills, no show/hide config. The redesign makes the *visible-filter
+set* configurable; Ken ruled the scope is **per-view, with a per-user
+default and a built-in fallback** (the PM's recommendation), not per-user-
+only or global.
+
+- **A saved view owns its visible-filter set** — it already encodes q= +
+  facet params in the URL / `queries.yaml`; "which filters this view shows"
+  belongs with it.
+- **The bare `/list` (no view)** uses a **per-user default** visible-filter
+  set (stored per-user like `board_hidden_columns` / list column visibility),
+  falling back to a **built-in default** (the primary built-ins:
+  Project/Status/Priority/Assignee) when the user has set none.
+- Resolution chain: **active view's set → per-user default → built-in
+  default.** Adding a filter via the desktop "all filters" dialog / mobile
+  sheet is transient for an ad-hoc `/list` unless saved into a view (or set
+  as the per-user default via an explicit action).
+- Migration: existing trackers/views with no stored set fall through to the
+  built-in default — no data migration needed; the feature is additive.
+
+To revert: this is Ken's scope call for the unbuilt redesign; an agent may
+refine storage details but not change the primary scope without a new ruling.
+
+### K98 · Monospace is for code blocks and CLI commands ONLY — strip it everywhere else, including query/DSL text
+
+**Ken's ruling (2026-09-19).** `font-mono` had spread across the UI as a
+"make this text look different" device — on task keys, user IDs, project
+slugs/prefixes, file paths, config keys quoted in prose, confirm-word inputs,
+hex colour fields, and query/DSL text (~150 sites). Ken: "i'd really rather
+have zero: only code blocks and cli commands."
+
+**Keep monospace ONLY for:**
+- **A. Code blocks** — fenced and inline code in task/comment *bodies*
+  (`.prose-body code`/`pre`) and `weights`/`custom_enum`-style code fences
+  in help prose. This is authored code content inside a markdown body.
+- **B. CLI commands** — literal shell commands shown in help/error prose
+  (`loctt doctor`, `loctt restore`, `git worktree remove …`).
+
+**Strip `font-mono` from everything else** (it becomes normal text —
+quotes/emphasis/`text-secondary` may substitute where a boundary cue is
+wanted):
+- **C. File / config paths** — `.loctt/config/workflow.yaml`, `sprints.yaml`.
+- **D. Config keys / values quoted in prose** — `due_date`, `boards:`,
+  a relationship/status key mid-sentence.
+- **E. Task keys / IDs / slugs / prefixes shown AS DATA** — the key on a
+  board card / list row / picker, a ULID, a project slug/prefix in settings,
+  a swept-pin id. (This was the abuse Ken first spotted.)
+- **F. Confirm-word inputs** — the `OVERWRITE`/`DELETE`/task-key confirm
+  field and the word shown to type.
+- **G. Hex colour input** — the `#aabbcc` label-colour field.
+- **H. Query / DSL text** — the advanced-query editor box, the visual
+  builder's live query preview, saved-view query previews, the filter-bar
+  query chip, and a query string shown in a broken-view notice. This is the
+  USER's own filter text, not authored code — it reads as normal text. (The
+  earlier version of this entry wrongly kept these as "DSL"; that was an
+  agent inference Ken never approved and rejected on sight — "i hate it".)
+
+A `<code>` element may stay as an element (semantics/quoting) but loses the
+`font-mono` class unless it is A or B. The `--font-mono` token stays (A/B
+still use it, and `.prose-body` code uses it).
+
+**To revert.** Re-add `font-mono` to the stripped sites (git history has
+each). This is a taste ruling by Ken, not a correctness one.
+
+### K99 · Brand accent is a teal (emerald–teal midpoint); split fill vs text accent; on-accent is black; semantic colours harmonised to it
+
+**Ken's ruling (2026-09-19).** The v1 indigo/purple accent was never a
+chosen brand colour — inherited from the v1 tokens. Ken chose a green-leaning
+**teal**, the emerald–teal midpoint, after a palette exploration.
+
+- **Accent hue.** Light `--accent: #0B9C81` (the midpoint Ken liked). Dark:
+  a **softened** variant, `#39A88F` (candidate "C" nudged down — the brighter
+  teal read "too harsh" on the dark canvas).
+- **On-accent is BLACK, both modes** (`--accent-contrast: #0B0B0C`). Ken:
+  "bright buttons should have black text/markings, not just white." White on
+  `#0B9C81` is 3.45:1 (fails); black is 5.7:1 (AA). Dark accent black = 6.72:1.
+- **Final accent values (supersede the exploratory ones above):** light
+  `--accent: #0F766E` (white on-accent, 5.5:1), dark `--accent: #39A88F`
+  (black on-accent, 6.7:1). **The fill/text split was dropped as
+  unnecessary** — `#0F766E` is deep enough to serve as both a fill (white
+  text on it) and as link/accent text on the surfaces (4.9–5.5:1), and the
+  dark `#39A88F` passes as text on every dark surface (5.6–6.7:1). So there
+  is ONE `--accent` token, no separate `--accent-text`.
+- **Blue and orange (harmonised semantics).** Light: active/medium blue
+  `#1868B0`; high/warning orange `#CC6600` — a VIBRANT orange that clears
+  **AA-Large (3:1)** but not AA-normal on the pale chip. Ken chose vibrancy
+  over AA-normal for this one colour, acceptable because the chip/priority
+  text is bold (AA-Large applies to bold text). Dark: blue `#6FB6F0`, orange
+  `#F0A868` (both pass easily on the dark canvas). This is the only token in
+  the file that intentionally sits at AA-Large rather than AA-normal;
+  recorded here so it is not later "found" as an AA regression.
+- **Logo "o"** stays neutral ink (single-accent brand system; `--text-primary`
+  pairing), unless revisited.
+- **Semantic colours harmonised.** Ken: status (pending/active/completed/
+  discarded), priority, and feedback (danger/success/warning) colours must be
+  ADAPTED to sit harmoniously with the teal scheme — matched luminosity/
+  saturation — NOT left as the independently-tuned indigo-era values. Hard
+  constraint: every harmonised colour must KEEP its WCAG AA contrast (the
+  file's existing per-token AA rationale is the floor, not to be regressed),
+  and the *completed* status green must stay visually distinct from the teal
+  brand accent so "done" does not read as "branded".
+
+**To revert.** Restore the indigo `--accent*` values (git history) and the
+independently-tuned semantic tokens; drop the `text-accent` split.
+
+### K100 · Point-of-use config: edit-in-place ONLY through a shared component the Settings panel also renders; deep-link otherwise
+
+**Ken's ruling (2026-09-20).** Config is being surfaced from where entities are
+used (sidebar rows, board columns, entity headers, pickers) because it was
+stranded in Settings. Two PM/UI analyses (advocate + skeptic) converged on a
+rule that is about **component ownership**, not about where the UI opens — and
+Ken adopted it:
+
+> An entity may be edited from a point of use **only** through a single
+> self-contained editor component (one that owns its own mutation, validation,
+> and error-anchoring) that the **Settings panel itself also renders**. If the
+> Settings panel's editor is not yet that shared component, the point-of-use
+> affordance is a **deep link** to `/settings/<section>#row-<id>` and stays a
+> link until the editor is extracted. Every in-place editor also carries a
+> "Manage all <noun>…" deep link so Settings stays discoverable and the two
+> surfaces are visibly the same thing.
+
+This is the which-layer rule applied to UI: in-place is a *reward for
+extraction*, not a licence to fork. "Safe" is checkable in review — is the
+Settings panel rendering the same component? If not, it's a link.
+
+**Why (the crux the skeptic found):** in-place is drift-free only when the
+editor already owns its mutation+validation (`ViewFormDialog` does — reuse is
+one import). Where the *panel* owns the write (workflow enums: whole-collection
+PUT with SET-28 stale-baseline refusal, SET-34 rollback, priority renumber,
+remap — `EnumCollectionPanel`), a second in-place editor is a second
+implementation = drift. This already happened on-branch: the saved-view Delete
+forked (sidebar drops the pin + suppresses the vanished-notice; the Settings
+panel does neither) — fix that as part of adopting the rule.
+
+**Per-entity assignment:**
+- **Saved views** — in-place (shipped); *close the drift*: make `SavedViewsPanel`
+  use `DeleteViewDialog` + pin-drop + `dismiss()` like the sidebar, and retire
+  `list/SaveViewDialog` in favour of `ViewFormDialog` seeded with the built DSL.
+- **Sprints** — in-place **via the `/sprints/:id` detail page** (its header IS
+  the editor). Sprint chips/rows anywhere DEEP-LINK to it. Do **not** build a
+  separate sprint dialog (avoids changing the detail interaction + its e2e).
+  First parity fix: hoist the duplicated `STATES`/`STATE_LABEL`/`ISO_DATE_RE`
+  from `SprintsPanel` and `SprintMetaHeader` into one module.
+- **Labels, Milestones, Projects** — deep-link **now**; convert to in-place
+  once their inline row-form is **extracted** to a shared dialog the panel also
+  renders (then it becomes in-place by the rule).
+- **Workflow enums / custom fields / relationships / board columns** —
+  **deep-link** (whole-collection or whole-document writes; hoisting not worth
+  it, and K1's edit-gate argues against 1-click config edits from views).
+- **Whole-surface config** (git-sync, calendar, keyboard, preferences, backup,
+  reconcile, diagnostics, card layout, timeline defaults) — **deep-link**,
+  labelled as navigation ("Configure…"), never "Edit".
+
+**Groundwork regardless (cheap, all panels):** add `id="row-<id>"` to every
+settings row so `#row-<id>` anchors land; when a hash names an archived row,
+auto-enable that panel's "Show archived". Defer `?edit=<id>` until a panel needs
+it.
+
+**To revert.** Remove the point-of-use `onSelect`/link; the shared dialogs and
+extracted modules stay (the panels still use them). This is a standard, not a
+one-off — new point-of-use config must follow it.
+
+### K101 · Git-backed auto-commit + push of agent-written content is accepted, not gated
+
+**Ken's ruling (2026-09-20).** Under git-backed mode, content an MCP agent
+writes — an attachment, a task body, a comment — is auto-committed to the
+`loctt` branch and, when that branch is pushed, leaves the machine. This is
+accepted as the intended behavior of the auto-commit+publish path: git-backed
+mode is opt-in, and the concern is not attachment-specific. No source-path
+confinement, no publish confirmation, and no per-tool gate is added on this
+basis. (This closes the F1 line of work: the A225 attempt to address it via
+`attach_file` path-confinement was reverted for breaking legitimate
+attach-from-the-project, and the underlying concern is now a decision, not an
+open gap.)
+
+### K102 · A View is an ordered list of Filters (simple + advanced), stored as authored — never merged into one query
+
+**Ken's ruling (2026-09-21).** Supersedes the A217/A228 single-`conditions`-tree
+model for saved views.
+
+**The model.** A **View** is a collection of **Filters**. A **Filter** is either
+a *simple filter* (field + operator + value(s), e.g. `status = in_progress`) or
+an *advanced filter* (a raw DSL query the human typed). A view holds an **ordered
+list** of filters, may mix both kinds, and may hold **multiple** advanced filters.
+**Semantics: ALL filters AND together** — a row shows only if every filter passes.
+
+**Storage rule (the load-bearing part).** Persist the filters **as authored** —
+order preserved, each filter kept in its own form. Do **not** merge them into a
+single DSL string, do **not** reorder, do **not** transform. Why: once merged you
+cannot tell which part the human typed as DSL (to keep verbatim) from what came
+from simple filters (to keep editable). Ken: *"if i take a saved view and i want
+to modify, i don't want to have to take out the DSL query … then risk breaking
+something in the view."* This extends K98's "don't turn human filters into ugly
+queries" to the storage layer, and replaces the derived-`query` cache that the
+FilterBar chip + edit dialog currently surface.
+
+**Execution (core adapts).** Core accepts the filter list and applies all filters
+conjunctively. Baseline implementation: AND the simple filters and the advanced
+queries together. Possible optimisation to **investigate** (not assumed): filter
+by the cheap simple filters first, then run advanced DSL only on survivors —
+measure before adopting.
+
+**New-view UX.** A new view **starts in the human-readable simple-filter picker**
+(dropdown fields + checked values, matching the top filter bar) — NOT the query
+builder AST, NOT starting in Advanced. Adding an advanced-query filter is an
+optional extra step. The current AND/OR/Group/Condition BuilderTree dialog is
+replaced.
+
+**Vocabulary (standardised).** **View** = a collection of filters (the saved,
+named thing). **Filter** = the filters themselves — a simple `field = value` or a
+DSL query. Audit and align every user-facing string across web/CLI/MCP/docs to
+this (e.g. sidebar section, "Save as view", "Edit view", "Add filter").
+
+**Migration.** Greenfield — saved-view data has no real users. Change the
+on-disk `queries.yaml` schema freely. No migrate-on-load code.
+
+**Seed (Ken, 2026-09-21).** *"we don't ship a demo."* `loctt init` seeds no
+demo content: the broken `blocked` view is removed, and the seed is trimmed
+to sensible defaults only (audited under K107's sweep / a seed audit), not
+demo data. The archived default comes from K107's scope flag, not a stored
+`archived != true` filter.
+
+**CLI/MCP authoring (Ken, 2026-09-21).** Both surfaces author the SAME
+mixed, stackable filter list as the web — simple filters AND advanced DSL,
+in one view — *with a preference for simple filters* so a CLI/MCP-created
+view still renders cleanly and editably in the web picker rather than
+opaque DSL. Not advanced-only.
+
+**Icon (K104 hook).** Add the optional `icon` field to `SavedQuery` in this
+schema change (the picker UI is K104, designed separately — see K104).
+
+**Sequencing.** Ken: do the small UI polish + get the web client type-checking
+green first (see the tsconfig gate gap below), commit, THEN take on this
+rearchitecture as a focused multi-surface piece (contracts → core → CLI/MCP/UI).
+
+**The stored shape is a DISCRIMINATED UNION, not a flagged single type
+(Ken, 2026-09-21).** Asked what `filters[]` should be, Ken: *"i think it
+should be a differentiated type between dumb filters and query filters.
+then the dumb filters will go back to rendering with the dumb filters in
+the UI."* So:
+
+```yaml
+filters:
+  - kind: simple          # a "dumb" filter — authored via dropdowns
+    field: status
+    op: "="
+    values: [backlog, in_progress]
+  - kind: advanced        # a query filter — authored by typing DSL
+    query: 'has_link("is_blocked_by")'
+```
+
+A `simple` entry carries **no query string at all** and therefore cannot
+degrade into one; a reopened view renders it as the dropdown row because
+that is the only thing it *can* render as. An `advanced` entry carries no
+field/op/values. The kind is **recorded, never inferred** — there is no
+parse-and-guess step on read, which is what makes "filters swap
+position / come back as DSL text" structurally impossible rather than
+merely avoided. Array order is the authored order, preserved on read and
+write.
+
+**The derived `query` field is DELETED from the stored view shape.**
+Today `SavedQuery.query` is a required field the serializer regenerates
+from the structured form on every write. Keeping it would flatten the
+ordered mixed list into one merged DSL on disk and force the dialog to
+re-parse that string to guess which parts were simple — exactly the
+failure the union prevents. `filters[]` is the sole source of truth;
+nothing reconstructs a canonical DSL.
+
+**Display summary is computed, never stored.** `loctt views`, MCP
+`list_views` and the web echoes render a one-line summary FROM
+`filters[]` at display time — simple filters as `field = a, b`, advanced
+ones as their query text. Not persisted (a stored summary is a second
+source of truth that goes stale — the same derived-field trap being
+removed here), and never parsed back.
+
+**Advanced text: normalise formatting only (Ken, 2026-09-21).** *"you may
+normalise spacing, dont edit anything else."* The stored advanced string
+is parsed and re-emitted by the spacing-only serializer: no operator
+rewriting, no negation flipping, no value or term reordering.
+
+**K102-parens (Ken, 2026-09-21).** Asked about paren normalisation, Ken:
+*"i think we should store parens as needed to prevent ambiguity or
+whatever, but if the user adds more parens for clarity, we should keep."*
+
+So: parens the user wrote are PRESERVED, and parens needed for
+unambiguous re-parsing are ADDED. Re-printing from the parse tree (which
+records structure, not the characters typed) silently dropped a
+clarity paren — `(a or b)` alone became `a or b`. That is a
+round-tripping artifact, not a decision, and it is now a defect to fix:
+record a "the author wrote parens here" flag on the node at parse time
+and re-emit it, keeping the existing precedence-driven parens for
+ambiguity.
+
+*Process note.* The agent (me) shipped the paren-dropping behaviour and
+flagged it afterwards as a judgement call. That is backwards per
+CLAUDE.md's "Disagreeing with a decision": the objection belonged in the
+question, before the answer. The rule "normalise spacing, dont edit
+anything else" plainly covered this; it was over-read to excuse an
+implementation limitation.
+
+**BUILT (2026-09-21).** `QueryNode` carries `parenthesized?: number` — a
+COUNT of authored pairs, not a boolean, so `((x))` round-trips exactly
+instead of collapsing to one pair. `queryNodeToDsl` emits
+`max(authored, required)` pairs.
+
+`max` rather than `+` is load-bearing: a node can carry BOTH an authored
+pair and a precedence-required one (`status = a and (b = 1 or c = 2)`),
+and `+` would emit `((...))`, which reparses as two authored pairs, which
+emits three — a saved view's text would grow a paren on every single
+save. `not` likewise changed from an unconditional wrap to
+`emit(operand, 1)` for the same reason. Normalisation is now idempotent;
+verified to three iterations on seven shapes and end-to-end through the
+CLI (`views create` then `views edit` leaves the text byte-identical).
+
+The marker is PRESENTATION METADATA only: `evaluator.ts` and
+`validate.ts` switch on `node.type` alone and never observe it, so
+execution semantics are unchanged.
+
+*Known limit (does not affect authored text).* A hand-built AST that
+nests right-associatively — `and(a, and(b, c))` constructed in code with
+no markers — still serialises to `a and b and c` and reparses
+left-associatively. Parsed text always carries markers where they matter,
+so this is unreachable from user input; it predates this change.
+
+**K102-builder (open defect, agent-caused).** The toolbar's "Advanced
+query…" surface used to offer TWO modes: a visual AND/OR/Group/Condition
+builder (nested grouping, OR, click-to-build) and a raw-DSL text box,
+switchable. The visual builder was built on `BuilderTree`, the AST K102
+deleted from core, so it stopped compiling and was deleted — leaving the
+top bar with only the text box.
+
+This is SCOPE SLIP, not a K102 decision. The K102 plan explicitly said
+"K102 replaces only the DIALOG; top bar untouched" and required verifying
+the top bar before deleting `QueryBuilder.tsx`. "It no longer compiled"
+describes the obstacle, not a justification for removing a feature.
+
+**To fix:** restore it. Investigation (2026-09-21) confirms the builder
+was NEVER coupled to saved-view storage: `AdvancedQuerySurface`'s own
+doc says it "edits ONLY the `q` param … so the facet chip params that
+FilterBar owns are left untouched". K102 changed how views are STORED;
+the builder is a query-composition UI over a URL parameter. The two were
+independent, so the deletion was pure collateral damage.
+
+`BuilderTree` was always a UI EDITING model, not a storage format — K102
+was right to remove it from storage and never needed to remove it from
+the editor.
+
+**RESTORED (2026-09-21).** Reinstated as a **web-client-local** editing
+type: `apps/web/src/client/list/builderTree.ts` holds `BuilderTree`,
+`queryToBuilderTree`, `builderTreeToQuery`/`conditionsToDsl` and
+`unrenderableTreeReason`, importing `parser`/`serialize`/`tokenizer` from
+core by SUBPATH (never the barrel — A37: it drags `node:path`/sharp into
+the browser bundle). `QueryBuilder.tsx` restored verbatim bar that import;
+`AdvancedQuerySurface` restored to its two-mode form. **Zero core or
+contracts change** — K102's storage change stands completely unaltered.
+
+*`parenthesized` is dropped by the builder, deliberately.* The tree
+FLATTENS same-operator and/or chains into n-ary groups, so the node an
+authored paren sat on frequently ceases to exist — there is nothing to
+attach the count to. `builderTreeToQuery` re-parenthesises from
+precedence alone, so emitted DSL always reparses to the same meaning. The
+only observable effect is that a decorative paren is not echoed back
+after a VISUAL round-trip; text-mode editing preserves it (K102-parens).
+This is the right split: the visual builder edits structure, the text box
+edits text.
+
+*`buildDsl.ts` / `builtinToDsl.ts` stay deleted.* Checked rather than
+assumed: at HEAD `buildDslFromSearch`'s only runtime caller was
+`SaveViewDialog.tsx`, which K102 deliberately replaced with
+`buildFilters.ts`; `builtinToDsl`'s only importer was its own test.
+Restoring them would be dead code plus a fourth resurrected module.
+
+**TWO GREEN TESTS WERE ASSERTING THE DELETION.** `FilterBar.test.tsx`
+lost 11 cases (`@verifies K83`, `QBLD-1`–`QBLD-5`, `LST-40/41/42`,
+`K97 #4`) and gained two that asserted the builder's ABSENCE
+(`expect(queryByTestId("query-builder")).toBeNull()`). Green, and
+encoding the wrong behaviour. Original block restored, +9 net. This is
+the SECOND instance of that pattern in this session (see K102-broken) —
+both times an agent deleted a capability and wrote a passing test that
+locked the deletion in.
+
+**To revert:** delete `builderTree.{ts,test.ts}`, `QueryBuilder.{tsx,test.tsx}`
+and re-reduce `AdvancedQuerySurface` to text-only.
+
+**K102-broken (open defect, agent-caused, DATA LOSS).** A hand-broken
+view degrades per-entry and its `rawText` is preserved on disk (P-11,
+VUE-22). But the web "Edit…" affordance on a broken view now opens the
+new dialog with `filters: []` — an empty picker — because its filters did
+not validate and the DSL text mode that used to hold the raw text is
+gone. Saving from there OVERWRITES the preserved text with nothing. The
+preservation guarantee therefore holds until the user touches the one
+control meant to repair it.
+
+Ken: *"we need a robust way for the new UIs to also handle when users
+hand-edit and break views."* This is the binding requirement — disk
+preservation alone is not the answer; the UI needs a real repair path.
+
+> **⚠ THIS ENTRY OVERCLAIMS — CORRECTED 2026-09-21. READ THIS FIRST.**
+>
+> A PM review challenged the premise and was RIGHT; I reproduced it
+> independently on a real tracker before accepting it.
+>
+> **The data-loss path described below never existed, and the "replace"
+> flow described as BUILT cannot succeed.** `findView`
+> (`core/src/views/manage.ts:21`) searches only `config.queries`, never
+> `config.broken` — and it has always done so, since `42d2f6a1`; K102 did
+> not change it. So `editView` and `deleteView` both throw
+> `unknown view: <ref>` for ANY entry that lives only in `broken`.
+>
+> Reproduced on a real tracker, by id and by name, on the CLI:
+> ```
+> views edit 01M0BROKENPROBE00000000AA --filter "status = done"
+>   → Error: unknown view: 01M0BROKENPROBE00000000AA
+> views edit handbroken --filter "status = done"
+>   → Error: unknown view: handbroken
+> views delete handbroken --yes
+>   → Error: unknown view: handbroken
+> ```
+> Web and MCP route through the same `editView`, so all three surfaces
+> are equally non-functional. `rawText` is never at risk because the
+> write never reaches `saveQueriesConfig` — it **fails safe, but fails
+> totally**.
+>
+> **So the real defect is the opposite of the one recorded:** not "a
+> broken view is too easy to destroy" but "**a broken view cannot be
+> repaired or deleted by any tool**". A user who opens Replace, reads the
+> warning, ticks the confirmation and clicks Save gets an opaque
+> `unknown view: 01M0…` with a raw ULID and no next action. The only
+> repair is hand-editing `queries.yaml`.
+>
+> The client-side guard below is real and does what it says — it just
+> guards a door that is already locked.
+>
+> **VUE-42's tests do not cover this.** Both assert only that Save is
+> DISABLED before the checkbox is ticked; neither ticks it and asserts
+> the outcome. Had either done so, this would have been caught before it
+> was recorded as BUILT. `known-gaps.md`'s claim that VUE-42 "has two
+> tagged tests" is therefore true but misleading, and is corrected there.
+>
+> **OPEN, and Ken's call** — see `K102-broken-repair` below.
+
+**BUILT (2026-09-21): "replace, with the original in front of you,
+behind an explicit confirmation."**
+
+*Why not repair-in-place?* A raw-YAML editor in the dialog was considered
+and rejected on a concrete ground: the only client write path is
+`PUT /api/views/:id` carrying a typed `EditViewRequest`, which cannot
+express arbitrary YAML. Offering raw-text repair would have meant
+inventing a raw-write route — a second, UNVALIDATED author of
+`queries.yaml`, from the surface least able to validate it. That is a
+bigger correctness hole than the one being closed.
+
+So the honest framing: LocTT cannot fix your YAML for you, but it can
+(a) show you exactly what you wrote and why it did not load, so you can
+fix the file yourself and KEEP it, and (b) let you deliberately replace
+it. Neither can happen by accident.
+
+- `ViewFormDialog` takes `broken?: {error, rawText, position?}`. When
+  present the title is "Replace broken view", Save reads "Replace view",
+  and a danger callout plus a READ-ONLY textarea show the parse error and
+  the exact on-disk YAML above the picker.
+- Save is INERT until an explicit checkbox is ticked. `needsConfirm`
+  feeds `disabled` AND `submit()` early-returns on `disabled`, so a
+  synthetic click cannot slip through either.
+- The picker still opens empty — that part of K102 was right. What
+  changed is that an empty picker can no longer WRITE.
+- `SavedViewsPanel` had no Edit on broken rows (so never carried the
+  silent-overwrite defect) but told users to "fix them by hand" without
+  showing the text. It now renders `rawText` and offers `Replace…`
+  through the same guarded dialog — labelled "Replace…", not "Edit…",
+  because that is what it does.
+
+*Correction (2026-09-22).* This entry originally implied the LIST's
+broken-view banner was untouched and correct. It was not. Its client type
+declared `broken_view.query` as a REQUIRED `string` that the server has
+never sent, so the banner rendered an empty paragraph and its "Fix this
+view in the editor" button opened the advanced editor with
+`q: undefined` — a blank box. That button was also a leftover of the
+repair-in-place flow this very entry removed. Fixed: the type matches the
+payload, the banner shows `rawText`, and it links to the guarded
+`Replace…` flow. See `known-gaps.md` for the full chain, including the
+spec fixture that was never actually broken and so masked all of it.
+- VUE-22 untouched: the broken row stays visible and actionable.
+
+**A green test was asserting the bug.** `Sidebar.test.tsx` contained
+"Edit on a broken row opens the dialog on its name with an empty filter
+picker" — passing, and green BECAUSE the destructive behaviour was
+present (an empty picker is what the data-loss path looks like from
+outside). Deleted and replaced; its one legitimate assertion (picker
+seeds empty, no DSL box) is preserved inside the new test, now beside the
+guard that makes an empty picker safe. Call this out in the commit
+message per CLAUDE.md.
+
+**To revert:** drop the `broken` prop from `ViewFormDialog` and its
+forwarding in `Sidebar.tsx`/`SavedViewsPanel.tsx`.
+
+**KNOWN LIMIT — SUPERSEDED.** This said the guard was client-side only
+and CLI/MCP could still replace a broken entry with `filters: []`. **They
+cannot** — `findView` rejects them first (see the correction at the top
+of this entry). The boundary question it raised is still worth answering,
+but only once a repair path exists; restated as `K102-broken-repair`.
+
+### K102-broken-repair · a broken saved view cannot be repaired or deleted by ANY surface
+
+**Ken's ruling: Option A. Not agent-revertible.**
+
+**Situation.** `findView` (`core/src/views/manage.ts:21`) resolves a ref
+only against `config.queries`. A `BrokenSavedQuery` lives in
+`config.broken` and keeps its real id, so every write path routed through
+`findView` — `editView`, `deleteView`, `archiveView`, `unarchiveView` —
+throws `unknown view: <ref>` for it. Verified on a real tracker, by id
+AND by name; web, CLI and MCP share that call and fail identically. The
+file is left byte-identical, so this fails SAFE — but there is **no
+in-app repair path at all**, and the broken-row affordances ("Edit…",
+"Replace…", "Delete…") are dead controls promising something they cannot
+do.
+
+**What has to be decided.** Should `findView` (or a parallel resolver)
+reach into `config.broken` so a confirmed client can replace or delete a
+broken entry — and if so, what gates it on CLI and MCP, which have no
+confirmation checkbox?
+
+**Option A — widen resolution, gate every surface.** `editView`/
+`deleteView` accept a broken-entry id; a write that would discard
+`rawText` requires an explicit opt-in (`replaceBroken: true`, `--force`,
+matching MCP param). *Cost:* touches the resolver every view operation
+shares, plus flags, docs and tests on three surfaces. *Benefit:* the
+repair path the UI already advertises actually works, and preservation
+stops depending on client manners — the original boundary question, now
+aimed at code that would really exist.
+
+**Option B — no in-app repair.** Leave resolution alone and RELABEL the
+broken-row affordances so they stop promising a repair — a read-only
+"show the stored text" plus "fix `queries.yaml` by hand". *Cost:* the
+user leaves the app to recover a view. *Benefit:* zero core risk, honest
+about what the tool does.
+
+**KEN'S RULING (2026-09-22): Option A.** Widen resolution AND gate every
+surface, in one change — the UI already tells the user a repair exists,
+so B would mean walking that back.
+
+Scope that follows from the ruling:
+- A broken entry becomes addressable by id (and by unique name) for
+  `editView` and `deleteView`. `archiveView`/`unarchiveView` stay
+  unreachable: archiving a view whose filters do not load is meaningless,
+  and silently succeeding would imply the entry is healthy.
+- A write that would discard a broken entry's preserved `rawText`
+  requires an EXPLICIT opt-in: `replaceBroken: true` on the wire,
+  `--force` on the CLI, a matching MCP param. Absent it, the write is
+  rejected with a message naming the entry and what the flag does — never
+  a bare `unknown view: <ulid>`.
+- A HEALTHY view is unaffected: no flag, no new friction, identical
+  behaviour.
+- `deleteView` on a broken entry is the one case where no `rawText`
+  survives by design (delete means delete), so it takes the same explicit
+  opt-in rather than a quieter one.
+- Parity is part of the ruling, not a follow-up: CLI and MCP ship the
+  flag and the docs in the same change as core.
+
+**Why it is Ken's:** it changes what every view write path resolves
+against, and the corruption guide covers object-fatal vs field-local at
+LOAD, not write-target resolution against a corrupt record.
+
+**BUILT (2026-09-22).** `findViewOrBroken` is a SEPARATE resolver, not a
+widening of `findView` — `findView` answers "give me a runnable view",
+and every read path (running, listing, pinning) is CORRECT to refuse a
+broken ref, so widening it would have silently changed all of them. Only
+`editView` and `deleteView` opt in.
+
+Verified end to end on a real tracker: without the flag the write is
+refused and `queries.yaml` is byte-identical afterwards; with it the
+entry is replaced **keeping the same id**, so a pin or bookmark still
+resolves. `archiveView`/`unarchiveView` refuse with their own reason.
+A healthy view's edit/delete path is unchanged and needs no flag.
+
+The gate's message names the view, its id, the actual parse failure, the
+fact that the original text is preserved, and both ways forward — never
+a bare `unknown view: <ulid>`.
+
+**A GREEN TEST WAS ASSERTING A HALF-BUILT FEATURE.**
+`Sidebar.test.tsx`'s "replaces a broken view only after the user
+confirms…" DID tick the checkbox and assert the PUT body — but as
+`{name, filters: []}`, a body the server answers **400** for. It passed
+while the repair was impossible end to end. Amended, not deleted. This is
+the third instance of the pattern this session, and the most subtle: the
+earlier two asserted a capability's ABSENCE, this one asserted a request
+that could never succeed.
+
+**One deviation found and closed during integration.** As handed back,
+`--force` alone satisfied the CLI's "nothing to change" check for ANY
+ref, so `views edit <healthy> --force` became a silent no-op rewrite
+instead of a usage error — a widening of the HEALTHY path, which
+constraint 4 forbids, and one the code comment already claimed did not
+happen. Now `--force` satisfies that check only when the ref actually
+resolves to a broken entry. Red-proven at the integration layer:
+reverting it turns "`--force` alone on a HEALTHY view is still a usage
+error" red.
+
+**Status: BUILT (2026-09-22).** What exists, checked against source
+rather than against the previous status line — which claimed core was
+done while `findView` still resolved only `config.queries`, so every
+surface still answered `unknown view: <ref>` for a broken entry:
+
+- **Core** (`packages/core/src/views/manage.ts`). A SEPARATE resolver,
+  `findViewOrBroken`, searches `config.queries` then `config.broken` —
+  id first across both pools, then unique name across both (a name shared
+  between a healthy and a broken entry is ambiguous, same as two healthy
+  ones). `findView` is untouched, so every READ path — running a view,
+  listing, pinning — keeps its current, correct refusal. Only `editView`
+  and `deleteView` opt into the wider resolver. `editView` on a broken
+  ref routes to `repairBrokenView`, which requires `replaceBroken: true`
+  and writes a healthy view **keeping the entry's id** (name too, unless
+  the caller supplies one); nothing else carries over, because the old
+  fields live only inside a `rawText` that did not validate as a whole.
+  Hard `deleteView` takes the same opt-in. `archiveView`/`unarchiveView`
+  call `assertNotBrokenForArchive` and refuse with no flag available; a
+  SOFT delete is an archive, so it inherits that refusal.
+- **Gate text.** Names the view and its id, quotes the loader's reason,
+  says the original text is preserved and would be discarded, and names
+  both spellings of the opt-in. Never a bare `unknown view: <ulid>`.
+- **Surfaces.** CLI `--force` on `views edit` and `views delete` (it also
+  satisfies `edit`'s nothing-to-change check, since "replace it, filters
+  and all" is itself a change); MCP `replaceBroken` on `edit_view` and
+  `delete_view` (distinct from `confirm`, which every delete still
+  needs); `replaceBroken` on `EditViewRequestSchema` and
+  `?replaceBroken=true` on `DELETE /api/views/:ref`.
+- **Web client.** `ViewFormDialog` now SENDS `replaceBroken: true` when
+  its target is broken. This was the live half of the VUE-42 gap: the
+  confirmation checkbox existed and only disabled its own Save button, so
+  a confirmed replace reached a server that rejected it. The sidebar's
+  broken-row Delete… carries the flag through `useDeleteView`.
+- **Tests.** Core, CLI, MCP, web server and `Sidebar.test.tsx`, every one
+  red-proven, and every one asserting the FILE's bytes rather than a
+  disabled control. Each layer carries a healthy-view regression guard
+  for constraint 4.
+
+**A green test was asserting a half-built feature.** `Sidebar.test.tsx`'s
+"replaces a broken view only after the user confirms…" ticked the box and
+asserted the PUT body was `{name, filters: []}` — a body the server
+answers 400 for. It passed while the repair was impossible end to end,
+because it never checked the flag the server requires. Amended rather
+than deleted; call it out in the commit message per CLAUDE.md.
+
+**Known cosmetic effect.** `saveQueriesConfig` writes healthy queries
+first and preserved broken entries after them, so a repaired entry moves
+to the end of the healthy list in the file. A view's position is not a
+stored, user-meaningful property (no `order` field; the sidebar sorts by
+its own rules), so this is a move in the file, not a change to the view.
+
+**To revert:** drop `findViewOrBroken` and the `replaceBroken` /
+`--force` parameters, restore `findView` at the four call sites, and drop
+the flag from the dialog and `useDeleteView`. Not agent-revertible — the
+ruling is Ken's.
+
+
+### K103 · Colours are a palette, not a hex text field — built-in light/dark palette + custom, stored as palette-ID | single | double
+
+**Ken's ruling (2026-09-21).**
+
+**The problem.** Entity colour (labels, statuses, priorities, task_types,
+relationships, enum values, custom fields) is authored as a raw `#aabbcc`
+**text field**. Ken: *"colour picker SHOULD NOT BE TEXT."* A hex string also
+has no light/dark awareness — one value is shown in both themes.
+
+**The model.**
+- A **built-in palette** of colours that match the app's colour scheme
+  (K99 accent family). Each palette entry has a **light-mode and a
+  dark-mode** value, so a chosen colour reads correctly in both themes.
+- Users can **add their own custom colours**, also specified **per mode**
+  (light + dark).
+- The picker is a **dropdown/palette swatch picker**, not a text input.
+
+**Core storage — a colour is one of three shapes:**
+1. **palette colour ID** — references a built-in palette entry (resolves to
+   its light/dark pair at render).
+2. **single colour** — one value used for both modes.
+3. **double colour** — an explicit `{ light, dark }` pair (a custom colour).
+
+Contracts gains this discriminated colour type; core owns the built-in
+palette definitions + validation; the design system exposes the palette as
+tokens (light/dark).
+
+**CLI/MCP.** Both accept the new colour shape (palette ID or single/double),
+AND expose a way to **list the built-in palette** (IDs + light/dark values)
+so an agent/CLI can pick a valid palette ID — 3-surface parity.
+
+**Interim (Ken's call).** Leave the current hex text field in place until the
+full palette model lands — no throwaway intermediate picker. *(Superseded
+by the build: the palette model landed, so the hex field is gone.)*
+
+**Applies to** every entity colour picker: labels, statuses, priorities,
+task_types, relationships, enum values, custom fields. (Extends A260, which
+shipped icon+color controls as text/simple inputs.)
+
+**Status: BUILT (2026-09-21/22), all three stages + docs.** See A280 for
+the wire shapes and the stage-by-stage detail. Contracts + core
+(`config/color.ts`, the one resolver), web (`ui/ColorPicker`,
+`ui/entityColor.ts` — the hex text field is gone), CLI + MCP (the three
+shapes on write, `loctt palette` / `list_palette_colors` for parity), and
+the label write path, which was the one entity that could read the new
+shapes but not write them.
+
+### K102-seq · Sequencing — free to re-order, completeness is the constraint
+
+**Ken's ruling (2026-09-21).** *"you can re-order, so long as everything is
+done in the end."* The order of the queued work (small UI-polish fixes, the
+K102 view rearchitecture, the K103 colour model) is at the implementer's
+discretion — optimise for clean checkpoints and avoiding multiple half-built
+rewrites at once. The binding constraint is that **all of it ships** before
+this line of work is called done; nothing on the UI-walk list or in K102/K103
+may be quietly dropped. (Supersedes any earlier stricter "NOW" / "one at a
+time, after green tree" phrasing — those were ordering preferences, not
+requirements.)
+
+### K105 · Point-of-use edit philosophy — dialogs + "+ New", no scattered Settings text links (amends K100)
+
+**Ken's ruling (2026-09-21).** Amends K100's requirement that every in-place
+editor carry a "Manage all <noun>…" deep-link and that un-extracted editors
+deep-link to Settings.
+
+**The rule now:**
+- **Editing** an entity from its point of use is always the **shared
+  ResponsiveDialog** the Settings panel also renders (K100's shared-component
+  core is kept), never by navigating to Settings.
+- **The affordance is an icon, not a text "Edit" button** (Ken, 2026-09-21):
+  - **One action** (just edit) → a single **IconButton** (pencil/edit or
+    gear glyph) with an `aria-label` + tooltip — not a `text "Edit"` button.
+  - **Several actions** (edit + archive + delete + manage…) → a **"⋯"
+    (kebab/more) menu** of MenuItems. This is the same overflow pattern as
+    the toolbar (K-toolbar): secondary/multiple actions collapse into "⋯".
+- **Creating** an entity is a **"+ New <entity>"** affordance in the sidebar
+  group (mirroring the saved-view "+ New view"), opening the shared create
+  dialog **in place** — NOT a form that lives on the Settings page.
+- **Reaching a global Settings panel** (for roster-level actions the dialog
+  does not own — reorder, remap-delete) is via a **proper entry only**: a
+  gear **IconButton** + tooltip, or a kebab **MenuItem**. The mandatory
+  "Manage all <noun>…" **text link** from K100 is **retired**; scattered
+  "…in Settings → <noun>" prose links are removed everywhere.
+- **Sprints:** create moves off the Settings page into a shared sprint
+  creator dialog opened via "+ New sprint"; per-sprint edit is in place (the
+  detail header / dialog). Whether the sprint Settings *page* is kept at all
+  is decided during the build — keep only if it owns roster-level actions
+  (reorder / remap-delete) that have no in-place home; otherwise drop it.
+
+**Scope: sweep ALL entities** — milestones, sprints, labels, projects (and
+board columns where a whole-config edit allows). Milestones also get the
+two-destinations bug fixed (sidebar row → `/milestones/$id`, not `/list`).
+
+**Bad copy** ("Progress toward every milestone. Manage them in Settings →
+Milestones.", "Progress is shown on the Milestones view, not here.", etc.) is
+rewritten/removed.
+
+**Status: BUILT (2026-09-21), committed in two sweeps.** Sidebar
+"+ New milestone/label/sprint" dialogs, the milestone sidebar/detail
+merge, a shared `SprintEditDialog`, kebab `RowActions` replacing text
+"Edit" buttons across Users / CustomFields / workflow-enum rows, sprints
+created in place, and the Settings prose links removed. Supersedes the
+K100 bullets on the mandatory manage-link and the deep-link-until-
+extracted fallback; K100's shared-editor principle otherwise stands.
+
+### K106 · One general dropdown primitive: Combobox generalized with `searchable` + `multi`/checkbox props
+
+**Ken's ruling (2026-09-21).** There are three overlapping dropdown
+implementations — `ui/Select` (themed native `<select>`), `ui/Combobox`
+(searchable single-select listbox), and `list/FilterDropdown` (bespoke
+`menuitemcheckbox` multi-select). Consolidate onto ONE general component,
+built by generalizing the Combobox (the "value-pickers over growable entity
+sets" component):
+
+- a **`searchable` boolean** — when false, no search box (covers the plain
+  `Select` case); when true, the typeahead (covers the large-set case).
+- a **`multi` / checkbox** mode — checkbox multi-select (covers
+  `FilterDropdown`'s role).
+
+So one primitive spans: plain single dropdown, searchable single, and
+multi-select-with-checkboxes. Then **refactor** the current `Select` and
+`FilterDropdown` call sites onto it and **rename** it to something general
+(not "Combobox"). Keep the a11y contracts each mode needs (listbox vs
+menuitemcheckbox roles, roving focus, A11Y-10).
+
+This supersedes the A211/A242 "Select for small / Combobox for large" split
+as SEPARATE components — they become modes of one component. The native
+`<select>`s the audit finds (e.g. EstimationPanel Unit/Scale) migrate onto
+this general component with `searchable={false}`.
+
+**FINDING (2026-09-21): the ruling rests on a partly-false premise.**
+A survey before implementation found:
+
+1. **`multi` already exists** — `ui/Combobox` already has a full
+   `mode: "multi"` variant with `onToggle`/`closeOnSelect`/`hideSelected`,
+   a rendered `Checkbox` and `aria-multiselectable`, and it is tested.
+2. **`searchable` already exists as `filterable`** — plus the
+   `COMBOBOX_SEARCH_THRESHOLD` (12) default. So that part of K106 is a
+   RENAME for clarity, not new capability.
+3. **`FilterDropdown` is not a Combobox with different props — it is a
+   `Menu`.** This is the blocker. `Combobox` renders an INLINE `absolute`
+   panel (`role=listbox`, `aria-activedescendant` keyboard model).
+   `FilterDropdown` renders through `ui/Menu`, which PORTALS to
+   `document.body` with runtime-measured `position: fixed` and a
+   `menuitemcheckbox` + real-roving-focus model. The portalling is
+   load-bearing for a FIXED defect (MENU-PORTAL): an inline panel was
+   clipped by ancestor `overflow` — the sidebar's `overflow-y-auto`
+   sliced a panel in half — and could not flip or clamp at the viewport
+   edge.
+
+Folding them therefore means CHOOSING A SUBSTRATE, which is a real
+architectural call, not a prop change. Verified independently
+(`createPortal` in `Menu.tsx:9`, MENU-PORTAL rationale at `Menu.tsx:17-24`).
+
+**Ken's ruling on the substrate (2026-09-21).** Asked which is cleaner and
+more robust, Ken: *"i dont understand. which is the cleaner and more
+robust solution?"* — answered: PORTALLING is strictly more robust (inline
+has a known, already-encountered clipping failure), so the clean end
+state is the whole family on the portal. Recommended to him as TWO steps
+so the risky keyboard-model rewrite lands alone: (1) rename + migrate the
+native `Select` sites now, (2) move the Combobox family onto the portal
+as its own focused change. **Awaiting his pick between one-pass and
+two-step.**
+
+**Ken's ruling on `Select` churn (2026-09-21).** *"Do the churn; keep
+ArchivedScopeControl's native select."* So: rewrite the ~20
+`HTMLSelectElement.value` assertions onto `data-value`, migrate every
+other `Select` call site, and `ui/Select` SURVIVES solely for
+`ArchivedScopeControl`, which has a documented accessibility reason to be
+a real `<select>`. K106's "delete the superseded components" is therefore
+satisfied for `FilterDropdown` only, not `Select`.
+
+**Status: BUILT (2026-09-21/22), both steps.** Step 1 folded the 18
+native `<select>` call sites onto `SelectCombobox` (A281). Ken then made
+the substrate pick — portalled, and as a SEPARATE change so an a11y
+regression would be attributable — and step 2 merged everything onto
+`ui/Dropdown` with `usePortalPlacement` shared with `Menu`. The three
+a11y models were NOT flattened: single/multi keep listbox semantics,
+`menu` is a third declared mode keeping `menuitemcheckbox` + roving
+focus, because ~30 e2e assertions depend on each. `ui/Select` survives
+for `ArchivedScopeControl` alone, per Ken.
+
+*Fallout worth remembering:* portalling the panels broke every component
+that used `wrapper.contains(relatedTarget)` to mean "focus is still
+mine" — `BodyEditor` tore itself down when the block-type dropdown opened
+(TSK-59). Fixed with a `data-dropdown-panel` marker, but the blast radius
+was wider than the dropdown call sites.
+
+### K107 · `archived` is a first-class tri-state query scope, default `false`, consistent across ALL archivable entities
+
+**Ken's ruling (2026-09-21).** Sequenced BEFORE K102 (which builds on the
+clean model).
+
+**The model.** `archived` stops being a magic filter/DSL term you must
+remember to add, and becomes a first-class **scope flag** on a query/list
+call. **Values (Ken, 2026-09-21): the string literals `active` / `archived`
+/ `all`** (chosen over `false`/`true`/`all` to avoid the false-vs-absent
+ambiguity across JSON/URL/CLI):
+- **`active`** — hide archived (the DEFAULT everywhere, every call).
+- **`archived`** — only archived.
+- **`all`** — both.
+
+This applies **to the 7 archivable entities: tasks, saved views,
+milestones, sprints, labels, projects, users** (Ken confirmed). It does
+**NOT** apply to the workflow config objects (statuses, priorities,
+task_types, relationships, custom fields) — those are not archivable; their
+lifecycle is delete-with-remap-or-refuse (WF-DELETE). Every list of an
+archivable entity defaults to `active` and takes an explicit scope to show
+archived. NB (audit correction): only Sprints + Users panels have a "Show
+archived" toggle today; Milestones/Labels/Projects/Views panels and ALL
+sidebars have none — K107 adds the control everywhere.
+
+**DSL `archived` field (Ken, 2026-09-21).** KEEP `archived` as a queryable
+DSL field (so `archived = true and status = done` stays expressible), but
+REMOVE the auto-injection of `archived != true`. Precedence: **when a
+task query explicitly mentions `archived`, the scope resolves to `all` for
+that call** — the user's own term decides, no double-filter.
+
+**Conflict warning (Ken, 2026-09-21).** When an explicit `archived` scope
+flag CONFLICTS with an `archived` term in the query — e.g. `--archived
+active` (or the default) alongside a query containing `archived = true` —
+emit a **warning** on CLI/MCP (and, where it applies, the UI) rather than
+silently resolving it. The precedence rule above still applies (the term
+wins, scope→all), but the conflict is surfaced so the result isn't
+mysterious. A non-conflicting mention (query says `archived` and the flag
+is `all` or unset) is not a conflict and warns nothing.
+
+**Core (audit).** Add a canonical `listX({scope})` per entity in core (most
+have none today — each surface re-implements the filter); all surfaces call
+it. `resolve*ByName`/`findProject`'s existing `includeArchived` (mutation
+targeting, not listing) is LEFT ALONE.
+
+**Wire shape.** One CLI flag spelling (`--archived active|archived|all`,
+retire `--all`), one MCP param (`archived`, on the shared config-list
+schema so all list_* inherit it), one web query param
+(`?archived=active|archived|all`), replacing today's split
+`--archived`/`--all`, `include_archived`/absent, `?archived`/`?include_archived`.
+UI: a tri-state control (replacing the two boolean toggles), added to every
+archivable list incl. the sidebars.
+
+**Approach: audit first.** A read-only audit maps how each archivable
+entity handles the archived dimension today (query flag? filter term? UI
+toggle? default? core function param?), surfaces the inconsistencies, and a
+unified plan is agreed before implementing. Then implement across core +
+CLI + MCP + web.
+
+**Interaction with K102.** Saved-view filters therefore never contain an
+`archived` term; a view carries the archived scope as this flag. The task
+DSL's `archived` field is reconciled during the audit (kept as queryable,
+or removed in favour of the flag — a call the audit informs).
+
+**Tri-state, not boolean** (Ken's explicit choice over hide/show).
+
+**Status: BUILT (2026-09-21), all surfaces + docs.** Contracts
+`ArchivedScope`, core `applyArchivedScope` as the ONE shared filter,
+tasks via `query/list.ts`, CLI `--archived active|archived|all`, MCP's
+tri-state param, and the web `ArchivedScopeControl`. Known gap recorded:
+`SprintsView`'s board stays on a boolean toggle, since an archived-only
+board has no sensible column rendering. No code yet.
+
+### K104 · Icon editor = Lucide icons + common-emoji list + free emoji input
+
+**Ken's ruling (2026-09-21).** An entity's icon is chosen from one of:
+(1) a **Lucide icon** (the app adopts the Lucide set for pickable icons),
+(2) a **common-emoji list** (a curated palette of frequent emoji), or
+(3) a **free-typed emoji** the user enters directly. Applies to the
+saved-view icon editor first (the surface Ken named) and is the shared icon
+picker for every entity that has an icon (K103's sibling — icon + colour are
+authored by shared reusable components). Ties into K102 (saved views gain an
+icon) and K103 (colour palette). **Picker design (Ken, 2026-09-21): a UI designer designs the picker.** Open
+questions to resolve in that design: a searcher? a dialog (and does a dialog
+stack on top of the entity's own edit dialog)? or a Select-with-grid (like an
+emoji picker, but a combined grid of Lucide icons + emojis)? Ken's leaning:
+an emoji-picker-style grid combining Lucide icons + emojis, where **icons can
+take the palette / free-form colour (K103) but emojis cannot** (an emoji
+carries its own colour). Get a design call before building.
+
+**Status: BUILT (2026-09-21).** Design in A279, build detail in the
+`BUILT` block there. The sub-question resolved as predicted: Lucide for
+user-pickable ENTITY icons, the hand-rolled `ui/Icon` affordance set kept
+untouched — additive, not a migration. Measured cost +22 KB gzip.
+
+### A275 · Diagnostics repair — two contextual buttons + a structured `fix` field, not a per-row Fix column
+
+**Ticket:** Ken's Diagnostics-repair request · **Date:** 2026-09-21 ·
+**Decided by:** the `pm` agent, on Ken's explicit delegation ("get ui agent
+to reason and make the call").
+
+**Situation.** The web Diagnostics panel (`/api/doctor`) was read-only.
+Ken hit a "stale key-index entries … run `loctt doctor --rebuild-index`"
+finding and asked for a repair button — and whether every row should have a
+one-click Fix (a rightmost column) or not ("ONLY if we consistently need
+buttons on a lot of the rows").
+
+**The reality.** A verified audit found only ~2 of ~46 doctor finding types
+are safely programmatically fixable, clustering into exactly two
+whole-tracker actions: `rebuild-index` (`rebuildKeyIndex`, idempotent) and
+`restore-missing` (`initLoctt({repair:true})`, existence-guarded gap-fill).
+~85% of findings need a human decision or a hand-edit.
+
+**Decided.** Two **contextual top-level buttons** ("Rebuild key index",
+"Restore missing files"), each shown only when a finding tagged with its
+`fix` is present — NOT a per-row Fix column (dead on ~85% of rows, and the
+pattern K105 has been removing). A finding's fixability is a **structured
+`fix?: "rebuild-index" | "restore-missing"` field on core's
+`DiagnosticCheck`** (and `DoctorCheckResponse`), set at the relevant yield
+sites, so every surface gates on data instead of parsing the human message.
+Rebuild-index runs immediately (idempotent); restore-missing is
+confirm-gated (it writes default files) and names the files it will
+recreate. Either action re-runs the doctor on success. Manual findings keep
+their message + copyable `loctt …` command unchanged. This revises the old
+"rebuild stays CLI-only / a button that cannot work is what XS-41 forbids"
+rule: the button now renders only when the endpoint can fulfil it, which is
+what XS-41 actually requires.
+
+**What was built.** Core: `DiagnosticFix` type + `fix` on `DiagnosticCheck`,
+tagged at the key-index-stale and missing-core-file yields. Contracts:
+`fix` on `DoctorCheckResponse`, new `DoctorRepairRequestSchema` +
+`DoctorRepairResponse`. Web: `POST /api/doctor/repair {action}` →
+`rebuildKeyIndex` / `initLoctt({repair:true})`; DiagnosticsPanel gains the
+two contextual buttons + restore confirm + re-run-on-success.
+MCP: `doctor` tool gains `restore_missing` (rebuild_index already existed)
+and surfaces `fix` in its output — 3-surface parity (CLI already had
+`doctor --rebuild-index` + `init --repair`). Docs: MCP reference updated.
+Tests: core `fix` assertion, web repair-button tests (contextual gating,
+POST-then-re-run, confirm-before-POST) — all red-proven.
+
+**To revert.** Remove `fix`/`DiagnosticFix` from `doctor.ts` + its yield
+tags; remove `POST /api/doctor/repair` + the buttons/confirm from the web;
+remove `restore_missing` + `fix` output from the MCP `doctor` tool; revert
+the contract `fix`/`DoctorRepair*` additions and the MCP reference row.
+
 ### A199 · REL-16 inline image render — a separate `?inline=1` serve path, raw bytes, `<img>` sandbox (implements K95)
 
 **Ticket:** REL-16 bullet 1 · **Date:** 2026-09-17 · **Implements:** K95.
@@ -14120,3 +15277,2978 @@ from cli deps + external (re-breaks `loctt mcp`); delete the inline-
 attachment `Content-Security-Policy` line (re-opens SVG XSS) and revert
 `server.attachments.test.ts`; drop `blob:`/`form-action` from the doc CSP;
 remove the `fast-uri` override.
+### A208 · SVG icon component for affordances (supersedes the unsupported "glyphs only" comment)
+
+**Ticket:** ui/ux-polish-and-timeline-panel · **Date:** 2026-09-19
+
+**The situation.** The UI drew interactive/decorative affordances —
+collapsible-section carets, close buttons, kebab menus, reorder controls,
+dropdown/sort carets — with Unicode glyphs (`▾ ✕ ⋯ ↑ ↓ ▸`). Ken: "instead
+of using proper iconography, the ui uses ascii/emojis … collapsible
+sections using ascii? that's really fucking gross." He also asked for icons
+on functional actions where they aid scanning (e.g. Copy link → link icon).
+
+`ui/icons.ts` carried a comment asserting "the app's decision (see
+decisions.md) is literal Unicode glyphs, no icon font and no icon
+component." **No such decision exists** — verified by search; the only
+recorded icon decisions (S-8 era) merely unified *which glyph* stands for
+each affordance, not a ban on SVG. Ken confirmed the "no SVG" claim was a
+hallucination. So there was no decision to override.
+
+**Decided.** Introduce `ui/Icon.tsx` — a hand-rolled inline-SVG icon set
+(currentColor, tree-shaken, no font/dependency, 16-unit stroked frame).
+Affordances are drawn with `<Icon>`; `ICON` (icons.ts) is kept ONLY for
+glyphs that are legitimately text/status: the ★ saved/favourite marker
+(Ken: intentional, keep) and the ⚠ status marker. Keyboard-key labels
+(↑←→↓) and prose arrows stay literal too. Common functional actions get an
+icon + label where it aids scanning (Copy link, Edit, Delete, Archive,
+Export, and the task-detail More menu).
+
+**Why.** Glyph affordances read as unfinished ASCII and drift in weight/
+baseline; a shared SVG set is consistent, theme-coloured, and a11y-clean
+(decorative `aria-hidden`; the control carries the label). Hand-rolled
+rather than a dependency (e.g. lucide) keeps the bundle lean and matches
+the app's self-contained style; only the ~20 names actually used exist.
+
+**To revert.** Delete `apps/web/src/client/ui/Icon.tsx`; restore the
+migrated call sites to their `ICON.*` glyphs / raw glyphs (git history has
+each); restore the removed `ICON` imports; revert the Select control test's
+chevron assertion to the glyph-text form. The ★/⚠ glyphs in `icons.ts`
+were never removed.
+
+### A209 · Broken `blocked` default saved view — repoint to `has_link("is_blocked_by")`
+
+**Ticket:** ui/ux-polish-and-timeline-panel · **Date:** 2026-09-19
+
+**The situation.** `defaultQueriesYaml()` (`packages/core/src/init/defaults.ts`)
+seeded a saved view `blocked` with query `archived != true and status =
+blocked`. The default workflow has no `blocked` status (backlog/in_progress/
+done/wont_do), so *every* new tracker shipped a broken pinned view: the CLI
+warned "unknown status value 'blocked'", the UI sidebar pinned `⭑ blocked`
+and it silently returned nothing. A first-run investigation agent found it;
+it fails for 100% of new users on every surface.
+
+**Decided.** Repoint the seed to `archived != true and
+has_link("is_blocked_by")`. That is the view's actual intent — tasks that
+ARE blocked by another — expressed against the seeded `blocks` / inverse
+`is_blocked_by` relationship. Verified: `linkTask` persists the inverse
+`is_blocked_by` edge on the blocked task, `evaluateHasLink` matches on the
+task's own stored relationships, and `validateQuery` accepts inverse keys
+(`relationshipTypeKeys` returns both `blocks` and `is_blocked_by`).
+
+**Why not the alternatives.** Dropping the view loses a useful default;
+adding a `blocked` *status* conflates workflow state with a relationship
+(a task can be blocked in any status) and would need a category + migration.
+The link predicate is the semantically correct, migration-free fix.
+
+**Known limitation (documented, not fixed).** The view lists a task as
+blocked even when its blocker is already done/wont_do; the DSL has no
+"edge whose target has status X" predicate, so this is the closest
+expressible approximation.
+
+### A210 · List toolbar redesign — band structure, folded Advanced, configurable visible filters (K97), builder-first surface
+
+**Ticket:** ui/ux-polish-and-timeline-panel · **Date:** 2026-09-19
+
+**The situation.** Ken's toolbar review flagged the list top as "gross":
+Refresh/Export floated in ListView's `justify-between` gutter (vertically
+centred in dead space, jumping as the chip row toggled); a leading
+"Advanced" pill led the facet row and was shorter than the facets;
+"Advanced" opened a raw DSL textbox rather than the visual builder that
+already existed (`QueryBuilder.tsx`); the builder leaked premature parse
+errors ("unknown status value ''") the instant a condition was added; and
+K97 (Ken's ruling) required the visible-filter set to become configurable.
+
+**Decided (all reversible; scope changes to K97 need Ken).**
+
+1. **FilterBar owns the whole toolbar.** ListView passed Refresh/Export as
+   siblings of FilterBar in one flex row; now it passes them as *props*
+   (`onRefresh`/`refreshBusy`/`exportTotal`/`exportQueryString`) and
+   FilterBar renders them in a right-aligned `view-actions` cluster on the
+   toolbar baseline. Fixes the floating/jumping. *Revert:* move the two
+   controls back into ListView's row and drop the four props.
+
+2. **Refresh demoted to icon-only** (`RefreshButton iconOnly`), since the
+   view auto-refreshes; `aria-label="Refresh"` unchanged so XS-3 + the
+   ListView.test locator still match. *Revert:* drop `iconOnly`.
+
+3. **Advanced folded into the filter system.** The leading
+   `advanced-query-toggle` pill is GONE. Advanced is reached from the END
+   of the "+ Add filter" menu ("Advanced query…", testid `advanced-open`),
+   and on mobile from the filter sheet. *Revert:* re-add the leading
+   ToolbarButton.
+
+4. **Builder-first surface, right-sized.** `AdvancedQuerySurface` already
+   opened the builder for renderable queries (K83); wrapped both modes in
+   a bordered `advanced-query-panel` card (`w-full min-w-0`) so it fills
+   the content width instead of a too-tall textarea, and relabelled the
+   builder's text toggle "Edit as text".
+
+5. **Premature-error suppression (problem #4).** BuilderMode now suppresses
+   the validation banner AND disables Apply while any leaf is *incomplete*
+   (blank value on a non-presence op) via `hasIncompleteLeaf`, and scrubs
+   any "at position N" tail from messages shown in the builder
+   (`scrubPosition`) so token coordinates never leak into the visual UI.
+   The text editor keeps its caret/position (it edits raw DSL). *Revert:*
+   drop the `incomplete` gate + `scrubPosition`.
+
+6. **Configurable visible filters (K97) — storage = URL `vf` param +
+   per-user setting.** New module `list/visibleFilters.ts`. Resolution
+   chain per K97: **active view's set → per-user default → built-in
+   default** (Project/Status/Priority/Assignee).
+   - The **active/transient set** is a comma-separated FilterId list in the
+     URL param `vf` (FilterId = a `FacetKey` or `field.<customKey>`). The
+     URL stays the single source of truth (`.passthrough()` already carries
+     unknown params), so a saved view stores it in its params like any
+     other filter, and it is transient for a bare `/list` until saved or
+     promoted. *Chosen over* a separate React/localStorage store because it
+     keeps the "URL is truth" invariant and needs no server change.
+   - The **per-user default** is `list_visible_filters` in `settings.yaml`,
+     read/written exactly like the board's `board_hidden_columns`
+     (A26/BRD-4) via `useUserSettings` + `useUserSettingsMutation`. Set by
+     an explicit "Save these as my default" action in the Add-filter menu.
+   - Migration-free: no `vf` and no stored default → built-in default.
+   - The "+ Add filter" affordance is a desktop `Menu` popover / mobile
+     `Sheet` (unified via a shared `AddFilterPanel`), grouped built-in /
+     custom, searchable when long. Removing a filter (panel foot of each
+     dropdown) also clears its active value so no invisible constraint is
+     left applied.
+   *Revert:* delete `visibleFilters.ts`, render every facet again, drop the
+   `vf` read/write and the `list_visible_filters` setting.
+
+**Not done / flagged (see known-gaps).** The Playwright e2e specs
+(`tests/ui/flow-list.spec.ts`, `flow-settings-projects-users.spec.ts`)
+still drive the removed `advanced-query-toggle` testid and assume every
+facet is a permanent pill; they are OUTSIDE this ticket's edit scope
+(client `list/**` + `ui/**` only) and need a follow-up pass.
+
+**Guard.** New init test "seeds queries that validate against the seeded
+workflow" (`init.test.ts`) runs `validateQuery(..., { workflow })` on every
+seeded query against the seeded workflow — shown to go red on the old
+`status = blocked` seed. The prior `parseQueriesConfig`-only test checked
+syntax, never enum/relationship validity against the workflow, which is how
+this shipped. Docs updated: `query-language.md`, `schema-reference.md` (both
+reproduced the old query verbatim).
+
+**To revert.** Restore `defaults.ts` line to `status = blocked`; remove the
+init guard test and revert the two doc lines. (Reverting reintroduces the
+bug — noted only for completeness.)
+
+### A211 · One searchable value picker: `ui/Combobox`, extracted from OptionPicker; the combobox-vs-Select rule
+
+**Context (Ken, 2026-09-19):** "query builder is still using native
+dropdown; some fields you pick values through checkboxes; native dropdown
+and checkboxes won't scale with too many values — we need a dropdown you
+can search in. I thought we did that for some selector? standardise. do
+an audit and fix." The searchable selector he remembered is
+`OptionPicker`'s K90 `search` prop (A-K90-SEARCH), which lived in
+`task/editors/` coupled to the meta trigger, so nothing outside the task
+panel could reuse it; the query builder's value control was a native
+`Select` for `=`/`!=` and a checkbox wall for `in`/`not in`.
+
+**Decision (agent-level).**
+
+1. **Extract, don't fork.** `ui/Combobox.tsx` is OptionPicker's listbox
+   lifted into a primitive: the 200ms debounced server query with
+   cancellation (K90), the current value merged into the list rather than
+   filtered out (P3/XS-27), present-but-disabled options with a reason
+   (TSK-10/33), per-option colour/suffix/hint (TSK-7), Escape → close
+   without a write → focus back on the trigger (TSK-41/P8). Added over
+   the original: a `mode="multi"` variant (replaces checkbox walls), a
+   client-side filter, and a full `aria-combobox`/`aria-activedescendant`
+   keyboard model (ArrowUp/Down, Home/End, Enter picks, Enter-with-
+   nothing-to-pick → `onSubmitQuery` for the labels "create" path). The
+   trigger is a render prop; `ComboboxButton` is the select-shaped
+   default so a row mixing a `Select` (operator) and a `Combobox` (value)
+   reads as one row. *Rejected:* a `searchable` mode on `ui/Select` — a
+   native `<select>` cannot host a text input, disabled-with-reason rows,
+   or a value outside its options (the XS-27 failure), so it would have
+   been a reimplementation behind Select's name.
+2. **The rule.** Sets the *user can grow* (labels, users, projects,
+   milestones, sprints, custom-enum values, timezones) → `Combobox`.
+   Small *fixed* sets (status/priority/type, operators, sprint state,
+   estimation unit, true/false, graph constraint) → plain `Select`/`Radio`.
+   Within a Combobox the search box appears when server search is wired
+   (always) or a static list reaches **12** options
+   (`COMBOBOX_SEARCH_THRESHOLD`, the same figure FilterDropdown used for
+   MSL-19); `filterable` overrides. So status on a task stays a plain
+   list, and a 30-value custom enum becomes typeable with no caller change.
+3. **Migrated.** `OptionPicker` → trigger over Combobox (all testids,
+   the `meta-unrecognized-*` flag, A11Y-23 wiring and the meta trigger
+   markup unchanged; 24 call sites untouched). `LabelsField` → Combobox
+   multi (`hideSelected` + `closeOnSelect`), the create offer in the
+   list footer, exact-name gate still server-authoritative (the last
+   unfiltered server answer, sequence-guarded). `QueryBuilder` value
+   control: `=`/`!=` on enum/entity/user → Combobox single with a
+   "Clear value" row, `@currentUser` (K80) and the not-in-config value
+   (XS-27) as options; `in`/`not in` → Combobox multi with a summarising
+   trigger ("A, B, C" / "N selected") and the `qb-value-opt-<key>`
+   testids on the option rows. `FilterDropdown` shares the threshold and
+   `filterOptions` but keeps `Menu` + `menuitemcheckbox` (see 4).
+4. **Deliberately NOT migrated (flagged, see known-gaps).**
+   - `FilterDropdown` facets: already searchable (≥12, client-side); its
+     `menuitemcheckbox` roving-focus contract (A11Y-10) is asserted by
+     ~25 Playwright specs outside this ticket's run scope. Re-rolling it
+     as `role="option"` is a contract change to make with the e2e suite
+     in hand.
+   - Settings/dialog selects over growable sets — `UsersPanel` and
+     `CalendarPanel` timezone (~400 IANA zones), `PreferencesPanel`
+     default project, `DeleteProjectDialog` remap, `MoveTaskDialog`
+     destination, `ReconcilePanel` pick-value, `UserDeleteDialog` /
+     `RemapDeleteDialog` radio lists — all use `selectOption`/`.check()`
+     in Playwright specs. Same reason. The create modal's multi-enum pill
+     toggles (`create-field-<key>-<v>`) likewise.
+   - The query builder's entity lists still come from the 1000-capped
+     sidebar hooks (client filter), not `?q=` — K90 parity for the
+     builder needs the search fns threaded into `BuilderConfig`.
+
+**Tests.** `ui/Combobox.test.tsx` (12 cases: threshold rule, filter +
+current-value pin, keyboard, Escape, onSubmitQuery, K90 debounce/merge,
+multi on/off + hideSelected, disabled-with-reason) — red-proven by five
+mutations (filter, Enter-pick, current-pin, threshold, hideSelected),
+each failing only its intended tests. `QueryBuilder.test.tsx`: four tests
+edited — they asserted `tagName === "SELECT"`, `fireEvent.change` on a
+select, and bare checkbox clicks, i.e. the controls this replaced; one
+added (`@verifies A211`: a 15-label set grows a box that filters).
+
+**To revert:** restore `OptionPicker.tsx`, `LabelsField.tsx`,
+`QueryBuilder.tsx` and `FilterDropdown.tsx` from `41d133c`, delete
+`ui/Combobox.tsx` + its test, and re-apply the four QueryBuilder test
+edits in reverse.
+
+### A212 · The child-progress meter (L4) renders on the tree axis's *child* side only, and web recomputes it client-side
+
+**Ticket:** L4 · **Date:** 2026-09-20 · **Commit:** (uncommitted)
+
+**The situation.** L4 adds a Jira-style done/active/todo meter on a
+parent task's group of children. Core's `Progress` gained `active`
+(category-based, discarded still excluded), and the meter had to appear
+on the task detail's Relationships panel, on `loctt show`, and on MCP
+`get_task`. Two calls were undersettled by the ticket.
+
+**What had to be decided.** (a) Which tree group gets the meter — a
+`graph: "tree"` def produces *two* sides (`parent` forward, `child`
+inverse), both rendered as trees; and (b) where the web meter's numbers
+come from, given core's `progress.ts` is a Node module (it reads the
+corpus) that cannot cross into the browser bundle.
+
+**Options considered.**
+
+1. **Meter on every tree group** vs **child side only.** Rendering on
+   both would put a progress bar on the "Parent" group, which points at
+   ancestors — a meter over "my parents" is meaningless, and usually
+   there is exactly one. Cost of child-only: a tiny config lookup
+   (`treeChildSideKey` = the tree def's `effectiveInverseKey`).
+2. **Web reads a server progress endpoint** vs **web recomputes from the
+   rows it already holds.** The panel's depth-0 rows already carry
+   `resolvedStatus`; classifying them via `statusOf(...)?.category` needs
+   no new request. A server round-trip would add a fetch for numbers the
+   client can derive, and would still restate the category rule
+   somewhere.
+
+**Decided.** (a) The meter renders only on the group whose key is the
+tree axis's child side (`treeChildSideKey`), and never when that axis is
+symmetric. (b) Web computes the child counts client-side from the rows'
+`resolvedStatus`, mirroring how `milestones/model.ts` already restates
+the presentation half of `Progress` on the client.
+
+**Why.** (a) A meter over ancestors is noise; the child side is the only
+one that summarises "how far along is the work under this task". (b) This
+is the established pattern in this package — the milestone readout does
+the identical thing — and it keeps the exclusion/category rule applied
+from one shared shape (`progressState`) rather than adding a surface. The
+authoritative computation still lives in core (`computeProgressFromStatuses`),
+which CLI and MCP call directly, satisfying the parity rule; the web copy
+is the presentation layer, not a second source of truth.
+
+**To revert.** Remove `active`/`tallyStatusCategories`/
+`computeProgressFromStatuses` from `packages/core/src/task/progress.ts`
+(+ index exports) and their tests; drop `activeFill` and the `active?`
+field from `apps/web/src/client/milestones/model.ts`; drop the `label`/
+`segmented` props and the segmented branch from `ProgressReadout.tsx`
+(delete `ProgressReadout.test.tsx`); remove `treeChildSideKey` from
+`relationships/group.ts` and the `ChildProgressMeter` +
+`child-progress` render from `RelationshipsPanel.tsx` (+ its tests);
+remove the `children` block from MCP `get_task` and the "Child progress"
+line from CLI `show` (`apps/{mcp,cli}/src/**/task-crud.ts`), their helper
+`treeChildSideKey`, the reference-doc paragraphs, and
+`tests/integration/cli/child-progress-parity.test.ts`.
+
+
+### A213 · The full timeline group-by set, via a surface-neutral searchable picker; `field.<key>` may dangle
+
+**Ticket:** UI/UX polish — timeline group-by · **Date:** 2026-09-20 · **Commit:** (this branch, uncommitted)
+
+**The situation.** `TimelineGroupingSchema` was a closed 5-enum
+(`none`/`milestone`/`assignee`/`status`/`sprint`), rendered by a native
+`<select>` in the toolbar and Settings. Ken approved the FULL group-by
+set and that the picker scale like the K97 filter work (A211's
+`Combobox`), reusable for board/list later. A PM/UI spec settled it: a
+single-select searchable `Combobox`, no offered-set config (eligibility
+derived), custom-enum fields groupable as `field.<key>`.
+
+**What had to be decided.** (1) Which fields are groupable, and how a
+custom-field grouping is stored. (2) Where the catalog lives. (3) What
+happens to a stored grouping whose custom field is deleted or changed to
+multi/non-enum.
+
+**Options considered.**
+ - *Groupable set:* only builtins (rejected — Ken wanted custom fields)
+   vs builtins + all custom enums (rejected — a multi/label field puts a
+   task in N bands, breaking TML-7's identical-row-count invariant) vs
+   builtins + **single-value** enum fields (chosen).
+ - *Catalog home:* under `timeline/` (rejected — a group-by is not a
+   timeline concept; the board already groups and the list will, so
+   scoping it to one surface is the drift CLAUDE.md names) vs a new
+   surface-neutral `apps/web/src/client/grouping/` (chosen).
+ - *Dangling `field.<key>`:* validate-and-reject at schema parse
+   (rejected — a hand-edited config would fail to load) vs preserve on
+   write and resolve at read time (chosen, mirroring
+   `dependency_relationship` / A31).
+
+**Decided.** `TimelineGrouping = Builtin | field.${string}`, where
+Builtin is the eight `none`/`project`/`milestone`/`sprint`/`assignee`/
+`status`/`priority`/`task_type`. Eligibility (single-value enum with
+values) is derived by `buildGroupingCatalog(workflow)`. `resolveGrouping`
+rejects an unresolvable value and DEFERS to the next precedence layer
+(url → view → workspace → `none`), naming the first rejected value in a
+`dangling` field the view surfaces as a one-line notice. The grouping
+control is `GroupByPicker`, a thin wrapper over `Combobox` single-select,
+mounted by both the toolbar and Settings.
+
+**Why.** TML-7's invariant is the hard constraint — every task lands in
+exactly one band under every grouping — which is why labels and
+multi-value enums are excluded. Surface-neutrality follows CLAUDE.md's
+core/surface-parity rule applied at the web layer. Dangling-preserve
+follows A31: silently pruning a reference destroys the evidence of a
+typo, and a notice cannot name a key that was erased.
+
+**Board/list reuse (open — for a future decision).** The catalog and
+`GroupByPicker` are deliberately surface-neutral, but `BoardGroupingSchema`
+(in `packages/contracts/src/query.ts`, used by
+`SavedViewDisplaySchema.group_by`) is still a separate enum. When the
+board adopts the picker, `BoardGroupingSchema` and `TimelineGroupingSchema`
+should be unified (a shared groupable-value schema), and
+`buildGroupingCatalog` given a per-surface capability filter so the board
+offers only what it can render. Not done here — flagged for its own
+ticket so the timeline change stays scoped.
+
+**To revert.** Restore the closed enum in
+`packages/contracts/src/workflow.ts` (`TimelineGroupingSchema` +
+`TimelineGrouping` type) and revert the schema-reference.md
+`default_grouping` row/notes; delete `apps/web/src/client/grouping/`
+(catalog + `GroupByPicker` + tests); restore the native `<select>`
+group-by in `apps/web/src/client/timeline/TimelineView.tsx` and
+`apps/web/src/client/settings/TimelinePanel.tsx`; revert the four new
+bucketers (`byProject`/`byPriority`/`byTaskType`/`byCustomField`) and the
+`field.`-dispatch in `apps/web/src/client/timeline/rows.ts`; revert
+`resolveGrouping` to the single-arg `resolve(...)` in
+`apps/web/src/client/timeline/settings.ts`; revert the lenient
+`groupingParam` in `apps/web/src/client/router/timelineSearch.ts` (and
+delete its test); undo the two additive `Combobox` touches (`dataValue`
+on `ComboboxButton`, `clear.testId`); and revert the e2e rewrites in
+`tests/ui/flow-timeline.spec.ts` (the `expectGrouping`/`chooseGrouping`
+helpers, the custom-field case, and the `setCustomEnumFields`/
+`setTaskField` helpers).
+
+### A214 · K100 point-of-use edit dialogs for Labels/Milestones/Projects; "All sprints" row; create/delete stay deep-links
+
+**Ticket:** K100 UI lane · **Date:** 2026-09-20 · **Commit:** (uncommitted)
+
+**The situation.** K100 makes point-of-use editing legal *only* through a
+single self-contained editor the Settings panel also renders. Labels /
+Milestones / Projects edited via **inline row forms** (not components), so
+the price was extraction. Three shared dialogs now exist —
+`LabelEditDialog`, `MilestoneEditDialog`, `ProjectEditDialog` — each owning
+its fields, validation and mutation; the panels render them (their inline
+edit branches deleted) and the sidebar rows open the *same* ones.
+
+**What had to be decided (calls the ticket left open).**
+
+1. **Sidebar "+ New project" and label/milestone Delete.** K100 only
+   extracted the *edit* forms. Project creation (`CreateProjectForm`:
+   slug/prefix uniqueness) and label/milestone delete (`RemapDeleteDialog`:
+   remap picker + last-project guard) are **panel-owned, not extracted**.
+   Per K100 an un-extracted affordance is a **deep link**, not a fork —
+   so "+ New project" links to `/settings/projects`, and the sidebar
+   label/milestone kebabs offer Archive (a clean single mutation) + a
+   "Manage …" deep link that carries the destructive delete.
+2. **Project make-default / archive placement.** The brief said the
+   dialog is "name + make-default + archive". Those are non-field actions;
+   they live *inside* `ProjectEditDialog` (a bordered action row), not on
+   the panel row kebab (which is now just Edit… / Delete). The panel tests
+   that clicked them from the row kebab were updated to open the dialog.
+3. **Stale-draft handling.** Each dialog is mounted fresh on open
+   (`editing && <Dialog …>`), so `useState(existing.*)` seeds from the
+   current entity — the B2 bug-5 stale-draft trap is closed by mounting,
+   replacing the per-row `reset()`-on-Edit-open dance.
+
+**Deferred.** `MilestoneDetail`'s header edit is untouched (a later pass,
+per the brief). Sprints get **no** dialog (K100: sprint edit stays on the
+`/sprints/:id` detail page); this lane only made the `/sprints` overview
+reachable via an "All sprints" sidebar row and left the sprint rows'
+filter-link behaviour intact.
+
+**To revert.** Delete `apps/web/src/client/settings/{LabelEditDialog,
+MilestoneEditDialog,ProjectEditDialog}.tsx`; restore the inline edit
+branches in `{Labels,Milestones,Projects}Panel.tsx` from git; remove the
+`*RowActions` kebabs, the dialog wiring, the "All sprints" and
+"+ New project" rows from `shell/Sidebar.tsx`; revert the K100 test blocks
+in `dataPanels.test.tsx`, `ProjectsPanel.test.tsx`, and `Sidebar.test.tsx`.
+The shared dialogs are the standard's payoff — this is a standard (K100),
+not a one-off; new point-of-use config must follow it.
+
+### A215 · Cross-view layout standard: `p-4`/`gap-3`/full-bleed, bare `ErrorState`, the `PageHeader` primitive, and a pane-owned settings padding
+
+**Ticket:** UI layout-consistency pass · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** The list-like main views had drifted apart. `ListView`
+used `p-6` + `gap-4` while Board/Timeline/Sprints/Milestones used `p-4`, so
+switching List↔any-other-view shifted the content 8px per edge. The
+header→body gap was `gap-4` on three views and `gap-3` elsewhere.
+`ErrorState` — which already self-centers and self-pads
+(`mx-auto max-w-lg px-4 py-10`) — was wrapped in a redundant `p-4` div in
+four views and mounted bare in TaskDetail, so a load failure was padded
+differently per view. Each titled view rolled its own header
+(`items-baseline` vs `items-center`, mixed gaps). And the settings panels
+were internally inconsistent: most padded `p-8` themselves (some via the
+shared `WorkflowPanelFrame`, some standalone), so switching sections
+shifted the panel — sixteen definitions of one value.
+
+**What had to be decided.** What is the one shell every list-like view
+uses; where does `ErrorState`'s spacing live; is a shared title-row
+primitive worth extracting and which views adopt it; and where does the
+settings-panel padding live so there is exactly one definition?
+
+**Options considered.**
+- *Page padding:* converge on `p-4`/`gap-3`/full-bleed (the built
+  majority) — cheap, matches four of five views already; vs. converge on
+  `p-6` — would touch four views instead of one and widen the gutter past
+  the mobile 16px minimum for no reason.
+- *ErrorState:* remove the redundant wrapper divs so the primitive owns its
+  spacing (TaskDetail's bare mount is already the target form); vs. add a
+  wrapper to TaskDetail too — would double-pad and re-encode the drift.
+- *PageHeader:* extract a title+subtitle+actions primitive and migrate the
+  views that have a title row; vs. leave each header bespoke — keeps the
+  typography drift.
+- *Settings padding:* give the `settings-pane` one `p-8` and strip every
+  panel/frame (one source of truth); vs. give every panel the same `p-8`
+  (sixteen copies of the value that will drift again).
+
+**Decided.** (1) All list-like main views use `p-4` + `gap-3` +
+full-bleed + view-owned scroll where a header is pinned. (2) `ErrorState`
+mounts bare everywhere — no wrapping padding div. (3) A `ui/PageHeader`
+primitive owns the plain title row
+(`flex flex-wrap items-center justify-between gap-3`, title
+`text-[1.0714rem] font-semibold`); MilestonesView adopts it. (4) The
+`settings-pane` in `SettingsShell` owns a single `p-8`; every panel and
+`WorkflowPanelFrame` render with no outer padding.
+
+**Why.** P7/consistency: two views answering "where is the edge of the
+content" must answer the same way. `p-4`/`gap-3` is the built majority, so
+converging on it is the smallest change. `ErrorState` already self-pads —
+a wrapper is redundant and was the actual source of the per-view drift.
+One padding definition (pane-owned) cannot drift; sixteen already had.
+PageHeader is scoped to the *plain* title row deliberately: only
+MilestonesView (and, as a bordered card, MilestoneDetail) have a real page
+title. Board's chips row, Sprints' manage-link + checkbox, the Timeline
+toolbar, and SprintDetail's back-link + `SprintMetaHeader` have **no**
+title, so there is nothing to converge there — forcing them into a
+title-oriented primitive would invent titles (§8 rule 2). MilestoneDetail
+and TaskDetail keep their bordered/`px-6 py-4` card headers: a border
+variant is a different component (different padding, background, bottom
+border), so adopting PageHeader there is more churn than value.
+
+**To revert.** In `apps/web/src/client`: restore `list/ListView.tsx`'s
+outer wrapper to `flex flex-col gap-4 p-6`; restore `gap-4` on the
+`flex-col` wrappers of `milestones/MilestonesView.tsx`,
+`milestones/MilestoneDetail.tsx`, `sprints/SprintDetail.tsx`; re-wrap the
+`ErrorState` in `board/BoardView.tsx`, `timeline/TimelineView.tsx`,
+`sprints/SprintsView.tsx`, `milestones/MilestonesView.tsx` in a `p-4` div;
+delete `ui/PageHeader.tsx` + `ui/PageHeader.test.tsx` and inline the old
+`<header>` back into `MilestonesView`; and move `p-8` off the
+`settings-pane` in `settings/SettingsShell.tsx` back onto each panel and
+`settings/WorkflowPanelFrame.tsx` (and restore it on `UnknownSection`/
+`NotBuiltYet`). This is a consistency standard, not a one-off — new views
+should follow it rather than reverting.
+
+
+### A216 · Titled `PageHeader`s for Board/Timeline/Sprints (static) and SprintDetail (name as title, meta as subtitle)
+
+**Ticket:** UI/UX polish · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** A215 extracted `ui/PageHeader` but adopted it only in
+MilestonesView, reasoning that Board/Timeline/Sprints/SprintDetail "have
+**no** title, so there is nothing to converge there." Ken subsequently
+ruled those four views *should* carry a titled header — so A216
+supersedes that specific part of A215's "Why" (the primitive and the
+layout standard stand; only the "these four have no title" call changes).
+The four views each had a bespoke, title-less top row: Board a
+`ChipsBar` + "+ Add task" flex row; Timeline a `FilterBar` + `Toolbar`;
+Sprints a `<header>` with a manage-link + archived checkbox; SprintDetail
+a back-link then the rich, edit-capable `SprintMetaHeader`
+(SPR-7/8/25/26/28/33/37, one combined PUT, non-optimistic errors, many
+testids).
+
+**What had to be decided.** For each view, where the title goes and what
+shares its row; and for SprintDetail specifically, how to make the sprint
+name the page title and the dates/state the subtitle **without**
+rewriting or weakening `SprintMetaHeader`'s edit machinery or any SPR
+test.
+
+**Options considered.**
+- *Board:* put `ChipsBar` in the header actions slot vs. keep it as its
+  own row below a title-only header. The chips wrap to up to one pill per
+  column and would crush the title at phone width in the actions slot —
+  so its own row is cleaner. "+ Add task" + the options overflow (both
+  small, fixed) go in the actions slot.
+- *Timeline:* fold the zoom/group/Today cluster into the actions slot vs.
+  leave the toolbar as its own row under a title-only header. The cluster
+  already wraps and collapses into a "More" menu at phone width; hoisting
+  it would fight that. Title-only header, toolbar unchanged below.
+- *Sprints:* the manage-link + archived toggle are small and fixed, so
+  they move cleanly into the actions slot.
+- *SprintDetail:* (a) add a title above an untouched `SprintMetaHeader` —
+  rejected, it renders the name/dates/state **twice**; (b) lift
+  `SprintMetaHeader`'s read-mode markup out into the PageHeader —
+  rejected, its unit tests render `<SprintMetaHeader>` alone and assert
+  the read-mode `sprint-meta-*-value` testids, so removing them there
+  would force weakening behavioral tests (a STOP-and-report condition);
+  (c) add an optional `foldReadMeta` prop that suppresses **only** the
+  read-mode Name/Start/End/State fields (keeping Goal, the Archived badge
+  and the Edit button), default `false` — chosen.
+
+**Decided.** Board/Timeline/Sprints get static `PageHeader`s titled
+"Board"/"Timeline"/"Sprints"; Board and Sprints put their small controls
+in the actions slot with the wide bar/toolbar as their own row, Timeline
+is title-only with the toolbar unchanged below. SprintDetail renders the
+sprint **name** as the PageHeader title (h1) and the **dates · state** as
+its subtitle, and passes `foldReadMeta` to `SprintMetaHeader` so those
+fields are not shown twice. `SprintMetaHeader`'s entire edit flow and
+persistence (one combined PUT, SPR-28/33/37, A147) are untouched.
+
+**Why.** §8 rule 2 (never invent titles) is satisfied — these are the
+exact four titles Ken named, no more. The fold is done conservatively:
+`foldReadMeta` defaults to `false`, so every existing `SprintMetaHeader`
+test renders the standalone (unfolded) presentation and stays green with
+no edit; only SprintDetail (which no test asserts the meta *values* of)
+opts in. No behavioral test was weakened or deleted. `PageHeader` needed
+**no** API change — `subtitle` is already `ReactNode`, so the
+dates/state node drops straight in.
+
+**To revert.** In `apps/web/src/client`: in `board/BoardView.tsx`,
+`timeline/TimelineView.tsx`, `sprints/SprintsView.tsx` remove the
+`PageHeader` (and its `import`) and restore the prior bespoke top rows
+(Board's `flex … justify-between` wrapping `ChipsBar` + the button
+cluster; Timeline drops the header line above `FilterBar`; Sprints'
+`<header>` with the manage-link + archived label). In
+`sprints/SprintDetail.tsx` remove the `PageHeader` + `SPRINT_STATE_LABELS`
+and drop the `foldReadMeta` prop from the `SprintMetaHeader` mount. In
+`sprints/SprintMetaHeader.tsx` remove the `foldReadMeta` prop and its
+`!foldReadMeta &&` guard around the read-mode Name/Start/End/State block.
+Remove the added "titled header" tests in `board/BoardView.test.tsx`,
+`timeline/TimelineView.settings-links.test.tsx`,
+`sprints/SprintsView.test.tsx`, and the "titled header fold" describe in
+`sprints/SprintDetail.test.tsx`.
+
+### A217 · Saved-view Stage 2 (web): builder-first filter authoring + structured `conditions` sent from web
+
+> **SUPERSEDED by K102 (2026-09-21).** A saved view no longer stores a
+> `conditions` `BuilderTree` or a derived `query` string; it stores an
+> ordered `filters[]` discriminated union. The `BuilderTree` AST, its
+> contracts mirror and `queryToConditions`/`conditionsToDsl` were deleted.
+> Kept as history — do not build on this entry.
+
+
+**Ticket:** Saved views store structured conditions (Stage 2 of 3) · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** Stage 1 (core+contracts, commit 9c673e7) made a saved
+view's `conditions` (a `BuilderTree`) the source of truth and `query` a
+derived, spacing-only serialization. Stage 2 brings the web surface into
+line. Two Ken rulings drive it: (1) the value-count operator switch in
+the filter-bar→DSL builder (`= x` for one value, `in (...)` for many) is a
+form-rewrite and must go; (2) the New/Edit filter dialog must NOT open a
+raw DSL query field — *"i can't use filters unless i go through the
+learning curve of your query language. NO!"* — it must be a visual builder
+by default, with an Advanced (raw DSL) toggle KEPT.
+
+**What had to be decided (agent calls).**
+
+- *B — operator by facet, not by count.* Every filter-bar facet is a
+  multi-select, so a lone value is still a membership question:
+  `buildConditionsFromSearch` authors `field in (v)` for all nine facets
+  and the `field.<key>` customs, never a count-based `=`. `buildDslFromSearch`
+  became a thin wrapper (`conditionsToDsl(buildConditionsFromSearch(...))`)
+  so the string is one serialization of the same structure "Save as view"
+  stores — string and structure cannot disagree, and the DSL is generated
+  by ONE path (core's serializer). Free-text `q` is now parsed and spliced
+  as a subtree (no blanket `(...)` wrap). *There is no genuinely scalar `=`
+  facet today; if one is ever added it would author a `=` leaf.*
+
+- *C — dialog shape (reuse without force-fit).* `AdvancedQuerySurface` is
+  contractually an inline-filter-bar component (its `onApply` writes URL
+  `q`, `onSwitchToBasic` reconstructs chips, it renders its own
+  Apply/Close). Rather than embed it and neuter two of its three callbacks
+  (which would put a second "Apply" next to the dialog's Save), the dialog
+  is assembled from the SAME building blocks the surface uses —
+  `QueryBuilder`+`buildBuilderConfig` (visual rows) and `AdvancedQueryEditor`
+  (DSL text) — with a dialog-owned builder/advanced toggle. To avoid parity
+  drift the surface's refuse/complete helpers (`parseForBuilder`,
+  `asGroupRoot`, `safeSerialize`, `hasIncompleteLeaf`, `scrubPosition`)
+  were EXPORTED and reused (one copy of the rule, not two). (pm-reviewed.)
+
+- *D — conditions on the wire.* The web sends structured `conditions`.
+  The contracts request schemas (`CreateViewRequest`/`EditViewRequest`)
+  are frozen at `{name,query,sort}` in Stage 1, so the server extends them
+  LOCALLY with the exported `BuilderTreeSchema`
+  (`CreateViewRequestWithConditions`/`EditViewRequestWithConditions`,
+  `query` relaxed to optional) and passes `conditions` to core, which
+  already accepts conditions OR query and derives the other. A client that
+  still sends only `query` (defensive) keeps working. `SaveViewDialog` and
+  the create/edit hooks (`CreateViewBody`/`EditViewBody`) gained `conditions`.
+
+- *E — advanced-mode save.* Editing raw DSL and saving parses it with
+  core's total `queryToConditions` and REFUSES an unparseable string
+  (mirrors VUE-11 "refuse, don't approximate"); the PARSED tree is sent so
+  the stored `conditions` and derived `query` never disagree. After Stage
+  1's total extension any VALID DSL is representable, so the only refusal
+  is a genuine parse error.
+
+- *Broken-view edit (important).* A broken saved view (VUE-22) has a
+  `query` that did not parse and NO `conditions`. The dialog's `existing`
+  prop makes `conditions` OPTIONAL; when absent it opens Advanced on the
+  raw `query` with no refuse-note, which is exactly the fix path. The
+  Sidebar's `EditTarget` carries `conditions` when present (valid view →
+  builder), omits it for a broken row.
+
+**Green tests edited because they asserted the SUPERSEDED behavior (not
+the bug — the pre-ruling shape).** `buildDsl.test.ts` and
+`dslToSearch.test.ts` asserted `priority = high`/`assignee = alice` for
+single-value facets (the count switch); updated to membership.
+`SavedViewsPanel.test.tsx` and `Sidebar.test.tsx` asserted the DSL
+textarea was the create/edit default and `{name,query}` was posted;
+rewritten to the builder-first default and `conditions` bodies. Each is a
+behavior Ken ruled out, called out at its edit site.
+
+**Tests added (red-proven).** `buildConditions.test.ts` (single-value
+facet → `in`, never `=`; value order; splice/guard); the `buildDsl`
+membership cases; `ViewFormDialog.test.tsx` (builder shown by default —
+red-proofed by forcing advanced default; Advanced toggle reveals the DSL
+box; save POSTs `conditions`; edit seeds from conditions; unrenderable
+conditions → Advanced+note; unparseable Advanced DSL refuses save —
+red-proofed by neutering the guard); `SaveViewDialog.test.tsx` (POST body
+carries `conditions`, membership — red-proofed by reverting to query-only);
+`server.view-conditions.test.ts` (create/edit round-trip conditions;
+query-only defensive path).
+
+**Why.** Structure-first end to end means the string a user sees and the
+structure stored are the same object serialized — no drift class survives.
+Builder-first satisfies Ken's ruling literally while keeping the Advanced
+escape hatch for power users and the only-thing-that-works path for
+exotic (has_link/not/date_fn) and broken views. Contracts stayed frozen
+(Stage 1) by extending request schemas at the web edge with an already-
+exported schema; core (Stage 1) and CLI/MCP (Stage 3) were untouched.
+
+**To revert.** In `apps/web/src/client/list/`: restore `buildDsl.ts`'s
+count-switch `clause()` and delete `buildConditions.ts`(+test);
+`SaveViewDialog.tsx` back to sending `query`. In
+`apps/web/src/client/settings/ViewFormDialog.tsx` restore the
+`AdvancedQueryEditor`-only body and narrow the `existing` prop to
+`id|name|query`; delete `ViewFormDialog.test.tsx`. Un-export the five
+helpers in `list/AdvancedQuerySurface.tsx`. In `client/shell/Sidebar.tsx`
+drop `conditions` from `EditTarget`. In `client/api/hooks/useCreateView.ts`/
+`useEditView.ts` drop the `*Body` types' `conditions`. In
+`server/server.ts` remove `CreateViewRequestWithConditions`/
+`EditViewRequestWithConditions` (revert handlers to the base schemas and
+stop forwarding `conditions`) and the `BuilderTreeSchema` import; delete
+`server/server.view-conditions.test.ts`. Revert the superseded-behavior
+test edits noted above. (The 5 fixture-`conditions` additions in
+`server.missing-view`/`view-warnings`/`views-invalid` tests are required
+by Stage 1's schema and stay.)
+
+### A218 · Settings nav is four frequency-ordered semantic groups (Content / Workflow / Personal / System), System last
+
+**Ticket:** ui/ux-polish · **Date:** 2026-09-20 · **Commit:** (uncommitted)
+
+**The situation.** SET-2 shipped the settings nav as five groups —
+Workspace, Workflow, Data, Tracker, Personal — with all 23 sections
+distributed across them (see A63 for why every section is listed).
+Ken reviewed the IA and found the five-group split fuzzy: "Data" vs
+"Tracker" vs "Workspace" did not map onto how a user reaches for a
+setting (Sync and Backup sat under "Tracker" next to Board columns;
+Users sat under "Workspace" next to Projects), and there was no cue
+that admin/plumbing settings are used least.
+
+**What had to be decided.** What group structure and order the settings
+nav should use.
+
+**Options considered.**
+
+1. **Keep the five SET-2 groups.** No churn, but the fuzzy boundaries
+   and the missing "least-used last" signal remain.
+2. **Four semantic groups, ordered by likelihood of use, System last:**
+   Content (Projects, Saved views, Labels, Milestones, Sprints),
+   Workflow (Statuses, Priorities, Task types, Custom fields,
+   Relationships, Estimation, Board columns, Timeline defaults,
+   Calendar), Personal (My preferences, Card layout, Sidebar pins,
+   Sidebar groups, Keyboard), System (Users, Sync, Backup & restore,
+   Diagnostics — Diagnostics last of all).
+
+**Decided.** Option 2 — Ken approved the exact four-group scheme and
+order above. Projects stays the landing section (`DEFAULT_SECTION`),
+and it is the first section of the first group. Section ids are
+unchanged, so no `/settings/<id>` URL changes; only each section's
+`group` and the array order changed. No labels were renamed.
+
+**Why.** Ken's ruling. The four groups are semantic but ordered by
+frequency (Content and Workflow are reached far more often than System),
+and putting System last with Diagnostics dead last signals "plumbing,
+rarely needed". This supersedes the SET-2 five-group *structure* while
+keeping SET-2's one-data-module design (A63): nav, route resolution,
+and the not-found state still all read from `sections.ts`, and array
+order is the single source of both grouping and within-group order
+(`sectionsInGroup` preserves array order). No empty catch-all group was
+introduced (A63's last point) — every group has real members.
+
+**To revert.** In `apps/web/src/client/settings/sections.ts`, restore
+the `SettingsGroup` union to `Workspace | Workflow | Data | Tracker |
+Personal`, restore `SETTINGS_GROUPS` to that five-name order, and put
+each section back to its pre-A218 group and array position (git blame /
+the diff for this commit has the exact old mapping). Then revert the
+group-heading assertion in
+`tests/ui/flow-settings-projects-users.spec.ts` (SET-2/A64 test) to the
+five names in the old order, and update
+`apps/web/src/client/settings/sections.test.ts` (added here) to the
+five groups — or delete it. `DEFAULT_SECTION` stays `projects` either
+way.
+
+### A219 · Saved-view Stage 3 (CLI + MCP + docs parity): `conditions` hoisted into the shared contracts request schema
+
+> **SUPERSEDED by K102 (2026-09-21).** A saved view no longer stores a
+> `conditions` `BuilderTree` or a derived `query` string; it stores an
+> ordered `filters[]` discriminated union. The `BuilderTree` AST, its
+> contracts mirror and `queryToConditions`/`conditionsToDsl` were deleted.
+> Kept as history — do not build on this entry.
+
+
+**Ticket:** Saved views store structured conditions (Stage 3 of 3) · **Date:** 2026-09-20 · **Commit:** (this one)
+
+**The situation.** Stages 1 (core+contracts, 9c673e7) and 2 (web, A217)
+made `conditions` the source of truth and `query` its derived, spacing-
+normalized serialization, and brought the web surface into line. Stage 3
+closes the core/surface-parity rule — "a capability in core is not done
+until CLI and MCP have it" — and resolves the Stage-2 drift A217 flagged:
+the web server had re-extended the frozen contracts request schemas
+LOCALLY (`CreateViewRequestWithConditions`/`EditViewRequestWithConditions`).
+
+**What had to be decided (agent calls).**
+
+- *A — hoist `conditions` into contracts, don't keep three copies.* Three
+  surfaces now need `conditions` on the create/edit request, so it belongs
+  in the one schema all three share, not re-derived at the web edge.
+  `CreateViewRequestSchema`/`EditViewRequestSchema` gained an OPTIONAL
+  `conditions: BuilderTreeSchema` and `query` on create was relaxed to
+  optional (a caller may send EITHER; core's `resolveViewFilter` requires
+  exactly one and derives the other). The web server dropped its two local
+  `*WithConditions` extensions and the now-unused `BuilderTreeSchema`
+  import, using the contracts schemas directly — web behavior identical
+  (all 114 view-related web server tests still green, incl.
+  `server.view-conditions.test.ts`).
+
+- *B — CLI needs no filter-path code change; core already derives.* The CLI
+  `views create/edit --query "<dsl>"` already passes the raw DSL to core's
+  `createView`/`editView`, which parse it into `conditions` and reject
+  unparseable DSL (Stage 1). Verified end-to-end: a CLI-created view's
+  `queries.yaml` entry has a populated structured `conditions` and its
+  stored `query` round-trips as the membership form (`status in (a, b)`,
+  not `= a`). `views list` unchanged (text output of the derived `query`).
+
+- *B′ — register `ViewError` as a CLI domain error.* Found while testing
+  the reject path: `ViewError` extends `Error`, not `LocttError`, so it was
+  NOT in `KNOWN_DOMAIN_ERRORS` and an unparseable `--query` bubbled to
+  `main()`'s outer catch instead of being handled in `runCommand` like
+  every sibling command's domain error. Added it (one import + one array
+  entry). Same user-facing message and exit code; the difference is it is
+  now handled at the command boundary and is unit-testable there. Pre-
+  existing latent inconsistency, not introduced by this change.
+
+- *C — MCP: DSL-in kept, `conditions` added to `list_views`.* `create_view`/
+  `edit_view` keep their DSL `query` input (the agent-facing shape); core
+  derives+validates `conditions`. `list_views` now returns `conditions`
+  alongside `query` (cheap; an agent introspecting a view sees the same
+  structured tree the web builder edits). Tool descriptions updated to be
+  honest: the stored form is structural and the returned `query` is a
+  spacing-normalized regeneration (`status=a` → `status = a`).
+
+**Tests added (red-proven).**
+- `apps/cli/src/commands/views.test.ts`: `views create --query "status in
+  (a, b)"` writes a populated membership `conditions` tree AND round-trips
+  the query as `status in (a, b)` — red-proofed by stubbing core's DSL
+  derivation to a bogus leaf; an unparseable `--query` is rejected and no
+  view is written.
+- `apps/mcp/src/tools/views.test.ts` (added case): `create_view` returns
+  the derived `conditions` and `list_views` carries it — red-proofed by
+  removing `conditions` from the `list_views` output.
+- `packages/contracts/src/service-schemas.test.ts` (new file): the create/
+  edit request schema accepts a body with `conditions` and one with DSL
+  `query` only, stays `.strict()`, and rejects a malformed tree — the
+  conditions-accepted assertion red-proofed by removing `conditions` from
+  the schema.
+
+**Why.** One request schema for three surfaces means a view authored on
+any surface produces the same stored `{query, conditions}` pair; the web
+edge no longer maintains a private copy that could drift. The CLI/MCP
+DSL-in path was correct since Stage 1 — Stage 3 proves it and closes the
+introspection gap (`list_views` conditions) and the description honesty
+gap.
+
+**To revert.** In `packages/contracts/src/service-schemas.ts` drop
+`conditions` from `CreateViewRequestSchema`/`EditViewRequestSchema`, make
+`query` on create required again, and remove the `BuilderTreeSchema`
+import; delete `service-schemas.test.ts`. In `apps/web/src/server/server.ts`
+re-add the `CreateViewRequestWithConditions`/`EditViewRequestWithConditions`
+extensions and the `BuilderTreeSchema` import, and point the handlers back
+at them (this reinstates A217's Stage-2 shape). In `apps/cli/src/runtime/
+errors.ts` remove `ViewError` from the import and `KNOWN_DOMAIN_ERRORS`;
+delete `apps/cli/src/commands/views.test.ts`. In `apps/mcp/src/tools/
+views.ts` drop `conditions: q.conditions` from the `list_views` `good`
+map and revert the three description strings; remove the added case in
+`apps/mcp/src/tools/views.test.ts`. Revert the docs notes in
+`docs/user/cli/reference.md`, `docs/user/mcp/reference.md`, and the
+`conditions` field/example in `docs/dev/schema-reference.md`.
+
+### A220 · Settings-panel UX fixes: broken-entry degradation (milestones/sprints), display-only friendly labels, BoardColumns reset confirm, UserDelete + SavedViews shared controls
+
+**Ticket:** Settings panels UX/correctness review · **Date:** 2026-09-20 · **Commit:** (this one) · **Reviewer:** self · **To revert:** see per-item notes below; every change is client-only (no core/contracts/CLI/MCP touched).
+
+**The situation.** A settings review surfaced four categories of
+client-only defect, all in individual panel files. Each was decided and
+implemented here; the load-bearing calls are recorded below.
+
+- *1 — Milestones/Sprints broken-entry degradation (correctness,
+  corruption-guide § 4.6).* The API **already exposes** `broken` for both
+  (`handleListMilestones`/`handleListSprints` in server.ts rode it since
+  Phase-7B; `CountedPage<T>.broken` already typed the hook). The panels
+  simply never rendered it, so a corrupt milestone/sprint silently
+  vanished — the exact DEG-30/A138 failure Labels/SavedViews/Enum panels
+  already handle. Fix is pure client rendering: `BrokenMilestoneRow` /
+  `BrokenSprintRow` mirror `BrokenLabelRow` (⚠ marker + `rawText` reason +
+  **Repair** = reload-from-disk, no Delete, per A202), and a lone broken
+  entry no longer reads as an empty list. **No server change was needed or
+  made** — this was the "API already exposes broken" case, not the
+  flag-a-gap case. *To revert:* delete the two `Broken*Row` components and
+  the `broken` reads/renders in each panel.
+
+- *2 — Jargon leaks (display-only relabels).* Every relabel changes ONLY
+  the visible text; the stored value stays the raw key (asserted by the
+  jargon tests reading `option.value`). The mappings (chosen here):
+  - Estimation units: `points/hours/days/custom_numeric/custom_enum` →
+    "Points / Hours / Days / Custom number scale / Custom label scale";
+    the panel description no longer names `custom_enum`.
+  - Relationship graph: `none/acyclic/tree` → "No constraint / No cycles
+    allowed / Strict hierarchy (one parent)".
+  - Custom-field type: `string/number/date/boolean/enum` → "Text / Number
+    / Date / Yes / No / Choice list" (type still locked after creation).
+  - GitSync happy-path enable confirm: "temporary worktree" → plain "publish
+    to it in the background, so your own working files and the branch you
+    have checked out are never touched or switched." The K93 hard-error /
+    refusal banners (force-push, history-rewrite, SHAs) keep git terms and
+    were NOT touched.
+  - Raw config filenames removed from ordinary copy: SidebarPins
+    swept-pin notice + delete-failed line ("queries.yaml" → "your saved
+    views"); Reconcile drift warning ("workflow.yaml" → "your workflow
+    configuration"). Code comments naming the files were left. *To revert:*
+    inline the raw tokens back into the option text / copy.
+
+- *3 — BoardColumns "Reset to one column per status" now confirms.* It
+  persisted (PUT undefined boards block) on ONE click, discarding all
+  custom columns. It is recoverable, so a typed-word gate would be
+  overkill — a plain shared `ConfirmDialog` gate is the call. The reset
+  behavior is unchanged; only a confirm step is added. **A pre-existing
+  green test (`reset writes an undefined boards block`) asserted the
+  one-click persist — i.e. the unsafe behavior this fixes — and was
+  updated to click through the confirm; called out at its edit site.** *To
+  revert:* drop `confirmingReset` state + the dialog, point the Reset
+  button back at `onReset`.
+
+- *4 — Growable-set controls → shared components (A211 roster).* Two done:
+  UserDeleteDialog's remap target was a radio WALL (one per user) → shared
+  searchable `Combobox`, mirroring DeleteProjectDialog; per-option testids
+  kept as `user-delete-remap-<id>`, trigger `user-delete-remap`, and the
+  delete stays blocked until a target is picked. SavedViewsPanel's delete
+  used a bespoke inline "Delete permanently?" row with two secondary
+  buttons → shared `ConfirmDialog` (same `view-delete-confirm` testid), so
+  the destructive confirm reads/behaves like the other Data panels and
+  inherits the focus trap. **Deferred (flagged, not half-done):**
+  ReconcilePanel's `git-reconcile-pick-value` native `<select>` → Combobox
+  was NOT done — the control's accessible name comes from the field
+  heading via `aria-labelledby` and a Batch-2 a11y unit test asserts
+  `getByRole("combobox", { name })`; a `<button>`-based ComboboxButton
+  changes that role and would require extending the shared primitive's
+  aria contract, which is bigger than this lane. Left on the A211 roster.
+  *To revert:* the UserDelete/SavedViews changes are the two `Combobox`/
+  `ConfirmDialog` swaps.
+
+**Tests added (all red-proven — behaviour broken → test red → restored).**
+`MilestonesPanel.test.tsx` (new) + `SprintsPanel.test.tsx` broken-entry
+block: marker renders + healthy row survives + lone-broken ≠ empty +
+Repair refetches. `settingsJargon.test.tsx` (new): friendly label present
+AND raw token absent AND stored value still the key, for graph/type/unit;
+plus estimation description does not leak `custom_enum`.
+`GitSyncPanel.confirm.test.tsx` (new): happy-path confirm has no
+"worktree". `BoardColumnsPanel.test.tsx`: reset needs confirm / cancel is
+a no-op / confirm performs the reset. `UserDeleteDialog.test.tsx` (new):
+combobox picks target and carries `remapTo`, blocked until picked, no
+radio-per-user wall.
+
+### A222 · Text↔visual toggle preserves builder state; empty groups never blank the query
+
+**Ticket:** UI bug (Ken, live) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** Ken reported: *"if i swap between the text and
+visual form, i just lose all my data without any confirmation."* In the
+`New saved view` / `Edit view` dialog (`ViewFormDialog` → `BuilderBody`
+→ `QueryBuilder`), the builder→advanced toggle did
+`setDraft(safeSerialize(tree))`. `safeSerialize` wrapped
+`builderTreeToQuery`, which THROWS on an empty group, in a try/catch that
+returns `""`. So whenever the tree held an empty group anywhere — the
+exact state after clicking "+ Group" and not yet filling it (also the
+Bug-1 repro) — serialization threw and the whole draft went blank: every
+OTHER, completed condition was silently discarded. Switching back then
+re-parsed `""` into an empty builder. The advanced→builder direction also
+re-parsed the draft unconditionally, dropping any in-progress/empty group
+the text cannot express even when the user never touched the text.
+
+**What had to be decided.** When the user toggles text↔visual, what is
+the right behavior for in-progress builder state that a DSL string cannot
+faithfully hold (an empty group; a half-built row) — silently drop it,
+confirm before dropping, or preserve it?
+
+**Options considered.**
+- *Confirm-on-loss (ConfirmDialog before switching).* Honest, but adds
+  friction to the common, fully-recoverable case, and the "loss" here is
+  avoidable — so a confirm would be apologizing for a bug instead of
+  fixing it.
+- *Make it lossless (chosen).* Prune empty groups only from the DERIVED
+  text so completed conditions survive serialization, and preserve the
+  live tree across the toggle so switching back restores it verbatim
+  (incl. empty/in-progress groups) whenever the user didn't edit the
+  text.
+
+**Decided.** Lossless. `safeSerialize` now prunes empty groups before
+serializing (via new `pruneEmptyGroups`), so a half-built "+ Group" no
+longer blanks the query. `ViewFormDialog` snapshots the tree behind the
+emitted text (`treeSnapshot`); advanced→builder restores that exact tree
+when the draft is byte-identical to what was emitted, and re-parses only
+when the user actually edited the text. No confirm is needed: the round
+trip is lossless on every reachable path (unrenderable text keeps the
+"Switch to visual" control disabled-with-reason, as before).
+
+**Why.** The repo's rule is "destructive actions are confirmed, and
+never silently drop the user's text" (BodyConflictDialog, K96). Silent
+loss was the defect; the preferred remedy is to remove the loss, not to
+narrate it. Pruning touches only the text projection — the builder tree
+is untouched — so an empty group the user is still building stays visible
+and survives the round trip.
+
+**To revert.** `apps/web/src/client/list/AdvancedQuerySurface.tsx`:
+remove `pruneEmptyGroups` and restore `safeSerialize` to the bare
+`builderTreeToQuery` try/catch. `apps/web/src/client/settings/ViewFormDialog.tsx`:
+drop the `treeSnapshot` state and the restore branch in
+`onSwitchToBuilder`, and revert `onSwitchToAdvanced` to
+`setDraft(safeSerialize(tree))`. Tests to drop:
+`ViewFormDialog.test.tsx`'s "preserves an in-progress condition across a
+text↔visual round-trip" and "does NOT blank out completed conditions when
+a half-built nested group is present". (The `QueryBuilder` row-alignment
+change — the `qb-leaf-row` column layout and its test — is a separate
+CSS-only fix in the same session and reverts independently.)
+
+### A223 · Milestone/sprint progress fails per-milestone, not all-or-nothing (MSL-35)
+
+**Ticket:** MSL-35 (Ken-approved core redesign) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** Milestone progress ("7 / 12 done") was computed in
+core by one shared corpus scan (`referenceProgressDetailed`) that read
+every task once and bucketed per milestone. Because it was one scan that
+computed once and returned `Record<string, Progress>`, a failure took
+down *every* milestone's numbers together — there was no per-milestone
+failure mode at all. Object-fatal (unreadable) tasks were reported only
+at the tracker level, and each milestone always got a `Progress`, so the
+one thing MSL-35's last bullet asks for — an error IN PLACE of the
+numbers for ONE milestone while the OTHERS keep rendering theirs — could
+not happen. This was recorded as the "documented ceiling" in
+known-gaps.md.
+
+**What had to be decided.** (1) The per-milestone result shape. (2) What
+to do with an unreadable task that cannot be tied to a milestone —
+attribute it somewhere, or keep it tracker-level.
+
+**Decided.**
+- **Shape.** `ProgressReport.progress` is now
+  `Record<string, MilestoneProgressResult>` where
+  `MilestoneProgressResult = Progress | ProgressUnavailable` and
+  `ProgressUnavailable = { unavailable: true; reason: string }`. A new
+  exported guard `isProgressUnavailable()` narrows it. `Progress` itself
+  is unchanged, so every existing consumer of a *computed* milestone is
+  untouched.
+- **Isolation.** In `referenceProgressDetailed` each milestone's
+  `computeProgress(group)` is wrapped so a failure computing one group
+  yields `ProgressUnavailable` for that milestone only; the others return
+  their real numbers.
+- **Attribution.** An object-fatal (unreadable) task is now best-effort
+  attributed to its milestone: `recoverReference()` splits the raw file
+  and reads a single top-level `milestone:`/`sprint:` line (unquoted or
+  quoted; no YAML re-parse). If it names one of the reported milestones,
+  that milestone is marked `unavailable` and the task is NOT
+  double-reported in the tracker-level `unreadable` list. A task whose
+  frontmatter delimiters are themselves destroyed (or that names no
+  recoverable milestone) stays in `unreadable` exactly as before — the
+  documented sensible default for a genuinely un-attributable task (P-5:
+  a short total must be explained, never silent).
+
+**Surface parity.** CLI `milestone/sprint list --progress` prints
+"(progress unavailable)" in place of `done/total` for a failed row while
+the other rows print their real numbers. MCP `list_milestones` /
+`list_sprints` (progress:true) emit
+`progress: { unavailable: true, reason }` per failing entry (tool
+descriptions updated). Web `server.ts` `withProgress` omits the
+`progress` field for an unavailable milestone, so the already-built
+client half — `progressState(undefined)` → `kind:"unavailable"` →
+`ProgressReadout`'s named, retryable error — renders the per-row error
+while siblings show numbers. No new client code was needed.
+
+**Tests (red-proven).** Core `progress-batch.test.ts`: attributed
+unreadable member → milestone unavailable, not double-reported; one
+milestone fails while two siblings keep real numbers; un-attributable
+unreadable stays tracker-level (the old K28 behaviour, kept for that
+case). Web `MilestonesView.test.tsx`: one milestone's error row + others'
+numbers simultaneously. Integration parity added (not run here — the
+integrator runs those): `tests/integration/cli/milestone-progress.test.ts`
+and `tests/integration/mcp/list-sprints-progress.test.ts`.
+
+**A green test that was asserting the bug (CLAUDE.md rule).** The old
+`progress-batch.test.ts` case "reports an unreadable member rather than
+silently shortening the total (K28)" asserted the milestone kept
+`{done:1,total:1}` while its unreadable member vanished into a global
+list — i.e. it encoded the all-or-nothing ceiling. It was replaced by the
+per-milestone cases above; the un-attributable arm of K28 is preserved as
+a separate test.
+
+**To revert.** `packages/core/src/task/progress.ts`: drop
+`ProgressUnavailable`/`MilestoneProgressResult`/`isProgressUnavailable`
+and `recoverReference`, restore `ProgressReport.progress` to
+`Record<string, Progress>`, and revert `referenceProgressDetailed` to the
+plain per-id `computeProgress` loop with all unreadable tasks
+tracker-level. Remove the re-exports from `packages/core/src/index.ts`
+and `packages/core/src/task/index.ts`. CLI (`milestone.ts`,`sprint.ts`)
+and MCP (`milestone.ts`,`sprint.ts`) revert to the `{done,total,discarded}`
+map and prior descriptions; web `server.ts` `withProgress` restores the
+zero-fill default. Drop the MSL-35 tests listed above and restore the old
+K28 core test. Re-add the MSL-35 ceiling entry to known-gaps.md.
+
+### A224 · Attachment name case-collision is refused; detach acts on the real on-disk name
+
+**Ticket:** known-gaps "attachment name case-alias" · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** On a case-insensitive volume (macOS APFS, Windows
+NTFS) an attachment name that differs only by letter case aliased an
+existing file: `detachFile("DROP.TXT")` unlinked `drop.txt` and wrote an
+`attachment_removed` history entry naming `DROP.TXT` — a name never on
+disk. Symmetrically, `attachFile("README.md")` over an existing
+`readme.md` threw `AttachmentExistsError` on macOS but coexisted as two
+files on Linux. Behaviour differed by filesystem.
+
+**What had to be decided.** (1) For detach: normalize to the real name,
+or refuse on a case mismatch. (2) For attach: allow (FS-dependent) or
+refuse a case-only collision.
+
+**Decided (the honest, deterministic behavior).**
+- **Detach normalizes to the real name.** `detachFile` resolves the
+  actual on-disk dirent case-insensitively (`findRealAttachmentName`),
+  unlinks that file, and records the real name in history. History names
+  what actually existed; the outcome is identical on every filesystem. A
+  mismatch is not refused because the user's intent — remove the
+  attachment they can see — is unambiguous, and refusing would strand a
+  file the user cannot name in the exact stored casing.
+- **Attach refuses a case-only collision.** `attachFile` throws the new
+  `AttachmentCaseCollisionError` when a name collides case-insensitively
+  (but not exactly) with an existing attachment, regardless of `force`.
+  Allowing it means either overwriting the wrong-cased file (APFS) or
+  coexisting (ext4) — both FS-dependent. Refusing is the one behavior
+  that is the same everywhere; the caller picks a casing.
+
+**Surface parity.** The refusal is a parity change: a case-colliding
+attach now refuses on CLI, MCP and web alike (core-level). Registered in
+CLI and MCP `KNOWN_DOMAIN_ERRORS` and mapped to 409 in the web attach
+route. Exact-same-name attach still throws `AttachmentExistsError`
+(unchanged; `force` still overwrites).
+
+**Tests (red-proven).** `attachments.test.ts`: attach `README.md` over
+`readme.md` refuses (with and without `force`, and names both casings);
+detach `DROP.TXT` against an on-disk `drop.txt` unlinks the real file and
+records `drop.txt`. Red-proven by disabling the collision check and the
+real-name resolution.
+
+**To revert.** In `packages/core/src/task/attachments.ts`: delete
+`AttachmentCaseCollisionError` and `findRealAttachmentName`, restore
+`detachFile` to unlink `getAttachmentPath(...)` and record the requested
+`name`, and restore `attachFile`'s exists check to the `stat(dest)`
+form. Remove the export from `task/index.ts` and `index.ts` and the
+`KNOWN_DOMAIN_ERRORS`/web-route arms in CLI, MCP and `server.ts`.
+
+### A225 · F1 attach-source confinement narrowed to the data dir — REVERTED same day
+
+**REVERTED (2026-09-20, Ken).** The narrowing below broke legitimate
+attach: an attachment can come from anywhere the user points to (a
+working-tree file, `~/Downloads`, outside the repo), so confining the
+source to `.loctt/` is wrong — 7 integration tests (attach by absolute
+path) confirmed attach-from-the-project is the intended contract. Attach
+is a reversible copy, not a privileged act, and the real exfil concern
+(agent-written content auto-committed+pushed) is not attachment-specific,
+so a per-tool path hack was the wrong shape. The attach source is back to
+the project-root boundary (A205). The broader concern is now tracked as
+its own known-gap ("an auto-approved agent can cause any written content
+to be git-auto-committed and pushed") for a deliberate future ruling.
+Original entry follows.
+
+**Ticket:** known-gaps "F1's confinement boundary" (Ken's call) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** `attach_file` (MCP) confined its source read to the
+PROJECT ROOT (A205), so `~/.ssh/id_rsa` was blocked but a steered agent
+could still attach a secret sitting BESIDE `.loctt/` (e.g.
+`<root>/credentials.txt`) and, under git-backed mode, auto-commit and
+push it off the machine.
+
+**What had to be decided.** Whether narrowing the source to `.loctt/`
+would break a legitimate human/agent attach.
+
+**Decided.** Narrow the MCP safe zone to the RESOLVED DATA DIR:
+`confineToRoot: resolveLocttDir(root)` (the resolver, so it follows the
+`LOCTT_DIR` constant — not a hardcoded `".loctt"`). Investigated the
+current boundary before narrowing: `attach_file` COPIES a source file
+INTO the tracker's attachments dir, and the tool already instructs the
+agent to "stage the file inside the tracker first, then attach it by its
+path there." The legitimate agent source is therefore expected to be
+inside `.loctt/` already, so confining to the data dir blocks the sibling
+exfil path WITHOUT breaking a real attach. `attachFile`'s `confineToRoot`
+option stays a generic directory — the surface picks the boundary; the
+human CLI still does not confine at all.
+
+**Tests (red-proven).** `mcp.test.ts`: attach of `<root>/credentials.txt`
+is refused (isError, nothing written); attach of a file staged inside
+`.loctt/` succeeds. The two pre-existing MCP attach tests that placed the
+source in the project root were updated to stage inside `.loctt/` (the
+parity change; they were not asserting the bug, the code outgrew them).
+`attachments.test.ts` adds a core-level data-dir boundary pair. Red-proven
+by reverting the handler to `confineToRoot: root`.
+
+**To revert.** In `apps/mcp/src/tools/task-files.ts` change
+`confineToRoot: resolveLocttDir(root)` back to `confineToRoot: root`
+(and drop the `resolveLocttDir` import), and revert the tool
+description/param text to "tracker root". Re-point the two updated MCP
+attach tests at `join(root, …)` and drop the new refusal/staged tests.
+
+### A226 · Backup carries displaced-body files as task-dir content (BAK-C13)
+
+**Ticket:** BAK-C13 (known-gaps) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** `restore --overwrite` preserves a displaced body as
+`.loctt/tasks/<id>/displaced-body-<ulid>.md` (K17 ruling 6), but
+`loctt backup` carried only `task.md`, `_comments.yaml`, `_history.yaml`
+and `attachments/`, so a subsequent backup lost the preserved text.
+
+**What had to be decided.** How to carry the file without inventing a
+broad new record format (the known-gap noted a dedicated record kind is
+clean but adds a format shape no case describes).
+
+**Decided (the smaller fix).** Treat displaced-body files as task-dir
+content, carried on the EXISTING task record via an optional
+`displacedBodies: { name, content }[]` field — the same pattern as
+`attachments`, not a new top-level `kind`. The exporter gathers any
+`displaced-body-*.md` in the task dir (`readDisplacedBodies`, stable
+sort, regex-matched, files only); restore re-lands them through the same
+`stagedSwap` as task.md (so they are in the one rollback-able unit).
+Their `displaced-body-<ulid>.md` names are unique, so re-landing never
+overwrites another. Names are validated up front in
+`assertBackupContained` (SEC-1/SEC-2) like attachment names. The restore
+report's existing `displacedBodies` (bodies displaced BY this restore) is
+a different concept and is left unchanged.
+
+**Tests (red-proven).** `restore.test.ts` (BAK-C13 carry):
+overwrite-restore to displace a body, backup, restore into a fresh
+tracker, assert the `displaced-body-*.md` survives with its text.
+Red-proven by making the exporter not carry it.
+
+**To revert.** In `packages/core/src/backup/format.ts` drop
+`BackupDisplacedBodySchema` and the `displacedBodies` field on
+`BackupTaskSchema`; in `export.ts` drop `readDisplacedBodies` and its use
+(and the `getTaskDir` import); in `restore.ts` drop the displaced-body
+write loop and the `assertBackupContained` arm. Re-add the BAK-C13 entry
+to known-gaps.md.
+
+### A227 · Server imports core's `dslAtom` instead of a private under-quoting copy
+
+**Ticket:** known-gaps "server's private dslAtom" · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** `apps/web/src/server/server.ts` had its own `dslAtom`
+built on a plain regex (`^[A-Za-z_][A-Za-z0-9_.-]*$` → bare, else
+quoted), separate from core's tokenizer-checked one. A filter value that
+is a bare keyword/number/date-shaped string (`"true"`, `"123"`, `"and"`)
+under-quoted and re-tokenized as the wrong type or as invalid DSL. Core's
+`dslAtom` was already exported from `@loctt/core`.
+
+**What had to be decided.** Nothing of scope — the browser-bundle
+constraint that kept the copies separate does not apply server-side.
+
+**Decided.** Delete the server's private `dslAtom` and
+`import { dslAtom } from "@loctt/core"`. One tokenizer-checked quoter
+across all producers.
+
+**Tests (red-proven).** `server.tasks.test.ts` (Fix 1): a keyword-shaped
+filter value (`labels=and`, `or`, `in`, `is`) now yields a valid query
+(200) rather than a 400 parse error. Red-proven by shadowing the import
+with the old regex.
+
+**To revert.** Restore the private `dslAtom` function in `server.ts` and
+drop the `dslAtom` import from the `@loctt/core` block.
+
+### A228 · Saved-view `conditions` migrate-on-load (derive from query) + per-view degradation
+
+> **SUPERSEDED by K102 (2026-09-21).** A saved view no longer stores a
+> `conditions` `BuilderTree` or a derived `query` string; it stores an
+> ordered `filters[]` discriminated union. The `BuilderTree` AST, its
+> contracts mirror and `queryToConditions`/`conditionsToDsl` were deleted.
+> Kept as history — do not build on this entry.
+
+
+**Ticket:** TEMP-TODO "Saved-view `conditions` migration path" + known-gaps
+"conditions block missing/corrupt is object-fatal" · **Date:** 2026-09-20 ·
+**Commit:** (uncommitted; Ken integrates)
+
+**The situation.** A217–A219 made saved views store a required structured
+`conditions` tree (`query` derived from it), chosen greenfield. But
+`queries.yaml` written before that ruling has a `query` and no
+`conditions`, and a hand edit can leave a malformed one. `parseQueriesConfig`
+validated the whole `queries` array with `SavedQuerySchema` (which requires
+`conditions`) up front, so either case rejected the ENTIRE file
+(object-fatal) — bricking an upgrade and violating per-element degradation
+(north-star P5 / corruption-handling guide).
+
+**What had to be decided.**
+- *Where in the load pipeline to repair.* Chosen: a TOLERANT loader schema
+  (`LoaderSavedQuerySchema`: requires id/name/query, validates
+  sort/display/archived strictly, accepts `conditions` as `z.unknown()`),
+  then a per-entry `resolveConditions` that validates the block or derives
+  from `query` via core's total `queryToConditions` — all BEFORE the strict
+  shape is required. `SavedQuerySchema` (the WRITTEN/validated shape) is
+  unchanged, so writes still require `conditions` and the file self-heals on
+  the next write (the serializer already emits `conditions`). This keeps
+  "loaded config always has conditions" without loosening the write path.
+- *When is an entry broken vs migrated.* Migrated: `conditions`
+  absent/malformed but `query` parses → derive, entry is valid+runnable,
+  recorded in a new `QueriesConfig.migrated` diagnostic. Broken (per-view
+  marker, existing `BrokenSavedQuery` path): recoverable from neither side.
+- *Bad-query + good-conditions.* KEPT as broken (pre-existing behavior — the
+  stored `query` is the runnable field a surface expects to parse; a valid
+  conditions block does not rescue a bad query). The task's degradation
+  trigger ("NEITHER usable") is satisfied without expanding scope to
+  re-derive `query` from conditions. **Flagged** — see below.
+
+**Decided.** Derive-on-load for absent/malformed `conditions`; per-view
+degrade only when neither `query` nor `conditions` is usable; a `doctor`
+check that reports migrated ("will persist on next write") and broken views.
+New `MigratedSavedQuery`/`migrated` contract diagnostic (mirrors `broken`;
+omitted when empty; never serialized). All surfaces inherit via the shared
+`loadQueriesConfig`.
+
+**Tests (red-proven).** `queries.test.ts` "conditions migration path":
+derive-on-MISSING, derive-on-MALFORMED, persist-on-write (self-heal),
+per-view degrade when both broken, whole legacy file loads. Red-proofs:
+restoring the object-fatal throw for missing conditions reddens the
+missing/legacy/persist tests; restoring the throw for malformed conditions
+reddens the malformed + degrade tests. `diagnostics.test.ts`: doctor warns
+"derived from their query" (migrated) and "could not be loaded" (broken),
+neither an error — red-proven by the same missing-derive throw.
+
+**To revert.** In `packages/core/src/config/queries.ts`, replace the
+`LoaderSavedQuerySchema`/`resolveConditions` path with the old
+`RawQueriesConfigSchema = z.object({ queries: z.array(SavedQuerySchema) })`
+and the direct DSL-parse-only per-entry loop; drop the `migrated` array from
+the returned config and the doctor check's migrated/broken branches; drop
+`MigratedSavedQuery`/`MigratedSavedQuerySchema` from
+`packages/contracts/src/query.ts` (+ index barrel). Restores the
+object-fatal behavior (and re-opens both tracked gaps).
+
+### A235 · A11Y-9 list keyboard cycle: row focus-restore on return, key link as the row's keyboard action
+
+**Ticket:** A11Y-9 (blocker · P8; K74 publish blocker) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** A11Y-9 requires the list → open → change status → save
+→ back cycle to work with no pointer. The known-gap said list rows were
+click-only, the status dropdown lacked arrow traversal, and nothing
+restored focus to the opened row on Back. Two of those three were already
+false: the key cell renders a real `<Link>` (`<a href>`, a native Tab
+stop that navigates on Enter), and status editing (on the task **detail**,
+not in a row) goes through `ui/Combobox`, which already opens on
+Enter/Space, arrow-traverses and commits on Enter (the A211 refactor,
+covered by `Combobox.test.tsx`). The one genuine gap was focus-restore
+across the list's unmount when a task opens and the user navigates back.
+
+**What had to be decided (recorded, revertible).**
+
+1. *How to make the row keyboard-activatable without a double Tab stop /
+   double announcement.* Chose: keep the `<tr>` a plain table row (no
+   `role`/`tabIndex` — those break table semantics and would add a second
+   Tab stop that a screen reader announces as a second focusable thing),
+   and treat the existing key `<Link>` as the row's single, ARIA-correct
+   keyboard action. Both the pointer path (`<tr onClick>`) and the
+   keyboard path (the link) route through one `openTask(key)` helper so
+   they never diverge. A modified click (cmd/ctrl/shift/middle → open in
+   new tab) is left to the browser.
+2. *Where to hold the "last opened" key across the list's unmount.*
+   Chose `sessionStorage` (per-tab, ephemeral, survives the remount),
+   consumed-and-cleared on restore so an unrelated later mount cannot
+   inherit it; every access try/caught (private mode can throw). Restore
+   runs on the `[items]` effect (the first paint has no anchor yet).
+3. *Restore vs. the generic route-change focus move.* `useRouteAnnouncement`
+   (A11Y-45) lands focus on `#main-content` on every route change,
+   including the return to `/list`. Chose: the list restore treats
+   `document.body` **and** the `#main-content` pane as default landings it
+   may override, but never a focus the user has since placed elsewhere.
+   The more-specific A11Y-9 restore wins over the generic A11Y-45 landing.
+
+**Not decided / deliberately out of scope.** A11Y-24 (announce a
+successful field save) is unbuilt for field saves — `MetaPanel`'s write
+path does not call the shell announcer, so A11Y-9's fourth bullet ("save
+outcome announced") rides on A11Y-24. That lives on the detail page,
+outside this lane; it is left as a tracked dependency (known-gaps) and
+the A11Y-9 Playwright test asserts the current silence negatively so it
+flips red the day A11Y-24 lands. Arrow-key row-to-row traversal (a "nice",
+not the blocker) was not added.
+
+**Tests (red-proven).**
+- `apps/web/src/client/list/ListView.a11y.test.tsx` (new): (a) Enter on
+  the row's key link opens the task — red-proven by replacing the link
+  with a plain span; (b) focus returns to the opened row's anchor on Back
+  — red-proven by disabling the restore; (c) a task opened by clicking the
+  **row** also restores on return — red-proven by reverting the `<tr>` to
+  a direct navigate that skips key-recording.
+- `tests/ui/flow-accessibility.spec.ts` (rewrote the former "A11Y-9
+  (partial): broken in three named places" into a passing `@verifies
+  A11Y-9` cycle): real key events throughout, the committed status
+  checked on disk (A11Y-28 discipline), Back restores focus to the row
+  anchor. Red-proven in-session: the focus-restore assertion failed
+  (`null` vs the task key) before the `#main-content` guard fix landed.
+
+**To revert.** In `apps/web/src/client/list/ListView.tsx`: delete
+`LAST_OPENED_KEY`, `rememberOpenedTask`, `takeOpenedTask`, `escapeTaskKey`
+(restore the inline `CSS.escape` at the two `[data-task-key]` selectors),
+`openTask`, and the `[items]` focus-restore effect; revert the `<tr>`/card
+`onClick` to `void navigate({ to: "/tasks/$key" … })`, drop the `onOpen`
+prop from `Cell` and the key `<Link>`'s recording `onClick` (back to bare
+`e.stopPropagation()`). Delete `ListView.a11y.test.tsx` and restore the
+"A11Y-9 (partial)" test; drop the A11Y-9 coverage notes in
+`known-gaps.md` and `flow-accessibility.md`.
+
+### A241 · K90 parity: the visual query builder's entity value pickers search server-side
+
+**Ticket:** K90 / A211 (the roster's last open bullet) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** The rest of the app searches growable entity sets
+server-side via `?q=` (task-meta pickers, FilterDropdown) — the K90
+mechanism. The visual query builder was the last holdout: its entity value
+pickers (assignee/reporter/comment_mentions → users; labels; milestone;
+sprint; project) were populated from the 1000-capped sidebar fetches and
+filtered client-side. A workspace past the fetch window could not find an
+out-of-window value in the builder, even though the same value was findable
+everywhere else (known-gaps A211, last bullet).
+
+**What was decided (recorded, revertible).**
+
+1. *How to thread search in.* `ui/Combobox` already supports server-side
+   search through its `search={{ onQuery }}` prop (the A211 refactor,
+   `Combobox.test.tsx`'s "server-side search (K90)" block). Chose to reuse
+   it rather than invent anything: `BuilderField` grew an optional
+   `search: EntitySearch` (`(q) => Promise<ValueOption[]>`); `ValueControl`
+   maps it to the Combobox's `ComboboxSearch` and passes it to both value
+   controls — the single picker and the `in (…)` multi picker.
+2. *Where the search fns come from.* `buildBuilderConfig` grew an optional
+   `search` map (`{ users, labels, milestones, sprints, projects }`) keyed
+   by the SAME field→source mapping as the seed `options`, so a field's live
+   search matches its seed list. `AdvancedQuerySurface` supplies it from the
+   existing `searchUsers`/`searchLabels`/`searchMilestones`/`searchSprints`/
+   `searchProjects` in `sidebarData.ts` — the identical fns MetaPanel uses,
+   no new endpoints. The map is a module-level const (stable identity), so
+   it never re-triggers the config `useMemo`.
+3. *What `options` carries in server mode.* When a field has a `search`, the
+   Combobox candidates come from the server, so `options` is trimmed to only
+   what must ALWAYS render regardless of the query: the `@currentUser`
+   affordance (K80) and the current selection(s), so a chosen value's label
+   — or its "(not in config)" note (XS-27) — survives when the latest result
+   page does not include it. Without a `search`, `options` stays the whole
+   seed list and the picker keeps the A211 client-side threshold filter.
+4. *Enum fields are left alone.* An enum/status/priority/type set is a closed
+   config set, never large, so it keeps the static client-filtered picker and
+   gets no `search`. Archived entities are carried through as
+   present-but-disabled (`disabled` + `(archived)` suffix on `ValueOption`),
+   matching the MetaPanel option mappers.
+
+**Not decided / out of scope.** `FilterDropdown` (the other A211 bullet)
+stays on its `Menu`/`menuitemcheckbox` model over the capped fetch — a
+separate ticket. No core/contracts change (the search endpoints and hooks
+already existed).
+
+**Tests (red-proven).** In `apps/web/src/client/list/QueryBuilder.test.tsx`,
+new "server-side entity value search (K90)" block:
+- the single entity picker queries the server with the typed text and makes
+  an out-of-seed result selectable (`assignee = u-zoe` for a user absent
+  from the seed list) — red-proven by disabling the `search` threading in
+  `ValueControl` (the fallback client filter never calls `onQuery` and never
+  surfaces the out-of-seed user; the assertion goes red);
+- the `in (…)` multi picker threads the same search — red-proven the same
+  way;
+- an enum field keeps the static picker (no search box, `onQuery` never
+  called) — guards against over-reaching the change onto closed sets.
+The existing `qb-leaf-row` layout test and every other QueryBuilder /
+Combobox test stay green (247 web tests pass).
+
+**To revert.** In `QueryBuilder.tsx`: remove `EntitySearch`, the `search`
+field on `BuilderField`, the `search` param + `entitySearch` map in
+`buildBuilderConfig`, the `search`/`entitySearch` local and its pass-through
+to both Comboboxes in `ValueControl` (restore `options` to the full
+`constrained.map(...)` in both), the `disabled`/`suffix` on `ValueOption`
+and `valueOptionToCombobox`, and the `ComboboxSearch` import. In
+`AdvancedQuerySurface.tsx`: drop the `sidebarData` search imports,
+`named`, `BUILDER_ENTITY_SEARCH`, and the `search:` arg to
+`buildBuilderConfig`. Delete the new test block and re-open the
+known-gaps A211 bullet.
+
+### A242 · A211 roster finished: the last native value-pickers over growable sets became `Combobox`
+
+**Ticket:** A211 (the value-picker roster) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** A211 standardised `ui/Combobox` and earlier waves
+(A218, A241) migrated most of the roster. Four sites remained, each
+picking from a set the user can grow with a control that does not search:
+the reconcile pick-value `Select`, the RemapDeleteDialog per-alternative
+radios, the CreateTaskModal multi-enum toggle pills, and — already
+converted in code but with specs still driving the old control — the two
+timezone pickers and the three project pickers. Verified current state
+before touching each (several were already `Combobox`; only the still-native
+ones were converted, per the roster's "don't re-convert" note).
+
+**What was decided (recorded, revertible).**
+
+1. *ComboboxButton learns `aria-labelledby`.* ReconcilePanel's pick-value
+   control is named by a separate heading `<div>` (wired via `useId()`),
+   not a string — a native `<select aria-labelledby>` carried that. A
+   `<button>`-based `ComboboxButton` took only `aria-label`. Added an
+   `aria-labelledby` prop that forwards to the button and, when present,
+   takes precedence over `aria-label` (the button emits one or the other,
+   never both — no duplicated name). This is the general primitive fix the
+   A218 note said the swap needed; it is on the shared `ui/Combobox`, so
+   any future heading-labelled trigger reuses it.
+2. *Reconcile pick-value → Combobox.* The enum/parent branch (a growable
+   value set: statuses, priorities, tasks) became a searchable `Combobox`
+   whose trigger forwards `aria-labelledby={fieldLabelId}`. The scalar
+   branch stays a free-text `TextField` — a third-value entry, not a set,
+   so out of roster scope. `Select` import dropped (it was the only use).
+3. *RemapDeleteDialog → reassign radio + Combobox.* Mirrored
+   UserDeleteDialog/DeleteProjectDialog: the per-alternative radios became
+   a "reassign" gating radio + a `Combobox` over the alternatives (trigger
+   `remap-to`, per-option testids kept `remap-to-<key>`). The "clear"
+   radio (`remap-clear`) stays — it is a distinct action (empty the field),
+   not another value in the set, so it is deliberately NOT a Combobox
+   option. `blocked` now also gates on "reassign chosen but no target
+   picked", matching UserDeleteDialog.
+4. *CreateTaskModal multi-enum → multi Combobox.* The toggle pills became a
+   `Combobox mode="multi"`, mirroring the detail panel's `MultiEnum` (which
+   is an OptionPicker over the same primitive) so create and detail cannot
+   disagree. Trigger carries `create-field-<key>`; per-value
+   `create-field-<key>-<v>` testids stay on each option button.
+5. *Stale specs on already-converted controls fixed.* `calendar-timezone`
+   (`selectOption`, left from the CalendarPanel migration),
+   `project-delete-remap` (`selectOption`), and "Destination project" in
+   three places (`selectOption` on the MoveTaskDialog button) were driving
+   converted `Combobox`es with native-`select` APIs — they would fail if
+   run. Updated to click-trigger → click-option. Noted in each as "control
+   type changed, not behavior."
+
+**Not decided / out of scope.** `list/FilterDropdown.tsx` — the last A211
+bullet — stays on its `Menu`/`menuitemcheckbox` model (searchable already;
+a model-parity nicety, not an unsearchable-set defect). A fixed small set
+with help text (e.g. a 3-option radio) is not in scope. No core/contracts
+change.
+
+**Tests (red-proven).**
+- `Combobox.test.tsx`: new "ComboboxButton — aria-labelledby" block — the
+  trigger exposes the accessible name via `aria-labelledby` and it wins
+  over `aria-label`. Red-proven by removing the forwarding (the button
+  loses the name; `getByRole("button", { name: "Status" })` goes red).
+- `ReconcilePanel.test.tsx`: the a11y test now asserts
+  `getByRole("button", { name: "Status" })` (role changed select→button,
+  name preserved — this test was asserting the old control type, now
+  corrected) + a new "selecting an enum option through the Combobox records
+  the value" test. Red-proven by breaking the enum `onSelect`'s
+  `onChoose("value", key)` (the selection is never recorded; assertion goes
+  red).
+- `dataPanels.test.tsx` (RemapDeleteDialog via LabelsPanel): the remap test
+  now chooses reassign, opens the picker, and clicks `remap-to-L2`.
+  Red-proven by breaking the Combobox `onSelect` (the target is never set;
+  confirm stays disabled / no `remap_to` on the request; assertion goes
+  red).
+- Playwright specs updated (typechecked via `tests/ui/tsconfig.json`, not
+  run this lane): `flow-git-reconcile.spec.ts` (`tagName` SELECT→BUTTON +
+  `aria-haspopup`, option-list read opens the trigger),
+  `flow-settings-workflow.spec.ts` (reassign+Combobox for remap; timezone
+  click-trigger), `flow-settings-projects-users.spec.ts` (project-delete
+  remap), `flow-tasks.spec.ts` (MoveTaskDialog ×3),
+  `flow-task-create.spec.ts` (multi-enum opens the trigger).
+
+Gates: `tsc --build` clean, eslint on touched files 0 errors, full web
+vitest suite green (2028 tests), `tsc -p tests/ui/tsconfig.json` clean.
+
+**To revert.** In `ui/Combobox.tsx`: remove the `aria-labelledby` prop,
+its doc block, and restore `aria-label={ariaLabel}` unconditionally
+(delete the `aria-labelledby` line). In `ReconcilePanel.tsx`: restore the
+`Select`-based pick-value (the `<Select>…<option>…` block), re-add the
+`Select` import, drop the `Combobox`/`ComboboxButton`/`ComboboxOption`
+import. In `RemapDeleteDialog.tsx`: restore the per-alternative radios
+(`remap-to-<key>` as radios), drop the reassign radio/Combobox and the
+`Combobox` import, restore the simpler `blocked`. In `CreateTaskModal.tsx`:
+restore the toggle-pill `<button data-testid={`${testid}-${v.key}`}>` map
+and drop the `Combobox` import. Revert the four spec edits and the two unit
+tests, and re-open the corresponding known-gaps A211 bullets.
+
+### A243 · A11Y-24: field-save outcomes are announced in the shell live region
+
+**Ticket:** A11Y-24 (WCAG-AA publish blocker, K74) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates)
+
+**The situation.** The shell's `Announcer` (`apps/web/src/client/ui/Announcer.tsx`)
+already backed theme-change (A11Y-7), route-change (A11Y-45), sort (A11Y-27)
+and result-count (A11Y-25) announcements, and `CommentsPanel` used it. The
+one confirmed gap A11Y-24 names was the **task-detail field save**: a
+successful `set`/`unset` was completely silent to a screen reader (the value
+just updated in place, with no live-region output), so a non-sighted user
+could not tell a save landed. The failure already rendered an anchored
+`role="alert"` notice (A11Y-46), but nothing spoke through the announcement
+channel. A11Y-9's fourth bullet rode on this and documented the silence with
+a negative Playwright assertion set to flip when A11Y-24 landed.
+
+**What was decided (recorded, revertible).**
+
+1. *Which layer owns the announce.* The mutation success/error handlers live
+   in `TaskDetail.tsx`'s `writeField` (MetaPanel's `onSet`/`onUnset` are thin
+   forwarders to it, and `EditableTitle` writes through it too). That is the
+   only place that knows the outcome, so the announce is wired there — in the
+   mutation's `onSuccess`/`onError`, **not** in render, which is what makes
+   it once-per-event rather than once-per-repaint (a background poll or a
+   sibling field's edit re-renders the panel). MetaPanel itself stays a pure
+   presenter; it never learns the outcome. `TaskDetail.tsx` was not in the
+   original lane's file list but is neither MetaPanel's do-not-touch set nor
+   another agent's; it is literally MetaPanel's save path, so touching it was
+   the honest which-layer call rather than inventing a callback prop to carry
+   the outcome up.
+2. *Success is polite, failure assertive.* `announce("<Field> saved")` polite
+   on success (a routine confirmation is not an interruption, and A11Y-24's
+   first bullet forbids moving focus — the announce sets state only, it never
+   focuses); `announce(failure.message, "assertive")` on failure, carrying
+   the **same** text the `role="alert"` notice shows (`FieldFailure.message`),
+   so the channel and the notice never disagree and a silent failure — the
+   case's named worst case — cannot happen.
+3. *Field label reuse.* Extracted `fieldLabel(field)` (underscores→spaces,
+   capitalised — no hardcoded map, so custom fields work too) from
+   `FieldFailureNotice.tsx` into a shared `task/fieldLabel.ts`, so the
+   announcement and the notice headline name a field identically.
+4. *Theme/toast verified, not rebuilt.* The theme toggle (A11Y-7) and route
+   change (A11Y-45) already announce; the toast region is itself an
+   `aria-live="polite"` region, so create toasts are announced. Left as-is.
+
+**Not decided / out of scope.** No change to `Announcer`'s API (the existing
+`announce(message, politeness?)` and its per-message keying were sufficient),
+no core/contracts/CLI/MCP change (this is a web-only a11y surface — the CLI
+and MCP have no live region), no change to the failure notice's rendering.
+
+**Tests (red-proven).**
+- `apps/web/src/client/task/TaskDetail.announce.test.tsx` (new): a successful
+  field save announces "<Field> saved" politely and does not move focus
+  (red-proven by deleting the success `announce` → polite region empty); a
+  failed save announces the error message assertively (red-proven by deleting
+  the failure `announce` → assertive region empty); once per save event, not
+  on re-render or before any save (red-proven by moving announce into render).
+- `tests/ui/flow-accessibility.spec.ts`: new `@verifies A11Y-24` — a real
+  successful priority save announced politely, then the same field forced to
+  fail announced assertively with the notice's message. The `@verifies A11Y-9`
+  test's negative assertion was flipped to assert the successful status save
+  **is** announced (`announcer-polite` contains "status saved").
+
+**Gate note.** The UI specs serve the **built** SPA (`tests/ui/fixtures`),
+so `npm run -w apps/web build` must run before the Playwright specs pick up
+a source change to the client. (Cost me a long debugging detour — recorded
+so the next agent does not repeat it.)
+
+**To revert.** In `TaskDetail.tsx`: remove the `useAnnouncer` import and
+call, the `fieldLabel` import, and the `onSuccess`/`announce` lines in
+`writeField` (restore it to the `onError`-only `setFieldError` form). Delete
+`task/fieldLabel.ts` and restore the private `fieldLabel` in
+`FieldFailureNotice.tsx` (dropping its import). Delete
+`TaskDetail.announce.test.tsx`, restore the A11Y-9 spec's negative assertion
+(`announcer-polite`/`-assertive` do **not** contain "saved") and its
+tracked-not-satisfied comment, delete the A11Y-24 spec test, and re-open the
+A11Y-9 "remaining dependency (A11Y-24)" note in known-gaps.md and the
+flow-accessibility.md coverage notes.
+
+### A244 · Sidebar-config clarity (Pins vs Groups) + inline "Customize sidebar" (K100 in-place)
+
+**Ticket:** Sidebar UX polish (Ken-approved, two moves) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** implements K100 (point-of-use config)
+
+**The situation.** Two flaws in the per-user sidebar config (which Ken keeps
+per-user, no global layer):
+
+1. *Confusable pair.* "Sidebar pins" (pins saved views) and "Sidebar groups"
+   (reorders/hides the built-in groups + filters) both edit the sidebar,
+   neither cross-referenced the other, and the names did not make the
+   distinction obvious.
+2. *Buried.* The config was reachable only deep in Settings, against K100's
+   point-of-use direction.
+
+**What was decided (recorded, revertible).**
+
+1. *Relabel, ids unchanged.* `Settings → Sidebar pins` → **"Pinned views"**
+   (it pins saved views). "Sidebar groups" keeps its name (it controls which
+   built-in groups show and their order). The section **ids** are unchanged
+   (`sidebar-pins`, `sidebar-groups`), so `/settings/<id>` URLs stay stable.
+   Both panel descriptions were sharpened to say which one to use.
+
+2. *Cross-link.* Each panel now carries a one-line deep link to the other
+   (`Pinned views` → "See Sidebar groups", and vice versa), so a user who
+   opened the wrong one is pointed at the right one instead of guessing.
+
+3. *Inline config — K100 IN-PLACE tier (not deep-link).* A "Customize
+   sidebar" affordance in the sidebar **footer** (gear icon; icon-only on the
+   collapsed rail, a real focusable `<button>` either way) opens the **exact
+   same `SidebarGroupsPanel` the Settings section renders**, inside a `Sheet`.
+   This is the K100 in-place tier and *not* a fork: `SidebarGroupsPanel` is a
+   self-contained editor that already owns its `useUserSettings` read and its
+   `useUserSettingsMutation` write, so reuse is one import — exactly the
+   "reward for extraction" K100 requires. An edit made inline writes the same
+   `sidebar_groups` user setting through the same PUT; there is no second
+   source of truth. The panel gained an `embedded` prop that only suppresses
+   its own `<h1>` (the Sheet supplies the title) — the editor, mutation and
+   validation are untouched. The footer's Settings link stays as the full-
+   surface fallback.
+
+   *Why in-place, not deep-link:* K100 prefers in-place "where feasible via
+   the SAME component the Settings panel renders; else deep-link." Here the
+   panel already qualifies (no logic fork, no refactor), so the deep-link
+   fallback tier does not apply. (Contrast A214, where Labels/Milestones/
+   Projects were deep-linked because their editors were not yet extracted.)
+
+4. *Kept out of the way on narrow/overlay.* On a narrow viewport the sidebar
+   is a temporary overlay drawer; a nested config sheet over it is fiddly on a
+   phone, so the affordance is withheld there (`!overlay`). The setting stays
+   reachable from Settings.
+
+**Tests (red-proven).** `sections.test.ts` (relabel + old label gone);
+`SidebarGroupsPanel.test.tsx` (cross-link href; `embedded` drops the `<h1>`);
+`SidebarPinsPanel.test.tsx` (retitled "Pinned views"; cross-link href — both
+panel test files now render inside a memory router for the `<Link>`);
+`Sidebar.test.tsx` (footer affordance present + keyboard-reachable `<button>` +
+outside the scroll region; opens the shared `SidebarGroupsPanel` — the "not a
+fork" proof; writes `sidebar_groups` through PUT /api/user-settings; hidden on
+narrow/overlay). Each new assertion was shown red by breaking the behaviour.
+
+**To revert.** Remove the footer "Customize sidebar" affordance + Sheet and
+the `embedded` prop from `SidebarGroupsPanel`; drop the two cross-link `<p>`s;
+revert the `sidebar-pins` label to "Sidebar pins" (ids never changed, so no
+URL/route churn). The panels and their mutation are otherwise untouched.
+
+### A245 · Editor markdown parser: nested/ordered lists, asterisk flanking, and backslash escapes now render faithfully
+
+**Ticket:** body-editor parser render defects (known-gaps #2, #3) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** TSK-17 (rich↔raw faithfulness)
+
+**The situation.** Three RENDER defects in `apps/web/src/client/editor/markdown.ts`
+(the markdown⇄TipTap bridge). These are display faithfulness bugs, **not**
+byte-preservation bugs — `RichBuffer` still returns original bytes on the
+unedited path, and for the asterisk case `toMarkdown` already re-emitted `*`,
+so the stored bytes round-tripped fine. The bug was what the *rich tab
+rendered* (and, for lists, what a genuine rich edit then serialized):
+
+1. *Lists flattened + renumbered.* List parsing matched one flat level only,
+   never emitting nesting, and `orderedList` carried no `start`; `toMarkdown`
+   always emitted `${idx+1}.`. So `- outer\n  - nested` rendered all-flat and
+   `3.\n4.` renumbered to `1.\n2.` on a rich edit.
+2. *Asterisk emphasis mis-rendered.* `*` emphasis had no flanking guard, so
+   `5 * 3 * 2` parsed to italic ` 3 ` and RENDERED italic where the user wrote
+   arithmetic. (The underscore half — intra-word `_` — was already guarded.)
+3. *Backslash escapes ignored.* `\*escaped\*` parsed to a literal `\` plus
+   italic `escaped\`; escapes were honored nowhere.
+
+**What was decided (recorded, revertible).**
+
+1. *Nested lists by indent + `start`.* A new `parseList` recurses on
+   deeper-indented item runs to build nested `bulletList`/`orderedList` nodes,
+   and records an ordered list's first ordinal as a `start` attr (only when
+   ≠ 1, to avoid perturbing the common case). `toMarkdown` counts markers up
+   from `start` and emits nested lists on their own following lines at
+   `depth+1`, splitting an item's leaf paragraphs from its nested sub-lists so
+   the marker sits on the leaf line and the nested list re-indents beneath it.
+
+2. *Asterisk flanking: a scoped space+digit guard, NOT full CommonMark.* The
+   `*` italic alternative is now
+   `(?<!\d)\*(?=\S)([\s\S]+?)(?<=\S)\*(?!\d)`: the opener must be followed by a
+   non-space and not preceded by a digit, the closer preceded by a non-space
+   and not followed by a digit. This keeps whitespace-flanked (` * `) and
+   digit-adjacent (`5*3`) asterisks literal while still matching
+   `*real italic*`/`**bold**`. **Deliberately scoped out:** full CommonMark
+   left/right-flanking with the punctuation rules — e.g. `*(foo)*` or emphasis
+   that opens next to punctuation is not specially handled, and CommonMark
+   would actually treat `5*3` as emphasis whereas we (per the defect report)
+   keep it literal. The scoped guard is what the defect needs; the full
+   run-length delimiter algorithm is not worth porting into this regex-based
+   inline parser.
+
+3. *Backslash escapes as a first-in-order inline alternative + `mdEscape` mark.*
+   A `\\([!-/:-@\[-`{-~])` alternative is matched **first**, so an escaped
+   delimiter is consumed as one literal char before any emphasis/code opener
+   can see it (this is what makes the escape↔emphasis interaction correct — an
+   escaped `\*` is never a delimiter). The bare char is emitted with an
+   `mdEscape` mark; `inlineText` re-escapes an `mdEscape` run (`\x`) so the
+   round-trip is stable (a bare `*` would otherwise re-parse as emphasis).
+   Escape set is CommonMark's ASCII-punctuation range. **Scoped out:** an
+   escaped char that is the *sole* content of an emphasis span keeps its
+   `mdEscape` handling and drops the emphasis wrapper — a corner not worth the
+   complexity.
+
+**Tests (red-proven), in `markdown.test.ts`.** Ordered-list `start` preserved
+(`3./4.` not `1./2.`, asserts both the `start` attr and the round-trip);
+nested list parses to a nested structure and round-trips with indentation;
+`5 * 3 * 2` / `a * b * c` / `3*4*5` render with no italic mark and text intact,
+paired with a positive `*word*`/`**word**` still-works test; `\*escaped\*`
+renders as literal `*escaped*` (no italic, no stray backslash) and round-trips
+back to `\*escaped\*`. Each was shown red: renumber revert, nested-recursion
+disabled, flanking guard reverted to `\*([\s\S]+?)\*`, and escape branch
+disabled — each turned exactly its test(s) red.
+
+**To revert.** Restore the old flat list block (single-level `while` loop,
+`${idx+1}.` in `toMarkdown`) and delete `parseList`/`LIST_ITEM_RE`/`indentOf`;
+revert alternative 12 to `\*([\s\S]+?)\*`; remove the `\\(...)` alternative,
+its `m[1]` branch, the `mdEscape` handling in `inlineText`, and renumber the
+inline capture groups back (code span `\2`→`\1`, etc.).
+
+### A246 · Body editor: in-app navigation flushes the buffer and keeps the text (extends K96 to the in-app-nav exit)
+
+**Ticket:** body-editor data-loss (known-gaps #4: "failed save + in-app navigation loses text") · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** K96 ("every exit keeps the text"), TSK-40 / TSK-48 / ERR-12
+
+**The situation.** K96 settled the exit model — autosave stays and every
+exit (blur, Esc, Cmd/Ctrl+Enter, Done) keeps the text; there is no
+discard. But one exit was still silently losing text: an **in-app
+navigation** (a TanStack Router route change, e.g. clicking a `<Link>`
+away from the task) while the body editor was dirty. Two paths in
+`useBodyAutosave.ts` were verified from source:
+
+1. *Unmount flush was timer-gated.* The unmount effect only re-flushed
+   when `timerRef.current !== null` (a pending idle timer). A dirty buffer
+   with **no** timer — the `failed` state after a refused write, or a write
+   in flight that then fails — was dropped on unmount. That is exactly the
+   text the user most needs kept.
+2. *`hasUnsavedWork` had no in-app consumer.* It was computed and wired to
+   `beforeunload` (tab close / reload) only. A client-side route change
+   never fires `beforeunload`, so nothing guarded the in-app-nav exit.
+
+**What was decided (recorded, revertible).** This is **not** a new save
+model and **not** a "cancel" — it extends K96's "every exit keeps the
+text" to the in-app-nav exit.
+
+1. *Unmount flush attempts whenever there is work to lose.* The gate is now
+   "buffer dirty (`bufferRef.current !== savedRef.current`) OR state
+   `failed`", not "a timer is pending". A `stateRef` (render-synced, like
+   `conflictRef`) lets the unmount cleanup read the latest state.
+2. *A router blocker (`useUnsavedGuard`, new, `apps/web/src/client/router/`).*
+   It wraps TanStack Router's own `useBlocker` — **no existing blocker/
+   usePrompt was in the repo to reuse** (grepped router/ and settings/;
+   settings forms have no such guard). While the editor has unsaved work,
+   an in-app navigation is intercepted; the hook flushes (`flushForNav`,
+   new on the hook) and lets the navigation proceed **only** if the flush
+   left the editor clean. A refused write (or an open conflict) blocks the
+   navigation and keeps `BodyEditSurface` mounted, so its existing
+   `SaveIndicator` / `BodyConflictDialog` stay on screen — mirroring what
+   `beforeunload` does for tab close. `flushForNav` reports safety off the
+   synchronous refs (`savedRef`/`conflictRef`), never the render-synced
+   `state`, which can lag one microtask behind a successful write.
+3. *No double prompt.* The blocker sets `enableBeforeUnload: false`;
+   `useBodyAutosave` already installs `beforeunload`, so the browser prompt
+   is not duplicated.
+
+**Tests (red-proven).** `useBodyAutosave.test.ts` (A246 block): unmount
+with a dirty **failed** buffer and no pending timer re-attempts the flush
+carrying the text (red against the timer-gated guard — no second write); a
+clean editor writes nothing on unmount; `flushForNav` returns `false` on a
+refused write and `true` once it lands (red when forced to return `true`).
+`useUnsavedGuard.test.tsx` drives a real memory router: navigation is
+blocked when the flush reports unsafe (red when the guard never blocks),
+proceeds when clean, and is not intercepted at all when there is no unsaved
+work.
+
+**To revert.** Restore the unmount effect's timer-gated body (`if
+(timerRef.current !== null) { …; if (dirty) flush }`) and drop the
+`stateRef`; remove `flushForNav` from the hook and its interface; delete
+`useUnsavedGuard.ts`/`.test.tsx` and its call in `BodyEditor.tsx`. K96 and
+the `beforeunload` guard are untouched by a revert.
+
+### A247 · Body read view is a content region + explicit Edit button, not a `role="button"` wrapping links/images (WCAG 4.1.2)
+
+**Ticket:** body-editor a11y (known-gaps #5: "rendered description is `role="button"` wrapping links") · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** WCAG 4.1.2 (Name, Role, Value — no nested interactive content); Ken's ruling (see known-gaps "the a11y restructure … also wants a decisions.md §8 entry")
+
+**The situation.** The K33 read view (`BodyRenderedView.tsx`) rendered the
+task description inside a `<div role="button" tabIndex={0}>` so a click
+anywhere entered edit (TSK-69). But the rendered markdown itself contains
+interactive nodes — links (`<a>`) and clickable images (`<img>` →
+lightbox). A `role="button"` wrapping interactive descendants is nested
+interactive content: a screen reader announces one button and cannot reach
+the links inside it, an a11y regression against the AA posture.
+
+**What was decided (Ken's ruling; the restructure the known-gaps entry
+called for).** Restructure the read view to a plain **content region** plus
+an **explicit Edit affordance**:
+
+1. *Content region.* The rendered-markdown container drops `role="button"`,
+   `tabIndex`, and the click/keydown-to-edit handlers. It is now a plain
+   `<div aria-label="Description">`, so the `<a>` and `<img>` inside it are
+   reachable and behave natively (links follow, images open the lightbox).
+2. *Explicit Edit button.* A keyboard-accessible `<Button variant=
+   "secondary" size="sm" aria-label="Edit description">Edit</Button>`
+   (testid `body-edit`) enters edit mode — mirroring the K100 header Edit on
+   milestone/sprint detail rather than inventing a new pattern.
+3. *Empty state still invites editing.* An empty body renders the
+   placeholder as a real `<button>` (no interactive descendants to nest, so
+   a valid control), so a click/Enter/Space on it enters edit.
+4. *TSK-69 superseded.* "Click the text anywhere to edit" (and the
+   caret-at-click coordinate plumbing: `enterCoords`/`focusCoords`, now
+   removed from `BodyEditor`) is replaced by the Edit button as the
+   enter-edit affordance. Entering edit still works by pointer and
+   keyboard; `BodyEditor`/`BodyEditSurface` and the editor itself are
+   otherwise unchanged.
+
+**Tests (red-proven), `BodyRenderedView.test.tsx` + `BodyEditor.test.tsx`.**
+The rendered container is not `role="button"` and has no `tabindex` (red
+when the role/tabIndex is re-added); a link inside the description is a
+reachable, focusable anchor with no `role="button"` ancestor (same
+red-proof); an explicit `body-edit` button exists and enters edit via
+click and keyboard (red when no such button exists); the empty placeholder
+is a button that enters edit on click. The former TSK-69 "click the text /
+Enter-Space on the region enters edit" assertions are **replaced** — they
+encoded the superseded click-anywhere model.
+
+**To revert.** Restore `role="button" tabIndex={0}` + the `onContainerClick`
+/`onKeyDown` enter-edit handlers on the `body-rendered` container, drop the
+Edit `<Button>` and the placeholder-as-button, and restore `onEnterEdit`'s
+coords parameter with `enterCoords`/`focusCoords` threading through
+`BodyEditor`.
+
+### A250 · Interactive tap targets meet WCAG 2.5.8 (24px), meta-panel control heights normalized
+
+**Ticket:** UI-chrome defect #15 (tap targets below 24px; meta control heights 17–50px) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** WCAG 2.5.8 AA (Target Size Minimum, 24px)
+
+**The situation.** A live audit at 390px found interactive controls under the
+24px 2.5.8 floor and inconsistent meta-panel control heights:
+
+1. The list row/select-all `Checkbox` painted a 16px (`h-4 w-4`) box with no
+   enlarged hit area — a native input is clickable only where it sits, so the
+   effective target was 16px.
+2. The label ✕-remove (`LabelsField.tsx`) and multi-select custom-field
+   ✕-remove (`CustomFields.tsx`) rendered a bare `Icon size={12}` in a
+   `<button>` with no min hit area — ~12px targets.
+3. The meta panel's single-line editors (`OptionPicker` / `TextField` /
+   `DateField` triggers in `task/editors/`) used `py-0.5` with no height
+   floor, so heights varied 17–50px in one viewport.
+
+**What was decided (recorded, revertible).**
+
+1. *Checkbox — enlarge the target in the shared primitive.* `ui/Checkbox.tsx`
+   now wraps the 16px painted box in a `<label>` sized `h-6 w-6` (24px). A
+   click anywhere in the label toggles the input via the label's native
+   behaviour, so the effective target is 24px while the box stays visually
+   16px. **No paint moved off the input** — all its
+   `checked`/`disabled`/`focus-visible`/`border-control` classes are
+   unchanged, so the existing Checkbox tests (which assert those classes on
+   the input) still hold. The caller's `onClick` (the list row's
+   `e.stopPropagation()`) is attached to the label, not the input, so a click
+   on the 24px slop is also guarded before it bubbles to the row. Every call
+   site (list row, select-all header, board card) inherits the larger target
+   with no change. **Considered and rejected:** moving the paint to a sibling
+   span with `peer-checked:*` and making the input a transparent 24px
+   overlay — it works but forces churn on several correct primitive tests for
+   no visual gain, so the label-wrap (which touches nothing on the input) was
+   chosen.
+
+2. *✕-remove buttons — per-site 24px hit slop, glyph unchanged.* The two chip
+   ✕ buttons keep `Icon size={12}` but gain
+   `grid min-h-6 min-w-6 place-items-center` plus negative margins
+   (`-my-1 -mr-1`) so the 24px clickable square does not inflate the chip's
+   visual height. Fixed per-site (not in a shared primitive) because these are
+   raw inline `<button>`s in the chip renderers, not `IconButton` instances.
+
+3. *`IconButton` `xs` size left as-is.* `xs` is `h-6 w-6` = exactly 24px, so
+   it already meets 2.5.8; no floor change was needed. The list's ✕ close uses
+   `size="sm"` (28px). No `IconButton` change.
+
+4. *Meta editors — one control-height floor.* The `OptionPicker`, `TextField`
+   and `DateField` triggers/inputs in `task/editors/` gained `min-h-7` (28px,
+   the app's standard small control height from `ui/Select`/`ui/TextField`
+   `sm`), with `flex items-center` on the button displays. This is a floor,
+   not a cap: chip-based fields (Labels, multi-enum) still grow with content,
+   which is expected. These editors are also used by `CreateTaskModal`; the
+   uniform height is an improvement there too, not a regression.
+
+**Tests (red-proven).** `ui/Checkbox.test.tsx` — the 16px box sits in a
+`h-6 w-6` label; a click on the label slop toggles; the caller `onClick`
+reaches the label. `task/MetaPanel.test.tsx` — label ✕ and multi-enum ✕ carry
+`min-h-6`/`min-w-6` (glyph stays 12px); the Status trigger carries `min-h-7`.
+Each was shown red by restoring the pre-fix classes.
+
+**To revert.** In `ui/Checkbox.tsx` restore the `relative inline-flex` span
+wrapper (drop the `<label>` + inner 16px span + the `onClick`-to-label
+routing). In `LabelsField.tsx`/`CustomFields.tsx` restore the bare
+`shrink-0 opacity-60 …` / `opacity-60 …` classNames on the ✕ buttons. In the
+three `task/editors/` files drop the `min-h-7` (and the `flex … items-center`
+added to the two display buttons).
+
+### A251 · Narrow viewports: drawer-only nav, no persistent icon rail (implements Ken's #9 call)
+
+**Ticket:** UI-chrome defect #9 (phones default to a persistent icon/dot rail) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** R2 (mobile sidebar), Ken 2026-09-20
+
+**The situation.** Below `NARROW_PX` (900px), the collapsed sidebar rendered a
+persistent `w-14` in-grid icon rail (dots + tooltips). Ken's call: on narrow
+viewports there should be **no** persistent rail — the sidebar is hidden and
+the header hamburger's drawer is the sole nav. The drawer overlay (with its
+scrim, focus-trap and Escape) already existed for the narrow+expanded state;
+only the narrow+collapsed default still showed the rail.
+
+**What was decided (recorded, revertible).** In `shell/Sidebar.tsx`, after the
+`overlay` (narrow + expanded ⇒ drawer) branch, a narrow viewport now returns
+`null` for the in-grid render — so the collapsed narrow state renders nothing
+at all. The `AppShell` grid column is `auto`, so a null sidebar collapses the
+track to 0 width without disturbing the main pane. The hamburger
+(`useSidebarCollapse.toggle`) flips the transient `mobileOpen` → the sidebar
+re-renders as the existing drawer overlay. **Desktop is unchanged:** the wide
+path still renders the expanded in-grid column, the collapsed `w-14` rail, and
+the resize handle exactly as before. The breakpoint is unchanged (900px, the
+`NARROW_PX` in the sidebar's local `useIsNarrow`, mirroring the hook's).
+
+**Tests (red-proven).** `shell/Sidebar.test.tsx` (new "Sidebar narrow rail
+suppression (#9)" block): at 380px + collapsed, NO in-grid `<aside>` renders
+(and no backdrop); at 1200px + collapsed the `w-14` in-grid rail still renders
+(desktop unchanged); at 380px + expanded the drawer overlay
+(`role="dialog"`, `data-overlay`, backdrop) still opens. The drawer-only
+assertion was shown red by removing the `if (narrow) return null;` guard (the
+old `w-14` rail then rendered).
+
+**Note.** The optional Playwright 390px check was not run (no server booted in
+this lane); the unit test asserts the DOM equivalent — no in-grid `<aside>` at
+narrow width, i.e. no dot-rail.
+
+**To revert.** Remove the `if (narrow) { return null; }` guard in
+`Sidebar.tsx` (between the `overlay` branch and the in-grid `<aside>` return);
+the narrow+collapsed state then falls through to the `w-14` rail again.
+
+### A252 · Per-entity workflow-write functions in core (foundation for CLI/MCP parity editing of workflow.yaml)
+
+**Ticket:** CLI/MCP workflow-editing parity, wave 1 (core) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** implements Ken's approved shape for per-entity workflow writes (the op matrix + guarantees he confirmed); mirrors the labels/milestones/sprints per-entity CRUD template Ken chose.
+
+**The situation.** `applyWorkflowEdit` (workflow-write.ts) is the whole-document
+workflow-write primitive — validated, atomic, journaled, with task-rewrite +
+remap — but its only caller was the web server's `PUT /api/workflow`, which
+ships the entire config. CLI and MCP have no way to change *one* workflow
+entity (add a status, delete a priority, reorder task types) and get the same
+guarantees. Per core/surface parity, a capability that exists for one surface
+only is drift; the per-entity layer is the shared foundation both later waves
+(CLI, MCP) call.
+
+**What was built (recorded, revertible).** New module
+`packages/core/src/config/workflow-entities.ts` with a per-entity
+create/edit/delete/reorder set per workflow entity, each a thin wrapper over one
+shared helper `mutateWorkflow(locttDir, mutator, remap)` that reads the config
+fresh, splices in the one change, and delegates to `applyWorkflowEdit`. Roster:
+statuses (create/edit/delete(remapTo)/reorder), priorities (create/edit/
+delete(remapTo)/reorder — reorder is the ONLY way to set `value`), task_types
+(create/edit/delete(remapTo)/reorder), relationships (create/edit/
+delete(remapTo-or-clear) — no reorder), custom_fields (create/edit/delete —
+whole delete is clear-only, no remap target), custom-field enum values
+(add/edit/delete(remapTo)/reorder), board columns (create/edit/delete/reorder —
+no remap; deleting the last column drops the `boards` block), estimation
+(editEstimationConfig singleton — scale + weights + all fields), timeline
+(editTimelineConfig singleton). Exported from `config/index.ts` and the package
+root, plus a `WorkflowEntityError` (extends `LocttError`, `validation_failed` /
+`not_saved`, mirroring `LabelError`).
+
+Guarantees enforced by construction: **key immutability** — `create*` takes
+`key`, `edit*` has no `key` path and constructs `updated.key = existing.key`
+(nor `type`/`multi` on a custom field, per SET-16, which `editCustomField`
+copies from `existing`); a rename is delete+create, there is deliberately no
+rename op. **Priority `value`** is never an argument — `createPriority`/
+`editPriority` inputs omit it and `renumberPriorities` (inside
+`assertWorkflowConfigValid`) recomputes it 1..N in list order; `reorderPriorities`
+is the only setter (D20). **Remap-or-refuse on delete** — the shared
+`resolveDeleteRemap` gate uses `computeWorkflowKeyUsage` for the in-use check
+and throws `WorkflowEntityError` when an in-use key is deleted with no
+`remapTo`; with `remapTo` it builds the `WorkflowRemap` directive the primitive
+understands. Custom-field WHOLE delete is clear-only (no target). **Read-fresh**
+per Ken's concurrency mitigation — each fn loads the current config itself,
+shrinking the read→write race window. **Atomicity** — every write funnels
+through `applyWorkflowEdit`, so a refused edit leaves workflow.yaml unchanged;
+no partial writes.
+
+Note: this wave is **core only**. CLI and MCP do not yet call these; that is the
+next wave. Per "a capability in core is not done until CLI and MCP have it",
+this A-entry records the foundation, not the finished parity.
+
+**Tests (red-proven).** `packages/core/src/config/workflow-entities.test.ts`
+(24 cases). Guard red-proofs performed and confirmed: (1) removing the in-use
+refusal in `resolveDeleteRemap` → the four delete-in-use refusal tests go red
+(the assertion is `toBeInstanceOf(WorkflowEntityError)`, which the primitive's
+own `WorkflowConfigError` does not satisfy, so the layer's own guard is what
+they pin); (2) letting `editStatus` honour a smuggled `key` → the
+key-immutability test goes red; (3) letting `editCustomField` honour `type`/
+`multi` → the SET-16 immutability test goes red; (4) making `reorderByKeys`
+ignore the requested order → the priority-value-recompute test goes red.
+
+**Signatures (for the CLI/MCP wave to call).** All async, `void` unless noted;
+`locttDir: string` is the first arg throughout.
+- `createStatus(locttDir, { key, label, category, default?, icon?, color? })`
+- `editStatus(locttDir, key, { label?, category?, default?, icon?, color? })` (icon/color: `null` clears)
+- `deleteStatus(locttDir, key, remapTo?: string | null)`
+- `reorderStatuses(locttDir, orderedKeys: string[])`
+- `createPriority(locttDir, { key, label, icon?, color? })` (no `value`)
+- `editPriority(locttDir, key, { label?, icon?, color? })`
+- `deletePriority(locttDir, key, remapTo?: string | null)`
+- `reorderPriorities(locttDir, orderedKeys)` (sets `value`)
+- `createTaskType(locttDir, { key, label, icon?, color? })`
+- `editTaskType(locttDir, key, { label?, icon?, color? })`
+- `deleteTaskType(locttDir, key, remapTo?: string | null)`
+- `reorderTaskTypes(locttDir, orderedKeys)`
+- `createRelationship(locttDir, { key, label, kind?, inverse?, inverse_label?, graph?, ranked?, icon?, color? })`
+- `editRelationship(locttDir, key, { label?, kind?, inverse?, inverse_label?, graph?, ranked?, icon?, color? })`
+- `deleteRelationship(locttDir, key, remapTo?: string | null)` (`null` clears edges; no reorder)
+- `createCustomField(locttDir, { key, label, type, multi, searchable, values?, task_types? })`
+- `editCustomField(locttDir, key, { label?, searchable?, task_types? })` (`task_types: null` → global; type/multi immutable)
+- `deleteCustomField(locttDir, key)` (clear-only, no remap)
+- `addFieldValue(locttDir, fieldKey, { key, label, icon?, color? })`
+- `editFieldValue(locttDir, fieldKey, valueKey, { label?, icon?, color? })`
+- `deleteFieldValue(locttDir, fieldKey, valueKey, remapTo?: string | null)`
+- `reorderFieldValues(locttDir, fieldKey, orderedKeys)`
+- `createBoardColumn(locttDir, { key, label, statuses, wip? })`
+- `editBoardColumn(locttDir, key, { label?, statuses?, wip? })` (`wip: null` clears)
+- `deleteBoardColumn(locttDir, key)`
+- `reorderBoardColumns(locttDir, orderedKeys)`
+- `editEstimationConfig(locttDir, { enabled?, unit?, unit_label?, scale?, preset_values?, weights? })` (optionals accept `null` to clear; requires enabled+unit resolvable)
+- `editTimelineConfig(locttDir, { dependency_relationship?, default_zoom?, show_arrows?, default_grouping? })` (`dependency_relationship: null` = explicit disable, written through)
+
+**To revert.** Delete `packages/core/src/config/workflow-entities.ts` and its
+test, and remove the corresponding export blocks added to
+`packages/core/src/config/index.ts` and `packages/core/src/index.ts`. Nothing
+outside those files depends on the new module yet (CLI/MCP waves not started),
+so removal is clean. The `invariants.md` WF-key-immutability row (below) documents
+a property the primitive already enforced independent of this module, so leave it.
+
+### A253 · CLI parity for workflow.yaml entity editing (calls the A252 core functions)
+
+**Ticket:** CLI/MCP workflow-editing parity, wave 2 (CLI) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** implements the CLI half of the parity A252 built the core for; mirrors the `label`/`views` command-family pattern (arg parsing via `runtime/args`, confirm via `runtime/confirm`, error mapping via `runtime/errors`). A-number chosen as A253 (the next free number after the A252 core wave; A260–A264 were claimed concurrently by the web-editability agent).
+
+**The situation.** A252 added per-entity workflow-write functions to core but recorded that "a capability in core is not done until CLI and MCP have it" — CLI and MCP called none of them. The web could edit statuses/priorities/etc.; the CLI could only read them (`loctt schema`). This wave brings the CLI to the core.
+
+**What was built (recorded, revertible).** New module `apps/cli/src/commands/workflow-entities.ts` — eight top-level command families, each a thin arg-parse → core-call → error-map wrapper: `status`, `priority`, `task-type`, `relationship`, `custom-field` (incl. `value <field>` sub-group for enum values), `board-column`, `estimation`, `timeline`. Each scalar family has `list|add|edit|rm|reorder` (relationships: no `reorder`; custom-field whole `rm`: no remap; board-column `rm`: no remap); estimation/timeline are `show|set` singletons. Wired into `apps/cli/src/index.ts` dispatcher (each `case` wrapped in `runCommand`), `usage.ts`, and `WorkflowEntityError` added to `KNOWN_DOMAIN_ERRORS` in `runtime/errors.ts`. Docs: `docs/user/cli/reference.md` gains a "Workflow configuration" section.
+
+Grammar decisions the docs did not settle (recorded here):
+- **`reorder` takes a trailing comma-list of keys** (`loctt priority reorder low,medium,high,critical`), matching the core `orderedKeys` signature — not `--before`/`--after` (that convention is for task *ranking*, task-rank.ts; workflow entities reorder the whole list at once, which the comma-list expresses directly). **To revert:** if a per-move UX is later wanted, add `--before`/`--after` parsing that reduces to a full `orderedKeys` list before the core call.
+- **`--value` is deliberately NOT accepted anywhere** (priority value is derived from order, D20). It is absent from the shared `ACCEPTED_FLAGS`, so `loctt priority add --value 9` fails as an unknown option (exit 2) rather than silently. Red-proven.
+- **Enum custom-field creation needs seed values**, and the CLI had no way to pass them (core `createCustomField` accepts `values`, but `custom-field add` exposed no flag, and `value add` needs the field to already exist — a valueless enum is rejected by core). Added a repeatable **`--enum-value key=label`** on `custom-field add`, required-and-only-allowed for `--type enum`. Named `--enum-value` (not `--value`) precisely so priority's `--value` rejection stays intact. **To revert:** drop `--enum-value` + `parseFieldValueSeeds`; enum fields would then be uncreatable from the CLI (a parity regression), so this stays unless the seeding UX changes.
+- **`edit` clears icon/color/wip/unit-label/scale/preset/task-types with `-`** (mirrors `label edit --color -`, `milestone edit --target-date -`); `timeline set --dependency-relationship -` is the explicit "no arrows" null (written through), not a clear-to-unset, matching the core contract.
+- **`rm` confirms via `confirmHardDelete`** (`--yes` to skip, `refused` in non-TTY → exit 2), like every other destructive CLI command. The core delete-in-use refusal fires *after* the confirm, so `--yes` alone does not bypass the remap requirement.
+
+**Error mapping.** `WorkflowEntityError` extends `LocttError`, which `KNOWN_DOMAIN_ERRORS` already caught, so refusals mapped to exit 1 with a clean message even before this change; it is named explicitly in the list (alongside `ViewError`) so the workflow-entity commands sit with every sibling's domain error rather than depending on the catch-all. The delete-in-use message ("… is in use; provide a remap target (or clear) to delete it") reaches the terminal as a clean `Error:` line.
+
+**Tests (red-proven).** `apps/cli/src/commands/workflow-entities.test.ts` (18 cases, integration-style against a temp tracker via `initLoctt`). Distinct CLI-layer rules covered: status add→workflow.yaml with icon/color; status edit label; status rm in-use refuses without `--remap-to` and succeeds with it; priority reorder changes the derived value from list order; priority `--value` rejected as unknown option; priority add appended and renumbered by position (no `--value` path); task-type rm; relationship add stores kind/graph; relationship `reorder` is not a subcommand (usage error); custom-field edit cannot change type; custom-field whole rm is clear-only; enum add requires `--enum-value`; enum seed + `value add` + `value rm --remap-to`; `value reorder`; board-column add/reorder; estimation scale; estimation `--weight key=n` map; timeline set. Guard red-proofs performed and confirmed (each broken, watched go red, restored): (1) `del(key, undefined)` in `removeScalar` → the status in-use remap test goes red; (2) adding `--value` to `ACCEPTED_FLAGS` → the `--value` rejection test goes red; (3) making priority reorder keep existing order → the reorder-value test goes red; (4) removing the enum seed guard → the enum-requires-value test goes red; (5) making `value reorder` keep order → the value-reorder test goes red.
+
+**Gates.** `npx tsc --build` clean; `npx eslint` on touched files clean (one import-sort autofix); `npx vitest run --root apps/cli` — 136 passed (18 new + 118 existing). Not run (integrator's job / out of lane): `test:integration`, `test:e2e`, the tsup CLI bundle. Note: the CLI's runnable bundle is produced by tsup (`npm run build`), not `tsc --build`, so `apps/cli/dist/*.js` was stale during this work; the vitest suite (which runs against source) is the authoritative behavioural gate.
+
+**Parity note.** CLI now matches the web's workflow-editing capability except that these are the same core functions, so behaviour is identical by construction. One place the CLI is *more* explicit than a raw core call: enum creation requires `--enum-value` at the CLI boundary (the web dialog enforces the same "an enum needs ≥1 value" rule before submit). MCP is the remaining wave (a separate agent's lane); until it lands, the "not done until CLI **and** MCP have it" bar is not fully met.
+
+**To revert.** Delete `apps/cli/src/commands/workflow-entities.ts` and its test; remove the eight `case` blocks + the import in `apps/cli/src/index.ts`; remove the `WorkflowEntityError` import + list entry in `runtime/errors.ts`; revert the `usage.ts` and `docs/user/cli/reference.md` additions. Nothing else depends on them.
+
+### A260 · Web dialogs gain icon + color controls (statuses/priorities/task_types/relationships/enum values); create builders thread them
+
+**Ticket:** Web editability gaps, Part A (Ken-approved) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** the schema already carries `icon`/`color` on StatusDef/PriorityDef/TaskTypeDef/RelationshipDef/CustomFieldValueDef (`IconStringSchema`/`HexColor`, optional); this brings the web authoring surface to it. Parallels A252 (core per-entity writes accept the same fields).
+
+**The situation.** `icon` and `color` are optional presentational fields on the five workflow entity kinds. `color` was displayed (dots/chips) and both round-tripped a hand-authored value, but **no web dialog let a user set either** — and the create builders in `workflowForms.ts` (`buildStatus`/`buildPriority`/`buildTaskType`, `buildCustomField`'s value map) *dropped* them, so even a value the edit path preserved could not be created. The relationship/enum-value edit paths preserved the fields only by spreading the stored row.
+
+**What was built (recorded, revertible).**
+1. New shared `ui/IconPicker.tsx` — a searchable, clearable `Combobox` over the app's SVG icon set (`ui/Icon.tsx`). Stores the icon *name*; keeps a stored-but-unknown value (a hand-authored emoji / other-set name) selectable rather than dropping it; "No icon" clear row (icon is optional).
+2. New shared `ui/ColorInput.tsx` — swatch + hex `TextField`, validating the contract's `HexColor` shape (`#`-optional, 3/6-digit), empty = none. Chosen over reusing `LabelEditDialog`'s stricter 6-digit-only regex because the workflow `HexColor` schema accepts the looser shape; matching it means a value the control passes is one the server accepts.
+3. `workflowForms.ts`: `EntryDraft` + `CustomFieldDraft` carry `icon`/`color`; a shared `presentational()` helper includes them only when non-empty (so the stored row stays clean and the schema never sees a blank icon / malformed colour). `buildStatus`/`buildPriority`/`buildTaskType` now thread them.
+4. Wired the controls into `EntryEditDialog` (statuses/priorities/task_types), `RelationshipEditDialog`, and per-enum-value rows in `CustomFieldEditDialog`. On **edit**, `EnumCollectionPanel.applyDialog` now applies the dialog's icon/color (clearing the key when undefined) rather than only spreading the stored row, so an edit can *change or clear* them, not just preserve.
+
+**Tests (red-proven).** `ui/IconPicker.test.tsx` (pick / searchable / clearable / keeps-unknown; 3 of 4 red-proven by breaking onSelect, clear, and unknown-handling). `settings/workflowPanels.test.tsx` — status create+edit, relationship create+edit, enum-value create carry icon+color on the PUT; red-proven by breaking `presentational()` (create), `applyDialog`'s withPresentational (status edit), and the value-map spread (enum value).
+
+**To revert.** Delete `ui/IconPicker.tsx` + `ui/ColorInput.tsx` (+ their tests), drop the icon/color threading from `workflowForms.ts` (`presentational`, the `EntryDraft`/`CustomFieldDraft` fields, the builder spreads), remove the IconPicker/ColorInput blocks from the three dialogs, and restore `EnumCollectionPanel.applyDialog`'s edit branch to the plain spread.
+
+### A261 · Custom-field `task_types` scope gets a web authoring control (K91 consumption shipped without it)
+
+**Ticket:** Web editability gaps, Part C1 (Ken-approved, highest) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** K91 / TSK-12 — `task_types?: string[]` scopes a custom field to specific types; absent ⇒ global. `customFieldInScope`/`customFieldsForType` (contracts) are the consumption rule.
+
+**The situation.** K91 added the `task_types` allowlist and the consumption side (create-task modal + detail filter custom fields by type) shipped, but there was **no authoring control** — a field could only be scoped by hand-editing workflow.yaml. `CustomFieldDraft`/`buildCustomField` did not carry it either, so neither create nor edit could set it.
+
+**What was built.** `CustomFieldEditDialog` gains a multi-select `Combobox` (`custom-field-dialog-scope`) over the workflow's task types, passed in via a new `taskTypes` prop from `CustomFieldsPanel` (`workflow.task_types`). `CustomFieldDraft` carries `task_types`; `buildCustomField` includes it only when non-empty. **Empty selection = global** — the builder drops the key, matching the consumption default (`customFieldInScope`: absent ⇒ all). Confirmed against the consumption code: an empty array is a valid "no types" config, but the dialog treats empty as global (never storing a field that shows nowhere via the UI); a hand-authored empty array still degrades as before.
+
+**Tests (red-proven).** `settings/workflowPanels.test.tsx` — create scopes to a chosen type; empty selection stores no `task_types`; edit adds a scope to a global field. Red-proven by breaking the `task_types` spread in `buildCustomField`.
+
+**To revert.** Remove the scope `Combobox` + `scope` state from `CustomFieldEditDialog` and the `taskTypes` prop, drop `task_types` from `CustomFieldDraft`/`buildCustomField`, and drop the `taskTypes={…}` prop in `CustomFieldsPanel`.
+
+### A262 · Estimation panel gains `scale` select + per-category `weights` inputs
+
+**Ticket:** Web editability gaps, Part B (Ken-approved) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** `EstimationConfigSchema` carries `scale` (free/linear/fibonacci) and `weights` (per-`custom_enum`-preset non-negative map; empty `{}` rejected).
+
+**What was built.** `EstimationPanel` gains a `scale` `Select` (all units) and, for `custom_enum`, one numeric weight input per preset value (`estimation-weight-<key>`). `scale: "free"` (the implicit default) drops the key so a CLI-written file round-trips. Weights: an empty input clears that key; clearing the last drops the whole map (the schema rejects `{}`); editing `preset_values` prunes weight keys no longer present (the schema rejects a weight key not in `preset_values`).
+
+**Tests (red-proven).** `settings/EstimationPanel.test.tsx` — scale persists / drops on "free"; weight input per preset, persists / drops-map-when-all-cleared; no weights control for a non-enum unit. Scale-persist + weight-persist red-proven by breaking the scale setter and the weight assignment.
+
+**To revert.** Remove the `SCALES`/`SCALE_LABEL` + scale `Select`, the `setWeight` helper + weights block, and the `preset_values` onChange weight-pruning in `EstimationPanel`.
+
+### A263 · Create/edit asymmetry fixed: sprint `goal` on create, user `avatar` on create (create-then-set)
+
+**Ticket:** Web editability gaps, Parts C2/C3 (Ken-approved) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** SprintDef `goal` optional free text (edit already had it via SprintMetaHeader); UserProfile `avatar` set via `POST /api/users/:id/avatar` (needs a persisted id).
+
+**What was built.**
+- **Sprint goal on create:** `SprintsPanel` create form gains a `goal` textarea (`sprint-create-goal`), omitted from the POST when blank. `useCreateSprint` already accepted `goal?`.
+- **User avatar on create (create-then-set):** `CreateUserForm` gains an avatar picker that decodes + crops (reusing `decodeImageFile` + `AvatarCropper`) into a *prepared* File held in state, then in the create mutation's `onSuccess` — once the new id exists — POSTs it to `/api/users/:id/avatar` via `useUploadAvatar`. Chosen over "create then open the row's upload dialog" as the cleaner one-step UX; if the avatar POST fails the user is still created and the per-row `AvatarUpload` can retry. The existing per-row `AvatarUpload` is unchanged.
+
+**Tests (red-proven).** `settings/SprintsPanel.test.tsx` — goal POSTed when entered / omitted when blank (goal-POST red-proven). `settings/UsersPanel.test.tsx` — with `prepareAvatar`/`AvatarCropper` mocked, a chosen avatar POSTs to the new user's id after create; none chosen ⇒ no avatar POST. Create-then-set red-proven by removing the onSuccess upload.
+
+**To revert.** Remove the `goal` state + textarea (and goal from the POST) in `SprintsPanel`; remove the avatar picker + prepared-file state + the onSuccess upload in `CreateUserForm`.
+
+### A264 · Label + Milestone create/edit dialogs unified into one mode-aware component each
+
+**Ticket:** Web editability gaps, Part D (Ken-approved) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** matches the mode-aware pattern `EntryEditDialog`/`ViewFormDialog` already use; K100 (one component owns the write).
+
+**The situation.** Labels and Milestones each had a separate inline create form (in `LabelsPanel`/`MilestonesPanel`) AND a modal edit dialog (`LabelEditDialog`/`MilestoneEditDialog`) with identical fields — copy-paste, two write sites per entity.
+
+**What was built.** `LabelEditDialog` and `MilestoneEditDialog` are now mode-aware (`mode: "create" | "edit"`). The panels drop their inline create forms and open the dialog in create mode from a "New label" / "New milestone" button. Create-specific bits kept as create-mode branches, not separate components: Labels' MSL-34 duplicate-name caution ("Create anyway", non-blocking). Testids kept stable — create mode reuses `label-create-name`/`label-create-color`/`label-create-submit`/`label-duplicate-warning` and `milestone-create-name`/`milestone-create-date`/`milestone-create-submit`; edit keeps `label-name-input`/`milestone-name-input` etc. **Not unified across entities** (labels stay separate from milestones) — only each entity's own create+edit split collapsed. Sidebar + MilestoneDetail edit callers updated to pass `mode="edit"`.
+
+**Tests (red-proven).** `settings/dataPanels.test.tsx` — Part D block: create-through-dialog POSTs for both entities (red-proven by breaking the create branch), edit-through-same-dialog PUTs, MSL-34 caution still shows in create mode. The two pre-existing inline-create tests (duplicate caution, non-hex colour) were updated to open the dialog first — a test that stopped covering its subject when the create form moved into the dialog.
+
+**To revert.** Restore `CreateLabelForm` in `LabelsPanel` and the inline create form in `MilestonesPanel`; make `LabelEditDialog`/`MilestoneEditDialog` edit-only (`existing` required, no `mode`); restore the `existing={…}` (no `mode`) callers in the panels, Sidebar and MilestoneDetail.
+
+### A265 · MCP parity for workflow.yaml entity editing (one consolidated tool + two singletons, calling the A252 core functions)
+
+**Ticket:** CLI/MCP workflow-editing parity, wave 3 (MCP) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** completes the "a capability in core is not done until CLI **and** MCP have it" bar A252 set and A253 half-met; mirrors the existing MCP tool patterns (`ToolDef` array in `tools/<entity>.ts`, `runtime/confirm.requireConfirm` gate, `WorkflowEntityError` added to `runtime/errors.ts`). A-number A265 (next free after A264).
+
+**The situation.** A252 added per-entity workflow-write functions to core; A253 gave the CLI parity; the web already had it. MCP called none of them — an agent could read workflow.yaml (`get_workflow_config`) but could not create/edit/delete/reorder a status, priority, task type, relationship, custom field, enum value, or board column, nor set estimation/timeline. This wave brings MCP to the core.
+
+**Tool shape (Ken's decision, recorded as the build target).** ONE consolidated collection tool `edit_workflow_entity` — **not** ~32 per-entity tools. Shape: `{ entity, op, key?, field?, fields?, remap_to?, order?, confirm? }`.
+- `entity`: `status | priority | task_type | relationship | custom_field | custom_field_value | board_column` (strict zod enum).
+- `op`: `create | edit | delete | reorder` (strict zod enum). An op illegal for the entity is refused with the legal set named (relationship has no reorder; custom_field has no reorder).
+- `key`: entity key — required for edit/delete, the NEW key on create, unused by reorder.
+- **`custom_field_value`'s parent is passed as a separate top-level `field` param** (not nested in `fields`). Chosen over nesting because the value's own `key` already lives at top level for every other entity, so the parent field key sitting beside it (rather than inside the create/edit payload) keeps `key` semantics uniform across entities. Documented in the tool description and `docs/user/mcp/reference.md`.
+- `fields`: the create/edit payload (label, category, icon, color, kind, inverse, type, multi, task_types, statuses, wip, values, …).
+- `remap_to`: delete-in-use target (or `null` to clear from every task).
+- `order`: the ordered key list for reorder.
+- `confirm`: required `true` for delete, via `requireConfirm` — matching every other `delete_*` MCP tool.
+
+**Estimation/timeline are SEPARATE singleton tools, not folded into `edit_workflow_entity`.** `set_estimation_config` and `set_timeline_config`. They are not collection entities (no key, no create/delete/reorder), so an `entity: "estimation", op: "edit"` overload would advertise three ops (create/delete/reorder) that are all illegal for them — noise in the matrix an agent has to learn. A dedicated tool with the actual fields as named params reads cleaner and validates at the wire. **To revert:** fold them in as `entity: "estimation"|"timeline"` with only `op: "edit"` legal, deleting the two tools.
+
+**Zod approach — permissive `fields` object with per-entity handler validation (NOT a discriminated union).** `entity` and `op` are strict enums (the common mistake — a bad entity/op — is caught at the wire), but `fields` is `z.record(z.string(), z.unknown())` validated per (entity, op) in the handler via small typed readers (`str`/`requireStr`/`bool`/`enumStr`/…), each throwing a `FieldsError` naming the offending field. The tradeoff Ken's plan flagged: a discriminated union on `entity` would give sharper *wire-level* errors, but the MCP `inputSchema` is a flat record of named zod schemas (every tool's convention; `index.ts` wraps it in `z.object().strict()`), **not** a single wrapper `z.object` — so a top-level discriminant is not expressible without abandoning that convention. Resolved toward the record convention + explicit handler messages (which can name the exact field and legal set, e.g. `` `fields.category` must be one of: pending, active, … ``). **To revert:** if per-entity wire schemas are later wanted, split into per-entity tools (the shape Ken rejected) or move to a union and change the `inputSchema` contract in `types.ts`/`index.ts`.
+
+**MCP-layer guards (the tool adds only these; core owns every data guarantee):**
+- Op legality per entity (`LEGAL_OPS` matrix).
+- `confirm: true` on delete (`requireConfirm`).
+- Clear-only delete rejects `remap_to` for `custom_field` and `board_column` (`NO_REMAP_DELETE`) — before any write.
+- **No rename:** an `edit` with a `key` inside `fields` is refused (keys immutable; the top-level `key` identifies the target). Enforced once in `dispatch()` for every entity.
+- **No priority `value`:** `fields.value` refused on priority create/edit (D20 — value is derived from list order; `reorder` is the only way to change it).
+- **Custom-field `type`/`multi` immutable:** refused in `fields` on edit (SET-16).
+- `WorkflowEntityError` added to `isKnownDomainError` (`runtime/errors.ts`) so core refusals reach the agent as a clean `errorResult`, not a rethrown server fault (parity with the CLI's `KNOWN_DOMAIN_ERRORS`).
+
+**What was built (recorded, revertible).** New `apps/mcp/src/tools/workflow-entities.ts` (three tools); registered in `registry.ts` (`WORKFLOW_ENTITY_TOOLS`); `WorkflowEntityError` imported + listed in `runtime/errors.ts`. Docs: `docs/user/mcp/reference.md` gains a "Workflow configuration (editing)" section with the full entity/op matrix, noting `get_workflow_config` is the read side (list_views-style).
+
+**Tests (red-proven).** `apps/mcp/src/mcp.test.ts` — new `describe("edit_workflow_entity")` block, 17 cases (stdio-style via `executeTool` against a temp `initLoctt` tracker). Coverage: three tools registered; status create round-trips label + icon + color; status edit label; rename attempt (`fields.key`) refused (original key survives, no new key); delete without confirm refused even with a remap; delete-in-use refused without `remap_to` (with confirm, so the remap requirement is what fires) and succeeds with `remap_to` + confirm (task moves to target); priority reorder recomputes the derived value (a middle key jumped to front changes value; list order matches `order`); priority `value` in fields refused; relationship reorder refused (illegal op, message names entity); unknown entity refused at the wire (strict enum); whole custom_field delete rejects `remap_to` (field survives); custom_field edit `type` change refused (immutable); enum field value round-trips icon + color; estimation `scale` round-trips; estimation `weights` round-trips (with `unit: custom_enum` + `preset_values`, which core requires together); `set_timeline_config` with no fields is a clean "nothing to change" error, not a write. **Guard red-proofs performed** (each broken, watched go red, restored): (1) the `fields.key` rename guard removed → rename test red; (2) `requireConfirm` short-circuited → confirm test red; (3) `rejectPriorityValue` neutered → priority-value test red; (4) relationship given `reorder` in `LEGAL_OPS` → op-legality test red; (5) `NO_REMAP_DELETE` clear-only rejection removed → clear-only test red; (6) `type`-immutable guard removed → immutable-type test red; (7) `iconColorCreate` stubbed to `{}` → both icon/color round-trip tests red; (8) status delete hard-coded `remapTo: undefined` → delete-in-use success test red; (9) priority reorder ignoring `order` → reorder-recompute test red.
+
+**Gates.** `npx tsc --build` clean; `npx eslint` on the four touched files clean (one import-sort autofix); `npx vitest run --root apps/mcp` — 95 passed (17 new + 78 existing). **Not run (out of lane / integrator's job):** `test:integration`, `test:e2e`.
+
+**Known follow-up (out of lane, flagged not fixed).** `tests/e2e/11-mcp-schema-contract.test.ts` holds an inline snapshot of every MCP tool name; the three new tools (`edit_workflow_entity`, `set_estimation_config`, `set_timeline_config`) are not in it, so that e2e test will fail until the snapshot is updated (`vitest -u` on that file, or hand-add the three sorted names). Left untouched deliberately — the lane was `apps/mcp/` + its tests + the MCP reference doc, and the gates excluded e2e. Recorded here so the integrator updates the snapshot rather than reading it as a regression.
+
+**Parity note.** MCP now matches the web and CLI workflow-editing capability — the same core functions, so behaviour is identical by construction. This closes the A252/A253 parity wave: all three surfaces (web, CLI, MCP) can now edit every workflow.yaml entity.
+
+**To revert.** Delete `apps/mcp/src/tools/workflow-entities.ts` and its test block; remove the `WORKFLOW_ENTITY_TOOLS` import + array entry in `registry.ts`; remove the `WorkflowEntityError` import + `isKnownDomainError` entry in `runtime/errors.ts`; revert the `docs/user/mcp/reference.md` section. Nothing else depends on them.
+
+### A267 · CLI + MCP parity for bulk archive / delete / link (comma-refs on CLI, `refs[]` on MCP, calling the existing core bulk functions)
+
+**Ticket:** bulk archive/delete/link CLI+MCP parity · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** "a capability in core is not done until CLI **and** MCP have it" — mirrors the already-shipped bulk `set`/`move` pattern (CLI comma-refs via `splitRefs`, MCP `refs: z.array().min(1).max(500)`, partial-success reporting, `requireConfirm` for destructive ops). A-number **A267** (A265 was the last committed entry; A266 skipped deliberately to avoid a collision with a concurrent agent numbering in the same window — the concurrent core/web work was on a separate lane).
+
+**The situation.** `bulkArchive`/`bulkDelete`/`bulkLink` had lived in core (`packages/core/src/task/bulk.ts`) and only the web reached them (`apps/web/src/server/server.ts` `handleBulkArchive`/`handleBulkDelete`/`handleBulkLink`). The CLI `archive`/`delete`/`link` and the MCP `archive_task`/`unarchive_task`/`delete_task`/`link_tasks` were single-ref, so archiving/deleting/linking a selection meant N commands and N ungroupable history entries — exactly the drift `set`/`move` had already been fixed for (A-numbered under CW-4).
+
+**CLI shape (decided).** `archive`/`unarchive`/`delete` take `<task>[,<task>…]` (comma-separated, split by the existing `splitRefs` in `task-crud.ts`, now exported alongside `reportBulk`). `link` takes `<task>[,<task>…] <relationship> <target>` — many sources, one target, one type (the web `bulkLink` shape). A single ref keeps the existing single-task code path and its friendlier message; two-or-more routes to the core bulk function. `delete` keeps its `--yes` confirm gate, now covering the whole batch with one prompt (not one per task). `reportBulk` gained an optional `unchanged` count rendered as "(N already in that state)" so archive's no-op tasks read honestly (parity with the web's BLK-27 `unchanged` array).
+
+**MCP shape (decided — extended the existing tools with `refs[]`, did NOT add `bulk_*` variants).** `archive_task`/`unarchive_task`/`delete_task` now take `refs: z.array(z.string()).min(1).max(500)` in place of `ref: z.string()`; `link_tasks` takes `refs[]` (sources) + `type` + `target`. This is the convention `move_task` and `bulk_update_tasks` already set (both extended a singular tool to `refs[]` ≤500 rather than adding a parallel `bulk_*` tool), so extending these four is the consistent shape — a second `bulk_archive_task` etc. would have been the drift. `delete_task` keeps `confirm: true` via `requireConfirm`, unchanged. `unlink_tasks` stays single-source (there is no core bulk-unlink, and the web has none either).
+
+**Tool names did NOT change** — `archive_task`, `unarchive_task`, `delete_task`, `link_tasks` keep their names and non-empty descriptions. Only their `inputSchema` shape changed. The e2e schema-contract snapshot (`tests/e2e/11-mcp-schema-contract.test.ts`) records only tool *names + hasDescription*, not input schemas, so it is unaffected — no `vitest -u` needed for this change (unlike A265, which added three new tool names).
+
+**Partial-success reporting (parity with web, all three surfaces).** Every surface reports per-task outcomes rather than all-or-nothing: a bad ref in the batch is listed in `failed` and does not abort the rest; the good refs still land. CLI: `reportBulk` prints "<action> on N task(s)", lists each failure on stderr, and sets a non-zero exit on any failure. MCP: a summary line "<Verb> N, failed M (bulk_op_id …)" plus one line per failure. `bulkLink`'s documented non-atomicity (each edge committed independently because `linkTask` takes the state lock itself; an unresolvable *target* fails every source identically) is surfaced as-is on both surfaces. `bulkArchive`/`bulkDelete` remain atomic writes (core's two-phase staged swap), and archive's `unchanged` no-op set is reported apart from the tasks actually changed.
+
+**What was built (recorded, revertible).** CLI: `apps/cli/src/commands/task-archive.ts` (archive/unarchive multi-ref → `bulkArchive`); `task-crud.ts` (`deleteCmd` multi-ref → `bulkDelete`; `splitRefs`/`reportBulk` exported; `reportBulk` gained `unchanged`); `task-links.ts` (`link` multi-source → `bulkLink`). MCP: `apps/mcp/src/tools/task-archive.ts` (both tools → `refs[]`, `bulkArchive`, shared `reportArchive` formatter); `task-crud.ts` (`delete_task` → `refs[]`, `bulkDelete`; import swapped `deleteTask`→`bulkDelete`); `task-links.ts` (`link_tasks` → `refs[]`, `bulkLink`; import swapped `linkTask`→`bulkLink`). Docs: `docs/user/cli/reference.md` (delete/archive/link sections document the comma forms + partial-failure example) and `docs/user/mcp/reference.md` (task + relationship tables updated to `refs` ≤500 with the partial-success/unchanged notes). **No change to `packages/core`, `packages/contracts`, or `apps/web`** (separate lane) — the CLI/MCP call the existing exported core functions as-is.
+
+**Tests (red-proven).** `tests/integration/cli/bulk.test.ts` — new `describe` with 11 cases (spawned binary): archive many; single-ref friendlier message kept; mixed selection counts already-archived as unchanged; unarchive many; bad ref reported without aborting; delete many with `--yes`; delete refused without `--yes` (nothing deleted); delete bad ref reported; link many sources to one target; link bad source reported. `tests/integration/mcp/bulk-lifecycle.test.ts` — new file, 9 cases (real MCP stdio client): archive many + reports split; mixed unchanged; unarchive many; archive bad ref; delete many with confirm; delete refused without confirm (both survive); delete bad ref; link many; link bad source. **Red-proof performed** (all six source files reverted to single-ref behaviour — CLI bulk branches forced off so only `refs[0]` is used, MCP handlers passing `[refs[0]]` to the core bulk fn — rebuilt, watched **16 of the new tests go red** with the expected "processed 1 not 2 / failed 0 not 1" assertion failures, then restored and confirmed all 27 green). The 8 that stayed green under the break were the single-ref parity guards and the two confirm-gate tests, which do not exercise multi-ref behaviour — correct.
+
+**Existing test mutated (per the "extending code someone else tested — mutate their tests too" rule).** `apps/mcp/src/mcp.test.ts` `"delete_task without confirm is rejected; archive_task is the soft path"` called `delete_task`/`archive_task` with `{ ref: "T-1" }`; the schema change to `refs[]` made those calls fail wire validation (missing `refs`) rather than reaching the confirm gate. Updated the three calls to `{ refs: ["T-1"] }`. This test was asserting the old *input shape*, not a bug, so no "asserting the bug" commit note applies — but it stopped covering its subject when the schema grew, which is exactly the case that rule names.
+
+**Gates.** `npx tsc --build` clean; `npx eslint` on the six touched source files + the two test files clean; `npx vitest run --root apps/cli` — 136 passed; `npx vitest run --root apps/mcp` — 95 passed (after the mcp.test.ts fix; one failure before). New bulk integration tests: 27 passed (11 CLI + 9 new MCP lifecycle + 7 pre-existing MCP bulk-update, re-run together). **Not run (out of lane / integrator's job):** `test:e2e` (see the schema-snapshot note above — no update needed this time), `test:integration` full sweep beyond the bulk files.
+
+**To revert.** Restore the single-ref forms: CLI `archive`/`unarchive`/`delete`/`link` drop the `refs.length > 1` branches (and `bulkArchive`/`bulkDelete`/`bulkLink` imports); un-export `splitRefs`/`reportBulk` and drop `reportBulk`'s `unchanged`. MCP: revert the four tools' `inputSchema` to `ref: z.string()` and their handlers to the single-task calls (`archiveTask`/`unarchiveTask`/`deleteTask`/`linkTask`), swapping the imports back. Revert the two test files and the `mcp.test.ts` three-line change, and the two reference-doc sections. Core/contracts/web untouched, so nothing there depends on this.
+
+### A268 · start_date ≤ due_date guard moved into core (was web-only; CLI/MCP could write start-after-due)
+
+**Ticket:** cross-surface parity audit — "guard enforced only in web" (Fix 1) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** "a capability in core is not done until every surface has it"; TML-45 required the constraint, but only the web `handleSetDates` route enforced it. A-number **A268** (A265 last committed; A266 skipped by the concurrent A267 agent; A268 taken to sit clear of that block — this is a separate core/web lane).
+
+**The defect.** `apps/web/src/server/server.ts` `handleSetDates` checked `start ≤ due` inline against the effective pair before calling core `setFields`. But CLI `set <task> start_date …` and MCP `update_task` call core `setField`/`setFields` directly and had **no** such check — so a start-after-due anomaly could be persisted from either surface, and the timeline then had to draw around data the web would have refused.
+
+**The fix (decided, revertible).** Added `assertDateOrdering(updated, touchedStart)` to `packages/core/src/task/update.ts`, called in **both** `setFieldLocked` and `setFieldsLocked` right after the effective post-write frontmatter (`updated`) is built and after the archived-reference guard. It compares `updated.start_date` vs `updated.due_date` (first 10 chars, YYYY-MM-DD) and throws `TaskUpdateError`. Because it runs against the *effective* merged frontmatter, a single-field edit (`setField`) or a single-edge change set (`setFields` carrying only one date) is compared against the value already on disk — matching the web route's semantics exactly. Clearing either date leaves a non-string on that side, so no false-refuse. `touchedStart` (whether this write carried `start_date`) anchors the error `field` on the side the user actually set, matching the web behaviour.
+
+**Error shape.** `TaskUpdateError` (code `validation_failed`, `data_state: not_saved`), message `The start date (YYYY-MM-DD) cannot be after the due date (YYYY-MM-DD).`, `field` = `start_date` when this write carried it else `due_date` — byte-identical to the message/field the web route produced.
+
+**Web-side removal.** Deleted the inline ordering block in `handleSetDates` (the `lookupTask`+`sent`-map+comparison). Kept `const current = await lookupTask(...)` (still needed to resolve `taskId`). The core `LocttError` now flows through the handler's existing `catch (err instanceof LocttError)` branch, which surfaces `envelope.message` + `envelope.field` — so the client receives the same 400 with the same message/field, and "nothing written" still holds (`setFields` is atomic). Verified: all web `handleSetDates`/TML-45 route tests pass unchanged (no web test edited).
+
+**Tests (red-proven).** `packages/core/src/task/update.test.ts` new `describe("date ordering …")` — 11 cases: setField refuses start-after-existing-due and due-before-existing-start (nothing written); anchors on the set field; allows equal/valid; unset (clear) does not false-refuse; setFields refuses an invalid pair (atomic, neither lands), refuses a single-edge change against the stored date, accepts a valid pair. **Red-proof:** neutralised `assertDateOrdering` body (`return;` first line), watched **5** of the rejection cases go red, restored — the 3 that stayed green are the valid-pair/clear cases (correctly assert no rejection).
+
+**Gates.** `packages/core` + `packages/contracts` type-check clean (isolated `tsc -p`); eslint clean on touched files; `npx vitest run packages/core packages/contracts` green (git-suite timeouts are environment flakes — all pass at `--testTimeout=30000`); `npx vitest run --root apps/web` — 2082 passed. Whole-repo `tsc --build` blocked ONLY by a pre-existing `if (false)` in `apps/cli/src/commands/task-links.ts` (the A267 agent's un-restored red-proof, outside this lane — see the note in the session report).
+
+**To revert.** Delete `assertDateOrdering` and its two call sites in `update.ts`; restore the inline `start ≤ due` block in `handleSetDates` (rebuild the `sent` map from `changes` + `current.frontmatter`). Remove the new `describe` in `update.test.ts`.
+
+### A269 · email validation confirmed in core + redundant web pre-checks removed (was web-only)
+
+**Ticket:** cross-surface parity + security audit — email "degrades silently into health" (Fix 2) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** same core-authority rule; the web comment itself said core "degrades a bad email silently into health".
+
+**Finding + state.** The core guard was ALREADY present (`packages/core/src/users/lifecycle.ts` `assertValidEmail`, imported `EmailSchema` from contracts, called in both `createUser` and `updateUser`) with core tests — shipped earlier under **A152**. So Fix 2's core half was done; the remaining redundancy was the two web pre-checks. Two changes made this session: (1) `assertValidEmail`'s `UserError` now carries `{ field: "email" }` (ERR-14 anchor) so a surface need not re-derive which field failed; (2) removed the `EmailSchema.safeParse` pre-check in `handleCreateUser` and `handleUpdateUser` and changed both `catch (UserError)` branches to surface `envelope.message` + `field: envelope.field ?? "name"` — so the core email error reaches the client with `field: "email"`, and any other `UserError` still anchors on `name`. Dropped the now-unused `EmailSchema` import from server.ts.
+
+**Error shape.** Core `UserError` (`validation_failed` / `not_saved`), message `invalid email: "bob"`, `field: "email"`. Web surfaces that message + field verbatim (previously the web produced its own friendlier "Enter a valid email address…" string; the web tests assert only `status 400` + `body.field === "email"` + on-disk-unchanged, all still true, so no web test edit was needed).
+
+**Tests (red-proven).** Core tests already existed (`packages/core/src/users/manage.test.ts` "rejects a malformed email" on create + update, from A152). **Red-proof:** neutralised `assertValidEmail`'s throw (`if (false)`), watched **2** rejection cases go red, restored. Web tests (`apps/web/src/server/server.test.ts` "user email validation (B2 bug 1)") pass unchanged — confirming the removed pre-check's behaviour is fully preserved through core.
+
+**Gates.** As A268 (core/contracts/web all green; web 2082 passed).
+
+**To revert.** Drop `{ field: "email" }` from `assertValidEmail`; restore the two `EmailSchema.safeParse` pre-checks in server.ts (and its `EmailSchema` import) and revert both catch branches to `error(res, err.message, 400, { …REJECTED_WRITE, field: "name" })`.
+
+### A270 · workflow-entity key charset validated at create time (security: self-inflicted corrupt config)
+
+**Ticket:** security audit (contained) — entity keys accept any non-empty string (Fix 3) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** a write the read side rejects is a latent corruption; enforce the read-side charset at the write boundary.
+
+**Finding.** Status/priority/task_type/relationship/custom_field/enum-value/board_column keys were validated only as `z.string().min(1)` + uniqueness — no charset. An agent or hand-edit could create a key with spaces/dots/newlines/uppercase/unicode; the write accepted it, but read-side regexes reject it (e.g. timeline grouping's `/^field\.[A-Za-z0-9_-]+$/`), producing a config that writes cleanly and reads back corrupt.
+
+**The rule chosen.** `ENTITY_KEY_RE = /^[a-z][a-z0-9_-]*$/` — lowercase start letter, then lowercase letters, digits, `_` or `-`. Identical to `packages/core/src/projects/slug.ts` `SLUG_RE`. **Verified every seeded/default key passes** (`packages/core/src/init/defaults.ts`: `backlog`, `in_progress`, `done`, `wont_do`, `critical`/`high`/`medium`/`low`, `story`/`bug`/`task`/`spike`/`feature`, `blocks`/`parent`/`clones`/`duplicates`/`causes`/`relates_to`, and every relationship `inverse` — `is_blocked_by`, `child`, `is_cloned_by`, `is_duplicated_by`, `is_caused_by`). A dedicated test iterates the loaded default config and asserts all keys + inverses match.
+
+**Where enforced (decided).** Added `assertValidEntityKey(key, entity)` and called it inside `assertKeyFree` — the single helper every `create*`/`addFieldValue` path already calls with the new key (7 sites: status/priority/task_type/relationship/custom_field/enum-value/board_column). Also validated the relationship **`inverse`** in `createRelationship` (it is a lookup key too — `has_link("is_blocked_by")`). **Create-time only** (keys are immutable after create; `edit*` has no path to change a key). Deliberately NOT tightened in the contracts Zod schema: the schema also validates data being *read* from disk, so tightening it would make an existing config with a legacy key fail to load (fatal) instead of degrading — the corruption-handling-guide's field-local-degrade intent. Error: `WorkflowEntityError` (`validation_failed`/`not_saved`), message `<entity> key '<key>' is not valid; use lowercase letters, digits, '_' or '-', starting with a letter`, `field: "key"`.
+
+**Tests (red-proven).** `packages/core/src/config/workflow-entities.test.ts` new `describe("entity key charset validation")` — 11 cases: seeded keys all pass; rejects space/dot/newline/uppercase/leading-digit; accepts `in_review-2`; rejects a malformed enum-value key and board-column key; rejects a malformed relationship inverse; anchors on `field: "key"`. **Red-proof:** neutralised `assertValidEntityKey`'s test (`if (false)`), watched **8** rejection cases go red, restored — the 3 that stayed green are the seeded-keys-pass + valid-key-accepted cases (correctly assert no rejection).
+
+**Gates.** As A268 (core/contracts green; part of the same run).
+
+**To revert.** Delete `ENTITY_KEY_RE`, `assertValidEntityKey`, the call to it inside `assertKeyFree`, and the `inverse` check in `createRelationship`. Remove the new `describe` in `workflow-entities.test.ts`.
+
+### A271 · dead-core export `getReconcileState` removed; `countTasksByReference` (singular) KEPT (has a real test caller)
+
+**Ticket:** cleanup — remove dead-core exports (Fix 4) · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** core exists so surfaces share it; an export called by nothing is drift with a good address.
+
+**`getReconcileState` — removed.** `packages/core/src/git/reconcile-session.ts` `getReconcileState` (a thin `readReconcileState` wrapper, superseded by `loadReconcileSession`) had **zero callers** anywhere — production or test (grep `getReconcileState\b` across the repo, excluding its own def and the two re-export lines, returned nothing). Removed the function and its two re-exports (`packages/core/src/git/index.ts`, `packages/core/src/index.ts`). NOT touched: `getReconcileStatePath` (a different, heavily-used symbol) and the `ReconcileState` type import (still used by `loadReconcileSession`/`emptyPlan`).
+
+**`countTasksByReference` (singular) — KEPT, not removed (per the task's "if it has a caller you missed, leave it and report").** The ticket described it as "referenced only in doc comments". That is inaccurate: `packages/core/src/task/counts.test.ts` has a dedicated `describe("countTasksByReference")` block that calls the singular function **10+ times** with real assertions (milestone/label/project/sprint/assignee/reporter counts, absent id, includeArchived). It is a thin wrapper over `countTasksByReferences` but it is a shipped, exported public API with genuine direct coverage — removing it would delete a passing test suite that asserts real behaviour. Left in place; flagging for Ken to decide whether the singular API is worth keeping (if removed, its test block goes too).
+
+**Tests.** None added (removal). Confirmed by grep that nothing imports `getReconcileState`; `packages/core` + `packages/contracts` suites stay green after removal.
+
+**To revert.** Re-add `getReconcileState` to `reconcile-session.ts` (`export async function getReconcileState(locttDir) { return readReconcileState(locttDir); }`) and its two re-export lines. `countTasksByReference` was not changed.
+
+### A272 · MCP reconcile resolve/abandon parity — `resolve_reconcile` + `abandon_reconcile` added (read side already existed)
+
+**Ticket:** parity audit — MCP could only READ reconcile status (`get_reconcile_status`); CLI (`loctt git reconcile apply/abandon`) and web (Settings → Sync) could resolve. Ken approved adding the write side to MCP. · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** "a capability in core is not done until CLI and MCP have it" — core's `applyReconcileDecisions` / `confirmRekey` / `abandonReconcile` were reachable from CLI and web but not MCP. Lane: `apps/mcp` only (concurrent agent in `apps/web`).
+
+**Tools added (`apps/mcp/src/tools/git.ts`).**
+- **`resolve_reconcile`** — input `{ decisions, confirm, confirm_rekey? }`. `decisions` is an array of core's `ReconcileDecision` **verbatim** (`{ taskId, field, choice, value? }`, `.strict()`) — the exact shape the CLI `--decisions <file.json>` and the web apply body take, kept camelCase (NOT the MCP surface's snake_case) so there is no re-mapping layer to drift from core; the CLI passes the file straight through and so does this tool. Calls `applyReconcileDecisions`. **Gated on `confirm: true`** via `requireConfirm` (the `delete_*` pattern): keeping one side discards the other's value, so an apply is destructive. If the completing sync then surfaces a rekey (`outcome.rekeyPlan`), the tool reports the preview and STOPS unless `confirm_rekey: true` is also passed, then calls `confirmRekey` and reports old→new. (Contrast `sync_from_git`, which auto-applies a rekey — a bare sync is not a mid-flow confirmed destructive action the way an apply already is, so the rekey there does not get a second gate. Chose the extra gate for resolve because the whole flow is already "you are about to discard data".) Honest partials (GIT-12/32) and unresolved-key warnings (GIT-33) are surfaced, mirroring the CLI.
+- **`abandon_reconcile`** — input `{ confirm }`. Calls `abandonReconcile`. **Gated on `confirm: true`**: it discards the pending decisions and the record of what must be resolved (not a revert — already-written rows stay). A clear when none is in progress is a safe no-op (core's `abandonReconcile` just clears the sentinel).
+
+**`get_reconcile_status` extended (same file), not changed in shape otherwise.** Added `task_id` to each conflict row and to each delete-vs-edit row, plus `decision_field: "__delete_vs_edit__"` on delete-vs-edit rows. Reason: a `resolve_reconcile` decision is keyed by `taskId` + `field`, but the status tool previously reported only `task_key` — an agent had no way to obtain the ULID a decision needs. The read side is otherwise unchanged (`in_progress`, `mode`, commits, conflict values, drift, auto-merged all as before).
+
+**Error mapping.** Git domain errors an apply / confirm-rekey can surface (`GitReconcileNeededError`, `GitReconcileInterruptedError`, `GitHistoryRewrittenError`, `GitRemoteSchemaNewerError`, `GitWorktreeMissingError`, `GitSyncFirstError`) are handled in-handler via a local `reconcileErrorText` helper → `text(err.message)` / `reconcileNeededResult`, matching the existing `publish_to_git` / `sync_from_git` handlers. Core's plain `Error("no reconciliation is in progress")` / `Error("no rekey is awaiting confirmation")` (not domain classes — `apply`/`confirm` throw them raw) are matched by message and returned as clean `errorResult`s, so an out-of-order call gets a sentence, not a rethrown server fault. **No `runtime/errors.ts` KNOWN-list change needed** — everything is caught before it reaches the dispatcher's `isKnownDomainError`, exactly as publish/sync already do.
+
+**Tests (`apps/mcp/src/mcp.test.ts`, new `describe("MCP reconcile resolve/abandon parity")`, 8 cases, all red-proven where they assert behaviour):** both tools registered alongside `get_reconcile_status`; `resolve_reconcile` confirm gate (red: remove `requireConfirm` → apply runs unconfirmed); `resolve_reconcile` with `confirm` but no reconcile in progress reaches core and maps the message cleanly (red: relabel the mapped message); strict input validation rejects a decision missing `choice`; strict rejects an extra unknown key on a decision (red: `decisionSchema` → `.passthrough()`); `abandon_reconcile` confirm gate (red: remove gate); `abandon_reconcile` with confirm is a no-op-safe clear; `get_reconcile_status` still reads `in_progress:false` clean. A full git-backed reconcile *fixture* (real conflict → resolve the values on disk) was NOT built as a unit test — it needs a two-worktree divergence that belongs in core's `reconcile-apply`/`publish-sync` suites (which already cover the apply mechanics) or in integration/e2e; the MCP-layer tests cover registration, the confirm gates, input validation, core-fn reach, and error mapping, which is what this lane owns.
+
+**Gates.** `npx tsc --build` clean; `npx eslint apps/mcp/src/tools/git.ts apps/mcp/src/mcp.test.ts` clean; `npx vitest run --root apps/mcp` 103 passing (8 new). No git, no integration/e2e run in-lane.
+
+**⚠ e2e schema-contract snapshot.** Adding two MCP tools changes the tool list, so `tests/e2e/11-mcp-schema-contract.test.ts`'s inline snapshot is now stale. The integrator must run `vitest -u` on that file (as A265 did) — do NOT hand-edit the snapshot.
+
+**Docs.** `docs/user/mcp/reference.md` git-mode section updated: `resolve_reconcile` + `abandon_reconcile` rows, `get_reconcile_status` row expanded, and a "Resolving a reconcile from MCP" walkthrough (status → resolve with confirm/confirm_rekey → abandon).
+
+**To revert.** Remove the `resolve_reconcile` and `abandon_reconcile` tool objects, the `decisionSchema` const, the `reconcileErrorText` helper, and the four new imports (`abandonReconcile`, `applyReconcileDecisions`, `confirmRekey`, `GitReconcileInterruptedError`, `requireConfirm`) from `apps/mcp/src/tools/git.ts`; revert the `task_id`/`decision_field` additions in `get_reconcile_status`; delete the new `describe` block in `mcp.test.ts`; revert the doc section; re-run `vitest -u` on the e2e schema-contract test.
+
+### A273 · `ResponsiveDialog` — the default overlay for editable modal surfaces (Dialog ≥640px, bottom Sheet below); migrations
+
+**Ticket:** UI/UX polish — a single responsive overlay primitive. Two separate primitives (`Modal`/`Dialog`, a centered desktop card; `Sheet`, a bottom drawer) did not compose, so every editor picked one and was wrong at the other width. Ken flagged "Customize sidebar", which used a bare `Sheet` and was therefore a bottom drawer even on desktop, where a dialog is correct. Ken approved building the primitive and migrating the surfaces that should use it. · **Date:** 2026-09-20 · **Commit:** (uncommitted; Ken integrates) · **Standard:** design-system §7 (one mobile pattern per breakpoint); the primitive is now the documented default for a modal that carries editable content. Lane: `apps/web` only (concurrent agent in `apps/mcp` — untouched).
+
+**The primitive (`apps/web/src/client/ui/ResponsiveDialog.tsx`).** One content slot (`children`) + `title` + `onClose` + optional `actions`/`description`/`testId`/`returnFocusTo`. Renders a centered titled `Dialog` at ≥ breakpoint and a bottom `Sheet` below it, from the SAME children — a presentation shell only, no forked state (Sheet's existing contract). It does NOT reimplement a11y: its two branches ARE the existing `Dialog`→`Modal` (focus trap A11Y-14, inert background A11Y-15/34, Escape + backdrop, `role="dialog"`/`aria-modal`) and `Sheet` (same machinery). On the mobile branch `actions` slot into the Sheet's sticky footer; `testId` lands on the body wrapper in both modes so specs locate the surface at either width.
+
+**Breakpoint: 640px.** Chosen as the app's single mobile breakpoint — the `useIsNarrow` default (Tailwind `sm`) already used by the list-filter Sheet and the table→card swap, and what design-system §7 ("Below the breakpoint…") points at. The Sidebar's own `NARROW_PX=900` is a DIFFERENT axis (in-grid column vs. floating shell drawer) and is deliberately not reused for the overlay.
+
+**Migrations (surface → was → now).** Customize sidebar (`shell/Sidebar.tsx`): bare `Sheet` → `ResponsiveDialog` — the surface Ken flagged; now a dialog on desktop, drawer on mobile. Multi-field editors moved from plain `Dialog`/`Modal` to `ResponsiveDialog`: `EntryEditDialog`, `RelationshipEditDialog`, `CustomFieldEditDialog`, `LabelEditDialog`, `MilestoneEditDialog`, `ProjectEditDialog` (outer editor only — its nested "Change prefix?" confirm stays a centered `Dialog`), `ViewFormDialog`, `MoveTaskDialog`, and the create forms `UsersPanel` "New user" + edit-user + `ProjectsPanel` "New project" (Modal → ResponsiveDialog). **Deliberately left centered:** `ConfirmDialog`/`TypedConfirmDialog` and the bespoke confirms (`RelationshipRow` "Remove this link?", `DeleteProjectDialog`, `UserDeleteDialog`, `RemapDeleteDialog`, the prefix-change confirm) — a short confirm is fine centered at all widths; and `SaveViewDialog` (single name field — not a cramped multi-field editor). `Sheet` stays the direct primitive for the list-filter facets, the advanced-query editor, the settings section switcher, and the timeline unscheduled drawer. All testids kept stable.
+
+**Design system.** `docs/dev/design/design-system.md` overlay section (§ components) and §7 responsiveness updated: `ResponsiveDialog` documented as the DEFAULT for a modal surface with editable content, the rule stated (Dialog ≥640px / bottom Sheet below; plain Modal/Dialog only for intentionally-centered cases; Sheet for the specific list-filter/advanced-query cases), breakpoint noted.
+
+**Tests (all red-proven).** New `ResponsiveDialog.test.tsx` (6 cases): mode switch — centered dialog at 1200px (no Sheet ✕) / bottom sheet at 375px (has ✕) — each red-proofed by forcing `narrow` constant the wrong way; testid stable across the switch; Escape + backdrop + focus-trap at both widths. New `Sidebar.test.tsx` case: Customize sidebar opens as a DIALOG on desktop (no Sheet close button), still mounts the shared `SidebarGroupsPanel`, still PUTs `sidebar_groups` (existing "same PUT" test unchanged) — red-proofed by forcing narrow. New `workflowPanels.test.tsx` case: the migrated entry editor opens/edits/saves at 375px with stable testids — red-proofed by dropping the Sheet-branch testid.
+
+**Gates.** `npx tsc --build` clean; `npx eslint` clean on all touched files; `npx vitest run --root apps/web` ui + settings + shell + task suites green (653 + new cases). No git, no integration/e2e in-lane.
+
+**To revert.** Delete `ResponsiveDialog.tsx` and its test; in each migrated file restore the `Dialog`/`Modal` import and swap `<ResponsiveDialog>`→`<Dialog>`/`<Modal>` (for the Modal-based create forms, back to `<Modal title=… onClose=…>`); restore the `Sheet` import + `<Sheet>` in `Sidebar.tsx`; revert the design-system overlay/§7 edits; drop the three new/added test cases.
+
+### A274 · Error/empty/loading-state gap fixes across three tiers (List mobile, LinkPicker, Data panels, settings panels, shared-primitive a11y)
+
+**Ticket:** A UI audit found specific error/empty/loading-state gaps; Ken approved fixing them in three tiers. The app is otherwise strong on these axes — the exemplary surfaces (desktop List's three-way split, Board/Timeline banners, Task-detail's 404-vs-unreachable-vs-500 error split, FieldFailureNotice's field-anchoring, corruption markers) were deliberately NOT touched. Lane: `apps/web/src/client` only (+ tests); `packages/*`, `apps/cli`, `apps/mcp` untouched. · **Date:** 2026-09-21 · **Commit:** (uncommitted; Ken integrates) · **Standard:** ERR-1 (a failed load must never read as an empty list), ERR-13 (each failure named), ONB-12 (a load in progress shows placeholders), design-review §A3 (`role="status"` on loading regions).
+
+**Tier 1 — silent-failure / failed-load-looks-empty bugs (correctness).**
+- **List mobile layout (`list/ListView.tsx`).** The narrow `<ul>` card layout rendered results with no `isLoading` skeleton and no `queryFailed`→ErrorState guard, while the desktop `<table>` had both — so a failed fetch on a phone read as "No tasks match these filters" (ERR-1 violation) and a load-in-progress read as the empty state. Gave the mobile layout the SAME three-way handling the table has, reusing the table's `queryFailed`/`lastQueryError`/`ErrorState`/`tasks.isLoading` logic; added a `SkeletonCards` helper (card-shaped counterpart to `SkeletonRows`, capped at 25) and, for parity, a "Clear filters" affordance on the mobile filtered-empty state.
+- **LinkPicker (`relationships/LinkPicker.tsx`).** Read only `results.data`/`results.isSuccess`; `results.isFetching`/`results.isError` were never read, so a search in flight was a blank void and a failed search was silent (indistinguishable from "no match"). Added an announced "Searching…" (`role="status"`) while fetching-with-no-data and an actionable error row (`role="alert"` + "Try again" → `refetch`) while `isError`, both distinct from the successful-empty "no task matches" state.
+- **SavedViewsPanel + LabelsPanel** archive/unarchive/permanent-delete failed silently. Added an optional `error` prop to the shared `ui/ConfirmDialog` (renders a danger `Callout`, `role="alert"`, `testid=confirm-dialog-error`); wired the SavedViews permanent-delete confirm to it and added inline `Callout` errors for the kebab archive/unarchive actions (`view-archive-error`, `view-unarchive-error`, `label-archive-error`), mirroring `MilestonesPanel`'s existing bug-3 fix. Added `.reset()` before the archive/delete mutations so a stale error clears on retry.
+
+**Tier 2 — polish.**
+- **ProjectsPanel (`settings/ProjectsPanel.tsx`).** `<tbody>` mapped items with no `length===0` guard → header-only blank table. Added a teach + create-CTA empty state (`projects-empty`) after the existing error/loading early returns.
+- **Four settings panels** (`PreferencesPanel`, `CardLayoutPanel`, `SidebarGroupsPanel`, `SidebarPinsPanel`) showed a generic "not saved" line with no server reason and no recovery. Brought each to the `ErrorState` standard (server message + Retry that re-sends the last write via `mutation.mutate(mutation.variables)`); the write is optimistic and rolled back on failure, so the context line states the last saved values are shown. `SidebarPinsPanel`'s `deleteView` failure block was upgraded the same way.
+
+**Tier 3 — shared primitives + `role="status"` gaps.** Loading indicators that carried `aria-busy` WITHOUT `role="status"` (so AT never announced them) were migrated to `ui/LoadingState` (which has both): `TaskDetail.tsx` (task load), `CommentsPanel.tsx`, `ActivityPanel.tsx`. Hand-rolled danger boxes reimplementing `border-danger-fg/30 bg-danger-fg/5` were migrated to `ui/Callout` where clean: `CreateTaskModal.tsx`'s `create-error` (testid + `role="alert"` preserved). **Migrated vs. kept:** MIGRATED — the three loading `<p aria-busy>`→`LoadingState`; `CreateTaskModal` error box→`Callout`; `ConfirmDialog` gains a `Callout`-based error slot. KEPT (behavior would be lost on a swap, only the a11y is already satisfied) — `FieldFailureNotice.tsx` (already `role="alert"`; its wrapper carries load-bearing `data-field`/`data-code`/`data-data-state` attributes and field-anchoring + retry/reload/back/dismiss that `Callout` cannot express); and the exemplary surfaces named above were left entirely alone.
+
+**Tests (all red-proven; before-state noted per test).** `ListView.test.tsx` (+2): mobile failed-fetch shows the error not the empty copy; mobile in-flight shows a skeleton not the empty state (both red on the pre-fix empty fall-through). `LinkPicker.test.tsx` (new, 3): `isFetching`→"Searching…" (`role=status`); `isError`→actionable error + refetch; successful-empty still shows "no match" (the last is the unchanged-behavior negative, stays green when stripped). `SavedViewsPanel.test.tsx` (+2): failed permanent-delete surfaces in the dialog; failed archive surfaces on the row. `dataPanels.test.tsx` (+1): failed label archive surfaced. `ProjectsPanel.test.tsx` (+1): zero-projects empty state + CTA. `CardLayoutPanel`/`PreferencesPanel`/`SidebarGroupsPanel`/`SidebarPinsPanel` (+1 each): failed save shows the server reason + a Retry that re-issues the write. `loadingAnnouncements.test.tsx` (new) + `CommentsPanel.loading.test.tsx` (new) + `ActivityPanel.test.tsx` (+1): the three loading regions expose `role="status"` (red on the pre-fix bare `<p aria-busy>`). No existing test asserted the replaced markup, so none needed updating (the `create-error` testid and `FieldFailureNotice` markup are unchanged).
+
+**Gates.** `npx tsc --build` clean; `npx eslint` clean on all touched files; `npx vitest run --root apps/web` FULL — 222 files, 2106 tests green. No git; no integration/e2e (out of lane).
+
+**To revert.** `list/ListView.tsx`: remove the `queryFailed`/`tasks.isLoading` branches from the mobile `<ul>` and the `SkeletonCards` helper (restore the bare `items.length===0` mobile branch). `relationships/LinkPicker.tsx`: drop the `link-searching`/`link-search-error` blocks. `ui/ConfirmDialog.tsx`: drop the `error` prop + its `Callout` and the `Callout` import; `settings/SavedViewsPanel.tsx` + `LabelsPanel.tsx`: drop the `error=`/inline `Callout` error surfacing (+ the `Callout` imports) and the `.reset()` calls. `settings/ProjectsPanel.tsx`: restore the unguarded `items.map`. `settings/{Preferences,CardLayout,SidebarGroups,SidebarPins}Panel.tsx`: restore the plain `<p role="alert">"not saved"` lines. `task/TaskDetail.tsx` + `comments/CommentsPanel.tsx` + `activity/ActivityPanel.tsx`: swap `LoadingState`→`<p aria-busy>` (drop the `LoadingState` imports). `create/CreateTaskModal.tsx`: swap `Callout`→the hand-rolled danger `<div>` (drop the `Callout` import). Delete the new test files (`LinkPicker.test.tsx`, `loadingAnnouncements.test.tsx`, `CommentsPanel.loading.test.tsx`) and the added cases in the others.
+
+### A277 · K107 stage 2 (config-entity lists, CLI + MCP): `applyArchivedScope`'s constraint widened to `boolean | undefined` so it is actually callable
+
+**Ticket:** K107 stage 2 — the six config entities' LIST paths (saved views, milestones, sprints, labels, projects, users) on CLI + MCP. Lane: `apps/cli/src/commands/{views,milestone,sprint,label,project,user}.ts` + `usage.ts`; `apps/mcp/src/tools/{views,milestone,sprint,label,project,user}.ts` + `apps/mcp/src/runtime/config-list.ts`; their tests; `docs/user/{cli,mcp}/reference.md`. Plus ONE core signature line (see below). Tasks + `apps/web` untouched (web owned by another agent). · **Date:** 2026-09-21 · **Commit:** (uncommitted; Ken integrates) · **Base:** bde77972 (K107 stage 1).
+
+**The situation.** Stage 1 shipped core's `applyArchivedScope<T extends { readonly archived?: boolean }>(items, scope)` as the one shared filter. Wiring it into the six config-list surfaces, EVERY call site failed to compile: the repo builds with `exactOptionalPropertyTypes: true`, under which a config entity typed `archived?: boolean | undefined` is not assignable to a constraint of `archived?: boolean` ("Type 'undefined' is not assignable to type 'boolean'"). The same errors were already present at HEAD in `apps/web/src/server/server.ts`, which calls the function the same way — so the exported function was uncallable by any real surface (CLI, MCP, and web all store `archived` as `boolean | undefined`).
+
+**What had to be decided.** Fix the type at the call sites (cast each array), or widen the core constraint by one word — a core touch the task said to flag before making?
+
+**Options considered.**
+- **Cast at each call site** (`as readonly {archived?: boolean}[]`). Keeps core frozen, but scatters an unsafe cast across ~13 call sites and re-introduces exactly the per-surface drift K107 exists to remove; the cast also loses the concrete element type, breaking downstream `.id`/`.name` access.
+- **Widen the constraint to `{ readonly archived?: boolean | undefined }`.** One word in core. TypeScript itself suggests it ("Consider adding 'undefined' to the types of the target's properties"). Runtime behaviour is identical; the generic `T` stays concrete so callers get their own element type back.
+
+**Decided.** Widen the core constraint by adding `| undefined`, and record it here as a flagged core touch rather than stopping.
+
+**Why.** It is not a new core function (the task's stop-trigger) — it is a one-word correction to a stage-1 signature that was unusable under the repo's own compiler settings; a core export no surface can call is unfinished, not done (CLAUDE.md). Casting at 13 sites would be the drift K107 removes. Behaviour-preserving, so nothing downstream changes at runtime.
+
+**The behaviour change (K107's point).** Default scope is now `active` (archived HIDDEN) on every config-entity list. Previously: CLI `milestone/sprint/label/project/user list` took `--all` to reveal archived and hid by default via a hand-rolled `.filter`; but MCP `list_labels`/`list_projects` and both `list_views` (CLI + MCP) and `list_milestones`/`list_sprints` (MCP) SHOWED archived unconditionally, and MCP `list_users` used a boolean `include_archived`. Now all six default to `active` and take the tri-state scope. Surfaces that previously showed archived now hide it by default: **MCP** `list_labels`, `list_projects`, `list_milestones`, `list_sprints`, `list_views`; **CLI** `views list`. CLI adds `--archived active|archived|all` (bare `--archived`=all; `--all` kept as a deprecated alias); MCP adds `archived: z.enum([...])` on the shared `configListInputSchema` (so labels/milestones/sprints/projects/users inherit it) and a per-tool copy on `list_views` (which does not use the shared schema).
+
+**MCP param rename.** `list_users`'s boolean `include_archived` is REPLACED by the tri-state `archived`. This is a breaking tool-param rename (an agent passing `include_archived: true` now gets the `active` default instead of all archived; the equivalent is `archived: "all"`). It regenerates the MCP schema-contract snapshot (`tests/e2e/11-mcp-schema-contract.test.ts` — NOT regenerated here; Ken regenerates).
+
+**To revert.** Core: `packages/core/src/config/archived-scope.ts` — narrow the constraint back to `{ readonly archived?: boolean }` (and every call site breaks again). MCP: `apps/mcp/src/runtime/config-list.ts` — drop the `archived` key from `configListInputSchema` and the `getArchivedScope` helper; `tools/{milestone,sprint,label,project,user}.ts` — drop the `applyArchivedScope(...)` line (restore `cfg.<entity>` / hand-rolled filter) and the `getArchivedScope` import; `tools/user.ts` — restore the `include_archived` param + `.filter`; `tools/views.ts` — drop the `archived` param + `applyArchivedScope`. CLI: `commands/{milestone,sprint,label,project,user,views}.ts` — restore `hasFlag(args,"--all")` + the hand-rolled `.filter` (and drop `--archived` from the ACCEPTED_FLAGS lists that gained it: sprint/label/project/user/views); `usage.ts` — restore the `list --all: include archived …` lines. Tests: delete `apps/mcp/src/tools/archived-scope.test.ts`, the "config-entity list archived scope (K107)" block in `apps/cli/src/cli.test.ts`, and revert the `list_views` default-hides assertion in `apps/mcp/src/tools/views.test.ts` (it was updated because it asserted the old show-all default). Docs: the six list rows in `docs/user/cli/reference.md` and the config-list rows + shared-`archived` note in `docs/user/mcp/reference.md`.
+
+### A283 · Two `loctt ui` windows are told apart by the PROJECT name in the document title — nothing on the page
+
+**Ken's ruling (2026-09-22).** Closes SHL-11 / SHL-31.
+
+**The problem.** `cc534a0d` removed the sidebar footer's working
+directory and `f85e5a7e` removed the task count, each reasonably ("a
+datum a user never acts on"). Neither considered that TOGETHER they left
+nothing identifying which tracker a window is showing — the two-window
+disambiguation SHL-11 states outright and SHL-31 tests.
+
+**What Ken rejected.** Restoring the path: *"is 'ugly file path' really
+the way to do it? i dont want that … you shouldnt be 'oh file path does
+the fucking job', no."* The agent's first instinct — the path satisfies
+the case text, so restore it — mistook satisfying a case for solving the
+problem.
+
+**Ruling 1 — name WHAT.** Asked whether to add a tracker-level name or
+use the existing project entity: *"use project entity. the user can
+rename the projects themselves if they want to differentiate."* This
+collapsed the design: a proposal for a new `workspace.yaml`, a CLI
+command, an MCP tool, a doctor check and a schema-reference section
+became a **web-client-only change**, because projects already have names.
+
+**Ruling 2 — WHERE.** *"Title only — nothing on the page."* The title is
+what a window-picker, tab strip and Cmd-Tab switcher show, which is where
+two windows are actually told apart. Every on-page slot considered either
+vanished with the sidebar (reintroducing the ambiguity precisely when you
+collapse it for room) or spent space in a header that had already dropped
+its wordmark once for lack of it.
+
+**Built.** `document.title` = `LocTT — <project> — <view>`, from the
+`["projects"]` query the sidebar already caches — no new request.
+
+*Resolution rule (agent call, within the ruling):* one filtered
+`?project=` → that project; else the workspace `effective_default`; else
+no project segment. A **sole-project shortcut was deliberately NOT added**
+when `effective_default` is null: the server already folds that case into
+`effective_default`, and re-deriving it client-side would be a second
+rule free to disagree with the sidebar's own active marker (SHL-5).
+**To revert that specific call:** add the shortcut in `titleProjectName`
+and accept the two sources of truth.
+
+*Fallbacks never emit an empty segment:* no project resolves →
+`<view> · LocTT` (today's format); unmatched route with a project →
+`LocTT — <project>`; neither → `LocTT`.
+
+**Cases amended in place**, per Ken's strict retirement rule — no
+"superseded" labels, no commented-out assertions. SHL-11 now states the
+title contract and keeps its Settings-link bullets; SHL-31's first bullet
+reads on titles. SHL-11 previously had NO passing coverage; it now has
+the SHL-31 spec plus two Sidebar unit tests.
+
+
+### A282 · E2E-surfaced defect fixes — and two reported defects that did not reproduce
+
+**Date:** 2026-09-22 · **Lane:** `apps/web/src/client/**`.
+
+**Situation.** Repairing the e2e specs after the K106 picker migration
+took the suite from 155 failures to 19, and the 19 were left RED on
+purpose as defect markers. Six were fixed here. **Two of the ten
+originally reported did not reproduce** — recorded below, because
+fixing something that is not broken is the more expensive mistake.
+
+**TSK-18 — the rich→raw toggle was swallowed after typing. Not an event
+bug; a LAYOUT one.** The brief's lead (a blur-ordering problem, by
+analogy with TSK-59) was wrong, and the agent said so rather than
+building to it. Instrumenting the real browser showed the blur guard was
+innocent (`contained=true`) and that **no `click` event fired at all**:
+pressing the toggle blurs the rich surface → `flush()` →
+`SaveIndicator`'s label goes "Unsaved changes" → "Saving…"/"Saved", the
+label narrows, and because the toggle is pushed right with `ml-auto` past
+a `flex-1` toolbar, the button slid **52px right between mousedown and
+mouseup**. Mouseup landed on the wrapper, so the browser synthesised no
+click. The second press worked because the label had settled.
+
+*Fix:* the three ordinary labels now share ONE css-grid cell with the
+inactive ones `invisible`, so the box is always as wide as the longest
+label **as the browser measures it** — no px constant to drift. A
+`sr-only` `aria-live` node carries the changing text, because a stack of
+static labels would otherwise leave the indicator silent to a screen
+reader; a live region announces content, not attributes.
+
+**LST-20 — a 400-char title widened the table by 66px.** The guard was
+`max-w-[42ch]` on the inner span: a magic ~354px that is simply still too
+wide, and any smaller value just moves the breakpoint. *Fix:* the title
+`<td>` carries `w-full max-w-0`. `max-width:0` zeroes its intrinsic
+contribution so every other column sizes from its own content first;
+`width:100%` then hands it whatever is left, at ANY viewport. The `ch`
+cap is gone.
+
+**GIT-9 — the ULID tiebreak was not stated.** Commit `cc534a0d` (Ken's)
+deliberately dropped the ULIDs from the rekey preview as "meaningless
+internal ids" and reworded the tiebreak — but the replacement named no
+rule at all. The rule was checked against `previewRekey` in
+`core/src/git/reconcile.ts` rather than paraphrased: ascending
+`localeCompare` on `id`, `sorted[0]` keeps the key, so the **lower ULID
+wins**.
+
+*Judgement call, flagged not buried:* the case says "shows both ULIDs",
+while Ken's commit removed them as clutter. Resolved by naming the rule
+in the prose and putting the two values behind a collapsed native
+`<details>`, rendered only when `tiebreak === "ulid"` — satisfying the
+case without reverting his call, and only on the path where the ULIDs
+explain something. **To revert to always-visible:** drop the `<details>`
+wrapper. Ken may prefer that; it is a one-line change.
+
+**A11Y-31 / PRU-26 / PRU-33 — "disabled" kebab items were not disabled.**
+`MenuItem` had no `disabled` prop; `RowActions` faked it by dropping
+`onSelect` and dimming, leaving the button focusable with its reason on
+an inner `<span>` (so never the accessible description). Now a native
+`disabled` — the IDL property and implicit `aria-disabled` come free, the
+existing `:not([disabled])` roving query excludes it automatically, and
+the reason sits on the button. Matches `Dropdown`'s existing idiom rather
+than inventing one.
+
+**SET-8 — the custom-field dialog's Save was unreachable below 720px.**
+`Modal`'s panel had no `max-h` and no scroll region, and the overlay
+centres an over-tall card, so both ends leave the viewport with nothing
+to scroll. `Sheet` (the mobile branch) already had the correct pattern,
+so `Modal` was CONVERGED on it rather than growing a second one.
+
+**TWO CLAIMS THAT DID NOT REPRODUCE.**
+- **A11Y-16** (invisible focus ring, reported 1.00:1) — measured in a
+  real Chromium against the built CSS, focused by keyboard so
+  `:focus-visible` genuinely matches: **16.14:1 light, 19.67:1 dark.**
+  The original `rgb(255,255,255)` reading was taken in DARK mode, where
+  `--text-primary` IS `#F4F4F3`; it only looked like a `currentColor`
+  fallback because the button's text is also white. Verified against
+  `tokens.css`. No CSS changed.
+- **VUE-22** (broken views "never reach the client") — `handleListViews`
+  spreads `broken`, `ViewsConfig` declares it, and a live probe returned
+  `broken: ["Busted"]`.
+
+*Both came with a file, a line number and a measurement.* The lesson for
+the next agent: a confidently-reported defect is a claim, not a fact, and
+the cheapest moment to check is before the fix.
+
+**A FOURTH green test asserting a bug.** `UsersPanel.test.tsx` read the
+disabled reason off `querySelector("[title]")` — explicitly pinning the
+inner-span placement that IS the A11Y-31 defect, with a comment saying
+so. Updated in place.
+
+
+### A281 · K106 step 1 — `Select` call sites onto `SelectCombobox`, and the `.value`→`data-value` assertion trap
+
+**Ticket:** K106 step 1 · **Date:** 2026-09-21 · **Lane:**
+`apps/web/src/client/**`.
+
+**What shipped.** `filterable` → `searchable` on `ui/Combobox` (pure
+rename; no production call site passed it, and the `??` override
+semantics are byte-identical). 18 native-`<select>` call sites across 12
+files migrated onto a new `SelectCombobox` wrapper with
+`searchable={false}`. A wrapper rather than 18 inline `Combobox`es
+because the a11y contract below has to hold identically everywhere.
+**Zero testids renamed.**
+
+Per Ken: *"Do the churn; keep ArchivedScopeControl's native select."* So
+`ui/Select` SURVIVES for that one site, and K106's "delete the superseded
+components" is satisfied for `FilterDropdown` only — which step 1 does
+NOT touch (see `K106` in § 9 for the deferred substrate call).
+
+**⚠ THE TRAP: `.value` → `data-value` SILENTLY WEAKENS ASSERTIONS.**
+This is the load-bearing finding and it generalises well past K106.
+
+A native `<select>`'s `.value` **could only report a value that had a
+matching `<option>`** — the DOM enforced it. `data-value` echoes the
+component's draft state, so it reports the stored token whether or not
+the option is actually offered. A straight port of an assertion from one
+to the other therefore keeps passing while testing strictly less.
+
+Concretely: three "escape hatch" branches keep a stored-but-unknown value
+selectable — `TimelinePanel`'s dangling dependency (A31/TML-34),
+`ViewFormDialog`'s removed custom field, `QueryBuilder`'s out-of-config
+field. **Deleting any of them left the suite GREEN** after the port.
+
+This is the repo's own "code outgrew a good test" case: nobody wrote a
+bad test, the substrate changed underneath good ones. Fixed by asserting
+the option is **offered**, not merely echoed — a `comboOptions()` helper
+alongside `comboValue()`. Independently red-proven at integration: with
+`ViewFormDialog`'s hatch deleted, "offers a stored field the catalog does
+not know as its raw token" goes red; source restored byte-exact and
+16/16 green after.
+
+**Two of those three hatches were NEVER covered** — that gap predates
+K106; the migration only made it visible. Since `data-value` is now the
+standard assertion in this codebase, **any future `Select`→`Combobox`
+port must pair a value assertion with an options assertion**, or it
+quietly asserts nothing about availability.
+
+**What the migrated sites genuinely lost.** The mobile native picker and
+native type-ahead, replaced by the listbox keyboard model — which is
+exactly why `ArchivedScopeControl` keeps its real `<select>`. Also
+implicit labelling: seven sites wrapped the control in a `<label>` and
+`LinkPicker` used `<label htmlFor>`, neither of which names a `<button>`;
+those became explicit `aria-label`/`aria-labelledby`, with a `listLabel`
+prop because the listbox cannot borrow an `aria-labelledby` target.
+`ComboboxButton` also gained `disabled` (SET-16 locks the custom-field
+type on edit) and `aria-describedby` (SprintMetaHeader's error anchor).
+
+**`cn()` trap avoided:** `ComboboxButton`'s disabled state picks
+background, colour and cursor inside ONE branch, so `bg-bg-surface` and
+`bg-bg-muted` can never both land in the class list.
+
+**Incidental finding.** `apps/web/src/client/ui/Combobox.tsx` contains
+654 NUL bytes at HEAD, unrelated to this work — `grep` treats the file as
+binary; use `git diff --text`.
+
+**To revert.** Restore the 18 call sites to `ui/Select`, delete
+`SelectCombobox` + `ui/selectComboboxTestUtils.ts`, rename `searchable`
+back to `filterable`, and revert the assertion helpers to `.value` reads
+(accepting that this re-weakens the three hatch assertions).
+
+**Status: step 1 BUILT + green (web client 1848, was 1846).**
+
+### A280 · K103 stage 1 — colour wire shapes (bare hex stays valid), and the `dropInvalidColor` data-loss fix
+
+**Ticket:** K103 stage 1 (contracts + core) · **Date:** 2026-09-21 ·
+**Lane:** `packages/contracts/src/**` + `packages/core/src/**`.
+
+**The wire shapes.** K103 ruled a colour is one of three shapes. Ken
+delegated the storage infrastructure (*"let an engineer decide on the
+infra for this"*). Decided:
+
+| Shape | Wire form |
+|---|---|
+| single | a bare hex string `"#1e6fcb"` |
+| double | `{ light, dark }` |
+| palette | `{ palette: "<id>" }` |
+
+**Why bare hex for `single`:** it IS the existing on-disk format, so every
+existing `workflow.yaml`/`labels.yaml` parses untouched — **no migration,
+no file rewrite, no reformatting of hand-written hex.** Shape 2's own
+definition ("one value used for both modes") is exactly what a stored hex
+already means.
+
+`z.union`, NOT `z.discriminatedUnion`: the arms are not all objects
+sharing a literal tag, and adding a tag would mean writing it into every
+user's file. Discrimination is still unambiguous rather than
+order-dependent — a string cannot match an object arm, and **both object
+arms are `.strict()`**, so a hybrid `{palette, light, dark}` matches
+NEITHER. Pinned by a test, red-proven by swapping `.strict()` for
+`.passthrough()`.
+
+**Palette values are SOURCED, not invented.** Seven entries in
+`core/config/color.ts`, every value copied literally from
+`apps/web/src/client/styles/tokens.css` — `teal` ← `--accent` (the K99
+brand), plus the harmonised status/priority/feedback tokens. Copied rather
+than imported because core has no DOM and CLI/MCP need them with no
+browser. A test pins `teal` to the K99 values so drift goes red.
+
+**Palette references are LIVE, per Ken's explicit pick.** Nothing caches a
+resolved hex onto a reference; red-proven by a mutation that snapshots.
+A well-shaped reference to a MISSING id is KEPT on load and degrades only
+at resolve time — dropping it would destroy the user's value over a
+palette entry they might re-add.
+
+**Degradation.** `resolveEntityColor(color, mode)` returns
+`{ok:false, failure:{reason:"unknown_palette_id", …}}` and never throws;
+`resolveEntityColorOr` is the lenient variant. Field-local per the
+corruption guide, following the MSL-22 precedent.
+
+**A P1 DATA-LOSS BUG FOUND AND FIXED.** `dropInvalidColor` in
+`core/config/labels.ts` tested the hex regex DIRECTLY. Post-K103 that
+would have **silently deleted every palette and double colour on load** —
+the schema would accept the new shapes, and this function would strip
+them anyway. Now delegates to `EntityColorSchema`, so the contract is the
+single judge of validity. Red-proven: reverting it turns 3 tests red.
+*Lesson:* a hand-rolled copy of a schema rule is a silent data-loss
+hazard the moment the schema widens.
+
+**⚠ PARTLY TYPE-CAUGHT, PARTLY SILENT — verify with `tsc --build`, not
+the per-project check.** The stage-1 agent reported "all three apps
+typecheck with 0 errors". That was measured with per-project
+`tsc --noEmit` and is WRONG for the monorepo: `npx tsc --build --force`
+surfaces **36 real errors across 18 files** (e.g.
+`CreateTaskModal.tsx:521`, where a `StatusDef[]` with the widened `color`
+no longer satisfies a `color?: string` prop). Corrected here rather than
+left standing, because "the apps are clean" would have sent the next
+reader looking only for runtime bugs.
+
+So the type system DOES catch a good share of the migration. What it does
+NOT catch is the subset where the new object shapes flow through
+`string | undefined` inference points that widen silently, or get
+interpolated into a template string. Those sites mishandle a palette or
+double colour at RUNTIME — rendering `[object Object]`, or dropping the
+colour entirely — with a clean compile. Both classes below:
+
+- `web/list/cells.tsx:306` **re-implements the hex regex** → rejects all
+  palette/double colours to `undefined` (the same class of bug as
+  `dropInvalidColor`, in the UI). Also `cells.tsx:78,171`.
+- `web/task/editors/LabelsField.tsx:94,177`, `web/shell/Sidebar.tsx:1957`
+  (`ColorDot`), `web/task/editors/OptionPicker.tsx:153` — pass `color`
+  straight into CSS.
+- `web/ui/ColorInput.tsx` + `isValidHexColor`, consumed by
+  `EntryEditDialog`, `RelationshipEditDialog`, `LabelEditDialog`,
+  `CustomFieldEditDialog:384`, `workflowForms.ts:134` (`.trim()` on a
+  possible object).
+- CLI `commands/label.ts:54`, `commands/workflow-entities.ts`
+  (~247/325/390) — interpolate colour into output.
+- MCP `tools/label.ts`; `web/server/server.ts:2750,2770` pass-through.
+
+Web additionally needs a mode signal to call the resolver; the theme is
+already in `client/theme`.
+
+**New exports.** From `@loctt/core`: `BUILTIN_PALETTE`, `getPaletteEntry`,
+`isKnownPaletteId`, `resolveEntityColor`, `resolveEntityColorOr`,
+`PaletteEntry`, `ColorResolution`, `ColorResolveFailure`. From
+`@loctt/contracts`: `EntityColor`, `ColorMode`, `isSingleColor`,
+`isDoubleColor`, `isPaletteColorRef` and the schemas.
+
+**To revert.** Restore `color: HexColor.optional()` on the 6 fields (5 in
+`workflow.ts`, 1 in `labels.ts`), delete `contracts/src/color.ts` and
+`core/src/config/color.ts`, and revert `dropInvalidColor` to the hex
+regex.
+
+**A STAGE-1 GAP, FOUND IN STAGE 2 AND CLOSED.** Stage 1 widened the
+*workflow* entity writers but NOT the *label* writers:
+`CreateLabelInput.color` and `editLabel`'s `changes.color` in
+`core/src/labels/manage.ts` stayed `color?: string`, and the whole label
+write path matched (`useCreateLabel`/`useUpdateLabel` → `/api/labels`
+handlers → core).
+
+Consequence: a label could READ all three shapes but only WRITE a bare
+hex, so `LabelEditDialog` could not be given the swatch picker — anything
+it produced would be silently narrowed to `string`, which is the exact
+`[object Object]` class K103 exists to remove. Labels were the one entity
+K103 explicitly names that the feature did not actually reach.
+
+Closed by widening the whole path to `EntityColor` (core input types,
+both server handlers, both client hooks) and giving the dialog the same
+`ColorPicker` + `sr-only` `ColorHexAlias` pattern the workflow dialogs
+use, so the original `label-color-input` testid keeps driving real
+behaviour. The dialog's local `HEX_RE`/`isValidColor` were deleted in
+favour of `isValidEntityColor` — another hand-rolled copy of a schema
+rule, the same pattern that caused the `dropInvalidColor` data loss and
+the `cells.tsx` silent drop. The invalid-colour message was reworded,
+since "must be a 6-digit hex" no longer describes what is accepted.
+
+Red-proven: reinstating the narrowing (`typeof input.color === "string"`)
+turns both new `createLabel` shape tests red; source restored
+byte-exact.
+
+*Lesson for a staged rollout:* "core is done" was true for five of six
+colour fields. A per-entity checklist beats a per-file one — the gap was
+invisible from the type errors, because the narrow type compiled fine.
+
+**STAGE 3 (CLI + MCP + docs) — BUILT.** The eight
+`restrict-template-expressions` / `no-base-to-string` lint errors were
+REAL bugs, not lint noise: each interpolated a colour straight into
+output, so a palette or double colour printed `[object Object]`. Lint
+caught the exact silent class stage 1 predicted.
+
+*Terminal render format.* A terminal has no light/dark signal, so
+resolving to one mode would be an arbitrary choice presented as fact.
+Instead each shape renders as itself, and the output round-trips as valid
+`--color` input:
+
+```
+Backend  palette:teal (#0F766E/#39A88F)
+Urgent   #1e6fcb
+Dual     light:#1e6fcb,dark:#8ab4f8
+```
+
+*CLI input syntax.* One flag expresses all three shapes:
+`--color "#1e6fcb"` (single), `--color "palette:teal"` (reference),
+`--color "light:#aaa,dark:#333"` (double). *MCP* takes the wire form
+directly as JSON, stated in the tool descriptions.
+
+*Palette listing (K103's explicit 3-surface parity requirement).*
+`loctt palette` on the CLI and `list_palette_colors` on MCP, both
+returning every id with BOTH mode values — so an agent picking a palette
+id is not guessing blind.
+
+Verified end-to-end on a real tracker: all three shapes store in their
+authored form (a bare hex stays a bare hex — no migration), and no
+surface prints `[object Object]`.
+
+**A PRODUCTION-BREAKING REGRESSION THIS STAGE INTRODUCED, AND THE GATE
+THAT MISSED IT.** Stage 2's `ui/entityColor.ts` and `ui/ColorPicker.tsx`
+imported the core BARREL (`from "@loctt/core"`). That is the A37 hazard:
+the barrel drags `node:path` and `sharp` into the browser bundle. Effect:
+`vite build` FAILED outright — `"resolve" is not exported by
+__vite-browser-external` — so **the client bundle could not be built at
+all**.
+
+Every unit gate stayed green while this was true: `tsc --build` 0, web
+2269 passing, lint 0 errors. Only `npm run build` caught it, and the one
+test that depends on the built bundle (`styles/colorTokens.test.ts`) was
+dismissed twice as "pre-existing, needs a build first" — by an agent and
+then by me. It was the actual signal.
+
+Fixed by adding a `./config/color.js` subpath export to core's
+`package.json` and importing through it, with the reason stated at both
+call sites. **Lesson: `npm run build` is part of the gate, not an
+afterthought — and a test that only fails without a build is not noise,
+it is the bundle's canary.**
+
+**Status: K103 COMPLETE across all three surfaces + docs. Gates:
+contracts 211, core 2298, web 2252, CLI 166, MCP 116, integration 596,
+tsc --build 0, lint 0 errors.**
+
+### A279 · K104 icon picker design — portalled grid popover, not a stacked dialog; storage unchanged
+
+**Ticket:** K104 · **Date:** 2026-09-21 · **Decided by:** the `pm` agent, on
+Ken's explicit delegation in K104 (*"a UI designer designs the picker"*).
+
+**Situation.** K104 ruled the icon MODEL (Lucide icon / common-emoji list /
+free-typed emoji) and explicitly deferred the picker's FORM to a design
+call: *"a searcher? a dialog (and does a dialog stack)? or a
+Select-with-grid?"* Ken's lean: an emoji-picker-style grid combining
+Lucide + emoji, where icons can take a K103 colour but emojis cannot.
+`ui/IconPicker.tsx` today is a `Combobox`-based single-column searchable
+list over the 40 hand-rolled `Icon.tsx` names — no grid, no emoji, not
+built to combine two sources.
+
+**Decided — the form.** A portalled popover (`Menu`'s pattern:
+`createPortal`, runtime-measured, viewport-clamped, outside-click/Escape)
+holding a tabbed grid, triggered from a button inside `ViewFormDialog`.
+NOT a stacked dialog.
+
+**Why.** No overlay-on-overlay pattern exists anywhere in this codebase —
+`ResponsiveDialog`/`Modal`/`Sheet`/`Menu` are all single-layer, and the
+focus-trap + inert-background contracts (A11Y-14/15/34) are not written to
+nest, so a second trap would fight the first and a `Sheet`-over-`Sheet` has
+no defined mobile transition. Building nested-overlay a11y machinery for
+one picker is a new cross-cutting primitive, not a contained UI call. The
+portal is also the *more* necessary here than for `Menu`: a multi-column
+grid is wider than a listbox and would hit the same ancestor-`overflow`
+clipping that MENU-PORTAL exists to fix, inside `ViewFormDialog`'s own
+scroll container. An inline-expanding panel was rejected too: it would
+dominate an already-scrolling form and reflow every field below it.
+
+**Sub-decisions.**
+- **Search: yes, one box** filtering Lucide names AND emoji keywords at
+  once. Both sets are in the hundreds — past A211's twelve threshold
+  either way. One box, not one per tab, because a user wanting "a
+  checkmark" does not know which source has it.
+- **Source coexistence: two tabs** ("Icons" / "Emoji") sharing the search
+  box, plus a persistent free-type emoji field pinned below — always
+  visible, not a third tab, because free-typing is an escape hatch, not a
+  peer browsing mode. Tabs rather than one merged scroll: the two are
+  semantically distinct choices, and Ken's "combined grid" describes a
+  layout, not a request to interleave unrelated glyphs.
+- **Colour interaction: DISABLE-WITH-REASON, PRESERVE INERT.** Switching
+  icon→emoji disables the colour control with an inline reason ("emoji
+  carries its own colour") and KEEPS the stored colour value untouched.
+  Not cleared — P-11: clearing discards a deliberate choice, and
+  icon→emoji→icon must restore the same colour rather than force
+  re-picking. Not silently active either, since K104 says emoji take no
+  colour. This is a UI-state rule; the stored field is untouched either
+  way, so it is not a storage decision.
+- **Storage: UNCHANGED.** `icon?: string` stays as-is. Verified directly
+  in `packages/contracts/src/workflow.ts` — `IconStringSchema`'s own doc
+  already specifies the discrimination rule this design needs ("renders
+  as either a Lucide icon (when it matches a known catalog name) or
+  verbatim text (which is how emoji fallback works)"). Shape-sniff on
+  read, not a tagged union. **K104 is therefore a UI-only build, not a
+  contracts change.**
+- **Lucide scope: coexist, additive.** Adopt `lucide-react` for the
+  user-pickable ENTITY icon set only; the hand-rolled `ui/Icon.tsx`
+  affordance set (chevrons, close, kebab, drag — decorative chrome, never
+  user-choosable) is untouched. `lucide-react` is not currently a
+  dependency of any workspace (checked all five `package.json`s).
+- **Degradation: field-local.** An unknown Lucide id or malformed string
+  renders as inert verbatim text, stays selectable, is never silently
+  rewritten by an unrelated save — which is what `IconPicker` already does
+  for unknown values, and what `IconStringSchema`'s existing tolerance
+  (any non-blank string) already permits. No schema tightening, so no new
+  malformed class for `doctor`.
+
+**CLI/MCP parity.** Both already accept a bare string for `icon`, so this
+design call requires no contract work. What IS needed at build time,
+mirroring K103's palette-listing requirement: CLI/MCP should be able to
+LIST the curated pickable-icon catalog, so an agent picking an icon is not
+guessing a valid id blind.
+
+**FLAGGED for Ken, not decided.** (1) `lucide-react`'s actual gzip cost
+for this repo's bundler — confirmed absent as a dependency and small in
+principle via named-import tree-shaking, but no measured number was taken,
+and stating one unmeasured is the kind of unverified claim CLAUDE.md
+warns about. If Ken wants a budget gate before adopting, that needs a
+real measurement. (2) Whether `ui/Icon.tsx`'s affordance set itself later
+migrates to Lucide — K104 already frames this as build-time with a lean
+toward coexist; this design assumes coexistence rather than re-opening it.
+
+**To revert.** New `apps/web/src/client/ui/IconEmojiPicker.tsx` and its
+call sites replacing `IconPicker`; remove the `lucide-react` dependency
+line to revert the Lucide-scope call independently of the popover-form
+call. No contracts change to revert.
+
+**BUILT (2026-09-21).** Three new modules in `ui/`: `iconCatalog.ts`
+(the data layer — explicit named imports from `lucide-react`, never the
+`icons` barrel, which would defeat tree-shaking and pull all 1,848
+icons), `IconEmojiPicker.tsx` (the A279 popover — `Menu`-based portal,
+two tabs over one shared search box, pinned free-type emoji field), and
+`IconColorFields.tsx` (the paired icon+colour fields carrying the
+coupling rule, built once rather than copied into four dialogs).
+`lucideIcon()`/`isLucideIcon()` ARE the validity answer — no regex
+anywhere, per the rule that a hand-rolled copy of a validation rule is a
+data-loss bug waiting to happen (three instances of that appeared in
+K103). Catalog: **225 Lucide entries + 91 emoji.**
+
+**The colour coupling is STRUCTURAL, not a promise.**
+`colorInert = icon !== undefined && !isLucideIcon(icon)`, and the
+disabled branch of `ColorPicker` has no code path that can call
+`onChange` — so "preserve inert" cannot be violated by a later edit that
+forgets the rule. Red-proven: a mutation that clears on switch turns the
+icon→emoji→icon test red.
+
+**A279 GOT ONE THING WRONG, AND IT MATTERED.** The design assumed the 35
+hand-rolled icon names map onto Lucide. **29 do; six do not** — `alert`,
+`subtasks`, `unarchive`, `refresh`, `list-numbered`, `code-block` are not
+Lucide ids and have no aliases (verified against the catalog, not from
+memory). Dropping them would turn every `icon: alert` already sitting in
+a real `workflow.yaml` into inert text — a silent VISUAL REGRESSION on
+existing trackers, which is categorically different from degrading a
+genuinely bad value. So those six keys stay in the map pointing at their
+nearest Lucide glyph, marked `legacy`. **This is a call A279 did not
+make**, recorded here rather than left implicit in the code.
+
+**Bundle cost — MEASURED, flag closed (2026-09-21).** The `vite build`
+failure that blocked this measurement was itself a regression introduced
+by K103 stage 2 (the core-barrel import, see A280); once fixed, the delta
+was measured directly by stubbing every `lucide-react` import in
+`iconCatalog.ts`, rebuilding, and restoring byte-exact:
+
+| | raw | gzip |
+|---|---|---|
+| with the catalog | 2,254 KB | **679 KB** |
+| Lucide stubbed out | 2,151 KB | **657 KB** |
+| **delta** | **+103 KB** | **+22 KB** |
+
+**+22 KB gzip for ~225 icons**, about 3% of the baseline. Tree-shaking
+works — the full 1,848-icon set would be far larger — and the icons
+genuinely ship (554 `path` and 77 `circle` elements of icon geometry are
+in the bundle). This closes the A279 flag with a real before/after diff
+rather than an estimate.
+
+*Two wrong readings were published before this one, both from bad greps
+rather than measurement:* "only 2 icons reached the bundle" (a
+`lucide-<slug>` grep that matched the package name and a CSS class) and
+"zero, the catalog did not ship" (grepping `createLucideIcon`, which the
+minifier renames). Recorded because the lesson is the point: **grep the
+artifact for the thing's DATA, not for a symbol name that minification
+can rewrite** — and a delta is only a delta when you build both sides.
+
+**Testids:** none renamed. `icon-option-<id>` is preserved so the
+existing `workflowPanels.test.tsx` assertions still drive real behaviour;
+only their addressing changed (`within(dialog)` → `screen`), because the
+grid is now legitimately portalled to `document.body` — which is A279's
+whole point. `IconPicker.tsx` and its test were deleted, with every
+behaviour they asserted carried forward into `IconEmojiPicker.test.tsx`
+— a replacement, not a locked-in deletion.
+
+**Status: BUILT.**
+
+### A278 · K102 web client: the BuilderTree AST surface is deleted repo-wide, not only from the view dialog
+
+> **SUPERSEDED, IN PART, THE SAME DAY (2026-09-21) — read this first.**
+> Two of the calls below were REVERSED by Ken after he reviewed them:
+>
+> 1. **The visual query builder is RESTORED.** Ken on being told it was
+>    gone: *"explain this? i dont think this is making sense."*
+>    Investigation confirmed `AdvancedQuerySurface` edits ONLY the URL `q`
+>    param and was never coupled to saved-view storage, so the deletion
+>    was collateral damage, not a consequence of K102. `BuilderTree` +
+>    `QueryBuilder` + the two-mode surface now live WEB-CLIENT-LOCAL in
+>    `apps/web/src/client/list/`, with zero core/contracts change. See
+>    the `K102-builder` entry in § 9.
+> 2. **The broken-view "empty picker" was a DATA-LOSS path** and is
+>    fixed. Opening Edit on a broken view and saving overwrote the
+>    preserved `rawText` with an empty filter list — the disk-preservation
+>    guarantee held only until the user touched the control meant to
+>    repair it. Save is now inert behind an explicit confirmation, with
+>    the parse error and on-disk YAML shown. See `K102-broken` in § 9 and
+>    case VUE-42.
+>
+> The third call (`AdvancedQueryEditor` is not reused per-row) and the
+> fourth (the active-view chip opens the dialog) STAND.
+>
+> `buildDsl.ts` / `builtinToDsl.ts` also stay deleted — rechecked on
+> restoration: `buildDslFromSearch`'s only runtime caller was
+> `SaveViewDialog`, which K102 replaced, and `builtinToDsl`'s only
+> importer was its own test.
+
+**Ticket:** K102 web-client half — the saved-view form dialog becomes an ordered simple/advanced filter picker. Lane: `apps/web/src/client/**` only. · **Date:** 2026-09-21 · **Commit:** (uncommitted; Ken integrates) · **Base:** a5bf2ac4.
+
+**The situation.** The brief scoped this to the DIALOG, and said explicitly: before deleting `QueryBuilder.tsx`, check whether the inline top-bar `AdvancedQuerySurface.tsx` still uses it — if so, leave it. It does use it. But the check that matters is one level down: K102 had already deleted `packages/core/src/query/builderTree.ts` outright, and core's `package.json` no longer exports the `./query/builderTree.js` subpath. `BuilderTree`, `queryToBuilderTree`, `builderTreeToQuery`, `conditionsToDsl`, `queryToConditions` and `unrenderableTreeReason` are all gone, with no replacement in `serialize.ts` or `query/index.ts`. So `QueryBuilder.tsx` was not a live surface to preserve — it was already uncompilable, along with everything above it.
+
+**What had to be decided.** Leave the client broken and stop (the brief's instruction, read literally), or follow the deletion up through its dependents.
+
+**Decided.** Delete the orphaned chain and reduce `AdvancedQuerySurface` to what still has a data model: the raw DSL editor over the URL `q`.
+
+Deleted: `QueryBuilder.tsx` + test, `buildDsl.ts` + test, `builtinToDsl.ts` + test (no runtime caller at all — only its own test), `buildConditions.ts` + test (superseded by `buildFilters.ts`, per the brief). `AdvancedQuerySurface.tsx` loses its builder mode, its `parseForBuilder`/`asGroupRoot`/`pruneEmptyGroups`/`safeSerialize`/`hasIncompleteLeaf`/`scrubPosition` exports (all now unreferenced) and its six config-source props; it keeps `AdvancedQueryEditor` over `q`. `dslToSearch.ts` SURVIVES — the DSL editor's "switch to basic" still uses it; only its `buildDslFromSearch` counterpart died.
+
+**Why.** A view no longer has a single query string, so there is nothing for an AST builder to build. Keeping a file that imports a module core does not export is not "leaving it alone", it is leaving the client uncompilable. The human-readable path K102 is about now lives in the filter bar's own dropdowns (ad-hoc) and the new view dialog (saved), which is what the AST builder was standing in for.
+
+**FLAGGED for Ken.** This removes the inline visual query builder from the top bar. Typing DSL at `q` still works, and building filters from dropdowns still works, but the middle ground — assembling a nested AND/OR/group query visually against `q` without saving a view — is gone. The new dialog's filters all AND together with no grouping, so a nested OR is now reachable only by typing DSL into an advanced filter. If that middle ground should come back, it needs a new data model (the old one is deleted in core), which is a separate ticket.
+
+**Second call, also flagged.** A BROKEN saved view (`BrokenSavedQuery`) can no longer be seeded into the edit dialog. Its stored filters did not validate, and the dialog has no raw-DSL mode to drop the unparsed text into; showing filters that failed to load would be inventing them. So the sidebar's "Edit…" on a broken row now opens the dialog on the entry's id + name with an EMPTY picker, and saving replaces the broken entry with whatever the user rebuilds. The `rawText` in the file is untouched until that save. The alternative — dropping "Edit…" from broken rows entirely — silently removes an affordance VUE-22 put there.
+
+**Third call.** `AdvancedQueryEditor` is NOT reused as the per-row editor for an advanced filter. It is a singleton surface: fixed `data-testid`s (`dsl-input`, `dsl-error`), a "Query (DSL)" heading, a Run action and a syntax popover. A view may hold several advanced filters, so mounting it N times would put duplicate ids and N Run buttons in one dialog. Each advanced row is `ui/TextArea` + the same `useValidateQuery` hook, keeping validation authoritative without the chrome.
+
+**Fourth call.** The active-view chip's Edit in `FilterBar` used to flatten the view into `q=<its query>` and open the DSL editor. That is the exact behaviour Ken struck out, and it has no implementation left anyway. It now opens `ViewFormDialog` seeded from the view's stored filters; the URL is untouched.
+
+**To revert.** There is no clean revert while core's `builderTree.ts` stays deleted — restoring these files requires restoring that module and its `package.json` export first. With that done: `git checkout a5bf2ac4 -- apps/web/src/client/list/{QueryBuilder.tsx,QueryBuilder.test.tsx,buildDsl.ts,buildDsl.test.ts,builtinToDsl.ts,builtinToDsl.test.ts,buildConditions.ts,buildConditions.test.ts,AdvancedQuerySurface.tsx,FilterBar.tsx,FilterBar.test.tsx} apps/web/src/client/settings/{ViewFormDialog.tsx,ViewFormDialog.test.tsx,SavedViewsPanel.tsx,SavedViewsPanel.test.tsx} apps/web/src/client/shell/{Sidebar.tsx,Sidebar.test.tsx}`, then delete `apps/web/src/client/list/facetOptions.ts` and `apps/web/src/client/settings/viewFilterFields.ts`.

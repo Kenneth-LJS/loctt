@@ -6,7 +6,8 @@ import type { SprintMetaPatch } from "../api/hooks/useSprintDetail.ts";
 import { useUpdateSprintMeta } from "../api/hooks/useSprintDetail.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
-import { Select } from "../ui/Select.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
+import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -64,6 +65,19 @@ const STATE_LABELS: Record<SprintState, string> = {
 
 interface Props {
   readonly sprint: SprintDef;
+  /**
+   * Fold the read-mode name/dates/state presentation OUT of this header,
+   * because the host (SprintDetail's PageHeader) is showing them as the
+   * page title + subtitle (Ken 2026-09-20 "fold the meta into
+   * PageHeader"). When set, the read view drops the Name/Start/End/State
+   * fields but keeps the Goal block, the Archived badge and the Edit
+   * control — so opening the editor still edits every field. Edit mode is
+   * untouched by this flag: the full five-field editor and its single
+   * combined PUT are exactly as before, so none of the persistence
+   * guarantees (SPR-28/33/37, A147) move. Defaults to false, which is the
+   * standalone presentation every existing test renders.
+   */
+  readonly foldReadMeta?: boolean;
 }
 
 /** Which field a save is in flight for, or failed on. */
@@ -109,7 +123,7 @@ function serverValue(sprint: SprintDef, field: FieldKey): string {
   return typeof v === "string" ? v : "";
 }
 
-export function SprintMetaHeader({ sprint }: Props) {
+export function SprintMetaHeader({ sprint, foldReadMeta = false }: Props) {
   const update = useUpdateSprintMeta();
 
   // `editing` is the SPR-8 gate: null when reading, a full draft of the
@@ -268,17 +282,25 @@ export function SprintMetaHeader({ sprint }: Props) {
         className="flex flex-col gap-3 border-b border-border-subtle pb-3"
       >
         <div className="flex flex-wrap items-start gap-4">
-          <ReadField label="Name" value={serverValue(sprint, "name")} testId="sprint-meta-name-value" />
-          <ReadField label="Start" value={serverValue(sprint, "start_date")} testId="sprint-meta-start_date-value" />
-          <ReadField label="End" value={serverValue(sprint, "end_date")} testId="sprint-meta-end_date-value" />
-          <div className="flex flex-col gap-1">
-            <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">State</span>
-            <span data-testid="sprint-meta-state-value" className="text-[0.9286rem] text-text-primary">
-              {STATE_LABELS[serverValue(sprint, "state") as SprintState] ?? serverValue(sprint, "state")}
-            </span>
-          </div>
+          {/* Folded out when the host PageHeader shows name/dates/state as
+              the title + subtitle (Ken 2026-09-20). The editor still edits
+              all of them — only this read presentation moves. */}
+          {!foldReadMeta && (
+            <>
+              <ReadField label="Name" value={serverValue(sprint, "name")} testId="sprint-meta-name-value" />
+              <ReadField label="Start" value={serverValue(sprint, "start_date")} testId="sprint-meta-start_date-value" />
+              <ReadField label="End" value={serverValue(sprint, "end_date")} testId="sprint-meta-end_date-value" />
+              <div className="flex flex-col gap-1">
+                <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">State</span>
+                <span data-testid="sprint-meta-state-value" className="text-[0.9286rem] text-text-primary">
+                  {STATE_LABELS[serverValue(sprint, "state") as SprintState] ?? serverValue(sprint, "state")}
+                </span>
+              </div>
+            </>
+          )}
 
-          {/* SPR-26: an archived sprint's detail page says so. */}
+          {/* SPR-26: an archived sprint's detail page says so. Kept here in
+              both modes so this header remains SPR-26's carrier. */}
           {sprint.archived === true && (
             <span
               data-testid="sprint-meta-archived"
@@ -354,20 +376,18 @@ export function SprintMetaHeader({ sprint }: Props) {
           onChange={v => setField("end_date", v)}
         />
 
-        <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
           <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">State</span>
           {/* SPR-7: exactly these three. No blank option, no "archived". */}
-          <Select
-            data-testid="sprint-meta-state"
+          <SelectCombobox
+            testId="sprint-meta-state"
             size="sm"
             value={editing.state}
+            aria-label="State"
             aria-describedby={errorFor("state") !== null ? "sprint-meta-state-problem" : undefined}
-            onChange={e => setField("state", e.target.value)}
-          >
-            {STATES.map(s => (
-              <option key={s} value={s}>{STATE_LABELS[s]}</option>
-            ))}
-          </Select>
+            onChange={v => setField("state", v)}
+            options={STATES.map(s => ({ value: s, label: STATE_LABELS[s] }))}
+          />
           {/* SPR-37: a rejected state transition anchors here, next to the
               control it is about — never under End date. */}
           {errorFor("state") !== null && (
@@ -382,7 +402,7 @@ export function SprintMetaHeader({ sprint }: Props) {
                 && " Your change was not saved; the previous value is still in place."}
             </span>
           )}
-        </label>
+        </div>
 
         {sprint.archived === true && (
           <span
@@ -397,13 +417,13 @@ export function SprintMetaHeader({ sprint }: Props) {
       <label className="flex flex-col gap-1">
         <span className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">Goal</span>
         {/* SPR-25: a multi-paragraph goal scrolls inside a bounded box. */}
-        <textarea
+        <TextArea
           data-testid="sprint-meta-goal"
           value={editing.goal}
           rows={2}
           placeholder="No goal set — describe what this sprint is for."
           onChange={e => setField("goal", e.target.value)}
-          className="max-h-32 w-full resize-y overflow-auto rounded-md border border-border-default bg-bg-surface px-2 py-1 text-[0.9286rem] text-text-primary"
+          className="max-h-32 resize-y overflow-auto"
         />
         {errorFor("goal") !== null && (
           <span

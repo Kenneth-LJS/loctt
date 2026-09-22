@@ -11,20 +11,23 @@
  * atomic.
  */
 
+import type { ArchivedScope, WorkflowConfig } from "@loctt/contracts";
+import { effectiveInverseKey, isSymmetricRelationship } from "@loctt/contracts";
 import {
   bodyToken,
   buildListContext,
   buildShowModel,
+  bulkDelete,
   bulkMoveTasksToProject,
   bulkSetFields,
+  computeProgressFromStatuses,
   createTask,
   DEFAULT_LIST_LIMIT,
-  deleteTask,
   duplicateTask,
   exportTasksToCSV,
   exportTasksToJSON,
   filterForExport,
-  getCurrentUser,
+  filtersToScannableText,  getCurrentUser,
   listTasks,
   loadAllTasksDetailed,
   loadArchivedGuardConfigs,
@@ -66,10 +69,26 @@ function optionalString(
   return typeof v === "string" && v !== "" ? { [key]: v } : {};
 }
 
+/**
+ * The type key of the *child* side of the `graph: "tree"` axis — the
+ * side a parent holds to point at its children (`child` by default,
+ * whatever `inverse` renames it to). `undefined` when there is no tree
+ * axis, or when it is symmetric. Config-driven, matching the CLI `show`
+ * helper and the web panel — never a literal `"child"`.
+ */
+function treeChildSideKey(
+  workflow: WorkflowConfig | undefined,
+): string | undefined {
+  const treeDef = workflow?.relationships.find(r => r.graph === "tree");
+  if (treeDef === undefined) return undefined;
+  if (isSymmetricRelationship(treeDef)) return undefined;
+  return effectiveInverseKey(treeDef);
+}
+
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "get_task",
-    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. When the body is included the result carries `body_token` — pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit.",
+    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. When the body is included the result carries `body_token` — pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit. A task with direct children on the tree axis carries a `children` roll-up ({done, active, total, discarded}) — category-based, with discarded children excluded from `total`, matching milestone/sprint progress.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
       include_body: z.boolean().optional().describe("Whether to include the markdown body (default true)"),
@@ -142,6 +161,28 @@ export const TOOLS: readonly ToolDef[] = [
           repair: h.repair,
         }));
       }
+      // L4: a done/active/todo roll-up of this task's direct children, on
+      // the child side of the tree axis (the inverse of `parent` — the
+      // forward side points at ancestors). Config-driven and category-
+      // based, mirroring the web meter and CLI `show`; discarded children
+      // are excluded from `total` exactly as milestones do. Omitted when
+      // there is no tree axis or no children, so an agent that sees
+      // `children` can trust it means something.
+      const childSideKey = treeChildSideKey(workflowConfig);
+      if (childSideKey !== undefined && workflowConfig !== undefined) {
+        const childStatuses = model.relationships
+          .filter(r => r.type === childSideKey)
+          .map(r => r.resolvedStatus);
+        if (childStatuses.length > 0) {
+          const p = computeProgressFromStatuses(childStatuses, workflowConfig);
+          result["children"] = {
+            done: p.done,
+            active: p.active,
+            total: p.total,
+            discarded: p.discarded,
+          };
+        }
+      }
       if (includeBody) {
         result["body"] = model.task.body;
         // K10. The agent cannot derive this: it is
@@ -156,13 +197,13 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "list_tasks",
-    description: "List tasks with optional query, view, and limit. Archived tasks are hidden by default; pass include_archived=true to include them. Saved views are respected as authored — they are not modified by this flag.",
+    description: "List tasks with optional query, view, and limit. Archived tasks are hidden by default (archived='active'); pass archived='archived' for only-archived or archived='all' for both. Saved views are respected as authored — they are not modified by this flag.",
     inputSchema: {
       query: z.string().optional().describe("Ad hoc query string"),
       view: z.string().optional().describe("Named saved view"),
       project: z.string().optional().describe("Filter to a specific project. AND-merges with `query` if both are supplied."),
       limit: z.number().optional().describe(`Max results (default ${DEFAULT_LIST_LIMIT})`),
-      include_archived: z.boolean().optional().describe("If true, include archived tasks (default false). Ignored when a query already mentions `archived` or when a saved view is used."),
+      archived: z.enum(["active", "archived", "all"]).optional().describe("Archived scope (K107): 'active' (default, hide archived), 'archived' (only archived), 'all' (both). Ignored when a query already mentions `archived` (the query's term wins) or when a saved view is used."),
       sort: z.string().optional().describe("Field to order by, e.g. priority, due_date, updated_at. Priority orders by its configured value, not alphabetically."),
       direction: z.enum(["asc", "desc"]).optional().describe("Sort direction (default asc)."),
       offset: z.number().optional().describe("Rows to skip, for paging past the first `limit`."),
@@ -183,7 +224,7 @@ export const TOOLS: readonly ToolDef[] = [
       const baseQuery = args["query"] as string | undefined;
       const view = args["view"] as string | undefined;
       const limit = args["limit"] as number | undefined;
-      const includeArchived = args["include_archived"] as boolean | undefined;
+      const archivedScope = args["archived"] as ArchivedScope | undefined;
       // Core supported both from the start; only the web exposed them,
       // so an agent wanting "the highest-priority open task" had to
       // fetch everything and order it itself (QRY-C4).
@@ -197,10 +238,10 @@ export const TOOLS: readonly ToolDef[] = [
       const warnings: string[] = [];
       // CMT-10: load comment mentions only when the query references them.
       const listViewQuery = view !== undefined && queriesConfig !== undefined
-        ? resolveView(queriesConfig, view)?.query
-        : undefined;
+        ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+        : [];
       const listCtx = await resolveCommentMentionsContext(
-        locttDir, tasks, buildListContext(tasks), [baseQuery, listViewQuery],
+        locttDir, tasks, buildListContext(tasks), [baseQuery, ...listViewQuery],
       );
       const result = listTasks({
         tasks,
@@ -212,7 +253,7 @@ export const TOOLS: readonly ToolDef[] = [
           // would return the same first `limit` rows (QRY-C5).
           ...(sortField !== undefined ? { sort: [{ field: sortField, direction }] } : {}),
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-          ...(includeArchived !== undefined ? { includeArchived } : {}),
+          ...(archivedScope !== undefined ? { archivedScope } : {}),
           ...(today !== undefined ? { today } : {}),
           ...(now !== undefined ? { now } : {}),
           ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
@@ -277,8 +318,9 @@ export const TOOLS: readonly ToolDef[] = [
       + "column set, formula-injection escaping and array handling come from "
       + "core, so the output matches the web download for the same rows. This "
       + "is a report for a spreadsheet, not a backup — it cannot restore (use "
-      + "the `backup` tool for that). Tasks that cannot be read are named in an "
-      + "`unreadable` field rather than silently dropped.",
+      + "the `backup` tool for that). The output is raw CSV/JSON text; tasks "
+      + "that cannot be read are named in a `Warning:` line prepended to that "
+      + "text rather than silently dropped.",
     inputSchema: {
       format: z.enum(["csv", "json"]).optional().describe("Output format (default csv)."),
       query: z.string().optional().describe("Ad hoc query string, as in list_tasks."),
@@ -313,10 +355,10 @@ export const TOOLS: readonly ToolDef[] = [
       const warnings: string[] = [];
       // CMT-10: gate the comment-mention scan on the query, as list_tasks does.
       const exportViewQuery = view !== undefined && queriesConfig !== undefined
-        ? resolveView(queriesConfig, view)?.query
-        : undefined;
+        ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+        : [];
       const exportCtx = await resolveCommentMentionsContext(
-        locttDir, tasks, buildListContext(tasks), [baseQuery, exportViewQuery],
+        locttDir, tasks, buildListContext(tasks), [baseQuery, ...exportViewQuery],
       );
       const result = listTasks({
         tasks,
@@ -324,7 +366,9 @@ export const TOOLS: readonly ToolDef[] = [
           ...(baseQuery !== undefined ? { query: baseQuery } : {}),
           ...(view !== undefined ? { view } : {}),
           ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-          includeArchived,
+          // filterForExport applies the archived filter below (parity with
+          // the web + CLI export), so the query filter is left open (K107).
+          archivedScope: "all",
           ...(today !== undefined ? { today } : {}),
           ...(now !== undefined ? { now } : {}),
           ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
@@ -363,10 +407,10 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_task",
-    description: "Create a new task. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the workspace default (or the only project) is used.",
+    description: "Create a new task and allocate its key under the resolved project. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the workspace default (or the only project) is used. Enum fields (status, priority, task_type) are validated against workflow.yaml before anything is written — an unknown key is rejected with the valid keys listed. Referencing an archived milestone, sprint, label, or user is refused by the archived-reference guard. Pass `parent` to pre-link the task under the tree axis in the same operation.",
     inputSchema: {
       title: z.string(),
-      project: z.string().optional().describe("Project key (slug). Optional when a default project is configured or only one project exists."),
+      project: z.string().optional().describe("Project slug, id, or name. Optional when a default project is configured or only one project exists."),
       status: z.string().optional(),
       priority: z.string().optional(),
       task_type: z.string().optional(),
@@ -383,6 +427,12 @@ export const TOOLS: readonly ToolDef[] = [
       milestone: z.string().optional().describe("Milestone id or name."),
       sprint: z.string().optional().describe("Sprint id or name."),
       labels: z.array(z.string()).optional(),
+      parent: z.string().optional().describe(
+        "Parent task key or id. Pre-links the new task under the "
+        + "configured tree relationship (the workflow's `graph: tree` "
+        + "axis), so a create can build a hierarchy without a follow-up "
+        + "link_tasks call.",
+      ),
     },
     handler: async ({ locttDir }, args) => {
       const { workflowConfig } = await loadOptionalConfigs(locttDir);
@@ -426,6 +476,7 @@ export const TOOLS: readonly ToolDef[] = [
             ...optionalString(args, "sprint"),
             ...(Array.isArray(args["labels"]) ? { labels: args["labels"] as string[] } : {}),
             ...(body !== undefined ? { body } : {}),
+            ...optionalString(args, "parent"),
           },
         });
         await saveState(locttDir, state);
@@ -616,18 +667,28 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "delete_task",
     description:
-      "Permanently remove a task directory. Use `archive_task` for the reversible (soft) " +
-      "variant. Always requires `confirm: true`.",
+      "Permanently remove one or more task directories. Use `archive_task` " +
+      "for the reversible (soft) variant. Always requires `confirm: true`. " +
+      "Pass several refs to delete them as one operation (a single lock, a " +
+      "shared bulk_op_id); a bad ref is reported without aborting the rest. " +
+      "This is irreversible — there is no history entry, because the file it " +
+      "would live in is deleted with the task.",
     inputSchema: {
-      ref: z.string(),
+      refs: z.array(z.string()).min(1).max(500)
+        .describe("Task keys or IDs. Capped at 500 — one bulk op holds the tracker lock for its whole run."),
       confirm: z.boolean().optional().describe("Required: must be true to proceed"),
     },
     handler: async ({ locttDir }, args) => {
       const blocked = requireConfirm(args, "delete_task");
       if (blocked) return blocked;
-      const task = await lookupTask(locttDir, args["ref"] as string);
-      await deleteTask(locttDir, task.frontmatter.id, { force: true });
-      return text(`Deleted ${task.frontmatter.key}.`);
+      const refs = args["refs"] as string[];
+      const result = await bulkDelete({ locttDir, taskRefs: refs });
+      const lines = [
+        `Deleted ${result.succeeded.length}, failed ${result.failed.length} (bulk_op_id ${result.bulk_op_id})`,
+      ];
+      for (const f of result.failed) lines.push(`  ${f.taskId}: ${f.error}`);
+      // Any failed ref is an error (parity with the CLI's non-zero exit).
+      return result.failed.length > 0 ? errorResult(lines.join("\n")) : text(lines.join("\n"));
     },
   },
   {

@@ -164,6 +164,9 @@ function assertBackupContained(loaded: Loaded, locttDir: string): void {
     for (const att of rec.attachments ?? []) {
       assertSafeBasenameOrRefuse(att.name, "attachment");
     }
+    for (const db of rec.displacedBodies ?? []) {
+      assertSafeBasenameOrRefuse(db.name, "displaced body");
+    }
   }
   for (const rec of loaded.users.values()) {
     if (rec.avatar !== undefined) {
@@ -740,6 +743,17 @@ export async function restoreBackup(
             path: getHistoryFilePath(locttDir, id), content: stringifyYaml(merged),
           });
         }
+      }
+      // Displaced bodies (BAK-C13) — task-dir text, so they land through
+      // the same staged swap as task.md. Their `displaced-body-<ulid>.md`
+      // names are unique, so restoring one never overwrites another; a
+      // restore of a task that already carries one simply re-lands the
+      // same file. Names were validated up front by assertBackupContained.
+      for (const db of record.displacedBodies ?? []) {
+        writes.push({
+          path: join(getTasksDir(locttDir), id, db.name),
+          content: db.content,
+        });
       }
     }
 

@@ -38,7 +38,9 @@ describe("POST /api/views query validation", () => {
 
   const create = (name: string, query: string) =>
     fetch(`${base}/api/views`, {
-      method: "POST", headers: csrf, body: JSON.stringify({ name, query }),
+      method: "POST",
+      headers: csrf,
+      body: JSON.stringify({ name, filters: [{ kind: "advanced", query }] }),
     });
 
   it("accepts a valid query", async () => {

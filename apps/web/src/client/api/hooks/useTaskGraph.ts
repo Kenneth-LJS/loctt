@@ -16,10 +16,11 @@ import { apiClient } from "../client.ts";
  * refetching per row. `/api/tasks` returns full public frontmatter,
  * `relationships` included, so one response carries the whole graph.
  *
- * `archived=true` because a hierarchy does not stop at an archived
- * node: REL-30's last bullet says an existing link to a task archived
- * later still renders, and a subtree with a hole in it where an
- * archived parent used to be would be a lie about the shape.
+ * `archived=all` (K107 tri-state; was `archived=true`) because a
+ * hierarchy does not stop at an archived node: REL-30's last bullet says
+ * an existing link to a task archived later still renders, and a subtree
+ * with a hole in it where an archived parent used to be would be a lie
+ * about the shape.
  *
  * Its own query key rather than the list view's: `["tasks", params]`
  * is keyed by whatever filter the user last had, so reading it here
@@ -49,7 +50,7 @@ export function useTaskGraph(): TaskIndex {
     queryKey: ["task-graph"],
     queryFn: ({ signal }) =>
       apiClient.get<TasksPage>(
-        `/api/tasks?limit=${String(GRAPH_LIMIT)}&archived=true`,
+        `/api/tasks?limit=${String(GRAPH_LIMIT)}&archived=all`,
         { signal },
       ),
   });

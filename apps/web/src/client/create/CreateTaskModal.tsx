@@ -1,4 +1,4 @@
-import type { CalendarConfig, CustomFieldDef, ProjectDef, WorkflowConfig } from "@loctt/contracts";
+import type { CalendarConfig, CustomFieldDef, EntityColor, ProjectDef, WorkflowConfig } from "@loctt/contracts";
 import { customFieldsForType } from "@loctt/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -29,7 +29,14 @@ import type { OptionSearch, PickerOption } from "../task/editors/OptionPicker.ts
 import { OptionPicker } from "../task/editors/OptionPicker.tsx";
 import { estimationShape } from "../task/estimation.ts";
 import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { resolveRowColors, useColorMode } from "../ui/entityColor.ts";
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { useToasts } from "../ui/Toast.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import {
@@ -432,15 +439,15 @@ export function CreateTaskModal({
           <h2 id={headingId} className="text-[1.0714rem] font-semibold text-text-primary">
             New task
           </h2>
-          <button
-            type="button"
+          <IconButton
+            variant="ghost"
+            size="sm"
             onClick={requestClose}
             aria-label="Close"
-            data-testid="create-close"
-            className="grid h-7 w-7 place-items-center rounded text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+            testId="create-close"
           >
-            {"×"}
-          </button>
+            <Icon name="close" />
+          </IconButton>
         </div>
 
         {/* The form body scrolls; the header and footer stay put, so
@@ -448,13 +455,12 @@ export function CreateTaskModal({
             button past the viewport. */}
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {failure !== null && (
-            <div
-              role="alert"
-              data-testid="create-error"
-              className="rounded border border-danger-fg/40 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
-            >
+            // Migrated from a hand-rolled danger box to the shared Callout
+            // (design-review §A-Callout) — same anchored, announced error,
+            // one dual-theme-verified treatment. testId + role preserved.
+            <Callout tone="danger" role="alert" testId="create-error">
               {failure.message}
-            </div>
+            </Callout>
           )}
 
           <ProjectField
@@ -477,25 +483,24 @@ export function CreateTaskModal({
           />
 
           <Field label="Title" htmlFor="create-title">
-            <input
+            <TextField
               id="create-title"
               ref={titleRef}
               data-testid="create-title"
               value={form.title}
               // A11Y-23: the error is associated with the input, not
-              // merely rendered next to it in red. `aria-invalid` is
-              // the programmatic mark the case's second bullet asks
-              // for, and `aria-describedby` is what makes a screen
-              // reader read the rule when focus enters the field —
+              // merely rendered next to it in red. `invalid` wires
+              // `aria-invalid` (the programmatic mark the case's second
+              // bullet asks for), and `aria-describedby` is what makes a
+              // screen reader read the rule when focus enters the field —
               // `role="alert"` alone only announces it once, at the
               // moment it appears, and says nothing on re-entry.
-              aria-invalid={showTitleRequired}
+              invalid={showTitleRequired}
               aria-describedby={showTitleRequired ? "create-title-required" : undefined}
               onChange={e => {
                 setForm(f => ({ ...f, title: e.target.value }));
                 if (e.target.value.trim() !== "") setShowTitleRequired(false);
               }}
-              className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
             />
             {showTitleRequired && (
               <p
@@ -726,8 +731,7 @@ export function CreateTaskModal({
 
         <div className="flex items-center justify-between gap-3 border-t border-border-subtle px-4 py-3">
           <label className="flex items-center gap-2 text-[0.8571rem] text-text-secondary">
-            <input
-              type="checkbox"
+            <Checkbox
               data-testid="create-another"
               checked={createAnother}
               onChange={e => { setCreateAnother(e.target.checked); }}
@@ -1000,22 +1004,25 @@ function EnumField({
 }: {
   readonly label: string;
   readonly testid: string;
-  readonly defs: readonly { key: string; label: string; color?: string | undefined }[];
+  // K103: `color` is the three-shape `EntityColor`, not a hex string.
+  // Narrowing it back to `string` here is what let the workflow defs
+  // through unresolved before.
+  readonly defs: readonly { key: string; label: string; color?: EntityColor | undefined }[];
   readonly value: string | undefined;
   readonly onSelect: (key: string) => void;
   readonly onClear: () => void;
 }) {
+  const colorMode = useColorMode();
   return (
     <Field label={label}>
       <div data-testid={`create-${testid}`}>
         <OptionPicker
           label={label}
           value={value}
-          options={defs.map(d => ({
-            key: d.key,
-            label: d.label,
-            ...(d.color !== undefined ? { color: d.color } : {}),
-          }))}
+          options={resolveRowColors(
+            defs.map(d => ({ key: d.key, label: d.label, color: d.color })),
+            colorMode,
+          )}
           onSelect={onSelect}
           onClear={onClear}
           clearLabel="None"
@@ -1295,8 +1302,7 @@ function CreateCustomField({
   if (def.type === "boolean") {
     return (
       <label className="flex items-center gap-2 text-[0.8571rem] text-text-secondary">
-        <input
-          type="checkbox"
+        <Checkbox
           data-testid={testid}
           checked={value === true}
           onChange={e => { onChange(e.target.checked ? true : undefined); }}
@@ -1310,33 +1316,44 @@ function CreateCustomField({
     const values = def.values ?? [];
     if (def.multi) {
       const selected = Array.isArray(value) ? (value as string[]) : [];
+      // A211/A242: the value set grows with the workflow config — a
+      // searchable multi-select `ui/Combobox` (the box appears on its own
+      // past twelve values), not one toggle pill per value. This mirrors
+      // the detail panel's MultiEnum, which is already an OptionPicker over
+      // the same Combobox primitive, so the create modal and task detail
+      // cannot disagree. The per-value `create-field-<key>-<v>` testids
+      // stay reachable on each option button; the trigger carries
+      // `create-field-<key>`. Dialog-safe: the Combobox's Escape stops
+      // propagation so it does not also close the create modal.
+      const chosenLabels = selected
+        .map(k => values.find(v => v.key === k)?.label ?? k);
       return (
         <Field label={def.label}>
-          <div data-testid={testid} className="flex flex-wrap gap-1.5">
-            {values.map(v => {
-              const on = selected.includes(v.key);
-              return (
-                <button
-                  key={v.key}
-                  type="button"
-                  data-testid={`${testid}-${v.key}`}
-                  aria-pressed={on}
-                  onClick={() => {
-                    const next = on ? selected.filter(k => k !== v.key) : [...selected, v.key];
-                    onChange(next.length > 0 ? next : undefined);
-                  }}
-                  className={[
-                    "rounded-full border px-2 py-0.5 text-[0.8571rem]",
-                    on
-                      ? "border-accent bg-accent text-accent-contrast"
-                      : "border-border-default text-text-secondary hover:bg-bg-muted",
-                  ].join(" ")}
-                >
-                  {v.label}
-                </button>
-              );
-            })}
-          </div>
+          <Combobox
+            mode="multi"
+            label={def.label}
+            options={values.map((v): ComboboxOption => ({ key: v.key, label: v.label }))}
+            selected={selected}
+            onToggle={(key, on) => {
+              const next = on ? [...selected, key] : selected.filter(k => k !== key);
+              onChange(next.length > 0 ? next : undefined);
+            }}
+            listTestId={`${testid}-list`}
+            optionTestId={o => `${testid}-${o.key}`}
+            searchTestId={`${testid}-search`}
+            trigger={p => (
+              <ComboboxButton
+                {...p}
+                testId={testid}
+                dataValue={selected.join(",")}
+                aria-label={def.label}
+                placeholder="None"
+                className="w-full"
+              >
+                {chosenLabels.length > 0 ? chosenLabels.join(", ") : ""}
+              </ComboboxButton>
+            )}
+          />
           <FieldProblem problem={problem} testid={testid} />
         </Field>
       );
@@ -1383,7 +1400,7 @@ function CreateCustomField({
   );
   return (
     <Field label={def.label} htmlFor={testid}>
-      <input
+      <TextField
         id={testid}
         type="text"
         data-testid={testid}
@@ -1401,7 +1418,6 @@ function CreateCustomField({
           // `null` and produce a different, less honest error.
           onChange(Number.isFinite(n) && raw.trim() !== "" ? n : raw);
         }}
-        className="w-full rounded border border-border-default bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
       />
       <FieldProblem problem={problem} testid={testid} />
     </Field>

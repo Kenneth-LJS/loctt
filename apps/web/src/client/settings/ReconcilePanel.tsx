@@ -17,9 +17,10 @@ import {
   useSaveReconcileDecisions,
 } from "../api/hooks/useGit.ts";
 import { Button } from "../ui/Button.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
-import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -151,7 +152,8 @@ export function ReconcilePanel() {
  * keeper, and the planned new key — then waits for an explicit confirm.
  * Nothing is renumbered until the user clicks Confirm rekey.
  */
-function RekeyPreview({ plan, confirm, onConfirmed }: {
+/** Exported for unit tests (GIT-8/GIT-9); rendered only by `ReconcilePanel`. */
+export function RekeyPreview({ plan, confirm, onConfirmed }: {
   readonly plan: RekeyPlan;
   readonly confirm: ReturnType<typeof useConfirmRekey>;
   readonly onConfirmed: (r: ConfirmRekeyResponse) => void;
@@ -181,17 +183,58 @@ function RekeyPreview({ plan, confirm, onConfirmed }: {
               <span data-testid="git-rekey-collided-key">{l.key}</span> collided —
               {" "}renumbering to <span data-testid="git-rekey-new-key">{l.newKey ?? "(unavailable)"}</span>
             </div>
+            {/* The internal task ids (ULIDs) are not in the prose — they
+                identify nothing to a person, and the human key is already
+                in the header line above while the created dates are what
+                let a user recognise which task is which. (Ken's report.)
+                They ARE still reachable, in the collapsed disclosure
+                below, because GIT-9 turns on being able to check the
+                decision: when the timestamps tie, the ULIDs are the only
+                two values that explain the outcome, and a rule the user
+                cannot check against the inputs is not a reason. */}
             <div className="mt-1 text-text-secondary">
-              Keeps the key: <code>{l.keeperId}</code> (created {fmt(l.keeperCreatedAt)})
+              The task created {fmt(l.keeperCreatedAt)} keeps the key.
             </div>
             <div className="text-text-secondary">
-              Renumbered: <code>{l.loserId}</code> (created {fmt(l.loserCreatedAt)})
+              The task created {fmt(l.loserCreatedAt)} is renumbered.
             </div>
-            <div className="mt-1 text-text-tertiary">
+            <div data-testid="git-rekey-tiebreak" className="mt-1 text-text-tertiary">
               {l.tiebreak === "created_at"
-                ? "Decided by created_at — the earlier task keeps the key."
-                : "The created_at values tied; the lower ULID kept the key."}
+                ? "The earlier task keeps the key."
+                : /* GIT-9: "the tie was broken automatically" said only
+                     that something decided — not what, and not that the
+                     answer is the same on every machine. Naming the rule
+                     is the point of the case: the ULIDs are sortable and
+                     already fixed on disk, so the lower one winning is
+                     what makes a second clone reconciling the same two
+                     tasks reach the same keeper. */
+                  "Both were created at the same instant, so the tie was broken on the "
+                  + "tasks’ internal IDs (ULIDs): the lower ULID keeps the key. The IDs "
+                  + "are already fixed, so every clone reconciling these two tasks picks "
+                  + "the same keeper."}
             </div>
+            {l.tiebreak === "ulid" && (
+              /* Collapsed by default: the values matter only to someone
+                 checking the decision, and an always-on pair of 26-char
+                 ULIDs is the clutter Ken's report removed. Native
+                 `<details>` — keyboard-operable for free, same pattern as
+                 the sync log in GitSyncPanel. */
+              <details data-testid="git-rekey-ulids" className="mt-1 text-text-tertiary">
+                <summary className="cursor-pointer select-none">
+                  Show the IDs that decided it
+                </summary>
+                <dl className="mt-1 grid grid-cols-[auto,1fr] gap-x-2">
+                  <dt>Keeps the key</dt>
+                  <dd data-testid="git-rekey-keeper-id" className="font-mono break-all">
+                    {l.keeperId}
+                  </dd>
+                  <dt>Renumbered</dt>
+                  <dd data-testid="git-rekey-loser-id" className="font-mono break-all">
+                    {l.loserId}
+                  </dd>
+                </dl>
+              </details>
+            )}
           </li>
         ))}
       </ul>
@@ -292,8 +335,8 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
         A <strong data-testid="git-reconcile-op">{sentinel.mode}</strong> found changes made on
         both sides since the last sync. Resolve each field, then the {sentinel.mode} completes.
         Started {new Date(sentinel.started_at).toLocaleString()} · base{" "}
-        <code className="font-mono text-[0.8571rem]">{sentinel.base_commit.slice(0, 8)}</code> → remote{" "}
-        <code className="font-mono text-[0.8571rem]">{sentinel.remote_commit.slice(0, 8)}</code>.
+        <code className="text-[0.8571rem]">{sentinel.base_commit.slice(0, 8)}</code> → remote{" "}
+        <code className="text-[0.8571rem]">{sentinel.remote_commit.slice(0, 8)}</code>.
       </p>
 
       {/* GIT-5/GIT-17: auto-merged/converged fields are reported, not asked. */}
@@ -492,8 +535,8 @@ function TaskGroup({ group, decisions, collapsed, onToggle, onChoose }: {
         onClick={onToggle}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.9286rem] font-medium text-text-primary"
       >
-        <span aria-hidden="true">{collapsed ? ICON.caretRight : ICON.caretDown}</span>
-        <code className="font-mono text-[0.8571rem]">{group.taskKey}</code>
+        <Icon name={collapsed ? "chevronRight" : "chevronDown"} size={14} />
+        <code className="text-[0.8571rem]">{group.taskKey}</code>
         <span className="truncate text-text-secondary">{group.taskTitle}</span>
         <span className="ml-auto text-[0.8571rem] text-text-tertiary">
           {group.rows.length} field{group.rows.length === 1 ? "" : "s"}
@@ -562,7 +605,7 @@ export function ConflictRow({ conflict, decision, onChoose }: {
       {/* GIT-14: keep-remote on a drift value warns it will render with a marker + appear in Diagnostics. */}
       {chosen === "remote" && conflict.remote.drift !== undefined && (
         <p role="alert" data-testid="git-reconcile-drift-warning" className="mt-1 text-[0.8571rem] text-warn-fg">
-          This value is not in the local workflow.yaml. Keeping it leaves the task with a drift
+          This value is not in your local workflow configuration. Keeping it leaves the task with a drift
           marker, and it will appear in Diagnostics until the referenced value is re-added.
         </p>
       )}
@@ -571,21 +614,42 @@ export function ConflictRow({ conflict, decision, onChoose }: {
       <div className="mt-2 flex items-center gap-2">
         {isEnumLike
           ? (
-              <Select
-                size="sm"
-                data-testid="git-reconcile-pick-value"
-                aria-labelledby={fieldLabelId}
-                value={chosen === "value" ? pickValue : ""}
-                onChange={(e) => {
-                  setPickValue(e.target.value);
-                  onChoose("value", e.target.value);
+              // A211/A242: the enum/parent value set grows with the
+              // workflow (statuses, priorities, tasks) — a searchable
+              // Combobox rather than a native <select>. Its accessible
+              // name comes from the field heading via `aria-labelledby`
+              // (the heading is a plain <div>, not a <label>), which the
+              // ComboboxButton forwards to the trigger — so the control
+              // still announces the field it belongs to (Batch-2 a11y).
+              <Combobox
+                label={conflict.fieldLabel}
+                options={(conflict.options ?? []).map((o): ComboboxOption => ({
+                  key: o.key,
+                  label: o.label,
+                }))}
+                value={chosen === "value" && pickValue !== "" ? pickValue : undefined}
+                onSelect={(key) => {
+                  setPickValue(key);
+                  onChoose("value", key);
                 }}
-              >
-                <option value="">Pick a value…</option>
-                {conflict.options?.map(o => (
-                  <option key={o.key} value={o.key}>{o.label}</option>
-                ))}
-              </Select>
+                listTestId="git-reconcile-pick-value-list"
+                optionTestId={o => `git-reconcile-pick-value-option-${o.key}`}
+                searchTestId="git-reconcile-pick-value-search"
+                trigger={p => (
+                  <ComboboxButton
+                    {...p}
+                    size="sm"
+                    testId="git-reconcile-pick-value"
+                    dataValue={chosen === "value" ? pickValue : ""}
+                    aria-labelledby={fieldLabelId}
+                    placeholder="Pick a value…"
+                  >
+                    {chosen === "value" && pickValue !== ""
+                      ? conflict.options?.find(o => o.key === pickValue)?.label ?? pickValue
+                      : ""}
+                  </ComboboxButton>
+                )}
+              />
             )
           : (
               <TextField
@@ -635,7 +699,7 @@ export function DeleteVsEditRow({ row, choice, onChoose }: {
       className="rounded border border-warn-fg/40 p-3 text-[0.9286rem]"
     >
       <div className="mb-1 font-medium text-text-primary">
-        <code className="font-mono text-[0.8571rem]">{row.taskKey}</code>{" "}
+        <code className="text-[0.8571rem]">{row.taskKey}</code>{" "}
         <span className="text-text-secondary">{row.taskTitle}</span>
       </div>
       <p data-testid="git-reconcile-dve-desc" className="mb-2 text-[0.8571rem] text-text-secondary">

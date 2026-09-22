@@ -224,8 +224,8 @@ async function flowDocs(dir: string): Promise<string[]> {
 
 export async function buildIndex(repoRoot: string): Promise<CaseIndex> {
   const trees: readonly { tree: Tree; dir: string }[] = [
-    { tree: "ui", dir: path.join(repoRoot, "docs/dev/ui-test-cases") },
-    { tree: "surface", dir: path.join(repoRoot, "docs/dev/surface-test-cases") },
+    { tree: "ui", dir: path.join(repoRoot, "tests/cases/ui-test-cases") },
+    { tree: "surface", dir: path.join(repoRoot, "tests/cases/surface-test-cases") },
   ];
 
   const cases: TestCase[] = [];
@@ -255,7 +255,7 @@ export async function buildIndex(repoRoot: string): Promise<CaseIndex> {
   cases.sort((a, b) => a.id.localeCompare(b.id, "en", { numeric: true }));
 
   return {
-    generated_from: "docs/dev/ui-test-cases/, docs/dev/surface-test-cases/",
+    generated_from: "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
     counts: {
       total: cases.length,
       ui: cases.filter((c) => c.tree === "ui").length,

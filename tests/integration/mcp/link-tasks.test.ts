@@ -12,8 +12,7 @@ describe("MCP link_tasks (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const link = await client.callTool("link_tasks", {
-          ref: "T-1",
+        const link = await client.callTool("link_tasks", { refs: ["T-1"],
           type: "blocks",
           target: "T-2",
         });

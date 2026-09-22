@@ -1,8 +1,8 @@
-import type { UserProfile } from "@loctt/contracts";
+import type { ArchivedScope, UserProfile } from "@loctt/contracts";
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
-import { useUsers } from "../api/hooks/sidebarData.ts";
+import { useUsersScoped } from "../api/hooks/sidebarData.ts";
 import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
 import {
   useArchiveUser,
@@ -12,17 +12,21 @@ import {
   useUpdateUser,
   useUploadAvatar,
 } from "../api/hooks/useUserMutations.ts";
+import { useIsNarrow } from "../shell/useIsNarrow.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { Modal } from "../ui/Modal.tsx";
-import { Select } from "../ui/Select.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { AvatarCropper } from "./AvatarCropper.tsx";
+import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { AvatarRejected, type DecodedImage, decodeImageFile } from "./prepareAvatar.ts";
+import { RowActions } from "./RowActions.tsx";
 import { UserDeleteDialog } from "./UserDeleteDialog.tsx";
 import { supportedTimezones } from "./workflowEdits.ts";
 
@@ -202,17 +206,18 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
             The image was prepared but not saved: {serverMessage}. Your previous
             avatar is still in effect.
           </p>
-          <button
-            type="button"
-            data-testid={`user-avatar-retry-${user.id}`}
+          <Button
+            size="sm"
+            variant="secondary"
+            testId={`user-avatar-retry-${user.id}`}
             onClick={() => {
               // PRU-40: re-post the already-cropped file, no re-pick.
               if (prepared) upload.mutate({ id: user.id, file: prepared });
             }}
-            className="mt-1 h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-text-primary"
+            className="mt-1"
           >
             Retry
-          </button>
+          </Button>
         </div>
       )}
       {cropping !== undefined && (
@@ -287,7 +292,7 @@ function EditUserDialog({
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title="Edit user"
       onClose={onClose}
       testId={`user-edit-dialog-${user.id}`}
@@ -330,31 +335,40 @@ function EditUserDialog({
             </p>
           )}
         </label>
-        <label className="grid gap-1 text-[0.9286rem]">
+        <div className="grid gap-1 text-[0.9286rem]">
           <span className="text-text-secondary">Timezone</span>
-          <Select
-            data-testid={`user-edit-timezone-${user.id}`}
-            value={timezone}
-            aria-invalid={!tzOk}
-            onChange={e => { setTimezone(e.target.value); }}
-          >
-            {/* B2 bug 2: no "(none)" option. It cannot clear the zone
-                (core keeps the old one), so offering it reported a save
-                that never happened. A blank-zone user sees a disabled
-                placeholder and must pick a real zone. */}
-            {!tzOk && (
-              <option value="" disabled>Select a timezone…</option>
+          {/* A211: ~400 IANA zones — a searchable Combobox, not a native
+              <select>. The search box appears on its own once the list
+              crosses the threshold. B2 bug 2: no "(none)" clear row — it
+              cannot clear the zone (core keeps the old one), so a
+              blank-zone user must pick a real zone before Save. */}
+          <Combobox
+            label="Timezone"
+            options={zoneOptions.map((z): ComboboxOption => ({ key: z, label: z }))}
+            value={tzOk ? timezone : undefined}
+            onSelect={z => { setTimezone(z); }}
+            listTestId={`user-edit-timezone-list-${user.id}`}
+            optionTestId={o => `user-edit-timezone-option-${user.id}-${o.key}`}
+            searchTestId={`user-edit-timezone-search-${user.id}`}
+            trigger={p => (
+              <ComboboxButton
+                {...p}
+                testId={`user-edit-timezone-${user.id}`}
+                dataValue={timezone}
+                aria-label="Timezone"
+                placeholder="Select a timezone…"
+                className="w-full"
+              >
+                {tzOk ? timezone : ""}
+              </ComboboxButton>
             )}
-            {zoneOptions.map(z => (
-              <option key={z} value={z}>{z}</option>
-            ))}
-          </Select>
+          />
           {!tzOk && (
             <p role="alert" data-testid={`user-edit-timezone-problem-${user.id}`} className="text-[0.7857rem] text-danger-fg">
               Pick a timezone.
             </p>
           )}
-        </label>
+        </div>
         {update.isError && (
           <Callout
             tone="danger"
@@ -368,7 +382,7 @@ function EditUserDialog({
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }
 
@@ -379,6 +393,60 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
     Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
   const create = useCreateUser();
+  // C3: an avatar can be chosen at create time. AvatarUpload's POST needs a
+  // persisted id (the file route is `/api/users/:id/avatar`), so the create
+  // form holds the *already-cropped* file and attaches it in the create
+  // mutation's onSuccess, once the id exists (create-then-set). The existing
+  // per-row AvatarUpload is unchanged.
+  const uploadAvatar = useUploadAvatar();
+  const [avatarProblem, setAvatarProblem] = useState<string | undefined>(undefined);
+  const [avatarFile, setAvatarFile] = useState<File | undefined>(undefined);
+  const [avatarPreview, setAvatarPreview] = useState<string | undefined>(undefined);
+  const [cropping, setCropping] = useState<
+    { decoded: DecodedImage; fileName: string } | undefined
+  >(undefined);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Revoke live object URLs on unmount (the preview blob and any open
+  // decoded source), mirroring AvatarUpload's cleanup.
+  const avatarPreviewRef = useRef(avatarPreview);
+  avatarPreviewRef.current = avatarPreview;
+  const croppingRef = useRef(cropping);
+  croppingRef.current = cropping;
+  useEffect(() => () => {
+    if (avatarPreviewRef.current !== undefined) URL.revokeObjectURL(avatarPreviewRef.current);
+    croppingRef.current?.decoded.revoke();
+  }, []);
+
+  const pickAvatar = async (file: File) => {
+    setAvatarProblem(undefined);
+    try {
+      const decoded = await decodeImageFile(file);
+      setCropping({ decoded, fileName: file.name });
+    } catch (err) {
+      if (err instanceof AvatarRejected) { setAvatarProblem(err.message); return; }
+      throw err;
+    }
+  };
+
+  const setPrepared = (file: File) => {
+    setAvatarFile(file);
+    if (avatarPreview !== undefined) URL.revokeObjectURL(avatarPreview);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const closeAvatarCropper = () => {
+    cropping?.decoded.revoke();
+    setCropping(undefined);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+  };
+
+  // The runtime's resolved zone must be selectable even if this browser's
+  // list omits it; offer it first when so (mirrors EditUserDialog).
+  const zones = supportedTimezones();
+  const zoneOptions = timezone.length > 0 && !zones.includes(timezone)
+    ? [timezone, ...zones]
+    : zones;
 
   const emailOk = looksLikeEmail(email);
   const blocked = name.trim().length === 0 || !emailOk || create.isPending;
@@ -388,20 +456,18 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
       {/* PRU-11: name, email, timezone — and no ID field. */}
       <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Display name</span>
-        <input
+        <TextField
           data-testid="user-create-name"
           value={name}
           onChange={e => { setName(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
       </label>
       <label className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Email</span>
-        <input
+        <TextField
           data-testid="user-create-email"
           value={email}
           onChange={e => { setEmail(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
         />
         {!emailOk && (
           <p role="alert" data-testid="user-create-email-problem" className="text-[0.7857rem] text-danger-fg">
@@ -409,15 +475,97 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
           </p>
         )}
       </label>
-      <label className="grid gap-1 text-[0.9286rem]">
+      <div className="grid gap-1 text-[0.9286rem]">
         <span className="text-text-secondary">Timezone</span>
-        <input
-          data-testid="user-create-timezone"
-          value={timezone}
-          onChange={e => { setTimezone(e.target.value); }}
-          className="h-8 rounded-md border border-border-default bg-bg-surface px-2 font-mono text-[0.9286rem]"
+        {/* A211: ~400 IANA zones — a searchable Combobox rather than a
+            free-text field, so a valid zone id is picked, not typed. */}
+        <Combobox
+          label="Timezone"
+          options={zoneOptions.map((z): ComboboxOption => ({ key: z, label: z }))}
+          value={timezone.length > 0 ? timezone : undefined}
+          onSelect={z => { setTimezone(z); }}
+          listTestId="user-create-timezone-list"
+          optionTestId={o => `user-create-timezone-option-${o.key}`}
+          searchTestId="user-create-timezone-search"
+          trigger={p => (
+            <ComboboxButton
+              {...p}
+              testId="user-create-timezone"
+              dataValue={timezone}
+              aria-label="Timezone"
+              placeholder="Select a timezone…"
+              className="w-full"
+            >
+              {timezone}
+            </ComboboxButton>
+          )}
         />
-      </label>
+      </div>
+      {/* C3: optional avatar at create time. The file is prepared (decoded
+          + cropped) here and posted after the user is created. */}
+      <div className="grid gap-1 text-[0.9286rem]">
+        <span className="text-text-secondary">Avatar</span>
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          data-testid="user-create-avatar-input"
+          onChange={e => {
+            const file = e.target.files?.[0];
+            if (file) void pickAvatar(file);
+          }}
+          className="sr-only"
+        />
+        <div className="flex items-center gap-2">
+          {avatarPreview !== undefined && (
+            <img
+              src={avatarPreview}
+              alt=""
+              data-testid="user-create-avatar-preview"
+              className="h-12 w-12 rounded-full object-cover"
+            />
+          )}
+          <Button
+            size="sm"
+            variant="secondary"
+            testId="user-create-avatar-choose"
+            onClick={() => { avatarInputRef.current?.click(); }}
+          >
+            {avatarFile !== undefined ? "Change avatar" : "Add avatar"}
+          </Button>
+          {avatarFile !== undefined && (
+            <Button
+              size="sm"
+              variant="ghost"
+              testId="user-create-avatar-clear"
+              onClick={() => {
+                if (avatarPreview !== undefined) { URL.revokeObjectURL(avatarPreview); setAvatarPreview(undefined); }
+                setAvatarFile(undefined);
+              }}
+            >
+              Remove
+            </Button>
+          )}
+        </div>
+        {avatarProblem !== undefined && (
+          <p role="alert" data-testid="user-create-avatar-problem" className="text-[0.7857rem] text-danger-fg">
+            {avatarProblem}
+          </p>
+        )}
+      </div>
+      {cropping !== undefined && (
+        <AvatarCropper
+          decoded={cropping.decoded}
+          fileName={cropping.fileName}
+          animated={cropping.decoded.animated}
+          testIdSuffix="create"
+          onConfirm={result => {
+            setPrepared(result.file);
+            closeAvatarCropper();
+          }}
+          onCancel={closeAvatarCropper}
+        />
+      )}
       {create.isError && (
         <p role="alert" data-testid="user-create-error" className="text-[0.8571rem] text-danger-fg">
           {create.error instanceof ApiError
@@ -426,12 +574,12 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onDone} className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary">
+        <Button variant="ghost" onClick={onDone}>
           Cancel
-        </button>
-        <button
-          type="button"
-          data-testid="user-create-submit"
+        </Button>
+        <Button
+          variant="primary"
+          testId="user-create-submit"
           disabled={blocked}
           onClick={() => {
             create.mutate(
@@ -440,30 +588,123 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
                 ...(email.trim().length > 0 ? { email: email.trim() } : {}),
                 ...(timezone.trim().length > 0 ? { timezone: timezone.trim() } : {}),
               },
-              { onSuccess: onDone },
+              {
+                onSuccess: (user) => {
+                  // C3 create-then-set: the id exists now, so attach the
+                  // cropped avatar. If it fails the user is still created;
+                  // the per-row AvatarUpload can retry. Close either way.
+                  if (avatarFile !== undefined) {
+                    uploadAvatar.mutate({ id: user.id, file: avatarFile });
+                  }
+                  onDone();
+                },
+              },
             );
           }}
-          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
         >
           {create.isPending ? "Creating…" : "Create user"}
-        </button>
+        </Button>
       </div>
     </div>
   );
 }
 
+/**
+ * One user row's secondary actions, collapsed into the shared `RowActions`
+ * kebab (U26 / K105: a row's actions are a "⋯" menu of MenuItems, never a
+ * spread of text buttons). Edit / Archive / Delete keep their testids as
+ * MenuItem ids. Archiving or deleting the acting user is disabled with the
+ * reason on the (still-listed) item, plus an sr-only note (U24).
+ */
+function UserRowActions({
+  user,
+  isSelf,
+  align = "end",
+  onEdit,
+  onArchive,
+  onDelete,
+}: {
+  readonly user: UserProfile;
+  readonly isSelf: boolean;
+  /** Table right-aligns the actions; the card left-aligns them. */
+  readonly align?: "start" | "end";
+  readonly onEdit: () => void;
+  readonly onArchive: () => void;
+  readonly onDelete: () => void;
+}) {
+  return (
+    <div className={align === "end" ? "text-right" : "text-left"}>
+      <div className={align === "end" ? "flex justify-end" : "flex justify-start"}>
+        <RowActions
+          align={align}
+          label={`Actions for user "${user.name ?? user.id}"`}
+          actions={[
+            // PRU-47: identity fields are edited in a per-row Edit dialog.
+            { label: "Edit…", testId: `user-edit-${user.id}`, onSelect: onEdit },
+            {
+              // PRU-26: archiving yourself is disabled (not error-on-click),
+              // with the reason on the item.
+              label: user.archived === true ? "Unarchive" : "Archive",
+              testId: `user-archive-${user.id}`,
+              onSelect: onArchive,
+              disabled: isSelf,
+              title: isSelf
+                ? "You cannot archive the user you are acting as. Switch to another user first."
+                : undefined,
+            },
+            {
+              // PRU-42: permanent delete, disabled for the acting user for
+              // the same reason (core refuses to delete whoever you are).
+              label: "Delete…",
+              testId: `user-delete-${user.id}`,
+              danger: true,
+              onSelect: onDelete,
+              disabled: isSelf,
+              title: isSelf
+                ? "You cannot delete the user you are acting as. Switch to another user first."
+                : undefined,
+            },
+          ]}
+        />
+      </div>
+      {/* U24: the self-user reason is on the disabled menu items (their
+          `title`) plus this sr-only note — never an inline paragraph that
+          reflows the row to a taller height (Ken's report). */}
+      {isSelf && (
+        <span
+          data-testid={`user-archive-blocked-${user.id}`}
+          className="sr-only"
+        >
+          You cannot archive or delete the user you are acting as. Switch users first.
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function UsersPanel() {
-  const users = useUsers();
   const current = useCurrentUser();
   const archive = useArchiveUser();
   const del = useDeleteUser();
+  // Below `sm` the four-column table (avatar/name/email/3 actions) does not
+  // fit — the actions wrapped raggedly and detached from their row (Ken's
+  // report). Render a stacked card per user instead.
+  const isNarrow = useIsNarrow();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<UserProfile | null>(null);
   const [editing, setEditing] = useState<UserProfile | null>(null);
+  // K107: the tri-state archived scope replaces the U25 `showArchived`
+  // boolean. Default `active`; the control reveals `archived`/`all`, and
+  // the server filters. A deep-link hash widens the fetch to `all` so a
+  // `#row-<id>` anchor to an archived user still resolves (K100).
+  const [scope, setScope] = useState<ArchivedScope>("active");
+  const [hashPresent] = useState(hashDeepLinkPresent);
+  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
+  const users = useUsersScoped(effectiveScope);
 
   if (users.isError) {
     return (
-      <div className="p-8">
+      <div>
         <ErrorState
           error={users.error}
           onRetry={() => { void users.refetch(); }}
@@ -478,14 +719,27 @@ export function UsersPanel() {
 
   const items = users.data?.items ?? [];
   const currentId = current.data?.id;
+  // K107: the server returned exactly the scope's rows. Active first, then
+  // archived, so the table/cards iterate a stable order within the scope.
+  const activeItems = items.filter(u => u.archived !== true);
+  const archivedItems = items.filter(u => u.archived === true);
+  const visible = [...activeItems, ...archivedItems];
 
   return (
-    <div className="p-8" data-testid="settings-users">
-      <h1 className="mb-1 text-lg font-semibold">Users</h1>
+    <div data-testid="settings-users">
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold">Users</h1>
+        <ArchivedScopeControl
+          testId="users-archived-scope"
+          value={scope}
+          onChange={setScope}
+        />
+      </div>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Identities that can be assigned work and attributed activity.
       </p>
 
+      {!isNarrow && (
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
@@ -496,12 +750,17 @@ export function UsersPanel() {
           </tr>
         </thead>
         <tbody>
-          {items.map(u => {
+          {visible.map(u => {
             const isSelf = u.id === currentId;
             const qual = qualifier(u, items);
             return (
               <tr
                 key={u.id}
+                // K100 deep-link anchor (`/settings/users#row-<id>`) — see
+                // useScrollToHash. The narrow-layout card carries the same
+                // id, and only one layout renders at a time, so they never
+                // collide.
+                id={`row-${u.id}`}
                 data-testid={`user-row-${u.id}`}
                 data-archived={u.archived === true ? "true" : "false"}
                 data-self={isSelf ? "true" : "false"}
@@ -526,85 +785,89 @@ export function UsersPanel() {
                   )}
                 </td>
                 <td className="py-2 pr-3 text-[0.9286rem] text-text-secondary">{u.email ?? ""}</td>
-                <td className="py-2 text-right">
-                  {/* PRU-47: the row is read-only; identity fields are
-                      edited in a per-row Edit dialog. */}
-                  <button
-                    type="button"
-                    data-testid={`user-edit-${u.id}`}
-                    onClick={() => {
-                      setEditing(u);
-                    }}
-                    className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
-                  >
-                    Edit
-                  </button>
-                  {/* PRU-26: archiving yourself is disabled, not
-                      error-on-click, and the reason is on the control. */}
-                  <button
-                    type="button"
-                    data-testid={`user-archive-${u.id}`}
-                    disabled={isSelf}
-                    title={isSelf
-                      ? "You cannot archive the user you are acting as. Switch to another user first."
-                      : undefined}
-                    onClick={() => {
-                      archive.mutate({ id: u.id, archived: u.archived !== true });
-                    }}
-                    className="h-8 rounded-md px-2 text-[0.9286rem] text-text-secondary hover:bg-bg-muted disabled:opacity-50"
-                  >
-                    {u.archived === true ? "Unarchive" : "Archive"}
-                  </button>
-                  {/* PRU-42: delete is the permanent path, offered
-                      beside archive. Disabled for the active user for
-                      the same reason archive is — core refuses to
-                      delete whoever you are acting as. */}
-                  <button
-                    type="button"
-                    data-testid={`user-delete-${u.id}`}
-                    disabled={isSelf}
-                    title={isSelf
-                      ? "You cannot delete the user you are acting as. Switch to another user first."
-                      : undefined}
-                    onClick={() => {
-                      del.reset();
-                      setDeleting(u);
-                    }}
-                    className="ml-1 h-8 rounded-md px-2 text-[0.9286rem] text-danger-fg hover:bg-bg-muted disabled:opacity-50"
-                  >
-                    Delete
-                  </button>
-                  {isSelf && (
-                    <p
-                      data-testid={`user-archive-blocked-${u.id}`}
-                      className="text-[0.7857rem] text-text-tertiary"
-                    >
-                      You cannot archive the user you are acting as. Switch
-                      users first.
-                    </p>
-                  )}
+                <td className="py-2 align-top">
+                  <UserRowActions
+                    user={u}
+                    isSelf={isSelf}
+                    onEdit={() => { setEditing(u); }}
+                    onArchive={() => { archive.mutate({ id: u.id, archived: u.archived !== true }); }}
+                    onDelete={() => { del.reset(); setDeleting(u); }}
+                  />
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      )}
+
+      {/* Mobile (< sm): a stacked card per user. The table's four columns
+          did not fit and the actions wrapped raggedly, detaching from
+          their row (Ken's report). Same data + the shared UserRowActions,
+          only the layout differs. */}
+      {isNarrow && (
+        <ul className="flex flex-col gap-2" data-testid="user-cards">
+          {visible.map(u => {
+            const isSelf = u.id === currentId;
+            const qual = qualifier(u, items);
+            return (
+              <li
+                key={u.id}
+                // Same K100 anchor as the desktop row; only one layout is
+                // in the DOM at a time.
+                id={`row-${u.id}`}
+                data-testid={`user-card-${u.id}`}
+                data-self={isSelf ? "true" : "false"}
+                className="rounded-lg border border-border-default p-3"
+              >
+                <div className="flex items-center gap-2">
+                  <AvatarCell user={u} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[0.9286rem] text-text-primary">
+                      {u.name}
+                      {u.archived === true && (
+                        <span className="ml-1 text-text-tertiary">(archived)</span>
+                      )}
+                      {qual !== undefined && (
+                        <span className="ml-1 text-[0.7857rem] text-text-tertiary">{qual}</span>
+                      )}
+                    </div>
+                    {u.email !== undefined && u.email !== "" && (
+                      <div className="truncate text-[0.8571rem] text-text-secondary">{u.email}</div>
+                    )}
+                  </div>
+                  <AvatarUpload user={u} />
+                </div>
+                <div className="mt-2 border-t border-border-subtle pt-2">
+                  <UserRowActions
+                    user={u}
+                    isSelf={isSelf}
+                    align="start"
+                    onEdit={() => { setEditing(u); }}
+                    onArchive={() => { archive.mutate({ id: u.id, archived: u.archived !== true }); }}
+                    onDelete={() => { del.reset(); setDeleting(u); }}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       <div className="mt-4">
-        <button
-          type="button"
-          data-testid="user-create-open"
+        <Button
+          variant="primary"
+          testId="user-create-open"
           onClick={() => { setCreating(true); }}
-          className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast"
         >
           New user
-        </button>
+        </Button>
       </div>
 
       {creating && (
-        <Modal title="New user" onClose={() => { setCreating(false); }}>
+        <ResponsiveDialog title="New user" onClose={() => { setCreating(false); }}>
           <CreateUserForm onDone={() => { setCreating(false); }} />
-        </Modal>
+        </ResponsiveDialog>
       )}
 
       {editing !== null && (

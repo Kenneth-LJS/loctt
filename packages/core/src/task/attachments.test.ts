@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getAttachmentPath, getAttachmentsDir } from "../paths/index.js";
 import {
   attachFile,
+  AttachmentCaseCollisionError,
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
@@ -107,6 +108,37 @@ describe("attachments", () => {
 
       const history = await readHistory(locttDir, taskId);
       expect(history.filter(e => e.kind === "attachment_added")).toHaveLength(2);
+    });
+
+    // Attachment name case-alias: uploading README.md over readme.md
+    // threw on APFS and coexisted on ext4. Refuse the case-only collision
+    // deterministically on every filesystem instead.
+    it("refuses a name colliding only by case with an existing attachment", async () => {
+      const first = await makeSource("readme.md", "lower");
+      await attachFile({ locttDir, taskId, sourcePath: first });
+
+      const second = await makeSource("README.md", "UPPER");
+      await expect(
+        attachFile({ locttDir, taskId, sourcePath: second }),
+      ).rejects.toBeInstanceOf(AttachmentCaseCollisionError);
+    });
+
+    it("case-only collision is refused even with force: true", async () => {
+      const first = await makeSource("readme.md", "lower");
+      await attachFile({ locttDir, taskId, sourcePath: first });
+
+      const second = await makeSource("README.md", "UPPER");
+      await expect(
+        attachFile({ locttDir, taskId, sourcePath: second, force: true }),
+      ).rejects.toBeInstanceOf(AttachmentCaseCollisionError);
+
+      // The refusal names the existing casing so the caller can act.
+      const err = await attachFile({
+        locttDir, taskId, sourcePath: second, force: true,
+      }).catch((e: unknown) => e) as AttachmentCaseCollisionError;
+      expect(err).toBeInstanceOf(AttachmentCaseCollisionError);
+      expect(err.existingName).toBe("readme.md");
+      expect(err.requestedName).toBe("README.md");
     });
 
     it("throws when the source is a directory", async () => {
@@ -270,6 +302,7 @@ describe("attachments", () => {
           await rm(outsideDir, { recursive: true, force: true });
         }
       });
+
     });
 
     it("creates attachments/ lazily", async () => {
@@ -306,6 +339,29 @@ describe("attachments", () => {
       await expect(
         detachFile({ locttDir, taskId, name: "nope.txt" }),
       ).rejects.toBeInstanceOf(AttachmentNotFoundError);
+    });
+
+    // Attachment name case-alias: DELETE .../DROP.TXT when drop.txt is on
+    // disk. Act on the real dirent and record its real name in history —
+    // never a casing that was never written. The attachment is created
+    // directly on disk (lower-case) so the test does not depend on the
+    // host filesystem's case sensitivity.
+    it("detaches by a differently-cased name, acting on and recording the real name", async () => {
+      const dir = getAttachmentsDir(locttDir, taskId);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "drop.txt"), "bytes", "utf-8");
+
+      await detachFile({ locttDir, taskId, name: "DROP.TXT" });
+
+      // The file really on disk is gone.
+      await expect(stat(join(dir, "drop.txt"))).rejects.toThrow();
+
+      // History names what actually existed, not the requested casing.
+      const history = await readHistory(locttDir, taskId);
+      expect(history.at(-1)).toMatchObject({
+        kind: "attachment_removed",
+        meta: { name: "drop.txt" },
+      });
     });
 
     it("rejects names containing path separators", async () => {

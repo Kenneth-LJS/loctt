@@ -1,14 +1,21 @@
-import { linkTask, loadOptionalConfigs, lookupTask, resolveLocttDir, TaskNotFoundError, unlinkTask } from "@loctt/core";
+import { bulkLink, linkTask, loadOptionalConfigs, lookupTask, resolveLocttDir, TaskNotFoundError, unlinkTask } from "@loctt/core";
 
 import { rejectUnknownFlags } from "../runtime/args.js";
 import { UsageError } from "../runtime/errors.js";
 import { assertWorkflowRelationshipKey } from "../runtime/workflow-assert.js";
+import { reportBulk, splitRefs } from "./task-crud.js";
 
 /**
- * `loctt link <task> <relationship> <target>` — bilateral relationship
- * write. Pre-validates the relationship type against the workflow
- * so an unknown type surfaces as a "Known: ..." UsageError rather
- * than a deeper core throw.
+ * `loctt link <task>[,<task>...] <relationship> <target>` — bilateral
+ * relationship write. Pre-validates the relationship type against the
+ * workflow so an unknown type surfaces as a "Known: ..." UsageError
+ * rather than a deeper core throw.
+ *
+ * Multiple comma-separated sources each get an edge to the one target,
+ * matching the web bulk-link shape (many sources → one target, one
+ * type). Reported per source; unlike archive/delete/set this is not
+ * atomic — `bulkLink` commits each edge independently because linkTask
+ * takes the state lock itself.
  */
 /**
  * Accepted flags per command. `getArg`/`hasFlag` are pure extractors and
@@ -24,12 +31,26 @@ export async function link(args: string[], root: string): Promise<void> {
   const relType = args[2];
   const target = args[3];
   if (!ref || !relType || !target) {
-    throw new UsageError("missing args", "loctt link <task> <relationship> <target>");
+    throw new UsageError("missing args", "loctt link <task>[,<task>...] <relationship> <target>");
   }
   const locttDir = resolveLocttDir(root);
   const { workflowConfig } = await loadOptionalConfigs(locttDir);
   assertWorkflowRelationshipKey(workflowConfig, relType);
-  const task = await lookupTask(locttDir, ref);
+  const refs = splitRefs(ref);
+
+  if (refs.length > 1) {
+    const result = await bulkLink({
+      locttDir,
+      taskRefs: refs,
+      type: relType,
+      target,
+      ...(workflowConfig !== undefined ? { workflowConfig } : {}),
+    });
+    reportBulk(`Linked --${relType}--> ${target}`, result);
+    return;
+  }
+
+  const task = await lookupTask(locttDir, refs[0] as string);
   const targetTask = await lookupTask(locttDir, target);
   await linkTask({
     locttDir,

@@ -8,6 +8,8 @@ import { detectMachineTimezone, loadCalendarConfig } from "../config/calendar.js
 import { parseQueriesConfig } from "../config/queries.js";
 import { parseWorkflowConfig } from "../config/workflow.js";
 import { resolveLocttDir } from "../paths/index.js";
+import { filtersToNode } from "../query/filters.js";
+import { validateQuery } from "../query/validate.js";
 import { parseState } from "../state/state.js";
 import { initLoctt } from "./init.js";
 
@@ -50,6 +52,36 @@ describe("initLoctt", () => {
     const content = await readFile(join(result.locttDir, "config", "queries.yaml"), "utf-8");
     const config = parseQueriesConfig(content);
     expect(config.queries.length).toBeGreaterThan(0);
+  });
+
+  // The seeded queries must be valid against the workflow that ships in
+  // the SAME init — not merely well-formed YAML. A shipped default that
+  // references a status/relationship the seeded workflow does not declare
+  // (e.g. the old `status = blocked`, a status no default workflow has)
+  // is broken for 100% of new users on every surface. parseQueriesConfig
+  // only checks syntax; validateQuery(..., { workflow }) is what catches
+  // an enum value or relationship kind the workflow never defined.
+  it("seeds queries that validate against the seeded workflow", async () => {
+    const result = await initLoctt(root);
+    const workflow = parseWorkflowConfig(
+      await readFile(join(result.locttDir, "config", "workflow.yaml"), "utf-8"),
+    );
+    const queries = parseQueriesConfig(
+      await readFile(join(result.locttDir, "config", "queries.yaml"), "utf-8"),
+    );
+    // Self-contained guard against vacuity: if the seed shipped zero
+    // queries (or parseQueriesConfig silently dropped a broken one), the
+    // loop below would assert nothing and pass green. Pin the count here
+    // so this test alone catches an empty/degraded seed.
+    expect(queries.queries.length).toBeGreaterThan(0);
+    for (const q of queries.queries) {
+      const node = filtersToNode(q.filters);
+      if (node === undefined) continue; // no filters: matches everything, nothing to validate
+      expect(
+        () => validateQuery(node, { workflow }),
+        `seeded query "${q.name}" is invalid against the seeded workflow`,
+      ).not.toThrow();
+    }
   });
 
   it("creates valid state.yaml keyed by the project id", async () => {

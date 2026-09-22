@@ -20,13 +20,46 @@ export function Modal({
   title,
   onClose,
   children,
+  footer,
+  bodyProps,
+  returnFocusTo,
 }: {
   readonly title: string;
   readonly onClose: () => void;
   readonly children: ReactNode;
+  /**
+   * An action row pinned BELOW the scrolling body (SET-8).
+   *
+   * This is the whole point of the slot: the body is the part that
+   * scrolls and the footer is not, so a tall dialog cannot push Save
+   * off a short viewport. A caller that instead puts its buttons at the
+   * end of `children` gets buttons that scroll with the content —
+   * reachable, but only after scrolling.
+   */
+  readonly footer?: ReactNode;
+  /**
+   * Attributes for the element wrapping the body AND the footer —
+   * `Dialog` puts its `data-testid` here, so the id still spans the
+   * action buttons. Many specs do
+   * `within(getByTestId(dialogId)).getByTestId("…-save")`, which a
+   * testid scoped to the scroller alone would have broken.
+   */
+  readonly bodyProps?: Record<string, string>;
+  /**
+   * Explicit focus-restore target for the case A11Y-15 names: the
+   * control that opened the modal will have unmounted by the time it
+   * closes (e.g. a kebab menu item, or a whole row that was deleted).
+   * Threaded straight into `useFocusTrap`'s own `returnFocusTo`. Omit and
+   * focus returns to whatever was focused at open — correct when the
+   * trigger survives.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(panelRef);
+  useFocusTrap(
+    panelRef,
+    returnFocusTo !== undefined ? { returnFocusTo: returnFocusTo.current } : {},
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -51,10 +84,48 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className="w-full max-w-md rounded-lg border border-border-default bg-bg-surface-raised p-4 shadow-overlay"
+        // SET-8: the panel is capped and its BODY scrolls, so a tall
+        // dialog (the custom-field editor with a list of enum values
+        // measures ~823px) cannot push its actions below the fold on a
+        // short window. Before this the panel had no `max-h` at all and
+        // the overlay's `grid place-items-center` centred an
+        // over-tall card, putting Save off-screen with nothing to
+        // scroll — the user simply could not save.
+        //
+        // This is `Sheet`'s pattern, not a second one: a flex column
+        // with a capped height, `min-h-0 flex-1 overflow-y-auto` on the
+        // body and `shrink-0` on the chrome. `Modal` was the odd
+        // primitive out — the mobile branch of `ResponsiveDialog` has
+        // been getting this right via `Sheet` all along, so the
+        // desktop branch was the only one that could strand its footer.
+        //
+        // `max-h-[calc(100dvh-2rem)]` rather than `85vh`: the overlay
+        // already contributes `p-4` (2rem of vertical padding), so the
+        // cap is exactly the space the panel is given. `dvh` tracks a
+        // mobile browser's collapsing toolbars, where `vh` does not.
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col rounded-lg border border-border-default bg-bg-surface-raised p-4 shadow-overlay"
       >
-        <h2 className="mb-3 text-[1.0714rem] font-semibold text-text-primary">{title}</h2>
-        {children}
+        <h2 className="mb-3 shrink-0 text-[1.0714rem] font-semibold text-text-primary">{title}</h2>
+        <div {...bodyProps} className="flex min-h-0 flex-1 flex-col">
+          {/*
+            The scroll region. `min-h-0` is load-bearing: a flex item
+            defaults to `min-height: auto`, which refuses to shrink
+            below its content — and that is precisely how an over-tall
+            body grows the panel past its own `max-h` and strands the
+            footer again.
+
+            `-mx-4 px-4` so the scroller spans the panel's full width:
+            `overflow-y-auto` also clips horizontally, which would slice
+            the focus ring off a control at the body's edge.
+          */}
+          <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4">
+            {children}
+          </div>
+          {/* Outside the scroller, so it cannot scroll out of reach. */}
+          {footer !== undefined && footer !== null ? (
+            <div className="shrink-0">{footer}</div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

@@ -130,7 +130,7 @@ function modifierLabel(): string {
 export function KeyboardPanel() {
   const mod = modifierLabel();
   return (
-    <div className="p-8" data-testid="keyboard-panel">
+    <div data-testid="keyboard-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Keyboard</h1>
       <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
         The shortcuts this build actually has. Shortcuts are not
@@ -146,7 +146,7 @@ export function KeyboardPanel() {
             <tbody>
               {group.items.map(s => (
                 <tr key={`${s.action}-${s.keys.join("+")}`} className="border-b border-border-subtle">
-                  <td className="w-40 py-1.5 align-top">
+                  <td className="w-auto py-1.5 align-top sm:w-40">
                     {s.keys.map((k, i) => (
                       <span key={`${k}-${String(i)}`}>
                         {/* No separator before the "or", and none
@@ -158,15 +158,26 @@ export function KeyboardPanel() {
                         {k === "/" ? (
                           <span className="mx-0.5 text-text-tertiary">or</span>
                         ) : (
-                          <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 font-mono text-[0.7857rem] text-text-primary">
+                          <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] text-text-primary">
                             {k === "Ctrl" ? mod : k}
                           </kbd>
                         )}
                       </span>
                     ))}
                   </td>
-                  <td className="py-1.5 text-[0.9286rem] text-text-primary">{s.action}</td>
-                  <td className="py-1.5 text-right text-[0.8571rem] text-text-tertiary">
+                  <td className="py-1.5 pl-2 align-top text-[0.9286rem] text-text-primary">
+                    {s.action}
+                    {/* On a phone the context can't fit as a third column
+                        without truncating to ~57px — show it under the
+                        action instead (UX eval #11). Hidden here at >= sm
+                        where the dedicated column carries it. */}
+                    {s.scope !== undefined && s.scope !== "" && (
+                      <span className="mt-0.5 block text-[0.7857rem] text-text-tertiary sm:hidden">
+                        {s.scope}
+                      </span>
+                    )}
+                  </td>
+                  <td className="hidden py-1.5 text-right align-top text-[0.8571rem] text-text-tertiary sm:table-cell">
                     {s.scope}
                   </td>
                 </tr>

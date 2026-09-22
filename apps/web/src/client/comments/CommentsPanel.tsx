@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
+import { useUploadAttachment } from "../api/hooks/useAttachments.ts";
 import {
   useComments,
   useDeleteComment,
@@ -11,6 +12,8 @@ import {
 } from "../api/hooks/useComments.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
 import { Button } from "../ui/Button.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
+import { uploadAsEmbeds } from "./commentAttachments.ts";
 import { CommentComposer } from "./CommentComposer.tsx";
 import { CommentItem } from "./CommentItem.tsx";
 import { DeleteCommentDialog } from "./DeleteCommentDialog.tsx";
@@ -81,6 +84,18 @@ export function CommentsPanel({
   const post = usePostComment(taskRef);
   const edit = useEditComment(taskRef);
   const del = useDeleteComment(taskRef);
+  // The SAME upload verb the Attachments panel uses (GOAL 2) — a comment's
+  // embedded file is just a ticket attachment, so it goes to the ticket's
+  // store and shows up in the Attachments list.
+  const uploadAttachment = useUploadAttachment(taskRef);
+
+  /**
+   * The composer's inline embed-inserter, published via `onEmbedReady`.
+   * Held in a ref so the attach handler (below) can splice an uploaded
+   * file into the body after the upload settles without re-rendering.
+   */
+  const insertEmbedRef = useRef<((markdown: string) => void) | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -104,10 +119,13 @@ export function CommentsPanel({
   }, []);
 
   if (comments.isPending) {
+    // LoadingState carries role="status" + aria-busy, so the load is
+    // announced — the bare <p aria-busy> was silent to a screen reader
+    // (design-review §A3). Inline treatment preserved via className.
     return (
-      <p aria-busy="true" className="text-[0.9286rem] text-text-tertiary">
+      <LoadingState className="text-[0.9286rem] text-text-tertiary">
         Loading comments…
-      </p>
+      </LoadingState>
     );
   }
 
@@ -232,6 +250,11 @@ export function CommentsPanel({
       {/* Below the list and always rendered — CMT-2's first bullet
           ("always visible without hunting"). Not inside a disclosure,
           not behind an "Add comment" button. */}
+      {attachError !== null && (
+        <p role="alert" data-testid="comment-composer-attach-error" className="text-[0.8571rem] text-danger-fg">
+          {attachError}
+        </p>
+      )}
       <CommentComposer
         initial=""
         mentionCandidates={index.mentionable}
@@ -241,6 +264,21 @@ export function CommentsPanel({
         error={postError ?? undefined}
         testId="comment-composer"
         resetToken={resetToken}
+        attachPending={uploadAttachment.isPending}
+        onEmbedReady={insert => { insertEmbedRef.current = insert; }}
+        onAttachFiles={files => {
+          setAttachError(null);
+          void uploadAsEmbeds(uploadAttachment, taskRef, files).then(({ embeds, failures }) => {
+            for (const embed of embeds) insertEmbedRef.current?.(embed);
+            if (failures > 0) {
+              setAttachError(
+                failures === 1
+                  ? "A file could not be attached. It was not added to the comment."
+                  : `${String(failures)} files could not be attached. They were not added to the comment.`,
+              );
+            }
+          });
+        }}
         onSubmit={body => {
           setPostError(null);
           post.mutate(

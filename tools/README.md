@@ -1,7 +1,7 @@
 # Case index and coverage tooling
 
-Turns the prose acceptance criteria in `docs/dev/ui-test-cases/` and
-`docs/dev/surface-test-cases/` into something a script can check, so
+Turns the prose acceptance criteria in `tests/cases/ui-test-cases/` and
+`tests/cases/surface-test-cases/` into something a script can check, so
 "this ticket is done" is a command that exits non-zero rather than a
 judgement call.
 
@@ -22,7 +22,7 @@ the tests actually tag.
 ## Commands
 
 ```bash
-npm run cases:index       # regenerate docs/dev/case-index.json
+npm run cases:index       # regenerate tests/cases/case-index.json
 npm run cases:check       # fail if the committed index is stale
 npm run cases:coverage    # report which cases have tests
 ```

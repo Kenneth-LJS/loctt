@@ -1,6 +1,6 @@
 # AI Agent Setup
 
-After [connecting LocTT via MCP](../common/getting-started.md#mcp-setup-ai-agent-integration), your AI agent can create, query, and update tasks using structured tools. But for it to follow your project's specific workflow conventions, you need to give it instructions.
+After [connecting LocTT via MCP](quickstart.md), your AI agent can create, query, and update tasks using structured tools. But for it to follow your project's specific workflow conventions, you need to give it instructions.
 
 This guide covers what to put in your agent's instruction file — `CLAUDE.md` for Claude Code, `.cursorrules` for Cursor, or whatever your tool uses.
 
@@ -42,17 +42,15 @@ Project-specific conventions that go beyond structural validation:
 
 ### Status transitions
 
-If your workflow has rules about how tasks move between statuses, state them explicitly. The MCP server doesn't enforce transition order — any valid status can be set on any task.
+If your workflow has rules about how tasks move between statuses, state them explicitly. The MCP server doesn't enforce transition order — any valid status can be set on any task. Use your own status keys; the example below uses the default set (`backlog`, `in_progress`, `done`, `wont_do`).
 
 ```markdown
 ## Task Management
 
 Status transitions:
-- New tasks start as `not_started`
+- New tasks start as `backlog`
 - Move to `in_progress` only when actively working on it
-- Move to `in_review` when a PR is open
-- Only move to `done` after the PR is merged
-- Use `blocked` when waiting on an external dependency — add a comment explaining what's blocking
+- Only move to `done` after the work is merged or shipped
 - `wont_do` requires a comment explaining why
 ```
 
@@ -81,7 +79,7 @@ Define how the agent should interact with tasks during its work.
 ## Workflow
 
 Before starting work:
-- Run `list_tasks` with view "active" to see current state
+- Run `list_tasks` with view "recent-open" to see current state
 - Check if a task already exists for what you're about to do
 - If working on an existing task, move it to `in_progress`
 
@@ -90,7 +88,7 @@ During work:
 - If you discover subtasks, create them and link with `parent` relationship
 
 After completing work:
-- Update status to `in_review` or `done` as appropriate
+- Update status to `done`
 - Add a summary of what was done to the task body
 ```
 
@@ -129,11 +127,10 @@ Here's a complete section you could add to your `CLAUDE.md`:
 This project uses LocTT for task tracking. Tasks are managed via MCP tools — never edit `.loctt/` files directly.
 
 ### Workflow rules
-- New tasks start as `not_started`
+- New tasks start as `backlog`
 - Move to `in_progress` when you begin work
-- Move to `in_review` when a PR is open for review
 - Move to `done` only after the change is merged
-- Use `blocked` with a comment explaining what's blocking
+- `wont_do` requires a comment explaining why
 
 ### Creating tasks
 - Title: short imperative phrase
@@ -152,13 +149,82 @@ This project uses LocTT for task tracking. Tasks are managed via MCP tools — n
 - `blocked` — tasks needing attention
 ```
 
-## Permissions and auto-approval
+## Permissions and control
 
-Most MCP clients (Claude Code, Cursor, etc.) let you pre-approve specific tool calls so the agent doesn't prompt every time. Most LocTT tools are safe to allowlist — they only read and write inside `.loctt/`.
+### Where the fence is
 
-**Do not auto-approve `attach_file`.** It takes an absolute filesystem path and copies that file into the task's `attachments/` directory. The MCP server runs with your user's permissions, so any path you can read, the agent can attach — including secrets like `~/.ssh/id_rsa`, `~/.aws/credentials`, browser cookie stores, or `.env` files in other projects. Once copied into `.loctt/`, those contents may be committed, pushed, or synced to other machines.
+LocTT itself has **no permission layer** — no per-tool access control and
+no read-only mode. Any tool the agent can call, it can run. The **only**
+thing standing between the agent and a destructive action is your MCP
+client's approval prompt (or your allowlist).
 
-Treat `attach_file` like a file-upload dialog: review every call before approving it, and check that `source_path` points where you expect. `detach_file` is safe to allowlist — it can only remove files already inside the task's attachments directory.
+In particular: the `delete_*` tools require a `confirm: true` argument, but
+**the agent supplies that argument itself** — it is not a prompt to you.
+"Requires confirm" means the tool refuses if the agent forgets the flag; it
+does not mean a human is asked. Your client's approval is the human gate.
+
+To run an agent **read-only**, allowlist only the read tools (`get_*`,
+`list_*`, `export_tasks`) and leave everything else to prompt.
+
+### What to auto-approve
+
+| Auto-approve | Review each call | Never auto-approve |
+|---|---|---|
+| Reads: `get_task`, `list_tasks`, `get_task_history`, `list_*`, `get_workflow_config`, `export_tasks` | Field writes: `create_task`, `update_task`, `unset_field`, `append_task_body`, `replace_task_body`, `post_comment`, `link_tasks`, `archive_task` | Permanent deletes: `delete_task`, `delete_project`, `delete_label`, `delete_milestone`, `delete_sprint`, `delete_view`, `delete_comment` |
+| | Bulk writes (up to 500 tasks at once): `bulk_update_tasks`, `move_task` | Tracker-wide rewrites: `set_project_prefix` |
+| | `attach_file` (see below) | Schema, backup, and sync: `migrate_schema`, `backup`, `restore`, `enable_git`/`disable_git`, `publish_to_git`, `sync_from_git` |
+| | | Identity: `switch_user`, `set_config_value` |
+
+The "never auto-approve" column is either irreversible or has tracker-wide
+blast radius — `set_project_prefix` renames every task's key,
+`publish_to_git` pushes your data to a remote, `switch_user` changes who
+every surface acts as. Prefer the reversible `archive_*` tools over
+`delete_*`, and **take a `backup` before turning an agent loose on real
+data.**
+
+**`attach_file`** copies a file into a task's `attachments/`. `source_path`
+is confined to inside the tracker root — a path outside it (`~/.ssh/id_rsa`,
+a `.env` in another project) is refused, so the agent can't reach arbitrary
+files on the machine. The residual risk is a sensitive file *staged inside
+the tracker*: once attached it lives in `.loctt/` and may be committed or
+synced. `detach_file` only removes files already in a task's attachments,
+so it's safe to allowlist.
+
+### Scoping an agent to one project
+
+There is **no per-project scoping.** The MCP server binds to a *tracker*
+(the directory with `.loctt/`), and an agent connected to it can see and
+change **every project in that tracker**. If you need an agent confined to
+one project, give it its own tracker in its own directory — separate
+`.loctt/` directories are the isolation boundary.
+
+### Auditing what the agent did
+
+Every change records **who made it**: the actor is the current user. So the
+cleanest way to tell an agent's work from your own is to **give the agent
+its own user** and switch to it for the agent's session
+(`loctt user create "Agent" --switch`, or have the agent's client run as
+that user). Then `loctt log <task>` and the Activity tab attribute each
+entry.
+
+History is **per task** — there is no single tracker-wide "everything the
+agent touched this session" view. To review a session, check the history
+of the tasks it worked on.
+
+### Concurrent edits
+
+LocTT and the MCP server share the same files, with no cross-surface lock
+outside git-sync. If you edit a task while an agent writes to it:
+
+- **Field updates** (`update_task`) are last-write-wins — whoever writes
+  last wins, silently.
+- **Body edits** are last-write-wins too, unless the agent passes the
+  `body_token` from its read (which refuses a stale write). You can't force
+  the agent to do this.
+
+So while an agent is running against a tracker, assume a task you're both
+touching can be clobbered in either direction. For real concurrent work,
+let the agent finish, or keep to different tasks.
 
 ## Notes
 

@@ -9,6 +9,7 @@
  * and with a "saved" indicator.
  */
 
+import type { Editor } from "@tiptap/core";
 import Link from "@tiptap/extension-link";
 import { Placeholder } from "@tiptap/extensions";
 import { Slice } from "@tiptap/pm/model";
@@ -47,6 +48,25 @@ export interface RichEditorProps {
   readonly testId?: string;
   /** Placeholder shown while the document is empty (TSK-62). */
   readonly placeholder?: string;
+  /**
+   * When true the internal formatting toolbar is not rendered — the
+   * caller (the description body's `BodyEditor`) owns a single toolbar
+   * that also carries the mode toggle, so RichEditor must not render a
+   * second one. The comment composer leaves this off and keeps the
+   * focus-gated toolbar (TSK-64).
+   */
+  readonly hideToolbar?: boolean;
+  /**
+   * Called once the TipTap editor is created (and again with `null` on
+   * unmount), so a caller that owns the toolbar can drive it.
+   */
+  readonly onEditorReady?: (editor: Editor | null) => void;
+  /**
+   * The viewport point the user clicked to enter edit (TSK-69). When
+   * given, the caret is placed at that coordinate (`posAtCoords`) on
+   * mount rather than at position 0.
+   */
+  readonly focusCoords?: { readonly x: number; readonly y: number };
 }
 
 export function RichEditor({
@@ -57,6 +77,9 @@ export function RichEditor({
   ariaLabel = "Description",
   testId = "rich-editor",
   placeholder = EMPTY_PLACEHOLDER,
+  hideToolbar = false,
+  onEditorReady,
+  focusCoords,
 }: RichEditorProps): React.JSX.Element {
   const onDocChangeRef = useRef(onDocChange);
   onDocChangeRef.current = onDocChange;
@@ -156,6 +179,44 @@ export function RichEditor({
   // view keeps handling keys on a page that has moved on.
   useEffect(() => () => { editor?.destroy(); }, [editor]);
 
+  // Publish the editor instance so a caller that owns the toolbar (the
+  // description body) can drive it, and retract it on teardown.
+  const onEditorReadyRef = useRef(onEditorReady);
+  onEditorReadyRef.current = onEditorReady;
+  useEffect(() => {
+    onEditorReadyRef.current?.(editor);
+    return () => { onEditorReadyRef.current?.(null); };
+  }, [editor]);
+
+  /**
+   * TSK-69: land the caret where the user clicked to enter edit, not at
+   * position 0. `posAtCoords` maps the viewport point to a document
+   * position; if it misses (a click in the padding), fall back to the
+   * document end so the caret is at least somewhere sensible. Run once
+   * per editor, guarded on `focusCoords` being supplied — the raw-mode
+   * path and the comment composer pass none and are unaffected.
+   */
+  const focusCoordsRef = useRef(focusCoords);
+  focusCoordsRef.current = focusCoords;
+  const didFocusAtCoords = useRef(false);
+  useEffect(() => {
+    if (editor === null || didFocusAtCoords.current) return;
+    const coords = focusCoordsRef.current;
+    if (coords === undefined) return;
+    didFocusAtCoords.current = true;
+    try {
+      const at = editor.view.posAtCoords({ left: coords.x, top: coords.y });
+      if (at !== null) {
+        editor.chain().focus(at.pos).run();
+        return;
+      }
+    } catch {
+      // jsdom lacks the geometry `posAtCoords` needs; fall through to a
+      // plain focus so tests and the no-layout path still land in edit.
+    }
+    editor.commands.focus("end");
+  }, [editor]);
+
   /**
    * Focus is tracked at the *container* (TSK-64), not on the ProseMirror
    * surface alone. Clicking a toolbar button moves focus off the
@@ -168,23 +229,43 @@ export function RichEditor({
    */
   const onFocusOut = (e: React.FocusEvent<HTMLDivElement>): void => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    // A dropdown this editor owns (the toolbar's block-type picker)
+    // PORTALS its panel to `document.body` (K106), so focus moving into
+    // it is not "within the wrapper" even though it is within the
+    // editor's own UI. Without this, opening that picker unmounted the
+    // toolbar mid-click and the transform never applied — the same bug
+    // as TSK-59 in `BodyEditor`, which carries the identical guard.
+    //
+    // `MarkdownField` always passes `hideToolbar`, so the vulnerable
+    // branch is dead there; `CreateTaskModal` is the one caller that
+    // omits it, which is why this instance outlived the first fix.
+    const related = e.relatedTarget as Element | null;
+    if (related?.closest("[data-dropdown-panel]") != null) return;
     setFocused(false);
   };
 
   return (
     <div
-      className="rounded border border-border-subtle"
+      // The comment composer frames itself (border + rounding); the
+      // description body's `BodyEditor` supplies the frame around the
+      // shared toolbar + surface, so RichEditor drops its own there
+      // (`hideToolbar`) to avoid a doubled border.
+      className={hideToolbar ? "" : "rounded border border-border-subtle"}
       onFocus={() => { setFocused(true); }}
       onBlur={onFocusOut}
     >
       {/*
         The toolbar renders only while the field (surface or its own
-        controls) holds focus (TSK-64). Kept mounted-then-hidden it would
-        still expose its buttons to a `getByRole("toolbar")` query and to
-        the tab order while the body is merely being viewed, so it is
-        unmounted, not `hidden`.
+        controls) holds focus (TSK-64) — the comment-composer behaviour.
+        Kept mounted-then-hidden it would still expose its buttons to a
+        `getByRole("toolbar")` query and to the tab order while merely
+        viewing, so it is unmounted, not `hidden`.
+
+        `hideToolbar` (the description body) opts out entirely: `BodyEditor`
+        renders one always-visible toolbar that also carries the mode
+        toggle, so this component must not render a second one.
       */}
-      {focused ? <Toolbar editor={editor} /> : null}
+      {!hideToolbar && focused ? <Toolbar editor={editor} /> : null}
       <div className="px-3 py-2">
         <EditorContent editor={editor} />
       </div>

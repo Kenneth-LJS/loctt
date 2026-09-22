@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { StatusDef, UserProfile } from "@loctt/contracts";
+import type { PriorityDef, StatusDef, TaskTypeDef, UserProfile } from "@loctt/contracts";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -160,5 +160,66 @@ describe("cell corruption markers", () => {
     );
     expect(screen.getByText("Ken")).toBeTruthy();
     expect(within(container).getByText(/\(broken\)/)).toBeTruthy();
+  });
+});
+
+/**
+ * K103 stage 2 — the list cells paint a RESOLVED colour.
+ *
+ * `cells.tsx` used to guard its CSS with a local hex regex and to hand
+ * `def.color` straight to a style object. Both were correct while a
+ * colour was a string and both break silently on the three-shape
+ * union: the regex rejects every palette and per-mode colour to
+ * `undefined` (the tint disappears), and the raw hand-off stringifies
+ * an object to `[object Object]` (CSS discards it, so the tint
+ * disappears too). Neither throws, and neither shows up in a
+ * typecheck once inference has widened — which is why these assert on
+ * the painted style rather than on the component rendering at all.
+ */
+describe("K103 — colour resolution in list cells", () => {
+  const priority = (color: PriorityDef["color"]): PriorityDef =>
+    ({ key: "high", label: "High", ...(color === undefined ? {} : { color }) }) as PriorityDef;
+
+  /** The dot's inline background, as the DOM actually holds it. */
+  function dotBackground(el: HTMLElement): string {
+    const dot = el.querySelector("span > span");
+    return (dot as HTMLElement | null)?.style.background ?? "";
+  }
+
+  it("paints a PALETTE priority colour, rather than dropping it", () => {
+    const { container } = render(<PriorityCell def={priority({ palette: "red" })} raw="high" />);
+    // A hex actually reached CSS. The regex this replaced matched
+    // nothing here, so the dot fell back to the key-based class and the
+    // configured colour was silently lost.
+    expect(dotBackground(container)).not.toBe("");
+    expect(dotBackground(container)).not.toContain("object Object");
+  });
+
+  it("paints a PER-MODE priority colour with the half for the active theme", () => {
+    const { container } = render(
+      <PriorityCell def={priority({ light: "#102030", dark: "#a0b0c0" })} raw="high" />,
+    );
+    // jsdom has no `matchMedia`, so `useTheme` resolves to light — the
+    // light half is what must paint, not the object and not the dark one.
+    expect(dotBackground(container)).toBe("rgb(16, 32, 48)");
+  });
+
+  it("paints a TYPE badge's palette colour instead of [object Object]", () => {
+    const { container } = render(
+      <TypeBadge def={{ key: "bug", label: "Bug", color: { palette: "blue" } } as TaskTypeDef} raw="bug" />,
+    );
+    const badge = container.querySelector("span") as HTMLElement;
+    expect(badge.style.color).not.toBe("");
+    expect(badge.style.color).not.toContain("object Object");
+    expect(badge.style.borderColor).toBe(badge.style.color);
+  });
+
+  it("falls back to the key-based dot when a palette id is unknown", () => {
+    const { container } = render(<PriorityCell def={priority({ palette: "nosuch" })} raw="high" />);
+    // Field-local degrade: no inline colour, and the key-based class
+    // still tints, so the row is not left blank over one bad reference.
+    expect(dotBackground(container)).toBe("");
+    expect((container.querySelector("span > span") as HTMLElement).className)
+      .toContain("bg-priority-high");
   });
 });

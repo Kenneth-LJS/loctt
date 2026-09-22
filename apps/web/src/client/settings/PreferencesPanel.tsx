@@ -1,13 +1,14 @@
 import type { ThemePreference, UserSettings } from "@loctt/contracts";
+import { Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { useProjects } from "../api/hooks/sidebarData.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { adoptStoredTheme, useTheme } from "../theme/useTheme.ts";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { Select } from "../ui/Select.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 
 /**
@@ -65,7 +66,7 @@ export function PreferencesPanel() {
 
   if (settings.isError) {
     return (
-      <div className="p-8">
+      <div>
         <h1 className="mb-2 text-lg font-semibold text-text-primary">My preferences</h1>
         <ErrorState
           error={settings.error}
@@ -106,14 +107,14 @@ export function PreferencesPanel() {
     && !items.some(p => p.id === personalDefault);
 
   return (
-    <div className="p-8" data-testid="preferences-panel">
+    <div data-testid="preferences-panel">
       <h1 className="mb-6 text-lg font-semibold text-text-primary">My preferences</h1>
 
       <section className="mb-8">
         <h2 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">Theme</h2>
         <p className="mb-2 text-[0.8571rem] text-text-secondary">
           Stored against your user, so it follows you between browsers.
-          <span className="ml-1 font-mono">system</span> tracks your OS setting.
+          <span className="ml-1">system</span> tracks your OS setting.
         </p>
         <div role="radiogroup" aria-label="Theme" className="flex gap-2">
           {THEMES.map(t => (
@@ -140,6 +141,22 @@ export function PreferencesPanel() {
           Where new tasks land when you do not pick a project. An explicit
           choice in the create form always wins.
         </p>
+        {/* CONFIG-5 / P4: this is the *personal* default; the workspace
+            default (the fallback when a user has none) is a different
+            setting on a different panel. Cross-link so the two "default
+            project" concepts are not mistaken for one. */}
+        <p className="mb-2 text-[0.7857rem] text-text-tertiary">
+          The workspace-wide fallback is in{" "}
+          <Link
+            to="/settings/$section"
+            params={{ section: "projects" }}
+            data-testid="preferences-workspace-default-link"
+            className="text-accent underline hover:text-text-primary"
+          >
+            Settings → Projects
+          </Link>
+          .
+        </p>
 
         {defaultIsDead ? (
           /* Not `role="alert"`: the user is reading a preferences page,
@@ -151,40 +168,78 @@ export function PreferencesPanel() {
             className="mb-2 rounded-md border border-border-subtle bg-warn-bg px-2 py-1 text-[0.8571rem] text-warn-fg"
           >
             Your default project{" "}
-            <code className="font-mono">{personalDefault}</code> no longer
+            <code>{personalDefault}</code> no longer
             exists. New tasks fall through to the workspace default until you
             pick another.
           </p>
         ) : null}
 
-        <Select
-          data-testid="default-project-select"
-          aria-label="Default project"
-          value={defaultIsDead ? "" : (personalDefault ?? "")}
-          onChange={e => {
-            const v = e.target.value;
-            // Choosing "no personal default" removes the key rather
-            // than storing "", which the contract rejects anyway
-            // (`z.string().min(1)`).
-            if (v === "") {
-              const { default_project: _dropped, ...rest } = stored;
-              save.mutate(rest as UserSettings);
-            } else {
-              patch({ default_project: v });
-            }
-          }}
-        >
-          <option value="">No personal default (use the workspace default)</option>
-          {items.filter(p => p.archived !== true).map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </Select>
+        {(() => {
+          // Choosing "no personal default" removes the key rather than
+          // storing "", which the contract rejects anyway
+          // (`z.string().min(1)`).
+          const clearDefault = (): void => {
+            const { default_project: _dropped, ...rest } = stored;
+            save.mutate(rest as UserSettings);
+          };
+          const active = items.filter(p => p.archived !== true);
+          const projectOptions: ComboboxOption[] = active.map(p => ({ key: p.id, label: p.name }));
+          // The trigger label: the picked project's name, or empty (the
+          // placeholder) for "no personal default". A dead value shows as
+          // empty here — the unresolvable notice above names it.
+          const selectedValue = defaultIsDead ? undefined : personalDefault;
+          const selectedLabel = selectedValue === undefined
+            ? ""
+            : active.find(p => p.id === selectedValue)?.name ?? "";
+          return (
+            // A211: the project list grows with the workspace — a
+            // searchable Combobox, not a native <select>. "No personal
+            // default" is the clear row.
+            <Combobox
+              label="Default project"
+              options={projectOptions}
+              value={selectedValue}
+              onSelect={v => { patch({ default_project: v }); }}
+              clear={{
+                label: "No personal default (use the workspace default)",
+                onClear: clearDefault,
+                testId: "default-project-clear",
+              }}
+              listTestId="default-project-list"
+              optionTestId={o => `default-project-option-${o.key}`}
+              searchTestId="default-project-search"
+              trigger={p => (
+                <ComboboxButton
+                  {...p}
+                  testId="default-project-select"
+                  dataValue={selectedValue ?? ""}
+                  aria-label="Default project"
+                  placeholder="No personal default (use the workspace default)"
+                >
+                  {selectedLabel}
+                </ComboboxButton>
+              )}
+            />
+          );
+        })()}
       </section>
 
       {save.isError ? (
-        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
-          Your preferences were not saved. The last saved values are shown.
-        </p>
+        // Was a generic "not saved" line that dropped the server's own
+        // reason and offered no way to try again. ErrorState carries the
+        // server message + Retry (re-sends the last write) — the standard
+        // the rest of the app holds. The write is optimistic and rolled
+        // back on failure, so the panel is already showing the last saved
+        // values; the context line says so.
+        <div className="mt-4" data-testid="preferences-save-error">
+          <ErrorState
+            error={save.error}
+            context="Your preferences were not saved — the last saved values are shown"
+            {...(save.variables !== undefined
+              ? { onRetry: () => { save.mutate(save.variables); } }
+              : {})}
+          />
+        </div>
       ) : null}
     </div>
   );

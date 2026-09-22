@@ -129,7 +129,40 @@ describe("GET /api/tasks (sort + pagination)", () => {
     for (const title of made) expect(titles).toContain(title);
   });
 
-  it("excludes archived tasks by default, includes them with archived=true", async () => {
+  // Fix 1 (server dslAtom under-quoting): the server used to build its
+  // filter atoms with a plain regex that let a bare keyword/number/date
+  // through UNQUOTED, so it re-tokenized as the wrong type or as invalid
+  // DSL. It now imports core's tokenizer-checked dslAtom, which quotes
+  // such values so they round-trip to one plain STRING token.
+  //
+  // Red-proof: under the old regex `labels=and` emitted `labels = and`,
+  // where `and` is the AND keyword — invalid DSL, which the list route
+  // maps to 400. Quoted (`labels = "and"`) it is a valid query that
+  // matches nothing, i.e. 200 with an empty set.
+  it("quotes a keyword-shaped filter value so the query stays valid (Fix 1)", async () => {
+    const res = await fetch(`${base}/api/tasks?labels=and`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: TaskFrontmatterPublic[] };
+    // No task carries a label literally named "and", so the set is empty
+    // — but the request is valid, not a 400 parse error.
+    expect(body.items.map(t => t.title)).not.toContain("Apple");
+  });
+
+  it("quotes other keyword-shaped filter values (Fix 1)", async () => {
+    // `or`/`in`/`is` are DSL operators/keywords: emitted bare they make
+    // `labels = or` etc., which is invalid DSL (the old regex passed them
+    // through, giving a 400). Quoted, each is a valid string comparison.
+    for (const value of ["or", "in", "is"]) {
+      const res = await fetch(`${base}/api/tasks?labels=${value}`);
+      expect(res.status, `labels=${value}`).toBe(200);
+    }
+  });
+
+  // K107: the tri-state `?archived` scope replaces the old `?archived=true`
+  // boolean. `active` (default) hides archived; `all` includes them;
+  // `archived` returns only archived. (This test asserted the old boolean
+  // spelling `archived=true`.)
+  it("excludes archived tasks by default, includes them with archived=all / archived", async () => {
     const all = await list("sort=title&dir=asc");
     const apple = all.items.find(t => t.title === "Apple");
     await fetch(`${base}/api/tasks/${apple!.key}/archive`, { method: "POST", headers: csrf });
@@ -137,8 +170,21 @@ describe("GET /api/tasks (sort + pagination)", () => {
     const visible = await list("");
     expect(visible.items.map(t => t.title)).not.toContain("Apple");
 
-    const withArchived = await list("archived=true");
-    expect(withArchived.items.map(t => t.title)).toContain("Apple");
+    const withAll = await list("archived=all");
+    expect(withAll.items.map(t => t.title)).toContain("Apple");
+
+    const onlyArchived = await list("archived=archived");
+    expect(onlyArchived.items.map(t => t.title)).toContain("Apple");
+    // `archived` is ONLY archived — an active task must not appear.
+    const banana = all.items.find(t => t.title === "Banana");
+    if (banana !== undefined) {
+      expect(onlyArchived.items.map(t => t.title)).not.toContain("Banana");
+    }
+
+    // A stale `?archived=true` bookmark is no longer recognised and falls
+    // back to the default active scope — archived stays hidden.
+    const legacyBool = await list("archived=true");
+    expect(legacyBool.items.map(t => t.title)).not.toContain("Apple");
   });
 
   // K25: idempotent archive/unarchive (behavior recorded in decisions.md K25/A127; no canonical case)

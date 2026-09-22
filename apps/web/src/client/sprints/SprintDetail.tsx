@@ -12,8 +12,16 @@ import { FilterBar } from "../list/FilterBar.tsx";
 import { progressState } from "../milestones/model.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import { BurndownChart } from "./BurndownChart.tsx";
 import { SprintMetaHeader } from "./SprintMetaHeader.tsx";
+
+/** The three sprint states' human labels, mirroring SprintMetaHeader. */
+const SPRINT_STATE_LABELS: Record<string, string> = {
+  active: "Active",
+  completed: "Completed",
+  future: "Future",
+};
 
 /**
  * The sprint detail route — `/sprints/$key` (M4.7).
@@ -101,9 +109,9 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
             No sprint matches this link
           </h1>
           <p className="mb-1 text-[0.9286rem] text-text-secondary">
-            Nothing in <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">sprints.yaml</code>{" "}
+            Nothing in <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">sprints.yaml</code>{" "}
             has the id{" "}
-            <code data-testid="sprint-not-found-key" className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+            <code data-testid="sprint-not-found-key" className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               {sprintId}
             </code>
             .
@@ -138,14 +146,40 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
   const progressUnreadable = sprintsProgress.data?.unreadable ?? [];
 
   return (
-    <div data-testid="sprint-detail" data-sprint-id={sprint.id} className="flex h-full flex-col gap-4 overflow-auto p-4">
+    <div data-testid="sprint-detail" data-sprint-id={sprint.id} className="flex h-full flex-col gap-3 overflow-auto p-4">
       <div>
         <Link to="/sprints" className="text-[0.8571rem] text-text-tertiary no-underline hover:underline">
           ← All sprints
         </Link>
       </div>
 
-      <SprintMetaHeader sprint={sprint} />
+      {/* The fold (Ken 2026-09-20): the sprint NAME is the page title
+          (h1), and the dates/state read-out is the subtitle beneath it.
+          SprintMetaHeader still owns the entire EDIT flow and all its
+          persistence guarantees — `foldReadMeta` only removes the
+          duplicate read presentation of the fields shown here, so the
+          name/dates/state are not rendered twice. The Edit button, the
+          Goal read/edit and the Archived badge stay in the header below. */}
+      <PageHeader
+        title={sprint.name}
+        testId="sprint-detail-header"
+        subtitle={
+          <p
+            data-testid="sprint-detail-meta-subtitle"
+            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.8571rem] text-text-tertiary"
+          >
+            <span data-testid="sprint-detail-window" className="tabular-nums">
+              {sprint.start_date} → {sprint.end_date}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span data-testid="sprint-detail-state">
+              {SPRINT_STATE_LABELS[sprint.state] ?? sprint.state}
+            </span>
+          </p>
+        }
+      />
+
+      <SprintMetaHeader sprint={sprint} foldReadMeta />
 
       {/* F1 (K30): the sprint's done/total, from core via
           `?progress=true` — the same figure the CLI's `sprint list
@@ -252,7 +286,7 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
             <tbody>
               {items.map(t => (
                 <tr key={t.id} data-testid={`sprint-task-${t.key}`} data-task-key={t.key}>
-                  <td className="border-b border-border-subtle py-1.5 pr-2 font-mono text-[0.8571rem]">
+                  <td className="border-b border-border-subtle py-1.5 pr-2 text-[0.8571rem]">
                     <Link to="/tasks/$key" params={{ key: t.key }} className="text-accent no-underline hover:underline">
                       {t.key}
                     </Link>

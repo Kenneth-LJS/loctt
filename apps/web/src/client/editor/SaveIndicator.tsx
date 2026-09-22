@@ -40,10 +40,8 @@ export function SaveIndicator(
     );
   }
 
-  const label =
-    state.kind === "saving" ? "Saving…"
-      : state.kind === "unsaved" ? "Unsaved changes"
-        : "Saved";
+  const kind = state.kind;
+  const label = ORDINARY_LABELS[kind];
 
   /**
    * `aria-live="polite"` rather than `role="status"`.
@@ -61,13 +59,68 @@ export function SaveIndicator(
    */
   return (
     <span
-      aria-live="polite"
       aria-label={`Description: ${label}`}
       data-testid="save-indicator"
       data-state={state.kind}
-      className="text-[0.8571rem] text-text-tertiary"
+      // ## Why the width is reserved (TSK-18)
+      //
+      // This indicator sits in the toolbar row's trailing slot, to the
+      // RIGHT of the `flex-1` toolbar whose own mode toggle is pushed
+      // right with `ml-auto`. So the indicator's width decides where the
+      // mode toggle is drawn: every character it gains or loses slides
+      // the toggle sideways by that much.
+      //
+      // That made the Rich→Markdown toggle a DEAD BUTTON after typing.
+      // Pressing it blurs the rich surface, which flushes the pending
+      // edit, so between mousedown and mouseup the label went
+      // "Unsaved changes" → "Saving…"/"Saved" — measured at 52px
+      // narrower — and the button slid 52px right, out from under the
+      // cursor. The browser then fired no `click` at all (mouseup landed
+      // on a different element), so `onModeChange` never ran: first
+      // click dead, second click fine. A pure layout defect that looked
+      // like an event-ordering bug.
+      //
+      // The three ordinary labels are therefore all laid out in one grid
+      // cell, with the inactive ones `invisible` — rendered, so they
+      // take space. The box is as wide as the LONGEST label at whatever
+      // the font actually renders — measured by the browser, not by a px
+      // constant that a font or copy change would silently invalidate —
+      // so no ordinary state change moves the toolbar by a single pixel.
+      //
+      // The `failed` state is deliberately NOT in this grid: it returns
+      // above with a message plus a Retry button, and it is a state the
+      // user reads and acts on rather than one that lands mid-click.
+      className="grid grid-cols-1 grid-rows-1 text-[0.8571rem] text-text-tertiary"
     >
-      {label}
+      {/* The announced text. A live region announces a CONTENT change,
+          not an attribute change, so the polite region has to be the one
+          node whose text actually differs per state — the sizer stack
+          below never changes its text and would announce nothing. */}
+      <span aria-live="polite" className="sr-only">{label}</span>
+      {ORDINARY_KINDS.map(k => (
+        <span
+          key={k}
+          // Hidden from assistive tech: the wrapper's `aria-label` names
+          // the control and the live region above speaks the state, so
+          // exposing three stacked copies would read all of them.
+          aria-hidden="true"
+          className={
+            "col-start-1 row-start-1 whitespace-nowrap "
+            + (k === kind ? "" : "invisible")
+          }
+        >
+          {ORDINARY_LABELS[k]}
+        </span>
+      ))}
     </span>
   );
 }
+
+/** The non-failed states, in the order they are stacked for sizing. */
+const ORDINARY_KINDS = ["saved", "saving", "unsaved"] as const;
+
+const ORDINARY_LABELS: Record<(typeof ORDINARY_KINDS)[number], string> = {
+  saved: "Saved",
+  saving: "Saving…",
+  unsaved: "Unsaved changes",
+};

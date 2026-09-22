@@ -1,9 +1,9 @@
 import type { SavedQuery, UserSettings } from "@loctt/contracts";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
-import { apiClient } from "../api/client.ts";
 import { useViews } from "../api/hooks/sidebarData.ts";
+import { useDeleteView } from "../api/hooks/useDeleteView.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
@@ -19,7 +19,7 @@ import { readSidebarPins, sweepSidebarPins } from "./sidebarPins.ts";
  *
  * SET-13's third bullet says a pin whose view was deleted is "dropped
  * **silently**". That text is superseded. The README's P7 amendment
- * (`docs/dev/ui-test-cases/README.md:191-198`) resolves the
+ * (`tests/cases/ui-test-cases/README.md:191-198`) resolves the
  * SHL-32 / SET-13 / SET-27 / XS-28 disagreement *in favour of the
  * explaining cases*: "a pinned view deleted from `queries.yaml` tells
  * the user it was removed rather than disappearing. Silently pruning a
@@ -47,8 +47,8 @@ export function SidebarPinsPanel() {
 
   if (settings.isError || views.isError) {
     return (
-      <div className="p-8">
-        <h1 className="mb-2 text-lg font-semibold text-text-primary">Sidebar pins</h1>
+      <div>
+        <h1 className="mb-2 text-lg font-semibold text-text-primary">Pinned views</h1>
         <ErrorState
           error={settings.error ?? views.error}
           onRetry={() => {
@@ -99,15 +99,8 @@ function PinsEditor({
   // pin is dropped in the same write path — `queries.yaml` loses the
   // view, and the sweep above removes the now-dangling pin on the
   // refetch the invalidation triggers.
-  const queryClient = useQueryClient();
   const [deleting, setDeleting] = useState<SavedQuery | null>(null);
-  const deleteView = useMutation({
-    mutationFn: (id: string) =>
-      apiClient.delete<{ deleted: string }>(`/api/views/${encodeURIComponent(id)}`),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["views"] });
-    },
-  });
+  const deleteView = useDeleteView();
 
   const byId = new Map(views.map(v => [v.id, v]));
   const pinned = sweep.kept;
@@ -126,11 +119,26 @@ function PinsEditor({
   };
 
   return (
-    <div className="p-8" data-testid="sidebar-pins-panel">
-      <h1 className="mb-1 text-lg font-semibold text-text-primary">Sidebar pins</h1>
-      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
-        Saved views pinned to the sidebar, in the order they appear there.
-        Saved against your user.
+    <div data-testid="sidebar-pins-panel">
+      <h1 className="mb-1 text-lg font-semibold text-text-primary">Pinned views</h1>
+      <p className="mb-2 max-w-prose text-[0.8571rem] text-text-secondary">
+        Pin your own saved views to the top of the sidebar's Saved filters
+        group, in the order they appear there. Saved against your user.
+      </p>
+      {/* A244: cross-link to the sibling section. See the matching note in
+          SidebarGroupsPanel — this points at the *groups* editor for the
+          user who wants to reorder or hide the built-in sections instead. */}
+      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-tertiary">
+        Looking to reorder or hide the sidebar's built-in sections?{" "}
+        <Link
+          to="/settings/$section"
+          params={{ section: "sidebar-groups" }}
+          data-testid="sidebar-pins-see-groups"
+          className="text-accent hover:underline"
+        >
+          See Sidebar groups
+        </Link>
+        .
       </p>
 
       {explained.length > 0 ? (
@@ -143,11 +151,11 @@ function PinsEditor({
           className="mb-4 rounded-md border border-border-subtle bg-warn-bg px-3 py-2 text-[0.8571rem] text-warn-fg"
         >
           {explained.length === 1
-            ? "A pinned view was removed because it no longer exists in queries.yaml:"
-            : "Pinned views were removed because they no longer exist in queries.yaml:"}
+            ? "A pinned view was removed because it no longer exists in your saved views:"
+            : "Pinned views were removed because they no longer exist in your saved views:"}
           <ul className="mt-1 mb-0 list-disc pl-5">
             {explained.map(id => (
-              <li key={id} data-swept-pin={id} className="font-mono">{id}</li>
+              <li key={id} data-swept-pin={id}>{id}</li>
             ))}
           </ul>
         </div>
@@ -253,21 +261,39 @@ function PinsEditor({
                 sidebar_pins: pinned.filter(p => p !== id),
               } as UserSettings);
             }
-            deleteView.mutate(id);
+            deleteView.mutate({ id });
           }}
         />
       ) : null}
 
       {deleteView.isError ? (
-        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
-          The view was not deleted. It is still in queries.yaml.
-        </p>
+        // ErrorState standard: the server's reason + a Retry that re-sends
+        // the delete, rather than a bare line. The view is still present,
+        // as the context says.
+        <div className="mt-4" data-testid="sidebar-pins-delete-error">
+          <ErrorState
+            error={deleteView.error}
+            context="The view was not deleted — it is still among your saved views"
+            {...(deleteView.variables !== undefined
+              ? { onRetry: () => { deleteView.mutate(deleteView.variables); } }
+              : {})}
+          />
+        </div>
       ) : null}
 
       {save.isError ? (
-        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
-          Your pins were not saved. The list shows your last saved order.
-        </p>
+        // ErrorState standard: the server's reason + a Retry that re-sends
+        // the last write. The write is rolled back on failure, so the list
+        // already shows the last saved order; the context says so.
+        <div className="mt-4" data-testid="sidebar-pins-save-error">
+          <ErrorState
+            error={save.error}
+            context="Your pins were not saved — the list shows your last saved order"
+            {...(save.variables !== undefined
+              ? { onRetry: () => { save.mutate(save.variables); } }
+              : {})}
+          />
+        </div>
       ) : null}
     </div>
   );

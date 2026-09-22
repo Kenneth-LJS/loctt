@@ -20,6 +20,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
+import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
 /*
  * These handlers deliberately do not catch.
@@ -107,12 +108,16 @@ export const TOOLS: readonly ToolDef[] = [
     name: "delete_comment",
     description:
       "Permanently remove a comment. Anyone may delete anyone's comment. " +
-      "The deletion is recorded in the task's activity log.",
+      "The deletion is recorded in the task's activity log. " +
+      "Always requires `confirm: true`.",
     inputSchema: {
       ref: z.string().describe("Task key or ID"),
       comment_id: z.string().describe("Comment ID from list_comments"),
+      confirm: z.boolean().optional().describe("Required: must be true to proceed"),
     },
     handler: async ({ locttDir }, args) => {
+      const blocked = requireConfirm(args, "delete_comment");
+      if (blocked) return blocked;
       const task = await lookupTask(locttDir, args["ref"] as string);
       await deleteComment({
         locttDir,

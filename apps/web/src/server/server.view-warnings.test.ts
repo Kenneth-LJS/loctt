@@ -23,13 +23,21 @@ describe("a saved view whose custom field no longer exists", () => {
   let app: ReturnType<typeof createWebApp>;
   let base: string;
 
+  // K102: a view stores an ordered `filters` list, not `query`/`conditions`.
+  // `squad` is still absent from workflow.yaml — the view outlived the
+  // field, which the query runs against, not the schema, so the
+  // "unknown field" warning still fires.
   const QUERIES = `queries:
   - id: 01J0000000000000000000001
     name: ghostfield
-    query: fields.squad = platform
+    filters:
+      - kind: advanced
+        query: fields.squad = platform
   - id: 01J0000000000000000000003
     name: healthy
-    query: status = backlog
+    filters:
+      - kind: advanced
+        query: status = backlog
 `;
 
   beforeEach(async () => {
@@ -86,11 +94,14 @@ describe("a saved view whose custom field no longer exists", () => {
     // "The sidebar entry is not silently removed; the view remains
     // editable so the user can fix it."
     const listed = (await (await fetch(`${base}/api/views`)).json()) as {
-      queries: { name: string; query: string }[];
+      queries: { name: string; filters: { kind: string; query?: string }[] }[];
     };
     const entry = listed.queries.find(q => q.name === "ghostfield");
     expect(entry).toBeDefined();
-    // Its query comes back verbatim, so the editor can pre-populate it.
-    expect(entry?.query).toBe("fields.squad = platform");
+    // Its advanced filter's query comes back verbatim, so the editor can
+    // pre-populate it. This is a WARNING (an unknown field the view
+    // references), not a parse failure — the view still resolves and
+    // its filters list, not `summary`.
+    expect(entry?.filters[0]?.query).toBe("fields.squad = platform");
   });
 });

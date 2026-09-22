@@ -1,3 +1,4 @@
+import type { ArchivedScope } from "@loctt/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type MouseEvent, useMemo, useState } from "react";
 
@@ -8,10 +9,18 @@ import {
   useOrphanedMilestoneTasks,
 } from "../api/hooks/useMilestoneProgress.ts";
 import { formatWorkspaceDate, NO_TARGET_DATE } from "../dates/workspaceDate.ts";
-import { Checkbox } from "../ui/Checkbox.tsx";
+// K105: the "+ New milestone" affordance opens the SAME shared dialog the
+// Settings panel and the sidebar create use (mode="create"), so a
+// milestone created from this view cannot drift from one created anywhere
+// else. Reading a settings/ component is allowed; this file does not edit it.
+import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
+import { Button } from "../ui/Button.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import type { MilestoneWithProgress, Readout } from "./model.ts";
 import {
   EXCLUDE_DISCARDED_QUERY,
@@ -104,10 +113,18 @@ export function MilestonesView() {
   const info = useInfo();
   const navigate = useNavigate();
 
-  // MSL-25: archived milestones are excluded from the default view and
-  // revealed by an affordance that does **not** unarchive them —
-  // this is a local view toggle, not a write.
-  const [showArchived, setShowArchived] = useState(false);
+  // MSL-25 / K107: archived milestones are excluded from the default view
+  // and revealed by the shared tri-state control — a local view scope, not
+  // a write. This view computes progress + orphan diagnosis over the WHOLE
+  // list (archived included), so the scope is applied client-side to what
+  // is *displayed* rather than by refetching. Default `active`.
+  const [scope, setScope] = useState<ArchivedScope>("active");
+
+  // K105: "+ New milestone" opens the shared create dialog in place (not
+  // a form on the Settings page). `false` is the closed state; on success
+  // the dialog invalidates the milestones query, so the new row appears
+  // here without extra wiring.
+  const [creating, setCreating] = useState(false);
 
   const all: readonly MilestoneWithProgress[] = useMemo(
     () => milestones.data?.items ?? [],
@@ -131,9 +148,16 @@ export function MilestonesView() {
 
   const archivedCount = all.filter(m => m.archived === true).length;
 
+  // K107 client-side scope: `active` hides archived, `archived` keeps only
+  // archived, `all` keeps both — the same three the shared control emits
+  // and the server applies elsewhere.
   const visible = useMemo(
-    () => sortMilestones(all.filter(m => showArchived || m.archived !== true)),
-    [all, showArchived],
+    () => sortMilestones(all.filter(m => {
+      if (scope === "all") return true;
+      if (scope === "archived") return m.archived === true;
+      return m.archived !== true;
+    })),
+    [all, scope],
   );
 
   // The tracker's date, not the browser's: two users in different
@@ -154,7 +178,7 @@ export function MilestonesView() {
   // different screens (ERR-1).
   if (milestones.isError) {
     return (
-      <div data-testid="milestones-load-error" className="p-4">
+      <div data-testid="milestones-load-error">
         <ErrorState
           error={milestones.error}
           context="Could not load milestones"
@@ -165,42 +189,50 @@ export function MilestonesView() {
   }
 
   return (
-    <div data-testid="milestones" className="flex h-full flex-col gap-4 overflow-auto p-4">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <div className="flex flex-col gap-0.5">
-          <h1 className="text-[1.0714rem] font-semibold text-text-primary">Milestones</h1>
-          {/* MSL-42 (UX-15): the discoverability copy. This *is* where
-              milestone progress renders, so the subhead says so plainly
-              and points at where milestones are created — closing the
-              "a view the user cannot find" gap the case is written
-              against. */}
+    <div data-testid="milestones" className="flex h-full flex-col gap-3 overflow-auto p-4">
+      <PageHeader
+        title="Milestones"
+        subtitle={
+          /* K105: the subhead describes the page — no "Manage them in
+             Settings → Milestones" pointer (Ken: useless copywriting;
+             creation now lives in the "+ New milestone" action beside the
+             title). MSL-42's discoverability is satisfied by the page
+             existing and being reachable, not by prose. */
           <p data-testid="milestones-subhead" className="text-[0.8571rem] text-text-tertiary">
-            Progress toward every milestone. Manage them in{" "}
-            <Link
-              to="/settings/$section"
-              params={{ section: "milestones" }}
-              className="underline underline-offset-2"
-            >
-              Settings → Milestones
-            </Link>
-            .
+            Progress toward every milestone, with the tasks counting toward each.
           </p>
-        </div>
-        {archivedCount > 0 && (
-          // MSL-25: reveals archived milestones *in the view* without
-          // unarchiving them. A checkbox rather than a button so its
-          // state is announced, and nothing here writes to
-          // `milestones.yaml`. Migrated to the B1 `Checkbox` primitive.
-          <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
-            <Checkbox
-              data-testid="milestones-show-archived"
-              checked={showArchived}
-              onChange={e => { setShowArchived(e.target.checked); }}
-            />
-            Show archived ({archivedCount})
-          </label>
-        )}
-      </header>
+        }
+        actions={
+          <>
+            {/* MSL-25 / K107: the shared tri-state control reveals archived
+                milestones *in the view* without unarchiving them — nothing
+                here writes to `milestones.yaml`. Shown whenever there are
+                archived milestones to reveal; the count rides on the
+                "Archived" option. */}
+            {archivedCount > 0 && (
+              <ArchivedScopeControl
+                testId="milestones-archived-scope"
+                value={scope}
+                onChange={setScope}
+                counts={{ archived: archivedCount }}
+              />
+            )}
+            {/* K105: create is a "+ New milestone" affordance opening the
+                shared create dialog in place, mirroring the sidebar's
+                "+ New project"/"+ New view". Not a deep link to a Settings
+                form. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              testId="milestones-new"
+              onClick={() => { setCreating(true); }}
+            >
+              <Icon name="plus" />
+              New milestone
+            </Button>
+          </>
+        }
+      />
 
       {/* K28 / P-5: task files that could not be read are excluded
           from every milestone's totals (they cannot be attributed to
@@ -236,14 +268,14 @@ export function MilestonesView() {
             </strong>{" "}
             {orphans.data.tasks.length === 1 ? "task names" : "tasks name"} a
             milestone that{" "}
-            <code className="font-mono">milestones.yaml</code> does not define,
+            <code>milestones.yaml</code> does not define,
             so {orphans.data.tasks.length === 1 ? "it is" : "they are"} counted
             toward no milestone below:{" "}
             {orphans.data.ids.map(id => (
               <code
                 key={id}
                 data-testid="milestones-orphan-id"
-                className="mr-1 font-mono"
+                className="mr-1"
               >
                 {id}
               </code>
@@ -256,20 +288,26 @@ export function MilestonesView() {
       )}
 
       {visible.length === 0 ? (
-        <p
+        // K105: the empty state gives a "+ New milestone" BUTTON that
+        // opens the shared create dialog in place — not a prose pointer to
+        // a Settings form. Its progress shows up here once created.
+        <div
           data-testid="milestones-empty"
-          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
+          className="flex flex-col items-center gap-3 rounded-md border border-border-subtle bg-bg-surface px-4 py-8 text-center"
         >
-          No milestones yet. Create one in{" "}
-          <Link
-            to="/settings/$section"
-            params={{ section: "milestones" }}
-            className="underline underline-offset-2"
+          <p className="text-[0.9286rem] text-text-tertiary">
+            No milestones yet. Create one and its progress will show up here.
+          </p>
+          <Button
+            variant="primary"
+            size="sm"
+            testId="milestones-empty-new"
+            onClick={() => { setCreating(true); }}
           >
-            Settings → Milestones
-          </Link>
-          {" "}and its progress will show up here.
-        </p>
+            <Icon name="plus" />
+            New milestone
+          </Button>
+        </div>
       ) : (
         <ul data-testid="milestones-rows" className="flex flex-col gap-2">
           {visible.map(m => (
@@ -283,6 +321,17 @@ export function MilestonesView() {
             />
           ))}
         </ul>
+      )}
+
+      {/* K105: the same shared dialog Settings and the sidebar create
+          open, in mode="create". On success it closes and invalidates the
+          milestones query, so the new milestone appears above without any
+          extra wiring here. */}
+      {creating && (
+        <MilestoneEditDialog
+          mode="create"
+          onClose={() => { setCreating(false); }}
+        />
       )}
     </div>
   );

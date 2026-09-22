@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { cn } from "./cn.ts";
 import { Modal } from "./Modal.tsx";
@@ -37,6 +37,8 @@ export interface DialogProps {
   /** Optional description under the title. */
   readonly description?: ReactNode;
   readonly testId?: string;
+  /** Explicit focus-restore target when the trigger will be gone on close. */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
 }
 
 export function Dialog({
@@ -46,16 +48,25 @@ export function Dialog({
   actions,
   description,
   testId,
+  returnFocusTo,
 }: DialogProps) {
   return (
-    <Modal title={title} onClose={onClose}>
-      <div {...(testId !== undefined ? { "data-testid": testId } : {})}>
-        {description !== undefined && description !== null ? (
-          <p className="mb-3 text-body text-text-secondary">{description}</p>
-        ) : null}
-        {children}
-        {actions !== undefined && actions !== null ? actions : null}
-      </div>
+    <Modal
+      title={title}
+      onClose={onClose}
+      // SET-8: the actions go in Modal's footer slot, so they sit below
+      // the scrolling body and stay reachable however tall the content
+      // is. `bodyProps` carries the testid onto the element wrapping
+      // body AND footer, keeping `within(getByTestId(dialog))` able to
+      // find the action buttons as before.
+      {...(actions !== undefined && actions !== null ? { footer: actions } : {})}
+      {...(testId !== undefined ? { bodyProps: { "data-testid": testId } } : {})}
+      {...(returnFocusTo !== undefined ? { returnFocusTo } : {})}
+    >
+      {description !== undefined && description !== null ? (
+        <p className="mb-3 text-body text-text-secondary">{description}</p>
+      ) : null}
+      {children}
     </Modal>
   );
 }

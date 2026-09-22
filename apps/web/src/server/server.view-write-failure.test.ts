@@ -54,7 +54,7 @@ describe("a save that queries.yaml refuses", () => {
     const res = await fetch(`${base}/api/views`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Loctt-Client": "test" },
-      body: JSON.stringify({ name: "phantom", query: "status = backlog" }),
+      body: JSON.stringify({ name: "phantom", filters: [{ kind: "advanced", query: "status = backlog" }] }),
     });
 
     // The save reports failure...
@@ -85,7 +85,7 @@ describe("a save that queries.yaml refuses", () => {
     const failed = await fetch(`${base}/api/views`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Loctt-Client": "test" },
-      body: JSON.stringify({ name: "phantom", query: "status = backlog" }),
+      body: JSON.stringify({ name: "phantom", filters: [{ kind: "advanced", query: "status = backlog" }] }),
     });
     expect(failed.status).toBeGreaterThanOrEqual(400);
 
@@ -93,7 +93,7 @@ describe("a save that queries.yaml refuses", () => {
     const retried = await fetch(`${base}/api/views`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Loctt-Client": "test" },
-      body: JSON.stringify({ name: "phantom", query: "status = backlog" }),
+      body: JSON.stringify({ name: "phantom", filters: [{ kind: "advanced", query: "status = backlog" }] }),
     });
     expect(retried.status).toBe(201);
     expect(await readFile(queriesPath, "utf8")).toContain("phantom");

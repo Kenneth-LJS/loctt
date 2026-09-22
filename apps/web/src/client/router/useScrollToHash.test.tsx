@@ -107,8 +107,12 @@ describe("useScrollToHash (K76)", () => {
   it("gives up on a target that never appears (a deleted comment) without erroring", () => {
     currentHash = "#comment-gone";
     render(<Probe />);
-    // More than the frame bound; must stop, not loop forever.
-    flushFrames(50);
+    // Flush well past the MAX_FRAMES backstop (180): the poll must terminate,
+    // not schedule forever. If the frame cap were removed, this would keep
+    // requesting frames indefinitely (and under fake timers, where
+    // performance.now() does not advance, the wall-clock deadline alone would
+    // never stop it — the cap is what guarantees termination).
+    flushFrames(250);
     expect(scrolled).toHaveLength(0);
   });
 });

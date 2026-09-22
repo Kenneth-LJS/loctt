@@ -9,6 +9,7 @@ import {
   useProjects,
   useSprints,
   useUsers,
+  useViews,
 } from "../api/hooks/sidebarData.ts";
 import {
   describeBulkResult,
@@ -21,12 +22,19 @@ import { useInfo } from "../api/hooks/useInfo.ts";
 import type { TaskListRow } from "../api/hooks/useTasks.ts";
 import { buildQueryString, DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { fieldView } from "../health/fieldHealth.ts";
+import { MAIN_CONTENT_ID } from "../shell/SkipLink.tsx";
+import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import type { EstimationShape } from "../task/estimation.ts";
 import { estimationShape } from "../task/estimation.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
+import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
-import { ICON } from "../ui/icons.ts";
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import { BulkBar, BulkResult } from "./BulkBar.tsx";
 import {
   AssigneeCell,
@@ -39,12 +47,11 @@ import {
 } from "./cells.tsx";
 import { resolveColumns } from "./columns.ts";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog.tsx";
-import { ExportMenu } from "./ExportMenu.tsx";
 import { clearedSearch, FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
-import { RefreshButton } from "./RefreshButton.tsx";
+import { useScopeTitle } from "./useScopeTitle.ts";
 import { useSelection } from "./useSelection.ts";
 
 /**
@@ -64,6 +71,59 @@ const DEFAULT_SORT_DIR: Record<string, "asc" | "desc"> = {
 };
 
 /**
+ * A11Y-9: the key of the task most recently opened from the list, held
+ * across the route change into the task detail and back.
+ *
+ * The list unmounts when a task opens, so ListView's per-instance refs
+ * (the A11Y-17 `focusedTaskKey`) are gone by the time the user returns.
+ * `sessionStorage` bridges that unmount — per-tab, ephemeral, and
+ * survives the remount — so on returning to `/list` focus can be
+ * restored to the opened row's anchor rather than to `document.body`
+ * (which would send the next Tab to the top of the page). Cleared once
+ * consumed so an unrelated later mount does not steal focus, and every
+ * access is guarded because `sessionStorage` can throw (private mode,
+ * blocked storage) — a11y restore is a convenience, never a hard
+ * dependency.
+ */
+const LAST_OPENED_KEY = "loctt:list:last-opened-task";
+
+function rememberOpenedTask(key: string): void {
+  try {
+    sessionStorage.setItem(LAST_OPENED_KEY, key);
+  } catch {
+    // Storage unavailable — focus restore on return is skipped, the
+    // rest of the flow is unaffected.
+  }
+}
+
+function takeOpenedTask(): string | null {
+  try {
+    const key = sessionStorage.getItem(LAST_OPENED_KEY);
+    if (key !== null) sessionStorage.removeItem(LAST_OPENED_KEY);
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Escape a task key for a `[data-task-key="…"]` selector.
+ *
+ * `CSS.escape` is the right tool, but it is absent in some non-browser
+ * runtimes (jsdom under test), where reaching for it throws before the
+ * selector is even built. Task keys are already safe CSS-identifier text
+ * (`WEB-1`), so the fallback simply quotes any character CSS treats
+ * specially — enough to keep the attribute selector valid without a
+ * polyfill.
+ */
+function escapeTaskKey(key: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(key);
+  }
+  return key.replace(/["\\]/g, "\\$&");
+}
+
+/**
  * The list view's table (M1.2). Reads URL search state for sort +
  * pagination, fetches the matching task page, and renders the
  * configured columns. Column headers sort (single-column, direction
@@ -73,6 +133,13 @@ const DEFAULT_SORT_DIR: Record<string, "asc" | "desc"> = {
 export function ListView() {
   const search = useSearch({ from: "/list" });
   const navigate = useNavigate({ from: "/list" });
+  // K-title rule: the title reflects the active scope (saved view name, or
+  // a single scoped project's name), falling back to the screen name.
+  const title = useScopeTitle(search, "List");
+  // Below `sm`, render the stacked-card layout instead of the table
+  // (UX eval #3). Conditional render, not CSS toggle, so the task list is
+  // never in the DOM twice.
+  const isNarrow = useIsNarrow();
 
   const params = tasksParamsFromSearch(search);
   const tasks = useTasksFeed(params);
@@ -84,11 +151,24 @@ export function ListView() {
   // cells resolve milestone and sprint through their own columns.
   const milestones = useMilestones();
   const sprints = useSprints();
+  // VUE-22: the broken-view banner shows the YAML still on disk, and
+  // `rawText` is carried on the views config rather than on the tasks
+  // response. Same cached `["views"]` query the sidebar reads, so this
+  // adds no fetch.
+  const views = useViews();
   const workflow = useWorkflow();
   const info = useInfo();
   const userSettings = useUserSettings();
 
   const { announce } = useAnnouncer();
+  // ONB-8 / first-run: the truly-empty list is the newcomer's landing.
+  // The board's "+ Add task" makes that state actionable; the same
+  // create entry point (the app-wide provider) turns the list's empty
+  // state from a dead-end sentence into a way in. Only offered when
+  // nothing is filtering — a filtered-empty view is answered by "Clear
+  // filters", where creating a task would not bring back the rows the
+  // filter hid.
+  const createTask = useCreateTask();
 
   // PRU-3: the project column is shown/hidden by how many projects the
   // URL scopes to — one project hides it (constant), all-projects shows
@@ -204,12 +284,21 @@ export function ListView() {
   // is what makes that visible rather than a silent widening.
   const missingView = pages[pages.length - 1]?.missing_view;
   // VUE-22: the URL named a saved view that is present in queries.yaml
-  // but whose query no longer parses. The server returns the parse error
-  // and its position rather than 500-ing or silently widening; this
-  // renders that as a deliberate error state (not an empty result) and
-  // offers to open the advanced editor pre-populated with the broken
-  // query so it can be repaired in place.
+  // but whose filters no longer validate. The server returns the parse
+  // error rather than 500-ing or silently widening; this renders that as
+  // a deliberate error state, not an empty result.
+  //
+  // K102 removed repair-in-place: the only client write path is a typed
+  // `EditViewRequest`, which cannot express arbitrary YAML. So the banner
+  // shows the bytes still on disk and points at the panel that offers the
+  // guarded Replace… flow — it no longer offers to "fix this in the
+  // editor", which seeded the advanced box from a `query` field the
+  // server has never sent.
   const brokenView = pages[pages.length - 1]?.broken_view;
+  // The raw YAML lives on the views config, not on the tasks response —
+  // `broken_view` is a per-request diagnostic, `broken` is the loader's
+  // record of the file. Matching by id is what ties the two together.
+  const brokenViewRaw = views.data?.broken?.find(b => b.id === brokenView?.id)?.rawText;
   // VUE-21: core raises a warning when a query names a field that no
   // longer exists, and the CLI and MCP both print it. The web dropped
   // it, so a saved view filtering on a deleted custom field answered
@@ -307,7 +396,7 @@ export function ListView() {
       if (key === null) return;
       if (document.activeElement !== null && document.activeElement !== document.body) return;
       const anchor = table.querySelector<HTMLElement>(
-        `[data-task-key="${CSS.escape(key)}"]`,
+        `[data-task-key="${escapeTaskKey(key)}"]`,
       );
       if (anchor) anchor.focus();
     });
@@ -318,6 +407,64 @@ export function ListView() {
       observer.disconnect();
     };
   }, []);
+
+  // A11Y-9: returning to the list restores focus to the row that was
+  // opened, not to document.body / the top of the page. The list
+  // unmounts when a task opens, so this cannot lean on the A11Y-17 ref
+  // above (that ref died with the previous instance) — the opened key
+  // was stashed in sessionStorage on open, and is consumed here once the
+  // rows for THIS render exist. It fires on `items` because the first
+  // paint is a loading/empty table with no anchor yet; keyed on the
+  // stored key being present, and the key is cleared as it is taken so a
+  // later unrelated mount cannot inherit it. If the row is gone (the
+  // task was archived, or filtered out) focus is left where it is — the
+  // same "deliberate location" restraint as A11Y-17.
+  useEffect(() => {
+    const table = tableRef.current;
+    if (table === null) return;
+    const key = takeOpenedTask();
+    if (key === null) return;
+    // Do not fight a focus the USER has already placed since arriving
+    // back on the list.
+    //
+    // `#main-content` is not such a focus. A11Y-45 bullet 2 parks focus
+    // on the main landmark after every route change, and that handler
+    // runs on this same navigation — so by the time this effect sees
+    // `document.activeElement` it is the landmark, never `document.body`.
+    // Treating that as "the user placed it" is what made this restore
+    // dead code: the key was taken, the guard returned, and focus stayed
+    // at the top of the document — exactly what A11Y-9 bullet 5 forbids.
+    //
+    // The two rules are not in conflict, they are general and specific:
+    // A11Y-45 parks focus at the top of the new view when nothing better
+    // is known, and A11Y-9 knows something better for this one arrival.
+    // So the landmark counts as "unclaimed" here, alongside body and a
+    // detached/null activeElement.
+    const active = document.activeElement;
+    const unclaimed =
+      active === null
+      || active === document.body
+      || active.id === MAIN_CONTENT_ID;
+    if (!unclaimed) return;
+    const anchor = table.querySelector<HTMLElement>(
+      `[data-task-key="${escapeTaskKey(key)}"]`,
+    );
+    if (anchor) {
+      anchor.focus();
+      // Seed the A11Y-17 ref too, so a refetch that immediately re-renders
+      // the table keeps focus on this row rather than dropping it.
+      focusedTaskKey.current = key;
+    }
+  }, [items]);
+
+  // A11Y-9: opening a task from the list (row click, or Enter on the row's
+  // key link) records the key so focus can be restored to that row on the
+  // way back. Both the pointer path (the `<tr>` onClick) and the keyboard
+  // path (the key `<Link>`) go through here, so the two never diverge.
+  const openTask = (key: string): void => {
+    rememberOpenedTask(key);
+    void navigate({ to: "/tasks/$key", params: { key } });
+  };
 
   // The result-set identity, for BLK-18. Everything the server reads
   // except how far we have paged — loading page 2 must not clear a
@@ -483,9 +630,11 @@ export function ListView() {
    */
   const undoControl = undoableArchive.length > 0
     ? (
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           disabled={busy}
+          className="ml-2"
           onClick={() => {
             const refsToRestore = undoableArchive;
             void runBulk(
@@ -494,10 +643,9 @@ export function ListView() {
               true,
             );
           }}
-          className="ml-2 rounded-md border border-border-subtle px-2 py-0.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
         >
           Undo
-        </button>
+        </Button>
       )
     : undefined;
 
@@ -602,15 +750,20 @@ export function ListView() {
   }, [loadedPages, search.page, navigate]);
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div className="flex items-center justify-between gap-3">
-        <FilterBar />
-        <RefreshButton
-          busy={tasks.isFetching}
-          onRefresh={() => { void tasks.refetch(); }}
-        />
-        <ExportMenu total={total} queryString={buildQueryString(params)} />
-      </div>
+    <div className="flex flex-col gap-3 p-4">
+      {/* K-title rule: the page title anchors the screen ABOVE the toolbar,
+          on every task view. The text is the active scope (view/project) or
+          "List". */}
+      <PageHeader title={title} testId="list-page-header" />
+      {/* FilterBar owns the whole toolbar row now — the filters (left) AND
+          the view-action cluster (Export/Save, top-right). The manual refresh
+          button was removed (Q4: refresh on focus/visibility, not a button);
+          Export is passed in as props so the bar controls its layout without
+          re-deriving the tasks feed. */}
+      <FilterBar
+        exportTotal={total}
+        exportQueryString={buildQueryString(params)}
+      />
       {queryWarnings.length > 0 && (
         <div
           role="status"
@@ -629,13 +782,22 @@ export function ListView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg"
         >
           <p className="font-medium">
-            <code className="font-mono">.loctt/config/workflow.yaml</code> has an
+            <code>.loctt/config/workflow.yaml</code> has an
             entry that does not parse, so some statuses or fields may be missing
             from the filters below.
           </p>
           <p className="mt-1">
-            Fix the file (or run <code className="font-mono">loctt doctor</code>),
-            then refresh. The rest of the list loaded normally.
+            <Link
+              to="/settings/$section"
+              params={{ section: "diagnostics" }}
+              data-testid="workflow-config-broken-diagnostics-link"
+              className="underline hover:opacity-80"
+            >
+              Open Diagnostics
+            </Link>
+            {" "}to see the problem, or fix the file (or run{" "}
+            <code className="font-mono">loctt doctor</code>), then refresh. The
+            rest of the list loaded normally.
           </p>
           <ul className="mt-1 list-none space-y-0.5 p-0" data-testid="workflow-config-broken-list">
             {brokenWorkflowEntries.map(e => (
@@ -649,7 +811,7 @@ export function ListView() {
                     Joined with a dot so the path reads `statuses[0].category`
                     — the field with enough path to find it (ERR-10 bullet 2)
                     and the expected values Zod carries (bullet 3). */}
-                <code className="rounded bg-bg-surface px-1 py-0.5 font-mono">
+                <code className="rounded bg-bg-surface px-1 py-0.5">
                   {e.sub}[{e.index}].
                 </code>{e.error}
               </li>
@@ -665,33 +827,49 @@ export function ListView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg"
         >
           <p className="font-medium">
-            The saved view <code className="font-mono">{brokenView.name}</code> could
+            The saved view <code>{brokenView.name}</code> could
             not be run: its query no longer parses.
           </p>
-          <p className="mt-1">
+          {/* The loader's message. It names the offending position
+              itself — a character offset when it has one, otherwise the
+              failing path (`[0].op must be one of: …`), which is what a
+              shape failure can honestly point at. `position` is rendered
+              as well only when it exists; asserting it always does would
+              be asserting an optional field. */}
+          <p data-testid="broken-view-error" className="mt-1">
             {brokenView.error}
             {brokenView.position !== undefined
               ? <> (at position <span data-testid="broken-view-position">{brokenView.position}</span>)</>
               : null}
           </p>
-          <p className="mt-1 font-mono text-[0.7857rem] text-text-secondary">{brokenView.query}</p>
-          <button
-            type="button"
-            data-testid="broken-view-fix"
-            onClick={() => {
-              void navigate({
-                search: prev => ({
-                  ...prev,
-                  view: undefined,
-                  q: brokenView.query,
-                  edit: true,
-                }),
-              });
-            }}
-            className="mt-1 underline hover:text-text-primary"
+          {/* VUE-22 bullet 3: the entry's original YAML, so the text the
+              user wrote is visible and they can fix the file by hand and
+              keep it. This is the only surviving record of what they
+              meant — describing it without showing it is not actionable
+              (the same reason SavedViewsPanel renders `rawText`). */}
+          {brokenViewRaw !== undefined && (
+            <pre
+              data-testid="broken-view-raw"
+              className="m-0 mt-1 overflow-x-auto rounded bg-bg-muted px-2 py-1 font-mono text-[0.7857rem] text-text-secondary"
+            >
+              {brokenViewRaw}
+            </pre>
+          )}
+          {/* K102 removed repair-in-place, so this points at the one
+              surface that can actually act: Saved views, where Replace…
+              sits behind an explicit confirmation. The button this
+              replaced seeded the advanced editor from `broken_view.query`
+              — a field the server never sent — so it opened the editor
+              blank and silently dropped the user's YAML. */}
+          <Link
+            to="/settings/$section"
+            params={{ section: "saved-views" }}
+            hash={`row-${brokenView.id}`}
+            data-testid="broken-view-manage"
+            className="mt-1 inline-block underline hover:text-text-primary"
           >
-            Fix this view in the editor
-          </button>
+            Fix it in the file, or replace it in Saved views
+          </Link>
         </div>
       )}
       {missingView !== undefined && (
@@ -699,9 +877,9 @@ export function ListView() {
           role="status"
           className="rounded-md border border-warn-fg/30 bg-warn-bg px-4 py-2 text-[0.8571rem] text-warn-fg"
         >
-          The saved view <code className="font-mono">{missingView}</code> no longer
+          The saved view <code>{missingView}</code> no longer
           exists, so this is showing every task instead. It was probably deleted
-          from <code className="font-mono">.loctt/config/queries.yaml</code>.{" "}
+          from <code>.loctt/config/queries.yaml</code>.{" "}
           <button
             type="button"
             onClick={() => { void navigate({ search: prev => ({ ...prev, view: undefined }) }); }}
@@ -719,18 +897,21 @@ export function ListView() {
           {" "}writes atomically, so a half-written file is not.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
-              <li key={u.id} className="font-mono text-[0.7857rem]">
+              <li key={u.id} className="text-[0.7857rem]">
                 {u.path}: {u.reason}
               </li>
             ))}
           </ul>
         </div>
       )}
-      {/* `overflow-x-auto`, not `hidden`: at a narrow viewport the
-          table is wider than its container, and clipping it made seven
-          of ten columns unreachable by any input — worse than the
-          honest overflow it replaced. `overflow-y-hidden` keeps the
-          rounded corners from being cut. */}
+      {/* The table is the desktop/tablet layout (>= sm). Below sm it is
+          replaced by a stacked-card list (rendered conditionally below) —
+          a 10-column table on a 375px phone was unusable (Title clipped,
+          most columns off-screen behind a horizontal scroll). UX eval #3.
+          Rendered only when NOT narrow so the two layouts never coexist in
+          the DOM. `overflow-x-auto` still lets a tablet scroll a wide
+          column set; `overflow-y-hidden` keeps the rounded corners. */}
+      {!isNarrow && (
       <div className="overflow-x-auto overflow-y-hidden rounded-md border border-border-subtle bg-bg-surface">
         {/* A11Y-26: the table has an accessible name describing what
             it lists, so a screen reader's table navigation announces
@@ -744,22 +925,18 @@ export function ListView() {
           <thead>
             <tr>
               <th scope="col" className="sticky top-0 w-9 border-b border-border-default bg-bg-canvas px-3 py-2 dark:bg-bg-surface">
-                <input
-                  type="checkbox"
+                <Checkbox
                   aria-label="Select all on this page"
                   checked={allOnPageSelected}
-                  ref={el => {
-                    // Indeterminate is not an attribute — it only
-                    // exists as a DOM property. BLK-3 requires the
-                    // header to be *checked*, not indeterminate, once
-                    // every visible row is selected.
-                    if (el) el.indeterminate = someOnPageSelected && !allOnPageSelected;
-                  }}
+                  // BLK-3 requires the header to be *checked*, not
+                  // indeterminate, once every visible row is selected;
+                  // the primitive owns the DOM-property plumbing.
+                  indeterminate={someOnPageSelected && !allOnPageSelected}
                   onChange={() => {
                     if (allOnPageSelected) selection.clear();
                     else selection.selectAll(items.map(t => t.id));
                   }}
-                  className="cursor-pointer align-middle accent-accent"
+                  className="align-middle"
                 />
               </th>
               {columns.map(col => {
@@ -788,23 +965,18 @@ export function ListView() {
                             this column is the active sort, the arrow is
                             in the stronger secondary text colour and
                             points up (asc) / down (desc); an unsorted
-                            column shows a faint neutral caret hint. All
-                            three use the canonical icon glyphs (ICON) so
-                            the list stops mixing `▼` with the app-wide
-                            `▾` (icons.ts §sort). */}
-                        <span
-                          className={
-                            isSorted
-                              ? "text-[0.7143rem] text-text-secondary"
-                              : "text-[0.7143rem] text-text-tertiary"
+                            column shows a faint neutral caret hint. */}
+                        <Icon
+                          name={
+                            isSorted && sortDir === "asc"
+                              ? "chevronUp"
+                              : "chevronDown"
                           }
-                        >
-                          {isSorted
-                            ? sortDir === "asc"
-                              ? ICON.caretUp
-                              : ICON.caretDown
-                            : ICON.caretDown}
-                        </span>
+                          size={12}
+                          className={
+                            isSorted ? "text-text-secondary" : "text-text-tertiary"
+                          }
+                        />
                       </button>
                     ) : (
                       col.label
@@ -883,9 +1055,17 @@ export function ListView() {
                       </button>
                     </>
                   ) : (
-                    <>
-                      No tasks yet. Create one to get started.
-                    </>
+                    <div className="flex flex-col items-center gap-3">
+                      <span>No tasks yet. Create your first one to get started.</span>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        testId="list-empty-add-task"
+                        onClick={() => { createTask.open(); }}
+                      >
+                        + Add task
+                      </Button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -893,7 +1073,7 @@ export function ListView() {
               items.map(task => (
                 <tr
                   key={task.id}
-                  onClick={() => void navigate({ to: "/tasks/$key", params: { key: task.key } })}
+                  onClick={() => { openTask(task.key); }}
                   aria-selected={selection.isSelected(task.id)}
                   className={[
                     // The key column is a `<th scope="row">`, not a `<td>`,
@@ -906,19 +1086,32 @@ export function ListView() {
                     // paint themselves — so on hover the whole row lifts,
                     // the ID/label cells included, and each chip stays
                     // legible instead of dissolving into the hover.
-                    "cursor-pointer [&>td]:border-b [&>td]:border-border-default [&>td]:px-3 [&>td]:py-2.5",
-                    "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0",
+                    //
+                    // The border-bottom + cell padding must ALSO target the
+                    // row-header `<th>` (the key column). A `[&>td]`-only rule
+                    // left that one cell with no bottom border, so the row
+                    // divider had a visible break across the key column — it
+                    // read as a gap in the line, not a continuous rule
+                    // (Ken's report). Cover both `td` and `th`.
+                    "cursor-pointer [&>td]:border-b [&>th]:border-b [&>td]:border-border-default [&>th]:border-border-default",
+                    "[&>td]:px-3 [&>td]:py-2.5 [&>th]:px-3 [&>th]:py-2.5",
+                    "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0 last:[&>th]:border-b-0",
                     task.archived ? "opacity-50" : "",
-                    // Background *and* a left border, not colour alone
+                    // The 2px selected-marker border is ALWAYS present on the
+                    // first cell — transparent when unselected — so toggling
+                    // selection only changes its COLOUR, never adds width.
+                    // Adding the border on select shifted every row a few px
+                    // sideways (Ken's report); reserving the space fixes it.
+                    "[&>td:first-child]:border-l-2 [&>td:first-child]:border-l-transparent",
+                    // Background *and* the left border, not colour alone
                     // (BLK-1) — the checked box is the third signal.
                     selection.isSelected(task.id)
-                      ? "[&>td]:bg-accent/10 [&>td:first-child]:border-l-2 [&>td:first-child]:border-l-accent"
+                      ? "[&>td]:bg-accent/10 [&>th]:bg-accent/10 [&>td:first-child]:!border-l-accent"
                       : "",
                   ].join(" ")}
                 >
                   <td className="align-middle">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       aria-label={`Select ${task.key}`}
                       checked={selection.isSelected(task.id)}
                       // The checkbox is the one hit area in the row that
@@ -927,12 +1120,12 @@ export function ListView() {
                       // change without a row click at all.
                       onClick={e => e.stopPropagation()}
                       onChange={() => selection.toggle(task.id)}
-                      className="cursor-pointer align-middle accent-accent"
+                      className="align-middle"
                     />
                   </td>
                   {columns.map(col => {
                     const cell = (
-                      <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                      <Cell colId={col.id} task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} onOpen={openTask} />
                     );
                     // A11Y-26's second bullet: the key column is the
                     // row header, so navigating rows announces *which
@@ -943,7 +1136,11 @@ export function ListView() {
                         {cell}
                       </th>
                     ) : (
-                      <td key={col.id} data-col={col.id} className="align-middle">
+                      <td
+                        key={col.id}
+                        data-col={col.id}
+                        className={"align-middle" + (col.id === "title" ? " " + TITLE_CELL : "")}
+                      >
                         {cell}
                       </td>
                     );
@@ -954,6 +1151,106 @@ export function ListView() {
           </tbody>
         </table>
       </div>
+      )}
+
+      {/* Mobile (< sm): a stacked card per task instead of the table.
+          Reuses the same `items`, `Cell` renderers and `selection` so the
+          data, sorting and multi-select all match the table exactly — only
+          the layout differs. UX eval #3 (responsive). Rendered ONLY below
+          `sm` (conditional, not CSS-hidden) so the task list is never in
+          the DOM twice — one accessible source, and no duplicate text for
+          a screen reader or a test's `getByText`. */}
+      {isNarrow && (
+      <ul className="flex flex-col gap-2 sm:hidden" data-testid="task-cards">
+        {queryFailed ? (
+          // Parity with the desktop table (ERR-1): a failed /api/tasks
+          // must read as "could not load", never fall through to the
+          // empty copy below. Without this branch a phone showed
+          // "No tasks match these filters." for a server that was down —
+          // the exact data-loss confusion the table already guards. Same
+          // latched error and Retry the table uses.
+          <li data-testid="task-cards-error">
+            <ErrorState
+              error={lastQueryError.current}
+              context="Could not load tasks"
+              onRetry={() => { void tasks.refetch(); }}
+            />
+          </li>
+        ) : tasks.isLoading ? (
+          // A load in progress shows placeholders, not the empty state
+          // (ONB-12). Card-shaped to match the rows they stand in for;
+          // capped like the table so a large page size does not paint
+          // a wall of placeholders.
+          <SkeletonCards rows={Math.min(params.limit ?? DEFAULT_LIST_LIMIT, 25)} />
+        ) : items.length === 0 ? (
+          <li className="rounded-md border border-border-subtle bg-bg-surface px-3 py-8 text-center text-text-tertiary">
+            {hasFilters ? (
+              <>
+                No tasks match these filters.{" "}
+                <button
+                  type="button"
+                  onClick={() => void navigate({ search: clearedSearch })}
+                  className="underline underline-offset-2 hover:text-text-primary"
+                >
+                  Clear filters
+                </button>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <span>No tasks yet. Create your first one to get started.</span>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  testId="list-empty-add-task-card"
+                  onClick={() => { createTask.open(); }}
+                >
+                  + Add task
+                </Button>
+              </div>
+            )}
+          </li>
+        ) : (
+          items.map(task => (
+            <li
+              key={task.id}
+              data-testid={`task-card-${task.key}`}
+              aria-selected={selection.isSelected(task.id)}
+              onClick={() => { openTask(task.key); }}
+              className={[
+                "cursor-pointer rounded-md border bg-bg-surface p-3",
+                selection.isSelected(task.id) ? "border-accent bg-accent/5" : "border-border-subtle",
+                task.archived ? "opacity-50" : "",
+              ].join(" ")}
+            >
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  aria-label={`Select ${task.key}`}
+                  checked={selection.isSelected(task.id)}
+                  onClick={e => e.stopPropagation()}
+                  onChange={() => selection.toggle(task.id)}
+                  className="mt-0.5 shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 text-[0.7857rem] text-text-tertiary">
+                    <Cell colId="key" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} onOpen={openTask} />
+                    <Cell colId="project" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                  </div>
+                  <div className="mt-0.5 font-medium text-text-primary">
+                    <Cell colId="title" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8571rem]">
+                    <Cell colId="status" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                    <Cell colId="priority" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                    <Cell colId="assignee" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                    <Cell colId="due_date" task={task} lookups={lookups} now={now} today={today} estimation={estimation} onFilterLabel={onFilterLabel} />
+                  </div>
+                </div>
+              </div>
+            </li>
+          ))
+        )}
+      </ul>
+      )}
       {/* The outcome outlives the bar. A move clears the selection
           (BLK-18), which unmounts BulkBar — and with it the only place
           the result was shown, taking the new keys BLK-9 requires be
@@ -968,14 +1265,15 @@ export function ListView() {
           className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border-divider bg-bg-surface px-4 py-2 shadow-[0_-1px_3px_rgba(0,0,0,0.06)]"
         >
           <BulkResult result={bulkResult} action={undoControl} />
-          <button
-            type="button"
+          <IconButton
+            variant="secondary"
+            size="sm"
             aria-label="Dismiss"
+            className="ml-auto"
             onClick={() => { setBulkResult(undefined); }}
-            className="ml-auto rounded-md border border-border-subtle px-2 py-0.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted"
           >
-            ✕
-          </button>
+            <Icon name="close" size={14} />
+          </IconButton>
         </div>
       )}
       <BulkBar
@@ -1055,6 +1353,38 @@ export function ListView() {
   );
 }
 
+/**
+ * LST-20: the title cell is the one that absorbs the leftover width.
+ *
+ * The table is `w-full` with the browser's default `table-layout: auto`,
+ * so every column is sized from its own content. A 400-character
+ * unbroken title therefore asked for ~400 characters of column, the
+ * table grew past its wrapper, and the whole list scrolled sideways —
+ * taking the adjacent columns with it, which is exactly what the case
+ * forbids.
+ *
+ * The previous guard was `max-w-[42ch]` on the inner span. That is a
+ * magic number pretending to be a layout rule: 42ch is ~354px, which
+ * still overflowed by 66px at the tested viewport (measured), and any
+ * narrower value only moves the breakpoint — the next viewport, font
+ * size or column set breaks it again.
+ *
+ * `max-w-0` + `w-full` is the layout rule instead:
+ *
+ *  - `max-width: 0` makes this cell's *intrinsic* contribution to the
+ *    table's preferred width zero, so the auto layout sizes every other
+ *    column from its own content first and the title never inflates the
+ *    table. ("Adjacent columns retain their widths.")
+ *  - `width: 100%` then hands the title whatever horizontal space is
+ *    actually left over — it is the flexible column, at any viewport,
+ *    rather than a fixed `ch` count that happens to fit one.
+ *
+ * The inner span's `truncate` clips to that computed width and puts the
+ * ellipsis at the real column boundary. Nothing here touches the stored
+ * value; the full string stays on `title=` for hover.
+ */
+const TITLE_CELL = "w-full max-w-0";
+
 function Cell({
   colId,
   task,
@@ -1063,6 +1393,7 @@ function Cell({
   today,
   estimation,
   onFilterLabel,
+  onOpen,
 }: {
   colId: string;
   task: TaskListRow;
@@ -1071,6 +1402,12 @@ function Cell({
   estimation: EstimationShape | null;
   /** Clicking a label pill filters to it (MSL-6). */
   onFilterLabel: (id: string) => void;
+  /**
+   * A11Y-9: activating the key link opens the task, recording the key
+   * for focus restore on return. Optional so a Cell rendered without it
+   * (none today) still falls back to a plain navigating link.
+   */
+  onOpen?: ((key: string) => void) | undefined;
   now: number;
   today: string;
 }) {
@@ -1092,14 +1429,31 @@ function Cell({
           <Link
             to="/tasks/$key"
             params={{ key: task.key }}
-            onClick={e => e.stopPropagation()}
+            // A11Y-9: this link is the row's keyboard-operable primary
+            // action — a real anchor, so Enter navigates natively and it
+            // is a single, natural Tab stop (no `tabIndex` on the `<tr>`,
+            // which would double the stops and make a reader announce the
+            // row twice). Plain activation records the opened key for
+            // focus-restore on return and stops the click reaching the
+            // `<tr>` (whose own onClick would record it a second time and
+            // is the mouse-only convenience). A modified click
+            // (cmd/ctrl/shift/middle → open in new tab) is left to the
+            // browser: it does not leave this list, so there is nothing
+            // to restore, and recording would be wrong.
+            onClick={e => {
+              e.stopPropagation();
+              if (onOpen === undefined) return;
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+              e.preventDefault();
+              onOpen(task.key);
+            }}
             // A11Y-17: the per-row focus anchor. When a refetch re-renders
             // the table (a filter change, a background poll), the
             // restoration effect re-focuses the same task's link by this
             // attribute, so focus stays on the equivalent row rather than
             // being dropped to document.body.
             data-task-key={task.key}
-            className="font-mono text-text-tertiary no-underline hover:text-accent"
+            className="text-text-tertiary no-underline hover:text-accent"
           >
             {task.key}
           </Link>
@@ -1126,13 +1480,15 @@ function Cell({
       const shown = task.title ?? task.key;
       // LST-20: an unbroken 400-char title had nothing to stop it, so
       // it widened the column and scrolled the whole table sideways.
+      // The cap lives on the `<td>` (`TITLE_CELL`), not here: this span
+      // only has to stay inside whatever width the cell was given.
       // Truncation is visual only — `title` puts the full string on
       // hover and the stored value is untouched.
       return (
         <span
           title={titleHealth?.error ?? task.title ?? task.key}
           className={[
-            "flex max-w-[42ch] items-center gap-1 truncate font-medium",
+            "flex max-w-full items-center gap-1 truncate font-medium",
             task.title === undefined ? "italic text-text-tertiary" : "text-text-primary",
           ].join(" ")}
         >
@@ -1198,13 +1554,37 @@ function Cell({
       return task.updated_at === undefined ? (
         <Dash />
       ) : (
-        <span className="whitespace-nowrap font-mono text-text-tertiary">
+        <span className="whitespace-nowrap text-text-tertiary">
           {relativeTime(task.updated_at, now)}
         </span>
       );
     default:
       return <Dash />;
   }
+}
+
+/**
+ * The mobile counterpart of {@link SkeletonRows}: a placeholder card per
+ * pending row, so the narrow layout shows a load-in-progress rather than
+ * the empty state (ONB-12 parity with the table).
+ */
+function SkeletonCards({ rows }: { rows: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, r) => (
+        <li
+          key={r}
+          aria-hidden
+          data-testid="task-card-skeleton"
+          className="rounded-md border border-border-subtle bg-bg-surface p-3"
+        >
+          <span className="block h-3 w-16 animate-pulse rounded bg-bg-muted" />
+          <span className="mt-2 block h-3.5 w-3/4 animate-pulse rounded bg-bg-muted" />
+          <span className="mt-2 block h-3 w-1/2 animate-pulse rounded bg-bg-muted" />
+        </li>
+      ))}
+    </>
+  );
 }
 
 function SkeletonRows({ columns, rows }: { columns: number; rows: number }) {

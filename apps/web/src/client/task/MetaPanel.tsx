@@ -14,6 +14,8 @@ import { relativeTime, shortDate } from "../list/format.ts";
 import type { ListLookups } from "../list/lookups.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
+import { resolveRowColors, useColorMode } from "../ui/entityColor.ts";
+import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { customFieldRows } from "./editors/CustomFields.tsx";
 import { DateField } from "./editors/DateField.tsx";
 import { LabelsField } from "./editors/LabelsField.tsx";
@@ -66,6 +68,8 @@ export function MetaPanel({
   milestones,
   sprints,
   calendar,
+  currentUser,
+  identityUnknown,
   onSet,
   onUnset,
   onCreateLabel,
@@ -105,6 +109,15 @@ export function MetaPanel({
   readonly milestones: readonly MilestoneDef[];
   readonly sprints: readonly SprintDef[];
   readonly calendar: CalendarConfig | undefined;
+  /**
+   * L3: the current (active) user, for the "Assign to me" quick action.
+   * `null` when the current-user read failed — identity is unknown
+   * (SHL-40), which also sets {@link identityUnknown}; the quick action
+   * is then hidden rather than writing under a guessed identity.
+   */
+  readonly currentUser?: UserProfile | null | undefined;
+  /** L3: true when identity is unknown (SHL-40) — hides "Assign to me". */
+  readonly identityUnknown?: boolean | undefined;
   readonly onSet: (field: string, value: unknown) => void;
   readonly onUnset: (field: string) => void;
   readonly onCreateLabel: (name: string) => Promise<string | undefined>;
@@ -138,21 +151,48 @@ export function MetaPanel({
   const today = new Date().toISOString().slice(0, 10);
   const project = lookups.project(fm.project);
 
-  const statusOptions = (workflow?.statuses ?? []).map(s => ({
-    key: s.key,
-    label: s.label,
-    ...(s.color !== undefined ? { color: s.color } : {}),
-  }));
-  const priorityOptions = (workflow?.priorities ?? []).map(p => ({
-    key: p.key,
-    label: p.label,
-    ...(p.color !== undefined ? { color: p.color } : {}),
-  }));
-  const typeOptions = (workflow?.task_types ?? []).map(t => ({
-    key: t.key,
-    label: t.label,
-    ...(t.color !== undefined ? { color: t.color } : {}),
-  }));
+  // L3: the resolved assignee/reporter profiles, for the avatar beside
+  // each picker (matching the list's AssigneeCell). Undefined for an
+  // unset field or a dangling id the tracker no longer knows — no face
+  // for a referent that cannot be shown.
+  const assigneeUser = users.find(u => u.id === fm.assignee);
+  const reporterUser = users.find(u => u.id === fm.reporter);
+
+  /**
+   * L3: whether the "Assign to me" quick action is offered. Hidden when
+   *  - identity is unknown (SHL-40 refuses attributed writes — writing
+   *    under a guessed identity is exactly what that block prevents),
+   *  - there is no current user at all,
+   *  - the current user is archived (archived users cannot be assigned
+   *    new work — TSK-7), or
+   *  - the current user is already the assignee (nothing to do).
+   */
+  const assignableSelf =
+    identityUnknown !== true &&
+    currentUser !== null &&
+    currentUser !== undefined &&
+    currentUser.archived !== true &&
+    fm.assignee !== currentUser.id
+      ? currentUser
+      : undefined;
+
+  // K103: the picker dots take one hex each, so each stored colour is
+  // resolved for the active theme here. `resolveRowColors` drops the
+  // key when it cannot resolve, which is the "no colour" signal
+  // `OptionPicker` already handles.
+  const colorMode = useColorMode();
+  const statusOptions = resolveRowColors(
+    (workflow?.statuses ?? []).map(s => ({ key: s.key, label: s.label, color: s.color })),
+    colorMode,
+  );
+  const priorityOptions = resolveRowColors(
+    (workflow?.priorities ?? []).map(p => ({ key: p.key, label: p.label, color: p.color })),
+    colorMode,
+  );
+  const typeOptions = resolveRowColors(
+    (workflow?.task_types ?? []).map(t => ({ key: t.key, label: t.label, color: t.color })),
+    colorMode,
+  );
 
   // TSK-12's fourth bullet: fields scoped to a task type appear only
   // for that type, and changing the type updates the set without a
@@ -229,6 +269,7 @@ export function MetaPanel({
             options={typeOptions}
             onSelect={v => { onSet("task_type", v); }}
             onClear={() => { onUnset("task_type"); }}
+            emptyText="Set type"
           />
         </Row>
 
@@ -239,6 +280,7 @@ export function MetaPanel({
             options={priorityOptions}
             onSelect={v => { onSet("priority", v); }}
             onClear={() => { onUnset("priority"); }}
+            emptyText="Set priority"
           />
         </Row>
 
@@ -253,33 +295,78 @@ export function MetaPanel({
         </Row>
 
         <Row {...rowShared} label="Assignee" error={errorFor("assignee")} corrupt={corruptFor("assignee")} onClearCorrupt={() => { onUnset("assignee"); }}>
-          <OptionPicker
-            label="Assignee"
-            value={fm.assignee}
-            options={userOptions(users, fm.assignee)}
-            onSelect={v => { onSet("assignee", v); }}
-            onClear={() => { onUnset("assignee"); }}
-            search={{
-              onQuery: q => searchUsers(q).then(rows => userOptions(rows, fm.assignee)),
-              placeholder: "Search users…",
-            }}
-            disabledReason="Archived users cannot be assigned new work."
-          />
+          <div className="flex min-w-0 items-center gap-1.5">
+            {/* L3: show the assigned person's face beside the picker,
+                matching the list's AssigneeCell. The avatar in the picker
+                *options* would need Combobox internals (off-limits), so it
+                lives here in the row's trigger area instead — noted. */}
+            {assigneeUser !== undefined && (
+              <UserAvatar
+                user={assigneeUser}
+                sizeClass="h-5 w-5 text-[0.7143rem]"
+                testId="meta-assignee-avatar"
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <OptionPicker
+                label="Assignee"
+                value={fm.assignee}
+                options={userOptions(users, fm.assignee)}
+                onSelect={v => { onSet("assignee", v); }}
+                onClear={() => { onUnset("assignee"); }}
+                emptyText="Add assignee"
+                search={{
+                  onQuery: q => searchUsers(q).then(rows => userOptions(rows, fm.assignee)),
+                  placeholder: "Search users…",
+                }}
+                disabledReason="Archived users cannot be assigned new work."
+              />
+            </div>
+          </div>
+          {/* L3: "Assign to me". Hidden when the current user is already
+              the assignee, when identity is unknown (SHL-40 refuses
+              attributed writes), and when the current user is archived
+              (archived users cannot be assigned new work — TSK-7). */}
+          {assignableSelf !== undefined && (
+            <div className="mt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                testId="meta-assign-to-me"
+                onClick={() => { onSet("assignee", assignableSelf.id); }}
+                className="-mx-1 h-6 text-accent"
+              >
+                Assign to me
+              </Button>
+            </div>
+          )}
         </Row>
 
         <Row {...rowShared} label="Reporter" error={errorFor("reporter")} corrupt={corruptFor("reporter")} onClearCorrupt={() => { onUnset("reporter"); }}>
-          <OptionPicker
-            label="Reporter"
-            value={fm.reporter}
-            options={userOptions(users, fm.reporter)}
-            onSelect={v => { onSet("reporter", v); }}
-            onClear={() => { onUnset("reporter"); }}
-            disabledReason="Archived users cannot be set as reporter."
-            search={{
-              onQuery: q => searchUsers(q).then(rows => userOptions(rows, fm.reporter)),
-              placeholder: "Search users…",
-            }}
-          />
+          <div className="flex min-w-0 items-center gap-1.5">
+            {reporterUser !== undefined && (
+              <UserAvatar
+                user={reporterUser}
+                sizeClass="h-5 w-5 text-[0.7143rem]"
+                testId="meta-reporter-avatar"
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <OptionPicker
+                label="Reporter"
+                value={fm.reporter}
+                options={userOptions(users, fm.reporter)}
+                onSelect={v => { onSet("reporter", v); }}
+                onClear={() => { onUnset("reporter"); }}
+                emptyText="Add reporter"
+                disabledReason="Archived users cannot be set as reporter."
+                search={{
+                  onQuery: q => searchUsers(q).then(rows => userOptions(rows, fm.reporter)),
+                  placeholder: "Search users…",
+                }}
+              />
+            </div>
+          </div>
         </Row>
 
         <Row {...rowShared} label="Labels" error={errorFor("labels")} corrupt={corruptFor("labels")} onClearCorrupt={() => { onUnset("labels"); }}>
@@ -306,6 +393,7 @@ export function MetaPanel({
             options={namedOptions(milestones, fm.milestone)}
             onSelect={v => { onSet("milestone", v); }}
             onClear={() => { onUnset("milestone"); }}
+            emptyText="Add milestone"
             disabledReason="Archived milestones cannot be newly assigned."
             search={{
               onQuery: q => searchMilestones(q).then(rows => namedOptions(rows, fm.milestone)),
@@ -321,6 +409,7 @@ export function MetaPanel({
             options={namedOptions(sprints, fm.sprint)}
             onSelect={v => { onSet("sprint", v); }}
             onClear={() => { onUnset("sprint"); }}
+            emptyText="Add to sprint"
             disabledReason="Archived sprints cannot be newly assigned."
             search={{
               onQuery: q => searchSprints(q).then(rows => namedOptions(rows, fm.sprint)),
@@ -336,6 +425,7 @@ export function MetaPanel({
             calendar={calendar}
             onCommit={v => { onSet("start_date", v); }}
             onClear={() => { onUnset("start_date"); }}
+            emptyText="Set start date"
             {...datesInverted(fm.start_date, fm.due_date)
               ? { problem: "The start date is after the due date." }
               : {}}
@@ -349,6 +439,7 @@ export function MetaPanel({
             calendar={calendar}
             onCommit={v => { onSet("due_date", v); }}
             onClear={() => { onUnset("due_date"); }}
+            emptyText="Set due date"
             {...datesInverted(fm.start_date, fm.due_date)
               ? { problem: "The due date is before the start date." }
               : {}}
@@ -385,6 +476,7 @@ export function MetaPanel({
           values: fm.fields ?? {},
           onSet,
           onUnset,
+          colorMode,
         }).map(row => (
           <Row
             {...rowShared}
@@ -480,10 +572,10 @@ function Footer({
           {/* Named as previous so they are not mistaken for the live
               key, and phrased so a user whose bookmark changed can see
               why (XS-46's second bullet). */}
-          Previously {history.map(k => <code key={k} className="font-mono">{k}</code>)
+          Previously {history.map(k => <code key={k}>{k}</code>)
             .reduce<React.ReactNode[]>((acc, node, i) => i === 0 ? [node] : [...acc, ", ", node], [])}
           {" — now "}
-          <code className="font-mono">{fm.key}</code>. Old links still resolve.
+          <code>{fm.key}</code>. Old links still resolve.
         </p>
       )}
     </div>
@@ -521,6 +613,7 @@ function estimateControl(
         options={options}
         onSelect={v => { onSet("estimate", v); }}
         onClear={() => { onUnset("estimate"); }}
+        emptyText="Add estimate"
       />
     );
   }
@@ -531,6 +624,7 @@ function estimateControl(
       value={value}
       numeric
       suffix={shape.suffix}
+      placeholder="Add estimate"
       onCommit={v => { onSet("estimate", Number(v)); }}
       onClear={() => { onUnset("estimate"); }}
     />
@@ -687,7 +781,7 @@ function CorruptFieldNotice({
         <span className="font-medium">{label}</span>{" "}
         <span aria-hidden="true">⚠</span>{" "}
         corrupt:{" "}
-        <span data-testid={`meta-corrupt-raw-${slug}`} className="font-mono break-all">
+        <span data-testid={`meta-corrupt-raw-${slug}`} className="break-all">
           {health.rawText}
         </span>
         <span className="sr-only"> (corrupt value — {health.error})</span>
@@ -752,9 +846,9 @@ function UnrecognisedGroup({
               className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 text-[0.9286rem]"
             >
               <div className="min-w-0">
-                <code className="font-mono text-text-secondary">{h.field}</code>
+                <code className="text-text-secondary">{h.field}</code>
                 {": "}
-                <span className="font-mono break-all text-text-primary">{h.rawText}</span>
+                <span className="break-all text-text-primary">{h.rawText}</span>
               </div>
               <Button
                 variant="ghost"

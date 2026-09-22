@@ -1,5 +1,5 @@
 import type { TimelineGrouping, TimelineZoom } from "@loctt/contracts";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -10,27 +10,34 @@ import { useTaskDates } from "../api/hooks/useTaskDates.ts";
 import { tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { ConfigErrorState } from "../board/ConfigErrorState.tsx";
+import { useCreateTask } from "../create/CreateTaskProvider.tsx";
+import { buildGroupingCatalog, type GroupEntry } from "../grouping/catalog.ts";
+import { GroupByPicker } from "../grouping/GroupByPicker.tsx";
+import { FilterBar } from "../list/FilterBar.tsx";
+import { useScopeTitle } from "../list/useScopeTitle.ts";
+import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
-import { Select } from "../ui/Select.tsx";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import { ToolbarButton } from "../ui/ToolbarButton.tsx";
 import { dependencyGraph } from "./arrows.ts";
 import {
   computeRange,
   dateToX,
   DAY_WIDTH,
+  fillRange,
   rangeWidth,
 } from "./geometry.ts";
 import {
   BAND_HEADER_H,
   buildLayout,
-  ROW_H,
 } from "./layout.ts";
-import type { TimelineRow } from "./rows.ts";
-import { buildRows, dateProblemNote, totalRows } from "./rows.ts";
+import { buildRows, totalRows } from "./rows.ts";
 import { dependencyRelationshipStatus, resolveArrows, resolveGrouping, resolveZoom } from "./settings.ts";
-import { TimelineChart } from "./TimelineChart.tsx";
+import { GUTTER_W, GUTTER_W_NARROW, TimelineChart } from "./TimelineChart.tsx";
+import { UnscheduledDrawer } from "./UnscheduledDrawer.tsx";
 import type { BarDropRequest } from "./useBarDrag.ts";
 import { applyDelta, useBarDrag } from "./useBarDrag.ts";
 
@@ -54,6 +61,8 @@ const TIMELINE_PAGE_SIZE = 200;
 export function TimelineView() {
   const search = useSearch({ from: "/timeline" });
   const navigate = useNavigate({ from: "/timeline" });
+  // K-title rule: scope-aware title (view/project name, else "Timeline").
+  const title = useScopeTitle(search, "Timeline");
 
   const params = useMemo(
     () => ({ ...tasksParamsFromSearch(search), limit: TIMELINE_PAGE_SIZE }),
@@ -68,6 +77,14 @@ export function TimelineView() {
   const sprints = useSprints();
   const users = useUsers();
   const views = useViews();
+  // First-run: the timeline greets a newcomer with advanced controls
+  // over empty data. When the tracker is genuinely empty (no tasks at
+  // all, no filter hiding them), the empty state offers a way in — the
+  // same app-wide create entry point the board and list use. A
+  // filtered-empty timeline, or one whose tasks are merely undated
+  // (`noBars`, the unscheduled drawer's job), does NOT get this CTA:
+  // creating a task would not answer either state.
+  const createTask = useCreateTask();
 
   const pages = tasks.data?.pages ?? [];
   const items = useMemo(() => pages.flatMap(p => p.items), [pages]);
@@ -100,9 +117,26 @@ export function TimelineView() {
     [search.zoom, search.grouping, search.arrows, activeView, workflow.data],
   );
 
+  // The group-by catalog is derived from the live workflow: eight
+  // builtins plus every single-value enum custom field. It drives both
+  // the picker's options and `resolveGrouping`'s validation, so a saved
+  // view (or URL) naming a now-deleted custom field is rejected here
+  // rather than reaching `buildRows` and drawing a single mislabelled
+  // band.
+  const groupingCatalog = useMemo(
+    () => buildGroupingCatalog(workflow.data),
+    [workflow.data],
+  );
+
   const zoom = resolveZoom(settingsInput).value;
-  const grouping = resolveGrouping(settingsInput).value;
+  const groupingResolved = resolveGrouping(settingsInput, groupingCatalog);
+  const grouping = groupingResolved.value;
   const arrowsOn = resolveArrows(settingsInput).value;
+
+  // Below sm the toolbar collapses (zoom + group + Today inline;
+  // Dependencies into a "More" menu) and the sticky gutter narrows.
+  const isNarrow = useIsNarrow();
+  const gutterW = isNarrow ? GUTTER_W_NARROW : GUTTER_W;
 
   // The workspace's today, not the browser's — TML-16 asks for the
   // marker "for the workspace timezone", and this is the same value
@@ -120,14 +154,43 @@ export function TimelineView() {
     [items, grouping, workflow.data, milestones.data, sprints.data, users.data],
   );
 
+  /**
+   * The width of the chart panel, measured so the range can be widened to
+   * fill it (see `range` below). Starts at 0 (unmeasured) — `fillRange` is
+   * then a no-op — and is updated by a ResizeObserver on the outer
+   * container. Measuring the outer container rather than the scroll body
+   * avoids a feedback loop: the body's own width is what we are about to
+   * set from this value.
+   */
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [panelWidth, setPanelWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (el === null) return;
+    const read = (): void => { setPanelWidth(el.clientWidth); };
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => { ro.disconnect(); };
+  }, []);
+
   const range = useMemo(() => {
     const dates: string[] = [];
     for (const t of items) {
       if (t.start_date !== undefined) dates.push(t.start_date);
       if (t.due_date !== undefined) dates.push(t.due_date);
     }
-    return computeRange(dates, today);
-  }, [items, today]);
+    const dataRange = computeRange(dates, today);
+    // Fill the panel: a short dated span otherwise draws a chart a few
+    // hundred px wide that floats in an empty panel (and disappears at a
+    // phone width). The measured value is the outer container's client
+    // width; the chart body sits inside the container's `p-4` padding
+    // (16px each side) and its own 1px border each side, so subtract that
+    // to target the drawable inner width. `fillRange` only ever *widens*,
+    // so a span already wider than the panel scrolls as before.
+    return fillRange(dataRange, zoom, Math.max(0, panelWidth - 34));
+  }, [items, today, zoom, panelWidth]);
 
   const layout = useMemo(() => buildLayout(model), [model]);
 
@@ -183,9 +246,11 @@ export function TimelineView() {
   const centreToday = useCallback((): void => {
     const el = scroller.current;
     if (el === null) return;
-    const x = dateToX(range, today, zoom);
+    // The chart body is offset right by the gutter, so today's pixel is
+    // `dateToX + gutterW` in the scroll container's coordinates.
+    const x = dateToX(range, today, zoom) + gutterW;
     el.scrollTo({ left: Math.max(0, x - el.clientWidth / 2), behavior: "auto" });
-  }, [range, today, zoom]);
+  }, [range, today, zoom, gutterW]);
 
   useLayoutEffect(() => {
     if (scroller.current === null || items.length === 0) return;
@@ -193,7 +258,38 @@ export function TimelineView() {
     if (centredFor.current === stamp) return;
     centredFor.current = stamp;
     centreToday();
-  }, [zoom, range, items.length, centreToday]);
+
+    /**
+     * TML-16 fallback: if centring on today leaves no bar in view — the
+     * dated tasks are all far from today — scroll to just before the
+     * earliest bar instead, so the initial paint shows the work rather
+     * than an empty stretch of calendar. Runs after `centreToday` and
+     * only when nothing intersects the visible window.
+     */
+    const el = scroller.current;
+    if (el === null) return;
+    let minBarLeft = Number.POSITIVE_INFINITY;
+    for (const t of items) {
+      if (typeof t.start_date === "string" && typeof t.due_date === "string") {
+        const left = dateToX(range, t.start_date, zoom) + gutterW;
+        if (left < minBarLeft) minBarLeft = left;
+      }
+    }
+    if (!Number.isFinite(minBarLeft)) return;
+    const viewLeft = el.scrollLeft;
+    const viewRight = viewLeft + el.clientWidth;
+    let anyVisible = false;
+    for (const t of items) {
+      if (typeof t.start_date === "string" && typeof t.due_date === "string") {
+        const left = dateToX(range, t.start_date, zoom) + gutterW;
+        const right = dateToX(range, t.due_date, zoom) + gutterW + DAY_WIDTH[zoom];
+        if (right >= viewLeft && left <= viewRight) { anyVisible = true; break; }
+      }
+    }
+    if (!anyVisible) {
+      el.scrollTo({ left: Math.max(0, minBarLeft - 48), behavior: "auto" });
+    }
+  }, [zoom, range, items, items.length, centreToday, gutterW]);
 
   /**
    * The drag layer (TML-9 through TML-12, TML-36 through TML-39).
@@ -372,16 +468,14 @@ export function TimelineView() {
   const loading = tasks.isPending || tasks.isLoading || workflow.isLoading;
   if (!loading && (tasks.isError || workflow.isError)) {
     return (
-      <div className="p-4">
-        <ErrorState
-          error={tasks.error ?? workflow.error}
-          context="Could not load the timeline"
-          onRetry={() => {
-            void tasks.refetch();
-            void workflow.refetch();
-          }}
-        />
-      </div>
+      <ErrorState
+        error={tasks.error ?? workflow.error}
+        context="Could not load the timeline"
+        onRetry={() => {
+          void tasks.refetch();
+          void workflow.refetch();
+        }}
+      />
     );
   }
 
@@ -428,17 +522,56 @@ export function TimelineView() {
   const activeFilters = describeFilters(search);
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4" data-testid="timeline">
+    <div ref={panelRef} className="flex h-full flex-col gap-3 p-4" data-testid="timeline">
+      {/* The titled header (Ken 2026-09-20). A title-only "Timeline" h1
+          row above the toolbar; the toolbar controls (FilterBar, zoom,
+          group-by, Today) keep their own rows below rather than folding
+          into the actions slot — the zoom/group/Today cluster already
+          wraps and collapses into a "More" menu at phone width, and
+          hoisting it into the header would fight that responsive
+          behaviour. This is a title row, not a toolbar restructure. */}
+      <PageHeader title={title} testId="timeline-header" />
+
+      {/* The shared list filter bar, so `/timeline` filters the same way
+          `/list` does (assignee, milestone, status, saved views, …). The
+          `from` route type is widened by the list-owning agent; this
+          mount passes only the props the timeline needs (no export
+          cluster). */}
+      <FilterBar
+        from="/timeline"
+        showSaveView
+      />
+
       <Toolbar
         zoom={zoom}
         grouping={grouping}
+        groupingCatalog={groupingCatalog}
         arrowsOn={arrowsOn}
         arrowsAvailable={depStatus.kind === "ok"}
+        isNarrow={isNarrow}
         onZoom={z => { setParam({ zoom: z }); }}
         onGrouping={g => { setParam({ grouping: g }); }}
         onArrows={v => { setParam({ arrows: v }); }}
         onToday={() => { centreToday(); }}
       />
+
+      {/* A `grouping` value — from a saved view or the URL — that names a
+          custom field which is no longer a single-value enum (deleted, or
+          changed to multi/non-enum). `resolveGrouping` deferred past it to
+          the next layer (finally `none`); this names what was dropped, in
+          the pattern of the dependency-config notice above. */}
+      {groupingResolved.dangling !== undefined && (
+        <div
+          role="alert"
+          data-testid="timeline-grouping-config-error"
+          className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[0.8571rem] text-text-primary"
+        >
+          Group by{" "}
+          <code data-testid="timeline-grouping-dangling-key">{groupingResolved.dangling}</code>
+          {" "}is no longer a single-value enum field — showing{" "}
+          {grouping === "none" ? "flat" : "the next available grouping"}.
+        </div>
+      )}
 
       {/* TML-34: a `dependency_relationship` naming a key that
           `relationships` does not define. Core no longer deletes the
@@ -454,7 +587,16 @@ export function TimelineView() {
           <strong>workflow.yaml</strong>: <code>timeline.dependency_relationship</code>
           {" "}names <code data-testid="timeline-dependency-missing-key">{depStatus.key}</code>,
           {" "}which is not defined in <code>relationships</code>. No dependency
-          {" "}arrows can be drawn until that key is corrected.
+          {" "}arrows can be drawn until that key is corrected.{" "}
+          <Link
+            to="/settings/$section"
+            params={{ section: "timeline" }}
+            hash="field-dependency_relationship"
+            data-testid="timeline-dependency-config-settings-link"
+            className="underline hover:opacity-80"
+          >
+            Open Timeline settings
+          </Link>
         </div>
       )}
 
@@ -472,7 +614,16 @@ export function TimelineView() {
             {calendarError instanceof ApiError
               ? calendarError.envelope?.message ?? calendarError.message
               : String(calendarError)}
-          </span>
+          </span>{" "}
+          <Link
+            to="/settings/$section"
+            params={{ section: "calendar" }}
+            hash="field-timezone"
+            data-testid="timeline-calendar-error-settings-link"
+            className="underline hover:opacity-80"
+          >
+            Open Calendar settings
+          </Link>
         </div>
       )}
 
@@ -538,7 +689,7 @@ export function TimelineView() {
           {" "}missing from this timeline and from the counts below. Check the file.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
-              <li key={u.id} className="font-mono text-[0.7857rem]">
+              <li key={u.id} className="text-[0.7857rem]">
                 {u.path}: {u.reason}
               </li>
             ))}
@@ -561,27 +712,33 @@ export function TimelineView() {
           className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-md border border-border-default text-[0.8571rem] text-text-secondary"
           data-testid="timeline-empty"
         >
-          <span>No tasks match this view.</span>
+          <span>
+            {activeFilters === null
+              ? "No tasks yet. Create your first one to see it on the timeline."
+              : "No tasks match this view."}
+          </span>
           <span data-testid="timeline-empty-filters">
             {activeFilters === null
-              ? "There are no tasks in this tracker yet."
+              ? "Give it a start and due date and it appears here as a bar."
               : `Active filter: ${activeFilters}`}
           </span>
+          {activeFilters === null && (
+            <Button
+              variant="primary"
+              size="sm"
+              testId="timeline-empty-add-task"
+              className="mt-2"
+              onClick={() => { createTask.open(); }}
+            >
+              + Add task
+            </Button>
+          )}
         </div>
       ) : (
         <>
-          {/* TML-41's third bullet: every task lacks dates, so the
-              chart area is genuinely empty and needs saying so —
-              the Unscheduled lane below is where the tasks are. */}
-          {noBars && (
-            <div
-              className="rounded-md border border-border-default px-3 py-2 text-[0.8571rem] text-text-secondary"
-              data-testid="timeline-no-dated-tasks"
-            >
-              None of these tasks has both a start date and a due date, so there is
-              nothing to chart. They are listed under Unscheduled below.
-            </div>
-          )}
+          {/* TML-41's third bullet — every task lacks dates — is now the
+              chart's own centred empty state (`noBars`), drawn inside the
+              frame rather than as a banner that squeezes the chart. */}
           <TimelineChart
             ref={scroller}
             layout={layout}
@@ -592,6 +749,8 @@ export function TimelineView() {
             calendar={calendar.data}
             shadingOn={zoom !== "month"}
             today={today}
+            isNarrow={isNarrow}
+            noBars={noBars}
             edges={arrowsOn ? edges : []}
             offscreenFrom={arrowsOn ? graph.offscreenFrom : undefined}
             onOpenTask={openTask}
@@ -611,7 +770,7 @@ export function TimelineView() {
                   data-testid="timeline-drag-label"
                   data-start={drag.start}
                   data-due={drag.due}
-                  className="pointer-events-none fixed z-50 rounded border border-border-default bg-bg-canvas px-1.5 py-0.5 font-mono text-[0.7857rem] shadow"
+                  className="pointer-events-none fixed z-50 rounded border border-border-default bg-bg-canvas px-1.5 py-0.5 text-[0.7857rem] shadow"
                   style={{ left: drag.x + 12, top: drag.y + 12 }}
                 >
                   {drag.edge === "start"
@@ -626,7 +785,14 @@ export function TimelineView() {
         </>
       )}
 
-      <UnscheduledLane rows={model.unscheduled} onOpenTask={openTask} />
+      <UnscheduledDrawer
+        rows={model.unscheduled}
+        onOpenTask={openTask}
+        isNarrow={isNarrow}
+        // TML-41: when there are no dated tasks, open the drawer once so
+        // the tasks the tracker *does* have are visible without a click.
+        initiallyExpanded={noBars}
+      />
 
       <div className="text-[0.7857rem] text-text-secondary" data-testid="timeline-total">
         {totalRows(model)} {totalRows(model) === 1 ? "task" : "tasks"}
@@ -661,15 +827,33 @@ function describeFilters(search: Record<string, unknown>): string | null {
 function Toolbar(props: {
   readonly zoom: TimelineZoom;
   readonly grouping: TimelineGrouping;
+  readonly groupingCatalog: readonly GroupEntry[];
   readonly arrowsOn: boolean;
   readonly arrowsAvailable: boolean;
+  readonly isNarrow: boolean;
   readonly onZoom: (z: TimelineZoom) => void;
   readonly onGrouping: (g: TimelineGrouping) => void;
   readonly onArrows: (v: boolean) => void;
   readonly onToday: () => void;
 }) {
   const zooms: TimelineZoom[] = ["day", "week", "month"];
-  const groupings: TimelineGrouping[] = ["none", "milestone", "assignee", "status", "sprint"];
+
+  // TML-15: the toggle reflects the state even when no relationship is
+  // configured, so it is disabled rather than hidden. On desktop it is an
+  // inline checkbox; on a phone it moves into the "More" menu so the
+  // toolbar's primary controls (zoom, group, Today) stay on one row.
+  const dependenciesToggle = (
+    <label className="flex items-center gap-1 text-[0.8571rem] text-text-secondary">
+      <Checkbox
+        data-testid="timeline-arrows"
+        checked={props.arrowsOn && props.arrowsAvailable}
+        disabled={!props.arrowsAvailable}
+        onChange={e => { props.onArrows(e.target.checked); }}
+      />
+      Dependencies
+    </label>
+  );
+
   return (
     <div className="flex flex-wrap items-center gap-4" data-testid="timeline-toolbar">
       <div className="flex items-center gap-1" role="group" aria-label="Zoom">
@@ -690,31 +874,16 @@ function Toolbar(props: {
 
       <label className="flex items-center gap-1 text-[0.8571rem] text-text-secondary">
         Group by
-        <Select
-          size="sm"
-          data-testid="timeline-grouping"
+        <GroupByPicker
+          catalog={props.groupingCatalog}
           value={props.grouping}
-          onChange={e => { props.onGrouping(e.target.value as TimelineGrouping); }}
-          className="capitalize"
-        >
-          {groupings.map(g => (
-            <option key={g} value={g}>{g}</option>
-          ))}
-        </Select>
+          onChange={props.onGrouping}
+          testIdBase="timeline-grouping"
+          aria-label="Group by"
+        />
       </label>
 
-      {/* TML-15: the toggle reflects the state even when no
-          relationship is configured — "the arrows toggle reflects that
-          state" — so it is disabled rather than hidden. */}
-      <label className="flex items-center gap-1 text-[0.8571rem] text-text-secondary">
-        <Checkbox
-          data-testid="timeline-arrows"
-          checked={props.arrowsOn && props.arrowsAvailable}
-          disabled={!props.arrowsAvailable}
-          onChange={e => { props.onArrows(e.target.checked); }}
-        />
-        Dependencies
-      </label>
+      {!props.isNarrow && dependenciesToggle}
 
       <Button
         type="button"
@@ -725,81 +894,31 @@ function Toolbar(props: {
       >
         Today
       </Button>
-    </div>
-  );
-}
 
-/**
- * TML-5: the Unscheduled lane.
- *
- * Hidden entirely when empty — the case allows either "hidden with no
- * tasks, or shown as an empty labelled lane", and forbids only the
- * unlabelled blank row. Hiding is the option that does not cost
- * vertical space on the common path.
- */
-function UnscheduledLane(props: {
-  readonly rows: readonly TimelineRow[];
-  readonly onOpenTask: (key: string) => void;
-}) {
-  if (props.rows.length === 0) return null;
-  return (
-    <div
-      className="rounded-md border border-border-default bg-bg-muted"
-      data-testid="timeline-unscheduled"
-    >
-      <div className="border-b border-border-default px-3 py-1.5 text-[0.8571rem] font-semibold">
-        Unscheduled{" "}
-        <span className="font-normal text-text-secondary" data-testid="timeline-unscheduled-count">
-          ({props.rows.length})
-        </span>
-      </div>
-      <ul>
-        {props.rows.map(r => (
-          <li key={r.task.id}>
-            <button
+      {props.isNarrow && (
+        <Menu
+          aria-label="More timeline options"
+          align="end"
+          trigger={({ toggle, ...aria }) => (
+            <Button
               type="button"
-              data-testid={`timeline-unscheduled-row-${r.task.key}`}
-              onClick={() => { props.onOpenTask(r.task.key); }}
-              className="flex w-full items-center gap-2 px-3 py-1 text-left text-[0.8571rem] hover:bg-bg-canvas"
-              style={{ height: ROW_H }}
+              variant="secondary"
+              size="sm"
+              testId="timeline-more"
+              onClick={toggle}
+              {...aria}
             >
-              <span className="font-mono text-text-secondary">{r.task.key}</span>
-              {/* K26: a corrupt title is absent from frontmatter, so
-                  fall back to the key rather than rendering an empty
-                  span — the task must never look untitled-and-nameless.
-                  The key is already shown alongside, but titling with it
-                  keeps the row honest when title is the corrupt field. */}
-              <span className="truncate">{r.task.title ?? r.task.key}</span>
-              {/* TML-19 ("hovering explains the missing date"), TML-20
-                  and TML-48 ("the message names the task and the
-                  offending field value"). Rendered as text, not only as
-                  a `title`: a tooltip the user must discover is not the
-                  explicit treatment those cases ask for, and TML-48's
-                  verbatim value has to be readable without hovering.
-                  `dateProblemNote` formats from the raw strings, so no
-                  `Invalid Date` can reach here. A corrupt date (Phase-7B)
-                  reaches the lane as `problem.kind === "corrupt"`; it
-                  gets a ⚠ marker and danger styling so it reads as
-                  BROKEN, distinct from a deliberately-undated row's plain
-                  reason chip — the two must not look alike. */}
-              {r.problem !== undefined && (
-                <span
-                  data-testid={`timeline-unscheduled-reason-${r.task.key}`}
-                  data-corrupt={r.problem.kind === "corrupt" ? "true" : undefined}
-                  className={
-                    r.problem.kind === "corrupt"
-                      ? "ml-auto flex shrink-0 items-center gap-1 rounded border border-danger-fg/50 bg-danger-fg/10 px-1 text-[0.7857rem] text-danger-fg"
-                      : "ml-auto shrink-0 rounded border border-border-subtle px-1 text-[0.7857rem] text-text-secondary"
-                  }
-                >
-                  {r.problem.kind === "corrupt" && <span aria-hidden="true">⚠</span>}
-                  {dateProblemNote(r.problem)}
-                </span>
-              )}
-            </button>
-          </li>
-        ))}
-      </ul>
+              More
+            </Button>
+          )}
+        >
+          {() => (
+            <MenuItem>
+              {dependenciesToggle}
+            </MenuItem>
+          )}
+        </Menu>
+      )}
     </div>
   );
 }

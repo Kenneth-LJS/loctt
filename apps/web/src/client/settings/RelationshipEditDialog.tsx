@@ -1,10 +1,14 @@
-import type { RelationshipDef } from "@loctt/contracts";
+import type { EntityColor, RelationshipDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
-import { Select } from "../ui/Select.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
+import { isValidEntityColor } from "../ui/entityColor.ts";
+import { IconColorFields } from "../ui/IconColorFields.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { isSymmetric } from "./workflowEdits.ts";
 import {
@@ -30,6 +34,18 @@ import {
  */
 
 const GRAPHS = ["none", "acyclic", "tree"] as const;
+
+/**
+ * Human labels for the stored graph-constraint keys. Display-only — the
+ * value written to `relationship.graph` is still the raw key. The tokens
+ * `none`/`acyclic`/`tree` leaked verbatim to the user before. See
+ * decisions.md §8.
+ */
+const GRAPH_LABEL: Record<(typeof GRAPHS)[number], string> = {
+  none: "No constraint",
+  acyclic: "No cycles allowed",
+  tree: "Strict hierarchy (one parent)",
+};
 
 export interface RelationshipDialogResult {
   readonly draft: RelationshipDraft;
@@ -60,6 +76,12 @@ export function RelationshipEditDialog({
   const [inverseLabel, setInverseLabel] = useState(initial?.inverse_label ?? "");
   const [graph, setGraph] = useState<RelationshipDef["graph"]>(initial?.graph ?? "none");
   const [ranked, setRanked] = useState(initial?.ranked === true);
+  // Presentational fields — seeded from the row on edit, editable on both
+  // create and edit. Previously these were carried straight from `initial`
+  // (survived a round-trip) but had no control; now they are set here.
+  const [icon, setIcon] = useState<string | undefined>(initial?.icon);
+  // K103: the stored `EntityColor` itself; `undefined` is "no colour".
+  const [color, setColor] = useState<EntityColor | undefined>(initial?.color);
 
   const effectiveKey = mode === "create" && !keyTouched ? keyFromLabel(label) : key;
 
@@ -71,10 +93,8 @@ export function RelationshipEditDialog({
     inverse_label: inverseLabel,
     graph,
     ranked,
-    // Carry the presentational fields the dialog does not render, so a
-    // label edit does not drop the row's icon/color.
-    icon: initial?.icon,
-    color: initial?.color,
+    icon: icon !== undefined && icon.trim().length > 0 ? icon.trim() : undefined,
+    color,
   };
 
   const problems =
@@ -93,6 +113,7 @@ export function RelationshipEditDialog({
   const canSubmit = hasNoProblems(problems)
     && problems.inverse === undefined
     && problems.inverse_label === undefined
+    && isValidEntityColor(color)
     && !pending;
 
   const submit = (): void => {
@@ -101,7 +122,7 @@ export function RelationshipEditDialog({
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={mode === "create" ? "New relationship" : "Edit relationship"}
       onClose={onClose}
       testId="relationships-entry-dialog"
@@ -163,7 +184,7 @@ export function RelationshipEditDialog({
           ) : (
             <code
               data-testid="relationships-entry-key-readonly"
-              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
+              className="inline-block rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary"
             >
               {initial?.key}
             </code>
@@ -171,8 +192,7 @@ export function RelationshipEditDialog({
         </label>
 
         <label className="flex items-center gap-2 text-text-secondary">
-          <input
-            type="checkbox"
+          <Checkbox
             data-testid="relationships-entry-symmetric"
             checked={symmetric}
             onChange={e => { setSymmetric(e.target.checked); }}
@@ -219,20 +239,18 @@ export function RelationshipEditDialog({
 
         <label className="block">
           <span className="mb-1 block text-text-secondary">Graph constraint</span>
-          <Select
+          <SelectCombobox
             size="sm"
-            data-testid="relationships-entry-graph"
+            testId="relationships-entry-graph"
             value={graph ?? "none"}
-            onChange={e => { setGraph(e.target.value as RelationshipDef["graph"]); }}
+            onChange={v => { setGraph(v as RelationshipDef["graph"]); }}
             aria-label="Graph constraint"
-          >
-            {GRAPHS.map(g => <option key={g} value={g}>{g}</option>)}
-          </Select>
+            options={GRAPHS.map(g => ({ value: g, label: GRAPH_LABEL[g] }))}
+          />
         </label>
 
         <label className="flex items-center gap-2 text-text-secondary">
-          <input
-            type="checkbox"
+          <Checkbox
             data-testid="relationships-entry-ranked"
             checked={ranked}
             onChange={e => { setRanked(e.target.checked); }}
@@ -240,12 +258,27 @@ export function RelationshipEditDialog({
           Ranked — links of this type keep an explicit order.
         </label>
 
+        {/* K104 — see EntryEditDialog. */}
+        <IconColorFields
+          icon={icon}
+          onIconChange={setIcon}
+          color={color}
+          onColorChange={setColor}
+          iconTestId="relationships-entry-icon"
+          iconListTestId="relationships-entry-icon-list"
+          iconSearchTestId="relationships-entry-icon-search"
+          iconClearTestId="relationships-entry-icon-clear"
+          colorTestId="relationships-entry-color-picker"
+          colorAliasTestId="relationships-entry-color"
+          noun="relationship"
+        />
+
         {error !== undefined && (
           <Callout tone="danger" role="alert" testId="relationships-entry-error">
             {error}
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

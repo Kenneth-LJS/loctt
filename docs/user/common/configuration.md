@@ -16,21 +16,16 @@ prefix containing a dash, lowercase, digit, or punctuation is rejected.
 
 ## Statuses
 
-Each status has a `key` (stored in task data), a `label` (display name), and a `category` (semantic grouping).
+Each status has a `key` (stored in task data), a `label` (display name), and a `category` (semantic grouping). One status carries `default: true` — it is the status a new task gets when none is given. This is what `loctt init` creates:
 
 ```yaml
 statuses:
-  - key: not_started
-    label: Not started
+  - key: backlog
+    label: Backlog
     category: pending
+    default: true
   - key: in_progress
     label: In progress
-    category: active
-  - key: in_review
-    label: In review
-    category: active
-  - key: blocked
-    label: Blocked
     category: active
   - key: done
     label: Done
@@ -44,52 +39,90 @@ Categories: `pending`, `active`, `completed`, `discarded`. Every status must bel
 
 ## Priorities
 
+Listed highest to lowest. The `value` is the numeric weight used for sorting; the Settings UI recomputes these when you drag to reorder. This is what `loctt init` creates:
+
 ```yaml
 priorities:
-  - key: low
-    label: Low
-    value: 1
-  - key: medium
-    label: Medium
-    value: 2
-  - key: high
-    label: High
-    value: 3
   - key: critical
     label: Critical
     value: 4
+  - key: high
+    label: High
+    value: 3
+  - key: medium
+    label: Medium
+    value: 2
+  - key: low
+    label: Low
+    value: 1
 ```
-
-The optional `value` field controls sort order. Without it, sorting falls back to alphabetical.
 
 ## Task Types
 
 ```yaml
 task_types:
-  - key: task
-    label: Task
+  - key: story
+    label: Story
   - key: bug
     label: Bug
+  - key: task
+    label: Task
+  - key: spike
+    label: Spike
   - key: feature
     label: Feature
 ```
 
 Task types are lightweight labels. There's no behavioral difference between them — they're for filtering and organization.
 
+## Estimation
+
+A task can carry an `estimate`. Estimation is on by default; the unit and label are configured under the `estimation` block (Settings → Workflow → Estimation in the UI):
+
+```yaml
+estimation:
+  enabled: true
+  unit: points        # points | hours | days | custom_numeric | custom_enum
+  unit_label: pts     # display suffix; required for the custom_* units
+  scale: free         # free | linear | fibonacci
+```
+
+- **`enabled: false`** hides the Estimate field everywhere (task detail, the create dialog, the list column).
+- **`unit`** sets what the numbers mean; `unit_label` is the suffix shown beside them.
+- **`custom_enum`** takes a `preset_values` list (e.g. `S, M, L, XL`) instead of raw numbers, and an optional `weights` map for weighted burndown.
+
+The `estimate` value itself is **free-form** — LocTT stores whatever you enter and does not check it against the unit or scale. Sprint [burndown](../cli/reference.md#sprints) sums numeric estimates for its chart; a value it can't read as a number simply counts as zero there, so keep estimates in the unit you configured.
+
 ## Relationships
+
+This is what `loctt init` creates:
 
 ```yaml
 relationships:
-  - key: parent
-    label: Parent
-    inverse: child
-    inverse_label: Child
-    graph: tree
   - key: blocks
     label: Blocks
     inverse: is_blocked_by
     inverse_label: Is blocked by
     graph: acyclic
+    ranked: true
+  - key: parent
+    label: Parent
+    inverse: child
+    inverse_label: Child
+    graph: tree
+    ranked: true
+  - key: clones
+    label: Clones
+    inverse: is_cloned_by
+    inverse_label: Is cloned by
+  - key: duplicates
+    label: Duplicates
+    inverse: is_duplicated_by
+    inverse_label: Is duplicated by
+  - key: causes
+    label: Causes
+    inverse: is_caused_by
+    inverse_label: Is caused by
   - key: relates_to
     label: Relates to
     kind: symmetric
@@ -105,11 +138,7 @@ Each relationship defines a forward key/label and an inverse. When you `link T-1
 | `acyclic` | Cycles are rejected when linking. |
 | `tree` | Cycles are rejected **and** this relationship may be drawn as a tree axis. |
 
-The shipped default gives `parent` `graph: tree` and `blocks`
-`graph: acyclic` — a blocking cycle is a deadlock worth refusing, but
-nobody draws a tree of blocking edges. Any number of relationships may
-be `tree`; views pick which axis to draw rather than the config
-deciding for them.
+So the default `parent` is a `tree` axis and `blocks` is `acyclic`. Any number of relationships may be `tree`; views pick which axis to draw rather than the config deciding for them. `ranked: true` lets a relationship's targets be ordered relative to each other (see `loctt rerank`).
 
 Symmetric relationships are never `tree`: a symmetric edge is a
 two-node cycle by definition.
@@ -184,10 +213,8 @@ custom_fields:
 | `values` | for `enum` | Allowed values with `key`, `label`, optional `value` |
 | `task_types` | no | Scope the field to specific task types. Omit it and the field is global (shows for every type). Listed, and it appears only on tasks whose type is in the list. A value already stored in a field that is out of scope for the task's current type is kept and shown read-only — never hidden or auto-removed. |
 
-> `searchable` has **no default** — omitting it is a parse error. The
-> normative field-by-field spec is
-> [schema-reference.md](../../dev/schema-reference.md#custom-fields); this
-> page shows usage only.
+> `searchable` has **no default** — omitting it is a parse error, so you
+> always state whether a field is queryable.
 
 Custom field values are stored under `fields:` in task frontmatter, separate from built-in fields:
 
@@ -198,9 +225,9 @@ fields:
   story_points: 5
 ```
 
-## Saved Queries
+## Saved views
 
-Saved queries live in `.loctt/config/queries.yaml`:
+Saved views live in `.loctt/config/queries.yaml`:
 
 ```yaml
 queries:

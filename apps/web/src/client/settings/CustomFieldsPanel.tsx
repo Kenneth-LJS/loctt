@@ -9,6 +9,7 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { type CustomFieldDialogResult,CustomFieldEditDialog } from "./CustomFieldEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
+import { RowActions } from "./RowActions.tsx";
 import { enumSortBasis } from "./workflowEdits.ts";
 import { collectionKeys, entryChangedOnDisk } from "./workflowForms.ts";
 import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
@@ -99,9 +100,9 @@ function FieldsEditor({
             && entryChangedOnDisk(opts.staleBaseline, fresh.custom_fields)
           ) {
             throw new ConcurrentWorkflowEditError(
-              `.loctt/config/workflow.yaml changed on disk while this dialog was `
+              `These settings changed outside the app while this dialog was `
               + `open — the field "${opts.staleBaseline.key}" is not what it was. `
-              + `Reload the panel to see the current file, then re-apply your change. `
+              + `Reload the panel, then re-apply your change. `
               + `Your edit was not saved.`,
             );
           }
@@ -151,7 +152,7 @@ function FieldsEditor({
       {inlineError && (
         <div role="alert" data-testid="workflow-save-error" className="mb-3 rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[0.9286rem]">
           <p className="font-medium text-danger-fg">
-            The change was not saved to .loctt/config/workflow.yaml.
+            Your change wasn’t saved.
           </p>
           <p className="mt-1 text-text-secondary">{saveError}</p>
         </div>
@@ -194,6 +195,7 @@ function FieldsEditor({
         <CustomFieldEditDialog
           mode={dialog.mode}
           existingKeys={collectionKeys(workflow, "custom_fields")}
+          taskTypes={workflow.task_types.map(t => ({ key: t.key, label: t.label }))}
           initial={dialog.mode === "edit" ? dialog.field : undefined}
           pending={save.isPending}
           error={dialogError}
@@ -296,6 +298,11 @@ function FieldRow({
 
   return (
     <div
+      // K100 deep-link anchor. A custom field is a config field, so the
+      // anchor follows the `#field-<key>` convention (as CalendarPanel's
+      // `#field-timezone` does) rather than `#row-<id>` — see
+      // useScrollToHash.
+      id={`field-${field.key}`}
       data-testid={`custom-field-${field.key}`}
       data-field-type={field.type}
       data-field-multi={field.multi ? "true" : "false"}
@@ -305,7 +312,7 @@ function FieldRow({
         <span data-testid={`custom-field-label-${field.key}`} className="font-medium">
           {field.label}
         </span>
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary">
+        <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary">
           {field.key}
         </code>
         <span
@@ -322,25 +329,14 @@ function FieldRow({
           {field.searchable ? "searchable" : "not searchable"}
         </span>
 
-        <span className="ml-auto flex gap-2">
-          <button
-            type="button"
-            data-testid={`custom-field-edit-${field.key}`}
-            disabled={disabled}
-            onClick={onEdit}
-            className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] disabled:opacity-40"
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            data-testid={`custom-field-delete-${field.key}`}
-            disabled={disabled}
-            onClick={onDelete}
-            className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg disabled:opacity-40"
-          >
-            Delete
-          </button>
+        <span className="ml-auto">
+          <RowActions
+            label={`Actions for custom field "${field.label}"`}
+            actions={[
+              { label: "Edit", testId: `custom-field-edit-${field.key}`, disabled, onSelect: onEdit },
+              { label: "Delete", testId: `custom-field-delete-${field.key}`, danger: true, disabled, onSelect: onDelete },
+            ]}
+          />
         </span>
       </div>
 
@@ -364,7 +360,7 @@ function FieldRow({
               {(field.values ?? []).map(v => (
                 <tr key={v.key} data-testid={`custom-field-value-${field.key}-${v.key}`}>
                   <td className="py-0.5 pr-3">{v.label}</td>
-                  <td className="py-0.5 pr-3 font-mono text-text-secondary">{v.key}</td>
+                  <td className="py-0.5 pr-3 text-text-secondary">{v.key}</td>
                   <td className="py-0.5 pr-3">{v.value ?? "—"}</td>
                   <td
                     data-testid={`custom-field-value-refcount-${field.key}-${v.key}`}
@@ -373,20 +369,19 @@ function FieldRow({
                     {String(counts[v.key] ?? 0)}
                   </td>
                   <td className="py-0.5">
-                    <button
-                      type="button"
-                      data-testid={`custom-field-value-delete-${field.key}-${v.key}`}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      testId={`custom-field-value-delete-${field.key}-${v.key}`}
                       disabled={disabled || (field.values ?? []).length <= 1}
                       onClick={() => { onDeleteValue(v); }}
-                      title={
-                        (field.values ?? []).length <= 1
-                          ? "An enum field must keep at least one value."
-                          : undefined
-                      }
-                      className="h-6 rounded border border-border-default px-1.5 text-[0.7857rem] text-danger-fg disabled:opacity-40"
+                      {...((field.values ?? []).length <= 1
+                        ? { title: "An enum field must keep at least one value." }
+                        : {})}
+                      className="text-danger-fg"
                     >
                       Delete
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}

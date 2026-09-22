@@ -8,6 +8,7 @@ import { Chip } from "./Chip.tsx";
 import { cn } from "./cn.ts";
 import { ICON } from "./icons.ts";
 import { Select } from "./Select.tsx";
+import { TextArea } from "./TextArea.tsx";
 import { TextField } from "./TextField.tsx";
 
 afterEach(cleanup);
@@ -86,14 +87,16 @@ describe("Select", () => {
   });
 
   it("renders a themed chevron overlay (not the native OS arrow)", () => {
-    render(
+    const { container } = render(
       <Select aria-label="S">
         <option>A</option>
       </Select>,
     );
-    // The caret is an overlaid element so it follows the theme token; a
+    // The caret is an overlaid SVG icon so it follows the theme token; a
     // bare <select> would rely on the OS arrow that ignores dark mode.
-    expect(screen.getByText(ICON.caretDown)).toBeTruthy();
+    // (Migrated from the ICON.caretDown glyph to the <Icon> component.)
+    const chevron = container.querySelector("svg.absolute");
+    expect(chevron).not.toBeNull();
   });
 
   it("re-declares a focus ring (appearance-none removed the UA one)", () => {
@@ -153,6 +156,71 @@ describe("TextField", () => {
     render(<TextField ref={ref} data-testid="meta-input-title" />);
     expect(ref.current).toBeInstanceOf(HTMLInputElement);
     expect(screen.getByTestId("meta-input-title").tagName).toBe("INPUT");
+  });
+
+  it("is full-width by default (backwards-compatible)", () => {
+    render(<TextField placeholder="wide" />);
+    expect(screen.getByPlaceholderText("wide").className).toContain("w-full");
+  });
+
+  it("drops w-full when fullWidth is false so a caller's width class applies", () => {
+    // cn is a plain join, not tailwind-merge — the ONLY way className='w-32'
+    // can win is if the primitive stops emitting w-full.
+    render(<TextField fullWidth={false} className="w-32" placeholder="narrow" />);
+    const cls = screen.getByPlaceholderText("narrow").className;
+    expect(cls).not.toContain("w-full");
+    expect(cls).toContain("w-32");
+  });
+
+  it("respects fullWidth=false on the leadingIcon wrapper too", () => {
+    render(
+      <TextField fullWidth={false} leadingIcon={ICON.more} placeholder="find" />,
+    );
+    // The wrapper (the input's parent span) must not force full width.
+    const input = screen.getByPlaceholderText("find");
+    const wrapper = input.parentElement as HTMLElement;
+    expect(wrapper.tagName).toBe("SPAN");
+    expect(wrapper.className).not.toContain("w-full");
+  });
+
+  it("keeps the leadingIcon wrapper full-width by default", () => {
+    render(<TextField leadingIcon={ICON.more} placeholder="find2" />);
+    const wrapper = screen.getByPlaceholderText("find2").parentElement as HTMLElement;
+    expect(wrapper.className).toContain("w-full");
+  });
+});
+
+describe("TextArea", () => {
+  it("renders a textarea with the shared border/radius tokens", () => {
+    render(<TextArea placeholder="notes" />);
+    const el = screen.getByPlaceholderText("notes");
+    expect(el.tagName).toBe("TEXTAREA");
+    expect(el.className).toContain("border-border-default");
+    expect(el.className).toContain("rounded-md");
+    expect(el.className).toContain("placeholder:text-text-tertiary");
+    expect(el.className).toContain("w-full");
+  });
+
+  it("wires invalid to aria-invalid AND the danger border together", () => {
+    render(<TextArea invalid placeholder="bad" />);
+    const el = screen.getByPlaceholderText("bad");
+    expect(el.getAttribute("aria-invalid")).toBe("true");
+    expect(el.className).toContain("aria-invalid:border-danger-fg");
+  });
+
+  it("does not set aria-invalid when valid, and forwards ref/testid", () => {
+    const ref = createRef<HTMLTextAreaElement>();
+    render(<TextArea ref={ref} data-testid="ta" placeholder="ok" />);
+    expect(screen.getByPlaceholderText("ok").getAttribute("aria-invalid")).toBeNull();
+    expect(ref.current).toBeInstanceOf(HTMLTextAreaElement);
+    expect(screen.getByTestId("ta").tagName).toBe("TEXTAREA");
+  });
+
+  it("drops w-full when fullWidth is false so a caller's width class applies", () => {
+    render(<TextArea fullWidth={false} className="max-h-32" placeholder="bounded" />);
+    const cls = screen.getByPlaceholderText("bounded").className;
+    expect(cls).not.toContain("w-full");
+    expect(cls).toContain("max-h-32");
   });
 });
 

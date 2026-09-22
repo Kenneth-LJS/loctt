@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import type { TrackerInfoResponse } from "@loctt/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -11,6 +10,7 @@ import {
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { Sidebar } from "./Sidebar.tsx";
 
 /**
@@ -60,8 +60,6 @@ let SLOW_COUNTS = false;
 /** Fails the count queries, for the unavailable-badge case. */
 let FAILED_COUNTS = false;
 
-/** Overrides the workspace label, per-test (ONB-23, SHL-19). */
-let CWD = "~/PDev/loctt";
 
 /** Makes /api/views fail, per-test (SHL-32). */
 let FAIL_VIEWS = false;
@@ -70,27 +68,26 @@ let FAIL_VIEWS = false;
 let SETTINGS: Record<string, unknown> = {};
 
 /** Saved views returned by /api/views, per-test (SHL-32). */
-let VIEWS: { id: string; name: string; query: string }[] = [
-  { id: "v_mine", name: "My open bugs", query: "x" },
+// `conditions` optional: a valid view carries it (edit seeds the builder
+// from it); fixtures that only exercise listing/pin/delete may omit it.
+let VIEWS: { id: string; name: string; filters: unknown[]; archived?: boolean }[] = [
+  {
+    id: "v_mine",
+    name: "My open bugs",
+    filters: [{ kind: "simple", field: "status", op: "in", values: ["backlog"] }],
+  },
 ];
 
-const INFO: TrackerInfoResponse = {
-  exists: true,
-  initState: "ready",
-  defaultUserName: "you",
-  taskCount: 7,
-  keyPrefix: "WEB-",
-  nextKey: "WEB-8",
-  schemaStatus: { kind: "current", version: 3 },
-  cwd: "~/PDev/loctt",
-  today: "2026-08-14",
-    timezone: "UTC",
-};
-
-/** `INFO` with the per-test workspace label applied. */
-function info(): TrackerInfoResponse {
-  return { ...INFO, cwd: CWD };
-}
+/** Broken saved views returned by /api/views, per-test (VUE-22). */
+let BROKEN_VIEWS: {
+  id: string;
+  name: string;
+  /** K102: a broken entry carries a display-only `summary`, not a query. */
+  summary: string;
+  error: string;
+  index: number;
+  rawText: string;
+}[] = [];
 
 /** Routes a request path to a canned JSON body for the stubbed fetch. */
 function routeFetch(path: string): unknown {
@@ -105,7 +102,9 @@ function routeFetch(path: string): unknown {
     };
   }
   if (path.startsWith("/api/views")) {
-    return { queries: VIEWS };
+    return BROKEN_VIEWS.length > 0
+      ? { queries: VIEWS, broken: BROKEN_VIEWS }
+      : { queries: VIEWS };
   }
   if (path.startsWith("/api/milestones")) {
     if (EMPTY_CONFIG) return { items: [], total: 0, offset: 0, limit: 100 };
@@ -234,7 +233,7 @@ async function renderSidebarAt(
     path: "/list",
     validateSearch: (s: Record<string, unknown>) => s,
     component: () => (
-      <Sidebar collapsed={false} info={info()} currentUserId={currentUserId} today="2026-06-08" />
+      <Sidebar collapsed={false} currentUserId={currentUserId} today="2026-06-08" />
     ),
   });
   const router = createRouter({
@@ -267,8 +266,12 @@ afterEach(() => {
   EFFECTIVE_DEFAULT = undefined;
   PRIORITIES = undefined;
   WORKFLOW_STATUSES = [];
-  CWD = "~/PDev/loctt";
-  VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+  VIEWS = [{
+    id: "v_mine",
+    name: "My open bugs",
+    filters: [{ kind: "simple", field: "status", op: "in", values: ["backlog"] }],
+  }];
+  BROKEN_VIEWS = [];
   SETTINGS = {};
   FAIL_VIEWS = false;
   window.localStorage.clear();
@@ -288,7 +291,9 @@ describe("Sidebar", () => {
     await renderSidebarAt("/list");
 
     // Group headers
-    for (const label of ["Projects", "Saved filters", "Milestones", "Sprints", "Labels", "Recently viewed"]) {
+    // "Views" was "Saved filters" — renamed per the View-vs-Filter vocab
+    // (K102): a saved thing is a "view".
+    for (const label of ["Projects", "Views", "Milestones", "Sprints", "Labels", "Recently viewed"]) {
       expect(await screen.findByText(label)).toBeTruthy();
     }
     // Project items
@@ -301,10 +306,68 @@ describe("Sidebar", () => {
     expect(await screen.findByText("frontend")).toBeTruthy();
   });
 
+  it("collapses a section on toggle and persists it to localStorage (U22)", async () => {
+    await renderSidebarAt("/list");
+    // A label row proves the Labels section body is expanded.
+    expect(await screen.findByText("frontend")).toBeTruthy();
+    const toggle = screen.getByTestId("sidebar-section-toggle-labels");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(toggle);
+
+    // Body hidden, header still there, state reflected + persisted.
+    await waitFor(() => {
+      expect(screen.queryByText("frontend")).toBeNull();
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("Labels")).toBeTruthy();
+    const stored = window.localStorage.getItem("loctt.sidebar.collapsedSections");
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored ?? "[]")).toContain("labels");
+  });
+
+  it("restores a section's collapsed state from localStorage on mount (U22)", async () => {
+    window.localStorage.setItem(
+      "loctt.sidebar.collapsedSections",
+      JSON.stringify(["labels"]),
+    );
+    await renderSidebarAt("/list");
+    // Header renders; body does not (restored collapsed).
+    expect(await screen.findByText("Labels")).toBeTruthy();
+    expect(screen.queryByText("frontend")).toBeNull();
+    expect(
+      screen.getByTestId("sidebar-section-toggle-labels").getAttribute("aria-expanded"),
+    ).toBe("false");
+  });
+
   it("hides completed sprints, shows active ones", async () => {
     await renderSidebarAt("/list");
     expect(await screen.findByText("Sprint 12")).toBeTruthy();
     expect(screen.queryByText("Sprint 11")).toBeNull();
+  });
+
+  it("'+ New milestone' opens the shared create dialog in place (K105)", async () => {
+    await renderSidebarAt("/list");
+    const btn = await screen.findByTestId("sidebar-new-milestone");
+    expect(screen.queryByTestId("milestone-create-name")).toBeNull();
+    fireEvent.click(btn);
+    expect(await screen.findByTestId("milestone-create-name")).not.toBeNull();
+  });
+
+  it("'+ New label' opens the shared create dialog in place (K105)", async () => {
+    await renderSidebarAt("/list");
+    const btn = await screen.findByTestId("sidebar-new-label");
+    expect(screen.queryByTestId("label-create-name")).toBeNull();
+    fireEvent.click(btn);
+    expect(await screen.findByTestId("label-create-name")).not.toBeNull();
+  });
+
+  it("'+ New sprint' opens the shared create dialog in place (K105)", async () => {
+    await renderSidebarAt("/list");
+    const btn = await screen.findByTestId("sidebar-new-sprint");
+    expect(screen.queryByTestId("sprint-create-name")).toBeNull();
+    fireEvent.click(btn);
+    expect(await screen.findByTestId("sprint-create-name")).not.toBeNull();
   });
 
   /**
@@ -439,15 +502,16 @@ describe("Sidebar recents (SHL-10)", () => {
 /**
  * @verifies SHL-11
  *
- * The footer names the workspace so two `loctt ui` windows are
- * distinguishable, and pins a Settings link beside it.
+ * SHL-11's footer bullet: a Settings link that navigates to the
+ * settings route. The case's other half — telling two `loctt ui`
+ * windows apart — is the document title's, and is covered in
+ * `useRouteAnnouncement.test.tsx`; nothing on the page carries it.
  */
 describe("Sidebar footer (SHL-11)", () => {
-  it("shows the workspace label and a Settings link", async () => {
+  it("shows a Settings link pointing at the settings route", async () => {
     await renderSidebarAt("/list");
 
-    expect(await screen.findByText("~/PDev/loctt")).toBeTruthy();
-    const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
+    const settings = (await screen.findByText("Settings")).closest("a") as HTMLAnchorElement;
     expect(settings.getAttribute("href")).toContain("/settings/");
   });
 });
@@ -487,16 +551,14 @@ describe("Sidebar truncation and scale", () => {
   /**
    * @verifies SHL-19
    *
-   * The workspace label truncates in place and keeps the Settings link
-   * visible beside it.
+   * The footer keeps the Settings link visible (the tracker path and the
+   * task count were both removed).
    */
-  it("truncates a long workspace path without displacing Settings", async () => {
+  it("keeps the Settings link in the footer", async () => {
     await renderSidebarAt("/list");
 
-    const cwd = await screen.findByText("~/PDev/loctt");
-    expect(cwd.className).toContain("truncate");
-    expect(cwd.getAttribute("title")).toBe("~/PDev/loctt");
-    expect(screen.getByText("Settings").closest("a")).not.toBeNull();
+    expect((await screen.findByText("Settings")).closest("a")).not.toBeNull();
+    expect(screen.queryByText(/\b7 tasks\b/)).toBeNull();
   });
 
   /**
@@ -525,9 +587,7 @@ describe("Sidebar truncation and scale", () => {
     // Everything that grows is inside the scroller...
     expect(scroller?.contains(screen.getByText("label-39"))).toBe(true);
     expect(scroller?.contains(screen.getByText("Recent task 20"))).toBe(true);
-    // ...and the footer is not.
-    const footer = screen.getByText("~/PDev/loctt");
-    expect(scroller?.contains(footer)).toBe(false);
+    // ...and the footer (now just the Settings link) is not.
     expect(scroller?.contains(screen.getByText("Settings"))).toBe(false);
   });
 
@@ -733,24 +793,23 @@ describe("Sidebar count badges that never arrive", () => {
  * this case describes. The footer has to absorb it without widening
  * the column or pushing Settings out.
  */
-describe("Sidebar footer with a very long workspace label", () => {
-  it("truncates in place and keeps Settings reachable", async () => {
-    // ~200 characters, of the shape `displayPath` actually emits.
-    CWD = `~/${"deeply-nested-project-directory".repeat(3)}/${"another-long-segment-name".repeat(3)}`;
-    expect(CWD.length).toBeGreaterThan(150);
+describe("Sidebar footer", () => {
+  // The tracker filesystem path was removed from the footer (Ken's
+  // report — developer chrome), so the former "truncate a very long
+  // workspace path" test no longer has a subject. What still matters is
+  // that the footer's Settings link stays reachable and out of the
+  // scrolling region regardless of how much sits above it.
+  it("keeps Settings reachable and outside the scroll region", async () => {
+    RECENTS = Array.from({ length: 20 }, (_, i) => ({
+      key: `WEB-${i + 1}`,
+      title: `Recent task ${i + 1}`,
+    }));
 
     await renderSidebarAt("/list");
+    await screen.findByText("Recent task 20");
 
-    const label = await screen.findByText(CWD);
-    // Truncated by CSS rather than wrapped: one line, ellipsis.
-    expect(label.className).toContain("truncate");
-    // The full label is available on hover.
-    expect(label.getAttribute("title")).toBe(CWD);
-
-    // Settings is beside it, not pushed out of the footer.
     const settings = screen.getByText("Settings").closest("a") as HTMLAnchorElement;
     expect(settings.getAttribute("href")).toContain("/settings/");
-    // And it is outside the scrolling region, so it cannot scroll away.
     const scroller = document.querySelector('[data-sidebar-scroll="true"]');
     expect(scroller?.contains(settings)).toBe(false);
   });
@@ -768,15 +827,15 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
   it("explains the removal inline, naming the view, without an alert", async () => {
     // First load: the view exists and is remembered.
     VIEWS = [
-      { id: "v_mine", name: "My open bugs", query: "x" },
-      { id: "v_gone", name: "Release blockers", query: "y" },
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_gone", name: "Release blockers", filters: [] },
     ];
     await renderSidebarAt("/list");
     expect(await screen.findByText("Release blockers")).toBeTruthy();
     cleanup();
 
     // The user edits queries.yaml and refreshes.
-    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    VIEWS = [{ id: "v_mine", name: "My open bugs", filters: [] }];
     await renderSidebarAt("/list");
 
     const notice = await screen.findByText(/Release blockers.*was removed/);
@@ -792,14 +851,14 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
 
   it("stays dismissed once dismissed", async () => {
     VIEWS = [
-      { id: "v_mine", name: "My open bugs", query: "x" },
-      { id: "v_gone", name: "Release blockers", query: "y" },
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_gone", name: "Release blockers", filters: [] },
     ];
     await renderSidebarAt("/list");
     await screen.findByText("Release blockers");
     cleanup();
 
-    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    VIEWS = [{ id: "v_mine", name: "My open bugs", filters: [] }];
     await renderSidebarAt("/list");
     const dismiss = await screen.findByLabelText(/Dismiss: Release blockers/);
     fireEvent.click(dismiss);
@@ -815,14 +874,14 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
 
   it("keeps explaining across a second refresh, until dismissed", async () => {
     VIEWS = [
-      { id: "v_mine", name: "My open bugs", query: "x" },
-      { id: "v_gone", name: "Release blockers", query: "y" },
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_gone", name: "Release blockers", filters: [] },
     ];
     await renderSidebarAt("/list");
     await screen.findByText("Release blockers");
     cleanup();
 
-    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    VIEWS = [{ id: "v_mine", name: "My open bugs", filters: [] }];
     await renderSidebarAt("/list");
     expect(await screen.findByText(/Release blockers.*was removed/)).toBeTruthy();
     cleanup();
@@ -836,7 +895,7 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
   });
 
   it("says nothing on a first-ever load, when nothing is remembered", async () => {
-    VIEWS = [{ id: "v_mine", name: "My open bugs", query: "x" }];
+    VIEWS = [{ id: "v_mine", name: "My open bugs", filters: [] }];
     await renderSidebarAt("/list");
     await screen.findByText("My open bugs");
     expect(screen.queryByText(/was removed/)).toBeNull();
@@ -847,8 +906,8 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
     // as removed because a request errored would be the same ERR-1
     // conflation one layer up.
     VIEWS = [
-      { id: "v_mine", name: "My open bugs", query: "x" },
-      { id: "v_gone", name: "Release blockers", query: "y" },
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_gone", name: "Release blockers", filters: [] },
     ];
     await renderSidebarAt("/list");
     await screen.findByText("Release blockers");
@@ -856,7 +915,7 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
 
     FAIL_VIEWS = true;
     await renderSidebarAt("/list");
-    await screen.findByText("Saved filters");
+    await screen.findByText("Views"); // renamed from "Saved filters" (K102 vocab)
     expect(screen.queryByText(/was removed/)).toBeNull();
   });
 });
@@ -893,14 +952,14 @@ describe("Sidebar groups customization (SHL-45)", () => {
     expect(screen.queryByText(/No labels yet/)).toBeNull();
   });
 
-  it("hides a built-in filter without removing the Saved filters group", async () => {
+  it("hides a built-in filter without removing the Views group", async () => {
     // @verifies SHL-45 — built-in filters are hideable too
     SETTINGS = { sidebar_groups: { hidden: ["overdue"] } };
     await renderSidebarAt("/list");
     await waitFor(() => {
       expect(screen.queryByText("Overdue")).toBeNull();
     });
-    screen.getByText("Saved filters");
+    screen.getByText("Views"); // renamed from "Saved filters" (K102 vocab)
     // A non-hidden filter still shows.
     screen.getByText("Assigned to me");
   });
@@ -922,19 +981,22 @@ describe("Sidebar groups customization (SHL-45)", () => {
     // Enabled: no `disabled` attribute (the old stub hardcoded one).
     expect(btn.hasAttribute("disabled")).toBe(false);
     fireEvent.click(btn);
-    // VUE-40: the sidebar entry opens the same create dialog the panel
-    // uses — the one with the advanced query editor, NOT the read-only
-    // "Save as view" dialog that hard-codes `archived != true`.
+    // VUE-40 + K102: the sidebar entry opens the same create dialog the
+    // panel uses — the human-readable FILTER PICKER, NOT a raw DSL box,
+    // NOT the AST builder, and NOT the read-only "Save as view" dialog
+    // that hard-codes `archived != true`.
     await screen.findByTestId("view-create-dialog");
-    screen.getByTestId("advanced-query-editor");
+    screen.getByTestId("view-filter-field-0");
+    expect(screen.queryByTestId("query-builder")).toBeNull();
+    expect(screen.queryByTestId("advanced-query-editor")).toBeNull();
   });
 
-  it("sidebar + New filter POSTs a TYPED query, not the fixed archived filter", async () => {
+  it("sidebar + New filter POSTs an ordered filters list, not the fixed archived filter", async () => {
     // @verifies VUE-40 — the sidebar bullet the case leads with. The old
     // wiring opened SaveViewDialog with `search={}`, so every view saved
-    // from the sidebar was `archived != true` and the user could not type
-    // a query. This asserts the sidebar reaches the query editor and POSTs
-    // exactly what was typed.
+    // from the sidebar was `archived != true` and the user could not build
+    // a filter. K102: the sidebar reaches the filter picker and POSTs the
+    // ordered filters authored there.
     await renderSidebarAt("/list");
     const posts: { url: string; body: unknown }[] = [];
     const realFetch = globalThis.fetch;
@@ -943,7 +1005,7 @@ describe("Sidebar groups customization (SHL-45)", () => {
       if ((init?.method ?? "GET") === "POST" && url.includes("/api/views")) {
         const raw = init?.body;
         posts.push({ url, body: typeof raw === "string" ? JSON.parse(raw) : undefined });
-        return Promise.resolve(new Response(JSON.stringify({ id: "vNew", name: "n", query: "q" }), {
+        return Promise.resolve(new Response(JSON.stringify({ id: "vNew", name: "n", filters: [] }), {
           status: 201, headers: { "Content-Type": "application/json" },
         }));
       }
@@ -951,16 +1013,363 @@ describe("Sidebar groups customization (SHL-45)", () => {
     });
 
     fireEvent.click(screen.getByTestId("sidebar-new-filter"));
-    await screen.findByTestId("advanced-query-editor");
+    await screen.findByTestId("view-filter-field-0");
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "My typed view" } });
-    fireEvent.change(screen.getByTestId("dsl-input"), { target: { value: "status:open AND type:bug" } });
+    pickCombo("view-filter-field-0", "title");
+    fireEvent.change(screen.getByTestId("view-filter-value-0"), { target: { value: "bug" } });
     fireEvent.click(screen.getByTestId("view-form-save"));
 
     await waitFor(() => { expect(posts.length).toBe(1); });
-    expect(posts[0]?.body).toEqual({ name: "My typed view", query: "status:open AND type:bug" });
+    const body = posts[0]?.body as { name: string; filters?: unknown };
+    expect(body.name).toBe("My typed view");
+    expect(body.filters).toEqual([
+      { kind: "simple", field: "title", op: "~", values: ["bug"] },
+    ]);
     // Never the SaveViewDialog default derived from an empty search.
     expect(JSON.stringify(posts[0]?.body)).not.toContain("archived != true");
+  });
+});
+
+/**
+ * Edit / Pin / Delete a saved filter from the sidebar row (Ken's gap).
+ *
+ * The user-view rows were bare `<Link>`s — the edit/rename/delete
+ * affordance existed only in Settings → Saved views. These cover the
+ * kebab the rows now carry: present on a user view, absent on a built-in;
+ * Edit opens the prefilled dialog and issues one PUT; Delete confirms,
+ * DELETEs, and does NOT fire the "was removed" vanished-view notice for
+ * the user's own deletion; Pin/Unpin issues one merged user-settings PUT;
+ * and a broken row offers Edit but not Pin.
+ */
+describe("Sidebar saved-filter row actions", () => {
+  /** Captures write requests so a test can assert method + URL + body. */
+  function captureWrites(): { calls: { method: string; url: string; body: unknown }[] } {
+    const calls: { method: string; url: string; body: unknown }[] = [];
+    const realFetch = globalThis.fetch;
+    // Once a view is DELETEd, its GET must reflect the removal, so the
+    // refetch the invalidation triggers sees it gone (the condition that
+    // trips useVanishedViews).
+    const deletedIds = new Set<string>();
+    const json = (b: unknown, status = 200): Response =>
+      new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? "GET";
+      if (method !== "GET") {
+        const raw = init?.body;
+        calls.push({ method, url, body: typeof raw === "string" ? JSON.parse(raw) : undefined });
+        if (url.includes("/api/query/validate")) return Promise.resolve(json({ valid: true }));
+        if (url.includes("/api/views/") && method === "PUT") {
+          return Promise.resolve(json({ id: "v_mine", name: "n", filters: [] }));
+        }
+        if (url.includes("/api/views/") && method === "DELETE") {
+          const id = decodeURIComponent(url.split("/api/views/")[1]?.split("?")[0] ?? "");
+          deletedIds.add(id);
+          return Promise.resolve(json({ deleted: id }));
+        }
+        if (url.includes("/api/user-settings")) return Promise.resolve(json({ user: "u_ken", settings: {} }));
+        return Promise.resolve(json({}));
+      }
+      // GET /api/views reflects deletions so a refetch shows the view gone.
+      if (/\/api\/views(\?|$)/.test(url) && deletedIds.size > 0) {
+        return Promise.resolve(json({ queries: VIEWS.filter(v => !deletedIds.has(v.id)) }));
+      }
+      return realFetch(input, init);
+    });
+    return { calls };
+  }
+
+  it("shows a kebab on a user-view row and none on a built-in", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    // The user view carries the kebab.
+    expect(
+      screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }),
+    ).toBeTruthy();
+    // A built-in ("Assigned to me") does not.
+    expect(
+      screen.queryByRole("button", { name: /Actions for saved filter "Assigned to me"/ }),
+    ).toBeNull();
+  });
+
+  it("Edit opens the prefilled dialog and issues one PUT /api/views/:id", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-edit"));
+    await screen.findByTestId("view-edit-dialog");
+    // K102: a valid view opens as DROPDOWN ROWS seeded from its stored
+    // filters. Prefilled name, and the first row shows `status`.
+    await screen.findByTestId("view-filter-field-0");
+    expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("My open bugs");
+    expect(comboValue("view-filter-field-0")).toBe("status");
+    expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
+    fireEvent.click(screen.getByTestId("view-form-save"));
+
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/views/v_mine"));
+      expect(puts.length).toBe(1);
+      const body = puts[0]?.body as { name: string; filters?: unknown };
+      expect(body.name).toBe("Renamed");
+      // The edit carries the ordered filters, unchanged by the rename.
+      expect(body.filters).toEqual([
+        { kind: "simple", field: "status", op: "in", values: ["backlog"] },
+      ]);
+    });
+  });
+
+  it("Delete confirms and issues one DELETE /api/views/:id", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    await screen.findByTestId("delete-view-dialog");
+    fireEvent.click(screen.getByTestId("delete-view-confirm"));
+
+    await waitFor(() => {
+      const dels = calls.filter(c => c.method === "DELETE" && c.url.includes("/api/views/v_mine"));
+      expect(dels.length).toBe(1);
+    });
+  });
+
+  it("Delete does not fire the vanished-view notice for the user's own deletion", async () => {
+    // The GET drops the view once it is deleted, so on the invalidation's
+    // refetch it is genuinely gone — exactly the condition that trips
+    // useVanishedViews. confirmDelete calls dismiss(view.id) BEFORE the
+    // mutate, which is what suppresses "«name» was removed from
+    // queries.yaml" for the user's own action.
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    await screen.findByTestId("delete-view-dialog");
+    fireEvent.click(screen.getByTestId("delete-view-confirm"));
+
+    // The DELETE fires and the refetch shows the view gone (the row
+    // disappears), which is the exact condition useVanishedViews watches.
+    await waitFor(() => {
+      expect(calls.some(c => c.method === "DELETE" && c.url.includes("/api/views/v_mine"))).toBe(true);
+    });
+    await waitFor(() => { expect(screen.queryByText("My open bugs")).toBeNull(); });
+    // Because confirmDelete dismissed the view before the mutate, no
+    // "was removed from queries.yaml" notice appears for the user's own
+    // deletion.
+    expect(screen.queryByText(/was removed from queries\.yaml/)).toBeNull();
+  });
+
+  it("Pin issues one merged PUT /api/user-settings carrying the pin", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    // Not yet pinned → the item reads "Pin to top".
+    fireEvent.click(screen.getByTestId("view-pin"));
+
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/user-settings"));
+      expect(puts.length).toBe(1);
+      expect(puts[0]?.body).toMatchObject({ sidebar_pins: ["v_mine"] });
+    });
+  });
+
+  it("Unpin drops the pin in a merged PUT when the view is already pinned", async () => {
+    SETTINGS = { sidebar_pins: ["v_mine"] };
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    // Already pinned → the toggle reads "Unpin".
+    fireEvent.click(screen.getByText("Unpin"));
+
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/user-settings"));
+      expect(puts.length).toBe(1);
+      expect(puts[0]?.body).toMatchObject({ sidebar_pins: [] });
+    });
+  });
+
+  it("a broken-view row offers Edit but not Pin", async () => {
+    BROKEN_VIEWS = [
+      { id: "v_bad", name: "Bad view", summary: "not a query", error: "parse error", index: 1, rawText: "id: v_bad" },
+    ];
+    await renderSidebarAt("/list");
+    await screen.findByText("Bad view");
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
+    // Edit (VUE-22 fix path) and Delete are offered; Pin is not.
+    expect(screen.getByTestId("broken-view-edit")).toBeTruthy();
+    expect(screen.getByTestId("broken-view-delete")).toBeTruthy();
+    expect(screen.queryByText(/^Pin/)).toBeNull();
+    expect(screen.queryByText("Unpin")).toBeNull();
+  });
+
+  /**
+   * The broken-view repair path, and the data-loss defect it used to be.
+   *
+   * A broken entry's full original YAML survives on disk in `rawText` and
+   * is re-emitted verbatim by every unrelated write (P-11 / K28 /
+   * Phase-Z-C2). Edit… seeds an EMPTY picker (K102 — the stored filters
+   * did not load, so there is nothing faithful to seed), and Save used to
+   * fire a plain `editView`, replacing that preserved text with
+   * `filters: []`. The one control offered to repair the entry was the
+   * only thing in the product that could destroy it.
+   *
+   * The test below that previously asserted "opens on an empty picker"
+   * was GREEN while that held, because an empty picker is exactly what
+   * the destructive path looks like from the outside. It was asserting
+   * the bug. It is replaced by these three.
+   */
+  const BROKEN_ONE = {
+    id: "v_bad",
+    name: "Bad view",
+    summary: "broken dsl",
+    error: "filters[0].op is not a comparison operator",
+    index: 1,
+    rawText: "id: v_bad\nname: Bad view\nfilters:\n  - kind: simple\n    field: status\n    op: WAT\n    values: [done]\nsort:\n  - field: priority\n    dir: desc\n",
+  };
+
+  /**
+   * Renders, then opens the broken row's Edit dialog, capturing writes in
+   * between. `captureWrites` must come AFTER `renderSidebarAt` — the
+   * latter installs its own fetch stub and would drop the spy.
+   */
+  async function openBrokenEdit(): Promise<{ calls: { method: string; url: string; body: unknown }[] }> {
+    await renderSidebarAt("/list");
+    await screen.findByText("Bad view");
+    const captured = captureWrites();
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
+    fireEvent.click(screen.getByTestId("broken-view-edit"));
+    await screen.findByTestId("view-edit-dialog");
+    await screen.findByTestId("view-filter-field-0");
+    return captured;
+  }
+
+  // @verifies VUE-42
+  it("Edit on a broken row will NOT save an empty filter list over the preserved text", async () => {
+    // THE regression guard for the data-loss defect. Everything a user
+    // could do to trigger the old overwrite — open Edit, click Save —
+    // must issue NO write at all while the replacement is unconfirmed.
+    BROKEN_VIEWS = [BROKEN_ONE];
+    const { calls } = await openBrokenEdit();
+
+    const save = screen.getByTestId<HTMLButtonElement>("view-form-save");
+    expect(save.disabled).toBe(true);
+    fireEvent.click(save);
+
+    // Give any in-flight mutation a chance to land before asserting none
+    // did — a false green here would be indistinguishable from the fix.
+    await waitFor(() => { expect(screen.getByTestId("view-edit-dialog")).toBeTruthy(); });
+    expect(calls.filter(c => c.url.includes("/api/views/"))).toEqual([]);
+  });
+
+  // @verifies VUE-22, VUE-42
+  it("Edit on a broken row shows the parse error and the YAML still on disk", async () => {
+    // The user hand-edited the file; the only honest thing to show them
+    // is what they wrote plus why it did not load. An empty picker alone
+    // implies the view had no filters — it had filters that did not load.
+    BROKEN_VIEWS = [BROKEN_ONE];
+    await openBrokenEdit();
+
+    expect(screen.getByTestId("view-form-broken-error").textContent)
+      .toContain("filters[0].op is not a comparison operator");
+    expect(screen.getByTestId<HTMLTextAreaElement>("view-form-broken-raw").value)
+      .toBe(BROKEN_ONE.rawText);
+    // Still the empty picker for the rebuild (K102), and still no DSL box.
+    expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("Bad view");
+    expect(comboValue("view-filter-field-0")).toBe("");
+    expect(screen.queryByTestId("dsl-input")).toBeNull();
+  });
+
+  it("replaces a broken view only after the user confirms the text will be discarded", async () => {
+    // Discarding recoverable text stays possible — it must just be a
+    // deliberate act. Ticking the confirmation is that act.
+    BROKEN_VIEWS = [BROKEN_ONE];
+    const { calls } = await openBrokenEdit();
+
+    fireEvent.click(screen.getByTestId("view-form-confirm-replace"));
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLButtonElement>("view-form-save").disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByTestId("view-form-save"));
+
+    await waitFor(() => {
+      const puts = calls.filter(c => c.method === "PUT" && c.url.includes("/api/views/v_bad"));
+      expect(puts.length).toBe(1);
+      // K102-broken-repair: the tick has to reach the SERVER. This test
+      // previously asserted only `{name, filters}` — a body the server
+      // REJECTS for a broken entry, so the dialog looked like it worked
+      // while every confirmed replace came back 400. Asserting the flag
+      // is what makes this a test of the repair rather than of the
+      // checkbox.
+      expect(puts[0]?.body).toMatchObject({
+        name: "Bad view",
+        filters: [],
+        replaceBroken: true,
+      });
+    });
+  });
+
+  it("deleting a broken row sends the replaceBroken opt-in the server requires", async () => {
+    // The broken row's Delete… goes through DeleteViewDialog, whose
+    // confirmation IS the explicit consent. Without carrying it to the
+    // server the delete comes back 400 and the dead control stays dead.
+    BROKEN_VIEWS = [BROKEN_ONE];
+    await renderSidebarAt("/list");
+    await screen.findByText("Bad view");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Bad view"' }));
+    fireEvent.click(screen.getByTestId("broken-view-delete"));
+    const confirm = await screen.findByTestId("delete-view-confirm");
+    fireEvent.click(confirm);
+
+    await waitFor(() => {
+      const dels = calls.filter(c => c.method === "DELETE" && c.url.includes("/api/views/v_bad"));
+      expect(dels.length).toBe(1);
+      expect(dels[0]?.url).toContain("replaceBroken=true");
+    });
+  });
+
+  it("deleting a HEALTHY view does not send replaceBroken", async () => {
+    // Constraint 4: the normal delete's request is unchanged.
+    VIEWS = [{ id: "v_ok", name: "Healthy view", filters: [] }];
+    BROKEN_VIEWS = [];
+    await renderSidebarAt("/list");
+    await screen.findByText("Healthy view");
+    const { calls } = captureWrites();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "Healthy view"' }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    fireEvent.click(await screen.findByTestId("delete-view-confirm"));
+
+    await waitFor(() => {
+      const dels = calls.filter(c => c.method === "DELETE" && c.url.includes("/api/views/v_ok"));
+      expect(dels.length).toBe(1);
+      expect(dels[0]?.url).not.toContain("replaceBroken");
+    });
+  });
+
+  it("hides an archived view from the sidebar", async () => {
+    // @verifies VUE-25 (sidebar half) — archived views stay in queries.yaml
+    // but must not appear in the sidebar, like every other group.
+    VIEWS = [
+      { id: "v_mine", name: "My open bugs", filters: [] },
+      { id: "v_old", name: "Archived thing", filters: [], archived: true },
+    ];
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    expect(screen.queryByText("Archived thing")).toBeNull();
   });
 });
 
@@ -1035,6 +1444,140 @@ describe("Sidebar strips the ambient sort from nav hrefs (LST-55)", () => {
 });
 
 /**
+ * The cross-view scope fix (Ken 2026-09-20): List/Board/Timeline share
+ * the filter scope. The view switcher must CARRY the filter keys and DROP
+ * the view-private display params when moving between views, and a project
+ * click made on the board/timeline must stay on that view rather than
+ * jumping to /list.
+ *
+ * These need the sibling view routes registered so TanStack can produce
+ * real hrefs for `to="/board"`/`to="/timeline"` and so the Sidebar can
+ * mount at those paths — the shared `renderSidebarAt` only knows `/list`.
+ * The `<Link>`s compute their href from the current search + pathname, so
+ * reading each href proves the behaviour without clicking through.
+ */
+describe("Sidebar cross-view filter scope (2026-09-20)", () => {
+  async function renderShellAt(pathname: string, search: Record<string, unknown> = {}) {
+    if (priorQc) {
+      await priorQc.cancelQueries();
+      priorQc.clear();
+    }
+    stubFetch();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    priorQc = qc;
+
+    const rootRoute = createRootRoute();
+    const sidebar = () => (
+      <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
+    );
+    const routes = (["/list", "/board", "/timeline"] as const).map(path =>
+      createRoute({
+        getParentRoute: () => rootRoute,
+        path,
+        validateSearch: (s: Record<string, unknown>) => s,
+        component: sidebar,
+      }),
+    );
+    const router = createRouter({
+      routeTree: rootRoute.addChildren(routes),
+      history: createMemoryHistory({
+        initialEntries: [
+          `${pathname}?${new URLSearchParams(
+            Object.fromEntries(Object.entries(search).map(([k, v]) => [k, String(v)])),
+          ).toString()}`,
+        ],
+      }),
+    });
+
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Projects");
+  }
+
+  const hrefOf = (el: HTMLElement): string => el.closest("a")?.getAttribute("href") ?? "";
+
+  it("the view switcher carries filter keys to the sibling view", async () => {
+    await renderShellAt("/list", {
+      status: "in_progress",
+      project: "p_api",
+      labels: "l_fe",
+      archived: "true",
+    });
+    // The Board and Timeline switcher links keep the scope. (Decoded and
+    // matched by value, since this harness JSON-encodes array params
+    // rather than using the app's CSV serializer.)
+    for (const name of ["Board", "Timeline"]) {
+      const href = decodeURIComponent(hrefOf(await screen.findByText(name)));
+      expect(href, `${name} keeps status`).toContain("in_progress");
+      expect(href, `${name} keeps project`).toContain("p_api");
+      expect(href, `${name} keeps labels`).toContain("l_fe");
+      expect(href, `${name} keeps archived`).toContain("archived=true");
+    }
+  });
+
+  it("the view switcher drops view-private params (page/sort/dir/zoom/grouping/arrows)", async () => {
+    await renderShellAt("/timeline", {
+      status: "in_progress",
+      page: "3",
+      sort: "title",
+      dir: "desc",
+      zoom: "month",
+      grouping: "assignee",
+      arrows: "true",
+    });
+    // Switching to the List keeps the filter, drops the display state.
+    const href = decodeURIComponent(hrefOf(await screen.findByText("List")));
+    expect(href).toContain("in_progress");
+    for (const key of ["page=", "sort=", "dir=", "zoom=", "grouping=", "arrows="]) {
+      expect(href, `List drops ${key}`).not.toContain(key);
+    }
+  });
+
+  it("a project link on /board stays on /board and keeps display state", async () => {
+    await renderShellAt("/board", { status: "in_progress" });
+    // The project link (and All-projects) target /board, not /list.
+    const web = hrefOf(await screen.findByText("Web"));
+    expect(web.startsWith("/board")).toBe(true);
+    // The project scope rides along (this test harness JSON-encodes the
+    // array param rather than CSV; the point is the value is present and
+    // the destination is /board, not /list).
+    expect(decodeURIComponent(web)).toContain("p_web");
+    const all = hrefOf(await screen.findByText("All projects"));
+    expect(all.startsWith("/board")).toBe(true);
+  });
+
+  it("a project link on /list still targets /list", async () => {
+    await renderShellAt("/list");
+    const web = hrefOf(await screen.findByText("Web"));
+    expect(web.startsWith("/list")).toBe(true);
+  });
+
+  it("a milestone link targets the milestone detail page (U14 merge)", async () => {
+    // U14/K105: a sidebar milestone now opens the milestone DETAIL page
+    // (/milestones/$id) — the superset surface — so the sidebar and the
+    // "All milestones" list reach the same one UI. It used to target
+    // /list?milestone=; that behavior was the bug this merge fixes.
+    await renderShellAt("/board");
+    const milestone = hrefOf(await screen.findByText("v1.0"));
+    expect(milestone.startsWith("/milestones/")).toBe(true);
+    expect(milestone.startsWith("/list")).toBe(false);
+  });
+
+  it("a sprint/label link stays on /list", async () => {
+    // Sprints and labels remain list-shaped filters (a label is not a
+    // page); only milestones gained a detail destination (U14).
+    await renderShellAt("/board");
+    const label = hrefOf(await screen.findByText("frontend"));
+    expect(label.startsWith("/list")).toBe(true);
+  });
+});
+
+/**
  * S-11 / S-8: the sidebar's decorative glyphs come from tokens and the
  * unified icon set, not hardcoded hex or an ad-hoc star.
  */
@@ -1104,5 +1647,535 @@ describe("Sidebar mobile overlay (R2)", () => {
     } finally {
       window.removeEventListener("loctt:sidebar-collapse", onCollapse);
     }
+  });
+
+  // The mobile drawer is now a proper modal dialog (B3 review blocker):
+  // role="dialog" + aria-modal, a close button, Escape-to-close, and a
+  // focus trap — not a bare floating <aside>.
+  it("the drawer is a role=dialog with aria-modal", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    const aside = document.querySelector("aside") as HTMLElement;
+    // Red-proof: the pre-fix overlay <aside> had neither attribute, so a
+    // dialog role/modal flag would fail against it.
+    expect(aside.getAttribute("role")).toBe("dialog");
+    expect(aside.getAttribute("aria-modal")).toBe("true");
+    expect(aside.getAttribute("aria-label")).toBe("Navigation");
+  });
+
+  it("has a close button that requests a dismiss", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    let dismissed = false;
+    const onCollapse = (): void => { dismissed = true; };
+    window.addEventListener("loctt:sidebar-collapse", onCollapse);
+    try {
+      fireEvent.click(screen.getByTestId("sidebar-overlay-close"));
+      expect(dismissed).toBe(true);
+    } finally {
+      window.removeEventListener("loctt:sidebar-collapse", onCollapse);
+    }
+  });
+
+  it("Escape requests a dismiss", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    let dismissed = false;
+    const onCollapse = (): void => { dismissed = true; };
+    window.addEventListener("loctt:sidebar-collapse", onCollapse);
+    try {
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(dismissed).toBe(true);
+    } finally {
+      window.removeEventListener("loctt:sidebar-collapse", onCollapse);
+    }
+  });
+
+  it("traps focus: it moves focus into the drawer on open", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    const aside = document.querySelector("aside") as HTMLElement;
+    // useFocusTrap lands focus inside the panel on mount (its first tab
+    // stop or the panel itself) — never left on document.body, from which
+    // the next Tab would restart at the top of the page behind the drawer.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(aside.contains(document.activeElement)).toBe(true);
+  });
+
+  it("does not cover the header: the drawer starts below it", async () => {
+    setWidth(380);
+    await renderSidebarAt("/list");
+    // The drawer (and its scrim) start at the 48px header height so the
+    // hamburger that opens/closes it stays reachable — it must not be
+    // pinned to `top-0`.
+    const aside = document.querySelector("aside") as HTMLElement;
+    expect(aside.style.top).toBe("3rem");
+    const backdrop = screen.getByTestId("sidebar-overlay-backdrop");
+    expect(backdrop.style.top).toBe("3rem");
+  });
+});
+
+/**
+ * #9 (Ken 2026-09-20): on a NARROW viewport there is no persistent in-grid
+ * icon rail. The collapsed narrow state renders nothing at all — the header
+ * hamburger opens the drawer overlay, which is the sole nav. Desktop keeps
+ * the collapsed rail. `renderSidebarWith` mounts at an explicit `collapsed`
+ * so both the narrow-collapsed (drawer-only) and wide-collapsed (rail)
+ * branches can be exercised; it does not await "Projects" because a
+ * collapsed sidebar hides the group labels (and the narrow-collapsed case
+ * renders nothing).
+ */
+describe("Sidebar narrow rail suppression (#9)", () => {
+  function setWidth(px: number): void {
+    Object.defineProperty(window, "innerWidth", { value: px, configurable: true, writable: true });
+  }
+  afterEach(() => { setWidth(1200); });
+
+  async function renderSidebarWith(collapsed: boolean): Promise<void> {
+    if (priorQc) {
+      await priorQc.cancelQueries();
+      priorQc.clear();
+    }
+    stubFetch();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    priorQc = qc;
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: (s: Record<string, unknown>) => s,
+      component: () => (
+        <Sidebar collapsed={collapsed} currentUserId="u_ken" today="2026-06-08" />
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: ["/list"] }),
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    // Give the router a tick to resolve; do not depend on group text
+    // (hidden while collapsed, absent when narrow-collapsed renders null).
+    await waitFor(() => {
+      expect(router.state.status).toBe("idle");
+    });
+  }
+
+  it("renders NO in-grid sidebar element when narrow + collapsed (drawer-only)", async () => {
+    // Red-proof: before the fix, narrow + collapsed rendered a persistent
+    // `w-14` icon rail <aside>, so this <aside> query returned an element.
+    setWidth(380);
+    await renderSidebarWith(true);
+    expect(document.querySelector("aside")).toBeNull();
+    // And no backdrop either — the drawer is closed, nothing floats.
+    expect(screen.queryByTestId("sidebar-overlay-backdrop")).toBeNull();
+  });
+
+  it("still renders the collapsed icon RAIL on a wide viewport (desktop unchanged)", async () => {
+    setWidth(1200);
+    await renderSidebarWith(true);
+    const aside = document.querySelector("aside") as HTMLElement;
+    // Red-proof against a fix that hides the rail everywhere: the wide
+    // collapsed column must remain, at its fixed rail width, in-grid.
+    expect(aside).not.toBeNull();
+    expect(aside.getAttribute("data-overlay")).toBeNull();
+    expect(aside.className).toContain("w-14");
+  });
+
+  it("narrow + expanded still opens the drawer overlay (hamburger path intact)", async () => {
+    // The hamburger flips collapsed→false; at narrow width that is the
+    // overlay drawer, not an in-grid rail.
+    setWidth(380);
+    await renderSidebarWith(false);
+    const aside = document.querySelector("aside") as HTMLElement;
+    expect(aside.getAttribute("data-overlay")).toBe("true");
+    expect(aside.getAttribute("role")).toBe("dialog");
+    expect(screen.getByTestId("sidebar-overlay-backdrop")).toBeTruthy();
+  });
+});
+
+/**
+ * @verifies K100
+ *
+ * Point-of-use editing (K100): the Labels / Milestones / Projects sidebar
+ * rows carry a kebab, a SIBLING of the row `<Link>` (a `<button>` inside an
+ * `<a>` is invalid HTML), that opens the SAME shared edit dialog the
+ * Settings panel renders. Sprints get no dialog — their overview becomes
+ * reachable via an "All sprints" row (editing stays on the detail page).
+ */
+describe("Sidebar point-of-use editing (K100)", () => {
+  /** Open a data-row's kebab by its accessible label, then a MenuItem. */
+  function openRowKebab(ariaLabelPrefix: string): void {
+    const kebab = document.querySelector<HTMLButtonElement>(
+      `[aria-label='${ariaLabelPrefix}']`,
+    );
+    if (kebab === null) throw new Error(`no kebab ${ariaLabelPrefix}`);
+    fireEvent.click(kebab);
+  }
+  function clickMenuItem(testId: string): void {
+    const item = document.querySelector<HTMLButtonElement>(`[data-testid='${testId}']`);
+    if (item === null) throw new Error(`no menu item ${testId}`);
+    fireEvent.click(item);
+  }
+
+  it("opens the shared LabelEditDialog, prefilled, from a label row kebab", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("frontend");
+
+    openRowKebab('Actions for label "frontend"');
+    clickMenuItem("sidebar-label-edit");
+
+    // The SAME component the panel renders (its testid), seeded from the row.
+    await screen.findByTestId("label-edit-dialog");
+    const name = screen.getByTestId<HTMLInputElement>("label-name-input");
+    expect(name.value).toBe("frontend");
+    const color = screen.getByTestId<HTMLInputElement>("label-color-input");
+    expect(color.value).toBe("#1e6fcb");
+  });
+
+  it("opens the shared MilestoneEditDialog, prefilled, from a milestone row kebab", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("v1.0");
+
+    openRowKebab('Actions for milestone "v1.0"');
+    clickMenuItem("sidebar-milestone-edit");
+
+    await screen.findByTestId("milestone-edit-dialog");
+    const name = screen.getByTestId<HTMLInputElement>("milestone-name-input");
+    expect(name.value).toBe("v1.0");
+  });
+
+  it("opens the shared ProjectEditDialog, prefilled, from a project row kebab", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("Web");
+
+    openRowKebab('Actions for project "Web"');
+    clickMenuItem("sidebar-project-edit");
+
+    await screen.findByTestId("project-edit-dialog-p_web");
+    const name = screen.getByTestId<HTMLInputElement>("project-name-input-p_web");
+    expect(name.value).toBe("Web");
+  });
+
+  it("keeps the row's kebab a sibling of the Link, not a descendant of it", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("frontend");
+    const kebab = document.querySelector<HTMLButtonElement>(
+      `[aria-label='Actions for label "frontend"']`,
+    );
+    expect(kebab).not.toBeNull();
+    // No enclosing anchor: a button in an anchor is invalid HTML.
+    expect(kebab?.closest("a")).toBeNull();
+  });
+
+  it("offers a Manage deep link and Archive on the label kebab", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("frontend");
+    openRowKebab('Actions for label "frontend"');
+    expect(document.querySelector("[data-testid='sidebar-label-archive']")).not.toBeNull();
+    expect(document.querySelector("[data-testid='sidebar-label-manage']")).not.toBeNull();
+  });
+
+  it("adds an 'All sprints' row linking to /sprints", async () => {
+    await renderSidebarAt("/list");
+    const link = await screen.findByTestId("sidebar-sprints-link");
+    expect(link.getAttribute("href")).toBe("/sprints");
+    expect(link.textContent).toMatch(/All sprints/);
+  });
+
+  it("opens the New-project dialog in place (U10 — no longer deep-links to Settings)", async () => {
+    // Was: asserted `sidebar-new-project` was a link whose href pointed at
+    // /settings/projects. U10 reversed that behavior — clicking "+ New
+    // project" now opens the shared CreateProjectDialog right there, no
+    // navigation. The old assertion was encoding the deep-link behavior
+    // Ken asked us to remove, so it is rewritten to the new contract.
+    await renderSidebarAt("/list");
+    const button = await screen.findByTestId("sidebar-new-project");
+    // It is a button now, not an anchor — there is no href to follow.
+    expect(button.getAttribute("href")).toBeNull();
+    expect(screen.queryByTestId("project-create-name")).toBeNull();
+    fireEvent.click(button);
+    // The dialog's own field proves it opened in place.
+    expect(await screen.findByTestId("project-create-name")).not.toBeNull();
+  });
+});
+
+/**
+ * CONFIG-5 / P4 + K100: the sprint sidebar rows gained a kebab. Sprint
+ * *editing* lives on the `/sprints/:key` detail page (no dialog), so the
+ * kebab only navigates: "Open sprint" → the detail page (where Edit
+ * lives), "Manage sprints…" → Settings → Sprints. The row's own click
+ * still filters the list by that sprint.
+ *
+ * These need the `/sprints/$key` and `/settings/$section` routes
+ * registered so `navigate` resolves; the shared `renderSidebarAt` only
+ * knows `/list`. The router is returned so the test can read where a
+ * kebab action landed.
+ */
+describe("Sidebar sprint row kebab (CONFIG-5, K100)", () => {
+  async function renderShellAt(pathname: string, search: Record<string, unknown> = {}) {
+    if (priorQc) {
+      await priorQc.cancelQueries();
+      priorQc.clear();
+    }
+    stubFetch();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    priorQc = qc;
+
+    const rootRoute = createRootRoute();
+    const sidebar = () => (
+      <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
+    );
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: (s: Record<string, unknown>) => s,
+      component: sidebar,
+    });
+    const sprintDetailRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/sprints/$key",
+      validateSearch: (s: Record<string, unknown>) => s,
+      component: () => <div>sprint detail</div>,
+    });
+    const settingsRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/settings/$section",
+      component: () => <div>settings pane</div>,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute, sprintDetailRoute, settingsRoute]),
+      history: createMemoryHistory({
+        initialEntries: [
+          `${pathname}?${new URLSearchParams(
+            Object.fromEntries(Object.entries(search).map(([k, v]) => [k, String(v)])),
+          ).toString()}`,
+        ],
+      }),
+    });
+
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Projects");
+    return router;
+  }
+
+  function openKebab(ariaLabel: string): void {
+    const kebab = document.querySelector<HTMLButtonElement>(`[aria-label='${ariaLabel}']`);
+    if (kebab === null) throw new Error(`no kebab ${ariaLabel}`);
+    fireEvent.click(kebab);
+  }
+
+  it("offers 'Open sprint' navigating to the sprint's detail page", async () => {
+    const router = await renderShellAt("/list");
+    await screen.findByText("Sprint 12");
+    openKebab('Actions for sprint "Sprint 12"');
+    const open = document.querySelector<HTMLButtonElement>("[data-testid='sidebar-sprint-open']");
+    expect(open).not.toBeNull();
+    await waitFor(() => {
+      fireEvent.click(open as HTMLButtonElement);
+    });
+    // `/sprints/$key` is keyed by the sprint's ULID (route decision V3),
+    // so Open sprint lands on `/sprints/<id>` — where Edit lives.
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/sprints/sp_12");
+    });
+  });
+
+  it("offers 'Manage sprints…' deep-linking to Settings → Sprints", async () => {
+    const router = await renderShellAt("/list");
+    await screen.findByText("Sprint 12");
+    openKebab('Actions for sprint "Sprint 12"');
+    const manage = document.querySelector<HTMLButtonElement>("[data-testid='sidebar-sprint-manage']");
+    expect(manage).not.toBeNull();
+    fireEvent.click(manage as HTMLButtonElement);
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/settings/sprints");
+    });
+  });
+
+  it("keeps the row's filter-link: clicking the sprint name filters the list by it", async () => {
+    const router = await renderShellAt("/list");
+    const rowName = await screen.findByText("Sprint 12");
+    // The name is inside the row `<Link>`; the kebab is a sibling. The
+    // link still carries the `sprint: [id]` filter scope.
+    const link = rowName.closest("a") as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    fireEvent.click(link);
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/list");
+      expect(router.state.location.search).toMatchObject({ sprint: ["sp_12"] });
+    });
+  });
+
+  it("puts the kebab OUTSIDE the row anchor (a button in an anchor is invalid HTML)", async () => {
+    await renderShellAt("/list");
+    await screen.findByText("Sprint 12");
+    const kebab = document.querySelector<HTMLButtonElement>(
+      "[aria-label='Actions for sprint \"Sprint 12\"']",
+    );
+    expect(kebab).not.toBeNull();
+    expect(kebab?.closest("a")).toBeNull();
+  });
+});
+
+/**
+ * @verifies A244 (K100 point-of-use)
+ *
+ * Task 2: the sidebar's own layout config is reachable INLINE from the
+ * sidebar, not only buried in Settings. A "Customize sidebar" affordance
+ * in the footer opens the SAME `SidebarGroupsPanel` the Settings section
+ * renders (K100 in-place tier — the panel is a self-contained editor that
+ * owns its mutation), inside a Sheet. It is discoverable, keyboard-
+ * reachable (a real <button>), writes the same `sidebar_groups` user
+ * setting through the same PUT (no second source of truth), and is kept
+ * out of the way on a narrow/overlay viewport.
+ */
+describe("Sidebar inline customize (A244, K100)", () => {
+  function setWidth(px: number): void {
+    Object.defineProperty(window, "innerWidth", { value: px, configurable: true, writable: true });
+  }
+  afterEach(() => { setWidth(1200); });
+
+  /**
+   * A self-contained render for the write test: a QueryClient with
+   * `staleTime: Infinity` so the settings query settles once and stays
+   * settled. The shared `renderSidebarAt` uses `gcTime: 0`, and the
+   * mutation's `onMutate` cancels the user-settings query — against a
+   * constantly-refetching query that cancel/refetch cycle starves the
+   * `waitFor` and the PUT never gets to run. A stable cache avoids it,
+   * and the PUT body is captured here from the first render.
+   */
+  async function renderWithPutCapture(): Promise<{ puts: Record<string, unknown>[] }> {
+    const puts: Record<string, unknown>[] = [];
+    if (priorQc) { await priorQc.cancelQueries(); priorQc.clear(); }
+    const current = globalThis.fetch as typeof globalThis.fetch & { mockRestore?: () => void };
+    current.mockRestore?.();
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const path = raw.replace(/^https?:\/\/[^/]+/, "");
+        if ((init?.method ?? "GET") === "PUT" && path.startsWith("/api/user-settings")) {
+          const b = init?.body;
+          const body = (typeof b === "string" ? JSON.parse(b) : {}) as Record<string, unknown>;
+          puts.push(body);
+          SETTINGS = body;
+          return Promise.resolve(new Response(JSON.stringify({ user: "u_ken", settings: body }), {
+            status: 200, headers: { "Content-Type": "application/json" },
+          }));
+        }
+        return Promise.resolve(new Response(JSON.stringify(routeFetch(path)), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      },
+    );
+    const qc = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: Infinity, staleTime: Infinity },
+        mutations: { retry: false },
+      },
+    });
+    priorQc = qc;
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: (s: Record<string, unknown>) => s,
+      component: () => (
+        <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: ["/list"] }),
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Projects");
+    return { puts };
+  }
+
+  it("shows a keyboard-reachable Customize sidebar button in the footer", async () => {
+    // Red-proof: removing the affordance from Footer fails this. It is a
+    // real <button> (focusable, Enter/Space-activatable) — not a div.
+    await renderSidebarAt("/list");
+    const btn = await screen.findByTestId("sidebar-customize");
+    expect(btn.tagName).toBe("BUTTON");
+    // Discoverable label, on the button itself or its accessible name.
+    expect(btn.getAttribute("aria-label") ?? btn.textContent ?? "").toMatch(/Customize sidebar/i);
+    // It sits in the pinned footer, not the scrolling groups region.
+    const scroller = document.querySelector('[data-sidebar-scroll="true"]');
+    expect(scroller?.contains(btn)).toBe(false);
+  });
+
+  it("opens the shared SidebarGroupsPanel in a sheet (not a fork)", async () => {
+    // Red-proof: if the affordance opened something other than the shared
+    // panel, `sidebar-groups-panel` (the panel's own testid) would be
+    // absent. Reusing the SAME component is the K100 in-place requirement.
+    await renderSidebarAt("/list");
+    fireEvent.click(await screen.findByTestId("sidebar-customize"));
+    await screen.findByTestId("sidebar-customize-sheet");
+    // The exact Settings panel is mounted inside the sheet.
+    expect(await screen.findByTestId("sidebar-groups-panel")).toBeTruthy();
+    // Embedded: the sheet supplies the title, so the panel drops its <h1>.
+    expect(screen.queryByTestId("settings-panel-title")).toBeNull();
+  });
+
+  it("opens the responsive primitive as a DIALOG on desktop, not a bare Sheet", async () => {
+    // Ken flagged this: Customize sidebar used a bare `Sheet`, so it was a
+    // bottom drawer even on desktop. It is now a `ResponsiveDialog`, which
+    // is a centered Dialog at desktop width. Red-proof: the desktop Dialog
+    // has no Sheet ✕ close button — if it reverted to a bare Sheet, the
+    // `sidebar-customize-sheet-close` control would be present here.
+    setWidth(1200);
+    await renderSidebarAt("/list");
+    fireEvent.click(await screen.findByTestId("sidebar-customize"));
+    await screen.findByTestId("sidebar-customize-sheet");
+    expect(await screen.findByTestId("sidebar-groups-panel")).toBeTruthy();
+    // Desktop → Dialog → no Sheet header/close button.
+    expect(screen.queryByTestId("sidebar-customize-sheet-close")).toBeNull();
+  });
+
+  it("writes the same sidebar_groups setting through the same PUT", async () => {
+    // Red-proof: this is the "no second source of truth" guard. The inline
+    // editor must hit PUT /api/user-settings with sidebar_groups, exactly
+    // as the Settings panel does — a fork writing elsewhere fails here.
+    const { puts } = await renderWithPutCapture();
+    fireEvent.click(await screen.findByTestId("sidebar-customize"));
+    await screen.findByTestId("sidebar-groups-panel");
+    // Hide a group from inside the sheet.
+    fireEvent.click(await screen.findByTestId("sidebar-group-toggle-labels"));
+    await waitFor(() => { expect(puts.length).toBeGreaterThan(0); });
+    const last = puts[puts.length - 1];
+    const groups = last?.["sidebar_groups"] as { hidden?: string[] } | undefined;
+    expect(groups?.hidden).toContain("labels");
+  });
+
+  it("hides the affordance on a narrow/overlay viewport", async () => {
+    // The sidebar is a temporary drawer when narrow; a nested config sheet
+    // over it is fiddly on a phone, so the affordance is withheld there
+    // (the setting stays reachable from Settings). Red-proof: rendering it
+    // in the overlay fails this.
+    setWidth(380);
+    await renderSidebarAt("/list");
+    // The overlay drawer is up...
+    expect(screen.getByTestId("sidebar-overlay-backdrop")).toBeTruthy();
+    // ...and the customize affordance is not offered inside it.
+    expect(screen.queryByTestId("sidebar-customize")).toBeNull();
+    // The Settings link is still present as the fallback route to config.
+    expect(screen.getByText("Settings").closest("a")).not.toBeNull();
   });
 });

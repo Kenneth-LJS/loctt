@@ -25,6 +25,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { Button } from "../ui/Button.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import type { BodyConflict } from "./useBodyAutosave.ts";
@@ -50,10 +51,18 @@ export function BodyConflictDialog({
   useInertBackground(panelRef);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onDismiss();
+      if (e.key === "Escape") {
+        // Escape dismisses the dialog and stops there — it must not also
+        // reach the BodyEditor's Escape handler and leave the editor,
+        // which would drop the user's unsaved "mine" text. Capture phase
+        // + stopPropagation so this wins over other document listeners.
+        e.preventDefault();
+        e.stopPropagation();
+        onDismiss();
+      }
     };
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); };
+    document.addEventListener("keydown", onKey, true);
+    return () => { document.removeEventListener("keydown", onKey, true); };
   }, [onDismiss]);
 
   /**
@@ -141,23 +150,21 @@ export function BodyConflictDialog({
         )}
 
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            data-testid="conflict-dismiss"
+          <Button
+            variant="ghost"
+            testId="conflict-dismiss"
             onClick={onDismiss}
-            className="rounded px-3 py-1 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
           >
             Cancel — save nothing
-          </button>
-          <button
-            type="button"
-            data-testid="conflict-apply"
+          </Button>
+          <Button
+            variant="primary"
+            testId="conflict-apply"
             disabled={preview === null}
             onClick={() => { if (preview !== null) onResolve(preview); }}
-            className="rounded bg-accent px-3 py-1 text-[0.9286rem] text-accent-contrast disabled:opacity-50"
           >
             Apply
-          </button>
+          </Button>
         </div>
       </div>
     </div>

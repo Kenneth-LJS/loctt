@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { SprintMetaHeader } from "./SprintMetaHeader.tsx";
 
 /**
@@ -95,7 +96,7 @@ describe("SprintMetaHeader — SPR-8 read-by-default", () => {
     // The old header committed on blur; the new one must not.
     fireEvent.blur(name);
     // And changing state must not commit on change either.
-    fireEvent.change(screen.getByTestId("sprint-meta-state"), { target: { value: "completed" } });
+    pickCombo("sprint-meta-state", "completed");
 
     // Give any stray mutation a tick to fire.
     await Promise.resolve();
@@ -110,7 +111,7 @@ describe("SprintMetaHeader — SPR-8 read-by-default", () => {
     const name = await screen.findByTestId("sprint-meta-name");
     fireEvent.change(name, { target: { value: "After" } });
     // end_date left unchanged — it must not appear in the PUT.
-    fireEvent.change(screen.getByTestId("sprint-meta-state"), { target: { value: "completed" } });
+    pickCombo("sprint-meta-state", "completed");
 
     fireEvent.click(screen.getByTestId("sprint-meta-save"));
 
@@ -169,7 +170,7 @@ describe("SprintMetaHeader — SPR-8 read-by-default", () => {
 
     render(<SprintMetaHeader sprint={SPRINT} />, { wrapper: wrapper() });
     fireEvent.click(screen.getByTestId("sprint-meta-edit"));
-    fireEvent.change(screen.getByTestId("sprint-meta-state"), { target: { value: "future" } });
+    pickCombo("sprint-meta-state", "future");
     fireEvent.click(screen.getByTestId("sprint-meta-save"));
 
     // The generic Callout states the failure.

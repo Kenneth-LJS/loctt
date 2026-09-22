@@ -3,6 +3,8 @@ import { useState } from "react";
 
 import { useTaskSearch } from "../api/hooks/useTaskSearch.ts";
 import { StatusBadge } from "../list/cells.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import type { LinkKindOption } from "./group.ts";
 import { linkKindOptions } from "./group.ts";
 
@@ -107,31 +109,33 @@ export function LinkPicker({
       className="rounded-md border border-border-default bg-bg-surface-raised p-3"
     >
       <div className="mb-2 flex items-center gap-2">
-        <label
-          htmlFor="link-kind"
+        {/* A <span>, not a <label htmlFor>: the control is a button, which
+            `htmlFor` does not name — it is referenced by aria-labelledby
+            instead, which keeps the same visible text as the name. */}
+        <span
+          id="link-kind-label"
           className="text-[0.8571rem] font-medium text-text-secondary"
         >
           Kind
-        </label>
-        <select
-          id="link-kind"
-          data-testid="link-kind"
+        </span>
+        <SelectCombobox
+          size="sm"
+          testId="link-kind"
           value={kind}
-          onChange={e => { setKind(e.target.value); }}
-          className="rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem] text-text-primary"
-        >
-          {options.map(o => (
-            <option key={o.key} value={o.key}>{o.label}</option>
-          ))}
-        </select>
+          onChange={setKind}
+          aria-labelledby="link-kind-label"
+          listLabel="Kind"
+          options={options.map(o => ({ value: o.key, label: o.label }))}
+        />
       </div>
 
       <label htmlFor="link-target" className="sr-only">
         Search for a task to link to {selfKey}
       </label>
-      <input
+      <TextField
         id="link-target"
         data-testid="link-target"
+        type="search"
         autoFocus
         value={query}
         placeholder="Search by key or title…"
@@ -145,7 +149,6 @@ export function LinkPicker({
             onCancel();
           }
         }}
-        className="w-full rounded border border-border-subtle bg-bg-surface px-2 py-1.5 text-[0.9286rem] text-text-primary"
       />
 
       {trimmed.length > 0 && (
@@ -163,7 +166,7 @@ export function LinkPicker({
                 onClick={() => { choose(hit); }}
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[0.9286rem] hover:bg-bg-muted"
               >
-                <span className="shrink-0 font-mono text-[0.8571rem] text-text-secondary">
+                <span className="shrink-0 text-[0.8571rem] text-text-secondary">
                   {hit.key}
                 </span>
                 {/* REL-8's fourth bullet: key + title + status, so two
@@ -188,6 +191,43 @@ export function LinkPicker({
               </button>
             </li>
           ))}
+          {/* A search in flight with nothing yet to show. Announced
+              (role=status) so a screen-reader user hears the picker is
+              working rather than a silent blank void between keystroke
+              and results (ERR/announcement gap). Only while the first
+              page for this query is loading — a refetch over existing
+              hits keeps those on screen. */}
+          {results.isFetching && results.data === undefined && (
+            <li
+              role="status"
+              data-testid="link-searching"
+              className="px-2 py-1.5 text-[0.9286rem] text-text-tertiary"
+            >
+              Searching…
+            </li>
+          )}
+          {/* The search request itself failed — distinct from "no task
+              matches", which is a successful empty result. Says what
+              broke and offers the repeatable action, rather than reading
+              as "nothing found" and sending the user hunting for a typo
+              (ERR-1). */}
+          {results.isError && results.data === undefined && (
+            <li
+              role="alert"
+              data-testid="link-search-error"
+              className="px-2 py-1.5 text-[0.9286rem] text-danger-fg"
+            >
+              Could not search for tasks.{" "}
+              <button
+                type="button"
+                data-testid="link-search-retry"
+                onClick={() => { void results.refetch(); }}
+                className="underline underline-offset-2 hover:text-text-primary"
+              >
+                Try again
+              </button>
+            </li>
+          )}
           {results.isSuccess && results.data.length === 0 && (
             <li
               data-testid="link-no-results"

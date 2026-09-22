@@ -1,6 +1,7 @@
 import type { CalendarConfig, TimelineZoom } from "@loctt/contracts";
 import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { Icon } from "../ui/Icon.tsx";
 import { ICON } from "../ui/icons.ts";
 import type { DependencyEdge } from "./arrows.ts";
 import { arrowPath } from "./arrows.ts";
@@ -89,6 +90,19 @@ const ROW_WINDOW_THRESHOLD = 400;
  */
 const EDGE_HIT_PX = 6;
 
+/**
+ * Width of the sticky task-name gutter, in pixels (Track C's deferred
+ * item). The gutter is a left column *inside* the scroll container that
+ * pins (`position: sticky; left: 0`) so a task's key + title stays
+ * readable while the chart body scrolls horizontally under it. The whole
+ * chart body (header, bars, shading, marker, arrows) is translated right
+ * by this width; nothing in `geometry.ts` changes — the offset is added
+ * once, here, at the render boundary.
+ */
+export const GUTTER_W = 220;
+/** Narrower gutter below the `sm` breakpoint, where 220px is too much. */
+export const GUTTER_W_NARROW = 128;
+
 export interface TimelineChartProps {
   readonly layout: Layout;
   readonly range: DateRange;
@@ -149,6 +163,17 @@ export interface TimelineChartProps {
   readonly offscreenFrom?: ReadonlySet<string> | undefined;
   /** Row model, so collapse can re-layout without the parent knowing. */
   readonly model?: RowModel;
+  /**
+   * True below the `sm` breakpoint. Narrows the sticky task-name gutter.
+   */
+  readonly isNarrow?: boolean;
+  /**
+   * TML-41: no task has both dates, so there is nothing to chart. The
+   * chart still draws its frame (header + grid) and shows this centred
+   * empty-state notice inside the viewport, rather than the parent
+   * rendering a banner above and squeezing the chart.
+   */
+  readonly noBars?: boolean;
 }
 
 export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
@@ -209,6 +234,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
 
     const px = DAY_WIDTH[props.zoom];
     const todayX = dateToX(props.range, props.today, props.zoom);
+    const gutterW = props.isNarrow === true ? GUTTER_W_NARROW : GUTTER_W;
 
     /**
      * The scroll container, tracked so the header/grid (horizontal) and
@@ -348,9 +374,15 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
         ref={scrollRef}
         onScroll={measure}
         data-testid="timeline-scroll"
-        className="min-h-0 flex-1 overflow-auto rounded-md border border-border-default"
+        className="min-h-0 min-h-[240px] flex-1 overflow-auto rounded-md border border-border-default"
       >
-        <div style={{ width: props.width, position: "relative" }}>
+        <div style={{ width: props.width + gutterW, position: "relative" }}>
+          {/* The chart body (header + bands), offset right by the gutter
+              width via `marginLeft` so every range-relative x from
+              `geometry.ts` (gutter-unaware) lands in the right column
+              without touching that module. The sticky task-name gutter is
+              rendered *after* this block and pinned over the left edge. */}
+          <div style={{ marginLeft: gutterW }}>
           {/* Header. Sticky so the dates stay visible while the bands
               scroll under them. Cells are absolutely positioned at their
               own `left` (not flex-packed) because only the windowed
@@ -452,7 +484,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                   className="sticky left-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-muted/90 px-2 text-left text-[0.7857rem] font-semibold"
                   style={{ position: "sticky", top: 24, height: BAND_HEADER_H, width: props.width }}
                 >
-                  <span aria-hidden="true">{collapsed.has(band.id) ? ICON.caretRight : ICON.caretDown}</span>
+                  <Icon name={collapsed.has(band.id) ? "chevronRight" : "chevronDown"} size={12} />
                   <span>{band.label}</span>
                   <span
                     className="font-normal text-text-secondary"
@@ -687,6 +719,86 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
 
             {props.renderBarOverlay?.()}
           </div>
+          </div>
+
+          {/* Sticky task-name gutter (Track C's deferred item).
+              A left column pinned over the chart body's left edge: one
+              cell per laid-out row (key · title) plus a band-header cell,
+              so the row a bar belongs to is always identifiable even when
+              the bar's own in-bar title has scrolled out of view.
+
+              Kept pinned during horizontal scroll by translating it by
+              the tracked `scrollLeft` (`viewport.left`) rather than CSS
+              `position: sticky` — the gutter sits inside an
+              absolutely-positioned overscan/windowed body where a flow
+              sticky child is unreliable, and the scroll offset is already
+              measured for windowing. Vertically it scrolls with the body.
+              The top spacer clears the 24px sticky date header. */}
+          <div
+            data-testid="timeline-gutter"
+            aria-hidden="true"
+            className="absolute left-0 top-0 z-30 border-r border-border-default bg-bg-canvas"
+            style={{
+              width: gutterW,
+              height: 24 + layout.height,
+              transform: `translateX(${String(viewport?.left ?? 0)}px)`,
+            }}
+          >
+            {/* Spacer aligning the gutter's rows under the date header. */}
+            <div className="sticky top-0 z-10 h-6 border-b border-border-default bg-bg-canvas" />
+            <div style={{ position: "relative", height: layout.height }}>
+              {layout.bands.map(band => {
+                const bandBottom =
+                  band.rows.length === 0
+                    ? band.y + BAND_HEADER_H
+                    : (band.rows[band.rows.length - 1] as { y: number }).y + ROW_H;
+                if (bandBottom < vTop || band.y > vBottom) return null;
+                return (
+                  <div key={band.id}>
+                    <div
+                      className="absolute left-0 flex items-center border-b border-border-subtle bg-bg-muted/90 px-2 text-[0.7857rem] font-semibold"
+                      style={{ top: band.y, height: BAND_HEADER_H, width: gutterW }}
+                    >
+                      <span className="truncate">{band.label}</span>
+                    </div>
+                    {band.rows.map(({ row, y }) => {
+                      if (y + ROW_H < vTop || y > vBottom) return null;
+                      return (
+                        <button
+                          key={row.task.id}
+                          type="button"
+                          data-testid={`timeline-gutter-row-${row.task.key}`}
+                          onClick={() => { props.onOpenTask(row.task.key); }}
+                          className="absolute left-0 flex items-center gap-1.5 overflow-hidden px-2 text-left text-[0.7857rem] hover:bg-bg-muted"
+                          style={{ top: y, height: ROW_H, width: gutterW }}
+                        >
+                          <span className="shrink-0 text-text-secondary">{row.task.key}</span>
+                          {/* K26: fall back to the key when title is the
+                              corrupt field. */}
+                          <span className="min-w-0 flex-1 truncate">{row.task.title ?? row.task.key}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* TML-41: no dated tasks. The frame above still drew (header +
+              grid); this is the chart's own centred empty state, rather
+              than a banner above that squeezes the chart. */}
+          {props.noBars === true && (
+            <div
+              data-testid="timeline-no-dated-tasks"
+              className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-[0.8571rem] text-text-secondary"
+            >
+              <span className="max-w-sm">
+                None of these tasks has both a start date and a due date, so there is
+                nothing to chart. They are listed under Unscheduled below.
+              </span>
+            </div>
+          )}
         </div>
       </div>
     );

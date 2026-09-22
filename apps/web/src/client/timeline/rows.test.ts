@@ -54,6 +54,27 @@ const workflow = {
     { key: "in_progress", label: "In Progress", category: "active" },
     { key: "done", label: "Done", category: "done" },
   ],
+  priorities: [
+    { key: "high", label: "High" },
+    { key: "low", label: "Low" },
+  ],
+  task_types: [
+    { key: "bug", label: "Bug" },
+    { key: "feature", label: "Feature" },
+  ],
+  custom_fields: [
+    {
+      key: "area",
+      label: "Area",
+      type: "enum",
+      multi: false,
+      searchable: false,
+      values: [
+        { key: "fe", label: "Frontend" },
+        { key: "be", label: "Backend" },
+      ],
+    },
+  ],
   relationships: [],
 } as unknown as WorkflowConfig;
 
@@ -61,8 +82,8 @@ const lookups: RowLookups = { workflow, milestones, sprints, users };
 
 /** A mixed set: every grouping dimension present and absent. */
 const tasks: TaskFrontmatterPublic[] = [
-  task({ id: "1", start_date: "2026-03-02", due_date: "2026-03-06", milestone: "m1", sprint: "s1", assignee: "u1", status: "in_progress" }),
-  task({ id: "2", start_date: "2026-03-03", due_date: "2026-03-04", milestone: "m2", sprint: "s2", assignee: "u2", status: "done" }),
+  task({ id: "1", start_date: "2026-03-02", due_date: "2026-03-06", milestone: "m1", sprint: "s1", assignee: "u1", status: "in_progress", project: "Apollo", priority: "high", task_type: "bug", fields: { area: "fe" } }),
+  task({ id: "2", start_date: "2026-03-03", due_date: "2026-03-04", milestone: "m2", sprint: "s2", assignee: "u2", status: "done", project: "Gemini", priority: "low", task_type: "feature", fields: { area: "be" } }),
   task({ id: "3", start_date: "2026-03-05", due_date: "2026-03-09", status: "backlog" }),
   // Unscheduled: neither date, only start, only due.
   task({ id: "4" }),
@@ -163,11 +184,72 @@ describe("buildRows — grouping", () => {
 
   // @verifies TML-7
   it("shows the same tasks under every grouping — identical total row count", () => {
-    // TML-7's last bullet, and the reason the fallback bands exist.
-    const groupings: TimelineGrouping[] = ["none", "milestone", "assignee", "status", "sprint"];
+    // TML-7's last bullet, and the reason the fallback bands exist. Now
+    // covers the full group-by set: the four new bucketers (project,
+    // priority, task_type, and a custom field) must each keep the count.
+    const groupings: TimelineGrouping[] = [
+      "none",
+      "milestone",
+      "assignee",
+      "status",
+      "sprint",
+      "project",
+      "priority",
+      "task_type",
+      "field.area",
+    ];
     const totals = groupings.map(g => totalRows(buildRows(tasks, g, lookups)));
     expect(new Set(totals).size).toBe(1);
     expect(totals[0]).toBe(tasks.length);
+  });
+
+  // @verifies TML-7
+  it("bands by project in first-seen order, with a No project band last", () => {
+    const model = buildRows(tasks, "project", lookups);
+    expect(model.bands.map(b => b.label)).toEqual(["Apollo", "Gemini", "No project"]);
+    expect(model.bands[model.bands.length - 1]?.id).toBe("__none__");
+  });
+
+  // @verifies TML-7
+  it("bands by priority using labels in declaration order, with a No priority band", () => {
+    const model = buildRows(tasks, "priority", lookups);
+    expect(model.bands.map(b => b.label)).toEqual(["High", "Low", "No priority"]);
+    expect(model.bands.map(b => b.id)).toEqual(["high", "low", "__none__"]);
+  });
+
+  // @verifies TML-7
+  it("bands by task type using labels in declaration order, with a No type band", () => {
+    const model = buildRows(tasks, "task_type", lookups);
+    expect(model.bands.map(b => b.label)).toEqual(["Bug", "Feature", "No type"]);
+    expect(model.bands.map(b => b.id)).toEqual(["bug", "feature", "__none__"]);
+  });
+
+  // @verifies TML-7
+  it("bands by a single-value enum custom field, value labels in config order", () => {
+    const model = buildRows(tasks, "field.area", lookups);
+    // Value labels from workflow, never the stored keys (fe/be), and a
+    // "No <field label>" band for the task carrying no value.
+    expect(model.bands.map(b => b.label)).toEqual(["Frontend", "Backend", "No Area"]);
+    expect(model.bands.map(b => b.id)).toEqual(["fe", "be", "__none__"]);
+  });
+
+  // @verifies TML-7
+  it("a non-string custom-field value falls to the No band, never a band of its own", () => {
+    // A corrupt/array value under a single-value field must not seed a
+    // band keyed on an object — it lands in "No Area" and the count holds.
+    const bad = task({ id: "bad", start_date: "2026-03-02", due_date: "2026-03-03", fields: { area: ["fe", "be"] } });
+    const model = buildRows([bad], "field.area", lookups);
+    expect(totalRows(model)).toBe(1);
+    expect(model.bands.map(b => b.label)).toEqual(["No Area"]);
+  });
+
+  // @verifies TML-7
+  it("falls to a single flat band when a field ref resolves to no def", () => {
+    // Defensive: resolveGrouping should reject this before buildRows, but
+    // a stray `field.gone` must not crash — it degrades to one band.
+    const model = buildRows(tasks, "field.gone" as TimelineGrouping, lookups);
+    expect(totalRows(model)).toBe(tasks.length);
+    expect(model.bands).toHaveLength(1);
   });
 
   // @verifies TML-7
