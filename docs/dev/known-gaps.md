@@ -413,17 +413,40 @@ documents the race), BLK-24, BRD-4, GIT-12, NEW-10.
 
 ## The e2e suite is not trustworthy at its configured worker count
 
-The same tree produced **56** failures at the configured 5 workers, **23**
-at 3 workers, and passes the affected files clean at 1–2. Each worker
-boots a real `loctt ui` server plus a browser, and whole files the spec
-work never touched (`flow-git-*`, `flow-task-failure`) fail under that
-contention.
+Measured repeatedly across this session, on the same tree:
 
-`playwright.config.ts` sets `retries: 0` with the comment "a flaky gate
-teaches the agent to re-run instead of fix" — the intent is right, but
-**the gate is currently not trustworthy at its own default
-concurrency**, which teaches the same lesson by a different route. Either
-the worker count comes down or the per-worker cost does.
+| workers | result |
+|---|---|
+| 5 (the configured default) | 56 failures |
+| 3 | 23, then later 5 |
+| **2** | **846 passed, 0 failed — the whole suite, clean** |
+| 1 (single file) | clean |
+
+The final 5 failures at 3 workers were **all in one file**
+(`flow-list.spec.ts`) and none of them had failed in any earlier run. The
+causes name the problem outright: `Protocol error
+(Runtime.callFunctionOn): Internal server error, session closed` —
+browser sessions dying mid-call — and `loctt create Gamma exited 1`, a
+CLI that could not spawn. Re-running that file alone: **184/184 pass**.
+
+Each worker boots a real `loctt ui` server AND a browser, so the
+per-worker cost is high enough that the configured concurrency exhausts
+the machine rather than the tests finding bugs.
+
+`playwright.config.ts` sets `retries: 0` with the comment *"a flaky gate
+teaches the agent to re-run instead of fix"*. The intent is right and
+this session proved its value twice — both tests dismissed as "known
+flakes" (NEW-10, SPR-6) turned out to be **real bugs** once someone
+looked. But the gate currently produces failures that are neither flakes
+nor bugs, which teaches re-running by a different route: an agent that
+sees five unfamiliar failures in one file learns to re-run, and is right
+to.
+
+**What a fix has to decide:** lower the worker count in the config
+(simplest, costs wall-clock), or reduce the per-worker cost (share a
+server across workers, or stub it where a spec does not need a real
+one). Left unfixed rather than silently lowering the default, since
+wall-clock on the gate is a real cost someone should choose knowingly.
 
 ## The three product decisions have been ruled on and closed
 
