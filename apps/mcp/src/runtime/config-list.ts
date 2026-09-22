@@ -17,6 +17,8 @@
  * tools, which already take numeric `limit`/`offset`.
  */
 
+import type { ArchivedScope } from "@loctt/contracts";
+import { DEFAULT_ARCHIVED_SCOPE } from "@loctt/contracts";
 import { z } from "zod";
 
 /** Default page size when `limit` is omitted. Matches the web server. */
@@ -25,13 +27,23 @@ export const CONFIG_LIST_DEFAULT_LIMIT = 100;
 export const CONFIG_LIST_MAX_LIMIT = 1000;
 
 /**
- * The three K90 list inputs, spread into a tool's `inputSchema`.
+ * The K90 list inputs plus the K107 archived scope, spread into a tool's
+ * `inputSchema`.
+ *
  * `q` is a case-insensitive name substring (blank/absent = no filter);
  * `limit`/`offset` page the (post-filter) list.
+ *
+ * `archived` (K107) is the tri-state scope every archivable config list
+ * shares — `active` (the default, hides archived), `archived` (only
+ * archived), or `all`. One param here so all six list_* tools inherit
+ * the same spelling and default; a handler applies it via
+ * `applyArchivedScope` from core, matching the CLI and web surfaces.
  */
 export const configListInputSchema = {
   q: z.string().optional()
     .describe("Case-insensitive name search; substring match. Blank/omitted = no filter."),
+  archived: z.enum(["active", "archived", "all"]).optional()
+    .describe("Archived scope (K107): `active` (default) hides archived, `archived` shows only archived, `all` shows both."),
   limit: z.number().int().nonnegative().max(CONFIG_LIST_MAX_LIMIT).optional()
     .describe(`Max results (default ${CONFIG_LIST_DEFAULT_LIMIT}, cap ${CONFIG_LIST_MAX_LIMIT}).`),
   offset: z.number().int().nonnegative().optional()
@@ -41,6 +53,16 @@ export const configListInputSchema = {
 /** Pulls `q` out of a handler's raw args. */
 export function getQ(args: Record<string, unknown>): string | undefined {
   return args["q"] as string | undefined;
+}
+
+/**
+ * Reads the K107 `archived` scope from a handler's raw args, defaulting
+ * to {@link DEFAULT_ARCHIVED_SCOPE} (`active`) when absent. The zod enum
+ * on {@link configListInputSchema} already rejects any other value, so
+ * this just narrows the type and applies the default.
+ */
+export function getArchivedScope(args: Record<string, unknown>): ArchivedScope {
+  return (args["archived"] as ArchivedScope | undefined) ?? DEFAULT_ARCHIVED_SCOPE;
 }
 
 /**

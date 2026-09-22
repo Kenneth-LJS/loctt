@@ -11,7 +11,7 @@ describe("MCP delete_task (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const del = await client.callTool("delete_task", { ref: "T-1" });
+        const del = await client.callTool("delete_task", { refs: ["T-1"] });
         expect(del.isError).toBe(true);
         expect(del.content[0]?.text ?? "").toMatch(/confirm/i);
 
@@ -30,8 +30,7 @@ describe("MCP delete_task (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const del = await client.callTool("delete_task", {
-          ref: "T-1",
+        const del = await client.callTool("delete_task", { refs: ["T-1"],
           confirm: true,
         });
         expect(del.isError).toBeFalsy();

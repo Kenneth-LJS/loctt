@@ -1,6 +1,7 @@
 import type { SidebarGroups, SidebarItemId } from "@loctt/contracts";
 import { SIDEBAR_ITEM_IDS } from "@loctt/contracts";
 import {
+  applyArchivedScope,
   archiveUser,
   countUserReferences,
   createUser,
@@ -25,7 +26,7 @@ import {
   validateSidebarIds,
 } from "@loctt/core";
 
-import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, hasFlag, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { getConfigPagination, getFilterArg, pageConfigList, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
@@ -48,7 +49,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--avatar", "--email", "--filter", "--hidden", "--limit", "--name", "--offset", "--order", "--remap-to", "--remove-avatar", "--reset", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--avatar", "--email", "--filter", "--hidden", "--limit", "--name", "--offset", "--order", "--remap-to", "--remove-avatar", "--reset", "--sweep-pins", "--switch", "--timezone", "--unassign", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -56,12 +57,14 @@ export async function run(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   switch (sub) {
     case "list": {
-      const includeArchived = hasFlag(args, "--all");
+      const scope = parseArchivedScope(args);
       const users = await loadAllUsers(locttDir);
       const current = await getCurrentUser(locttDir);
-      // K90 order (matching the web `handleListUsers`): archived filter,
-      // then name filter, then page.
-      const visible = users.filter(u => includeArchived || u.archived !== true);
+      // K90/K107 order (matching the web `handleListUsers`): archived
+      // scope, then name filter, then page. Default scope `active` hides
+      // archived; `--archived archived|all` (and the deprecated `--all`
+      // alias) widen it.
+      const visible = applyArchivedScope(users, scope);
       const matched = filterByName(visible, getFilterArg(args));
       const page = pageConfigList(matched, getConfigPagination(args));
       for (const u of page.items) {

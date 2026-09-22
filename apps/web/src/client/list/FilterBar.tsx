@@ -1,6 +1,9 @@
-import type { WorkflowConfig } from "@loctt/contracts";
+import type { ArchivedScope, WorkflowConfig } from "@loctt/contracts";
+// Per-file subpath, NOT the barrel: the barrel drags node:path into the
+// browser bundle (A37).
+import { filtersToSummary } from "@loctt/core/query/filters.js";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   useLabels,
@@ -8,28 +11,71 @@ import {
   useProjects,
   useSprints,
   useUsers,
+  useViews,
 } from "../api/hooks/sidebarData.ts";
-import { useWorkflow } from "../api/hooks/useWorkflow.ts";
+import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
+import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import type { ListSearch } from "../router/listSearch.ts";
+import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
+import { useIsNarrow } from "../shell/useIsNarrow.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
-import { Checkbox } from "../ui/Checkbox.tsx";
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { ICON } from "../ui/icons.ts";
-import { ToolbarButton } from "../ui/ToolbarButton.tsx";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { Radio } from "../ui/Radio.tsx";
+import { Sheet } from "../ui/Sheet.tsx";
+import { TextField } from "../ui/TextField.tsx";
 import { AdvancedQuerySurface } from "./AdvancedQuerySurface.tsx";
-import { FilterDropdown, type FilterOption } from "./FilterDropdown.tsx";
+import { ExportMenu } from "./ExportMenu.tsx";
+import { buildFacetOptions, type FacetOptions } from "./facetOptions.ts";
+import { FilterFacet, type FilterOption } from "./FilterFacet.tsx";
 import { SaveViewDialog } from "./SaveViewDialog.tsx";
+import {
+  addableFilters,
+  buildFilterCatalog,
+  type FilterCatalogEntry,
+  type FilterId,
+  resolveVisibleFilters,
+  userVisibleFiltersOf,
+  withUserVisibleFilters,
+} from "./visibleFilters.ts";
 
 /**
- * The list view's filter bar (M1.3). Renders a dropdown per facet
- * (Project, Status, Priority, Type, Assignee, Label, Milestone, Sprint,
- * plus any workflow custom fields), the active filters as removable
- * chips, a "Show archived" toggle, and "Save as view".
+ * The list view's filter bar (M1.3, redesigned per Ken's toolbar review
+ * + K97). It owns the WHOLE toolbar row:
+ *
+ *  - **Left band — filters.** The *resolved visible-filter set* (K97),
+ *    not every facet: a FilterFacet per visible built-in/custom-enum
+ *    field, then a subtle "+ Add filter" affordance that opens a picker
+ *    of every remaining filter. Below `sm` this band collapses into a
+ *    single "Filters" button + bottom Sheet.
+ *  - **Right band — view actions.** A clean, aligned cluster pinned to
+ *    the top-right: Refresh (demoted to icon-only — the view
+ *    auto-refreshes), Export, and Save as view. These used to float in
+ *    ListView's flex gutter, vertically centred in dead space and
+ *    jumping as the chip row appeared; owning them here keeps them on the
+ *    same baseline as the filters at one consistent control height.
+ *  - **Chip row.** The active filters as removable chips + "Clear all",
+ *    below the toolbar.
+ *
+ * Advanced querying is folded into the filter system: there is no leading
+ * "Advanced" pill. The builder is reached from the END of the Add-filter
+ * menu ("Advanced query…") — one level in, not first — and opens the
+ * visual {@link AdvancedQuerySurface} (builder-first; raw DSL is a
+ * secondary toggle inside it).
  *
  * The URL is the single source of truth: every control reads its state
  * from the typed search params and writes back through `navigate`, so
- * back/forward and bookmarking work for free. Changing any filter
- * resets `page` so you don't land on an out-of-range page.
+ * back/forward and bookmarking work for free. Changing any filter resets
+ * `page`.
  */
+
+// `FacetOptions` moved to `./facetOptions.ts` (K102) so the saved-view
+// dialog can offer the same options; re-exported here because the bar is
+// still where callers reach for it.
+export type { FacetOptions } from "./facetOptions.ts";
 
 /** Filter facets backed by a fixed URL param + a data source. */
 export type FacetKey =
@@ -61,8 +107,17 @@ const FACET_LABELS: Record<FacetKey, string> = {
  * implementations agreeing for now.
  */
 export interface FilterBarProps {
-  /** The route whose search params back the controls. */
-  readonly from?: "/list" | "/sprints/$key";
+  /**
+   * The route whose search params back the controls.
+   *
+   * `/board` and `/timeline` share the bar too (the cross-view scope
+   * fix, Ken 2026-09-20): their search schemas are supersets of the
+   * list's (BoardSearch === ListSearch; TimelineSearch extends it), so
+   * every read the bar makes type-checks against all four, and every
+   * write spreads `prev` so a view's private params (timeline
+   * zoom/grouping/arrows, list page/sort/dir) survive a filter change.
+   */
+  readonly from?: "/list" | "/sprints/$key" | "/board" | "/timeline";
   /**
    * Facets to leave out. The sprint detail hides `sprint`: the page
    * *is* a sprint scope, and a control that could change or clear it
@@ -71,12 +126,23 @@ export interface FilterBarProps {
   readonly hiddenFacets?: readonly FacetKey[];
   /** Hidden where a saved view would not reproduce the scope. */
   readonly showSaveView?: boolean;
+  /**
+   * View actions, rendered in the toolbar's top-right cluster. Passed in
+   * by ListView (they need the tasks feed's fetch state + the export
+   * query string) rather than re-derived here, so the bar owns the
+   * *layout* of the cluster without owning the data. Omitted on the
+   * sprint detail, which has its own header actions.
+   */
+  readonly exportTotal?: number | undefined;
+  readonly exportQueryString?: string | undefined;
 }
 
 export function FilterBar({
   from = "/list",
   hiddenFacets = [],
   showSaveView = true,
+  exportTotal,
+  exportQueryString,
 }: FilterBarProps = {}) {
   const search = useSearch({ from });
   const navigate = useNavigate({ from });
@@ -97,26 +163,122 @@ export function FilterBar({
   const [advanced, setAdvanced] = useState(openEditorRequested);
   const [draft, setDraft] = useState(query);
 
-  // When `?edit=1` arrives while the bar is already mounted (the user
-  // was on /list and clicked a broken view), open the editor and seed it
-  // from the URL query, then strip `edit` so switching back to basic
-  // does not immediately re-open it. Initial mount is covered by the
-  // useState seed above; this handles the in-place navigation.
-  useEffect(() => {
-    if (!openEditorRequested) return;
-    setDraft(query);
-    setAdvanced(true);
-    void navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, edit: undefined }) });
-  }, [openEditorRequested, query, navigate]);
+  // K107: the archived scope lives in the URL (`?archived=…`). Absent /
+  // unknown falls back to the default `active`. Writing it back drops the
+  // param entirely for the default so the URL stays clean, and resets the
+  // page since a scope change changes the result set.
+  const archivedScope: ArchivedScope = search.archived ?? "active";
+  const setArchivedScope = (scope: ArchivedScope) => {
+    void navigate({
+      search: prev => ({
+        ...prev,
+        archived: scope === "active" ? undefined : scope,
+        page: undefined,
+      }),
+    });
+  };
 
   const projects = useProjects();
   const users = useUsers();
   const labels = useLabels();
   const milestones = useMilestones();
   const sprints = useSprints();
+  const views = useViews();
   const workflow = useWorkflow();
+  const userSettings = useUserSettings();
+  const settingsMutation = useUserSettingsMutation();
 
   const [saveOpen, setSaveOpen] = useState(false);
+  // K102: the active-view chip's Edit opens the shared view form dialog
+  // seeded from the view's stored filters (it used to flatten the view
+  // into `q=` and open the raw DSL editor — see `editActiveView`).
+  const [editingView, setEditingView] = useState(false);
+  // Below sm the facet band collapses into a single "Filters" button that
+  // opens a bottom sheet (responsive plan GROUP B) — 9+ facet pills wrapping
+  // into a column ate most of the screen before any task showed.
+  const isNarrow = useIsNarrow();
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  // The "Add filter" picker Sheet on mobile (the desktop one is a Menu).
+  const [addSheetOpen, setAddSheetOpen] = useState(false);
+
+  // ── Transient-UI reset on a filter switch ──────────────────────────
+  //
+  // The bar holds open-UI state that is NOT derived from the URL
+  // (`advanced`, `draft`, and the two mobile sheets). When the user
+  // switches which filter they are looking at — clicking saved filter B
+  // in the sidebar while filter A is active, i.e. `search.view` or the
+  // free-text `q` is replaced by a navigation — that transient UI is now
+  // aimed at the wrong thing and must reset: the advanced editor closes,
+  // its draft re-syncs to the new query, and any open sheet closes.
+  //
+  // The discriminator is "the user navigated to a DIFFERENT filter" vs
+  // "the editor asked to open". The `?edit=1` path IS the editor opening
+  // (the query chip's Edit, or a broken view's "Fix in editor") — it must
+  // NOT be treated as a filter switch, or it would open then immediately
+  // close itself. So `openEditorRequested` wins: when it is set, open the
+  // editor from the URL query and strip `edit`; otherwise, when the
+  // filter signature changed since the last render, reset.
+  //
+  // Keyed on the (view, q) pair — the "which filter am I looking at"
+  // signature. The two parts are compared separately because they answer
+  // two different questions:
+  //   - `view` changing is UNAMBIGUOUSLY a switch to another saved
+  //     filter/view (the sidebar sets `view=<id>`), or clearing one.
+  //   - `q` changing is a switch ONLY when it did not come from the
+  //     editor itself: applying a query from the OPEN editor writes `q`
+  //     too, and that must NOT close the editor out from under the user.
+  // So a `q` change counts as a switch only while the editor is closed (a
+  // fresh q= navigation landing on the bar); a `q` change with the editor
+  // open is an in-editor Apply and is left alone. A `view` change resets
+  // regardless — that is always someone picking a different filter.
+  // Facet/page/sort changes touch neither part, so the open editor
+  // survives them.
+  const viewSig = (search as { view?: string }).view ?? "";
+  const filterSig = `${viewSig}\n${query}`;
+  const lastViewSig = useRef(viewSig);
+  const lastFilterSig = useRef(filterSig);
+  // The last `q` the editor's own Apply wrote. A q= change is ambiguous by
+  // URL alone: it is EITHER the editor applying (keep it open) OR a
+  // navigation to a different filter from OUTSIDE the bar — the header
+  // search writes `q` on /list too (Header `text ~ "…"`), and that IS a
+  // switch. So the editor tags its own writes here, and the reset skips a
+  // q change that matches the tag. Anything else that changes `q` (header
+  // search, back/forward) is treated as a switch and closes the editor.
+  const appliedByEditor = useRef<string | null>(null);
+  useEffect(() => {
+    if (openEditorRequested) {
+      // The editor asked to open (query-chip Edit / broken-view fix).
+      // Seed it from the URL query and clear the one-shot flag. Record
+      // the signatures so the reset branch does not also fire for this
+      // same navigation.
+      lastViewSig.current = viewSig;
+      lastFilterSig.current = filterSig;
+      setDraft(query);
+      setAdvanced(true);
+      void navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, edit: undefined }) });
+      return;
+    }
+    const viewChanged = viewSig !== lastViewSig.current;
+    const sigChanged = filterSig !== lastFilterSig.current;
+    // An in-editor Apply is a `q` change (view unchanged) whose new value
+    // is exactly what the editor just wrote — not a switch.
+    const isOwnApply = !viewChanged && sigChanged && appliedByEditor.current === query;
+    if (query !== appliedByEditor.current) appliedByEditor.current = null;
+    const isSwitch = sigChanged && !isOwnApply;
+    lastViewSig.current = viewSig;
+    lastFilterSig.current = filterSig;
+    if (isSwitch) {
+      // A genuine switch to a different filter/view. Reset the transient
+      // UI: close the editor, re-sync the draft to the new filter's query,
+      // and close any open picker sheet/dialog.
+      setAdvanced(false);
+      setDraft(query);
+      setAddSheetOpen(false);
+      setFilterSheetOpen(false);
+      setSaveOpen(false);
+      setEditingView(false);
+    }
+  }, [openEditorRequested, viewSig, filterSig, query, navigate]);
 
   const options = useMemo(
     () =>
@@ -172,6 +334,88 @@ export function FilterBar({
 
   const customFilters = readCustomFilters(search);
 
+  // ── Configurable visible-filter set (K97) ──────────────────────────
+  //
+  // The catalog is every filter the workspace can show; the resolved set
+  // is what the toolbar actually renders. Resolution chain:
+  //   active view's set (URL `vf`) → per-user default → built-in default.
+  // `vf` is a comma-separated FilterId list carried in the URL (source of
+  // truth, .passthrough()) — a saved view stores it in its params like
+  // any other filter, and it stays transient for a bare /list unless the
+  // user saves it into a view or promotes it to their default.
+  const catalog = useMemo(
+    () =>
+      buildFilterCatalog(
+        (Object.keys(FACET_LABELS) as FacetKey[]).map(id => ({ id, label: FACET_LABELS[id] })),
+        workflow.data,
+      ),
+    [workflow.data],
+  );
+
+  const viewSet = readVisibleFilterParam(search);
+  const userSet = userVisibleFiltersOf(userSettings.data?.settings);
+  // Both sets are derived from their source each render (a fresh array
+  // identity every time), so the memo keys on their stable string forms —
+  // extracted to locals so the dependency array stays statically checkable.
+  const viewSetKey = viewSet?.join(",");
+  const userSetKey = userSet?.join(",");
+  const visibleFilters = useMemo(
+    () =>
+      resolveVisibleFilters({
+        viewSet,
+        userSet,
+        catalog,
+        hidden: hiddenFacets,
+      }),
+    // viewSet/userSet are keyed by their serialized forms (viewSetKey/
+    // userSetKey); depending on the arrays directly would defeat the memo
+    // (a new identity every render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [viewSetKey, userSetKey, catalog, hiddenFacets],
+  );
+
+  const addable = addableFilters(catalog, visibleFilters, hiddenFacets);
+
+  // Adding/removing a visible filter writes the resolved set into `vf`,
+  // making the transient toolbar state explicit in the URL. Removing a
+  // filter also clears any active value on it, so hiding a filter never
+  // leaves an invisible, still-applied constraint (which would be an
+  // un-removable filter with no chip to reverse it — the exact "filtered
+  // for no visible reason" trap LST-53 fixed for `q=`).
+  const setVisible = (next: readonly FilterId[]): void => {
+    void navigate({
+      search: prev => ({ ...prev, vf: next.length > 0 ? next.join(",") : undefined }),
+    });
+  };
+
+  const addFilter = (id: FilterId): void => {
+    setVisible([...visibleFilters, id]);
+    setAddSheetOpen(false);
+  };
+
+  const removeFilter = (id: FilterId): void => {
+    void navigate({
+      search: prev => {
+        const next: Record<string, unknown> = { ...prev };
+        const kept = visibleFilters.filter(v => v !== id);
+        next.vf = kept.length > 0 ? kept.join(",") : undefined;
+        // Clear the removed filter's active value(s) too.
+        next[id] = undefined;
+        next.page = undefined;
+        return next;
+      },
+    });
+  };
+
+  // K97: promote the current visible set to the per-user default for the
+  // bare /list, via an explicit action in the Add-filter menu. Merges into
+  // the whole settings doc (PUT replaces it) exactly as the board's column
+  // visibility does.
+  const saveAsDefault = (): void => {
+    const current = userSettings.data?.settings ?? ({} as NonNullable<typeof userSettings.data>["settings"]);
+    settingsMutation.mutate(withUserVisibleFilters(current, visibleFilters));
+  };
+
   const activeChips = buildChips(search, options, customFields, loadedFacets, workflow.isSuccess)
     // A chip for a hidden facet would carry a ✕ that removes the very
     // scope the route is defined by.
@@ -193,12 +437,74 @@ export function FilterBar({
     });
   };
 
+  // A `q=` DSL carries raw entity ids — `assignee = "01M2VY..."` — which
+  // mean nothing to a person reading the chip (UX eval #6). Resolve any
+  // quoted id in the query to its display name for the PREVIEW only; the
+  // real query (and the Advanced editor) keep the ids. Covers users
+  // (assignee/reporter/mentions), labels, milestones and sprints.
+  const idToName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const u of users.data?.items ?? []) m.set(u.id, u.name ?? u.id);
+    for (const l of labels.data?.items ?? []) m.set(l.id, l.name);
+    for (const ms of milestones.data?.items ?? []) m.set(ms.id, ms.name);
+    for (const sp of sprints.data?.items ?? []) m.set(sp.id, sp.name);
+    return m;
+  }, [users.data, labels.data, milestones.data, sprints.data]);
+
+  const humanized = query.replace(/"([^"]+)"/g, (whole, id: string) => {
+    const name = idToName.get(id);
+    return name !== undefined ? `"${name}"` : whole;
+  });
+
   // A truncated preview keeps the chip informative (which query is
   // running) without letting a long DSL expression blow out the row; the
   // full text is on the chip's title and in the Advanced editor.
-  const queryPreview = query.length > 32 ? `${query.slice(0, 31)}…` : query;
+  const queryPreview = humanized.length > 32 ? `${humanized.slice(0, 31)}…` : humanized;
 
-  const hasActive = activeChips.length > 0 || hasQuery;
+  // A valid saved view is active (`?view=<id>`) and its query is resolved
+  // SERVER-side, so the toolbar showed a filtered list with no facet chip
+  // and no query text — the same "filtered for no visible reason" trap
+  // LST-53 closed for `q=`, latent for saved views. Surface it as its own
+  // chip: named, editable, clearable. Resolution is client-side against
+  // the loaded `queries.yaml` (useViews); an id that does not resolve to a
+  // present, non-broken query renders NO chip — ListView's `missingView`
+  // and `brokenView` banners already own those two cases, and duplicating
+  // them here would double the message.
+  const activeViewId = typeof (search as { view?: unknown }).view === "string"
+    ? (search as { view: string }).view
+    : undefined;
+  const activeView = activeViewId === undefined
+    ? undefined
+    : (views.data?.queries ?? []).find(v => v.id === activeViewId);
+  const hasActiveView = activeView !== undefined;
+  // What the view matches, for the chip. K102: a view stores an ORDERED
+  // filter list and no derived query string, so this is the shared
+  // display-only summary — computed here, never persisted, never parsed
+  // back. The preview truncates to the same ~32-char budget as the q=
+  // chip, with the full text on the chip's title.
+  const viewSummary = activeView === undefined ? "" : filtersToSummary(activeView.filters);
+  const viewSummaryPreview =
+    viewSummary.length > 32 ? `${viewSummary.slice(0, 31)}…` : viewSummary;
+
+  // Editing a saved view opens the SAME view form dialog Settings and the
+  // sidebar use, seeded from the view's stored filters.
+  //
+  // It used to flatten the view into `q=<its query>` and open the raw DSL
+  // editor. K102 removed the thing that made that possible — a view has no
+  // single query string any more — and it was the behaviour Ken struck
+  // out: a view built from dropdowns must reopen as dropdowns, not as DSL.
+  const editActiveView = (): void => { setEditingView(true); };
+
+  // Clearing the active view returns to all tasks, mirroring `clearQuery`.
+  const clearActiveView = (): void => {
+    void navigate({
+      search: prev => ({ ...prev, view: undefined, page: undefined }),
+    });
+  };
+
+  const hasActive = activeChips.length > 0 || hasQuery || hasActiveView;
+
+  const openAdvanced = (): void => { setDraft(query); setAdvanced(true); setAddSheetOpen(false); };
 
   if (advanced) {
     return (
@@ -210,6 +516,10 @@ export function FilterBar({
         // param untouched, so q + chips compose as intersection in the
         // URL (LST-40). An empty query removes the `q` param (LST-41).
         onApply={(q: string) => {
+          // Tag this as the editor's own write so the transient-reset
+          // effect does not mistake the resulting `q` change for a switch
+          // to a different filter and close the editor (see appliedByEditor).
+          appliedByEditor.current = q.trim().length > 0 ? q : "";
           void navigate({
             search: (prev: Record<string, unknown>) => ({
               ...prev,
@@ -232,112 +542,353 @@ export function FilterBar({
     );
   }
 
+  // The number of active facet filters (the chip count, excluding the
+  // free-text query) — the badge on the mobile "Filters" button.
+  const activeFacetCount = activeChips.length;
+
+  // One dropdown for a resolved-visible filter id, be it a built-in facet
+  // or a `field.<key>` custom enum. Extracted so it renders identically
+  // inline (desktop) and inside the mobile filter Sheet — both call the
+  // same setFilter/navigate writes, so state never forks.
+  const renderFilterControl = (id: FilterId) => {
+    if (!id.startsWith("field.")) {
+      const key = id as FacetKey;
+      return (
+        <FilterFacet
+          key={key}
+          label={FACET_LABELS[key]}
+          options={options[key]}
+          unavailable={failedFacets.has(key)}
+          selected={facetOf(key)}
+          onChange={next => setFilter(key, next)}
+          onRemove={() => { removeFilter(key); }}
+          // LST-40/MSL-7: labels are set-valued, so 2+ selected can mean
+          // "has all of these" or "has any". Offer the choice inline
+          // once it matters; other facets are scalar and OR is the only
+          // sensible reading.
+          {...(key === "labels" && facetOf("labels").length >= 2
+            ? { matchToggle: (
+                <LabelsMatchToggle
+                  value={search.labels_match ?? "any"}
+                  onChange={mode => void navigate({
+                    search: prev => ({
+                      ...prev,
+                      labels_match: mode === "all" ? "all" : undefined,
+                      page: undefined,
+                    }),
+                  })}
+                />
+              ) }
+            : {})}
+        />
+      );
+    }
+    const cfKey = id.slice("field.".length);
+    const cf = customFields.find(c => c.key === cfKey);
+    if (cf === undefined || cf.type !== "enum" || !cf.values || cf.values.length === 0) return null;
+    return (
+      <FilterFacet
+        key={cf.key}
+        label={cf.label}
+        options={cf.values.map(v => ({ value: v.key, label: v.label }))}
+        selected={customFilters[cf.key] ?? []}
+        onChange={next => setFilter(`field.${cf.key}`, next)}
+        onRemove={() => { removeFilter(`field.${cf.key}`); }}
+      />
+    );
+  };
+
+  const facetControls = (
+    <>{visibleFilters.map(renderFilterControl)}</>
+  );
+
+  // The desktop "+ Add filter" affordance: a Menu listing every addable
+  // filter (grouped built-in / custom, searchable when long), with the
+  // "Advanced query…" escape hatch and "Save as default" at the end.
+  const addFilterMenu = (
+    <Menu
+      align="start"
+      aria-label="Add filter"
+      trigger={({ toggle, ...aria }) => (
+        <Button
+          variant="ghost"
+          size="md"
+          testId="add-filter"
+          onClick={toggle}
+          {...aria}
+        >
+          <Icon name="plus" size={14} />
+          Add filter
+        </Button>
+      )}
+    >
+      {({ close }) => (
+        <AddFilterPanel
+          addable={addable}
+          onAdd={id => { addFilter(id); close(); }}
+          onOpenAdvanced={() => { openAdvanced(); close(); }}
+          onSaveDefault={from === "/list" ? () => { saveAsDefault(); close(); } : undefined}
+        />
+      )}
+    </Menu>
+  );
+
   return (
     <div className="flex flex-col gap-2">
-      {/* Toolbar, regrouped into three bands (K-2/K-3/S-3/S-4): the
-          facets, the Advanced mode-toggle, then the actions. `flex-wrap`
-          + `min-w-0` lets the bands reflow and condense on a narrow
-          viewport rather than overflowing (S-11 mobile / UX-16 collapse):
-          the facet band wraps first, and the action band stays pinned
-          right until there is no room, then drops below. */}
+      {/* Toolbar: a single row split into two bands — filters (left),
+          view actions (right). `flex-wrap` + `min-w-0` lets the filter
+          band wrap while the action cluster stays pinned right until
+          there is no room, then drops below. One control height (h-8)
+          across every band. */}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {/* Band 1 — Advanced mode-toggle. A ToolbarButton (B1) so it
-            shares the one pill height/style with the facets and shows the
-            active look while the advanced editor is the mode in use. */}
-        <ToolbarButton
-          testId="advanced-query-toggle"
-          size="sm"
-          active={hasQuery}
-          onClick={() => { setDraft(query); setAdvanced(true); }}
-        >
-          Advanced
-        </ToolbarButton>
+        {/* Left band — filters. Inline at >= sm; collapsed into a
+            "Filters" button + bottom sheet below sm (GROUP B). The same
+            controls render in both, so they write the same search params
+            either way. */}
+        {!isNarrow && (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {facetControls}
+            {/* The Add-filter affordance leads nothing: it sits at the
+                END of the filter row, subtle (ghost), one level in. */}
+            {addFilterMenu}
+          </div>
+        )}
 
-        {/* Band 2 — facets. */}
-        {FACET_KEYS.filter(key => !hiddenFacets.includes(key)).map(key => (
-          <FilterDropdown
-            key={key}
-            label={FACET_LABELS[key]}
-            options={options[key]}
-            unavailable={failedFacets.has(key)}
-            selected={facetOf(key)}
-            onChange={next => setFilter(key, next)}
-            // LST-40/MSL-7: labels are set-valued, so 2+ selected can mean
-            // "has all of these" or "has any". Offer the choice inline
-            // once it matters; other facets are scalar and OR is the only
-            // sensible reading.
-            {...(key === "labels" && facetOf("labels").length >= 2
-              ? { matchToggle: (
-                  <LabelsMatchToggle
-                    value={search.labels_match ?? "any"}
-                    onChange={mode => void navigate({
-                      search: prev => ({
-                        ...prev,
-                        labels_match: mode === "all" ? "all" : undefined,
-                        page: undefined,
-                      }),
-                    })}
-                  />
-                ) }
-              : {})}
-          />
-        ))}
-
-        {customFields.map(cf =>
-          cf.type === "enum" && cf.values && cf.values.length > 0 ? (
-            <FilterDropdown
-              key={cf.key}
-              label={cf.label}
-              options={cf.values.map(v => ({ value: v.key, label: v.label }))}
-              selected={customFilters[cf.key] ?? []}
-              onChange={next => setFilter(`field.${cf.key}`, next)}
-            />
-          ) : null,
+        {isNarrow && (
+          <Button
+            variant="secondary"
+            testId="filters-open"
+            onClick={() => { setFilterSheetOpen(true); }}
+          >
+            <Icon name="search" size={14} className="text-text-tertiary" />
+            Filters
+            {activeFacetCount > 0 && (
+              <span
+                data-testid="filters-active-count"
+                className="grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-[0.7857rem] font-medium text-accent-contrast"
+              >
+                {activeFacetCount}
+              </span>
+            )}
+          </Button>
         )}
 
         <div className="flex-1" />
 
-        {/* Band 3 — actions. */}
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[0.9286rem] text-text-secondary">
-          <Checkbox
-            checked={search.archived === true}
-            onChange={e =>
-              void navigate({
-                search: prev => ({ ...prev, archived: e.target.checked ? true : undefined, page: undefined }),
-              })
-            }
-          />
-          Show archived
-        </label>
-
-        {showSaveView && (
-          <Button size="md" onClick={() => setSaveOpen(true)}>
-            <span aria-hidden="true">{ICON.star}</span>
-            Save as view
-          </Button>
+        {/* Right band — view actions. All three controls (Show archived,
+            Export, Save as view) are secondary (Ken's toolbar review, U23):
+            none is primary, so on desktop they collapse into a single "⋯"
+            overflow menu rather than three inline pills. On mobile they
+            already live in the filters Sheet, so this cluster is
+            desktop-only. No manual refresh (Q4): freshness is TanStack
+            Query staleTime + focus refetch. */}
+        {!isNarrow && (
+          <div className="flex items-center gap-2" data-testid="view-actions">
+            <Menu
+              align="end"
+              aria-label="View options"
+              trigger={({ toggle, ...aria }) => (
+                <IconButton
+                  variant="secondary"
+                  size="md"
+                  aria-label="View options"
+                  title="View options"
+                  testId="view-actions-menu"
+                  onClick={toggle}
+                  {...aria}
+                >
+                  <Icon name="more" size={16} />
+                </IconButton>
+              )}
+            >
+              {({ close }) => (
+                <>
+                  {/* K107: the tri-state archived scope replaces the old
+                      "Show archived" checkable item. It writes the same URL
+                      param the mobile sheet's control writes. The select is
+                      a menu descendant, so interacting with it does not
+                      trip the menu's outside-click close — the scope stays
+                      changeable with the menu open. */}
+                  <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+                    <ArchivedScopeControl
+                      label="Archived"
+                      testId="view-actions-archived-scope"
+                      value={archivedScope}
+                      onChange={setArchivedScope}
+                    />
+                  </div>
+                  {/* Export keeps its own menu (CSV/JSON, failure + skipped
+                      status). Its popover is an inline descendant of this
+                      panel, so the parent's outside-click treats a click on
+                      it as inside and stays open. */}
+                  {exportTotal !== undefined && exportQueryString !== undefined && (
+                    <ExportMenu total={exportTotal} queryString={exportQueryString} />
+                  )}
+                  {showSaveView && (
+                    <MenuItem
+                      testId="view-actions-save-view"
+                      onSelect={() => { setSaveOpen(true); close(); }}
+                    >
+                      <span aria-hidden="true">{ICON.star}</span>
+                      Save as view
+                    </MenuItem>
+                  )}
+                </>
+              )}
+            </Menu>
+          </div>
         )}
       </div>
 
+      {isNarrow && filterSheetOpen && (
+        <Sheet
+          title="Filters"
+          testId="filters-sheet"
+          onClose={() => { setFilterSheetOpen(false); }}
+          footer={
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                data-testid="filters-sheet-clear"
+                disabled={!hasActive}
+                onClick={() => { void navigate({ search: () => ({}) }); }}
+                className="text-[0.9286rem] text-text-secondary underline-offset-2 hover:underline disabled:opacity-40"
+              >
+                Clear all
+              </button>
+              <Button size="md" onClick={() => { setFilterSheetOpen(false); }}>
+                Done
+              </Button>
+            </div>
+          }
+        >
+          {/* Same facet controls as desktop, stacked full-width. Changes
+              apply live (they write search params) — the list behind the
+              sheet updates as on desktop. */}
+          <div className="flex flex-col gap-2 [&_button]:w-full">
+            {facetControls}
+            {addable.length > 0 && (
+              <Button
+                variant="ghost"
+                size="md"
+                testId="add-filter-mobile"
+                onClick={() => { setAddSheetOpen(true); }}
+              >
+                <Icon name="plus" size={14} />
+                Add filter
+              </Button>
+            )}
+            <Button variant="ghost" size="md" testId="advanced-open-mobile" onClick={openAdvanced}>
+              Advanced query…
+            </Button>
+            {/* K107: tri-state archived scope, replacing the mobile
+                "Show archived" checkbox. Writes the same URL param. */}
+            <div className="mt-2">
+              <ArchivedScopeControl
+                label="Archived"
+                size="md"
+                testId="filters-sheet-archived-scope"
+                value={archivedScope}
+                onChange={setArchivedScope}
+              />
+            </div>
+            {showSaveView && (
+              <Button size="md" onClick={() => { setFilterSheetOpen(false); setSaveOpen(true); }}>
+                <span aria-hidden="true">{ICON.star}</span>
+                Save as view
+              </Button>
+            )}
+          </div>
+        </Sheet>
+      )}
+
+      {/* The Add-filter picker as a Sheet on mobile — the same content the
+          desktop Menu shows, reusing the sanctioned mobile overlay (K97:
+          unify popover-on-desktop / Sheet-on-mobile). */}
+      {isNarrow && addSheetOpen && (
+        <Sheet
+          title="Add filter"
+          testId="add-filter-sheet"
+          onClose={() => { setAddSheetOpen(false); }}
+        >
+          <AddFilterPanel
+            addable={addable}
+            onAdd={addFilter}
+            onOpenAdvanced={openAdvanced}
+            onSaveDefault={from === "/list" ? saveAsDefault : undefined}
+          />
+        </Sheet>
+      )}
+
       {hasActive ? (
         <div className="flex flex-wrap items-center gap-1.5">
+          {hasActiveView ? (
+            // The active saved view as a removable chip, styled like the
+            // q= query chip (LST-53) — accent-muted, NOT font-mono (K98:
+            // mono is code/CLI only). Its label is a BUTTON that opens the
+            // view form dialog seeded from the view's stored filters, so
+            // a view is editable from where it's shown; the full summary is
+            // on the title so the truncated preview can be read on hover.
+            <span
+              data-testid="active-view-chip"
+              className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
+            >
+              <button
+                type="button"
+                data-testid="active-view-chip-edit"
+                title={`Edit view "${activeView.name}": ${viewSummary}`}
+                aria-label={`Edit view ${activeView.name}`}
+                onClick={editActiveView}
+                className="inline-flex cursor-pointer items-center gap-1 hover:underline"
+              >
+                <span className="text-accent/70">View:</span>
+                <span>{activeView.name}</span>
+                {viewSummary !== "" ? (
+                  <span className="max-w-[24ch] truncate text-accent/70">{viewSummaryPreview}</span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                aria-label="Clear active view"
+                onClick={clearActiveView}
+                className="ml-0.5 cursor-pointer text-accent/70 hover:text-accent"
+              >
+                <Icon name="close" size={12} />
+              </button>
+            </span>
+          ) : null}
           {hasQuery ? (
             // LST-53: the active free-text query as a removable chip. Its
             // ✕ clears just `q` (and the saved-view id it may have come
             // from); "Clear all" below wipes everything.
             <span
               data-testid="query-chip"
-              title={query}
               className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
             >
-              <span className="text-accent/70">Query:</span>
-              <span className="max-w-[24ch] truncate font-mono">{queryPreview}</span>
+              {/* The query text is a BUTTON that opens the advanced editor
+                  pre-loaded with this query — so a query filter is editable
+                  from where it's shown, not only removable (Ken). The full
+                  query is on the title so a truncated preview can be read on
+                  hover; the visible text is the truncated, id-humanized
+                  preview. */}
+              <button
+                type="button"
+                data-testid="query-chip-edit"
+                title={`Edit query: ${humanized}`}
+                aria-label={`Edit query: ${humanized}`}
+                onClick={openAdvanced}
+                className="inline-flex cursor-pointer items-center gap-1 hover:underline"
+              >
+                <span className="text-accent/70">Query:</span>
+                <span className="max-w-[24ch] truncate">{queryPreview}</span>
+              </button>
               <button
                 type="button"
                 aria-label="Remove query filter"
                 onClick={clearQuery}
                 className="ml-0.5 cursor-pointer text-accent/70 hover:text-accent"
               >
-                {ICON.close}
+                <Icon name="close" size={12} />
               </button>
             </span>
           ) : null}
@@ -361,7 +912,7 @@ export function FilterBar({
                 }}
                 className={`ml-0.5 cursor-pointer ${extraClass}`}
               >
-                {ICON.close}
+                <Icon name="close" size={12} />
               </button>
             );
             // LST-33: a dangling reference reads as "gone", not as a
@@ -377,7 +928,7 @@ export function FilterBar({
                   className="inline-flex items-center gap-1 rounded bg-warn-bg px-2 py-0.5 text-[0.8571rem] text-warn-fg"
                 >
                   <span className="opacity-80">{chip.facetLabel}:</span>
-                  <code className="font-mono">{chip.value.slice(-6)}</code>
+                  <code>{chip.value.slice(-6)}</code>
                   <span className="italic">(no longer exists)</span>
                   {removeButton("text-warn-fg/70 hover:text-warn-fg")}
                 </span>
@@ -394,19 +945,120 @@ export function FilterBar({
               </span>
             );
           })}
-          <button
-            type="button"
-            onClick={clearAll}
-            className="cursor-pointer rounded px-1.5 py-0.5 text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
-          >
+          <Button variant="ghost" size="sm" onClick={clearAll}>
             Clear all
-          </button>
+          </Button>
         </div>
       ) : null}
 
       {saveOpen ? <SaveViewDialog search={search} onClose={() => setSaveOpen(false)} /> : null}
+      {editingView && activeView !== undefined ? (
+        <ViewFormDialog existing={activeView} onClose={() => { setEditingView(false); }} />
+      ) : null}
     </div>
   );
+}
+
+/**
+ * The Add-filter picker's body, shared by the desktop Menu panel and the
+ * mobile Sheet (K97: one pattern, two shells). Lists every addable filter
+ * grouped built-in / custom, searchable when long, then the "Advanced
+ * query…" escape hatch and (on /list) "Save as default".
+ */
+function AddFilterPanel({
+  addable,
+  onAdd,
+  onOpenAdvanced,
+  onSaveDefault,
+}: {
+  readonly addable: readonly FilterCatalogEntry[];
+  readonly onAdd: (id: FilterId) => void;
+  readonly onOpenAdvanced: () => void;
+  readonly onSaveDefault?: (() => void) | undefined;
+}) {
+  const [filter, setFilter] = useState("");
+  // Search once the list is long enough to scan-hunt (same threshold feel
+  // as the facet's typeahead).
+  const searchable = addable.length >= 8;
+  const q = filter.trim().toLowerCase();
+  const shown = searchable && q !== ""
+    ? addable.filter(e => e.label.toLowerCase().includes(q))
+    : addable;
+
+  const builtins = shown.filter(e => e.group === "builtin");
+  const customs = shown.filter(e => e.group === "custom");
+
+  const section = (title: string, entries: readonly FilterCatalogEntry[]) =>
+    entries.length === 0 ? null : (
+      <div className="py-1">
+        <p className="px-3 py-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">{title}</p>
+        {entries.map(e => (
+          <MenuItem key={e.id} testId={`add-filter-${e.id}`} onSelect={() => { onAdd(e.id); }}>
+            {e.label}
+          </MenuItem>
+        ))}
+      </div>
+    );
+
+  return (
+    <div data-testid="add-filter-panel" className="min-w-[220px]">
+      {searchable && (
+        <div className="border-b border-border-subtle p-1.5">
+          <TextField
+            type="search"
+            size="sm"
+            aria-label="Search filters"
+            placeholder="Search filters…"
+            value={filter}
+            onChange={e => { setFilter(e.target.value); }}
+          />
+        </div>
+      )}
+
+      {addable.length === 0 ? (
+        <p className="px-3 py-2 text-[0.8571rem] italic text-text-tertiary">
+          Every filter is already shown.
+        </p>
+      ) : shown.length === 0 ? (
+        <p className="px-3 py-2 text-[0.8571rem] italic text-text-tertiary">No filters match.</p>
+      ) : (
+        <>
+          {section("Built-in", builtins)}
+          {section("Custom fields", customs)}
+        </>
+      )}
+
+      <div className="border-t border-border-subtle py-1">
+        <MenuItem testId="advanced-open" onSelect={onOpenAdvanced}>
+          <Icon name="settings" size={14} className="text-text-tertiary" />
+          Advanced query…
+        </MenuItem>
+        {onSaveDefault !== undefined && (
+          <MenuItem testId="save-default-filters" onSelect={onSaveDefault}>
+            <Icon name="star" size={14} className="text-text-tertiary" />
+            Save these as my default
+          </MenuItem>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Reads the `vf` visible-filter param (comma-separated FilterIds) from the
+ * URL. Returns `undefined` when absent so resolution falls through to the
+ * per-user default; an explicit empty value ("show nothing extra") is
+ * preserved as an empty array.
+ */
+function readVisibleFilterParam(search: Partial<ListSearch>): readonly FilterId[] | undefined {
+  const raw = (search as Record<string, unknown>).vf;
+  if (typeof raw === "string") {
+    return raw.split(",").map(s => s.trim()).filter(Boolean);
+  }
+  if (Array.isArray(raw)) {
+    return raw.filter((x): x is string => typeof x === "string");
+  }
+  return undefined;
 }
 
 /**
@@ -427,73 +1079,6 @@ export function clearedSearch<T extends Record<string, unknown>>(prev: T): T {
 const FACET_KEYS: readonly FacetKey[] = [
   "project", "status", "priority", "type", "assignee", "reporter", "labels", "milestone", "sprint",
 ];
-
-export interface FacetOptions {
-  project: FilterOption[];
-  status: FilterOption[];
-  priority: FilterOption[];
-  type: FilterOption[];
-  assignee: FilterOption[];
-  reporter: FilterOption[];
-  labels: FilterOption[];
-  milestone: FilterOption[];
-  sprint: FilterOption[];
-}
-
-interface NamedEntity {
-  readonly id: string;
-  readonly name: string;
-  readonly archived?: boolean | undefined;
-}
-
-/**
- * Like {@link NamedEntity} but `name` may be `undefined` (O5 — a corrupt
- * or absent profile name is field-local; the user still loads). Only the
- * user facet degrades this way, so it is a separate shape rather than
- * loosening every entity's `name`.
- */
-interface NamedUser {
-  readonly id: string;
-  readonly name?: string | undefined;
-  readonly archived?: boolean | undefined;
-}
-
-function buildFacetOptions(input: {
-  projects: readonly NamedEntity[];
-  users: readonly NamedUser[];
-  labels: readonly NamedEntity[];
-  milestones: readonly NamedEntity[];
-  sprints: readonly NamedEntity[];
-  workflow: WorkflowConfig | undefined;
-}): FacetOptions {
-  const live = <T extends { archived?: boolean | undefined }>(xs: readonly T[]): readonly T[] =>
-    xs.filter(x => x.archived !== true);
-  const userOpts: FilterOption[] = input.users.map(u => {
-    // O5: a nameless profile degrades to its id so the facet option is
-    // never blank.
-    const name = u.name ?? u.id;
-    return {
-      value: u.id,
-      label: u.archived ? `${name} (archived)` : name,
-    };
-  });
-  return {
-    project: live(input.projects).map(p => ({ value: p.id, label: p.name })),
-    status: (input.workflow?.statuses ?? []).map(s => ({ value: s.key, label: s.label })),
-    priority: (input.workflow?.priorities ?? []).map(p => ({ value: p.key, label: p.label })),
-    type: (input.workflow?.task_types ?? []).map(t => ({ value: t.key, label: t.label })),
-    // Assignee and reporter share one option set built from the known
-    // users — archived ones included (greyed) so historical filters
-    // still work. Because the options come from the users list and not
-    // from task values, a dangling ULID (a deleted user, PRU-25) is
-    // never offered on either facet.
-    assignee: userOpts,
-    reporter: userOpts,
-    labels: live(input.labels).map(l => ({ value: l.id, label: l.name })),
-    milestone: live(input.milestones).map(m => ({ value: m.id, label: m.name })),
-    sprint: live(input.sprints).map(s => ({ value: s.id, label: s.name })),
-  };
-}
 
 function readCustomFilters(search: Partial<ListSearch>): Record<string, string[]> {
   const out: Record<string, string[]> = {};
@@ -609,8 +1194,7 @@ function LabelsMatchToggle({
       <span className="text-text-tertiary">Match</span>
       {(["any", "all"] as const).map(mode => (
         <label key={mode} className="inline-flex items-center gap-1">
-          <input
-            type="radio"
+          <Radio
             name="labels-match"
             data-testid={`labels-match-${mode}`}
             checked={value === mode}

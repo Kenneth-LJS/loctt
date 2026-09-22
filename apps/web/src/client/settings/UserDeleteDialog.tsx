@@ -9,7 +9,11 @@ import type {
 } from "../api/hooks/useUserMutations.ts";
 import { useUserReferences } from "../api/hooks/useUserMutations.ts";
 import { DELETE_CONFIRM_WORD } from "../list/DeleteConfirmDialog.tsx";
+import { Button } from "../ui/Button.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Modal } from "../ui/Modal.tsx";
+import { Radio } from "../ui/Radio.tsx";
+import { TextField } from "../ui/TextField.tsx";
 
 /**
  * PRU-42: deleting a user who is still referenced on tasks.
@@ -72,6 +76,9 @@ export function UserDeleteDialog({
     mutation.isPending ||
     usage.isLoading ||
     (referenced && resolution === null) ||
+    // "Reassign" selected but no target user picked yet — nothing to
+    // remap onto, so the delete stays blocked.
+    (resolution?.kind === "remap" && resolution.to === "") ||
     !confirmed;
 
   const envelope = mutation.error instanceof ApiError ? mutation.error.envelope : undefined;
@@ -120,23 +127,51 @@ export function UserDeleteDialog({
             <legend className="mb-1 text-[0.9286rem] text-text-secondary">
               What should happen to those references?
             </legend>
-            {others.map(o => (
-              <label key={o.id} className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
-                <input
-                  type="radio"
-                  name="user-delete-resolution"
-                  data-testid={`user-delete-remap-${o.id}`}
-                  checked={resolution?.kind === "remap" && resolution.to === o.id}
-                  onChange={() => { setResolution({ kind: "remap", to: o.id }); }}
-                />
-                <span>
-                  Reassign them to <strong className="font-medium">{o.name}</strong>
-                </span>
-              </label>
-            ))}
+            {/* A211: the user list grows with the workspace — a searchable
+                Combobox rather than one radio per user, matching how
+                DeleteProjectDialog remaps. The "reassign" radio gates the
+                picker; a "clear" radio is the no-remap path. Per-option
+                testids stay `user-delete-remap-<id>` so the option targets
+                are unchanged; the trigger carries `user-delete-remap`. */}
             <label className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
-              <input
-                type="radio"
+              <Radio
+                name="user-delete-resolution"
+                data-testid="user-delete-reassign"
+                checked={resolution?.kind === "remap"}
+                onChange={() => {
+                  setResolution(prev =>
+                    prev?.kind === "remap" ? prev : { kind: "remap", to: "" });
+                }}
+              />
+              <span>Reassign them to another user</span>
+            </label>
+            {resolution?.kind === "remap" && (
+              <div className="ml-6 mb-1 grid gap-1">
+                <Combobox
+                  label="Reassign those references to"
+                  options={others.map((o): ComboboxOption => ({ key: o.id, label: o.name ?? o.id }))}
+                  value={resolution.to === "" ? undefined : resolution.to}
+                  onSelect={v => { setResolution({ kind: "remap", to: v }); }}
+                  listTestId="user-delete-remap-list"
+                  optionTestId={o => `user-delete-remap-${o.key}`}
+                  searchTestId="user-delete-remap-search"
+                  trigger={p => (
+                    <ComboboxButton
+                      {...p}
+                      testId="user-delete-remap"
+                      dataValue={resolution.to}
+                      aria-label="Reassign those references to"
+                      placeholder="Choose a user…"
+                      className="w-full"
+                    >
+                      {others.find(o => o.id === resolution.to)?.name ?? ""}
+                    </ComboboxButton>
+                  )}
+                />
+              </div>
+            )}
+            <label className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
+              <Radio
                 name="user-delete-resolution"
                 data-testid="user-delete-unassign"
                 checked={resolution?.kind === "unassign"}
@@ -165,15 +200,14 @@ export function UserDeleteDialog({
 
         <label className="grid gap-1 text-[0.8571rem] font-medium text-text-secondary">
           <span>
-            Type <code className="font-mono text-text-primary">{DELETE_CONFIRM_WORD}</code> to confirm
+            Type <code className="text-text-primary">{DELETE_CONFIRM_WORD}</code> to confirm
           </span>
-          <input
+          <TextField
             type="text"
             data-testid="user-delete-confirm-input"
             value={typed}
             onChange={e => { setTyped(e.target.value); }}
             aria-label={`Type ${DELETE_CONFIRM_WORD} to confirm`}
-            className="w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 font-mono text-[0.9286rem] text-text-primary"
           />
         </label>
 
@@ -185,23 +219,21 @@ export function UserDeleteDialog({
         )}
 
         <div className="mt-1 flex justify-end gap-2">
-          <button
-            type="button"
-            data-testid="user-delete-cancel"
+          <Button
+            variant="ghost"
+            testId="user-delete-cancel"
             onClick={onClose}
-            className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
           >
             Cancel
-          </button>
-          <button
-            type="button"
-            data-testid="user-delete-confirm"
+          </Button>
+          <Button
+            variant="danger"
+            testId="user-delete-confirm"
             disabled={blocked}
             onClick={submit}
-            className="h-8 rounded-md bg-danger-fg px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:cursor-not-allowed disabled:opacity-50"
           >
             {mutation.isPending ? "Deleting…" : "Delete user"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

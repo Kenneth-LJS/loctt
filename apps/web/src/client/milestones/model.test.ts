@@ -119,6 +119,52 @@ describe("progressState", () => {
     // No number is offered in place of the missing one.
     expect(failed.percent).toBeUndefined();
   });
+
+  // @verifies L4
+  it("leaves activeFill undefined when the source carried no active count", () => {
+    // Behaviour-preserving for milestones/sprints: a `Progress` without
+    // `active` (the shape they build) yields the single fill and no
+    // middle segment. Red-proof: if `progressState` defaulted a missing
+    // `active` to 0 and set `activeFill: 0`, a segmented caller would
+    // draw an empty active slice instead of falling back to the single
+    // fill.
+    const r = progressState(p(3, 4, 0));
+    expect(r.activeFill).toBeUndefined();
+    expect(r.fill).toBe(0.75);
+  });
+
+  // @verifies L4
+  it("splits the bar into done and active segments when active is present", () => {
+    // 6 total, 2 done, 3 active, 1 todo. done fills 1/3, active fills
+    // 1/2, and the remainder 1/6 is the un-started track.
+    const r = progressState({ done: 2, active: 3, total: 6, discarded: 0, fraction: 2 / 6 });
+    expect(r.fill).toBeCloseTo(2 / 6);
+    expect(r.activeFill).toBeCloseTo(3 / 6);
+    // The two segments never sum past the track.
+    expect((r.activeFill ?? 0) + r.fill).toBeLessThanOrEqual(1);
+    // The un-started remainder.
+    expect(1 - r.fill - (r.activeFill ?? 0)).toBeCloseTo(1 / 6);
+  });
+
+  // @verifies L4
+  it("clamps the active segment so done + active never overflow the track", () => {
+    // A hand-edited corpus can momentarily report done + active > total
+    // (a child counted in two categories after a bad edit). The bar must
+    // not overflow: activeFill is clamped to the space `fill` left.
+    const r = progressState({ done: 4, active: 4, total: 5, discarded: 0, fraction: 4 / 5 });
+    expect(r.fill).toBeCloseTo(4 / 5);
+    // 4/5 done leaves only 1/5; active is clamped from 4/5 down to 1/5.
+    expect(r.activeFill).toBeCloseTo(1 / 5);
+    expect(r.fill + (r.activeFill ?? 0)).toBeCloseTo(1);
+  });
+
+  // @verifies L4
+  it("suppresses the active segment on an empty (no-tasks) readout", () => {
+    // `active` present but total 0: still "No tasks", no segment.
+    const r = progressState({ done: 0, active: 0, total: 0, discarded: 0, fraction: 0 });
+    expect(r.kind).toBe("none");
+    expect(r.activeFill).toBeUndefined();
+  });
 });
 
 describe("isOverdue", () => {

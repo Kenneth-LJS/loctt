@@ -14,6 +14,7 @@
 import type { SidebarGroups, SidebarItemId } from "@loctt/contracts";
 import { SIDEBAR_GROUP_IDS, SIDEBAR_ITEM_IDS } from "@loctt/contracts";
 import {
+  applyArchivedScope,
   archiveUser,
   countUserReferences,
   createUser,
@@ -37,7 +38,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
-import { configListInputSchema, getQ, pageConfigList } from "../runtime/config-list.js";
+import { configListInputSchema, getArchivedScope, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { errorResult, text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -46,20 +47,22 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_users",
     description:
-      "List registered users. By default, archived users are hidden; pass include_archived=true to include them. "
+      "List registered users. By default archived users are hidden (K107); pass "
+      + "`archived: archived` for only archived or `archived: all` for both. "
       + "K90: pass `q` for a case-insensitive name substring search, and `limit`/`offset` to page (default 100, cap 1000).",
     inputSchema: {
-      include_archived: z.boolean().optional(),
+      // K107: the shared tri-state `archived` scope replaces the old
+      // boolean `include_archived` param. `include_archived: true` maps to
+      // `archived: all`; the default is `active` either way.
       ...configListInputSchema,
     },
     handler: async ({ locttDir }, args) => {
-      const includeArchived = args["include_archived"] === true;
       const users = await loadAllUsers(locttDir);
       const current = await getCurrentUser(locttDir);
-      // K90 order (matching the web `handleListUsers`): archived filter,
-      // then name filter, then page.
-      const visible = users.filter(u => includeArchived || u.archived !== true);
-      const filtered = pageConfigList(filterByName(visible, getQ(args)), args);
+      // K90/K107 order (matching the web `handleListUsers`): archived
+      // scope, then name filter, then page.
+      const scoped = applyArchivedScope(users, getArchivedScope(args));
+      const filtered = pageConfigList(filterByName(scoped, getQ(args)), args);
       return text(JSON.stringify({
         current: current?.id ?? null,
         users: filtered,

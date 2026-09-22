@@ -34,12 +34,67 @@ export type { OptionalConfigs } from "./config/index.js";
 export type { WorkflowRemap } from "./config/index.js";
 export type { ConfigKeyDef } from "./config/index.js";
 export type { ArchivedGuardConfigs } from "./config/index.js";
+export type {
+  AddFieldValueInput,
+  CreateBoardColumnInput,
+  CreateCustomFieldInput,
+  CreatePriorityInput,
+  CreateRelationshipInput,
+  CreateStatusInput,
+  CreateTaskTypeInput,
+  EditBoardColumnChanges,
+  EditCustomFieldChanges,
+  EditEstimationChanges,
+  EditFieldValueChanges,
+  EditPriorityChanges,
+  EditRelationshipChanges,
+  EditStatusChanges,
+  EditTaskTypeChanges,
+  EditTimelineChanges,
+  IconColorInput,
+} from "./config/index.js";
+export type {
+  ColorResolution,
+  ColorResolveFailure,
+  PaletteEntry,
+} from "./config/index.js";
 export {
   applyWorkflowEdit,
   computeWorkflowKeyCounts,
   computeWorkflowKeyUsage,
   saveWorkflowConfig,
   validateRemapCoversDeletions,
+} from "./config/index.js";
+export {
+  addFieldValue,
+  createBoardColumn,
+  createCustomField,
+  createPriority,
+  createRelationship,
+  createStatus,
+  createTaskType,
+  deleteBoardColumn,
+  deleteCustomField,
+  deleteFieldValue,
+  deletePriority,
+  deleteRelationship,
+  deleteStatus,
+  deleteTaskType,
+  editBoardColumn,
+  editCustomField,
+  editEstimationConfig,
+  editFieldValue,
+  editPriority,
+  editRelationship,
+  editStatus,
+  editTaskType,
+  editTimelineConfig,
+  reorderBoardColumns,
+  reorderFieldValues,
+  reorderPriorities,
+  reorderStatuses,
+  reorderTaskTypes,
+  WorkflowEntityError,
 } from "./config/index.js";
 export { loadWorkflowConfig, parseWorkflowConfig } from "./config/index.js";
 export {
@@ -60,6 +115,13 @@ export {
 export { loadOptionalConfigs } from "./config/index.js";
 export { filterByName, filterProjects, isBlankQuery } from "./config/index.js";
 export { brokenEntriesToPlain, collectValidEntries } from "./config/index.js";
+export {
+  BUILTIN_PALETTE,
+  getPaletteEntry,
+  isKnownPaletteId,
+  resolveEntityColor,
+  resolveEntityColorOr,
+} from "./config/index.js";
 export { validateTaskAgainstWorkflow, validateWorkflowConfig } from "./config/index.js";
 export {
   ArchivedReferenceError,
@@ -93,6 +155,7 @@ export {
   saveListViewConfig,
 } from "./config/index.js";
 export {
+  applyArchivedScope,
   getLabelsConfigPath,
   LabelsConfigError,
   labelsConfigExists,
@@ -158,7 +221,6 @@ export {
   enableGit,
   fetchLocttBranch,
   getGitStatus,
-  getReconcileState,
   // GIT-25: the adopt-or-stop refusal for a pre-existing LocTT-written
   // branch, so a surface can distinguish it from a foreign-content refusal.
   GitBranchAdoptNeededError,
@@ -290,6 +352,14 @@ export type { ListContext,ListOptions, ListTasksOptions } from "./query/index.js
 export type { ListTasksResult } from "./query/index.js";
 export type { ValidateQueryOptions } from "./query/index.js";
 export { tokenize, TokenizeError } from "./query/index.js";
+// The single tokenizer-checked DSL atom quoter. Exported so every
+// producer — including the web server, whose private copy under-quotes
+// grammar-colliding bare values — can share one round-trip-safe quoter.
+export { dslAtom, queryNodeToDsl } from "./query/index.js";
+// K102: a saved view stores an ordered filter list; these turn it into
+// something runnable (an in-memory AST), readable (a display summary),
+// or scannable, and normalize it for storage (spacing only).
+export { FilterError, filtersToNode, filtersToScannableText, filtersToSummary, filterToNode, filterToSummary, normalizeFilter, normalizeFilters } from "./query/index.js";
 export { QUERYABLE_FIELDS, QueryValidationError, validateQuery } from "./query/index.js";
 export { ParseError,parseQuery } from "./query/index.js";
 export { evaluateQuery } from "./query/index.js";
@@ -389,7 +459,7 @@ export type {
   MoveTaskOptions,
   MoveTaskResult,
 } from "./task/index.js";
-export type { MilestoneProgressOptions, Progress, ProgressReport } from "./task/index.js";
+export type { MilestoneProgressOptions, MilestoneProgressResult, Progress, ProgressReport, ProgressUnavailable } from "./task/index.js";
 export type { BodyWriteOptions } from "./task/index.js";
 export type { CommentsPage } from "./task/index.js";
 export {
@@ -405,6 +475,7 @@ export {
 } from "./task/index.js";
 export {
   attachFile,
+  AttachmentCaseCollisionError,
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
@@ -445,10 +516,13 @@ export { linkTask, RelationshipError,unlinkTask } from "./task/index.js";
 export { buildTree, getChildren, getParents,getRelatedTasks, validateRelationships } from "./task/index.js";
 export {
   computeProgress,
+  computeProgressFromStatuses,
+  isProgressUnavailable,
   milestoneProgress,
   milestoneProgressDetailed,
   sprintProgress,
   sprintProgressDetailed,
+  tallyStatusCategories,
 } from "./task/index.js";
 export { bodyToken, StaleBodyWriteError } from "./task/io.js";
 export type { CreateUserOptions, DeleteUserOptions, EditUserOptions, UserReferenceCounts, UserSettings } from "./users/index.js";
@@ -512,6 +586,7 @@ export {
   deleteView,
   editView,
   findView,
+  findViewOrBroken,
   unarchiveView,
   ViewError,
 } from "./views/index.js";

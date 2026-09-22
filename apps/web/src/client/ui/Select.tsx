@@ -1,7 +1,7 @@
 import { forwardRef,type SelectHTMLAttributes } from "react";
 
 import { cn } from "./cn.ts";
-import { ICON } from "./icons.ts";
+import { Icon } from "./Icon.tsx";
 
 /**
  * A themed native `<select>`. Standardises the two drifting variants onto
@@ -15,8 +15,11 @@ import { ICON } from "./icons.ts";
  * overlaid glyph is the theme-aware way to draw it. `pr-7` leaves room
  * for it.
  *
- * Skip `task/editors/OptionPicker.tsx` in migration — it is deliberately
- * a custom listbox, not a `<select>`.
+ * **Small, fixed sets only** (A211): statuses, operators, a unit or a
+ * state — lists the user cannot grow. A set that scales with the
+ * workspace (labels, users, projects, milestones, sprints, custom-enum
+ * values) uses `Combobox`, which searches. `OptionPicker` (the inline
+ * meta field) is a `Combobox` trigger, not a `<select>`.
  *
  * `data-testid` passes through to the `<select>`.
  */
@@ -51,12 +54,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         >
           {children}
         </select>
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-meta text-text-tertiary"
-        >
-          {ICON.caretDown}
-        </span>
+        <Icon
+          name="chevronDown"
+          size={14}
+          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary"
+        />
       </span>
     );
   },

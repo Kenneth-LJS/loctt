@@ -4,7 +4,7 @@
  * Stores `@user:<id>` — the id is the payload and the display name is
  * resolved at render time, so renaming a user does not require
  * rewriting every body that mentions them. That is the on-disk
- * convention in `docs/dev/markdown-extensions.md`, and core's
+ * convention in `docs/dev/reference/markdown-extensions.md`, and core's
  * `extractMentions` is the reader half of the same contract.
  *
  * The trigger rule matches `extractMentions` deliberately: an `@` that
@@ -152,6 +152,11 @@ export function useMentionState(
         const pick = matches[highlighted];
         if (pick) { e.preventDefault(); choose(pick); }
       } else if (e.key === "Escape") {
+        // Escape closes the menu and nothing else: stop it reaching the
+        // BodyEditor's own Escape handler, which would otherwise leave the
+        // editor entirely (K96 exit) on the same keypress.
+        e.preventDefault();
+        e.stopPropagation();
         setQuery(null);
       }
     };
@@ -188,7 +193,7 @@ export function MentionMenu({ state }: { readonly state: MentionState }): React.
             {c.hint !== undefined && (
               <span
                 data-testid={`mention-hint-${c.id}`}
-                className="block font-mono text-[0.7857rem] text-text-tertiary"
+                className="block text-[0.7857rem] text-text-tertiary"
               >
                 {c.hint}
               </span>

@@ -1,5 +1,5 @@
 /**
- * Regenerates docs/dev/case-index.json from the flow docs.
+ * Regenerates tests/cases/case-index.json from the flow docs.
  *
  * `--check` verifies the committed index matches the docs without writing,
  * so CI (and the per-ticket gate) fails when a case is added or retagged
@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { buildIndex } from "./parse.ts";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const INDEX_PATH = path.join(REPO_ROOT, "docs/dev/case-index.json");
+const INDEX_PATH = path.join(REPO_ROOT, "tests/cases/case-index.json");
 
 async function main(): Promise<void> {
   const check = process.argv.includes("--check");

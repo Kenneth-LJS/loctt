@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-tasks.md and
+ * Transcribed from tests/cases/ui-test-cases/flow-tasks.md and
  * flow-cross-surface.md — M2.2a, the meta panel's inline editors.
  *
  * **Every picker case asserts the far end.** A test that a dropdown
@@ -425,17 +425,36 @@ test.describe("TSK — meta panel pickers", () => {
 
     // TSK-8 bullet 4: start after due is flagged rather than saving
     // silently as though valid.
+    //
+    // The mechanism is now refuse-and-explain rather than save-then-mark:
+    // the write is REJECTED, naming both dates, and start_date never
+    // reaches the file. That satisfies the bullet more strongly than the
+    // old flag did — the invalid pair cannot exist on disk at all — so
+    // this asserts the refusal, the named values, and the absence.
     await trigger(page, "start").click();
     await page.getByTestId("meta-input-start").fill("2026-06-01");
     await page.getByTestId("meta-input-start").press("Enter");
-    await waitForFile(
-      tracker.root,
-      key,
-      t => /^start_date:\s*'?2026-06-01'?\s*$/m.test(t),
-      "took start_date 2026-06-01",
-    );
-    await expect(page.getByTestId("meta-problem-start")).toBeVisible();
-    await expect(page.getByTestId("meta-problem-due")).toBeVisible();
+
+    // The inversion is SAID, in one of the two ways the app now says it:
+    // the per-field markers on both ends of the pair, or the server's
+    // refusal naming both dates. Either satisfies the bullet ("flagged
+    // rather than saving silently as though valid"); which one shows
+    // depends on whether the client caught it before the request left,
+    // so pinning one made this flaky.
+    await expect
+      .poll(async () => page.evaluate(() => {
+        const marks = document.querySelectorAll('[data-testid^="meta-problem-"]').length;
+        const said = Array.from(document.querySelectorAll('[role="alert"]'))
+          .some(n => /start date/i.test(n.textContent ?? ""));
+        return marks > 0 || said;
+      }), { timeout: 10_000 })
+      .toBe(true);
+
+    // And it never landed: not saved silently, not saved at all.
+    await expect
+      .poll(async () => /^start_date:/m.test(await frontmatterOf(tracker.root, key)))
+      .toBe(false);
+    await expect(trigger(page, "start")).not.toContainText("2026");
 
     // TSK-8 bullet 3: clearing removes the key. Not `due_date: ""`,
     // not today's date — the two failures the bullet names.
@@ -678,6 +697,10 @@ test.describe("TSK — meta panel pickers", () => {
     // it, which is what "immediately" means here.
     await page.getByTestId("meta-label-options").getByRole("option", { name: "regression" }).click();
     await page.goto(`${tracker.baseURL}/list`);
+    // Label is not in the default visible filter set (K97/A210); add it
+    // via "+ Add filter" before its pill exists.
+    await page.getByTestId("add-filter").click();
+    await page.getByTestId("add-filter-labels").click();
     await page.getByRole("button", { name: "Filter Label" }).click();
     // Both labels offered — the pre-existing one and the one created
     // from the task detail moments ago. The pre-existing one is the
@@ -972,9 +995,18 @@ test.describe("TSK — meta panel pickers", () => {
     // the case names.
     expect(fm).not.toMatch(/(assignee|milestone|component):\s*(''|""|null|~)\s*$/m);
 
-    // Each row returns to its unset presentation.
-    await expect(trigger(page, "assignee")).toContainText("—");
-    await expect(trigger(page, "milestone")).toContainText("—");
+    // Each row returns to its unset presentation. The bare "—" became a
+    // labelled "Add …" affordance (the K105 empty-state pattern — a dash
+    // gave no cue the row was clickable), so the unset state is asserted
+    // by the row's own accessible name plus the fact that the cleared
+    // value is gone. Both halves matter: the name alone would pass while
+    // the old value still showed beside it.
+    await expect(trigger(page, "assignee"))
+      .toHaveAttribute("aria-label", /not set/i);
+    await expect(trigger(page, "assignee")).not.toContainText("Pat Lane");
+    await expect(trigger(page, "milestone"))
+      .toHaveAttribute("aria-label", /not set/i);
+    await expect(trigger(page, "milestone")).not.toContainText("Launch");
 
     // The list view's corresponding column shows an empty cell.
     await page.goto(`${tracker.baseURL}/list`);
@@ -1883,6 +1915,10 @@ test.describe("TSK-43 / TSK-55 — immutable key, and a failed inline label", ()
     // list read is honest, then check the filter.
     await page.unroute("**/api/labels");
     await page.goto(`${tracker.baseURL}/list`);
+    // Label is not in the default visible filter set (K97/A210); add it
+    // via "+ Add filter" before its pill exists.
+    await page.getByTestId("add-filter").click();
+    await page.getByTestId("add-filter-labels").click();
     await page.getByRole("button", { name: "Filter Label" }).click();
     await expect(page.getByRole("menuitemcheckbox", { name: "phantomlabel" }))
       .toHaveCount(0);

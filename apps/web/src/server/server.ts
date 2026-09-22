@@ -7,17 +7,19 @@ import { join as pathJoin, normalize as pathNormalize, resolve as pathResolve, s
 import { pipeline } from "node:stream/promises";
 
 import type {
+  ArchivedScope,
   BulkResponse,
   CommentResponse,
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
+  DoctorRepairResponse,
+  EntityColor,
   ErrorCode,
   ErrorResponse,
   FieldHealth,
   IntegritySummaryResponse,
   LinkRequest,
-  ListTasksRequest,
   MigrateResponse,
   MigrationPlanResponse,
   RecentTaskResponse,
@@ -27,6 +29,7 @@ import type {
   WorkflowUsageResponse,
 } from "@loctt/contracts";
 import {
+  ArchivedScopeSchema,
   BulkArchiveRequestSchema,
   BulkDeleteRequestSchema,
   BulkLinkRequestSchema,
@@ -34,9 +37,9 @@ import {
   BulkSetRequestSchema,
   CalendarConfigSchema,
   CreateViewRequestSchema,
+  DoctorRepairRequestSchema,
   EditCommentRequestSchema,
   EditViewRequestSchema,
-  EmailSchema,
   InitRequestSchema,
   isSortableTaskField,
   ListViewConfigSchema,
@@ -45,9 +48,11 @@ import {
   PutWorkflowRequestSchema,
   ValidateQueryRequestSchema,
 } from "@loctt/contracts";
+import type { ListOptions } from "@loctt/core";
 import {
   abandonReconcile,
   appendTaskBody,
+  applyArchivedScope,
   applyReconcileDecisions,
   applyWorkflowEdit,
   ArchivedReferenceError,
@@ -100,6 +105,7 @@ import {
   detachFile,
   detectSyncFsAdvisory,
   disableGit,
+  dslAtom,
   duplicateTask,
   editComment,
   editLabel,
@@ -114,7 +120,7 @@ import {
   filterByName,
   filterForExport,
   filterProjects,
-  findLossyConstructs,
+  filtersToScannableText,  findLossyConstructs,
   findProjectBySlug,
   FsAccessError,
   getAttachmentPath,
@@ -137,6 +143,7 @@ import {
   isEmptyTracker,
   isMalformedHistoryEntry,
   isMigrationLocked,
+  isProgressUnavailable,
   LabelError,
   linkTask,
   listComments,
@@ -181,6 +188,7 @@ import {
   readBurndownSeries,
   readHistoryRows,
   readRecents,
+  rebuildKeyIndex,
   recoverInterruptedPrefixRename,
   reorderBoardRank,
   ReorderError,
@@ -998,6 +1006,25 @@ function parsePagination(
 }
 
 /**
+ * K107: the one place the `?archived=active|archived|all` query param is
+ * parsed for every archivable-list endpoint (tasks, saved views,
+ * milestones, sprints, labels, projects, users). Replaces the old split
+ * spellings — the task list's `?archived=true` boolean and the user
+ * list's `?include_archived=true` — with the single tri-state scope.
+ *
+ * Anything absent, empty or unrecognised falls back to the default
+ * (`active`, hide archived) rather than erroring: a pasted or hand-typed
+ * URL with a bad scope is a bad filter, not a bad request, and the list
+ * must still render (same tolerance as the sort/pagination params).
+ * `applyArchivedScope` (config entities) and the task list's
+ * `archivedScope` option both take exactly this value.
+ */
+function parseArchivedScope(url: URL): ArchivedScope {
+  const parsed = ArchivedScopeSchema.safeParse(url.searchParams.get("archived"));
+  return parsed.success ? parsed.data : "active";
+}
+
+/**
  * Builds a paginated response envelope. Slices `items` by the
  * provided offset+limit and reports the unsliced total so clients
  * can render `Page X of Y` without a follow-up count call.
@@ -1031,28 +1058,6 @@ function assertPersisted<T>(entity: T | undefined, kind: string, key: string): T
 }
 
 const VALID_REF_RE = /^[A-Za-z0-9_-]+$/;
-
-/**
- * Renders a filter value as a DSL atom.
- *
- * Identifiers that **start with a letter or underscore** pass through
- * unquoted; everything else is double-quoted with `"`/`\` escaped, so
- * a value can never break out of its atom and inject query structure.
- * This is the single chokepoint that makes
- * {@link buildStructuredQuery} injection-safe.
- *
- * The leading-character rule is load-bearing, and the previous
- * `[A-Za-z0-9_.-]+` was not: **every ULID begins with a digit**, so the
- * tokenizer read `01M0TC…` as the number `01` followed by a stray
- * identifier and rejected the query. That broke every ULID-valued
- * filter — project, assignee, reporter, milestone, sprint, labels —
- * on every request, while the UI still displayed a chip claiming the
- * filter was applied.
- */
-function dslAtom(value: string): string {
-  if (/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(value)) return value;
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
 
 /**
  * The structured list filters, mapping a URL search-param name to the
@@ -1468,6 +1473,63 @@ async function tryServeStatic(
  * without a CORS preflight, and since we set no Access-Control-Allow-*
  * headers, the preflight will be denied — blocking cross-site requests.
  */
+/**
+ * DNS-rebinding guard. The server binds 127.0.0.1, which stops direct
+ * off-machine access but NOT DNS rebinding: a hostile public page can
+ * rebind its own hostname to 127.0.0.1 and then issue same-origin
+ * requests — including plain GETs, which `requireCsrfHeader` does not
+ * guard — to read the whole tracker. The defence is to reject any
+ * request whose `Host` header is not one of the loopback names this
+ * server legitimately answers to. A rebound request carries the
+ * attacker's hostname in `Host`, so it never matches.
+ *
+ * Allowed hosts: `127.0.0.1`, `localhost`, `[::1]` (IPv6 loopback),
+ * each with an optional `:port`. The server has no configurable bind
+ * host — `main.ts` always binds 127.0.0.1 and only the port varies —
+ * so no external host is legitimate. We do NOT pin the port: the caller
+ * may reach us through a different port than we think we're on (0-port
+ * test binds, a port-forward), and the port carries no security
+ * property here — the hostname is the rebinding lever, not the port.
+ *
+ * A missing `Host` (HTTP/1.0 without one, or a raw socket) is rejected:
+ * a legitimate browser always sends it.
+ */
+function hostIsAllowed(hostHeader: string | undefined): boolean {
+  if (hostHeader === undefined || hostHeader === "") return false;
+  // Strip an optional `:port`. IPv6 literals are bracketed
+  // (`[::1]:port`), so only split on the last colon when it is not
+  // inside brackets.
+  let host = hostHeader.trim();
+  if (host.startsWith("[")) {
+    // `[::1]` or `[::1]:port` — take what's inside the brackets.
+    const end = host.indexOf("]");
+    if (end === -1) return false;
+    host = host.slice(1, end);
+  } else {
+    const colon = host.lastIndexOf(":");
+    if (colon !== -1) host = host.slice(0, colon);
+  }
+  const name = host.toLowerCase();
+  return name === "127.0.0.1" || name === "localhost" || name === "::1";
+}
+
+function requireAllowedHost(
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+): boolean {
+  if (hostIsAllowed(req.headers.host)) return true;
+  // Rejected before any handler ran, so nothing was read or written.
+  // The header value is machinery, not user copy (ERR-16), so the
+  // offending host goes in `detail`.
+  error(res, "That request was addressed to a host this server does not serve, so it was refused.", 403, {
+    code: "validation_failed",
+    data_state: "not_saved",
+    recovery: { kind: "none" },
+    detail: `Disallowed Host header: ${req.headers.host ?? "(none)"}`,
+  });
+  return false;
+}
+
 function requireCsrfHeader(
   req: import("node:http").IncomingMessage,
   res: import("node:http").ServerResponse,
@@ -1638,6 +1700,48 @@ export function createWebApp(options: WebAppOptions) {
     }
   };
 
+  const handleDoctorRepair: RouteHandler = async ({ req, res, locttDir }) => {
+    // The two safe, programmatic repairs the doctor's `fix` field points a
+    // finding at (K-diagnostics-repair). Both are whole-tracker, idempotent
+    // or existence-guarded, and already the CLI/MCP repair paths:
+    //  - "rebuild-index"  → rebuildKeyIndex: rewrites the derived key↔id
+    //    index (stale/orphan/target-missing). Idempotent, cache-only.
+    //  - "restore-missing" → initLoctt({repair:true}): recreates missing
+    //    core config/state files with defaults; never overwrites survivors.
+    // Deliberately NOT a blanket "repair all" — core has no such function
+    // and ~85% of findings need a human decision or hand-edit.
+    const r = await parseJsonBodyWithSchema(req, res, DoctorRepairRequestSchema);
+    if (r === undefined) return;
+    try {
+      if (r.action === "rebuild-index") {
+        const index = await rebuildKeyIndex(locttDir);
+        const entries = Object.keys(index.entries).length;
+        json(res, { action: r.action, entries } satisfies DoctorRepairResponse);
+        return;
+      }
+      // restore-missing: gap-fill only. `initLoctt` with repair recreates
+      // whatever core file is absent and leaves surviving data untouched.
+      const result = await initLoctt(root, { repair: true });
+      json(res, { action: r.action, created: result.created.length } satisfies DoctorRepairResponse);
+    } catch (err) {
+      // Both paths write under .loctt/; a raw fs errno is a knowable cause
+      // (ERR-31) — name it and say nothing was partially applied beyond
+      // what the existence-guarded repair already wrote.
+      const errno = (err as NodeJS.ErrnoException).code;
+      error(
+        res,
+        `The repair did not complete: ${err instanceof Error ? err.message : "unknown error"}.`,
+        500,
+        {
+          code: "io_failed",
+          data_state: "not_saved",
+          recovery: { kind: "reload" },
+          ...(typeof errno === "string" ? { detail: errno } : {}),
+        },
+      );
+    }
+  };
+
   const handleIntegrity: RouteHandler = async ({ res, locttDir }) => {
     // DEG-31: a tiny, fixed-size integrity summary for the global badge.
     // Deliberately NOT `runDoctorStream`/`checkDataIntegrity` — those walk
@@ -1650,10 +1754,18 @@ export function createWebApp(options: WebAppOptions) {
     json(res, summary satisfies IntegritySummaryResponse);
   };
 
-  const handleListViews: RouteHandler = async ({ res, locttDir }) => {
+  const handleListViews: RouteHandler = async ({ res, url, locttDir }) => {
     try {
       const cfg = await loadQueriesConfig(locttDir);
-      json(res, cfg);
+      // K107: `/api/views` honours the tri-state `?archived` scope like
+      // every other archivable list. The picker/resolver callers request
+      // `all` so an archived view stays selectable by URL; the settings
+      // panel requests its own scope; the sidebar defaults to `active`.
+      // `broken` entries carry no `archived` field and are always kept —
+      // a corrupt view is surfaced regardless of scope so it can be
+      // repaired. The rest of the config (defaults etc.) rides through.
+      const scope = parseArchivedScope(url);
+      json(res, { ...cfg, queries: applyArchivedScope(cfg.queries, scope) });
     } catch (err) {
       // VUE-36 / XS-66: a queries.yaml that will not parse must reach
       // the sidebar as a *named* failure, not as the generic 500
@@ -1744,15 +1856,25 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleCreateView: RouteHandler = async ({ req, res, locttDir }) => {
+    // K102: every surface sends the SAME shape — an ordered `filters`
+    // list, each entry either a simple field/op/values filter or an
+    // advanced DSL string. There is no web-sends-structure /
+    // CLI-sends-DSL split any more, and no derived query string.
     const r = await parseJsonBodyWithSchema(req, res, CreateViewRequestSchema);
     try {
-      const created = await createView(locttDir, r);
+      const created = await createView(locttDir, {
+        name: r.name,
+        filters: r.filters,
+        ...(r.sort !== undefined ? { sort: r.sort } : {}),
+        ...(r.archivedScope !== undefined ? { archivedScope: r.archivedScope } : {}),
+        ...(r.icon !== undefined ? { icon: r.icon } : {}),
+      });
       json(res, created, 201);
     } catch (err) {
       // ViewError is core's own user-facing text (a bad query, a
       // duplicate name), so it is the headline verbatim per ERR-6.
       if (err instanceof ViewError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "query" });
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "filters" });
         return;
       }
       throw err;
@@ -1761,6 +1883,9 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateView: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const ref = captures[0] ?? "";
+    // As with create, one shared shape. `filters` replaces the WHOLE
+    // ordered list when present; omitting it leaves the view's filters
+    // untouched (order is meaningful, so there is no partial patch).
     const r = await parseJsonBodyWithSchema(req, res, EditViewRequestSchema);
     try {
       // Drop explicitly-`undefined` keys so we're passing
@@ -1769,13 +1894,20 @@ export function createWebApp(options: WebAppOptions) {
       // sort: null case ("clear sort") is preserved.
       const updated = await editView(locttDir, ref, {
         ...(r.name !== undefined ? { name: r.name } : {}),
-        ...(r.query !== undefined ? { query: r.query } : {}),
+        ...(r.filters !== undefined ? { filters: r.filters } : {}),
         ...(r.sort !== undefined ? { sort: r.sort } : {}),
+        ...(r.archivedScope !== undefined ? { archivedScope: r.archivedScope } : {}),
+        ...(r.icon !== undefined ? { icon: r.icon } : {}),
+        // K102-broken-repair: the client's explicit "yes, replace the
+        // preserved original text" (the dialog's confirmation tick).
+        // Meaningless for a healthy view, which is why it is passed
+        // straight through rather than branched on here.
+        ...(r.replaceBroken !== undefined ? { replaceBroken: r.replaceBroken } : {}),
       });
       json(res, updated);
     } catch (err) {
       if (err instanceof ViewError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "query" });
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: "filters" });
         return;
       }
       throw err;
@@ -1790,8 +1922,13 @@ export function createWebApp(options: WebAppOptions) {
     // stayed in queries.yaml and kept resolving by id. `?soft=true`
     // is the way to archive (VUE-25), which is a different intent.
     const soft = url.searchParams.get("soft") === "true";
+    // K102-broken-repair: deleting a BROKEN entry discards the original
+    // text queries.yaml preserves for it, so it takes the same explicit
+    // opt-in as a replace. A DELETE carries no body, so it rides the
+    // query string beside `soft`. No effect on a healthy view.
+    const replaceBroken = url.searchParams.get("replaceBroken") === "true";
     try {
-      await deleteView(locttDir, ref, { hard: !soft });
+      await deleteView(locttDir, ref, { hard: !soft, replaceBroken });
       json(res, { deleted: ref });
     } catch (err) {
       // A delete names no field, and re-issuing it gets the same answer
@@ -1994,8 +2131,13 @@ export function createWebApp(options: WebAppOptions) {
       // An unreadable task must not take down the projects panel; the
       // badge is omitted rather than shown as a wrong number.
     }
+    // K107: the choosable list honours the tri-state `?archived` scope
+    // (default active). `default`/`effective_default`/`task_counts`/drift
+    // below stay computed over the FULL config — they are workspace facts,
+    // not filtered results, exactly as `?q=` leaves them.
+    const scope = parseArchivedScope(url);
     json(res, {
-      ...paginated(filterProjects(cfg.projects, q), page.offset, page.limit),
+      ...paginated(applyArchivedScope(filterProjects(cfg.projects, q), scope), page.offset, page.limit),
       default: cfg.default ?? null,
       effective_default: effectiveDefault,
       task_counts: taskCounts,
@@ -2337,10 +2479,21 @@ export function createWebApp(options: WebAppOptions) {
       ? await milestoneProgressDetailed(locttDir, ids, workflow)
       : await sprintProgressDetailed(locttDir, ids, workflow);
     return {
-      items: items.map(i => ({
-        ...i,
-        progress: report.progress[i.id] ?? { done: 0, total: 0, discarded: 0, fraction: 0 },
-      })),
+      items: items.map(i => {
+        const result = report.progress[i.id];
+        // MSL-35: a milestone whose own progress could not be computed
+        // (an unreadable member attributed to it) carries NO `progress`
+        // field. The client's `progressState(undefined)` renders that as
+        // the named, retryable "unavailable" row for THAT milestone only,
+        // distinct from `0 / 0` (a real empty milestone). Every other
+        // milestone still ships its real numbers, so one row's failure
+        // never blanks the list — the per-row behaviour the old
+        // all-or-nothing scan could not express.
+        if (result === undefined || isProgressUnavailable(result)) {
+          return i;
+        }
+        return { ...i, progress: result };
+      }),
       // K28 (aggregate half): an unreadable task cannot be attributed to
       // a milestone/sprint (its ref field is what failed to parse), so it
       // rides at the top level alongside `broken`. The per-item totals
@@ -2354,9 +2507,14 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const q = url.searchParams.get("q") ?? undefined;
+    const scope = parseArchivedScope(url);
     const cfg = await loadSprintsConfig(locttDir);
-    // K90: `?q=` name search, before the count/progress scans.
-    const counted = await withCounts(locttDir, url, "sprint", filterByName(cfg.sprints, q));
+    // K90/K107: `?q=` name search and the `?archived` scope, both applied
+    // before the count/progress scans so those run only over the window
+    // actually returned (default scope `active` hides archived).
+    const counted = await withCounts(
+      locttDir, url, "sprint", applyArchivedScope(filterByName(cfg.sprints, q), scope),
+    );
     const { items, unreadable } = await withProgress(locttDir, url, "sprint", counted);
     json(res, {
       ...paginated(items, page.offset, page.limit),
@@ -2486,9 +2644,13 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const q = url.searchParams.get("q") ?? undefined;
+    const scope = parseArchivedScope(url);
     const cfg = await loadMilestonesConfig(locttDir);
-    // K90: `?q=` name search, before the count/progress scans.
-    const counted = await withCounts(locttDir, url, "milestone", filterByName(cfg.milestones, q));
+    // K90/K107: `?q=` name search and the `?archived` scope, both applied
+    // before the count/progress scans (default scope `active`).
+    const counted = await withCounts(
+      locttDir, url, "milestone", applyArchivedScope(filterByName(cfg.milestones, q), scope),
+    );
     const { items, unreadable } = await withProgress(locttDir, url, "milestone", counted);
     json(res, {
       ...paginated(items, page.offset, page.limit),
@@ -2576,10 +2738,14 @@ export function createWebApp(options: WebAppOptions) {
     const page = parsePagination(url, res);
     if (!page) return;
     const q = url.searchParams.get("q") ?? undefined;
+    const scope = parseArchivedScope(url);
     const cfg = await loadLabelsConfig(locttDir);
-    // K90: `?q=` name search, applied before the (expensive) usage-count
-    // scan so counts run only over the matched window.
-    const items = await withCounts(locttDir, url, "label", filterByName(cfg.labels, q));
+    // K90/K107: `?q=` name search and the `?archived` scope, applied
+    // before the (expensive) usage-count scan so counts run only over the
+    // matched window (default scope `active`).
+    const items = await withCounts(
+      locttDir, url, "label", applyArchivedScope(filterByName(cfg.labels, q), scope),
+    );
     json(res, {
       ...paginated(items, page.offset, page.limit),
       // Phase-7B: a corrupt label entry degrades; surfaced here.
@@ -2588,7 +2754,11 @@ export function createWebApp(options: WebAppOptions) {
   };
 
   const handleCreateLabel: RouteHandler = async ({ req, res, locttDir }) => {
-    const r = await parseJsonBody<{ name: string; color?: string }>(req, res);
+    // K103: `color` is any of the three shapes, not just a hex string.
+    // `saveLabelsConfig` round-trips through `parseLabelsConfig`, which
+    // validates via `EntityColorSchema`, so a malformed shape is still
+    // rejected on write rather than trusted from the wire.
+    const r = await parseJsonBody<{ name: string; color?: EntityColor }>(req, res);
     try {
       const created = await createLabel(locttDir, {
         name: r.name,
@@ -2608,7 +2778,7 @@ export function createWebApp(options: WebAppOptions) {
 
   const handleUpdateLabel: RouteHandler = async ({ req, res, locttDir, captures }) => {
     const id = captures[0] ?? "";
-    const r = await parseJsonBody<{ name?: string; color?: string | null }>(req, res);
+    const r = await parseJsonBody<{ name?: string; color?: EntityColor | null }>(req, res);
     try {
       await editLabel(locttDir, id, {
         ...(r.name !== undefined ? { name: r.name } : {}),
@@ -2706,14 +2876,18 @@ export function createWebApp(options: WebAppOptions) {
   const handleListUsers: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
     if (!page) return;
-    const includeArchived = url.searchParams.get("include_archived") === "true";
+    // K107: the tri-state `?archived` scope replaces the old
+    // `?include_archived=true` boolean. Default `active` hides archived;
+    // the pickers/resolvers that must keep an archived assignee's name
+    // visible (P-4, LST-25) request `all`.
+    const scope = parseArchivedScope(url);
     const q = url.searchParams.get("q") ?? undefined;
     const users = await loadAllUsers(locttDir);
     const current = await getCurrentUser(locttDir);
     // K90: `?q=` name search. A user with no `name` is non-matching for a
     // non-empty query (filterByName skips undefined names).
     const filtered = filterByName(
-      users.filter(u => includeArchived || u.archived !== true),
+      applyArchivedScope(users, scope),
       q,
     );
     json(res, {
@@ -2794,18 +2968,11 @@ export function createWebApp(options: WebAppOptions) {
       error(res, "A name is required.", 400, { ...REJECTED_WRITE, field: "name" });
       return;
     }
-    // B2 bug 1: reject a malformed email on the WRITE path. Without this,
-    // core persists `email: "bob"`, the reader degrades it into `health`
-    // on the next load, and the field silently reads back blank — data
-    // loss reported as a 201. `field: "email"` lets the client anchor the
-    // error at the email input.
-    if (request.email !== undefined && !EmailSchema.safeParse(request.email).success) {
-      error(res, "Enter a valid email address, or leave it blank.", 400, {
-        ...REJECTED_WRITE,
-        field: "email",
-      });
-      return;
-    }
+    // B2 bug 1: a malformed email is refused by core `createUser` now
+    // (parity — the CLI/MCP inherit it), against the same `EmailSchema`.
+    // Its UserError anchors `field: "email"`; the catch surfaces that, so
+    // the client still places the error at the email input and nothing is
+    // written (the field was degraded into `health` on read before).
     try {
       const created = await createUser(locttDir, {
         name: request.name,
@@ -2816,7 +2983,8 @@ export function createWebApp(options: WebAppOptions) {
       json(res, created, 201);
     } catch (err) {
       if (err instanceof UserError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        const envelope = err.toEnvelope();
+        error(res, envelope.message, 400, { ...REJECTED_WRITE, field: envelope.field ?? "name" });
         return;
       }
       throw err;
@@ -2830,21 +2998,10 @@ export function createWebApp(options: WebAppOptions) {
       email?: string | null;
       timezone?: string;
     }>(req, res);
-    // B2 bug 1: a non-null email must be a valid address before it is
-    // written. `null` clears the field (allowed); `undefined` leaves it
-    // unchanged. A malformed string is rejected here, not degraded into
-    // `health` on the next read (silent data loss).
-    if (
-      "email" in request
-      && request.email !== null
-      && !EmailSchema.safeParse(request.email).success
-    ) {
-      error(res, "Enter a valid email address, or leave it blank.", 400, {
-        ...REJECTED_WRITE,
-        field: "email",
-      });
-      return;
-    }
+    // B2 bug 1: a malformed non-null email is refused by core `updateUser`
+    // now (parity). `null` clears the field, `undefined` leaves it. The
+    // UserError anchors `field: "email"`; the catch surfaces that, so the
+    // previous, valid email stays on disk (no silent corruption).
     try {
       const target = await resolveUserRef(locttDir, ref);
       const updated = await updateUser(locttDir, target.id, {
@@ -2855,7 +3012,8 @@ export function createWebApp(options: WebAppOptions) {
       json(res, updated);
     } catch (err) {
       if (err instanceof UserError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "name" });
+        const envelope = err.toEnvelope();
+        error(res, envelope.message, 400, { ...REJECTED_WRITE, field: envelope.field ?? "name" });
         return;
       }
       throw err;
@@ -3785,34 +3943,14 @@ export function createWebApp(options: WebAppOptions) {
       return;
     }
 
-    // TML-45: "the write is rejected ... and the reason names the
-    // constraint: start cannot be after due", and "nothing is written
-    // to disk". Checked here, before `setFields`, so the rejection
-    // happens without a partial write — and against the *effective*
-    // pair, which for a single-edge drag means the stored value of the
-    // date this request does not carry. A left-edge drag past the due
-    // date sends only `start_date`, so comparing the two sent values
-    // would find nothing wrong and write the anomaly.
+    // TML-45: start-after-due is refused in core `setFields` now, against
+    // the *effective* pair (the stored value of the date this request does
+    // not carry). A left-edge drag past due sends only `start_date`, and
+    // core compares it to the due date on disk. The LocttError it throws
+    // — message and `field` — is surfaced by the catch below, so the
+    // constraint, and "nothing was written" (setFields is atomic), reach
+    // the client exactly as before, but every surface now inherits it.
     const current = await lookupTask(locttDir, ref);
-    const sent = new Map(changes.map(c => [c.field, c.value as string]));
-    const start = sent.get("start_date") ?? current.frontmatter.start_date;
-    const due = sent.get("due_date") ?? current.frontmatter.due_date;
-    if (
-      typeof start === "string" && typeof due === "string"
-      && start.slice(0, 10) > due.slice(0, 10)
-    ) {
-      error(
-        res,
-        `The start date (${start.slice(0, 10)}) cannot be after the due date `
-        + `(${due.slice(0, 10)}).`,
-        400,
-        {
-          ...REJECTED_WRITE,
-          field: sent.has("start_date") ? "start_date" : "due_date",
-        },
-      );
-      return;
-    }
 
     try {
       const wfConfig = await loadWorkflowConfig(locttDir);
@@ -3946,7 +4084,12 @@ export function createWebApp(options: WebAppOptions) {
     // the list falls back to unfiltered rows and the `broken_view` banner
     // explains why the filter did not apply.
     const view = viewMissing || brokenView !== undefined ? undefined : requestedView;
-    const includeArchived = url.searchParams.get("archived") === "true";
+    // K107: the tri-state `?archived=active|archived|all` scope (default
+    // `active`) replaces the old `?archived=true` boolean. Core applies it
+    // to the effective query; when the query itself mentions `archived`
+    // the user's term wins and `onArchivedConflict` fires (surfaced as a
+    // warning below), matching the CLI/MCP behaviour Ken specified.
+    const archivedScope = parseArchivedScope(url);
     // Fold the free-text `query` and the structured filter params
     // (project/status/priority/type/assignee/…, plus custom
     // `field.<key>`) into one DSL query, AND-ing every active filter.
@@ -3997,12 +4140,12 @@ export function createWebApp(options: WebAppOptions) {
     // passing a sentinel limit large enough to cover any tracker.
     // `total` then reflects the true matching count and the page
     // slice happens in `paginated()` below.
-    const params: ListTasksRequest = {
+    const params: ListOptions = {
       ...(effectiveQuery !== undefined ? { query: effectiveQuery } : {}),
       ...(view !== undefined ? { view } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
       ...(sort !== undefined ? { sort } : {}),
-      ...(includeArchived ? { includeArchived: true } : {}),
+      archivedScope,
       ...(today !== undefined ? { today } : {}),
       ...(now !== undefined ? { now } : {}),
       ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
@@ -4029,13 +4172,14 @@ export function createWebApp(options: WebAppOptions) {
 
     // CMT-10: the "Mentions me" built-in resolves to
     // `comment_mentions = currentUser()`. Load comment mentions only when
-    // the effective query (or a resolved saved view's query) references
-    // the field, so ordinary lists do no comment I/O.
+    // the effective query (or a resolved saved view's filters) references
+    // the field, so ordinary lists do no comment I/O. A view contributes
+    // one scannable string per filter (K102).
     const listViewQuery = view !== undefined && queriesConfig !== undefined
-      ? resolveView(queriesConfig, view)?.query
-      : undefined;
+      ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+      : [];
     const listCtx = await resolveCommentMentionsContext(
-      locttDir, tasks, buildListContext(tasks), [effectiveQuery, listViewQuery],
+      locttDir, tasks, buildListContext(tasks), [effectiveQuery, ...listViewQuery],
     );
 
     let result;
@@ -4049,6 +4193,19 @@ export function createWebApp(options: WebAppOptions) {
             message: err.message,
             position: err.position,
             suggestions: [...err.suggestions],
+          });
+        },
+        // K107: the requested archived scope conflicts with an explicit
+        // `archived` term in the query — the term wins (scope resolves to
+        // `all`), but the override is surfaced rather than resolved
+        // silently, so the result set isn't mysterious.
+        onArchivedConflict: (scope: ArchivedScope) => {
+          queryWarnings.push({
+            field: "archived",
+            message:
+              `The query mentions "archived", so its term decides — the "${scope}" archived filter was not applied.`,
+            position: 0,
+            suggestions: [],
           });
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
@@ -4090,7 +4247,7 @@ export function createWebApp(options: WebAppOptions) {
             broken_view: {
               id: brokenView.id,
               name: brokenView.name,
-              query: brokenView.query,
+              summary: brokenView.summary,
               error: brokenView.error,
               ...(brokenView.position !== undefined ? { position: brokenView.position } : {}),
             },
@@ -4139,13 +4296,15 @@ export function createWebApp(options: WebAppOptions) {
     // what the search could not see.
     const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
     const { workflowConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
-    const includeArchived = url.searchParams.get("archived") === "true";
+    // K107: tri-state scope (default `active`). The relationship pickers
+    // request `all` so an archived task stays findable by paste (REL-30).
+    const archivedScope = parseArchivedScope(url);
 
     const result = listTasks({
       tasks,
       options: {
         query: `text ~ ${JSON.stringify(q)}`,
-        ...(includeArchived ? { includeArchived: true } : {}),
+        archivedScope,
         ...(today !== undefined ? { today } : {}),
         ...(now !== undefined ? { now } : {}),
         ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
@@ -4174,7 +4333,13 @@ export function createWebApp(options: WebAppOptions) {
       });
       return;
     }
-    const includeArchived = url.searchParams.get("archived") === "true";
+    // K107: export mirrors the list's visible rows, so it honours the same
+    // tri-state `?archived` scope (default `active`). `filterForExport`
+    // (core) is a two-state include/exclude; `all` and `archived` both
+    // need archived rows present, and `archived` then narrows to only
+    // those below — core has no "only archived" export path to change.
+    const archivedScope = parseArchivedScope(url);
+    const includeArchived = archivedScope !== "active";
     const includeBody = url.searchParams.get("body") === "true";
     const columnsParam = url.searchParams.get("columns");
     const columns = columnsParam ? columnsParam.split(",").map(c => c.trim()).filter(Boolean) : undefined;
@@ -4197,7 +4362,7 @@ export function createWebApp(options: WebAppOptions) {
     const effectiveQuery = view !== undefined
       ? baseQuery
       : buildStructuredQuery(url, baseQuery);
-    const params: ListTasksRequest = {
+    const params: ListOptions = {
       ...(effectiveQuery !== undefined ? { query: effectiveQuery } : {}),
       ...(view !== undefined ? { view } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
@@ -4208,10 +4373,10 @@ export function createWebApp(options: WebAppOptions) {
     };
     // CMT-10: gate the comment-mention scan on the query, as the list does.
     const exportViewQuery = view !== undefined && queriesConfig !== undefined
-      ? resolveView(queriesConfig, view)?.query
-      : undefined;
+      ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+      : [];
     const exportCtx = await resolveCommentMentionsContext(
-      locttDir, tasks, buildListContext(tasks), [effectiveQuery, exportViewQuery],
+      locttDir, tasks, buildListContext(tasks), [effectiveQuery, ...exportViewQuery],
     );
     const result = listTasks({
       tasks,
@@ -4220,7 +4385,12 @@ export function createWebApp(options: WebAppOptions) {
       ...(workflowConfig !== undefined ? { workflowConfig } : {}),
       ctx: exportCtx,
     });
-    const filtered = filterForExport(result, includeArchived);
+    const withArchived = filterForExport(result, includeArchived);
+    // `archived` scope narrows to only archived rows; `active`/`all` keep
+    // what `filterForExport` returned.
+    const filtered = archivedScope === "archived"
+      ? withArchived.filter(t => t.frontmatter.archived === true)
+      : withArchived;
     const opts = {
       ...(columns ? { columns } : {}),
       ...(includeBody ? { includeBody: true } : {}),
@@ -5573,6 +5743,7 @@ export function createWebApp(options: WebAppOptions) {
     { method: "GET", pattern: "/api/migrate/plan", handler: handleMigratePlan },
     { method: "POST", pattern: "/api/migrate", handler: handleMigrate },
     { method: "GET", pattern: "/api/doctor", handler: handleDoctor },
+    { method: "POST", pattern: "/api/doctor/repair", handler: handleDoctorRepair },
     { method: "GET", pattern: "/api/integrity", handler: handleIntegrity },
     { method: "GET", pattern: "/api/config", handler: handleConfig },
     { method: "GET", pattern: CONFIG_KEY_RE, handler: handleGetConfigKey },
@@ -5692,6 +5863,11 @@ export function createWebApp(options: WebAppOptions) {
     // plenty — these are log-correlation tokens for an operator
     // grepping recent output, not identifiers persisted anywhere.
     const reqId = randomBytes(4).toString("hex");
+
+    // DNS-rebinding guard runs first, on EVERY request (GET included),
+    // before any routing or data access. A rebound hostile page carries
+    // its own hostname in `Host` and is refused here with a 403.
+    if (!requireAllowedHost(req, res)) return;
 
     if (!requireCsrfHeader(req, res)) return;
 

@@ -1,10 +1,13 @@
-import type { QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
+import type { ArchivedScope, QueriesConfig, Task, WorkflowConfig } from "@loctt/contracts";
+import { DEFAULT_ARCHIVED_SCOPE } from "@loctt/contracts";
 
 import { QueriesConfigError } from "../config/queries.js";
 import { listComments } from "../task/comments.js";
 import { readField } from "../task/mutable.js";
 import type { EvalContext } from "./evaluator.js";
 import { evaluateQuery } from "./evaluator.js";
+import { filtersToNode } from "./filters.js";
+import type { QueryNode } from "./parser.js";
 import { parseQuery } from "./parser.js";
 import { tokenize } from "./tokenizer.js";
 import { QueryValidationError, validateQuery } from "./validate.js";
@@ -28,13 +31,21 @@ export interface ListOptions {
   /** Maximum number of results. Defaults to {@link DEFAULT_LIST_LIMIT}. */
   readonly limit?: number;
   /**
-   * If true, include archived tasks in the results.
-   * If false (default), an `archived != true` filter is ANDed onto the
-   * effective query — unless the user-provided query already mentions
-   * `archived`, in which case the user's intent is preserved.
-   * Saved views (`view`) are never modified — they are respected as authored.
+   * The archived scope (K107). `active` (default) hides archived tasks by
+   * ANDing `archived != true` onto the effective query; `archived` shows
+   * ONLY archived (`archived = true`); `all` applies no archived filter.
+   *
+   * Precedence: when the user-provided query already mentions `archived`,
+   * the user's term wins and NO scope filter is injected — the scope
+   * effectively resolves to `all` for that call. When that happens under a
+   * non-`all` requested scope it is a CONFLICT, surfaced via
+   * {@link ListOptions.onArchivedConflict} rather than silently resolved.
+   *
+   * Saved views (`view`) are respected as authored — the scope is not
+   * injected into a view's own query here (a view carries its own scope
+   * once K102 lands; today a view's stored query decides).
    */
-  readonly includeArchived?: boolean;
+  readonly archivedScope?: ArchivedScope;
   /**
    * Project filter. When set, only tasks with this project key are
    * returned. Applied as a post-query filter against `frontmatter.project`
@@ -88,6 +99,16 @@ export interface ListTasksOptions {
    * problem. Ad hoc queries throw instead.
    */
   readonly onWarning?: (err: QueryValidationError) => void;
+  /**
+   * Called when the requested {@link ListOptions.archivedScope} conflicts
+   * with an explicit `archived` term in the user's query (e.g. scope
+   * `active` but the query says `archived = true`). The user's term wins
+   * (scope resolves to `all` for the call); this callback lets a surface
+   * warn that the flag was overridden rather than resolving it silently
+   * (K107). Not called when the scope is `all`, or when the query does not
+   * mention `archived`.
+   */
+  readonly onArchivedConflict?: (scope: ArchivedScope) => void;
 }
 
 /** Context provider for building EvalContext per task. */
@@ -232,14 +253,23 @@ function storedEnumValues(tasks: readonly Task[]): ReadonlySet<string> {
 
 function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
   const { tasks, options, queriesConfig, workflowConfig, ctx = {} } = opts;
-  let queryStr: string | undefined = options.query;
+  const queryStr: string | undefined = options.query;
   let sortSpec = options.sort;
   let usedView = false;
-  // Distinct from `usedView`: a caller can pass `--view` *and*
-  // `--query`, in which case the query is the user's own typing and a
-  // typo in it should still throw. Only a query that actually came
-  // from the saved view gets the lenient treatment.
-  let queryFromView = false;
+  /**
+   * The view's filters composed into one AST (K102). Held separately from
+   * `queryStr` because a view no longer HAS a query string: its filters
+   * are the stored form, and composing them here is the in-memory
+   * execution step that is discarded after this call. When a caller
+   * passes both `--view` and `--query`, the two ASTs are ANDed below.
+   */
+  let viewNode: QueryNode | undefined;
+  /**
+   * A view's own archived scope, applied when the caller did not ask for
+   * one explicitly. A view stores its scope as a FIELD (K107), never as a
+   * filter term.
+   */
+  let viewScope: ArchivedScope | undefined;
 
   // Resolve view if specified
   if (options.view) {
@@ -252,56 +282,87 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     if (!view) {
       throw new Error(`unknown view "${options.view}"`);
     }
-    if (!queryStr) {
-      queryStr = view.query;
-      queryFromView = true;
-    }
+    viewNode = filtersToNode(view.filters);
+    viewScope = view.archivedScope;
     if (!sortSpec && view.sort) sortSpec = view.sort;
     usedView = true;
   }
 
-  // Semantic validation runs against the query *as authored*, before
-  // the archived-wrapping below rewrites it. Validating the rewritten
-  // string would report positions shifted by the `(` prefix, so a UI
-  // underlining the error would point one character off.
-  //
-  // Severity differs by origin. A query the user just typed is a
-  // mistake worth stopping on. A saved view referencing a
-  // since-deleted custom field is a pre-existing tracker that used to
-  // work — breaking `loctt list --view x` outright would be a
-  // regression, so it warns and runs, returning whatever it matches.
-  // Callers surface `onWarning` (a banner in the UI, a stderr line in
-  // the CLI).
+  // Semantic validation. Severity differs by origin: a query the user
+  // just typed is a mistake worth stopping on, while a saved view
+  // referencing a since-deleted custom field is a pre-existing tracker
+  // that used to work — breaking `loctt list --view x` outright would be
+  // a regression, so it warns and runs, returning whatever it matches.
+  // Callers surface `onWarning` (a banner in the UI, a stderr line in the
+  // CLI).
+  const validateOpts = workflowConfig
+    ? { workflow: workflowConfig, inUse: storedEnumValues(opts.tasks) }
+    : {};
+
+  // The ad-hoc query is parsed and validated on its own, as authored, so
+  // an error's position still points into the string the user typed.
+  let queryNode: QueryNode | undefined;
   if (queryStr) {
+    queryNode = parseQuery(tokenize(queryStr));
+    validateQuery(queryNode, validateOpts);
+  }
+
+  // The view's composed AST validates leniently (warn, don't throw).
+  if (viewNode !== undefined) {
     try {
-      validateQuery(
-        parseQuery(tokenize(queryStr)),
-        workflowConfig
-          ? { workflow: workflowConfig, inUse: storedEnumValues(opts.tasks) }
-          : {},
-      );
+      validateQuery(viewNode, validateOpts);
     } catch (err) {
       if (!(err instanceof QueryValidationError)) throw err;
-      if (!queryFromView) throw err;
       opts.onWarning?.(err);
     }
   }
 
-  // Hide archived tasks by default. Saved views are respected as authored,
-  // and explicit user queries that mention `archived` are left untouched.
-  if (!options.includeArchived && !usedView) {
-    if (!queryStr) {
-      queryStr = "archived != true";
-    } else if (!queryMentionsArchived(queryStr)) {
-      queryStr = `(${queryStr}) and archived != true`;
+  // Archived scope (K107 + K102). Resolution order:
+  //  1. an explicit `archivedScope` from the caller,
+  //  2. else the VIEW'S OWN scope field when a view is in play,
+  //  3. else the default (`active`).
+  // A view stores its scope as a field, never as a filter term, so
+  // running a view applies that scope rather than exempting the call from
+  // scoping the way the pre-K102 "respect the view as authored" rule did.
+  //
+  //  - `active`   → AND `archived != true` (hide archived) — the default.
+  //  - `archived` → AND `archived = true`  (only archived).
+  //  - `all`      → add nothing.
+  // When the user's own ad-hoc query mentions `archived`, their term wins
+  // and nothing is added; if the requested scope was not `all`, that is a
+  // conflict surfaced via `onArchivedConflict`.
+  const scope: ArchivedScope =
+    options.archivedScope ?? viewScope ?? DEFAULT_ARCHIVED_SCOPE;
+  let scopeNode: QueryNode | undefined;
+  if (scope !== "all") {
+    const mentions = queryStr !== undefined && queryMentionsArchived(queryStr);
+    if (mentions) {
+      // User's term wins; report the conflict rather than double-filtering.
+      opts.onArchivedConflict?.(scope);
+    } else {
+      scopeNode = {
+        type: "comparison",
+        field: "archived",
+        op: scope === "active" ? "!=" : "=",
+        value: { type: "boolean", value: true },
+      };
     }
   }
 
-  // Filter by query
+  // Compose the whole predicate: view filters AND ad-hoc query AND scope.
+  // This AST exists only for this call — it is never serialized and never
+  // written back to a view (K102: storage and execution are separate).
+  const parts = [viewNode, queryNode, scopeNode].filter(
+    (n): n is QueryNode => n !== undefined,
+  );
+  const ast = parts.reduce<QueryNode | undefined>(
+    (acc, n) => (acc === undefined ? n : { type: "and", left: acc, right: n }),
+    undefined,
+  );
+
+  // Filter by the composed predicate
   let filtered: Task[];
-  if (queryStr) {
-    const tokens = tokenize(queryStr);
-    const ast = parseQuery(tokens);
+  if (ast !== undefined) {
     filtered = tasks.filter(task => {
       const body = ctx.getBody?.(task.frontmatter.id);
       const commentMentions = ctx.getCommentMentions?.(task.frontmatter.id);

@@ -17,6 +17,9 @@
  *   not coerced or treated as missing.
  */
 
+import type { ArchivedScope } from "@loctt/contracts";
+import { DEFAULT_ARCHIVED_SCOPE } from "@loctt/contracts";
+
 import { UsageError } from "./errors.js";
 
 /**
@@ -52,6 +55,40 @@ export function getArg(args: string[], flag: string): string | undefined {
     }
   }
   return result;
+}
+
+/**
+ * Every value given for a REPEATABLE flag, in the order they appeared.
+ *
+ * {@link getArg} keeps only the last occurrence — right for a flag that
+ * names one value. A repeatable flag (`views create --filter a --filter b`)
+ * needs them all, and needs them IN ORDER, because a saved view's filter
+ * list is ordered as authored (K102).
+ *
+ * Matches `getArg`'s value rules exactly (both `--flag value` and
+ * `--flag=value` forms; a bare flag followed by another flag contributes
+ * nothing) so the two cannot disagree about what counts as a value.
+ */
+export function getArgAll(args: string[], flag: string): string[] {
+  const name = flag.replace(/^--?/, "");
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === "--") break;
+    if (a === undefined) continue;
+    if (a === `--${name}=` || a.startsWith(`--${name}=`)) {
+      out.push(a.slice(`--${name}=`.length));
+      continue;
+    }
+    if (a === `--${name}`) {
+      const next = args[i + 1];
+      if (next === undefined) continue;
+      if (next.startsWith("-") && next !== "-") continue;
+      out.push(next);
+      i += 1;
+    }
+  }
+  return out;
 }
 
 /**
@@ -242,4 +279,55 @@ export function getNonNegativeIntArg(
     throw new UsageError(`${flag} must be a non-negative integer`);
   }
   return value;
+}
+
+/**
+ * The archived scope (K107) for a list command, from `--archived
+ * <active|archived|all>`. Bare `--archived` (no value) means `all` — the
+ * back-compat spelling from when `--archived` was a boolean "include
+ * archived" flag. `--all` is accepted as a deprecated alias for
+ * `--archived all` (the config-entity list commands used it). Absent →
+ * the default `active` (hide archived).
+ *
+ * An unrecognized value throws a UsageError rather than silently
+ * defaulting, so a typo (`--archived activ`) surfaces.
+ */
+/**
+ * Whether the user actually passed an archived flag.
+ *
+ * `parseArchivedScope` cannot answer this: it returns the DEFAULT when no
+ * flag was given, so "not specified" and "explicitly --archived active"
+ * collapse to the same value. That distinction became load-bearing under
+ * K102, where a saved view carries its OWN `archivedScope` field and the
+ * resolution order is: explicit flag > the view's field > the default.
+ * Passing the parsed default unconditionally would shadow every view's
+ * stored scope — a view saved as `all` would still hide archived rows.
+ */
+export function hasArchivedFlag(args: string[]): boolean {
+  return args.includes("--all")
+    || args.includes("--archived")
+    || args.some(a => a.startsWith("--archived="));
+}
+
+/**
+ * The archived scope the user asked for, or `undefined` when they asked
+ * for none — so a caller can let a saved view's own scope apply. See
+ * {@link hasArchivedFlag}.
+ */
+export function parseOptionalArchivedScope(args: string[]): ArchivedScope | undefined {
+  return hasArchivedFlag(args) ? parseArchivedScope(args) : undefined;
+}
+
+export function parseArchivedScope(args: string[]): ArchivedScope {
+  const hasAll = args.includes("--all");
+  const raw = getArg(args, "--archived");
+  const bareArchived = raw === undefined && args.includes("--archived");
+
+  if (bareArchived || hasAll) return "all";
+  if (raw === undefined) return DEFAULT_ARCHIVED_SCOPE;
+  if (raw === "active" || raw === "archived" || raw === "all") return raw;
+  throw new UsageError(
+    `invalid value for --archived: ${JSON.stringify(raw)}. `
+    + `Expected one of: active, archived, all (or bare --archived for all).`,
+  );
 }

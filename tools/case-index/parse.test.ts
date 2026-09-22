@@ -15,7 +15,7 @@ import { buildIndex } from "./parse.ts";
 let root: string;
 
 async function writeFlow(tree: "ui" | "surface", name: string, body: string): Promise<void> {
-  const dir = path.join(root, `docs/dev/${tree}-test-cases`);
+  const dir = path.join(root, `tests/cases/${tree}-test-cases`);
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, name), body, "utf8");
 }
@@ -23,8 +23,8 @@ async function writeFlow(tree: "ui" | "surface", name: string, body: string): Pr
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "loctt-case-index-"));
   // buildIndex reads both trees; keep the unused one present but empty.
-  await mkdir(path.join(root, "docs/dev/ui-test-cases"), { recursive: true });
-  await mkdir(path.join(root, "docs/dev/surface-test-cases"), { recursive: true });
+  await mkdir(path.join(root, "tests/cases/ui-test-cases"), { recursive: true });
+  await mkdir(path.join(root, "tests/cases/surface-test-cases"), { recursive: true });
 });
 
 afterEach(async () => {
@@ -47,7 +47,7 @@ describe("buildIndex", () => {
     expect(index.cases[0]).toEqual({
       id: "LST-1",
       tree: "ui",
-      file: "docs/dev/ui-test-cases/flow-list.md",
+      file: "tests/cases/ui-test-cases/flow-list.md",
       line: 3,
       title: "A claim.",
       milestone: "M1",
@@ -176,7 +176,7 @@ describe("buildIndex", () => {
     );
 
     await expect(buildIndex(root)).rejects.toThrow(
-      /docs\/dev\/ui-test-cases\/flow-list\.md:3/,
+      /tests\/cases\/ui-test-cases\/flow-list\.md:3/,
     );
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-settings.md (SET-32,
+ * Transcribed from tests/cases/ui-test-cases/flow-settings.md (SET-32,
  * SET-42) and flow-projects-users.md (the M4.1 PRU cases), plus
  * XS-63.
  *
@@ -21,6 +21,70 @@ import { expect, test } from "./fixtures/tracker.ts";
  * `users/<id>/avatar.<ext>`, not on the request body. Reads the file
  * the profile records rather than assuming `avatar.jpg`.
  */
+/**
+ * Opens a project/user row's kebab and returns the named action item.
+ *
+ * Both panels put their row actions behind the shared `RowActions` kebab
+ * (U26/K105): the items only exist while the menu is open, and since
+ * K106 step 2 the panel is PORTALLED to `document.body`, so it is not a
+ * descendant of the row. The kebab trigger IS in the row, which is what
+ * keeps this addressing the right one.
+ *
+ * Returns the item so a caller can assert on it (text, disabled) as well
+ * as click it. A caller that only ASSERTS leaves the menu open, so this
+ * dismisses any menu already open before opening the one it was asked
+ * for. That is not tidiness — the portalled panel is `position: fixed`
+ * and sized to its content, and it lands directly over the rows beneath
+ * the one it belongs to: with ken's menu open, `elementFromPoint` at the
+ * next row's kebab returns ken's "Edit…" item, and a click on that kebab
+ * never lands. A real user's click there hits `Menu`'s outside-click
+ * handler and closes the menu, so Playwright's "wait until actionable"
+ * is the right model of a real second click only once the first menu is
+ * gone. Escape is the same close path without a stray click.
+ */
+async function rowMenuItem(
+  page: import("@playwright/test").Page,
+  rowTestId: string,
+  itemTestId: string,
+): Promise<import("@playwright/test").Locator> {
+  const row = page.getByTestId(rowTestId);
+  const kebab = row.getByRole("button", { name: /^Actions for / });
+  if ((await kebab.getAttribute("aria-expanded")) !== "true") {
+    const openMenu = page.locator('[role="menu"]');
+    if (await openMenu.count() > 0) {
+      await page.keyboard.press("Escape");
+      await expect(openMenu).toHaveCount(0);
+    }
+    await kebab.click();
+  }
+  return page.getByTestId(itemTestId);
+}
+
+/** Opens the row's kebab and clicks the named action. */
+async function rowAction(
+  page: import("@playwright/test").Page,
+  rowTestId: string,
+  itemTestId: string,
+): Promise<void> {
+  await (await rowMenuItem(page, rowTestId, itemTestId)).click();
+}
+
+/**
+ * Opens a project row's Edit dialog.
+ *
+ * "Make default" and "Archive" moved OUT of the row (and out of the
+ * kebab) and into this dialog, alongside name and prefix — they are
+ * real `<Button disabled>` controls there, which is what the
+ * disabled-state assertions need.
+ */
+async function openProjectEdit(
+  page: import("@playwright/test").Page,
+  id: string,
+): Promise<void> {
+  await rowAction(page, `project-row-${id}`, `project-edit-${id}`);
+  await expect(page.getByTestId(`project-edit-dialog-${id}`)).toBeVisible();
+}
+
 async function storedAvatar(
   root: string,
   userId: string,
@@ -197,18 +261,30 @@ test.describe("SET — the settings shell", () => {
   });
 
   // @verifies SET-2
-  test("SET-2: the nav is grouped into the five groups with non-interactive headings", async ({
+  // @verifies A64
+  test("SET-2/A64: the nav is grouped into the four semantic groups, System last, with non-interactive headings", async ({
     page,
     tracker,
   }) => {
     await page.goto(`${tracker.baseURL}/settings/projects`);
     const nav = page.getByTestId("settings-nav");
 
-    for (const group of ["Workspace", "Workflow", "Data", "Tracker", "Personal"]) {
+    // Four groups (A64), frequency-ordered with System last.
+    const groups = ["Content", "Workflow", "Personal", "System"];
+    for (const group of groups) {
       await expect(nav.getByRole("heading", { name: group })).toBeVisible();
     }
+    // And no stragglers from the old five-group scheme.
+    for (const stale of ["Workspace", "Data", "Tracker"]) {
+      await expect(nav.getByRole("heading", { name: stale })).toHaveCount(0);
+    }
+
+    // The headings render in the approved order (Content → System).
+    const headingNames = await nav.getByRole("heading").allTextContents();
+    expect(headingNames.map(t => t.trim())).toEqual(groups);
+
     // A heading is not a link — it cannot navigate away by accident.
-    await expect(nav.getByRole("link", { name: "Workspace", exact: true })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Content", exact: true })).toHaveCount(0);
 
     // The active section is marked.
     await expect(page.getByTestId("settings-nav-projects")).toHaveAttribute(
@@ -354,10 +430,14 @@ test.describe("PRU — the projects panel", () => {
 
     // Edit-model (B2): open the row's edit form, change the name, Save.
     // The name no longer saves on blur.
-    await page.getByTestId(`project-edit-${id}`).click();
+    await openProjectEdit(page, id);
     await page.getByTestId(`project-name-input-${id}`).fill("Backend Services");
-    // The slug stays fixed and disabled inside the form.
-    await expect(page.getByTestId(`project-slug-${id}`)).toHaveValue("backend");
+    // The slug is not editable at all — the dialog offers no slug control,
+    // and the row keeps showing the fixed value. That is a stronger form
+    // of "stays fixed and disabled" than a disabled input was.
+    await expect(page.getByTestId(`project-edit-dialog-${id}`)
+      .getByTestId(`project-slug-input-${id}`)).toHaveCount(0);
+    await expect(page.getByTestId(`project-slug-${id}`)).toHaveText("backend");
     await page.getByTestId(`project-name-save-${id}`).click();
 
     // The far end: the label moved on disk and the slug did not (A60).
@@ -380,15 +460,22 @@ test.describe("PRU — the projects panel", () => {
     const id = /id: (\w+)\n\s+name: Backend/.exec(yaml)?.[1] ?? "";
 
     // Edit-model (B2): the immutable fields are shown in the edit form.
-    await page.getByTestId(`project-edit-${id}`).click();
+    await rowAction(page, `project-row-${id}`, `project-edit-${id}`);
 
-    // Disabled, not merely unvalidated. `toHaveJSProperty` rather than
-    // `toBeDisabled`, which retargets inside a <label>. The prefix input,
-    // unlike the slug, is enabled — it changes via its own confirm
-    // dialog (PRU-44), so PRU-20's immutability is only the slug plus the
-    // requirement that no plain PUT rewrites the prefix.
-    await expect(page.getByTestId(`project-slug-${id}`))
-      .toHaveJSProperty("disabled", true);
+    // The slug is not an editable control AT ALL any more: the dialog
+    // offers no slug field, and the row shows it as read-only text. That
+    // is a stronger form of "disabled" than a disabled input — there is
+    // nothing to re-enable. The prefix input, unlike the slug, is
+    // enabled: it changes via its own confirm dialog (PRU-44), so
+    // PRU-20's immutability is the slug plus the requirement that no
+    // plain PUT rewrites the prefix.
+    // No slug-editing control exists anywhere in the dialog.
+    await expect(page.getByTestId(`project-edit-dialog-${id}`)
+      .locator('input[data-testid*="slug"], select[data-testid*="slug"]'))
+      .toHaveCount(0);
+    const slug = page.getByTestId(`project-slug-${id}`);
+    await expect(slug).toHaveText("backend");
+    expect(await slug.evaluate(el => el.tagName)).toBe("SPAN");
     // The name is editable in the same form, so the disabled slug reads
     // as intentional rather than as a broken form.
     await expect(page.getByTestId(`project-name-input-${id}`))
@@ -411,14 +498,18 @@ test.describe("PRU — the projects panel", () => {
     // The badge is visible *before* the dialog opens.
     await expect(page.getByTestId(`project-refcount-${tasksId}`)).toHaveText("2");
 
-    await page.getByTestId(`project-delete-${tasksId}`).click();
+    await rowAction(page, `project-row-${tasksId}`, `project-delete-${tasksId}`);
     const dialog = page.getByTestId("project-delete-dialog");
     await expect(dialog).toContainText("2 tasks");
 
     // No default that silently orphans them: confirm is blocked until
     // a remap target is chosen.
     await expect(page.getByTestId("project-delete-confirm")).toBeDisabled();
-    await page.getByTestId("project-delete-remap").selectOption({ label: "Web" });
+    // A211: the remap target is a searchable Combobox, not a native
+    // <select> (control type changed, not behavior) — open the trigger,
+    // then click the option.
+    await page.getByTestId("project-delete-remap").click();
+    await page.getByTestId("project-delete-remap-list").getByRole("option", { name: "Web" }).click();
     await expect(page.getByTestId("project-delete-confirm")).toBeEnabled();
   });
 
@@ -436,7 +527,7 @@ test.describe("PRU — the projects panel", () => {
     const tasksId = /id: (\w+)\n\s+name: Tasks/.exec(yaml)?.[1] ?? "";
     expect(tasksId).not.toBe("");
 
-    await page.getByTestId(`project-delete-${tasksId}`).click();
+    await rowAction(page, `project-row-${tasksId}`, `project-delete-${tasksId}`);
     await expect(page.getByTestId("project-delete-dialog")).toBeVisible();
 
     // Choosing "clear the project field" enables confirm without a remap
@@ -466,7 +557,7 @@ test.describe("PRU — the projects panel", () => {
     const before = await projectsYaml(tracker.root);
     const tasksId = /id: (\w+)\n\s+name: Tasks/.exec(before)?.[1] ?? "";
 
-    await page.getByTestId(`project-delete-${tasksId}`).click();
+    await rowAction(page, `project-row-${tasksId}`, `project-delete-${tasksId}`);
     await page.getByTestId("project-delete-cancel").click();
 
     expect(await projectsYaml(tracker.root)).toBe(before);
@@ -481,7 +572,7 @@ test.describe("PRU — the projects panel", () => {
     const yaml = await projectsYaml(tracker.root);
     const only = /id: (\w+)/.exec(yaml)?.[1] ?? "";
 
-    const del = page.getByTestId(`project-delete-${only}`);
+    const del = await rowMenuItem(page, `project-row-${only}`, `project-delete-${only}`);
     await expect(del).toBeDisabled();
     await expect(del).toHaveAttribute("title", /at least one project/i);
   });
@@ -498,9 +589,22 @@ test.describe("PRU — the projects panel", () => {
     const id = /id: (\w+)\n\s+name: Legacy/.exec(yaml)?.[1] ?? "";
 
     // No typed confirmation — archive is reversible.
+    // Archive moved into the row's Edit dialog (alongside "Make
+    // default"): one click, no typed confirmation, because it is
+    // reversible.
+    await openProjectEdit(page, id);
+    await expect(page.getByTestId(`project-archive-${id}`)).toHaveText("Archive");
     await page.getByTestId(`project-archive-${id}`).click();
+
+    // The row leaves the default (active) scope — archived, not deleted.
+    await expect(page.getByTestId(`project-row-${id}`)).toHaveCount(0);
+    await page.getByTestId("projects-archived-scope").selectOption("all");
     await expect(page.getByTestId(`project-row-${id}`))
       .toHaveAttribute("data-archived", "true");
+
+    // ...and the reversal is offered, equally without confirmation —
+    // the "offers unarchive" half of the case.
+    await openProjectEdit(page, id);
     await expect(page.getByTestId(`project-archive-${id}`)).toHaveText("Unarchive");
 
     // The far end.
@@ -521,12 +625,13 @@ test.describe("PRU — the projects panel", () => {
     expect(webId).not.toBe("");
 
     // Make Web the default from the panel.
+    await openProjectEdit(page, webId);
     await page.getByTestId(`project-set-default-${webId}`).click();
 
     // The marker moves to Web without a reload, and its button goes inert.
     await expect(page.getByTestId(`project-default-marker-${webId}`)).toBeVisible();
     await expect(page.getByTestId(`project-set-default-${webId}`)).toBeDisabled();
-    await expect(page.getByTestId(`project-set-default-${webId}`)).toHaveText("Default");
+    await expect(page.getByTestId(`project-set-default-${webId}`)).toHaveText(/Default/);
 
     // The far end: config records the default, and new tasks land there.
     await expect.poll(async () => projectsYaml(tracker.root))
@@ -553,7 +658,7 @@ test.describe("PRU — the projects panel", () => {
     expect(robinId).toBeTruthy();
 
     await page.goto(`${tracker.baseURL}/settings/users`);
-    await page.getByTestId(`user-edit-${robinId}`).click();
+    await rowAction(page, `user-row-${robinId}`, `user-edit-${robinId}`);
     await expect(page.getByTestId(`user-edit-dialog-${robinId}`)).toBeVisible();
 
     await page.getByTestId(`user-edit-name-${robinId}`).fill("Robin Banks");
@@ -604,7 +709,7 @@ test.describe("PRU — the projects panel", () => {
     expect(webId).not.toBe("");
 
     // Edit-model (B2): the prefix control lives inside the edit form.
-    await page.getByTestId(`project-edit-${webId}`).click();
+    await rowAction(page, `project-row-${webId}`, `project-edit-${webId}`);
     await page.getByTestId(`project-prefix-${webId}`).fill("SITE");
     await page.getByTestId(`project-prefix-save-${webId}`).click();
 
@@ -795,16 +900,31 @@ test.describe("PRU — the users panel", () => {
     expect(selfId).not.toBe("");
 
     // Disabled, not error-on-click, and the reason points at switching.
-    await expect(page.getByTestId(`user-archive-${selfId}`)).toBeDisabled();
+    await expect(await rowMenuItem(page, `user-row-${selfId}`, `user-archive-${selfId}`)).toBeDisabled();
     await expect(page.getByTestId(`user-archive-blocked-${selfId}`))
       .toContainText(/switch/i);
 
     // The block is targeted, not a broken panel: another user archives.
     const other = page.locator('[data-self="false"]').first();
     const otherId = (await other.getAttribute("data-testid"))?.replace("user-row-", "") ?? "";
-    await page.getByTestId(`user-archive-${otherId}`).click();
+    await rowAction(page, `user-row-${otherId}`, `user-archive-${otherId}`);
+
+    // The panel's scope (K107) defaults to `active`, so a user that really
+    // archived LEAVES this list — that departure is the outcome, and
+    // asserting `data-archived="true"` on the still-`active` row would be
+    // asserting a state the scope filter makes unobservable (it passed
+    // only by racing the refetch that removes the row).
+    await expect(page.getByTestId(`user-row-${otherId}`)).toHaveCount(0);
+
+    // Widening the scope shows the same row, now marked archived — which
+    // separates "archived" from "vanished / failed to render".
+    await page.getByTestId("users-archived-scope").selectOption("all");
     await expect(page.getByTestId(`user-row-${otherId}`))
       .toHaveAttribute("data-archived", "true");
+
+    // And the block on self still stands after a successful sibling
+    // archive, so the panel is not merely broken for everyone.
+    await expect(await rowMenuItem(page, `user-row-${selfId}`, `user-archive-${selfId}`)).toBeDisabled();
   });
 
   // @verifies PRU-23
@@ -1383,7 +1503,10 @@ test.describe("PRU-25 — a hard-deleted user still referenced as reporter", () 
     // via the picker below; first, the filter facet.
 
     // The Reporter filter offers only existing users; the dangling ULID
-    // is not an option.
+    // is not an option. Reporter is not in the default visible filter set
+    // (K97/A210), so add it via "+ Add filter" before its pill exists.
+    await page.getByTestId("add-filter").click();
+    await page.getByTestId("add-filter-reporter").click();
     await page.getByRole("button", { name: "Filter Reporter" }).click();
     await expect(page.getByRole("menuitemcheckbox", { name: "Erin" })).toBeVisible();
     // Dave's profile is gone, so he is not offered; his ULID never is.
@@ -1436,7 +1559,7 @@ test.describe("PRU-42 — deleting a user who is assignee on many tasks", () => 
     const daveId = (await daveRow.first().getAttribute("data-testid"))?.replace("user-row-", "") ?? "";
     expect(daveId).not.toBe("");
 
-    await page.getByTestId(`user-delete-${daveId}`).click();
+    await rowAction(page, `user-row-${daveId}`, `user-delete-${daveId}`);
     const dialog = page.getByTestId("user-delete-dialog");
     await expect(dialog).toBeVisible();
 
@@ -1454,6 +1577,14 @@ test.describe("PRU-42 — deleting a user who is assignee on many tasks", () => 
     const confirm = page.getByTestId("user-delete-confirm");
     await expect(confirm).toBeDisabled();
     // Choose to reassign Dave's references to Erin.
+    // The resolution is now an explicit choice: the "Reassign" radio
+    // gates the target picker (a "clear" radio is the no-remap path), so
+    // the intent is stated before a target is named.
+    await page.getByTestId("user-delete-reassign").check();
+    // K106: the remap target is a searchable listbox. The option testids
+    // are preserved (`user-delete-remap-<id>`) but the rows only exist
+    // while the panel is open, and it is portalled to `document.body`.
+    await page.getByTestId("user-delete-remap").click();
     await page.getByTestId(`user-delete-remap-${await userIdByName(tracker, "Erin")}`).click();
     await expect(confirm).toBeDisabled(); // resolution alone is not enough
     await page.getByTestId("user-delete-confirm-input").fill("DELETE");
@@ -1491,14 +1622,18 @@ test.describe("PRU-42 — deleting a user who is assignee on many tasks", () => 
     if (daveId === undefined) throw new Error("no id for Dave");
 
     await page.goto(`${tracker.baseURL}/settings/users`);
-    await page.getByTestId(`user-delete-${daveId}`).click();
+    await rowAction(page, `user-row-${daveId}`, `user-delete-${daveId}`);
     await expect(page.getByTestId("user-delete-dialog")).toBeVisible();
 
     // The reversible path: archive instead.
     await page.getByTestId("user-delete-archive-instead").click();
 
-    // Dave is archived, not deleted — his row is marked, and the task
-    // still names him (archive keeps references intact, unlike delete).
+    // Dave is archived, not deleted — his row leaves the default
+    // (active) scope and is still there, marked, under "all" (K107's
+    // tri-state scope), and the task still names him (archive keeps
+    // references intact, unlike delete).
+    await expect(page.getByTestId(`user-row-${daveId}`)).toHaveCount(0);
+    await page.getByTestId("users-archived-scope").selectOption("all");
     await expect(page.getByTestId(`user-row-${daveId}`))
       .toHaveAttribute("data-archived", "true");
     expect(await fmByTitle(tracker.root, "Kept task", "assignee")).toBe(daveId);

@@ -16,7 +16,7 @@ import { cn } from "./cn.ts";
  * `className` escape hatch and `testId` behave exactly as in `Button`.
  */
 export type IconButtonVariant = "ghost" | "secondary" | "danger";
-export type IconButtonSize = "sm" | "md";
+export type IconButtonSize = "xs" | "sm" | "md" | "touch";
 
 export interface IconButtonProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> {
@@ -30,9 +30,20 @@ export interface IconButtonProps
   readonly testId?: string;
 }
 
+/**
+ * One square footprint per size. `xs` (24px) is for tiny inline remove
+ * buttons (e.g. a query-builder condition's ✕); `touch` is a 44px tap
+ * target for controls that must meet WCAG 2.5.5 (e.g. the settings
+ * RowActions kebab, which previously hand-rolled `h-11 w-11`). On the
+ * larger `touch` size the glyph would look lost centred in the box, so
+ * the grid centring plus `text-body` keeps the icon at its normal size
+ * with the extra area as invisible hit-slop — exactly what 2.5.5 wants.
+ */
 const ICON_BUTTON_SIZE: Record<IconButtonSize, string> = {
+  xs: "h-6 w-6",
   sm: "h-7 w-7",
   md: "h-8 w-8",
+  touch: "h-11 w-11 text-body",
 };
 
 const ICON_BUTTON_BASE =

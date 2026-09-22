@@ -81,33 +81,27 @@ describe("listSearchSchema", () => {
     expect(parsed.labels).toBeUndefined();
   });
 
-  // `z.coerce.boolean()` is `Boolean(value)`, so every non-empty string
-  // — including "false" — coerced to true. `?archived=false` showed
-  // archived tasks with the toggle rendering as off.
-  it("parses archived=false as false, not truthy-string true", () => {
-    expect(listSearchSchema.parse({ archived: "false" }).archived).toBe(false);
-    expect(listSearchSchema.parse({ archived: "0" }).archived).toBe(false);
+  // K107: `archived` is the tri-state scope literal, not a boolean. These
+  // replace the old boolean-coercion tests (which asserted `"false"`/`"0"`
+  // → false and `"true"`/`"1"` → true), a schema that no longer exists.
+  it("parses the three scope literals", () => {
+    expect(listSearchSchema.parse({ archived: "active" }).archived).toBe("active");
+    expect(listSearchSchema.parse({ archived: "archived" }).archived).toBe("archived");
+    expect(listSearchSchema.parse({ archived: "all" }).archived).toBe("all");
   });
 
-  it("parses archived=true as true", () => {
-    expect(listSearchSchema.parse({ archived: "true" }).archived).toBe(true);
-    expect(listSearchSchema.parse({ archived: "1" }).archived).toBe(true);
-  });
-
-  it("leaves archived undefined when absent, so consumers apply their own default", () => {
+  it("leaves archived undefined when absent, so consumers apply the active default", () => {
     expect(listSearchSchema.parse({}).archived).toBeUndefined();
   });
 
-  // validateSearch runs on every navigation, so a garbage toggle must
-  // fall back rather than throw and break the whole route.
-  it("falls back to undefined for an unparseable archived value without throwing", () => {
+  // validateSearch runs on every navigation, so a garbage scope (or a
+  // stale `?archived=true`/`false` bookmark from the old boolean schema)
+  // must fall back rather than throw and break the whole route.
+  it("falls back to undefined for an unrecognised archived value without throwing", () => {
     expect(listSearchSchema.parse({ archived: "yes" }).archived).toBeUndefined();
     expect(listSearchSchema.parse({ archived: "" }).archived).toBeUndefined();
-  });
-
-  it("accepts a real boolean archived (in-memory state, not from the URL)", () => {
-    expect(listSearchSchema.parse({ archived: false }).archived).toBe(false);
-    expect(listSearchSchema.parse({ archived: true }).archived).toBe(true);
+    expect(listSearchSchema.parse({ archived: "true" }).archived).toBeUndefined();
+    expect(listSearchSchema.parse({ archived: "false" }).archived).toBeUndefined();
   });
 });
 
@@ -171,21 +165,25 @@ describe("serializeListSearch", () => {
       dir: "desc" as const,
       page: 3,
       limit: 25,
-      archived: true,
+      // K107: `archived` is the tri-state scope, not a boolean.
+      archived: "all" as const,
     };
     const serialized = serializeListSearch(original);
     const reparsed = listSearchSchema.parse(serialized);
     expect(reparsed).toEqual(original);
   });
 
-  // The serializer emits `archived=false` rather than dropping it, so
-  // the false branch has to survive the round trip too — previously it
-  // came back as true.
-  it("round-trips archived in both directions", () => {
-    for (const archived of [true, false]) {
+  // K107: replaces the old boolean round-trip. The serializer emits the
+  // scope literal and the schema parses it back; an unknown value falls
+  // through to undefined (the `active` default the consumer applies).
+  it("round-trips the tri-state archived scope", () => {
+    for (const archived of ["active", "archived", "all"] as const) {
       const serialized = serializeListSearch({ archived });
-      expect(serialized).toEqual({ archived: String(archived) });
+      expect(serialized).toEqual({ archived });
       expect(listSearchSchema.parse(serialized).archived).toBe(archived);
     }
+    // A stale `?archived=true` bookmark no longer parses to a scope; it
+    // falls through to undefined so the list opens at the default scope.
+    expect(listSearchSchema.parse({ archived: "true" }).archived).toBeUndefined();
   });
 });

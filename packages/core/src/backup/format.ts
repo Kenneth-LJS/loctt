@@ -79,6 +79,24 @@ export const BackupAttachmentSchema = z.object({
 export type BackupAttachment = z.infer<typeof BackupAttachmentSchema>;
 
 /**
+ * A displaced body preserved by `restore --overwrite` (K17 ruling 6):
+ * a `displaced-body-<ulid>.md` file written into the task's own
+ * directory. Carried as UTF-8 text on the task's line, alongside its
+ * other task-dir content, so a subsequent `backup` does not lose it
+ * (BAK-C13).
+ *
+ * This is deliberately NOT a new top-level record kind — it is task-dir
+ * content, so it travels on the task record exactly as `task.md`,
+ * comments, history and attachments do.
+ */
+export const BackupDisplacedBodySchema = z.object({
+  /** The `displaced-body-<ulid>.md` filename, a plain basename. */
+  name: z.string().min(1),
+  content: z.string(),
+}).strict();
+export type BackupDisplacedBody = z.infer<typeof BackupDisplacedBodySchema>;
+
+/**
  * Line 1. Read before anything else, and the only line the version
  * check needs (BAK-C21).
  */
@@ -124,6 +142,12 @@ export const BackupTaskSchema = z.object({
   comments: z.array(z.unknown()).optional(),
   history: z.array(z.unknown()).optional(),
   attachments: z.array(BackupAttachmentSchema).optional(),
+  /**
+   * `displaced-body-<ulid>.md` files in the task dir (BAK-C13). Optional
+   * and omitted when there are none, so a task without any carries no
+   * displaced-body structure at all — the same rule as attachments.
+   */
+  displacedBodies: z.array(BackupDisplacedBodySchema).optional(),
 }).strict();
 export type BackupTaskRecord = z.infer<typeof BackupTaskSchema>;
 

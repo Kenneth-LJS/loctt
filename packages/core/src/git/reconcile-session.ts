@@ -48,13 +48,6 @@ function git(args: string[], cwd: string): { ok: boolean; out: string } {
   return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
 }
 
-/** The current sentinel, or undefined when no reconciliation is in progress. */
-export async function getReconcileState(
-  locttDir: string,
-): Promise<ReconcileState | undefined> {
-  return readReconcileState(locttDir);
-}
-
 /**
  * Recomputes the per-field plan for the in-progress reconciliation, or
  * returns undefined when no sentinel is present.

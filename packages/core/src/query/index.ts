@@ -1,11 +1,11 @@
-export type { BuilderTree } from "./builderTree.js";
-export { builderTreeToQuery, queryToBuilderTree } from "./builderTree.js";
 export type { EvalContext } from "./evaluator.js";
 export { evaluateQuery } from "./evaluator.js";
+export { FilterError, filtersToNode, filtersToScannableText, filtersToSummary, filterToNode, filterToSummary, normalizeFilter, normalizeFilters } from "./filters.js";
 export type { ListContext, ListOptions, ListTasksOptions, ListTasksResult } from "./list.js";
 export { buildListContext, DEFAULT_LIST_LIMIT, listTasks, listTasksPaginated, loadCommentMentions, queryReferencesCommentMentions, resolveCommentMentionsContext, resolveView } from "./list.js";
 export type { ComparisonOp,QueryNode, QueryValue } from "./parser.js";
 export { ParseError,parseQuery } from "./parser.js";
+export { dslAtom, queryNodeToDsl } from "./serialize.js";
 export type { Token, TokenType } from "./tokenizer.js";
 export { tokenize, TokenizeError } from "./tokenizer.js";
 export type { ValidateQueryOptions } from "./validate.js";

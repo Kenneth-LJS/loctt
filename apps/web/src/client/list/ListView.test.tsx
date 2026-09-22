@@ -10,8 +10,27 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
 import { listSearchSchema } from "../router/listSearch.ts";
+import { ToastProvider } from "../ui/Toast.tsx";
 import { ListView } from "./ListView.tsx";
+
+/**
+ * ListView calls `useCreateTask` (its empty state's "+ Add task" opens
+ * the shared modal), so every mount wraps it in the same provider stack
+ * the shell uses. ToastProvider is included so a test that actually
+ * opens the modal — which itself calls `useToasts` — has it available;
+ * for the tests that never open it, it is inert.
+ */
+function WrappedListView() {
+  return (
+    <ToastProvider>
+      <CreateTaskProvider>
+        <ListView />
+      </CreateTaskProvider>
+    </ToastProvider>
+  );
+}
 
 /**
  * ListView tests. Stub fetch with a small task page + config data,
@@ -103,7 +122,7 @@ async function mountList(initialSearch = "", settleText = "First task") {
     getParentRoute: () => rootRoute,
     path: "/list",
     validateSearch: listSearchSchema,
-    component: ListView,
+    component: WrappedListView,
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([listRoute]),
@@ -126,6 +145,34 @@ afterEach(() => {
 });
 
 describe("ListView", () => {
+  // U13 / K-title rule
+  it("shows the screen name as the page title when nothing is scoped", async () => {
+    await mountList();
+    const header = screen.getByTestId("list-page-header");
+    expect(within(header).getByText("List")).toBeTruthy();
+  });
+
+  it("titles the page with a single scoped project's name (U13)", async () => {
+    // /api/projects stubs p_web = "Web"; scoping to it makes it the title.
+    await mountList("?project=p_web");
+    const header = screen.getByTestId("list-page-header");
+    expect(within(header).getByText("Web")).toBeTruthy();
+    expect(within(header).queryByText("List")).toBeNull();
+  });
+
+  it("keeps the project title as more filters are added (U13)", async () => {
+    // A project scope + a status filter still titles by the project — the
+    // added filter does not touch `project`.
+    await mountList("?project=p_web&status=in_progress");
+    expect(within(screen.getByTestId("list-page-header")).getByText("Web")).toBeTruthy();
+  });
+
+  it("falls back to the screen name when several projects are scoped (U13)", async () => {
+    await mountList("?project=p_web&project=p_other");
+    const header = screen.getByTestId("list-page-header");
+    expect(within(header).getByText("List")).toBeTruthy();
+  });
+
   // @verifies LST-2
   it("renders the row with resolved labels for enum/id values", async () => {
     await mountList();
@@ -138,6 +185,35 @@ describe("ListView", () => {
     expect(cells.getByText("Feature")).toBeTruthy(); // type label
     expect(cells.getByText("Ken")).toBeTruthy(); // assignee first name
     expect(cells.getByText("frontend")).toBeTruthy(); // label name
+  });
+
+  // Mobile (< sm) card layout (UX eval #3). The card list renders
+  // alongside the table (CSS decides which is visible); jsdom does not
+  // evaluate the breakpoint, so this asserts the cards exist in the DOM
+  // and carry the same per-task data as the table — key, title, status —
+  // and that each card is a link target. The `sm:hidden` / `hidden
+  // sm:block` split is what actually shows one or the other at runtime.
+  it("renders a stacked card per task for the mobile layout, mirroring the table data", async () => {
+    // Drive the narrow (< sm) layout: useIsNarrow reads innerWidth when
+    // matchMedia is unavailable (jsdom). At 375px the cards render and the
+    // table does not, so `getByText` stays unambiguous.
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      await mountList();
+      const cards = await screen.findByTestId("task-cards");
+      const firstCard = within(cards).getByTestId("task-card-WEB-1");
+      // Same fields as the table row: key, title, and the status label.
+      expect(within(firstCard).getByText("First task")).toBeTruthy();
+      expect(within(firstCard).getByText("WEB-1")).toBeTruthy();
+      expect(within(firstCard).getByText("In progress")).toBeTruthy();
+      // A per-card select checkbox, like the table row.
+      expect(within(firstCard).getByLabelText("Select WEB-1")).toBeTruthy();
+      // The table layout is NOT in the DOM at this width (single source).
+      expect(screen.queryByRole("table")).toBeNull();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+    }
   });
 
   // K-15 (a UI-review item, not a numbered case — no @verifies tag): the
@@ -198,6 +274,64 @@ describe("ListView", () => {
     const titleCell = row.querySelector('[data-col="title"]') as HTMLElement;
     // The title cell is NOT blank — it shows the key as a fallback.
     expect(titleCell.textContent).toContain("WEB-9");
+  });
+
+  // @verifies LST-20
+  /**
+   * A 400-character unbroken title must not widen the table.
+   *
+   * jsdom has no layout engine, so the overflow itself cannot be
+   * measured here — the e2e spec (`LST-20: a 400-character title
+   * truncates without scrolling the table`) is what measures it, and it
+   * failed by 66px before this. What CAN be pinned below that gate is
+   * the rule the measurement depends on: the title cell's width must be
+   * derived from the table, never from its own content.
+   *
+   * `max-width: 0` is what makes the cell's intrinsic contribution zero,
+   * so the auto table layout sizes every other column first and the
+   * title takes only the leftover (`width: 100%`). The old guard was a
+   * `max-w-[42ch]` on the inner span — content-derived, ~354px, and so
+   * still 66px too wide at the tested viewport. A narrower `ch` value
+   * would only move the breakpoint, which is why the assertion below
+   * rejects ANY `ch`/`px` cap rather than a particular one.
+   */
+  it("LST-20: bounds a pathological title against the table, not against its own content", async () => {
+    const long = "x".repeat(400);
+    TASKS_OVERRIDE = {
+      items: [{
+        id: "01TASKCCCC0000000000000000",
+        key: "WEB-11",
+        project: "p_web",
+        title: long,
+        status: "in_progress",
+        created_at: "2026-06-01T00:00:00.000Z",
+        updated_at: "2026-06-07T00:00:00.000Z",
+      }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    };
+    await mountList("", "In progress");
+    const row = screen.getByText("In progress").closest("tr") as HTMLElement;
+    const titleCell = row.querySelector('[data-col="title"]') as HTMLElement;
+
+    // The cell absorbs the leftover width and contributes nothing to the
+    // table's preferred width.
+    expect(titleCell.className).toContain("max-w-0");
+    expect(titleCell.className).toContain("w-full");
+
+    // And nothing inside it re-introduces a content-derived cap — a
+    // `max-w-[NNch]` or `max-w-[NNpx]` anywhere in the subtree is exactly
+    // the magic number this replaces, and would put the breakpoint back.
+    const capped = [titleCell, ...titleCell.querySelectorAll("*")]
+      .map(el => (el as HTMLElement).className)
+      .filter(c => typeof c === "string" && /max-w-\[\d+(?:\.\d+)?(?:ch|px|rem)\]/.test(c));
+    expect(capped).toEqual([]);
+
+    // Truncation is visual only: the stored value is untouched and the
+    // whole string is on hover (the case's second bullet).
+    expect(titleCell.textContent).toBe(long);
+    expect(row.querySelector(`[title="${long}"]`)).not.toBeNull();
   });
 
   // @verifies A137 / A137.1 (per-row health marker in the list)
@@ -370,7 +504,7 @@ describe("ListView", () => {
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     const rootRoute = createRootRoute();
-    const listRoute = createRoute({ getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: ListView });
+    const listRoute = createRoute({ getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: WrappedListView });
     const router = createRouter({ routeTree: rootRoute.addChildren([listRoute]), history: createMemoryHistory({ initialEntries: ["/list"] }) });
     render(
       <QueryClientProvider client={qc}>
@@ -407,7 +541,7 @@ describe("ListView", () => {
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
     const rootRoute = createRootRoute();
-    const listRoute = createRoute({ getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: ListView });
+    const listRoute = createRoute({ getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema, component: WrappedListView });
     const router = createRouter({ routeTree: rootRoute.addChildren([listRoute]), history: createMemoryHistory({ initialEntries: ["/list?status=done"] }) });
     render(
       <QueryClientProvider client={qc}>
@@ -421,6 +555,77 @@ describe("ListView", () => {
     // a fix that requires editing a green test means that test was
     // asserting the bug.
     expect(await screen.findByText(/No tasks match these filters/)).toBeTruthy();
+  });
+
+  // First-run / ONB-8: the truly-empty list (no tasks AND no filters) is
+  // a newcomer's landing. It must be actionable — a create button that
+  // opens the same modal the board/header open — not a dead-end
+  // sentence. Wrapped in the app-wide CreateTaskProvider (as the shell
+  // does) so `useCreateTask` resolves to the real modal.
+  function mountEmptyList(initialSearch: string) {
+    vi.restoreAllMocks();
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      const body = path.startsWith("/api/tasks") ? { items: [], total: 0, offset: 0, limit: 50 } : routeFetch(path);
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: listSearchSchema,
+      component: WrappedListView,
+    });
+    const router = createRouter({ routeTree: rootRoute.addChildren([listRoute]), history: createMemoryHistory({ initialEntries: [`/list${initialSearch}`] }) });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("truly-empty list shows a create button that opens the modal (first-run)", async () => {
+    mountEmptyList("");
+    const add = await screen.findByTestId("list-empty-add-task");
+    expect(screen.getByText(/No tasks yet/)).toBeTruthy();
+    // No filter is active, so the Clear-filters affordance is absent —
+    // that belongs to a filtered-empty view, not a fresh tracker.
+    expect(screen.queryByText(/Clear filters/)).toBeNull();
+    // The button opens the shared create modal (same entry point the
+    // board's "+ Add task" uses).
+    expect(screen.queryByTestId("create-task-modal")).toBeNull();
+    fireEvent.click(add);
+    expect(await screen.findByTestId("create-task-modal")).toBeTruthy();
+  });
+
+  it("filtered-empty list shows Clear filters and NOT a create button", async () => {
+    mountEmptyList("?status=done");
+    expect(await screen.findByText(/No tasks match these filters/)).toBeTruthy();
+    expect(screen.getByText(/Clear filters/)).toBeTruthy();
+    // Creating a task would not bring back rows the filter hid, so the
+    // create CTA is deliberately absent here.
+    expect(screen.queryByTestId("list-empty-add-task")).toBeNull();
+  });
+
+  // Cross-view layout standardisation (commit 02b05cd): the ListView root
+  // container uses the shared `p-4` / `gap-3` rhythm, NOT the older
+  // `p-6` / `gap-4`. A silent bump back to p-6 would desync it from Board
+  // and Timeline (which this same rule pins) with nothing to catch it.
+  // The root is the parent of the FilterBar's own root; `add-filter` sits
+  // inside FilterBar, so its nearest `.flex-col` ancestor is the FilterBar
+  // root and that root's parent is the ListView container.
+  it("uses the shared p-4/gap-3 layout rhythm on its root container", async () => {
+    await mountList();
+    const filterBarRoot = screen.getByTestId("add-filter").closest("div.flex-col");
+    expect(filterBarRoot).not.toBeNull();
+    const listRoot = filterBarRoot?.parentElement as HTMLElement;
+    expect(listRoot.className).toContain("p-4");
+    expect(listRoot.className).toContain("gap-3");
+    // Guard against the specific regression: the pre-standardisation values.
+    expect(listRoot.className).not.toContain("p-6");
+    expect(listRoot.className).not.toContain("gap-4");
   });
 });
 
@@ -486,7 +691,7 @@ function mountPaged(
     getParentRoute: () => rootRoute,
     path: "/list",
     validateSearch: listSearchSchema,
-    component: ListView,
+    component: WrappedListView,
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([listRoute]),
@@ -575,60 +780,122 @@ describe("ListView pagination", () => {
 });
 
 /**
- * @verifies XS-3
+ * Mobile (< sm) card layout: loading and error branches.
  *
- * The tracker has three writers — this UI, the CLI, and the MCP
- * server — so "I just changed that in the terminal" is the ordinary
- * case. Automatic refresh bounds how stale a value can get; this is
- * the control for when the user already knows.
+ * The desktop `<table>` had a three-way split (skeleton / ErrorState /
+ * empty), but the narrow `<ul>` card layout rendered results with NO
+ * loading and NO error branch — a failed initial fetch fell straight
+ * through to "No tasks match these filters" / "No tasks yet", which reads
+ * as data loss on a phone (ERR-1). These assert the card layout now
+ * matches the table's handling. Both are red-proven: on the pre-fix code
+ * the empty copy rendered and neither the error nor the skeleton existed.
  */
-describe("ListView manual refresh", () => {
-  it("offers a top-level refresh that refetches and reports itself busy", async () => {
-    await mountList();
+describe("ListView mobile card layout — loading and error", () => {
+  const NARROW = 375;
 
-    const before = vi.mocked(globalThis.fetch).mock.calls.filter(c =>
-      typeof c[0] === "string" && c[0].includes("/api/tasks"),
-    ).length;
-    expect(before).toBeGreaterThan(0);
+  // This describe sits outside the top `describe("ListView")`; make its
+  // cleanup explicit so a mounted tree never straddles into the next test.
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-    // Reachable directly, not behind a menu.
-    const refresh = screen.getByRole("button", { name: "Refresh" });
-    expect(refresh.getAttribute("title")).toMatch(/refresh/i);
+  async function atNarrow(fn: () => Promise<void>): Promise<void> {
+    const original = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: NARROW });
+    try {
+      await fn();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
+  }
 
-    await act(async () => {
-      fireEvent.click(refresh);
-      await Promise.resolve();
+  // A tasks stub whose /api/tasks response is controlled by `tasksResult`
+  // (a rejected promise for the error case, a never-settling promise for
+  // the loading case); config requests resolve normally so the rest of the
+  // shell mounts.
+  function stubTasks(tasksResult: () => Promise<Response>) {
+    vi.spyOn(globalThis, "fetch").mockImplementation(((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      if (path.startsWith("/api/tasks")) {
+        return tasksResult();
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(routeFetch(path)), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }) as typeof fetch);
+  }
+
+  function mountRaw(initialSearch = "") {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const rootRoute = createRootRoute();
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: listSearchSchema,
+      component: WrappedListView,
     });
-
-    // It never silently no-ops: a request actually goes out.
-    await waitFor(() => {
-      const after = vi.mocked(globalThis.fetch).mock.calls.filter(c =>
-        typeof c[0] === "string" && c[0].includes("/api/tasks"),
-      ).length;
-      expect(after).toBeGreaterThan(before);
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: [`/list${initialSearch}`] }),
     });
+    // Return the RTL result so each test scopes its queries to its OWN
+    // container (`within(result.container)`) rather than the whole
+    // document — this describe has no per-test cleanup of its own, and a
+    // document-wide query would otherwise trip over a sibling test's
+    // not-yet-unmounted tree.
+    return render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+  }
 
-    // And it settles rather than staying busy forever.
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "Refresh" }).getAttribute("aria-busy"),
-      ).toBe("false");
+  // @verifies ERR-1 (a failed load must not read as an empty list)
+  it("shows the load error, not the empty copy, when the initial fetch fails", async () => {
+    await atNarrow(async () => {
+      // A rejected /api/tasks (offline-style, like the desktop table's
+      // guard) with retry:false, so the error is immediate and
+      // deterministic.
+      // A rejected /api/tasks (offline-style) with retry:false, so the
+      // error is immediate and deterministic — mirrors the desktop table's
+      // guard.
+      stubTasks(() => Promise.reject(new TypeError("Failed to fetch")));
+      const { container } = mountRaw();
+      const view = within(container);
+
+      // The card layout renders the error surface...
+      const errorHost = await view.findByTestId("task-cards-error", undefined, { timeout: 3000 });
+      expect(within(errorHost).getByText("Could not load tasks")).toBeTruthy();
+      // ...and does NOT fall through to either empty message. This is the
+      // pre-fix bug: a down server read as "no tasks".
+      expect(view.queryByText(/No tasks match these filters/i)).toBeNull();
+      expect(view.queryByText(/No tasks yet/i)).toBeNull();
     });
   });
 
-  /**
-   * @verifies XS-3
-   *
-   * The staleness window is *stated*, not described as "eventually" —
-   * XS-2's requirement, surfaced where a user would look for it.
-   */
-  it("states the automatic refresh window on the control", async () => {
-    await mountList();
-    const title = screen.getByRole("button", { name: "Refresh" }).getAttribute("title") ?? "";
-    expect(title).toMatch(/\d+ seconds/);
-    expect(title).toMatch(/return to the tab/i);
+  // @verifies ONB-12 (a load in progress shows placeholders, not empty)
+  it("shows a skeleton, not the empty state, while the initial fetch is in flight", async () => {
+    await atNarrow(async () => {
+      // /api/tasks never settles, so the feed stays in its loading state.
+      stubTasks(() => new Promise<Response>(() => { /* never resolves */ }));
+      const { container } = mountRaw();
+      const view = within(container);
+
+      // Placeholder cards appear while loading...
+      expect((await view.findAllByTestId("task-card-skeleton")).length).toBeGreaterThan(0);
+      // ...and the empty copy is NOT shown (the pre-fix bug: loading read
+      // as "no tasks yet").
+      expect(view.queryByText(/No tasks yet/i)).toBeNull();
+      expect(view.queryByText(/No tasks match these filters/i)).toBeNull();
+    });
   });
 });
+
+// Q4: there is no manual refresh button (removed; freshness is TanStack
+// Query staleTime + focus refetch). The former "ListView manual refresh"
+// block and its XS-3 window-stated-on-the-control assertions went with it.
 
 /**
  * @verifies XS-28

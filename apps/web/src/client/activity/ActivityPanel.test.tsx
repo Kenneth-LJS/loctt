@@ -135,6 +135,27 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+describe("ActivityPanel — loading is announced", () => {
+  // The loading indicator was a bare <p aria-busy> with no role=status, so
+  // a screen reader was never told the feed was loading (design-review §A3).
+  // It now uses LoadingState (role=status). Red-proven: the pre-fix <p> had
+  // no role, so this query returns null.
+  it("announces the load with role=status", async () => {
+    // An /activity request that never resolves keeps the panel loading.
+    fetchMock.mockImplementation(((input: unknown) => {
+      const url = typeof input === "string" ? input : String((input as { url?: string }).url ?? "");
+      if (url.includes("/comments")) return Promise.resolve(jsonResponse([]));
+      return new Promise<Response>(() => { /* never resolves */ });
+    }) as never);
+
+    renderPanel();
+
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toMatch(/Loading activity/i);
+    expect(status.getAttribute("aria-busy")).toBe("true");
+  });
+});
+
 describe("ActivityPanel — incomplete history (CMT-37 second bullet)", () => {
   /**
    * @verifies CMT-37

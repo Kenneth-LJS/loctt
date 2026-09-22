@@ -68,7 +68,7 @@ export function CardLayoutPanel() {
 
   if (settings.isError) {
     return (
-      <div className="p-8">
+      <div>
         <h1 className="mb-2 text-lg font-semibold text-text-primary">Card layout</h1>
         <ErrorState
           error={settings.error}
@@ -117,7 +117,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
   };
 
   return (
-    <div className="p-8" data-testid="card-layout-panel">
+    <div data-testid="card-layout-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Card layout</h1>
       <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
         Which fields board cards show, and in what order. Saved against your
@@ -207,9 +207,19 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
       </div>
 
       {save.isError ? (
-        <p role="alert" className="mt-4 text-[0.8571rem] text-danger-fg">
-          The layout was not saved. The list shows your last saved layout.
-        </p>
+        // ErrorState standard: the server's reason + a Retry that re-sends
+        // the last write, replacing a generic line with no recovery. The
+        // write is rolled back on failure (BRD-47), so the list already
+        // shows the last saved layout; the context says so.
+        <div className="mt-4" data-testid="card-layout-save-error">
+          <ErrorState
+            error={save.error}
+            context="The layout was not saved — the list shows your last saved layout"
+            {...(save.variables !== undefined
+              ? { onRetry: () => { save.mutate(save.variables); } }
+              : {})}
+          />
+        </div>
       ) : null}
     </div>
   );

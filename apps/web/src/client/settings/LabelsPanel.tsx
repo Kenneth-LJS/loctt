@@ -1,17 +1,22 @@
-import type { BrokenEntry, LabelDef } from "@loctt/contracts";
+import type { ArchivedScope, BrokenEntry, LabelDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
-import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
 import {
   useArchiveLabel,
   useCountedLabels,
   useDeleteLabel,
-  useUpdateLabel,
 } from "../api/hooks/useDataMutations.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
+import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
+import { useResolvedColor } from "../ui/entityColor.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { hashDeepLinkPresent } from "./deepLinkHash.ts";
+import { LabelEditDialog } from "./LabelEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
+import { RowActions } from "./RowActions.tsx";
 
 /**
  * Settings → Data → Labels (MSL-8..MSL-12, MSL-31, MSL-32, MSL-34,
@@ -35,32 +40,32 @@ import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
  * cannot disagree (MSL-11).
  */
 
-/** MSL-37: the format the editor accepts, stated to the user. */
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-
-function isValidColor(value: string): boolean {
-  return value === "" || HEX_RE.test(value);
-}
-
 function LabelRow({ label, count, allLabels }: {
   readonly label: LabelDef & { readonly taskCount?: number };
   readonly count: number;
   readonly allLabels: readonly LabelDef[];
 }) {
-  const update = useUpdateLabel();
   const archive = useArchiveLabel();
   const del = useDeleteLabel();
+  // K100: editing now runs through the shared LabelEditDialog (which the
+  // sidebar also opens), rather than an inline row form. The panel only
+  // decides whether the dialog is open.
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(label.name);
-  const [color, setColor] = useState(label.color ?? "");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const archived = label.archived === true;
-  const colorOk = isValidColor(color);
-  const nameOk = name.trim().length > 0;
+  // K103: the swatch takes one hex, resolved for the active theme.
+  // `data-label-color` reports the SAME resolved value it paints —
+  // before this it interpolated the stored value, so a palette or
+  // per-mode colour published `[object Object]` to both the attribute
+  // and the CSS.
+  const swatch = useResolvedColor(label.color);
 
   return (
     <li
+      // K100 deep-link anchor (`/settings/labels#row-<id>`) — see
+      // useScrollToHash. Kept alongside the test id.
+      id={`row-${label.id}`}
       data-testid={`label-row-${label.id}`}
       data-label-archived={archived ? "true" : "false"}
       className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
@@ -68,130 +73,66 @@ function LabelRow({ label, count, allLabels }: {
       <span
         aria-hidden="true"
         data-testid="label-swatch"
-        data-label-color={label.color ?? ""}
+        data-label-color={swatch ?? ""}
         className="h-4 w-4 shrink-0 rounded-full border border-border-subtle"
-        style={{ backgroundColor: label.color ?? "transparent" }}
+        style={{ backgroundColor: swatch ?? "transparent" }}
       />
 
-      {editing
-        ? (
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <div className="flex gap-2">
-                <input
-                  aria-label="Label name"
-                  data-testid="label-name-input"
-                  value={name}
-                  onChange={e => { setName(e.target.value); }}
-                  className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
-                />
-                <input
-                  aria-label="Label colour"
-                  data-testid="label-color-input"
-                  value={color}
-                  placeholder="#aabbcc"
-                  onChange={e => { setColor(e.target.value); }}
-                  className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 font-mono text-[0.9286rem]"
-                />
-              </div>
-              {/*
-                MSL-37: rejected at the input, naming the expected
-                format, with Save blocked — nothing partially-written
-                reaches labels.yaml.
-              */}
-              {!colorOk && (
-                <p role="alert" data-testid="label-color-invalid" className="text-[0.8571rem] text-danger-fg">
-                  Colour must be a 6-digit hex value like{" "}
-                  <code className="font-mono">#aabbcc</code>. Leave it empty for no colour.
-                </p>
-              )}
-              {update.isError && (
-                <p role="alert" className="text-[0.8571rem] text-danger-fg">
-                  {update.error instanceof ApiError ? update.error.message : "Could not save."}
-                </p>
-              )}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  data-testid="label-save"
-                  disabled={!colorOk || !nameOk || update.isPending}
-                  onClick={() => {
-                    update.mutate(
-                      { id: label.id, name: name.trim(), color: color === "" ? null : color },
-                      { onSuccess: () => { setEditing(false); } },
-                    );
-                  }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setName(label.name);
-                    setColor(label.color ?? "");
-                    setEditing(false);
-                  }}
-                  className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )
-        : (
-            <>
-              <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
-                {label.name}
-                {/*
-                  MSL-10: an archived label is still shown wherever it is
-                  referenced, marked rather than hidden.
-                */}
-                {archived && (
-                  <span data-testid="label-archived-marker" className="ml-2 text-text-tertiary">
-                    (archived)
-                  </span>
-                )}
-              </span>
+      <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
+        {label.name}
+        {/*
+          MSL-10: an archived label is still shown wherever it is
+          referenced, marked rather than hidden.
+        */}
+        {archived && (
+          <span data-testid="label-archived-marker" className="ml-2 text-text-tertiary">
+            (archived)
+          </span>
+        )}
+      </span>
 
-              {/*
-                MSL-11: zero is rendered as 0, never as a blank — a blank
-                cell reads as "unknown", which is a different claim.
-              */}
-              <span
-                data-testid="label-refcount"
-                data-label-refcount={String(count)}
-                className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
-              >
-                {String(count)} task{count === 1 ? "" : "s"}
-              </span>
+      {/*
+        MSL-11: zero is rendered as 0, never as a blank — a blank
+        cell reads as "unknown", which is a different claim.
+      */}
+      <span
+        data-testid="label-refcount"
+        data-label-refcount={String(count)}
+        className="w-24 shrink-0 text-right text-[0.8571rem] text-text-secondary"
+      >
+        {String(count)} task{count === 1 ? "" : "s"}
+      </span>
 
-              <button
-                type="button"
-                data-testid="label-edit"
-                onClick={() => { setEditing(true); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                data-testid="label-archive-toggle"
-                disabled={archive.isPending}
-                onClick={() => { archive.mutate({ id: label.id, archived: !archived }); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-              >
-                {archived ? "Unarchive" : "Archive"}
-              </button>
-              <button
-                type="button"
-                data-testid="label-delete"
-                onClick={() => { setConfirmingDelete(true); }}
-                className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-              >
-                Delete
-              </button>
-            </>
-          )}
+      <RowActions
+        label={`Actions for label ${label.name}`}
+        actions={[
+          { label: "Edit…", testId: "label-edit", onSelect: () => { setEditing(true); } },
+          {
+            label: archived ? "Unarchive" : "Archive",
+            testId: "label-archive-toggle",
+            disabled: archive.isPending,
+            onSelect: () => { archive.reset(); archive.mutate({ id: label.id, archived: !archived }); },
+          },
+          { label: "Delete", testId: "label-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
+        ]}
+      />
+
+      {/* An archive/unarchive that fails must say so — the toggle used to
+          swallow the error and read as done while nothing changed on disk
+          (mirrors MilestonesPanel's bug-3 fix). */}
+      {archive.isError && (
+        <Callout tone="danger" role="alert" testId="label-archive-error" className="basis-full">
+          {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
+        </Callout>
+      )}
+
+      {editing && (
+        <LabelEditDialog
+          mode="edit"
+          existing={label}
+          onClose={() => { setEditing(false); }}
+        />
+      )}
 
       {confirmingDelete && (
         /*
@@ -228,96 +169,6 @@ function LabelRow({ label, count, allLabels }: {
   );
 }
 
-function CreateLabelForm({ existing }: { readonly existing: readonly LabelDef[] }) {
-  const create = useCreateLabel();
-  const [name, setName] = useState("");
-  const [color, setColor] = useState("");
-  const [acknowledgedDuplicate, setAcknowledgedDuplicate] = useState(false);
-
-  const trimmed = name.trim();
-  const colorOk = isValidColor(color);
-  /**
-   * MSL-34: names are not unique, so a duplicate is a caution shown
-   * *before* confirming — never an error, and never a block. The
-   * wording must not claim the name is invalid, because it is not.
-   */
-  const duplicate = trimmed !== ""
-    && existing.some(l => l.name.toLowerCase() === trimmed.toLowerCase());
-  const needsAck = duplicate && !acknowledgedDuplicate;
-
-  return (
-    <form
-      data-testid="label-create-form"
-      className="mb-4 flex flex-col gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (needsAck) { setAcknowledgedDuplicate(true); return; }
-        create.mutate(
-          { name: trimmed, ...(color !== "" ? { color } : {}) },
-          {
-            onSuccess: () => {
-              setName("");
-              setColor("");
-              setAcknowledgedDuplicate(false);
-            },
-          },
-        );
-      }}
-    >
-      <div className="flex gap-2">
-        <input
-          aria-label="New label name"
-          data-testid="label-create-name"
-          value={name}
-          placeholder="New label"
-          onChange={(e) => { setName(e.target.value); setAcknowledgedDuplicate(false); }}
-          className="min-w-0 flex-1 rounded border border-border-subtle bg-bg-surface px-2 py-1 text-[0.9286rem]"
-        />
-        <input
-          aria-label="New label colour"
-          data-testid="label-create-color"
-          value={color}
-          placeholder="#aabbcc"
-          onChange={e => { setColor(e.target.value); }}
-          className="w-28 rounded border border-border-subtle bg-bg-surface px-2 py-1 font-mono text-[0.9286rem]"
-        />
-        <button
-          type="submit"
-          data-testid="label-create-submit"
-          disabled={trimmed === "" || !colorOk || create.isPending}
-          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1 text-[0.9286rem] disabled:opacity-50"
-        >
-          {needsAck ? "Create anyway" : "Create"}
-        </button>
-      </div>
-
-      {!colorOk && (
-        <p role="alert" data-testid="label-create-color-invalid" className="text-[0.8571rem] text-danger-fg">
-          Colour must be a 6-digit hex value like <code className="font-mono">#aabbcc</code>.
-        </p>
-      )}
-
-      {duplicate && (
-        <p
-          data-testid="label-duplicate-warning"
-          data-label-duplicate="warning"
-          className="text-[0.8571rem] text-warn-fg"
-        >
-          A label with this name already exists. Label names do not have to be
-          unique — you can create it anyway, and both will be shown with their
-          colours to tell them apart.
-        </p>
-      )}
-
-      {create.isError && (
-        <p role="alert" className="text-[0.8571rem] text-danger-fg">
-          {create.error instanceof ApiError ? create.error.message : "Could not create the label."}
-        </p>
-      )}
-    </form>
-  );
-}
-
 /**
  * DEG-30 / UX-13: a label whose stored fields do not validate (a
  * non-string `name`, an unknown key) is lifted by the tolerant loader
@@ -347,6 +198,10 @@ function BrokenLabelRow({ entry, onRepair, repairing }: {
   const name = entry.id ?? `Label entry #${String(entry.index + 1)}`;
   return (
     <li
+      // K100 anchor: a deep link to a label lands here even when the
+      // entry is broken, so it resolves by the same `row-<id>` id (only
+      // when the loader could read an id).
+      {...(entry.id !== undefined ? { id: `row-${entry.id}` } : {})}
       data-testid={`label-broken-${entry.id ?? `index-${String(entry.index)}`}`}
       data-broken-label={entry.id ?? `index-${String(entry.index)}`}
       aria-disabled="true"
@@ -361,27 +216,37 @@ function BrokenLabelRow({ entry, onRepair, repairing }: {
         </span>
         <p className="mt-0.5 text-[0.8571rem] text-text-secondary">
           Fix this entry in{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.7857rem]">
+          <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem]">
             .loctt/config/labels.yaml
           </code>{" "}
           and reload — LocTT will not rewrite it for you.
         </p>
       </div>
-      <button
-        type="button"
-        data-testid={`label-broken-repair-${entry.id ?? `index-${String(entry.index)}`}`}
+      <Button
+        variant="secondary"
+        size="sm"
+        testId={`label-broken-repair-${entry.id ?? `index-${String(entry.index)}`}`}
         disabled={repairing}
         onClick={onRepair}
-        className="shrink-0 rounded border border-border-subtle px-2 py-1 text-[0.8571rem] text-text-primary disabled:opacity-50"
+        className="shrink-0"
       >
         Repair
-      </button>
+      </Button>
     </li>
   );
 }
 
 export function LabelsPanel() {
-  const labels = useCountedLabels();
+  const [creating, setCreating] = useState(false);
+  // K107: this panel had NO archived control before — archived labels
+  // rendered inline with an `(archived)` marker. It now defaults to the
+  // `active` scope and reveals archived through the tri-state control. A
+  // deep-link hash widens the fetch to `all` so a `#row-<id>` anchor to an
+  // archived label still resolves (K100).
+  const [scope, setScope] = useState<ArchivedScope>("active");
+  const [hashPresent] = useState(hashDeepLinkPresent);
+  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
+  const labels = useCountedLabels(effectiveScope);
 
   if (labels.isError) {
     /*
@@ -392,7 +257,7 @@ export function LabelsPanel() {
     */
     const envelope = labels.error instanceof ApiError ? labels.error.envelope : undefined;
     return (
-      <div className="p-8" data-testid="labels-panel">
+      <div data-testid="labels-panel">
         <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
           Labels
         </h1>
@@ -404,7 +269,7 @@ export function LabelsPanel() {
           />
           <p className="mt-2 text-[0.9286rem] text-text-secondary">
             This is a failure to read the file, not an empty label list. Fix{" "}
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               .loctt/config/labels.yaml
             </code>{" "}
             and reload.
@@ -425,18 +290,36 @@ export function LabelsPanel() {
   const broken = labels.data.broken ?? [];
 
   return (
-    <div className="p-8" data-testid="labels-panel">
+    <div data-testid="labels-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Labels
       </h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
-          .loctt/config/labels.yaml
-        </code>. Task counts exclude archived tasks.
+        Task counts exclude archived tasks.
       </p>
 
-      <CreateLabelForm existing={items} />
+      <div className="mb-4 flex items-center gap-3">
+        <Button
+          variant="secondary"
+          testId="label-create-open"
+          onClick={() => { setCreating(true); }}
+        >
+          New label
+        </Button>
+        <ArchivedScopeControl
+          testId="labels-archived-scope"
+          value={scope}
+          onChange={setScope}
+        />
+      </div>
+
+      {creating && (
+        <LabelEditDialog
+          mode="create"
+          existingLabels={items}
+          onClose={() => { setCreating(false); }}
+        />
+      )}
 
       {items.length === 0 && broken.length === 0
         ? (
@@ -444,7 +327,7 @@ export function LabelsPanel() {
             // an empty file (MSL-31's "visually distinct"). A lone broken
             // entry is NOT empty (DEG-30 / A138) — the list renders below.
             <p data-testid="labels-empty" data-labels-state="empty" className="text-[0.9286rem] text-text-tertiary">
-              No labels yet. Create one above.
+              {scope === "archived" ? "No archived labels." : "No labels yet. Create one above."}
             </p>
           )
         : (
