@@ -7,7 +7,7 @@ user-invocable: true
 Execute the complete feature development workflow:
 
 1. **Planning** - Create implementation plan
-   - Read `docs/dev/architecture.md` and `docs/dev/schema-reference.md` for product context
+   - Read `docs/dev/reference/architecture.md` and `docs/dev/reference/schema-reference.md` for product context
    - Present plan to user for review
    - STOP and wait for approval before proceeding
 

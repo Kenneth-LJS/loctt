@@ -3,8 +3,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Editor } from "@tiptap/core";
 import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { comboOptions, comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { LOCTT_EXTENSIONS } from "./extensions.ts";
 import { fromMarkdown, toMarkdown } from "./markdown.ts";
 import { Toolbar } from "./Toolbar.tsx";
@@ -58,8 +59,7 @@ describe("Toolbar level picker — TSK-59", () => {
   // @verifies TSK-59
   it("offers Paragraph and H1–H6", () => {
     render(<Toolbar editor={ed()} />);
-    const picker = screen.getByTestId<HTMLSelectElement>("fmt-block-type");
-    const options = Array.from(picker.options).map(o => o.textContent);
+    const options = comboOptions("fmt-block-type").map(o => o.label);
     expect(options).toEqual([
       "Paragraph", "Heading 1", "Heading 2", "Heading 3",
       "Heading 4", "Heading 5", "Heading 6",
@@ -83,19 +83,19 @@ describe("Toolbar level picker — TSK-59", () => {
   it("reflects the current block's level in the picker", () => {
     ed().chain().focus().setHeading({ level: 3 }).run();
     render(<Toolbar editor={ed()} />);
-    expect((screen.getByTestId<HTMLSelectElement>("fmt-block-type")).value).toBe("3");
+    expect(comboValue("fmt-block-type")).toBe("3");
 
     cleanup();
     ed().chain().focus().setParagraph().run();
     render(<Toolbar editor={ed()} />);
-    expect((screen.getByTestId<HTMLSelectElement>("fmt-block-type")).value).toBe("paragraph");
+    expect(comboValue("fmt-block-type")).toBe("paragraph");
   });
 });
 
 describe("Toolbar block transform caret — TSK-60", () => {
   /** Picks a value in the level picker, driving `applyBlock`. */
   function pick(value: string): void {
-    fireEvent.change(screen.getByTestId("fmt-block-type"), { target: { value } });
+    pickCombo("fmt-block-type", value);
   }
 
   // @verifies TSK-60
@@ -105,7 +105,7 @@ describe("Toolbar block transform caret — TSK-60", () => {
     // The caret sits in the heading, so the editor reports it active and
     // the picker — reading the same state — shows Heading 2 at once.
     expect(ed().isActive("heading", { level: 2 })).toBe(true);
-    expect((screen.getByTestId<HTMLSelectElement>("fmt-block-type")).value).toBe("2");
+    expect(comboValue("fmt-block-type")).toBe("2");
   });
 
   // @verifies TSK-60
@@ -133,6 +133,46 @@ describe("Toolbar block transform caret — TSK-60", () => {
     // The block count settles after the first transform (heading +
     // TrailingNode's empty paragraph) and must not grow per toggle.
     expect(ed().state.doc.childCount).toBe(baseline);
+  });
+});
+
+describe("Toolbar mode toggle + null editor (Phase-0 restructure)", () => {
+  it("renders the mode toggle at the right, and no formatting when editor is null (raw mode)", () => {
+    const onMode = vi.fn();
+    render(<Toolbar editor={null} mode="raw" onModeChange={onMode} />);
+    // The toolbar shell and the mode toggle render even with no editor —
+    // this is the raw (source) mode bar. No formatting controls appear
+    // (they apply only to the rich surface); a disabled row would be
+    // clutter. Red-proof: the pre-restructure toolbar returned null when
+    // editor was null, so it rendered nothing at all.
+    expect(screen.getByRole("toolbar", { name: "Formatting" })).toBeTruthy();
+    expect(screen.getByTestId("mode-rich")).toBeTruthy();
+    expect(screen.getByTestId("mode-raw")).toBeTruthy();
+    expect(screen.queryByTestId("fmt-bold")).toBeNull();
+    expect(screen.queryByTestId("fmt-block-type")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("mode-rich"));
+    expect(onMode).toHaveBeenCalledWith("rich");
+  });
+
+  it("renders the formatting controls (as icon buttons with shortcut titles) when an editor is present", () => {
+    render(<Toolbar editor={ed()} mode="rich" onModeChange={vi.fn()} />);
+    const bold = screen.getByTestId("fmt-bold");
+    // An icon glyph, not a text label — the affordance is drawn (A208).
+    expect(bold.textContent).toBe("");
+    expect(bold.querySelector("svg")).toBeTruthy();
+    // The accessible name and the shortcut hint are both carried.
+    expect(bold.getAttribute("aria-label")).toBe("Bold");
+    expect(bold.getAttribute("title")).toMatch(/Bold \((⌘|Ctrl)B\)/);
+    // Undo/redo were added.
+    expect(screen.getByTestId("fmt-undo")).toBeTruthy();
+    expect(screen.getByTestId("fmt-redo")).toBeTruthy();
+  });
+
+  it("locks the toggle to Markdown and disables Rich for a forced-raw (lossy) body", () => {
+    render(<Toolbar editor={null} mode="raw" onModeChange={vi.fn()} forcedRaw />);
+    expect(screen.getByTestId<HTMLButtonElement>("mode-rich").disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>("mode-raw").disabled).toBe(false);
   });
 });
 

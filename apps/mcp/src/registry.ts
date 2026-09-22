@@ -36,6 +36,7 @@ import { TOOLS as TASK_RANK_TOOLS } from "./tools/task-rank.js";
 import { TOOLS as TRACKER_TOOLS } from "./tools/tracker.js";
 import { TOOLS as USER_TOOLS } from "./tools/user.js";
 import { TOOLS as VIEWS_TOOLS } from "./tools/views.js";
+import { TOOLS as WORKFLOW_ENTITY_TOOLS } from "./tools/workflow-entities.js";
 import type { McpTool, ToolDef } from "./types.js";
 
 /**
@@ -62,6 +63,7 @@ const TOOL_GROUPS: readonly (readonly ToolDef[])[] = [
   TRACKER_TOOLS,
   USER_TOOLS,
   VIEWS_TOOLS,
+  WORKFLOW_ENTITY_TOOLS,
 ];
 
 function build(): Map<string, ToolDef> {

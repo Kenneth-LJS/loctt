@@ -50,7 +50,7 @@ export class StateError extends LocttError {
  *
  *  - Dropping or defaulting a wrong-typed `next_number` re-issues a key a
  *    live task already holds — a key collision, which the key-allocation
- *    invariants (`docs/dev/invariants.md`, P-5/P-7) forbid because it is
+ *    invariants (`docs/dev/reference/invariants.md`, P-5/P-7) forbid because it is
  *    unrecoverable: two tasks then answer to one key and every link,
  *    bookmark and commit message referencing it is ambiguous.
  *  - Setting aside one bad `keys.<project>` entry as a `BrokenEntry` and

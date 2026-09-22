@@ -1,8 +1,18 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wordmark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/wordmark-light.svg">
+    <img alt="LocTT" src="docs/assets/wordmark-light.svg" width="240">
+  </picture>
+</p>
+
 # LocTT
 
-**Project management that lives in your repo, not on someone else's server.**
+**A task tracker that lives in your repo — driven from the terminal, an AI agent, or a browser.**
 
-An open-source, local-first task tracker — a free **JIRA / Linear / Asana alternative** for personal projects and small teams. Tasks are stored as markdown files in a `.loctt/` directory, right alongside your code. No subscriptions, no vendor lock-in, no accounts to set up. Just your tasks, in your repo, under your control.
+Tasks are plain markdown files in a `.loctt/` directory next to your code. Nothing to sign up for, nothing to host, no lock-in: the data is yours, readable, and versioned alongside the project. An MCP server is built in, so an AI agent can read and write tasks with no integration to wire up.
+
+Open source under MIT. A free, local-first alternative to JIRA, Linear, and Asana for personal projects and small teams.
 
 ## The Problem
 
@@ -16,24 +26,22 @@ For a solo project or a small team that already version-controls everything, thi
 
 That's what LocTT is.
 
-## Benefits
+## Why LocTT
 
-- **Free of charge.** No subscriptions, no tiers, no per-seat pricing. Open source under MIT.
-- **No vendor lock-in.** Your tasks are markdown files with YAML frontmatter. Move them, grep them, script against them — they're just files.
-- **No accounts or API keys.** No admin consoles, no onboarding flow, no OAuth dance.
-- **No rate limits, no outages, no "scheduled maintenance."** It runs on your machine.
-- **Works offline.** On a plane, on a train, in a cabin with no signal. Your tasks are right there on disk.
-- **Git-friendly.** Commit `.loctt/` like any other folder, or use the opt-in sync mode that stores tasks on a dedicated branch.
-- **AI-agent native.** Ships with an MCP server so Claude, Cursor, and other agents can manage tasks directly — no integration code required.
+- **It's just files.** Tasks are markdown with YAML frontmatter in `.loctt/`. `grep` them, diff them in a pull request, script against them — there's no database and no export feature to escape through.
+- **Your agent is a first-class user.** The built-in MCP server gives an AI agent the same task operations you get — no API keys, no OAuth, no integration layer to build.
+- **Three surfaces, one store.** The CLI, the web UI, and the MCP server all read and write the same directory, so they never disagree. Create a task in one, see it in the others.
+- **Sharing is opt-in and free.** Commit `.loctt/` with your code, or turn on git-backed sync to keep tasks on a dedicated branch — you already have git, so it costs nothing to set up.
+- **It runs on your machine.** No accounts, no rate limits, no outages, and it works offline.
 
 ## Features
 
 **Core task management**
 - Tasks with status, priority, type, assignee, reporter, dates, labels, custom fields, and free-form markdown body
 - Configurable workflows — define your own statuses, priorities, task types, and relationship kinds in YAML
-- Directed relationships between tasks (`blocks`, `depends_on`, `parent`, or any custom kind you define)
+- Relationships between tasks (`blocks`, `parent`/`child`, `relates_to`, and more — or any custom kind you define)
 - File attachments per task
-- Activity log — every field change, link, body edit, and archive action is recorded
+- Comments with @-mentions, and an activity log that records every field change, link, body edit, and archive action
 - Soft-delete (archive) with restore, plus permanent delete
 
 **Organization**
@@ -47,7 +55,7 @@ That's what LocTT is.
 - Saved views in `queries.yaml` for frequently-used filters
 
 **Three ways to use it**
-- **Web UI** — board and list views in your browser
+- **Web UI** — list, board, and timeline views in your browser
 - **CLI** — fast, scriptable task management from the terminal
 - **MCP server** — AI agents read and manage tasks through structured tools
 
@@ -95,7 +103,7 @@ Start the web server:
 loctt ui
 ```
 
-This starts the server in the foreground and opens your browser to [http://localhost:4321](http://localhost:4321). You get board and list views for browsing, creating, and updating tasks — all backed by the same `.loctt/` data on disk. Press Ctrl-C to stop. Pass `--no-open` to skip the browser launch, or `--port <n>` to use a different port.
+This starts the server in the foreground and opens your browser to [http://localhost:4321](http://localhost:4321). You get list, board, and timeline views for browsing, creating, and updating tasks — all backed by the same `.loctt/` data on disk. Press Ctrl-C to stop. Pass `--no-open` to skip the browser launch, or `--port <n>` to use a different port.
 
 ### Keyboard shortcuts
 
@@ -155,92 +163,21 @@ See [docs/user/mcp/reference.md](docs/user/mcp/reference.md) for the full tool l
 
 ## CLI Usage
 
-### Create a task
+A taste of the everyday commands:
 
 ```bash
-loctt create "Set up CI pipeline"
+loctt create "Fix login bug" --priority high --type bug   # create, with fields
+loctt list --query "status = in_progress and priority = high"   # filter
+loctt list --view recent-open        # run a saved view
+loctt set T-1 status done            # set a field
+loctt link T-2 blocks T-1            # relate two tasks
+loctt show T-1                       # full detail
 ```
 
-Set fields right away:
-
-```bash
-loctt create "Fix login bug" --status in_progress --priority high --type bug
-```
-
-### List tasks
-
-```bash
-loctt list
-```
-
-Filter with the query language:
-
-```bash
-loctt list --query "status = in_progress and priority = high"
-loctt list --query "text ~ CI"
-```
-
-Use a saved view:
-
-```bash
-loctt list --view recent-open
-```
-
-### View a task
-
-```bash
-loctt show T-1
-```
-
-### Update a task
-
-```bash
-loctt set T-1 status in_progress
-loctt set T-1 priority high
-loctt set T-1 assignee "ken"
-loctt unset T-1 priority
-```
-
-Edit the task body (free-form markdown):
-
-```bash
-loctt body T-1 --set "## Notes\nNeed to check the auth middleware first."
-```
-
-### Link tasks
-
-```bash
-loctt link T-2 blocks T-1
-loctt link T-3 parent T-1
-```
-
-### Attach files
-
-```bash
-loctt attach T-1 ./screenshot.png
-loctt detach T-1 screenshot.png
-```
-
-### Archive and delete
-
-Archive is reversible:
-
-```bash
-loctt archive T-1
-loctt unarchive T-1
-```
-
-Delete is permanent:
-
-```bash
-loctt delete T-1 --force
-```
-
-### History
-
-```bash
-loctt log T-1
-```
+Tasks also archive (`loctt archive` / `unarchive`), attach files, carry a
+markdown body, and record every change in `loctt log`. See the
+[CLI reference](docs/user/cli/reference.md) for every command and flag, or
+the [Quick Start](docs/user/quickstart.md) for a guided walk-through.
 
 ## Git Sync
 
@@ -256,72 +193,60 @@ Conflicts are handled through automatic 3-way reconciliation — see [docs/user/
 
 ## Configuration
 
-Everything is customizable in `.loctt/config/workflow.yaml`: statuses, priorities, task types, relationships, and custom fields. Saved queries live in `.loctt/config/queries.yaml`.
+Everything is customizable in `.loctt/config/workflow.yaml`: statuses, priorities, task types, relationships, and custom fields. Saved views live in `.loctt/config/queries.yaml`.
 
 ## Documentation
 
 **Start here:**
+- [Quick Start](docs/user/quickstart.md) — install, initialize, and walk through the basics
 - [Concepts](docs/user/common/concepts.md) — how LocTT works, where data lives, and how sharing works
-- [Getting Started](docs/user/common/getting-started.md) — install, initialize, and walk through the basics
-- [Features](docs/user/features.md) — feature tour with links to each interface (Web UI, MCP, CLI)
 
 **By interface:**
 - [Features](docs/user/features.md) — what LocTT does, and which interfaces support each capability
 - [CLI reference](docs/user/cli/reference.md)
 - [MCP reference](docs/user/mcp/reference.md)
-- [Web UI spec](docs/user/ui/features.md) — the target UI; only the list view ships today
+- [Web UI guide](docs/user/ui/guide.md)
 
 **Cross-cutting:**
 - [Configuration](docs/user/common/configuration.md)
 - [Query Language](docs/user/common/query-language.md)
 - [Git Sync](docs/user/common/git-sync.md)
 - [Agent Setup](docs/user/mcp/agent-setup.md) — giving your AI agent project-specific workflow instructions
+- [Recovery & health](docs/user/common/recovery.md) — undo, finding lost tasks, hand-editing, and `loctt doctor`
+- [Data portability](docs/user/common/data-portability.md) — reading and exporting your data
+- [Upgrading & migrations](docs/user/common/upgrading.md) — updating LocTT and schema migrations safely
 - [Uninstall](docs/user/common/uninstall.md)
 
 **For contributors:**
-- [Architecture](docs/dev/architecture.md) — monorepo layout, data model, task identity
-- [Schema Reference](docs/dev/schema-reference.md) — file formats (`task.md`, `workflow.yaml`, …)
-- [Development](docs/dev/development.md) — building, running, and testing locally
-- [Invariants](docs/dev/invariants.md) — rules a change must not break
+- [Architecture](docs/dev/reference/architecture.md) — monorepo layout, data model, task identity
+- [Schema Reference](docs/dev/reference/schema-reference.md) — file formats (`task.md`, `workflow.yaml`, …)
+- [Development](docs/dev/process/development.md) — building, running, and testing locally
+- [Invariants](docs/dev/reference/invariants.md) — rules a change must not break
 - [Decisions](docs/dev/decisions.md) — locked design decisions, including what is deliberately not built
-- [Markdown extensions](docs/dev/markdown-extensions.md) — what the body editor must round-trip
-- [Build loop](docs/dev/build-loop.md) — how a web-UI ticket gets built and verified
+- [Markdown extensions](docs/dev/reference/markdown-extensions.md) — what the body editor must round-trip
+- [Build loop](docs/dev/process/build-loop.md) — how a web-UI ticket gets built and verified
 - [Known gaps](docs/dev/known-gaps.md) — understood defects not yet fixed
 
-**Acceptance criteria** — 931 cases describing observable behaviour, one
-file per flow. They are the specification the web UI is built against:
-- [UI test cases](docs/dev/ui-test-cases/) — 18 flow docs, plus the P1–P10 principles in its [README](docs/dev/ui-test-cases/README.md)
-- [CLI & MCP test cases](docs/dev/surface-test-cases/) — 10 flow docs, gaps only
-- [`case-index.json`](docs/dev/case-index.json) — the machine-readable index; see [tools/README.md](tools/README.md) for the coverage gate
+**Acceptance criteria** — cases describing observable behaviour, one file
+per flow. They are the specification each surface is built against:
+- [UI test cases](tests/cases/ui-test-cases/) — plus the P1–P10 principles in its [README](tests/cases/ui-test-cases/README.md)
+- [CLI & MCP test cases](tests/cases/surface-test-cases/)
+- [`case-index.json`](tests/cases/case-index.json) — the machine-readable index; see [tools/README.md](tools/README.md) for the coverage gate
 
-## Security & data model
+## Data & security
 
-LocTT is **single-user and local-first by design.** Its security posture
-is a deliberate choice, not an omission:
+Your tasks are files in `.loctt/`, so **your security is your git's
+security** — whoever can read the repo (or the branch, in git-backed
+mode) can read your tasks. There's no login and no accounts because
+there's nothing hosted to log into.
 
-- **The web server listens on loopback only** (`127.0.0.1`). It is not
-  reachable from other machines, and it sets no CORS headers.
-- **There is no authentication and no multi-user model** — because
-  nothing is exposed. The tracker is your local files; the UI is a local
-  view of them. This is the "no accounts, no API keys" benefit above, and
-  it is why there is no login to secure.
-- **Your data never leaves your machine** unless *you* enable optional
-  [Git Sync](#git-sync), which publishes to a git branch you control.
+The web UI is a local app; it serves on `localhost` and isn't built to be
+put on a public network. If you need multi-user, hosted task tracking,
+LocTT is the wrong tool.
 
-**Do not put LocTT on a network.** Because it assumes it is alone on a
-trusted machine, do **not** bind it to `0.0.0.0`, place it behind a
-reverse proxy, or otherwise expose it to other users or the internet —
-there is no auth layer to protect it if you do. (`npm run dev:host`
-exposes only the Vite *dev* client for local device testing; the API
-server still binds loopback.) If you need multi-user, hosted task
-tracking, LocTT is the wrong tool — that is the trade it makes for
-zero-setup simplicity.
-
-The realistic risk to guard against is **malformed data on disk** (a
-hand-edit or another tool corrupting a `.loctt/` file), not attackers.
-LocTT degrades around a corrupt field rather than crashing, and
-[`loctt doctor`](docs/user/cli/reference.md) reports what it finds — run
-it if something looks off.
+If a `.loctt/` file gets corrupted — a bad hand-edit, another tool — LocTT
+degrades around the bad field rather than crashing, and
+[`loctt doctor`](docs/user/cli/reference.md) reports what it finds.
 
 See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 

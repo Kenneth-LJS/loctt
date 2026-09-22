@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LocTT Logo Lab</title>
+<style>
+  :root {
+    --bg: #14151a;
+    --panel: #1c1e25;
+    --panel-2: #23262f;
+    --line: #32363f;
+    --text: #e8eaef;
+    --dim: #9aa0ad;
+    --accent: #6ea8fe;
+    --mark: #e8eaef;
+    --canvas: #101116;
+    --grid: #262a33;
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f4f6;
+    --panel: #ffffff;
+    --panel-2: #f7f8fa;
+    --line: #dcdfe5;
+    --text: #1a1c22;
+    --dim: #676e7d;
+    --accent: #2563eb;
+    --mark: #1a1c22;
+    --canvas: #ffffff;
+    --grid: #e6e8ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.5 ui-sans-serif, -apple-system, "SF Pro Text", Segoe UI, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: .01em; }
+  header .sp { flex: 1; }
+  .wrap {
+    display: grid;
+    grid-template-columns: 340px minmax(0,1fr);
+    gap: 0; min-height: calc(100vh - 53px);
+  }
+  @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } }
+
+  /* ---- controls ---- */
+  .panel {
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+    padding: 16px 18px 40px;
+    overflow-y: auto;
+  }
+  @media (max-width: 860px) { .panel { border-right: none; border-bottom: 1px solid var(--line); } }
+  .group { margin-bottom: 22px; }
+  .group > h2 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--dim); margin: 0 0 10px; font-weight: 600;
+  }
+  .ctl { margin-bottom: 13px; }
+  .ctl .row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .ctl label { font-weight: 500; }
+  .ctl .val {
+    margin-left: auto; font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--dim); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px;
+  }
+  .ctl input[type=range] {
+    width: 100%; margin: 0; accent-color: var(--accent);
+  }
+  .ctl.disabled { opacity: .38; pointer-events: none; }
+
+  /* two-value rows: regular | small */
+  .sizehdr {
+    display: grid; grid-template-columns: 1fr 74px 74px; gap: 6px;
+    align-items: end; margin: 2px 0 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sizehdr .col {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--dim); text-align: center; line-height: 1.25;
+  }
+  .sizehdr em { display: block; font-style: normal; font-size: 9px; opacity: .7; letter-spacing: 0; }
+  .f { display: grid; grid-template-columns: 1fr 74px 74px; gap: 6px;
+       align-items: center; margin-bottom: 7px; }
+  .f > label { font-weight: 500; font-size: 12px; }
+  .f input[type=number] {
+    width: 100%; font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 5px; padding: 5px 6px;
+    text-align: right; -moz-appearance: textfield;
+  }
+  .f input[type=number]::-webkit-outer-spin-button,
+  .f input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .f input:focus { outline: none; border-color: var(--accent); }
+  .f .slreg { grid-column: 1 / 3; margin: 0 0 2px; }
+  .f .slsml { grid-column: 3 / -1; margin: 0 0 2px; }
+  .f .slsml { accent-color: var(--dim); }
+  .f input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); }
+  .hint { color: var(--dim); font-size: 11px; margin-top: 4px; }
+  .chk { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; cursor: pointer; }
+  .chk input { accent-color: var(--accent); margin: 0; }
+  .btnrow { display: flex; flex-wrap: wrap; gap: 6px; }
+  button {
+    font: inherit; font-size: 12px; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.on { border-color: var(--accent); color: var(--accent); }
+
+  /* ---- stage ---- */
+  .stage { padding: 20px 22px 40px; overflow-y: auto; }
+  .board {
+    background: var(--canvas); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px;
+    display: flex; justify-content: center;
+  }
+  .board svg { width: min(460px, 100%); height: auto; display: block; }
+
+  /* Thumbnails wrap rather than overflow. The wordmark row is ~4.4x
+     wider than the square-mark row, so a fixed flex line clipped it;
+     min-width:0 + wrap lets each figure keep its natural size and spill
+     onto the next line instead of being cut off. */
+  .sizes {
+    display: flex; align-items: flex-end; flex-wrap: wrap;
+    gap: 18px 22px; margin-top: 22px; max-width: 100%;
+  }
+  .sizes figure { margin: 0; text-align: center; min-width: 0; max-width: 100%; }
+  .sizes figcaption { color: var(--dim); font-size: 10px; margin-top: 6px; }
+  .sizes svg { display: block; max-width: 100%; height: auto; }
+  /* the wordmark row runs widest -- give it its own line per item when
+     the pane is narrow */
+  #wordsizes figure { flex: 0 0 auto; }
+  .swatch { background: var(--mark); border-radius: 8px; padding: 10px; }
+  .swatch svg path { fill: var(--canvas) !important; }
+
+  .metrics {
+    margin-top: 22px; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
+  }
+  .metrics div {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px;
+  }
+  .metrics b { display: block; font-weight: 500; color: var(--dim); font-size: 10px;
+    text-transform: uppercase; letter-spacing: .07em; margin-bottom: 3px; }
+  .metrics span { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .warn { color: #e5a13a; }
+
+  .out { margin-top: 22px; }
+  .out h2 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--dim); margin: 0 0 8px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .out h2 button { margin-left: auto; }
+  textarea {
+    width: 100%; min-height: 150px; resize: vertical;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px;
+    font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre; overflow-wrap: normal; overflow-x: auto;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Logo Lab — notched square + counter</h1>
+  <div class="sp"></div>
+  <div class="btnrow">
+    <button id="theme">Light</button>
+    <button id="export">Export values</button>
+    <button id="reset">Reset</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ CONTROLS ============ -->
+  <div class="panel">
+    <div class="sizehdr">
+      <span></span><span class="col">regular<em>&ge;64px</em></span><span class="col">small<em>16px</em></span>
+    </div>
+    <div class="group" id="g-geometry"><h2>Geometry</h2></div>
+    <div class="group" id="g-curvature"><h2>Curvature</h2>
+      <label class="chk"><input type="checkbox" id="crookConcentric" checked> inner corner = radius + gap</label>
+    </div>
+    <div class="group" id="g-letters"><h2>Letters &mdash; CTT</h2></div>
+  </div>
+
+  <!-- ============ STAGE ============ -->
+  <div class="stage">
+    <div class="board">
+      <svg id="big" viewBox="-0.06 -0.06 1.12 1.12" xmlns="http://www.w3.org/2000/svg">
+        <path id="mark" fill="var(--mark)" fill-rule="evenodd"></path>
+      </svg>
+    </div>
+
+    <div class="board" style="margin-top:14px">
+      <svg id="word" viewBox="0 0 4 1" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <path id="wordmark" fill="var(--mark)" fill-rule="evenodd"></path>
+      </svg>
+    </div>
+
+    <div class="sizes">
+      <figure><div class="swatch"><svg id="s64" width="64" height="64" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg></div><figcaption>64 knockout</figcaption></figure>
+      <figure><svg id="s64b" width="64" height="64" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>64</figcaption></figure>
+      <figure><svg id="s48" width="48" height="48" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>48</figcaption></figure>
+      <figure><svg id="s32" width="32" height="32" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>32</figcaption></figure>
+      <figure><svg id="s24" width="24" height="24" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>24</figcaption></figure>
+      <figure><svg id="s16" width="16" height="16" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>16</figcaption></figure>
+    </div>
+
+    <div class="sizes" id="wordsizes"></div>
+
+    <div class="hint" id="derivedR" style="margin-top:16px"></div>
+    <div class="hint warn" id="cap-rSquare"></div>
+
+    <div class="out">
+      <h2>path d <button id="copyd">Copy</button></h2>
+      <textarea id="dout" readonly spellcheck="false"></textarea>
+    </div>
+
+    <div class="out">
+      <h2>all svgs &mdash; LO + LOCTT, every size <button id="download">Download .svg files</button><button id="copysvg">Copy</button></h2>
+      <textarea id="svgout" readonly spellcheck="false"></textarea>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------
+   GEOMETRY
+
+   Unit square, y down, origin top-left.
+
+   `corner` c: the diagonal cut runs from (1-c, 0) on the top edge to
+   (1, c) on the right edge. It removes the top-right triangle. c=1 is
+   the full diagonal (half the square gone); the slider caps there.
+
+   The cut line has outward normal n = (1,-1)/sqrt2. Signed distance
+   from a point p to the cut line is dot(p - (1,0), n).
+
+   The counter square sits in the removed triangle, pushed `inset` off
+   the top and right edges, and `gap` off the cut measured along n.
+   Its top-right corner is at (1-inset, inset). With side s its
+   bottom-left corner is (1-inset-s, inset+s), whose distance to the
+   cut is (s + ... ) -- working it through, requiring that bottom-left
+   corner to sit `gap` clear of the cut gives
+
+        s = c - gap*sqrt2 - 2*inset
+
+   i.e. `gap` in perpendicular units costs sqrt2 of nominal width.
+   We surface BOTH numbers in the metrics so the trade is visible.
+------------------------------------------------------------------ */
+
+const R2 = Math.SQRT2;
+
+/* --------------------------------------------------------------------
+   TWO VALUES PER FIELD, INTERPOLATED BY SIZE
+
+   A shape tuned at 64px+ does not hold at 16px: hairline gaps close up,
+   optical corrections that look right large look heavy small. So every
+   field carries TWO numbers -- `reg` (what it should be at 64px and
+   above) and `sml` (at 16px) -- and the value actually used is a linear
+   interpolation between them:
+
+       t = clamp((px - 16) / (64 - 16), 0, 1)
+       value = sml + (reg - sml) * t
+
+   At >=64px you get `reg` exactly; at <=16px you get `sml` exactly.
+   Leave the two equal and the field simply does not vary with size.
+-------------------------------------------------------------------- */
+const SMALL_PX = 16, REG_PX = 64;
+
+const FIELDS = [
+  { k:"corner",    g:"geometry",    label:"corner",          min:0, max:0.95, step:0.001, reg:0.62, sml:0.62 },
+  { k:"bevel",     g:"geometry",    label:"bevel",           min:0, max:1, step:0.001, reg:0.35, sml:0.35 },
+  { k:"gap",       g:"geometry",    label:"gap",             min:0, max:0.5, step:0.001, reg:0.1, sml:0.13 },
+  { k:"inset",     g:"geometry",    label:"inset",           min:0, max:0.5, step:0.001, reg:0.07, sml:0.07 },
+  { k:"rSquare",   g:"curvature",   label:"corner radius",   min:0, max:0.5, step:0.001, reg:0.087, sml:0.07 },
+  { k:"optical",   g:"curvature",   label:"optical",         min:0, max:1, step:0.01, reg:0.19, sml:0.5 },
+  { k:"rDiag",     g:"curvature",   label:"diagonal bias",   min:0.2, max:3, step:0.01, reg:1, sml:1 },
+  { k:"cCutW",     g:"letters",     label:"C cut width",     min:0, max:0.9, step:0.005, reg:0.5, sml:0.5 },
+  { k:"cCutH",     g:"letters",     label:"C cut height",    min:0, max:0.9, step:0.005, reg:0.45, sml:0.45 },
+  { k:"tCutW",     g:"letters",     label:"T cut width",     min:0, max:0.49, step:0.005, reg:0.3, sml:0.3 },
+  { k:"tCutH",     g:"letters",     label:"T cut height",    min:0, max:0.9, step:0.005, reg:0.65, sml:0.65 },
+  { k:"wordGap",   g:"letters",     label:"letter gap",      min:0, max:0.6, step:0.005, reg:0.12, sml:0.12 },
+  { k:"wordScale", g:"letters",     label:"CTT scale",       min:0.3, max:1.2, step:0.005, reg:1, sml:1 },
+];
+
+// S holds {reg, sml} per field, plus the non-interpolated settings.
+const S = { crookConcentric: true };
+for (const f of FIELDS) S[f.k] = { reg: f.reg, sml: f.sml };
+
+const SIZES = [16, 24, 32, 48, 64];   // thumbnails shown under the mark
+const EXPORT_SIZE = 100;              // viewBox of the copyable output
+const EXPORT_PREC = 3;
+
+/** The parameter set at a given pixel size. */
+function paramsAt(px) {
+  const t = Math.max(0, Math.min(1, (px - SMALL_PX) / (REG_PX - SMALL_PX)));
+  const out = { crookConcentric: S.crookConcentric };
+  for (const f of FIELDS) {
+    const v = S[f.k];
+    out[f.k] = v.sml + (v.reg - v.sml) * t;
+  }
+  return out;
+}
+
+
+/* ---------- path helpers ---------- */
+
+const v  = (a,b) => [a[0]-b[0], a[1]-b[1]];
+const len = a => Math.hypot(a[0], a[1]);
+const norm = a => { const l = len(a) || 1; return [a[0]/l, a[1]/l]; };
+const add = (a,b,k=1) => [a[0]+b[0]*k, a[1]+b[1]*k];
+const cross = (a,b) => a[0]*b[1] - a[1]*b[0];
+
+/**
+ * Round the polygon `pts` (closed, any winding) where radii[i] is the
+ * requested radius at vertex i. Each radius is clamped so adjacent
+ * fillets can never overrun a shared edge — the classic failure that
+ * makes rounded paths fold inside out at high radius.
+ */
+function roundPoly(pts, radii) {
+  // Drop vertices that coincide with their predecessor. A zero-length
+  // edge gives an undefined edge direction, which propagates NaN through
+  // the fillet maths and reads as a self-intersection. Parameter caps
+  // aim to prevent these; this makes it structurally impossible.
+  {
+    const p = [], r = [];
+    for (let i = 0; i < pts.length; i++) {
+      const prev = p.length ? p[p.length-1] : pts[pts.length-1];
+      if (len(v(pts[i], prev)) > 1e-9) { p.push(pts[i]); r.push(radii[i]); }
+    }
+    // collapsing the wrap-around too
+    while (p.length > 3 && len(v(p[0], p[p.length-1])) <= 1e-9) { p.pop(); r.pop(); }
+    if (p.length < 3) return "";
+    pts = p; radii = r;
+  }
+  const n = pts.length;
+
+  // tangent length wanted at each vertex, from its interior angle
+  const want = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], a = pts[(i-1+n)%n], b = pts[(i+1)%n];
+    const u = norm(v(a,p)), w = norm(v(b,p));
+    let cosT = Math.max(-1, Math.min(1, u[0]*w[0] + u[1]*w[1]));
+    const theta = Math.acos(cosT);          // angle between the two edges
+    const r = radii[i] || 0;
+    // tangent distance from the vertex for a circle of radius r
+    want[i] = (r <= 0 || theta < 1e-6 || Math.abs(Math.PI - theta) < 1e-6)
+      ? 0 : r / Math.tan(theta / 2);
+  }
+
+  // Clamp per edge: t[i] + t[i+1] <= edge length.
+  //
+  // Scaling BOTH ends by the same factor (the obvious fix) preserves the
+  // ratio between two competing radii, so a vertex that asked for a lot
+  // keeps more than one that asked for little -- the shape goes lopsided
+  // instead of degrading evenly. Instead give each edge's budget out
+  // fairly: equal shares, and anyone wanting less than its share keeps
+  // what it asked for, releasing the remainder to the other end.
+  const t = want.slice();
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      const j = (i+1)%n;
+      const L = len(v(pts[j], pts[i]));
+      if (t[i] + t[j] <= L + 1e-12) continue;
+      const half = L / 2;
+      let ti, tj;
+      if (t[i] <= half)      { ti = t[i];        tj = L - ti; }  // i is modest
+      else if (t[j] <= half) { tj = t[j];        ti = L - tj; }  // j is modest
+      else                   { ti = half;        tj = half;   }  // both greedy
+      if (Math.abs(ti-t[i]) > 1e-12 || Math.abs(tj-t[j]) > 1e-12) changed = true;
+      t[i] = ti; t[j] = tj;
+    }
+    if (!changed) break;
+  }
+
+  let d = "", first = null;
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], a = pts[(i-1+n)%n], b = pts[(i+1)%n];
+    const u = norm(v(a,p)), w = norm(v(b,p));
+    const ti = t[i];
+    if (ti <= 1e-9) {
+      if (!first) { first = p; d += `M${P(p)}`; } else d += `L${P(p)}`;
+      continue;
+    }
+    let cosT = Math.max(-1, Math.min(1, u[0]*w[0] + u[1]*w[1]));
+    const theta = Math.acos(cosT);
+    const sgn = cross(v(p,a), v(b,p)) > 0 ? 1 : -1;
+    const r = ti * Math.tan(theta/2);
+    const inPt  = add(p, u, ti);   // where the fillet starts
+    const outPt = add(p, w, ti);   // where it ends
+    if (!first) { first = inPt; d += `M${P(inPt)}`; } else d += `L${P(inPt)}`;
+    d += `A${N(r)} ${N(r)} 0 0 ${sgn > 0 ? 1 : 0} ${P(outPt)}`;
+  }
+  return d + "Z";
+}
+
+let PREC = 2;
+const N = x => {
+  const s = (Math.abs(x) < 1e-9 ? 0 : x).toFixed(PREC);
+  return s.replace(/\.?0+$/, "") || "0";
+};
+const P = p => `${N(p[0])} ${N(p[1])}`;
+
+/* ---------- the mark ---------- */
+
+/* --------------------------------------------------------------------
+   CORNER RADIUS: LITERAL, THE WAY ILLUSTRATOR AND FIGMA DO IT
+
+   A corner radius is a physical thing: the circle of radius r inscribed
+   tangent to both edges. Its tangent points sit r/tan(T/2) back from the
+   vertex, so an ACUTE corner eats far more edge than an OBTUSE one at the
+   same r. That asymmetry is correct and expected -- it is what "8px
+   radius" means, and it is what makes the corner match a rounded
+   rectangle sitting beside it.
+
+   This file previously "compensated" for angle by equalising the sagitta
+   (the depth the curve cuts into the corner), which inflated a 135-degree
+   corner to 5.03x the square radius. That was wrong on three counts:
+
+     1. Nothing does this. Illustrator's Live Corners gives "an actual
+        real radius measured from the centre point of the curve", with
+        identical centre points at 90 and 135 degrees. Figma's arc is
+        likewise "based on an inscribed circle".
+     2. Illustrator DID consider angle compensation and went the OPPOSITE
+        way: its opt-in "Relative" rounding REDUCES the radius at sharp
+        corners so they stop ballooning. Growing the obtuse radius is the
+        inverse of the one correction the tool actually offers.
+     3. Measured here, it did not even achieve its own goal -- the cap
+        starved it to sagitta 0.0103 against the square corners' 0.0409 --
+        while consuming 51-61% of each bevel edge against 20% of the long
+        outer edges, so the straight runs came out wildly uneven.
+
+   (Illustrator's legacy Effect > Round Corners is a separate, broken
+   thing that measures from the vertex rather than the circle centre, so
+   its input behaves as the TANGENT length: true R = L*tan(T/2). At 135
+   degrees an input of 30pt yields a real radius of 72.4pt. We do not
+   copy that; it over-rounds obtuse corners.)
+
+   So: one literal radius per corner, no angle correction. If a 135-degree
+   corner reads too crisp, nudge ITS slider -- that is a deliberate
+   optical tweak, which is how designers handle it, and exactly why the
+   diagonal corners have their own control.
+-------------------------------------------------------------------- */
+
+/** Interior angle at vertex i of a closed polygon, in radians. */
+function interiorAngle(pts, i) {
+  const n = pts.length;
+  const p = pts[i], a = pts[(i-1+n)%n], b = pts[(i+1)%n];
+  const u = norm(v(a,p)), w = norm(v(b,p));
+  const c = Math.max(-1, Math.min(1, u[0]*w[0] + u[1]*w[1]));
+  return Math.acos(c);
+}
+
+function geometry(s) {
+  const c = Math.max(0, Math.min(1, s.corner));
+  const inset = s.inset;
+
+  // Counter square, nested in the bite. The two params are independent,
+  // each measured against a DIFFERENT pair of edges -- which is the whole
+  // point: inset never eats into the gap.
+  //
+  //   inset -> distance from the top and right edges of the unit square
+  //   gap   -> distance from the L's two inner edges (x=armX and y=armY)
+  //
+  // The bite is c wide and c tall. Take `inset` off the outer pair and
+  // `gap` off the inner pair, and whatever is left is the counter:
+  //
+  //   side = c - inset - gap
+  //
+  // Both are straight axis-aligned subtractions -- no sqrt2, no /2,
+  // because neither corner is being pinned against the diagonal.
+  const side = c - inset - s.gap;
+
+  // A single straight cut across a square yields a CHAMFERED SQUARE, never
+  // an L -- at any value of c. The L needs the corner removed as a
+  // RECTANGULAR bite whose inner corner then gets the diagonal treatment.
+  //
+  // So: `corner` c is how much of the corner is bitten out (c of the width
+  // and c of the height, per the original spec: 0.5 => a quarter of the
+  // area gone). That alone gives a clean L with arms (1-c) wide:
+  //
+  //     (0,0) - (1-c,0) - (1-c,c) - (1,c) - (1,1) - (0,1)
+  //                          ^ the L's inner (concave) corner
+  //
+  // `bevel` then slices the L's two LEG TIPS along the TL->BR diagonal --
+  // not the inner crook. The L has two free ends:
+  //
+  //   the vertical leg's tip, where it meets the TOP edge    (0,0)-(armX,0)
+  //   the horizontal leg's tip, where it meets the RIGHT edge (1,armY)-(1,1)
+  //
+  // A slope-1 cut across each tip truncates it at 45 degrees, so both legs
+  // end on the same diagonal direction. bevel is the fraction of the leg's
+  // own width taken off; bevel=1 cuts the tip to a point.
+  const armX = 1 - c;          // vertical leg: x from 0..armX
+  const armY = c;              // where the horizontal leg's top edge sits
+  const wV = armX;             // vertical leg width
+  const wH = 1 - armY;         // horizontal leg width (bottom band height)
+
+  // Cap the bevel so the outline cannot fold through itself.
+  //
+  // The vertical-leg cut runs from (armX - bV, 0) to (armX, bV) where
+  // bV = bevel*wV. Its lower vertex must stay ABOVE the crook at y = armY,
+  // so bV <= armY  =>  bevel <= armY / wV. Symmetrically for the
+  // horizontal leg: bH = bevel*wH must not pass the crook at x = armX.
+  //
+  // The right-arm cut runs from (1 - bH, armY) to (1, armY + bH) where
+  // bH = bevel*wH. It must not run back past the crook along the bite's
+  // edge (which is c long), so bH <= c; and it must not run below the
+  // bottom edge, so armY + bH <= 1, i.e. bH <= wH.
+  //
+  // Wide legs with a shallow bite (small `corner`) bind first -- c=0.2
+  // gives wV=0.8 against armY=0.2, so the ceiling is 0.25. A flat cap
+  // alone is nowhere near enough; it let c=0.2 self-intersect at every
+  // bevel above 0. (Verified over a 50-combo sweep.)
+  //
+  // The 0.98 factor keeps each bevel vertex strictly short of its
+  // limit: landing exactly ON one makes a duplicate vertex / zero-length
+  // edge, which reads as a self-intersection and breaks the fillet maths.
+  const bevelMax = Math.max(0, Math.min(
+    0.92,                                          // keep the tip from collapsing
+    wV > 1e-6 ? 0.98 * armY / wV : 0.92,           // vertical arm: don't reach the crook
+    wH > 1e-6 ? 0.98 * c / wH : 0.92,              // right arm: don't reach the crook
+    0.98                                           // right arm: stay above the bottom edge
+  ));
+  const bevel = Math.max(0, Math.min(bevelMax, s.bevel));
+
+  // Every radius comes from just two sliders:
+  //
+  //   rSquare -- the 90 degree corners: the L's three outer corners and
+  //              the counter's four. The L's INNER corner (the crook)
+  //              also takes it, plus the gap, so the crook's curve and
+  //              the counter's facing curve stay concentric.
+  //   rDiag   -- the diagonal cut's corners, applied literally
+  //              as a literal radius, like every other drawing tool.
+  //
+  // Marker constants let radiusLimits() probe which slider owns which
+  // vertex; DIAG entries are resolved to real radii just below.
+  const SQ = s.rSquare;
+  const DIAG = -1;               // placeholder: resolved by angle, below
+  // The L's inner (concave) corner. Adding the gap makes its curve
+  // CONCENTRIC with the counter's facing corner -- the two arcs then
+  // share a centre and the channel between them keeps constant width.
+  // That is a deliberate offset, not part of the radius model: with
+  // `crookConcentric` off it simply takes the same radius as every other
+  // corner, so setting one number really does give one curvature
+  // everywhere.
+  const CROOK = s.crookConcentric === false ? SQ : SQ + s.gap;
+
+  let outerPts, outerR;
+  if (c <= 1e-6) {
+    outerPts = [[0,0],[1,0],[1,1],[0,1]];
+    outerR   = [SQ, SQ, SQ, SQ];
+  } else if (bevel <= 1e-6) {
+    // crisp L, six vertices -- no diagonal at all
+    outerPts = [[0,0], [armX,0], [armX,armY], [1,armY], [1,1], [0,1]];
+    outerR   = [SQ, SQ, CROOK, SQ, SQ, SQ];
+  } else {
+    // Vertical leg tip: cut from (armX - bV, 0) down to (armX, bV), so the
+    // top of the leg is sheared back on a slope-1 line.
+    const bV = bevel * wV;
+    // Right arm: bevel the TOP corner of that arm -- the one at (1, armY)
+    // where the bite's edge meets the right edge, facing the counter.
+    // NOT the bottom-right corner of the unit square, which stays square.
+    const bH = bevel * wH;
+
+    outerPts = [
+      [0, 0],                    // TL
+      [armX - bV, 0],            // start of vertical-leg bevel (top edge)
+      [armX, bV],                // end of vertical-leg bevel
+      [armX, armY],              // inner crook
+      [1 - bH, armY],            // start of right-arm bevel (on the bite's edge)
+      [1, armY + bH],            // end of right-arm bevel (on the right edge)
+      [1, 1],                    // BR -- stays square
+      [0, 1]                     // BL
+    ];
+    outerR = [
+      SQ,                        // TL
+      DIAG, DIAG,                // vertical-leg bevel corners
+      CROOK,                     // inner crook (concave)
+      DIAG, DIAG,                // right-arm bevel corners
+      SQ,                        // BR
+      SQ                         // BL -- the L's heel
+    ];
+  }
+
+  // Resolve the DIAG placeholders. Each diagonal corner gets the radius
+  // that gives it the same tangent length as a 90-degree corner of
+  // radius rDiag -- so the two obtuse (135) and two acute (45) corners
+  // come out visually matched instead of needing separate sliders.
+  // ANGLE COMPENSATION.
+  //
+  // At equal radius R, a 135-degree corner consumes 2.414x LESS edge than
+  // a 90-degree one (q = R/tan(th/2)) and cuts in 5.03x less deep. That
+  // size disparity -- not curvature -- is what makes equal radii look
+  // unequal. Smoothing cannot touch it: it scales both corners by the
+  // same (1+s), leaving the ratio at 2.414 exactly. Measured, not assumed.
+  //
+  // `optical` blends between the two defensible endpoints:
+  //
+  //   0 = literal radius      R(th) = R                 (Illustrator/Figma)
+  //   1 = equal footprint     R(th) = R * tan(th/2)/tan(45) = 2.414x @135
+  //
+  // as  R(th) = R * (tan(th/2)/tan(45)) ** optical.
+  //
+  // Glyphs is the only shipped tool with an angle correction ("Visual
+  // Corrections": larger radii at obtuse corners, which is this
+  // direction) but it does not publish the factor, so the exponent is a
+  // dial for the eye rather than a derived constant.
+  // ONE radius drives every corner. `radius` is the 90-degree value; a
+  // corner at any other angle derives from it:
+  //
+  //     R(th) = radius * (tan(th/2) / tan(45)) ** optical
+  //
+  //   optical = 0  -> literal equal radius everywhere (Illustrator/Figma).
+  //                   A 135-degree corner then consumes 2.414x LESS edge
+  //                   than a 90-degree one and reads much smaller.
+  //   optical = 1  -> equal edge footprint: every corner eats the same
+  //                   length of its edges. 2.414x radius at 135 degrees.
+  //
+  // `diagBias` then multiplies the non-90 corners on top, for hand
+  // tuning when the formula is close but not your eye's answer.
+  //
+  // (Glyphs is the only shipped tool with an angle correction -- larger
+  // radii at obtuse corners, this direction -- but does not publish the
+  // factor, so `optical` is a dial, not a derived constant.)
+  const K = Math.max(0, Math.min(1, s.optical ?? 0));
+  const BIAS = s.rDiag ?? 1;
+  outerR = outerR.map((r, i) => {
+    if (r !== DIAG) return r;
+    const T = interiorAngle(outerPts, i);
+    const scaled = SQ * Math.pow(Math.tan(T/2) / Math.tan(Math.PI/4), K);
+    return scaled * BIAS;
+  });
+
+  // Counter square, top-right corner at (1-inset, inset). All four of its
+  // corners are 90 degrees, so they take rSquare directly.
+  const x1 = 1 - inset, y0 = inset;
+  const x0 = x1 - side, y1 = y0 + side;
+  const small = [[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+  const rSmall = [SQ, SQ, SQ, SQ];
+
+  return { c, side, outerPts, outerR, small, rSmall, inset, bevelMax };
+}
+
+/**
+ * Clamp the radius sliders to what the current geometry can actually
+ * render. This is where the clamp lives now -- NOT in render()'s readout
+ * loop, which used to write back into the <input> and fight the pointer
+ * mid-drag. Sliders hold intent; this holds what gets drawn.
+ */
+function effectiveRadii(s) {
+  // The sliders are ABSOLUTE radii, matching what every drawing tool
+  // means by a corner radius. Clamp each to what its corner can hold --
+  // the ceiling is in tangent-length space (a corner's two fillets must
+  // fit the edges they share), which is what maxRadiusAt() returns.
+  //
+  // Clamping lives here and NOT in render(): writing a clamped value back
+  // into the <input> fights the pointer mid-drag and makes the thumb
+  // jitter. The slider holds intent; this holds what gets drawn.
+  const lim = radiusLimits(s);
+  const out = { ...s };
+  const cap = Math.max(0, Math.min(0.5, lim.rSquare));
+  out.rSquare = Math.max(0, Math.min(cap, s.rSquare));
+  return out;
+}
+
+
+
+/* --------------------------------------------------------------------
+   LETTERFORMS
+
+   C and T are built the same way as the L: a unit-square block with
+   rectangular bites taken out, then run through the SAME roundPoly with
+   the SAME rSquare, so every letter's corners match the mark's.
+
+   Concave corners (the inside of a bite) take rSquare too -- roundPoly
+   works out convex vs concave from the winding, so nothing special is
+   needed here.
+-------------------------------------------------------------------- */
+
+/** C: block with one rectangular bite out of the middle of the right edge. */
+function letterC(s) {
+  const w = Math.max(0, Math.min(0.95, s.cCutW));
+  const h = Math.max(0, Math.min(0.95, s.cCutH));
+  const R = s.rSquare;
+  if (w <= 1e-6 || h <= 1e-6) {
+    return { pts: [[0,0],[1,0],[1,1],[0,1]], r: [R,R,R,R] };
+  }
+  const y0 = (1 - h) / 2, y1 = y0 + h;   // bite is vertically centred
+  const x  = 1 - w;                      // how far in the bite reaches
+  return {
+    pts: [
+      [0,0], [1,0], [1,y0],   // top edge, down to the bite
+      [x,y0], [x,y1],         // into the bite and across  (concave)
+      [1,y1], [1,1], [0,1]    // back out, down, and home
+    ],
+    r: [R,R,R, R,R, R,R,R]
+  };
+}
+
+/** T: block with a rectangular bite out of each bottom corner. */
+function letterT(s) {
+  const w = Math.max(0, Math.min(0.49, s.tCutW));
+  const h = Math.max(0, Math.min(0.95, s.tCutH));
+  const R = s.rSquare;
+  if (w <= 1e-6 || h <= 1e-6) {
+    return { pts: [[0,0],[1,0],[1,1],[0,1]], r: [R,R,R,R] };
+  }
+  const y = 1 - h;            // underside of the crossbar
+  return {
+    pts: [
+      [0,0], [1,0],           // the crossbar's top
+      [1,y], [1-w,y],         // down the right, in along the bar
+      [1-w,1], [w,1],         // down the stem's right, across its foot
+      [w,y], [0,y]            // up the stem's left, out along the bar
+    ],
+    r: [R,R, R,R, R,R, R,R]
+  };
+}
+
+function buildPath(sRaw) {
+  const s = effectiveRadii(sRaw);
+  const g = geometry(s);
+  let d = roundPoly(g.outerPts, g.outerR);
+  if (g.side > 1e-4) d += " " + roundPoly(g.small, g.rSmall);
+  return { d, g };
+}
+
+/**
+ * Largest radius vertex `i` of `pts` can take while still being drawn
+ * exactly as asked. The fillet needs tangent length r/tan(theta/2) at
+ * the vertex, and may use at most half of each adjoining edge (half,
+ * not all, because the neighbour has an equal claim). Invert that.
+ */
+function maxRadiusAt(pts, i) {
+  const n = pts.length;
+  const p = pts[i], a = pts[(i-1+n)%n], b = pts[(i+1)%n];
+  const u = norm(v(a,p)), w = norm(v(b,p));
+  const cosT = Math.max(-1, Math.min(1, u[0]*w[0] + u[1]*w[1]));
+  const theta = Math.acos(cosT);
+  if (theta < 1e-6 || Math.abs(Math.PI - theta) < 1e-6) return 0;
+  const budget = Math.min(len(v(a,p)), len(v(b,p))) / 2;
+  return budget * Math.tan(theta / 2);
+}
+
+/**
+ * Per-slider ceilings for the current geometry.
+ *
+ * Rather than re-deriving which vertex takes which radius (a mapping that
+ * has to stay in sync with geometry()), ask geometry() for the outline
+ * built with a marker value per slider, then read back which vertices
+ * carry it. One source of truth.
+ */
+function radiusLimits(s) {
+  // Probe geometry() with a UNIT marker radius on one slider at a time
+  // and read back the tightest ceiling among the vertices it owns.
+  // The marker is absolute (1.0), never the user's proportion, so the
+  // ceiling does not depend on the value we are about to scale by it.
+  const lim = { rSquare: Infinity, rDiag: Infinity };
+
+  const probeSq = geometry({ ...s, rSquare: 1, rDiag: 0 });
+  probeSq.outerR.forEach((r, i) => {
+    if (r > 1e-9) lim.rSquare = Math.min(lim.rSquare, maxRadiusAt(probeSq.outerPts, i) / r);
+  });
+  if (probeSq.side > 1e-4) {
+    lim.rSquare = Math.min(lim.rSquare, maxRadiusAt(probeSq.small, 0));
+  }
+
+  const probeD = geometry({ ...s, rSquare: 0, rDiag: 1 });
+  probeD.outerR.forEach((r, i) => {
+    if (r > 1e-9) lim.rDiag = Math.min(lim.rDiag, maxRadiusAt(probeD.outerPts, i) / r);
+  });
+
+  for (const k in lim) if (!isFinite(lim[k]) || lim[k] < 0) lim[k] = 0.5;
+  return lim;
+}
+
+
+
+/* --------------------------------------------------------------------
+   THE WORDMARK: the LO mark, then C T T behind it.
+
+   Each letter is drawn into its own unit box, scaled by `wordScale`, and
+   laid out left to right with `wordGap` between boxes. The LO keeps the
+   full unit height; the CTT sit on the same baseline (bottom-aligned),
+   which is what makes them read as following it rather than floating.
+-------------------------------------------------------------------- */
+function buildWordmark(s) {
+  const scale = Math.max(0.05, s.wordScale);
+  const gap   = Math.max(0, s.wordGap);
+
+  // translate + scale a subpath's numbers (absolute M/L/A only)
+  const place = (d, dx, dy, k) => d.replace(/([MLA])([^MLAZ]*)/gi, (_, cmd, args) => {
+    const n = (args.match(/-?\d*\.?\d+(?:e-?\d+)?/g) || []).map(parseFloat);
+    const num = x => { const v = Math.abs(x) < 1e-9 ? 0 : x;
+      return (v.toFixed(Math.max(0, PREC)).replace(/\.?0+$/, "")) || "0"; };
+    if (cmd.toUpperCase() === "A") {
+      const out = [];
+      for (let i = 0; i + 7 <= n.length; i += 7) {
+        const [rx, ry, rot, laf, sf, x, y] = n.slice(i, i + 7);
+        out.push(`${num(rx*k)} ${num(ry*k)} ${rot} ${laf} ${sf} ${num(x*k+dx)} ${num(y*k+dy)}`);
+      }
+      return cmd + out.join(cmd);
+    }
+    const pairs = [];
+    for (let i = 0; i + 1 < n.length; i += 2) pairs.push(`${num(n[i]*k+dx)} ${num(n[i+1]*k+dy)}`);
+    return cmd + pairs.join(" ");
+  });
+
+  const lo = buildPath(s).d;                 // the L + counter, unit box
+  const C  = letterC(s), T = letterT(s);
+  const cD = roundPoly(C.pts, C.r);
+  const tD = roundPoly(T.pts, T.r);
+
+  let x = 1 + gap;                           // LO occupies 0..1
+  const parts = [lo];
+  for (const d of [cD, tD, tD]) {
+    parts.push(place(d, x, 1 - scale, scale));   // bottom-aligned
+    x += scale + gap;
+  }
+  return { d: parts.join(" "), width: x - gap };
+}
+
+/* ---------- render ---------- */
+
+const $ = id => document.getElementById(id);
+
+function render() {
+  save();
+  // The big preview is drawn at the REGULAR end of the scale.
+  PREC = 6;
+  const pReg0 = paramsAt(REG_PX);
+  const big = buildPath(pReg0);
+  $("mark").setAttribute("d", big.d);
+
+  const w = buildWordmark(pReg0);
+  $("wordmark").setAttribute("d", w.d);
+  // Pad the wordmark box. At wordScale = 1 the letters fill y 0..1
+  // exactly, so a tight viewBox puts their flat tops hard against the
+  // panel edge and they read as chopped. The mark itself is not clipped
+  // -- this is breathing room, matching the LO preview's own margin.
+  const PAD = 0.06;
+  $("word").setAttribute("viewBox",
+    `${-PAD} ${-PAD} ${(w.width + PAD*2).toFixed(4)} ${(1 + PAD*2).toFixed(4)}`);
+
+  // Wordmark at each size, each from its OWN interpolated parameters --
+  // this row is where you see the full logo fall apart at 16px.
+  const host = $("wordsizes");
+  if (!host.childElementCount) {
+    host.innerHTML = SIZES.slice().reverse().map(px =>
+      `<figure>${px === 64 ? '<div class="swatch" id="wswatch">' : ''}` +
+      `<svg id="w${px}" viewBox="0 0 4 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg>` +
+      `${px === 64 ? '</div>' : ''}` +
+      `<figcaption>${px === 64 ? '64 knockout' : px}</figcaption></figure>`).join("");
+  }
+  for (const px of SIZES) {
+    const ww = buildWordmark(paramsAt(px));
+    const el = $("w" + px);
+    if (!el) continue;
+    const pad = 0.06;
+    el.setAttribute("viewBox",
+      `${-pad} ${-pad} ${(ww.width + pad*2).toFixed(4)} ${(1 + pad*2).toFixed(4)}`);
+    // keep the LETTERS at px tall, not the padded box
+    el.setAttribute("height", (px * (1 + pad*2)).toFixed(1));
+    el.setAttribute("width",  (px * (ww.width + pad*2)).toFixed(1));
+    el.querySelector("path").setAttribute("d", ww.d);
+  }
+
+  // Each thumbnail gets its OWN parameters, interpolated for its size --
+  // that is the whole point of the two-value model.
+  for (const px of SIZES) {
+    const d = buildPath(paramsAt(px)).d;
+    for (const id of ["s" + px, px === 64 ? "s64b" : null]) {
+      if (!id) continue;
+      const el = $(id);
+      if (el) el.querySelector("path").setAttribute("d", d);
+    }
+  }
+
+  // Readouts: caps, and what the formula gives at each angle.
+  const pReg = paramsAt(REG_PX);
+  const lim = radiusLimits(pReg);
+  const cap = Math.max(0, Math.min(0.5, lim.rSquare));
+  const box = $("cap-rSquare");
+  if (box) {
+    const over = pReg.rSquare > cap + 1e-9;
+    box.textContent = over ? `capped at ${cap.toFixed(3)}` : "";
+    box.classList.toggle("warn", over);
+  }
+
+  const g = big.g;
+  const info = $("derivedR");
+  if (info) {
+    const seen = new Map();
+    g.outerPts.forEach((p, i) => {
+      const deg = Math.round(interiorAngle(g.outerPts, i) * 180 / Math.PI);
+      if (!seen.has(deg)) seen.set(deg, g.outerR[i]);
+    });
+    info.innerHTML = [...seen.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([deg, r]) => `${deg}\u00B0 r <b>${r.toFixed(3)}</b>`)
+      .join(" &nbsp;\u00B7&nbsp; ");
+  }
+
+  // Export: fixed viewBox, fixed precision, regular-size parameters.
+  PREC = EXPORT_PREC;
+  const dMark = scalePath(buildPath(pReg0).d, EXPORT_SIZE);
+  $("dout").value = dMark;
+  $("svgout").value = allSvgs();
+}
+
+/**
+ * Every variant, ready to paste or save: the LO mark and the full LOCTT
+ * wordmark, each emitted at every size in SIZES using THAT size's own
+ * interpolated parameters -- a 16px file is not the 64px file scaled
+ * down, it is the small-value geometry.
+ */
+function allSvgs() {
+  const prev = PREC;
+  PREC = EXPORT_PREC;
+  const out = [];
+
+  for (const px of SIZES) {
+    const p = paramsAt(px);
+    const d = scalePath(buildPath(p).d, px);
+    out.push(
+`<!-- LO mark @ ${px} -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${px} ${px}" width="${px}" height="${px}">
+  <path fill-rule="evenodd" fill="currentColor" d="${d}"/>
+</svg>`);
+  }
+
+  for (const px of SIZES) {
+    const p = paramsAt(px);
+    const w = buildWordmark(p);
+    const d = scalePath(w.d, px);
+    const wd = +(w.width * px).toFixed(3);
+    out.push(
+`<!-- LOCTT wordmark @ ${px} tall -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${wd} ${px}" width="${wd}" height="${px}">
+  <path fill-rule="evenodd" fill="currentColor" d="${d}"/>
+</svg>`);
+  }
+
+  PREC = prev;
+  return out.join("\n\n");
+}
+
+/** Multiply every LENGTH in a path by k (arc flags are left alone). */
+function scalePath(d, k) {
+  const num = x => {
+    const v = Math.abs(x) < 1e-9 ? 0 : x;
+    return (v.toFixed(Math.max(0, PREC)).replace(/\.?0+$/, "")) || "0";
+  };
+  return d.replace(/([MLA])([^MLAZ]*)/gi, (_, cmd, args) => {
+    const n = (args.match(/-?\d*\.?\d+(?:e-?\d+)?/g) || []).map(parseFloat);
+    if (cmd.toUpperCase() === "A") {
+      const out = [];
+      for (let i = 0; i + 7 <= n.length; i += 7) {
+        const [rx, ry, rot, laf, sf, x, y] = n.slice(i, i + 7);
+        out.push(`${num(rx*k)} ${num(ry*k)} ${rot} ${laf} ${sf} ${num(x*k)} ${num(y*k)}`);
+      }
+      return cmd + out.join(cmd);
+    }
+    return cmd + n.map(v => num(v * k)).join(" ");
+  });
+}
+
+/* ---------- build the controls from FIELDS ---------- */
+
+function buildControls() {
+  for (const f of FIELDS) {
+    const host = $("g-" + f.g);
+    const row = document.createElement("div");
+    row.className = "f";
+    row.innerHTML =
+      `<label for="${f.k}-reg">${f.label}</label>` +
+      `<input type="number" id="${f.k}-reg" step="${f.step}" min="${f.min}" max="${f.max}">` +
+      `<input type="number" id="${f.k}-sml" step="${f.step}" min="${f.min}" max="${f.max}">` +
+      `<input class="sl slreg" type="range" id="${f.k}-slreg" min="${f.min}" max="${f.max}" step="${f.step}">` +
+      `<input class="sl slsml" type="range" id="${f.k}-slsml" min="${f.min}" max="${f.max}" step="${f.step}">`;
+    host.appendChild(row);
+
+    const reg = $(`${f.k}-reg`), sml = $(`${f.k}-sml`);
+    const slReg = $(`${f.k}-slreg`), slSml = $(`${f.k}-slsml`);
+
+    // One slider per column, fully independent. The regular slider never
+    // touches the small value -- editing one size must not silently move
+    // the other.
+    slReg.addEventListener("input", e => {
+      S[f.k].reg = parseFloat(e.target.value);
+      syncField(f); render();
+    });
+    slSml.addEventListener("input", e => {
+      S[f.k].sml = parseFloat(e.target.value);
+      syncField(f); render();
+    });
+    const commit = (which, el) => {
+      const val = parseFloat(el.value);
+      if (!isFinite(val)) { syncField(f); return; }
+      S[f.k][which] = val;          // typed values are NOT clamped to the
+      syncField(f);                 // slider range -- you asked for it
+      render();
+    };
+    reg.addEventListener("change", () => commit("reg", reg));
+    sml.addEventListener("change", () => commit("sml", sml));
+    reg.addEventListener("keydown", e => { if (e.key === "Enter") reg.blur(); });
+    sml.addEventListener("keydown", e => { if (e.key === "Enter") sml.blur(); });
+  }
+  const cc = $("crookConcentric");
+  cc.addEventListener("change", e => { S.crookConcentric = e.target.checked; render(); });
+}
+
+function syncField(f) {
+  const v = S[f.k];
+  const reg = $(`${f.k}-reg`), sml = $(`${f.k}-sml`);
+  const slReg = $(`${f.k}-slreg`), slSml = $(`${f.k}-slsml`);
+  const dp = String(f.step).includes(".") ? String(f.step).split(".")[1].length : 0;
+  if (document.activeElement !== reg) reg.value = (+v.reg.toFixed(dp));
+  if (document.activeElement !== sml) sml.value = (+v.sml.toFixed(dp));
+  slReg.value = Math.max(f.min, Math.min(f.max, v.reg));
+  slSml.value = Math.max(f.min, Math.min(f.max, v.sml));
+}
+
+function syncAll() { for (const f of FIELDS) syncField(f); $("crookConcentric").checked = S.crookConcentric; }
+
+/* ---------- copy buttons ---------- */
+
+for (const [btn, ta] of [["copyd","dout"],["copysvg","svgout"]]) {
+  $(btn).addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($(ta).value); }
+    catch { $(ta).select(); document.execCommand("copy"); }
+    const b = $(btn), old = b.textContent;
+    b.textContent = "Copied"; setTimeout(() => b.textContent = old, 900);
+  });
+}
+
+$("theme").addEventListener("click", e => {
+  const light = document.documentElement.getAttribute("data-theme") === "light";
+  document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+  e.target.textContent = light ? "Light" : "Dark";
+});
+
+$("reset").addEventListener("click", () => {
+  for (const f of FIELDS) S[f.k] = { reg: f.reg, sml: f.sml };
+  S.crookConcentric = true;
+  try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
+  syncAll(); render();
+});
+
+/* ---------- persistence ---------- */
+
+const STORE_KEY = "loctt-logo-lab/v1";
+
+/** Only the field values and the one checkbox; nothing derived. */
+function serialise() {
+  const o = { crookConcentric: S.crookConcentric };
+  for (const f of FIELDS) o[f.k] = { reg: S[f.k].reg, sml: S[f.k].sml };
+  return o;
+}
+
+function save() {
+  // Wrapped: storage throws in private mode / blocked-cookie contexts,
+  // and a failed save must never break the editor.
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(serialise())); }
+  catch (e) { /* ignore */ }
+}
+
+function load() {
+  let raw;
+  try { raw = localStorage.getItem(STORE_KEY); } catch (e) { return false; }
+  if (!raw) return false;
+  let o;
+  try { o = JSON.parse(raw); } catch (e) { return false; }
+  if (!o || typeof o !== "object") return false;
+  // Merge field by field so a stored file from an older FIELDS list (or a
+  // hand-edited one) cannot introduce junk or drop a newer field.
+  for (const f of FIELDS) {
+    const v = o[f.k];
+    if (!v || typeof v !== "object") continue;
+    const reg = Number(v.reg), sml = Number(v.sml);
+    if (isFinite(reg)) S[f.k].reg = reg;
+    if (isFinite(sml)) S[f.k].sml = sml;
+  }
+  if (typeof o.crookConcentric === "boolean") S.crookConcentric = o.crookConcentric;
+  return true;
+}
+
+/* ---------- export the current values as source ---------- */
+
+function exportSource() {
+  const dp = k => {
+    const f = FIELDS.find(x => x.k === k);
+    const st = String(f.step);
+    return st.includes(".") ? st.split(".")[1].length : 0;
+  };
+  const rows = FIELDS.map(f => {
+    const v = S[f.k];
+    const d = dp(f.k);
+    const pad = (n) => String(+n.toFixed(d));
+    return `  { k:${JSON.stringify(f.k).padEnd(11)} g:${JSON.stringify(f.g).padEnd(13)}` +
+           ` label:${(JSON.stringify(f.label)+",").padEnd(18)}` +
+           ` min:${f.min}, max:${f.max}, step:${f.step},` +
+           ` reg:${pad(v.reg)}, sml:${pad(v.sml)} },`;
+  }).join("\n");
+  return `const FIELDS = [\n${rows.replace(/k:"(\w+)"/g, 'k:"$1",').replace(/g:"(\w+)"/g, 'g:"$1",')}\n];\n\n` +
+         `const S = { crookConcentric: ${S.crookConcentric} };`;
+}
+
+$("download").addEventListener("click", () => {
+  // One file per variant, zipped is overkill -- fire them individually.
+  const prev = PREC; PREC = EXPORT_PREC;
+  const files = [];
+  for (const px of SIZES) {
+    const p = paramsAt(px);
+    files.push([`loctt-mark-${px}.svg`,
+`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${px} ${px}" width="${px}" height="${px}">
+  <path fill-rule="evenodd" fill="currentColor" d="${scalePath(buildPath(p).d, px)}"/>
+</svg>`]);
+  }
+  for (const px of SIZES) {
+    const p = paramsAt(px);
+    const w = buildWordmark(p);
+    const wd = +(w.width * px).toFixed(3);
+    files.push([`loctt-wordmark-${px}.svg`,
+`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${wd} ${px}" width="${wd}" height="${px}">
+  <path fill-rule="evenodd" fill="currentColor" d="${scalePath(w.d, px)}"/>
+</svg>`]);
+  }
+  PREC = prev;
+  files.forEach(([name, text], i) => setTimeout(() => {
+    const url = URL.createObjectURL(new Blob([text], {type:"image/svg+xml"}));
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, i * 120));   // stagger: browsers drop simultaneous downloads
+});
+
+$("export").addEventListener("click", async () => {
+  const text = exportSource();
+  $("dout").value = text;
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { $("dout").select(); document.execCommand("copy"); }
+  const b = $("export"), old = b.textContent;
+  b.textContent = "Copied to clipboard";
+  setTimeout(() => { b.textContent = old; render(); }, 1400);
+});
+
+buildControls();
+load();
+syncAll();
+render();
+</script>
+</body>
+</html>

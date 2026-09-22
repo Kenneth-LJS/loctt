@@ -94,46 +94,50 @@
   --text-tertiary: #5C6675;
   --text-disabled: #BAC2CF;
 
-  --accent: #4F46E5;
-  --accent-hover: #4338CA;
-  --accent-muted: #EEF0FE;
+  /* Brand accent — teal (K99). #0F766E is deep enough to serve BOTH as a
+   * FILL with white on-accent text (buttons/checked controls/logo L:
+   * #FFFFFF on it = 5.5:1) AND as TEXT/links on the surfaces (5.5:1 on
+   * white, 4.9:1 on muted) — so no separate text-accent token is needed
+   * (the K99 fill/text split turned out unnecessary once this depth was
+   * chosen). --accent-muted is a faint teal wash for tinted surfaces. */
+  --accent: #0F766E;
+  --accent-hover: #0C6156;
+  --accent-muted: #E3F5F0;
   --accent-contrast: #FFFFFF;
 
   --status-pending-fg: #475569;
   --status-pending-bg: #EEF2F8;
-  /* --status-active-fg: was #1E6FCB (4.35:1 on -bg — failed AA for the
-   * 12px chip text, A11Y-40, found by the axe sweep). Darkened one step
-   * to clear 4.5:1 (5.47:1 vs #E6F0FC). Distinct from --priority-medium,
-   * which keeps #1E6FCB — it sits on canvas, not the active-bg, and axe
-   * did not flag it. */
-  --status-active-fg: #175FB4;
-  --status-active-bg: #E6F0FC;
-  /* --status-completed-fg: was #1F8A4C (3.88:1 on -bg — failed AA for
-   * 12px chip text, A11Y-40, found by the contrast harness). Darkened to
-   * clear 4.5:1 (5.16:1 vs #E6F5EC). */
-  --status-completed-fg: #18743F;
-  --status-completed-bg: #E6F5EC;
-  /* --status-discarded-fg: was #7B8699 (3.04:1 vs its -bg, failed AA,
-   * T2). Raised to AA (4.96:1 vs #E4EAF2). The review called "muted"
-   * a judgement call; the accessible default wins — decided, spec §2.4
-   * open decision #4. */
+  /* --status-active-fg (K99, harmonised to the teal scheme): a vibrant
+   * blue, distinct from the teal accent and the completed green. 5.9:1
+   * vs #E3F0FA (AA). */
+  --status-active-fg: #1868B0;
+  --status-active-bg: #E3F0FA;
+  /* --status-completed-fg (K99): a true green kept clearly distinct from
+   * the teal brand accent (warmer/yellower). 5.6:1 vs #EDF6E3 (AA). */
+  --status-completed-fg: #356E1A;
+  --status-completed-bg: #EDF6E3;
+  /* --status-discarded-fg: neutral, AA (5.07:1 vs #E9ECF1). */
   --status-discarded-fg: #5A6472;
-  --status-discarded-bg: #E4EAF2;
+  --status-discarded-bg: #E9ECF1;
 
-  --feedback-danger-fg: #C2341A;
+  /* --feedback-* (K99): danger stays clearly red, warning a vibrant
+   * orange, success the completed green — harmonised saturation. */
+  --feedback-danger-fg: #B02F17;
   --feedback-danger-bg: #FDECE8;
-  --feedback-warn-fg: #A15C00;
+  /* --feedback-warn-fg: a VIBRANT orange (K99, Ken chose vibrancy over
+   * AA-normal here). #CC6600 is AA-LARGE (3:1) not AA-normal on the pale
+   * warn-bg — acceptable because the chip/priority text is bold. See K99. */
+  --feedback-warn-fg: #CC6600;
   --feedback-warn-bg: #FBF1DE;
-  /* --feedback-success-fg: was #1F8A4C (3.88:1 — failed AA, harness). */
-  --feedback-success-fg: #18743F;
-  --feedback-success-bg: #E6F5EC;
+  --feedback-success-fg: #356E1A;
+  --feedback-success-bg: #EDF6E3;
 
-  /* --priority-low: was #7B8699 (3.46:1 vs canvas, failed AA, T2).
-   * Raised to AA (5.08:1 vs bg-canvas). */
+  /* Priority (K99, harmonised). low neutral; medium the active blue;
+   * high the vibrant orange (AA-Large, bold text); critical red. */
   --priority-low: #5F6B7E;
-  --priority-medium: #1E6FCB;
-  --priority-high: #D97706;
-  --priority-critical: #C2341A;
+  --priority-medium: #1868B0;
+  --priority-high: #CC6600;
+  --priority-critical: #B02F17;
 
   --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
   --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -178,34 +182,38 @@
   --text-tertiary: #909098;
   --text-disabled: #4A4A50;
 
-  --accent: #818CF8;
-  --accent-hover: #A5B4FC;
-  --accent-muted: #1E1B4B;
+  /* Brand accent dark (K99): a SOFTENED teal (the bright one read too
+   * harsh on the dark canvas). Bright enough that on-accent text is BLACK
+   * (--accent-contrast, 6.7:1). --accent-text is a lighter teal for links
+   * on the dark surface (9:1 on #141416). */
+  --accent: #39A88F;
+  --accent-hover: #4FC3AB;
+  --accent-muted: #0E2E28;
   --accent-contrast: #0B0B0C;
 
   --status-pending-fg: #A8A8AE;
   --status-pending-bg: #25252A;
-  --status-active-fg: #7CB7FF;
-  --status-active-bg: #0F2236;
-  --status-completed-fg: #6EE7A0;
-  --status-completed-bg: #0E2B1A;
-  /* --status-discarded-fg dark: was #6E6E75 (3.25:1 vs -bg, failed AA,
-   * T2). Raised to AA (5.19:1 vs #1F1F22). */
+  /* Harmonised (K99): blue distinct from teal accent + green. */
+  --status-active-fg: #6FB6F0;
+  --status-active-bg: #0F2436;
+  /* Completed green, distinct from the teal accent. */
+  --status-completed-fg: #8FD46A;
+  --status-completed-bg: #12250C;
   --status-discarded-fg: #909098;
   --status-discarded-bg: #1F1F22;
 
   --feedback-danger-fg: #FF8A73;
   --feedback-danger-bg: #3A1410;
-  --feedback-warn-fg: #F2B35C;
+  /* Vibrant orange (dark passes easily on the dark canvas). */
+  --feedback-warn-fg: #F0A868;
   --feedback-warn-bg: #2E1F08;
-  --feedback-success-fg: #6EE7A0;
-  --feedback-success-bg: #0E2B1A;
+  --feedback-success-fg: #8FD46A;
+  --feedback-success-bg: #12250C;
 
-  /* --priority-low dark: was #6E6E75 (3.89:1 vs canvas, failed AA,
-   * T2). Raised to AA (5.74:1 vs bg-canvas). */
+  /* Priority dark (K99, harmonised). */
   --priority-low: #8A8A92;
-  --priority-medium: #7CB7FF;
-  --priority-high: #F2B35C;
+  --priority-medium: #6FB6F0;
+  --priority-high: #F0A868;
   --priority-critical: #FF8A73;
 
   --shadow-raised: none;

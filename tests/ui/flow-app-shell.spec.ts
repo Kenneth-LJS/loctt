@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-app-shell.md.
+ * Transcribed from tests/cases/ui-test-cases/flow-app-shell.md.
  *
  * The cases here are about *browser* behaviour — history, scroll
  * position, deep links — which a jsdom test cannot assert. A unit test
@@ -8,10 +8,77 @@
  * returns to where the user left it.
  */
 
-import { readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { execa } from "execa";
+
+import {
+  cliEntry,
+  freePort,
+  killAndWait,
+  registerServerChild,
+  waitForReady,
+  workspaceRoot,
+} from "./fixtures/server-harness.ts";
 import { expect, test } from "./fixtures/tracker.ts";
+
+/**
+ * A second, independent tracker + server, for the one case that is
+ * about two instances at once (SHL-31).
+ *
+ * The `tracker` fixture deliberately hands each test exactly one
+ * tracker, and widening it to a pair would make every other spec pay
+ * for a server it does not use. This spins the extra one up locally
+ * instead; the caller stops it in a `finally`.
+ */
+async function spawnTracker(): Promise<{
+  root: string;
+  baseURL: string;
+  run(args: readonly string[]): Promise<string>;
+  stop(): Promise<void>;
+}> {
+  const root = await mkdtemp(path.join(workspaceRoot, "loctt-ui-second-"));
+  const run = async (args: readonly string[]): Promise<string> => {
+    const result = await execa(process.execPath, [cliEntry, ...args], {
+      cwd: root,
+      env: process.env,
+      reject: false,
+    });
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `loctt ${args.join(" ")} exited ${String(result.exitCode)}\n${result.stderr}`,
+      );
+    }
+    return result.stdout;
+  };
+
+  await run(["init"]);
+  const port = await freePort();
+  const baseURL = `http://127.0.0.1:${String(port)}`;
+  const child = execa(process.execPath, [cliEntry, "ui", "--port", String(port), "--no-open"], {
+    cwd: root,
+    env: process.env,
+    reject: false,
+  });
+  const unregister = registerServerChild(child);
+
+  const stop = async (): Promise<void> => {
+    await killAndWait(child);
+    unregister();
+    await rm(root, { recursive: true, force: true }).catch((err: unknown) => {
+      console.error(`second tracker: failed to remove ${root}: ${String(err)}`);
+    });
+  };
+
+  try {
+    await waitForReady(baseURL, 15_000);
+  } catch (err) {
+    await stop();
+    throw err;
+  }
+  return { root, baseURL, run, stop };
+}
 
 test.describe("SHL — routing and history", () => {
   // @verifies SHL-15
@@ -37,8 +104,15 @@ test.describe("SHL — routing and history", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Beta task")).toBeHidden();
 
+    // Switching views carries the filter scope across (cross-view scope
+    // fix, Ken 2026-09-20). This assertion previously expected
+    // `/timeline$` — that encoded the bug where the view switcher dropped
+    // every URL param, so a filter set on the list vanished the moment you
+    // moved to the board or timeline. Per the repo rule on editing a green
+    // test that asserted the bug: the switcher now preserves the scope, so
+    // the status filter rides along and the URL keeps `status=in_progress`.
     await page.getByRole("link", { name: "Timeline" }).click();
-    await expect(page).toHaveURL(/\/timeline$/);
+    await expect(page).toHaveURL(/\/timeline\?status=in_progress$/);
 
     // Three steps back, in reverse order, one navigation each.
     await page.goBack();
@@ -346,30 +420,55 @@ test.describe("SHL — theme and motion", () => {
 });
 
 test.describe("SHL — scale and isolation", () => {
-  // @verifies SHL-31
-  test("SHL-31: two trackers are distinguishable by their footers", async ({
-    page,
+  // @verifies SHL-11, SHL-31
+  test("SHL-31: two trackers are distinguishable by their titles", async ({
+    browser,
     tracker,
   }) => {
-    await tracker.seed([{ title: "Alpha task" }]);
-    await page.goto(`${tracker.baseURL}/list`);
+    // The case is about *two* instances, so it needs two of them. One
+    // tracker cannot show that the titles differ — it can only show
+    // that a title exists, which is the assertion this test used to
+    // make while the case it names went unverified.
+    const second = await spawnTracker();
+    try {
+      // Each tracker's project is renamed, which is exactly the
+      // affordance Ken's ruling points at: "the user can rename the
+      // projects themselves if they want to differentiate." Both
+      // trackers start with a project named "Tasks", so without a
+      // rename the two windows legitimately read the same.
+      await tracker.run(["project", "edit", "Tasks", "--name", "Alpha Service"]);
+      await second.run(["project", "edit", "Tasks", "--name", "Beta Service"]);
 
-    // The footer names *this* workspace, abbreviated, so a user with
-    // two `loctt ui` windows can tell them apart. The label ends in
-    // the tracker's own directory name — which is what makes two
-    // instances distinguishable rather than both reading "~/code".
-    const label = await page
-      .locator("aside")
-      .locator("div.font-mono")
-      .first()
-      .textContent();
-    const tail = (label ?? "").split("/").filter(Boolean).pop() ?? "";
-    expect(tail.length).toBeGreaterThan(0);
-    expect(tracker.root).toContain(tail);
+      const contextA = await browser.newContext();
+      const contextB = await browser.newContext();
+      const pageA = await contextA.newPage();
+      const pageB = await contextB.newPage();
+      try {
+        await pageA.goto(`${tracker.baseURL}/list`);
+        await pageB.goto(`${second.baseURL}/list`);
 
-    // And it is not the full absolute path — the server abbreviates,
-    // so the response never carries the filesystem layout.
-    expect(label).not.toBe(tracker.root);
+        // The window title names the project, so the two windows are
+        // tellable apart from the tab strip alone — no file path on
+        // the page, and nothing added to the sidebar.
+        await expect(pageA).toHaveTitle("LocTT — Alpha Service — List");
+        await expect(pageB).toHaveTitle("LocTT — Beta Service — List");
+
+        // The point of the case: the labels *differ*.
+        expect(await pageA.title()).not.toBe(await pageB.title());
+
+        // Sidebar contents reflect each tracker independently.
+        const asideA = pageA.locator("aside");
+        const asideB = pageB.locator("aside");
+        await expect(asideA.getByText("Alpha Service")).toBeVisible();
+        await expect(asideB.getByText("Beta Service")).toBeVisible();
+        await expect(asideA.getByText("Beta Service")).toHaveCount(0);
+      } finally {
+        await contextA.close();
+        await contextB.close();
+      }
+    } finally {
+      await second.stop();
+    }
   });
 });
 
@@ -600,7 +699,8 @@ test.describe("XS — the UI and the CLI mean the same things", () => {
     await expect(page.getByText("Archived elsewhere")).toBeHidden();
 
     // And visible, badged, once archived rows are asked for.
-    await page.getByLabel("Show archived").check();
+    await page.getByTestId("view-actions-menu").click();
+    await page.getByTestId("view-actions-archived-scope").selectOption("all");
     await expect(page.getByText("Archived elsewhere")).toBeVisible();
     await expect(
       page.getByRole("row", { name: /Archived elsewhere/ }),
@@ -626,8 +726,11 @@ test.describe("XS — the UI and the CLI mean the same things", () => {
     }
 
     // The refetch reflects *all six*, not a subset — a page-1 refresh
-    // stitched onto a stale page 2 is the failure this case names.
-    await page.getByRole("button", { name: "Refresh" }).click();
+    // stitched onto a stale page 2 is the failure this case names. There
+    // is no manual refresh button (Q4); a browser reload is the force-
+    // refresh path, and it must reflect the full CLI change (not a stale
+    // page-1-over-page-2 stitch).
+    await page.reload();
     await expect(page.getByText("Showing 1–6 of 6")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator("tbody tr")).toHaveCount(6);
 
@@ -666,6 +769,9 @@ test.describe("BLK — export with an unreadable task", () => {
     await expect(page.getByText("Readable one")).toBeVisible();
 
     const download = page.waitForEvent("download");
+    // Export moved into the list toolbar's "View options" overflow menu
+    // (`053cf571`); its trigger only exists while that menu is open.
+    await page.getByTestId("view-actions-menu").click();
     await page.getByRole("button", { name: /Export/ }).click();
     await page.getByRole("menuitem", { name: /CSV/ }).click();
 
@@ -718,7 +824,15 @@ test.describe("SHL — a config file broken by hand", () => {
     // The M1 gate's F4 third strand: the filter presented a broken
     // config as an empty one, which is ERR-1's conflation one layer
     // down. An absence and a failure must not look alike.
-    await page.getByRole("button", { name: "Label", exact: false }).first().click();
+    // Label is not in the default visible facet set (K97/A210), so it
+    // has to be ADDED before its pill exists — without this, the
+    // `name: "Label"` match landed on the sidebar's "Labels" section
+    // toggle and merely collapsed it.
+    await page.getByTestId("add-filter").click();
+    await page.getByTestId("add-filter-labels").click();
+    await page.getByRole("button", { name: "Filter Label", exact: true }).click();
+    // K106 step 2: the facet panel is portalled to `document.body`, so
+    // it is read from `page` rather than from the toolbar's subtree.
     const menu = page.getByRole("menu");
     await expect(menu).toContainText(/could not be loaded/i);
     await expect(menu).not.toContainText("No options");
@@ -770,14 +884,14 @@ test.describe("SHL — narrow viewports", () => {
       ).toBeLessThanOrEqual(doc.clientWidth);
     }
 
-    // The table still scrolls within its own container: the fix is a
-    // header that fits, not a table that was clipped.
-    const table = page.locator("table").first();
-    const tb = await table.evaluate(el => {
-      const c = el.parentElement;
-      return c === null ? null : { client: c.clientWidth, scroll: c.scrollWidth };
-    });
-    expect(tb?.scroll ?? 0).toBeGreaterThan(tb?.client ?? 0);
+    // The rows are still fully readable: the fix is a header that fits,
+    // not content that was clipped. Below `sm` the table is replaced by
+    // a stacked card per task (`abceb888`), so there is no table to
+    // scroll — the content reflows instead, which is the stronger form
+    // of the same requirement and is already implied by the
+    // no-horizontal-pan assertion above.
+    await expect(page.getByTestId("task-cards")).toBeVisible();
+    await expect(page.locator('[data-testid^="task-card-"]').first()).toBeVisible();
   });
 
   test("the full header returns at desktop width", async ({ page, tracker }) => {
@@ -788,7 +902,10 @@ test.describe("SHL — narrow viewports", () => {
 
     // What narrow drops, wide keeps — the labels are hidden by a
     // breakpoint, not deleted.
-    await expect(page.getByText("TaskTracker")).toBeVisible();
+    // The wordmark is "LocTT" since the brand pass (`d8268292`); it is
+    // `hidden sm:inline`, so this asserts exactly what the case means —
+    // the label is dropped by a breakpoint, not deleted.
+    await expect(page.getByText("LocTT", { exact: true })).toBeVisible();
     await expect(page.getByLabel("New task")).toContainText("New task");
     await expect(page.getByLabel("Search tasks")).toBeVisible();
   });
@@ -1021,43 +1138,6 @@ test.describe("SHL — the shell under a failing recovery attempt", () => {
 
     // And the banner is still there afterwards, still offering retry.
     await expect(banner).toBeVisible();
-  });
-
-  /**
-   * @verifies SHL-11, ERR-1
-   *
-   * The other half of the same fix. During an outage `info.data` is
-   * undefined, so a shell rendered from the placeholder reports
-   * `taskCount: 0` — and the footer told a user with two tasks that
-   * they had none. "A server that is down and a tracker that is empty
-   * must be visibly different screens" (ERR-1) applies to the footer
-   * as much as to the table.
-   *
-   * The last *known* info is used instead, so the footer keeps saying
-   * what was last true rather than inventing a zero.
-   */
-  test("the footer does not report zero tasks during an outage", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed([{ title: "Alpha task" }, { title: "Beta task" }]);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Alpha task")).toBeVisible();
-
-    const footer = page.locator("aside");
-    await expect(footer).toContainText(/2 tasks/);
-
-    await page.route(/\/api\//, route => { void route.abort("connectionrefused"); });
-    await page.reload();
-    await expect(page.locator("[data-server-unreachable]")).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Not "0 tasks" — that is a claim about their data, and it is
-    // false. Either the last known count or an explicit "unavailable";
-    // never a fabricated zero.
-    await expect(footer).not.toContainText(/\b0 tasks\b/);
-    await expect(footer).toContainText(/2 tasks|unavailable/);
   });
 });
 

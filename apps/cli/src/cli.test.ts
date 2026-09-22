@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { initLoctt, lookupByKey, resolveLocttDir } from "@loctt/core";
+import { initLoctt, lookupByKey, resolveLocttDir, serializeQueriesConfig } from "@loctt/core";
 import type { MockInstance } from "vitest";
 import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -57,6 +57,45 @@ describe("CLI commands", () => {
     process.argv = ["node", "loctt", "init"];
     await main();
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Initialized"));
+  });
+
+  const initOutput = (): string =>
+    consoleSpy.mock.calls.map(c => String(c[0] ?? "")).join("\n");
+
+  it("init prints a Next steps block guiding a first-time user", async () => {
+    process.argv = ["node", "loctt", "init"];
+    await main();
+    const out = initOutput();
+    expect(out).toContain("Next steps:");
+    // The three orientations a cold user needs.
+    expect(out).toContain("loctt create");
+    expect(out).toContain("loctt ui");
+    expect(out).toContain(".loctt/docs/");
+  });
+
+  it("init --no-docs omits the docs line from Next steps", async () => {
+    process.argv = ["node", "loctt", "init", "--no-docs"];
+    await main();
+    const out = initOutput();
+    expect(out).toContain("Next steps:");
+    expect(out).not.toContain(".loctt/docs/");
+  });
+
+  it("init --quiet prints neither the summary nor the Next steps block", async () => {
+    process.argv = ["node", "loctt", "init", "--quiet"];
+    await main();
+    expect(consoleSpy).not.toHaveBeenCalled();
+  });
+
+  it("init --json prints a machine-readable summary and no Next steps block", async () => {
+    process.argv = ["node", "loctt", "init", "--json"];
+    await main();
+    const out = initOutput();
+    expect(out).not.toContain("Next steps:");
+    const parsed = JSON.parse(out) as { created: string[]; locttDir: string; repaired: boolean };
+    expect(parsed.repaired).toBe(false);
+    expect(Array.isArray(parsed.created)).toBe(true);
+    expect(parsed.locttDir).toContain(".loctt");
   });
 
   it("info shows tracker state", async () => {
@@ -1378,12 +1417,20 @@ describe("CLI list — stale saved view warning", () => {
     await initLoctt(root);
     // A view referencing a custom field that doesn't exist — the
     // shape a tracker ends up in after the field is deleted.
+    // K102: a saved view stores an ordered `filters[]` list, not a `query`
+    // DSL string or a derived `conditions` tree. A single advanced filter
+    // carrying the stale DSL reaches the same unknown-custom-field warning.
     await writeFile(
       join(root, ".loctt", "config", "queries.yaml"),
-      "queries:\n"
-      + "  - id: 01HSV0000000000000STALE3\n"
-      + "    name: stale\n"
-      + "    query: fields.deleted_field = x\n",
+      serializeQueriesConfig({
+        queries: [
+          {
+            id: "01HSV0000000000000STALE3",
+            name: "stale",
+            filters: [{ kind: "advanced", query: "fields.deleted_field = x" }],
+          },
+        ],
+      }),
       "utf-8",
     );
   });
@@ -1411,7 +1458,9 @@ describe("CLI list — stale saved view warning", () => {
       "queries:\n"
       + "  - id: 01HSV0000000000000FINE01\n"
       + "    name: fine\n"
-      + "    query: status != done\n",
+      + "    filters:\n"
+      + "      - kind: advanced\n"
+      + "        query: status != done\n",
       "utf-8",
     );
     process.argv = ["node", "loctt", "list", "--view", "fine"];
@@ -1544,5 +1593,157 @@ describe("project set-prefix", () => {
     await main();
     expect(process.exitCode).toBe(2);
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("set-prefix"));
+  });
+});
+
+/**
+ * @verifies K107 — the `--archived <active|archived|all>` scope on the
+ * config-entity list commands (milestone, sprint, label, project, user,
+ * views).
+ *
+ * Default (no flag) is `active` and HIDES archived — a behavior change:
+ * before K107 these lists took `--all` to reveal archived and the views
+ * list always showed archived inline. `--archived archived` shows only
+ * archived; `--archived all` (and the deprecated `--all` alias) shows
+ * both. Filtering goes through core's `applyArchivedScope` and the flag
+ * through `parseArchivedScope`. Driven through `main()` — the same path a
+ * user's shell hits.
+ */
+describe("config-entity list archived scope (K107)", () => {
+  let root: string;
+  let originalArgv: string[];
+  let logSpy: MockInstance;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-k107-"));
+    originalArgv = process.argv;
+    vi.spyOn(process, "cwd").mockImplementation(() => root);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    process.exitCode = undefined;
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    process.argv = originalArgv;
+    vi.restoreAllMocks();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const run = async (...argv: string[]): Promise<string> => {
+    logSpy.mockClear();
+    process.argv = ["node", "loctt", ...argv];
+    await main();
+    return logSpy.mock.calls.map(c => String(c[0] ?? "")).join("\n");
+  };
+
+  // entity -> [create argv builder, archive argv builder, list argv]
+  const cases: Array<{
+    label: string;
+    create: (name: string) => string[];
+    archive: (name: string) => string[];
+    list: string[];
+  }> = [
+    {
+      label: "milestone",
+      create: n => ["milestone", "create", n],
+      archive: n => ["milestone", "archive", n],
+      list: ["milestone", "list"],
+    },
+    {
+      label: "sprint",
+      create: n => ["sprint", "create", n, "--start", "2026-01-01", "--end", "2026-01-14"],
+      archive: n => ["sprint", "archive", n],
+      list: ["sprint", "list"],
+    },
+    {
+      label: "label",
+      create: n => ["label", "create", n],
+      archive: n => ["label", "archive", n],
+      list: ["label", "list"],
+    },
+    {
+      label: "user",
+      // A freshly created user is not the active user, so it can be archived.
+      create: n => ["user", "create", n],
+      archive: n => ["user", "archive", n],
+      list: ["user", "list"],
+    },
+  ];
+
+  for (const c of cases) {
+    it(`${c.label} list defaults to active and honors --archived archived|all|--all`, async () => {
+      await run(...c.create("KeepMe"));
+      await run(...c.create("GoneAway"));
+      await run(...c.archive("GoneAway"));
+
+      // Default: archived hidden.
+      const active = await run(...c.list);
+      expect(active).toContain("KeepMe");
+      expect(active).not.toContain("GoneAway");
+
+      // Only archived.
+      const onlyArchived = await run(...c.list, "--archived", "archived");
+      expect(onlyArchived).toContain("GoneAway");
+      expect(onlyArchived).not.toContain("KeepMe");
+
+      // Both, via the tri-state value.
+      const all = await run(...c.list, "--archived", "all");
+      expect(all).toContain("KeepMe");
+      expect(all).toContain("GoneAway");
+
+      // Both, via the deprecated --all alias.
+      const alias = await run(...c.list, "--all");
+      expect(alias).toContain("KeepMe");
+      expect(alias).toContain("GoneAway");
+    });
+  }
+
+  it("project list defaults to active and honors --archived archived|all|--all", async () => {
+    // initLoctt seeds the "Tasks" project; add + archive a second one.
+    await run("project", "create", "KeepProj", "--prefix", "KEP");
+    await run("project", "create", "GoneProj", "--prefix", "GON");
+    await run("project", "archive", "GoneProj");
+
+    const active = await run("project", "list");
+    expect(active).toContain("KeepProj");
+    expect(active).not.toContain("GoneProj");
+
+    const onlyArchived = await run("project", "list", "--archived", "archived");
+    expect(onlyArchived).toContain("GoneProj");
+    expect(onlyArchived).not.toContain("KeepProj");
+
+    const all = await run("project", "list", "--archived", "all");
+    expect(all).toContain("KeepProj");
+    expect(all).toContain("GoneProj");
+
+    const alias = await run("project", "list", "--all");
+    expect(alias).toContain("GoneProj");
+  });
+
+  it("views list defaults to active and honors --archived archived|all", async () => {
+    await run("views", "create", "keep-view", "--query", "status = backlog");
+    await run("views", "create", "gone-view", "--query", "status = done");
+    await run("views", "archive", "gone-view");
+
+    const active = await run("views", "list");
+    expect(active).toContain("keep-view");
+    expect(active).not.toContain("gone-view");
+
+    const onlyArchived = await run("views", "list", "--archived", "archived");
+    expect(onlyArchived).toContain("gone-view");
+    expect(onlyArchived).not.toContain("keep-view");
+
+    const all = await run("views", "list", "--archived", "all");
+    expect(all).toContain("keep-view");
+    expect(all).toContain("gone-view");
+  });
+
+  it("rejects an invalid --archived value with a usage error", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.argv = ["node", "loctt", "label", "list", "--archived", "activ"];
+    await main();
+    expect(process.exitCode).toBe(2);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("invalid value for --archived"));
   });
 });

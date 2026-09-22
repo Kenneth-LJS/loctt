@@ -1,5 +1,7 @@
+import type { SavedQuery } from "@loctt/contracts";
 import { ulid } from "ulid";
 
+import { serializeQueriesConfig } from "../config/queries.js";
 import { slugifyName } from "../projects/slug.js";
 
 /**
@@ -109,27 +111,28 @@ timeline:
 `;
 }
 
-/** Default queries.yaml content. */
+/**
+ * Default queries.yaml content.
+ *
+ * K102 (Ken): *"we don't ship a demo."* `loctt init` seeds NO demo
+ * content — the former `blocked` view (which shipped broken) is gone, and
+ * what remains is one sensible default, not a showcase.
+ *
+ * `recent-open` carries a single simple filter. It does NOT carry an
+ * `archived != true` filter: hiding archived rows is the VIEW'S SCOPE
+ * (K107), which defaults to `active`, not a filter term the user has to
+ * see and cannot safely delete.
+ */
 export function defaultQueriesYaml(): string {
-  const id1 = ulid();
-  const id2 = ulid();
-  return `queries:
-  - id: ${id1}
-    name: recent-open
-    query: archived != true and status != done
-    sort:
-      - field: updated_at
-        direction: desc
-
-  - id: ${id2}
-    name: blocked
-    query: archived != true and status = blocked
-    sort:
-      - field: priority
-        direction: desc
-      - field: updated_at
-        direction: desc
-`;
+  const queries: SavedQuery[] = [
+    {
+      id: ulid(),
+      name: "recent-open",
+      filters: [{ kind: "simple", field: "status", op: "!=", values: ["done"] }],
+      sort: [{ field: "updated_at", direction: "desc" }],
+    },
+  ];
+  return serializeQueriesConfig({ queries });
 }
 
 /**

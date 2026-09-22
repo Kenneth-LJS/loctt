@@ -6,9 +6,11 @@
  * resolving against an arbitrary value.
  *
  * F1 (agent-surface hardening): the source path is CONFINED to inside
- * the tracker root. An auto-approved / steered agent cannot copy a file
- * from anywhere on disk (`~/.ssh/id_rsa`, `.env`) into `.loctt/`, where
- * git-backed mode would then commit and push it off the machine. When
+ * the tracker's resolved data dir (`.loctt/`), not merely the project
+ * root (Ken's narrowing). An auto-approved / steered agent cannot copy a
+ * file from anywhere on disk (`~/.ssh/id_rsa`, `.env`) — nor a secret
+ * sitting BESIDE `.loctt/` (`<root>/credentials.txt`) — into `.loctt/`,
+ * where git-backed mode would then commit and push it off the machine. When
  * git-backed mode is on, a successful attach also auto-commits (publishes
  * to the loctt branch), matching Ken's model: attachments push INTO the
  * repo, then commit.
@@ -81,10 +83,10 @@ async function autoCommitAttachment(
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "attach_file",
-    description: "Copy a local file into a task's attachments directory. Only file paths are supported in v1 (no base64 content); the file must be readable from the MCP server's filesystem AND resolve to inside the tracker root — a path outside the tracker (e.g. ~/.ssh/id_rsa) is refused. Stage the file inside the tracker first, then attach it by its path there. When git-backed mode is enabled, a successful attach also commits (publishes) the new attachment.",
+    description: "Copy a local file into a task's attachments directory. Only file paths are supported in v1 (no base64 content); the file must be readable from the MCP server's filesystem AND resolve to inside the tracker's data directory (.loctt/) — a path outside it (e.g. ~/.ssh/id_rsa, or a secret sitting beside .loctt/) is refused. Stage the file inside .loctt/ first, then attach it by its path there. When git-backed mode is enabled, a successful attach also commits (publishes) the new attachment.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
-      source_path: z.string().describe("Absolute path to the file to attach. Must be absolute AND inside the tracker root — a path outside the tracker is refused. The MCP server's cwd is not guaranteed to match the agent's mental model."),
+      source_path: z.string().describe("Absolute path to the file to attach. Must be absolute AND inside the tracker's data directory (.loctt/) — a path outside it is refused. The MCP server's cwd is not guaranteed to match the agent's mental model."),
       force: z.boolean().optional().describe("If true, overwrite an existing attachment with the same basename."),
     },
     handler: async ({ locttDir, root }, args) => {
@@ -99,8 +101,14 @@ export const TOOLS: readonly ToolDef[] = [
           locttDir,
           taskId: task.frontmatter.id,
           sourcePath,
-          // F1: confine the source to inside the tracker root on the
-          // agent surface. The CLI (human) does not confine.
+          // The source is confined to the project root (A205): blocks a
+          // read of e.g. ~/.ssh/id_rsa outside the repo, while still
+          // allowing a real file the user or agent points to anywhere in
+          // the project. (A tighter .loctt/-only narrowing was tried and
+          // reverted — it broke legitimate attach, which by design copies
+          // a file from the working tree, and attaching is a reversible
+          // copy, not a destructive or privileged act. See decisions.md
+          // A225-REVERTED.)
           confineToRoot: root,
           force,
         });
@@ -131,7 +139,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "detach_file",
-    description: "Remove a file from a task's attachments directory.",
+    description: "Remove a file from a task's attachments directory, identified by basename; refused if no attachment by that name exists. Unlike attach_file, this does not auto-commit — in git-backed mode the removal stays uncommitted until the next publish.",
     inputSchema: {
       ref: z.string().describe("Task key or ID"),
       name: z.string().describe("Basename of the attachment, no path separators"),

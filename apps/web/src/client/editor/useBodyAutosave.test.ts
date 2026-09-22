@@ -559,3 +559,93 @@ describe("A59 — no write leaves while the conflict dialog is open", () => {
     expect(result.current.conflict).not.toBeNull();
   });
 });
+
+describe("A246 — in-app navigation keeps the text (unmount flush + flushForNav)", () => {
+  // @verifies A246
+  it("re-flushes a dirty FAILED buffer on unmount even with no pending timer", async () => {
+    // The bug: the unmount flush was gated on `timerRef.current !== null`
+    // (a pending idle timer). A `failed` write leaves NO timer — the idle
+    // save already fired and was refused — so unmounting the editor (an
+    // in-app navigation tears the route down) dropped the user's text
+    // silently. Red-proof: against the old timer-gated guard, no second
+    // write is attempted on unmount here (the assertion goes red).
+    const { result, unmount } = harness();
+
+    api.failWith(500, {
+      code: "io_failed",
+      message: "No space left on device.",
+      data_state: "not_saved",
+      detail: "ENOSPC",
+    });
+
+    // Type, let the idle save fire and FAIL. Now: buffer dirty, state
+    // failed, and — crucially — no pending timer.
+    act(() => { result.current.edit("precious words"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(BODY_IDLE_MS); });
+    await settle();
+    expect(result.current.state.kind).toBe("failed");
+    expect(api.writes).toHaveLength(1);
+
+    // The disk clears; the write would now succeed. Navigating away
+    // (unmount) must ATTEMPT the flush rather than discard the text.
+    api.succeed();
+    await act(async () => { unmount(); await vi.advanceTimersByTimeAsync(0); });
+
+    // A second write was attempted on unmount, carrying the very text the
+    // user would otherwise have lost.
+    expect(api.writes.length).toBeGreaterThanOrEqual(2);
+    expect(api.writes.at(-1)?.body).toBe("precious words");
+  });
+
+  // @verifies A246
+  it("does NOT flush again on unmount when the buffer is already saved", async () => {
+    // The guard is "dirty OR failed", not "always". A clean editor
+    // (nothing typed, or everything saved) writes nothing on unmount, so
+    // navigating away from an untouched description issues no spurious
+    // POST. Red-proof: an unconditional unmount flush would send a write
+    // here and fail this assertion.
+    const { result, unmount } = harness();
+    act(() => { result.current.edit("typed"); });
+    await act(async () => { await result.current.flush(); });
+    await settle();
+    expect(result.current.state.kind).toBe("saved");
+    const before = api.writes.length;
+
+    await act(async () => { unmount(); await vi.advanceTimersByTimeAsync(0); });
+    expect(api.writes.length).toBe(before);
+  });
+
+  // @verifies A246
+  it("flushForNav returns false on a failed write (block the nav) and true when clean", async () => {
+    // `flushForNav` is what the router guard awaits: it flushes and reports
+    // whether the editor is safe to unmount. A refused write must report
+    // `false` so the navigation is blocked and the failed UI stays up;
+    // once the write can land it reports `true` and the nav proceeds.
+    // Red-proof: a `flushForNav` that ignored the outcome and always
+    // returned true would let the nav through over a failed save, failing
+    // the first assertion.
+    const { result } = harness();
+
+    api.failWith(500, {
+      code: "io_failed",
+      message: "No space left on device.",
+      data_state: "not_saved",
+    });
+    act(() => { result.current.edit("mine"); });
+
+    let blocked: boolean | undefined;
+    await act(async () => { blocked = await result.current.flushForNav(); });
+    // The write was refused: not safe to leave → block (false).
+    expect(blocked).toBe(false);
+    expect(result.current.state.kind).toBe("failed");
+
+    // The cause clears; flushing for nav now lands and reports safe.
+    api.succeed();
+    let safe: boolean | undefined;
+    await act(async () => { safe = await result.current.flushForNav(); });
+    expect(safe).toBe(true);
+    expect(api.writes.at(-1)?.body).toBe("mine");
+    await settle();
+    expect(result.current.state.kind).toBe("saved");
+  });
+});

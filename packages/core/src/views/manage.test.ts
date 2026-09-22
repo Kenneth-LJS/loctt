@@ -1,7 +1,8 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { Filter } from "@loctt/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadQueriesConfig } from "../config/queries.js";
@@ -20,6 +21,10 @@ import {
 let root: string;
 let locttDir: string;
 
+const statusNotDone: Filter = { kind: "simple", field: "status", op: "!=", values: ["done"] };
+const statusDone: Filter = { kind: "simple", field: "status", op: "=", values: ["done"] };
+const priorityHigh: Filter = { kind: "simple", field: "priority", op: "=", values: ["high"] };
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "loctt-views-"));
   await initLoctt(root, { docs: false });
@@ -34,29 +39,85 @@ describe("createView", () => {
   it("generates a stable id", async () => {
     const view = await createView(locttDir, {
       name: "open",
-      query: "status != done",
+      filters: [statusNotDone],
     });
     expect(view.id).toMatch(/^[0-9A-Z]{26}$/);
     expect(view.name).toBe("open");
+  });
+
+  it("stores the filter list as authored, in order", async () => {
+    // K102: storage and execution are separate. What is stored is the
+    // ordered filter list itself — no derived query string, no
+    // conditions tree.
+    const view = await createView(locttDir, {
+      name: "multi",
+      filters: [statusNotDone, priorityHigh],
+    });
+    expect(view.filters).toEqual([statusNotDone, priorityHigh]);
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(findView(cfg, view.id).filters).toEqual([statusNotDone, priorityHigh]);
+  });
+
+  it("accepts an empty filter list (matches everything in scope)", async () => {
+    const view = await createView(locttDir, { name: "everything", filters: [] });
+    expect(view.filters).toEqual([]);
+  });
+
+  it("normalizes an advanced filter's spacing only, leaving a simple filter untouched", async () => {
+    // Ken, K102: "you may normalise spacing, dont edit anything else."
+    const view = await createView(locttDir, {
+      name: "spacing",
+      filters: [{ kind: "advanced", query: "status=done" }, statusNotDone],
+    });
+    expect(view.filters[0]).toEqual({ kind: "advanced", query: "status = done" });
+    expect(view.filters[1]).toEqual(statusNotDone);
+  });
+
+  it("rejects an advanced filter with unparseable DSL rather than storing it", async () => {
+    await expect(
+      createView(locttDir, { name: "bad", filters: [{ kind: "advanced", query: "status ==" }] }),
+    ).rejects.toThrow(ViewError);
+  });
+
+  it("rejects a filter set that fails semantic validation", async () => {
+    await expect(
+      createView(locttDir, {
+        name: "bad-field",
+        filters: [{ kind: "simple", field: "not_a_real_field", op: "=", values: ["x"] }],
+      }),
+    ).rejects.toThrow(ViewError);
+  });
+
+  it("stores optional sort, archivedScope, and icon", async () => {
+    const view = await createView(locttDir, {
+      name: "styled",
+      filters: [statusNotDone],
+      sort: [{ field: "updated_at", direction: "desc" }],
+      archivedScope: "all",
+      icon: "star",
+    });
+    expect(view.sort).toEqual([{ field: "updated_at", direction: "desc" }]);
+    expect(view.archivedScope).toBe("all");
+    expect(view.icon).toBe("star");
   });
 });
 
 describe("findView", () => {
   it("resolves by id", async () => {
-    const created = await createView(locttDir, { name: "open", query: "status != done" });
+    const created = await createView(locttDir, { name: "open", filters: [statusNotDone] });
     const cfg = await loadQueriesConfig(locttDir);
     expect(findView(cfg, created.id).name).toBe("open");
   });
 
   it("resolves by unique name", async () => {
-    await createView(locttDir, { name: "open", query: "status != done" });
+    await createView(locttDir, { name: "open", filters: [statusNotDone] });
     const cfg = await loadQueriesConfig(locttDir);
     expect(findView(cfg, "open").name).toBe("open");
   });
 
   it("throws on ambiguous name", async () => {
-    const a = await createView(locttDir, { name: "dup", query: "status != done" });
-    await createView(locttDir, { name: "dup", query: "status = done" });
+    const a = await createView(locttDir, { name: "dup", filters: [statusNotDone] });
+    await createView(locttDir, { name: "dup", filters: [statusDone] });
     const cfg = await loadQueriesConfig(locttDir);
     expect(() => findView(cfg, "dup")).toThrow(ViewError);
     // ID still resolves cleanly.
@@ -65,20 +126,67 @@ describe("findView", () => {
 });
 
 describe("editView", () => {
-  it("updates name and query", async () => {
-    const created = await createView(locttDir, { name: "open", query: "status != done" });
+  it("updates name and filters", async () => {
+    const created = await createView(locttDir, { name: "open", filters: [statusNotDone] });
     const updated = await editView(locttDir, created.id, {
       name: "still-open",
-      query: "status = in_progress",
+      filters: [{ kind: "simple", field: "status", op: "=", values: ["in_progress"] }],
     });
     expect(updated.name).toBe("still-open");
-    expect(updated.query).toBe("status = in_progress");
+    expect(updated.filters).toEqual([{ kind: "simple", field: "status", op: "=", values: ["in_progress"] }]);
+  });
+
+  it("leaves filters untouched when omitted", async () => {
+    const created = await createView(locttDir, { name: "open", filters: [statusNotDone] });
+    const updated = await editView(locttDir, created.id, { name: "renamed" });
+    expect(updated.filters).toEqual([statusNotDone]);
+  });
+
+  it("replaces the WHOLE filter list rather than patching it", async () => {
+    const created = await createView(locttDir, { name: "multi", filters: [statusNotDone, priorityHigh] });
+    const updated = await editView(locttDir, created.id, { filters: [statusDone] });
+    expect(updated.filters).toEqual([statusDone]);
+  });
+
+  it("clears sort with null, leaves it alone when omitted", async () => {
+    const created = await createView(locttDir, {
+      name: "sorted",
+      filters: [statusNotDone],
+      sort: [{ field: "updated_at", direction: "desc" }],
+    });
+
+    const untouched = await editView(locttDir, created.id, { name: "still-sorted" });
+    expect(untouched.sort).toEqual([{ field: "updated_at", direction: "desc" }]);
+
+    const cleared = await editView(locttDir, created.id, { sort: null });
+    expect(cleared.sort).toBeUndefined();
+  });
+
+  it("clears icon with null, leaves it alone when omitted", async () => {
+    const created = await createView(locttDir, {
+      name: "iconed",
+      filters: [statusNotDone],
+      icon: "star",
+    });
+
+    const untouched = await editView(locttDir, created.id, { name: "still-iconed" });
+    expect(untouched.icon).toBe("star");
+
+    const cleared = await editView(locttDir, created.id, { icon: null });
+    expect(cleared.icon).toBeUndefined();
+  });
+
+  it("rejects a replacement filter list that fails validation", async () => {
+    const created = await createView(locttDir, { name: "open", filters: [statusNotDone] });
+    await expect(
+      editView(locttDir, created.id, { filters: [{ kind: "advanced", query: "status ==" }] }),
+    ).rejects.toThrow(ViewError);
   });
 });
 
 describe("archiveView / unarchiveView", () => {
   it("flips archived: true and back", async () => {
-    const created = await createView(locttDir, { name: "test-view", query: "status != done" });
+    const created = await createView(locttDir, { name: "test-view", filters: [statusNotDone] });
     await archiveView(locttDir, created.id);
     let cfg = await loadQueriesConfig(locttDir);
     let target = cfg.queries.find(q => q.id === created.id);
@@ -97,7 +205,7 @@ describe("archiveView / unarchiveView", () => {
 
 describe("deleteView (soft, default)", () => {
   it("sets archived: true and keeps the entry runnable by id", async () => {
-    const created = await createView(locttDir, { name: "test-view", query: "status != done" });
+    const created = await createView(locttDir, { name: "test-view", filters: [statusNotDone] });
     const before = (await loadQueriesConfig(locttDir)).queries.length;
 
     await deleteView(locttDir, created.id);
@@ -112,7 +220,7 @@ describe("deleteView (soft, default)", () => {
 
 describe("deleteView (hard)", () => {
   it("removes the entry from queries.yaml", async () => {
-    const created = await createView(locttDir, { name: "test-view", query: "status != done" });
+    const created = await createView(locttDir, { name: "test-view", filters: [statusNotDone] });
     const before = (await loadQueriesConfig(locttDir)).queries.length;
 
     await deleteView(locttDir, created.id, { hard: true });
@@ -123,7 +231,7 @@ describe("deleteView (hard)", () => {
   });
 
   it("can delete an already-archived view", async () => {
-    const created = await createView(locttDir, { name: "test-view", query: "status != done" });
+    const created = await createView(locttDir, { name: "test-view", filters: [statusNotDone] });
     const before = (await loadQueriesConfig(locttDir)).queries.length;
 
     await archiveView(locttDir, created.id);
@@ -142,6 +250,11 @@ describe("deleteView (hard)", () => {
  * `serializeQueriesConfig` never emitted `broken`, so a UI save silently
  * dropped a hand-broken entry. Each writer now carries `config.broken`
  * through.
+ *
+ * Under K102 a "broken" entry is one whose `filters` array itself fails
+ * validation (an unrecognized filter shape) — there is no more
+ * `conditions`/`query` pair to hand-corrupt, so the fixture below seeds a
+ * `filters` block with an invalid entry to produce it.
  */
 describe("view writes preserve a concurrent broken view (K28)", () => {
   /** Write a queries.yaml holding one valid and one unparseable entry. */
@@ -151,10 +264,15 @@ describe("view writes preserve a concurrent broken view (K28)", () => {
       "queries:\n"
       + "  - id: 01KEEP000000000000000000AA\n"
       + "    name: keep\n"
-      + "    query: status != done\n"
+      + "    filters:\n"
+      + "      - kind: simple\n"
+      + "        field: status\n"
+      + "        op: \"!=\"\n"
+      + "        values: [\"done\"]\n"
       + "  - id: 01BROKEN00000000000000000B\n"
       + "    name: broken-one\n"
-      + "    query: \"status ==\"\n",
+      + "    filters:\n"
+      + "      - kind: not-a-real-kind\n",
       "utf-8",
     );
   }
@@ -165,7 +283,7 @@ describe("view writes preserve a concurrent broken view (K28)", () => {
     const before = await loadQueriesConfig(locttDir);
     expect(before.broken).toHaveLength(1);
 
-    await createView(locttDir, { name: "fresh", query: "priority = high" });
+    await createView(locttDir, { name: "fresh", filters: [priorityHigh] });
 
     const after = await loadQueriesConfig(locttDir);
     // The broken entry survived the write (the data-loss this guards).
@@ -235,5 +353,228 @@ describe("view writes preserve a concurrent broken view (K28)", () => {
     expect(after.queries.find(q => q.name === "keep")).toBeUndefined();
     expect(after.broken).toHaveLength(1);
     expect(after.broken?.[0]?.name).toBe("broken-one");
+  });
+});
+
+/**
+ * K102-broken-repair · a broken entry is addressable by the two write
+ * paths that can legitimately target it, and only behind an explicit
+ * opt-in.
+ *
+ * Before this, `findView` resolved only against `config.queries`, so
+ * every write aimed at a broken entry died on `unknown view: <ref>` —
+ * on web, CLI and MCP alike. The UI's "Edit… / Replace… / Delete…"
+ * controls on broken rows were dead.
+ *
+ * The outcome asserted throughout is the FILE, not a return value or a
+ * disabled button: VUE-42 shipped "BUILT" on tests that only checked
+ * Save was disabled before confirming, which is exactly how a write that
+ * the server would reject went unnoticed.
+ */
+describe("K102-broken-repair · repairing and deleting a broken view", () => {
+  const BROKEN_ID = "01BROKEN00000000000000000B";
+
+  /** queries.yaml holding one healthy entry and one unreadable one. */
+  async function seed(): Promise<void> {
+    await writeFile(
+      getQueriesConfigPath(locttDir),
+      "queries:\n"
+      + "  - id: 01KEEP000000000000000000AA\n"
+      + "    name: keep\n"
+      + "    filters:\n"
+      + "      - kind: simple\n"
+      + "        field: status\n"
+      + "        op: \"!=\"\n"
+      + "        values: [\"done\"]\n"
+      + `  - id: ${BROKEN_ID}\n`
+      + "    name: broken-one\n"
+      + "    filters: \"not a list\"\n",
+      "utf-8",
+    );
+  }
+
+  const readFileBytes = async (): Promise<string> =>
+    readFile(getQueriesConfigPath(locttDir), "utf-8");
+
+  it("editView without replaceBroken is rejected and the file is byte-identical", async () => {
+    await seed();
+    const before = await readFileBytes();
+
+    await expect(editView(locttDir, BROKEN_ID, { filters: [statusDone] }))
+      .rejects.toThrow(ViewError);
+
+    // The outcome that matters: the preserved original text survived.
+    expect(await readFileBytes()).toBe(before);
+  });
+
+  it("the rejection names the view and says how to proceed, not 'unknown view'", async () => {
+    await seed();
+    // The whole point of the gate is an ACTIONABLE message. A bare
+    // `unknown view: <ulid>` is what shipped, and it told the user
+    // nothing they could act on.
+    const err = await editView(locttDir, BROKEN_ID, { filters: [statusDone] })
+      .then(() => undefined, (e: unknown) => e as Error);
+    expect(err?.message).toContain("broken-one");
+    expect(err?.message).toContain(BROKEN_ID);
+    expect(err?.message).toContain("--force");
+    expect(err?.message).toContain("replaceBroken: true");
+    expect(err?.message).not.toContain("unknown view");
+  });
+
+  it("editView with replaceBroken replaces the entry and KEEPS its id", async () => {
+    await seed();
+
+    const repaired = await editView(locttDir, BROKEN_ID, {
+      filters: [statusDone],
+      replaceBroken: true,
+    });
+
+    // Same id: pins and every other by-id reference survive the repair.
+    expect(repaired.id).toBe(BROKEN_ID);
+    const after = await loadQueriesConfig(locttDir);
+    // It moved out of `broken` and into the healthy catalog...
+    expect(after.broken).toBeUndefined();
+    const now = after.queries.find(q => q.id === BROKEN_ID);
+    expect(now?.filters).toEqual([statusDone]);
+    // ...and the unreadable text is gone from disk, which is what the
+    // opt-in consented to.
+    expect(await readFileBytes()).not.toContain("not a list");
+    // The healthy sibling is untouched.
+    expect(after.queries.find(q => q.name === "keep")).toBeDefined();
+  });
+
+  it("a repaired view keeps its old name when the caller supplies none", async () => {
+    await seed();
+    const repaired = await editView(locttDir, BROKEN_ID, {
+      filters: [statusDone],
+      replaceBroken: true,
+    });
+    expect(repaired.name).toBe("broken-one");
+  });
+
+  it("a broken entry is addressable by unique name, not only by id", async () => {
+    await seed();
+    const repaired = await editView(locttDir, "broken-one", {
+      name: "fixed",
+      filters: [statusDone],
+      replaceBroken: true,
+    });
+    expect(repaired.id).toBe(BROKEN_ID);
+    expect(repaired.name).toBe("fixed");
+  });
+
+  it("hard deleteView without replaceBroken is rejected and the file is byte-identical", async () => {
+    await seed();
+    const before = await readFileBytes();
+
+    await expect(deleteView(locttDir, BROKEN_ID, { hard: true }))
+      .rejects.toThrow(ViewError);
+
+    expect(await readFileBytes()).toBe(before);
+  });
+
+  it("hard deleteView with replaceBroken removes the entry and keeps the healthy one", async () => {
+    await seed();
+
+    await deleteView(locttDir, BROKEN_ID, { hard: true, replaceBroken: true });
+
+    const after = await loadQueriesConfig(locttDir);
+    expect(after.broken).toBeUndefined();
+    expect(after.queries.find(q => q.id === BROKEN_ID)).toBeUndefined();
+    expect(await readFileBytes()).not.toContain("not a list");
+    expect(after.queries.find(q => q.name === "keep")).toBeDefined();
+  });
+
+  it("archiveView on a broken entry is rejected — the flag does not unlock it", async () => {
+    await seed();
+    const before = await readFileBytes();
+
+    const err = await archiveView(locttDir, BROKEN_ID)
+      .then(() => undefined, (e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(ViewError);
+    expect(err?.message).toContain("cannot be archived");
+    expect(err?.message).toContain("broken-one");
+    expect(await readFileBytes()).toBe(before);
+  });
+
+  it("unarchiveView on a broken entry is rejected", async () => {
+    await seed();
+    const before = await readFileBytes();
+
+    const err = await unarchiveView(locttDir, BROKEN_ID)
+      .then(() => undefined, (e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(ViewError);
+    expect(err?.message).toContain("cannot be unarchived");
+    expect(await readFileBytes()).toBe(before);
+  });
+
+  it("a SOFT delete of a broken entry is refused (it is an archive)", async () => {
+    await seed();
+    const before = await readFileBytes();
+    // `deleteView` without `hard` delegates to `archiveView`, so the
+    // archive refusal is what the user must get — `replaceBroken` is
+    // deliberately not an escape hatch here.
+    await expect(deleteView(locttDir, BROKEN_ID, { replaceBroken: true }))
+      .rejects.toThrow(/cannot be archived/);
+    expect(await readFileBytes()).toBe(before);
+  });
+
+  /**
+   * Constraint 4 of the ruling, and the most important one: a HEALTHY
+   * view's write paths are unchanged. These are the regression guards —
+   * if widening resolution ever leaks into the normal path, they go red.
+   */
+  describe("a healthy view is completely unaffected", () => {
+    it("edits without any flag, with a broken sibling present", async () => {
+      await seed();
+      const cfg = await loadQueriesConfig(locttDir);
+      const keep = cfg.queries.find(q => q.name === "keep");
+      if (keep === undefined) throw new Error("seed missing 'keep'");
+
+      const updated = await editView(locttDir, keep.id, { filters: [priorityHigh] });
+
+      expect(updated.filters).toEqual([priorityHigh]);
+      const after = await loadQueriesConfig(locttDir);
+      // The broken sibling is still preserved, untouched.
+      expect(after.broken).toHaveLength(1);
+      expect(await readFileBytes()).toContain("not a list");
+    });
+
+    it("archives, unarchives and hard-deletes without any flag", async () => {
+      await seed();
+      const cfg = await loadQueriesConfig(locttDir);
+      const keep = cfg.queries.find(q => q.name === "keep");
+      if (keep === undefined) throw new Error("seed missing 'keep'");
+
+      await archiveView(locttDir, keep.id);
+      expect((await loadQueriesConfig(locttDir)).queries.find(q => q.id === keep.id)?.archived)
+        .toBe(true);
+
+      await unarchiveView(locttDir, keep.id);
+      expect((await loadQueriesConfig(locttDir)).queries.find(q => q.id === keep.id)?.archived)
+        .toBeUndefined();
+
+      await deleteView(locttDir, keep.id, { hard: true });
+      const after = await loadQueriesConfig(locttDir);
+      expect(after.queries.find(q => q.id === keep.id)).toBeUndefined();
+      expect(after.broken).toHaveLength(1);
+    });
+
+    it("passing replaceBroken at a healthy view changes nothing about the edit", async () => {
+      await seed();
+      const cfg = await loadQueriesConfig(locttDir);
+      const keep = cfg.queries.find(q => q.name === "keep");
+      if (keep === undefined) throw new Error("seed missing 'keep'");
+
+      // The gate is on the RESOLVED ENTRY, never on the flag, so a
+      // stray flag cannot alter a healthy write.
+      const updated = await editView(locttDir, keep.id, {
+        filters: [priorityHigh],
+        replaceBroken: true,
+      });
+      expect(updated.id).toBe(keep.id);
+      expect(updated.filters).toEqual([priorityHigh]);
+      expect((await loadQueriesConfig(locttDir)).broken).toHaveLength(1);
+    });
   });
 });

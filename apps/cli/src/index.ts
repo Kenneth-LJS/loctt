@@ -20,6 +20,7 @@ import * as labelCmd from "./commands/label.js";
 import * as mcpCmd from "./commands/mcp.js";
 import * as migrateCmd from "./commands/migrate.js";
 import * as milestoneCmd from "./commands/milestone.js";
+import * as paletteCmd from "./commands/palette.js";
 import * as projectCmd from "./commands/project.js";
 import * as schemaCmd from "./commands/schema.js";
 import * as sprintCmd from "./commands/sprint.js";
@@ -32,6 +33,7 @@ import * as taskRankCmd from "./commands/task-rank.js";
 import * as uiCmd from "./commands/ui.js";
 import * as userCmd from "./commands/user.js";
 import * as viewsCmd from "./commands/views.js";
+import * as workflowEntityCmd from "./commands/workflow-entities.js";
 import { getArg, stripRootArgs } from "./runtime/args.js";
 import { EXIT, runCommand, UsageError } from "./runtime/errors.js";
 import { dirExists, SCHEMA_GUARD_EXEMPT_COMMANDS } from "./runtime/schema-guard.js";
@@ -186,6 +188,10 @@ export async function main(): Promise<void> {
 
       case "label": await runCommand(() => labelCmd.run(args, root)); break;
 
+      // K103: the built-in palette is tracker-independent (it lives in
+      // core, not in .loctt/), so this needs no root and no init.
+      case "palette": await runCommand(() => { paletteCmd.run(args); return Promise.resolve(); }); break;
+
       case "milestone": await runCommand(() => milestoneCmd.run(args, root)); break;
       case "sprint":    await runCommand(() => sprintCmd.run(args, root));    break;
       case "calendar":  await runCommand(() => calendarCmd.run(args, root));  break;
@@ -193,6 +199,19 @@ export async function main(): Promise<void> {
       case "rerank":       await runCommand(() => taskRankCmd.rerank(args, root));      break;
       case "board-rerank": await runCommand(() => taskRankCmd.boardRerank(args, root)); break;
       case "board-move":   await runCommand(() => taskRankCmd.boardMoveCmd(args, root)); break;
+
+      // Workflow.yaml entity editing (parity with the web settings panels
+      // and the MCP workflow tools). Each family is its own top-level
+      // command; all route through the per-entity core functions. See
+      // commands/workflow-entities.ts.
+      case "status":       await runCommand(() => workflowEntityCmd.status(args, root)); break;
+      case "priority":     await runCommand(() => workflowEntityCmd.priority(args, root)); break;
+      case "task-type":    await runCommand(() => workflowEntityCmd.taskType(args, root)); break;
+      case "relationship": await runCommand(() => workflowEntityCmd.relationship(args, root)); break;
+      case "custom-field": await runCommand(() => workflowEntityCmd.customField(args, root)); break;
+      case "board-column": await runCommand(() => workflowEntityCmd.boardColumn(args, root)); break;
+      case "estimation":   await runCommand(() => workflowEntityCmd.estimation(args, root)); break;
+      case "timeline":     await runCommand(() => workflowEntityCmd.timeline(args, root)); break;
 
       case "git":     await runCommand(() => gitCmd.run(args, root));     break;
       case "config":  await runCommand(() => configCmd.run(args, root));  break;

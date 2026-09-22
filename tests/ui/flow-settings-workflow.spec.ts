@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-settings.md — the M4.2
+ * Transcribed from tests/cases/ui-test-cases/flow-settings.md — the M4.2
  * workflow-panel cases — and flow-cross-surface.md XS-31.
  *
  * Several of these assert the file on disk after the write, so a
@@ -13,7 +13,35 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { comboValues, expectComboValue, pickCombo } from "./fixtures/dropdown.ts";
 import { expect, test } from "./fixtures/tracker.ts";
+
+/**
+ * Clicks a settings row's kebab action (Edit / Delete).
+ *
+ * The workflow/custom-field/relationship rows put their per-row actions
+ * behind a shared `RowActions` kebab (U26/K105). Its `Menu` only mounts
+ * the items while open, and since K106 step 2 that panel is PORTALLED to
+ * `document.body` — so the item is neither present before the kebab is
+ * clicked, nor a descendant of the row afterwards.
+ *
+ * `rowAnchor` is a selector for something unique to the row (its label
+ * or its row wrapper); the kebab is the `Actions for …` button inside
+ * it, which is how a user finds it too. The item is then clicked from
+ * `page`, because the open panel is portalled out of the row.
+ */
+async function rowAction(
+  page: import("@playwright/test").Page,
+  rowAnchor: string,
+  itemTestId: string,
+): Promise<void> {
+  await page
+    .locator(`div:has(> ${rowAnchor})`)
+    .getByRole("button", { name: /^Actions for / })
+    .first()
+    .click();
+  await page.getByTestId(itemTestId).click();
+}
 
 function workflowPath(root: string): string {
   return path.join(root, ".loctt", "config", "workflow.yaml");
@@ -293,14 +321,18 @@ test.describe("SET — delete with remap", () => {
     // SET-17: the reference count is on the row, before the confirm.
     await expect(page.getByTestId(`statuses-refcount-${doomed}`)).toHaveText("9 tasks");
 
-    await page.getByTestId(`statuses-delete-${doomed}`).click();
+    await rowAction(page, `[data-testid="statuses-label-${doomed}"]`, `statuses-delete-${doomed}`);
     // And repeated in the confirm.
     await expect(page.getByTestId("remap-refcount")).toContainText("9 tasks");
 
     // No default is preselected — the confirm requires a choice.
+    // A211/A242: alternatives are a searchable Combobox behind a
+    // "reassign" radio now (control type changed, not behavior), so the
+    // no-default assertion is on the two radios rather than one radio per
+    // alternative.
     await expect(page.getByTestId("remap-confirm")).toBeDisabled();
     await expect(page.getByTestId("remap-clear")).not.toBeChecked();
-    await expect(page.getByTestId(`remap-to-${keep}`)).not.toBeChecked();
+    await expect(page.getByTestId("remap-reassign")).not.toBeChecked();
 
     // BUG-2 (SET-17): the "clear" option states the real consequence —
     // the field is cleared/emptied on those tasks, not left dangling with
@@ -312,8 +344,13 @@ test.describe("SET — delete with remap", () => {
     await expect(page.getByTestId("remap-clear-warning"))
       .not.toContainText(/Diagnostics/i);
 
-    // Choosing remap moves all nine and reports the count.
-    await page.getByTestId(`remap-to-${keep}`).check();
+    // Choosing remap moves all nine and reports the count. Control type
+    // changed (radio-per-alternative → reassign radio + Combobox), not
+    // behavior: choose reassign, open the picker, pick the target by its
+    // (unchanged) per-option testid.
+    await page.getByTestId("remap-reassign").check();
+    await page.getByTestId("remap-to").click();
+    await page.getByTestId(`remap-to-${keep}`).click();
     await expect(page.getByTestId("remap-confirm")).toBeEnabled();
     await page.getByTestId("remap-confirm").click();
 
@@ -378,7 +415,11 @@ test.describe("SET — delete with remap", () => {
     await expect(page.getByTestId("remap-clear-warning"))
       .not.toContainText(/Diagnostics/i);
 
-    await page.getByTestId("remap-to-sprint_2").check();
+    // Control type changed (radio-per-alternative → reassign radio +
+    // Combobox), not behavior.
+    await page.getByTestId("remap-reassign").check();
+    await page.getByTestId("remap-to").click();
+    await page.getByTestId("remap-to-sprint_2").click();
     await page.getByTestId("remap-confirm").click();
 
     await expect.poll(async () => (await workflowYaml(tracker.root)).includes("sprint_1"))
@@ -429,13 +470,15 @@ test.describe("SET — relationships", () => {
     // Open it on the first relationship and confirm both are real,
     // labelled controls over the values the schema allows.
     const first = declared[0] as string;
-    await page.getByTestId(`relationships-edit-${first}`).click();
+    await rowAction(page, `[data-testid="relationship-symmetric-${first}"]`, `relationships-edit-${first}`);
     const dialog = page.getByTestId("relationships-entry-dialog");
     await expect(dialog).toBeVisible();
+    // K106: a button-based picker. The TRIGGER is still in the dialog;
+    // its listbox is portalled to `document.body`, so the offered set is
+    // read from `page` rather than from the dialog's subtree.
     await expect(dialog.getByTestId("relationships-entry-graph"))
-      .toHaveValue(/^(none|acyclic|tree)$/);
-    const graphOptions = await dialog.getByTestId("relationships-entry-graph")
-      .locator("option").evaluateAll(els => els.map(e => (e as HTMLOptionElement).value));
+      .toHaveAttribute("data-value", /^(none|acyclic|tree)$/);
+    const graphOptions = await comboValues(page, "relationships-entry-graph");
     expect(graphOptions).toEqual(["none", "acyclic", "tree"]);
     await expect(dialog.getByTestId("relationships-entry-ranked")).toBeVisible();
   });
@@ -476,7 +519,7 @@ test.describe("SET — relationships", () => {
     // The symmetric toggle lives in the Edit dialog now (open decision
     // #3). Open it, tick symmetric — the inverse fields disappear in the
     // same interaction — and save.
-    await page.getByTestId("relationships-edit-supersedes").click();
+    await rowAction(page, '[data-testid="relationship-symmetric-supersedes"]', "relationships-edit-supersedes");
     const dialog = page.getByTestId("relationships-entry-dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId("relationships-entry-inverse"))
@@ -507,7 +550,7 @@ test.describe("SET — relationships", () => {
     // Re-open the dialog and untick: the inverse fields come back, and
     // the user can type the pair again (the dialog does not carry the
     // pre-fold values, but it must present the fields to re-enter them).
-    await page.getByTestId("relationships-edit-supersedes").click();
+    await rowAction(page, '[data-testid="relationship-symmetric-supersedes"]', "relationships-edit-supersedes");
     const dialog2 = page.getByTestId("relationships-entry-dialog");
     await dialog2.getByTestId("relationships-entry-symmetric").uncheck();
     await expect(dialog2.getByTestId("relationships-entry-inverse")).toBeVisible();
@@ -618,7 +661,7 @@ test.describe("SET — custom fields", () => {
     // The type/multi lock lives in the Edit dialog now (open decision
     // #3): the row is a read-out, and the controls the case is about are
     // behind Edit.
-    await page.getByTestId("custom-field-edit-story_points").click();
+    await rowAction(page, '[data-testid="custom-field-label-story_points"]', "custom-field-edit-story_points");
     const dialog = page.getByTestId("custom-field-dialog");
     await expect(dialog).toBeVisible();
 
@@ -688,7 +731,7 @@ test.describe("SET — custom fields", () => {
     // Weights are edited in the Edit dialog now (open decision #3). The
     // value rows there are index-ordered, so `xs` is row 0. Set it, save,
     // and it reaches the file as the value's `value`.
-    await page.getByTestId("custom-field-edit-size").click();
+    await rowAction(page, '[data-testid="custom-field-label-size"]', "custom-field-edit-size");
     const dialog = page.getByTestId("custom-field-dialog");
     await expect(dialog).toBeVisible();
     await dialog.getByTestId("custom-field-dialog-value-weight-0").fill("1");
@@ -707,7 +750,7 @@ test.describe("SET — custom fields", () => {
 
     // Clearing it again returns the stated fallback — SET-8's last
     // bullet, which is about the panel *saying* which applies.
-    await page.getByTestId("custom-field-edit-size").click();
+    await rowAction(page, '[data-testid="custom-field-label-size"]', "custom-field-edit-size");
     const dialog2 = page.getByTestId("custom-field-dialog");
     await dialog2.getByTestId("custom-field-dialog-value-weight-0").fill("");
     await dialog2.getByTestId("custom-field-save").click();
@@ -727,7 +770,7 @@ test.describe("SET — estimation", () => {
     const before = await workflowYaml(tracker.root);
 
     await page.getByTestId("estimation-enabled").check();
-    await page.getByTestId("estimation-unit").selectOption("custom_enum");
+    await pickCombo(page, "estimation-unit", "custom_enum");
 
     // Attached to the preset-values field, not a generic toast.
     const problem = page.getByTestId("estimation-preset-values-problem");
@@ -744,7 +787,7 @@ test.describe("SET — estimation", () => {
     expect(await workflowYaml(tracker.root)).toBe(before);
 
     // Switching back to a numeric mode clears the error.
-    await page.getByTestId("estimation-unit").selectOption("points");
+    await pickCombo(page, "estimation-unit", "points");
     await expect(page.getByTestId("estimation-preset-values-problem")).toHaveCount(0);
     await expect(page.getByTestId("estimation-save")).toBeEnabled();
   });
@@ -757,11 +800,11 @@ test.describe("SET — estimation", () => {
     await page.goto(`${tracker.baseURL}/settings/estimation`);
 
     await page.getByTestId("estimation-enabled").check();
-    await page.getByTestId("estimation-unit").selectOption("points");
+    await pickCombo(page, "estimation-unit", "points");
     // Numeric: aggregates are a sum.
     await expect(page.getByTestId("estimation-aggregate-note")).toContainText(/sum/i);
 
-    await page.getByTestId("estimation-unit").selectOption("custom_enum");
+    await pickCombo(page, "estimation-unit", "custom_enum");
     // Enum: counts per category, and a select over the presets.
     await expect(page.getByTestId("estimation-aggregate-note"))
       .toContainText(/counts per category/i);
@@ -913,12 +956,18 @@ test.describe("SET — calendar", () => {
     await expect(panel).not.toContainText(/ at Object\.| at async /);
 
     // The unresolvable value is not offered as a choice (it is not one
-    // of the picker's options), and it is not selected — the select
+    // of the picker's options), and it is not selected — the trigger
     // sits on the "Pick a valid timezone…" placeholder instead.
-    await expect(page.getByTestId("calendar-timezone")).toHaveValue("");
-    const offered = await page.getByTestId("calendar-timezone")
-      .locator("option").evaluateAll(els => els.map(e => (e as HTMLOptionElement).value));
+    //
+    // A211/K106: a searchable listbox, so the selected value is
+    // `data-value` and the options are the portalled panel's rows
+    // (`calendar-timezone-option-<zone>`), not `<option>` children.
+    await expect(page.getByTestId("calendar-timezone")).toHaveAttribute("data-value", "");
+    const offered = await comboValues(page, "calendar-timezone");
     expect(offered).not.toContain("Mars/Olympus_Mons");
+    // A positive control: the list is a real, populated roster, so the
+    // absence above cannot pass merely because nothing rendered.
+    expect(offered.length).toBeGreaterThan(1);
 
     // Saving is blocked while the stored zone does not resolve — the
     // strict write path cannot round-trip a zone the read path only
@@ -934,15 +983,14 @@ test.describe("SET — calendar", () => {
     // The half of SET-24 that IS reachable: whatever the picker
     // offers, an unresolvable zone is not among the options.
     await page.goto(`${tracker.baseURL}/settings/calendar`);
-    // Wait for the panel before reading the options: `evaluateAll` on
-    // an unresolved locator returns `[]` rather than retrying, so
-    // reading it mid-load asserts "zero options" against a select that
-    // has not rendered.
+    // Wait for the panel before reading the options, so a mid-load read
+    // cannot assert "zero options" against a picker that has not
+    // rendered. `comboValues` opens the portalled listbox, reads its
+    // `role="option"` rows and closes it again (K106 — there are no
+    // `<option>` children any more).
     await expect(page.getByTestId("calendar-panel")).toBeVisible();
-    const select = page.getByTestId("calendar-timezone");
-    await expect(select.locator("option").first()).toBeAttached();
-    const options = await select.locator("option")
-      .evaluateAll(els => els.map(e => (e as HTMLOptionElement).value));
+    await expect(page.getByTestId("calendar-timezone")).toBeVisible();
+    const options = await comboValues(page, "calendar-timezone");
     expect(options.length).toBeGreaterThan(1);
 
     // Asserting only that `Mars/Olympus_Mons` is absent would hold for
@@ -982,7 +1030,14 @@ test.describe("SET — calendar", () => {
     await expect(note).toContainText(/date-only/i);
     await expect(note).toContainText("updated_at");
 
-    await page.getByTestId("calendar-timezone").selectOption("Asia/Singapore");
+    // A211: the timezone picker is a searchable Combobox (~400 IANA
+    // zones), not a native <select>. Control type changed, not behavior:
+    // open the trigger, filter, and click the option. (This spec still
+    // drove it with selectOption from before the CalendarPanel timezone
+    // was migrated — updated here alongside the roster completion.)
+    await page.getByTestId("calendar-timezone").click();
+    await page.getByTestId("calendar-timezone-search").fill("Asia/Singapore");
+    await page.getByTestId("calendar-timezone-option-Asia/Singapore").click();
     // XS-31: working days go with it in the same save.
     await page.getByTestId("calendar-working-day-6").check();
     await page.getByTestId("calendar-save").click();
@@ -1151,7 +1206,11 @@ test.describe("SET — the panels under stress and failure", () => {
     // next action.
     const err = page.getByTestId("workflow-save-error");
     await expect(err).toContainText("workflow.yaml");
-    await expect(err).toContainText(/not saved/i);
+    // The copy is "Your change wasn't saved." (curly apostrophe, since
+    // `cc534a0d`'s copy cleanup). The claim — the banner says the change
+    // did NOT land — is unchanged; the pattern matches either wording so
+    // a future copy tweak does not masquerade as a behaviour change.
+    await expect(err).toContainText(/(was\s*n[’']t|not)\s+saved/i);
     await expect(err).toContainText(/permission/i);
 
     // Re-dragging is possible immediately — the panel is not disabled.
@@ -1368,8 +1427,12 @@ test.describe("SET — the panels under stress and failure", () => {
 
     await page.goto(`${tracker.baseURL}/settings/calendar`);
     // The panel is a faithful lens on the file.
-    await expect(page.getByTestId("calendar-timezone")).toHaveValue("Europe/Berlin");
-    await expect(page.getByTestId("calendar-first-day")).toHaveValue("1");
+    await expectComboValue(page, "calendar-timezone", "Europe/Berlin");
+    // K106: a button-based picker. `expectComboValue` asserts BOTH that
+    // the control reports `1` AND that `1` is an option it offers —
+    // `data-value` alone would pass for a value with no matching row,
+    // which is the half `<select>.value` used to give for free.
+    await expectComboValue(page, "calendar-first-day", "1");
     for (const d of [1, 2, 3, 4, 5]) {
       await expect(page.getByTestId(`calendar-working-day-${String(d)}`)).toBeChecked();
     }
@@ -1380,7 +1443,7 @@ test.describe("SET — the panels under stress and failure", () => {
 
     // Changing first day to Sunday reaches the file, which is what the
     // pickers read on their next render.
-    await page.getByTestId("calendar-first-day").selectOption("0");
+    await pickCombo(page, "calendar-first-day", "0");
     await page.getByTestId("calendar-save").click();
     await expect(page.getByTestId("calendar-saved")).toBeVisible();
     expect(await readFile(calendarPath(tracker.root), "utf8"))

@@ -58,7 +58,13 @@ export function useMilestonesWithProgress() {
     queryKey: ["workflow", "milestones-progress"],
     queryFn: ({ signal }) =>
       apiClient.get<Page<MilestoneWithProgress>>(
-        `/api/milestones?progress=true&limit=${String(PICKER_PAGE_LIMIT)}`,
+        // K107: request ALL scopes. Without `archived=all` this hook
+        // returns only active milestones, so `archivedCount` is always 0
+        // and `MilestonesView` never renders its reveal control — making
+        // archived milestones unreachable from the view entirely
+        // (MSL-25). Every other config hook already passes this; this one
+        // was missed.
+        `/api/milestones?progress=true&archived=all&limit=${String(PICKER_PAGE_LIMIT)}`,
         { signal },
       ),
   });

@@ -1,6 +1,7 @@
 import type { StatusDef } from "@loctt/contracts";
 import { useState } from "react";
 
+import { Icon } from "../ui/Icon.tsx";
 import type { RelationshipRow } from "./group.ts";
 import { RelationshipRowView } from "./RelationshipRow.tsx";
 import type { TreeNode } from "./tree.ts";
@@ -72,7 +73,7 @@ export function TreeRows({
               }}
               className="shrink-0 rounded px-1 text-[0.7857rem] text-text-tertiary hover:bg-bg-muted"
             >
-              {isCollapsed ? "▸" : "▾"}
+              <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={14} />
             </button>
           ) : (
             <span aria-hidden="true" className="inline-block w-[18px] shrink-0" />

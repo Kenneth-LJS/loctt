@@ -12,7 +12,7 @@ export function Stub({ name }: { name: string }) {
     // for the same reason — the shell owns the page height.
     <div className="grid h-full place-items-center bg-bg-canvas p-8 font-sans text-text-primary">
       <div className="text-text-tertiary text-sm">
-        Route stub: <code className="font-mono">{name}</code>
+        Route stub: <code>{name}</code>
       </div>
     </div>
   );

@@ -99,3 +99,25 @@ describe("SettingsShell responsive layout (R1)", () => {
     expect(navClass).toContain("md:shrink-0");
   });
 });
+
+/**
+ * The single-source-of-truth padding rule (K-layout): the settings PANE
+ * owns the `p-8` page padding, and each panel renders with no outer page
+ * padding of its own — so switching sections cannot shift the content and
+ * there is no double-pad. KeyboardPanel is a static panel (no fetch), so
+ * it is the least-noisy representative here.
+ */
+describe("SettingsShell — the pane owns the padding (K-layout)", () => {
+  it("puts p-8 on the settings pane, and the panel's own root does NOT carry it", async () => {
+    renderShell("keyboard");
+    const pane = await screen.findByTestId("settings-pane");
+    // The pane is the one source of page padding.
+    expect(pane.className).toContain("p-8");
+
+    // The panel rendered inside it adds no page padding of its own —
+    // otherwise the content would be double-padded. Re-adding `p-8` to the
+    // panel root (or removing it from the pane) turns one of these red.
+    const panel = await screen.findByTestId("keyboard-panel");
+    expect(panel.className).not.toContain("p-8");
+  });
+});

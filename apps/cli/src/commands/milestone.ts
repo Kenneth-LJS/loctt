@@ -1,18 +1,21 @@
 import {
+  applyArchivedScope,
   archiveMilestone,
   createMilestone,
   deleteMilestone,
   editMilestone,
   filterByName,
+  isProgressUnavailable,
   loadMilestonesConfig,
   loadWorkflowConfig,
   milestoneProgressDetailed,
+  type MilestoneProgressResult,
   resolveLocttDir,
   resolveMilestoneIdFromInput,
   unarchiveMilestone,
 } from "@loctt/core";
 
-import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, hasFlag, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
@@ -40,21 +43,23 @@ export async function run(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   switch (sub) {
     case "list": {
-      const includeArchived = hasFlag(args, "--all");
+      const scope = parseArchivedScope(args);
       const showIds = hasFlag(args, "--ids");
       const showProgress = hasFlag(args, "--progress");
       const cfg = await loadMilestonesConfig(locttDir);
-      // K90 order (matching the web `handleListMilestones`): archived
-      // filter, then name filter, then page. Progress is computed over
-      // the paged window only, so a page's `--progress` scan is bounded.
-      const visible = cfg.milestones.filter(m => includeArchived || m.archived !== true);
+      // K90/K107 order (matching the web `handleListMilestones`): archived
+      // scope, then name filter, then page. Progress is computed over the
+      // paged window only, so a page's `--progress` scan is bounded.
+      // Default scope `active` hides archived; `--archived archived|all`
+      // (and the deprecated `--all` alias) widen it.
+      const visible = applyArchivedScope(cfg.milestones, scope);
       const matched = filterByName(visible, getFilterArg(args));
       const page = pageConfigList(matched, getConfigPagination(args));
       const shown = page.items;
 
       // Opt-in: progress scans every task, and `milestone list` is
       // otherwise a config read.
-      let progress: Record<string, { done: number; total: number; discarded: number }> = {};
+      let progress: Record<string, MilestoneProgressResult> = {};
       if (showProgress) {
         const workflow = await loadWorkflowConfig(locttDir);
         const report = await milestoneProgressDetailed(locttDir, shown.map(m => m.id), workflow);
@@ -77,12 +82,16 @@ export async function run(args: string[], root: string): Promise<void> {
         const due = m.target_date ? `  due ${m.target_date}` : "";
         const idCol = showIds ? `\t${m.id}` : "";
         const p = progress[m.id];
-        // Name the excluded discarded tasks where the number is shown:
-        // silently shrinking a denominator is as confusing as leaving
-        // dead work in it.
-        const prog = p
-          ? `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`
-          : "";
+        // MSL-35: a per-milestone failure reads "progress unavailable" in
+        // place of the numbers for THIS row only — the other rows above
+        // and below still print their real done/total. Name the excluded
+        // discarded tasks where the number is shown: silently shrinking a
+        // denominator is as confusing as leaving dead work in it.
+        const prog = p === undefined
+          ? ""
+          : isProgressUnavailable(p)
+            ? "  (progress unavailable)"
+            : `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`;
         console.log(`${m.name}${idCol}${due}${prog}${arch}`);
       }
       // DEG-C3: surface a hand-broken milestone entry preserved in

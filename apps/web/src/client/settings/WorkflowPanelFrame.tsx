@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { ApiError } from "../api/client.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { useWorkflowUsage } from "../api/hooks/useWorkflowMutations.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 
@@ -57,7 +58,7 @@ export function WorkflowPanelFrame({
     const envelope = workflow.error instanceof ApiError ? workflow.error.envelope : undefined;
     const isConfigInvalid = envelope?.code === "config_invalid";
     return (
-      <div className="p-8" data-testid="workflow-panel-error">
+      <div data-testid="workflow-panel-error">
         {header}
         <div
           data-workflow-error={isConfigInvalid ? "config-invalid" : "unreachable"}
@@ -79,14 +80,14 @@ export function WorkflowPanelFrame({
               control, and it re-runs the query rather than reloading
               the page: the point of the case is that the *server* need
               not restart. */}
-          <button
-            type="button"
-            data-testid="workflow-reload"
+          <Button
+            variant="secondary"
+            testId="workflow-reload"
             onClick={() => { void workflow.refetch(); }}
-            className="mt-3 h-8 rounded-md border border-border-default px-3 text-[0.9286rem]"
+            className="mt-3"
           >
             Reload from disk
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -94,7 +95,7 @@ export function WorkflowPanelFrame({
 
   if (workflow.isLoading || workflow.data === undefined) {
     return (
-      <div className="p-8">
+      <div>
         {header}
         <LoadingState className="text-[0.9286rem] text-text-tertiary">Loading workflow…</LoadingState>
       </div>
@@ -120,7 +121,7 @@ export function WorkflowPanelFrame({
           })));
   if (brokenEntries.length > 0) {
     return (
-      <div className="p-8" data-testid="workflow-panel-error">
+      <div data-testid="workflow-panel-error">
         {header}
         <div data-workflow-error="config-invalid">
           <div className="rounded-md border border-danger-fg/40 bg-bg-muted p-3 text-[0.9286rem]">
@@ -139,7 +140,7 @@ export function WorkflowPanelFrame({
                   data-testid={`workflow-broken-${e.sub}-${String(e.index)}`}
                   className="text-[0.8571rem] text-text-secondary"
                 >
-                  <code className="rounded bg-bg-surface px-1 py-0.5 font-mono">
+                  <code className="rounded bg-bg-surface px-1 py-0.5">
                     {e.sub}[{e.index}]
                   </code>{" "}
                   {e.error}
@@ -148,21 +149,21 @@ export function WorkflowPanelFrame({
             </ul>
           </div>
           {/* SET-33: a Reload re-parses from disk without a server restart. */}
-          <button
-            type="button"
-            data-testid="workflow-reload"
+          <Button
+            variant="secondary"
+            testId="workflow-reload"
             onClick={() => { void workflow.refetch(); }}
-            className="mt-3 h-8 rounded-md border border-border-default px-3 text-[0.9286rem]"
+            className="mt-3"
           >
             Reload from disk
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-8" data-testid="workflow-panel">
+    <div data-testid="workflow-panel">
       {header}
       {children({
         workflow: workflow.data,
@@ -173,13 +174,12 @@ export function WorkflowPanelFrame({
         path: usage.data?.path ?? ".loctt/config/workflow.yaml",
         usage: usage.data,
       })}
+      {/* SET-3: name the file this panel reflects. This had regressed to a
+          vague "changes appear after you refresh" line (Ken's "useless
+          copywriting") that also dropped the path SET-3 requires — restored
+          to the actual config path. */}
       <p data-testid="workflow-config-path" className="mt-6 text-[0.7857rem] text-text-tertiary">
-        Reflects{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">
-          {usage.data?.path ?? ".loctt/config/workflow.yaml"}
-        </code>
-        . Editing that file directly and refreshing shows the change —
-        this panel is a lens, not a cache.
+        Stored in <code className="text-text-secondary">{usage.data?.path ?? ".loctt/config/workflow.yaml"}</code>
       </p>
     </div>
   );

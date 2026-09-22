@@ -46,6 +46,35 @@ describe("createLabel", () => {
     expect(cfg.labels[0]).toEqual({ id: def.id, name: "Backend", color: "#1e6fcb" });
   });
 
+  // K103: a label was the one entity that could READ all three colour
+  // shapes but only WRITE a bare hex — `CreateLabelInput.color` and
+  // `editLabel`'s `changes.color` were typed `string`, so anything the
+  // swatch picker produced was silently narrowed. These pin the write
+  // path for the two non-hex shapes; without them the narrowing is
+  // invisible, because a hex-only write still passes every other test.
+  it("stores a palette reference, not a resolved hex", async () => {
+    const def = await createLabel(locttDir, {
+      name: "Palette", color: { palette: "teal" },
+    });
+    const cfg = await loadLabelsConfig(locttDir);
+    // The REFERENCE round-trips. A snapshot of teal's current hex here
+    // would break Ken's live-reference ruling: re-theming teal must move
+    // this label with it.
+    expect(cfg.labels[0]).toEqual({
+      id: def.id, name: "Palette", color: { palette: "teal" },
+    });
+  });
+
+  it("stores an explicit per-mode pair", async () => {
+    const def = await createLabel(locttDir, {
+      name: "Dual", color: { light: "#1e6fcb", dark: "#8ab4f8" },
+    });
+    const cfg = await loadLabelsConfig(locttDir);
+    expect(cfg.labels[0]).toEqual({
+      id: def.id, name: "Dual", color: { light: "#1e6fcb", dark: "#8ab4f8" },
+    });
+  });
+
   it("allows duplicate names (disambiguated by id)", async () => {
     const a = await createLabel(locttDir, { name: "Twin" });
     const b = await createLabel(locttDir, { name: "Twin" });

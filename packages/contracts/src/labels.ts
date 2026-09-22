@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { HexColor } from "./brands.js";
+import { EntityColorSchema } from "./color.js";
 import { BrokenEntrySchema } from "./health.js";
 
 /**
@@ -11,14 +11,16 @@ import { BrokenEntrySchema } from "./health.js";
  *    users. Tasks reference labels by id.
  *  - `name` is the human display name. Mutable. Not unique
  *    (disambiguated by id when ambiguous).
- *  - `color` is an optional hex string (e.g. "#1e6fcb").
+ *  - `color` is an optional `EntityColor` (K103): a bare hex string
+ *    (e.g. "#1e6fcb", used for both modes), an explicit
+ *    `{light, dark}` pair, or a live `{palette: "<id>"}` reference.
  *  - `archived` hides the label from default lists and pickers.
  *    Hard-delete (with explicit remap) removes the entry entirely.
  */
 export const LabelDefSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  color: HexColor.optional(),
+  color: EntityColorSchema.optional(),
   archived: z.boolean().optional(),
 }).strict();
 

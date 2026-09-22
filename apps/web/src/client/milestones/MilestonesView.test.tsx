@@ -154,6 +154,43 @@ describe("MilestonesView — unreadable task notice (K28 / P-5)", () => {
   });
 });
 
+describe("MilestonesView — per-milestone progress failure (MSL-35)", () => {
+  // @verifies MSL-35
+  it("shows one milestone's error row while its siblings show their numbers", async () => {
+    // The exact case the documented ceiling blocked: a milestone whose
+    // own progress could not be computed (server omits its `progress`,
+    // so `progressState(undefined)` ⇒ kind "unavailable") renders the
+    // named, retryable error IN PLACE of its numbers, while the other
+    // milestones in the SAME list keep rendering their real done/total.
+    // Under the old all-or-nothing scan this could not happen — a single
+    // failure blanked every row's numbers together.
+    MILESTONES = [
+      // ms_bad: no `progress` field ⇒ unavailable (the attributed-failure
+      // wire shape the server now emits for a per-milestone failure).
+      { id: "ms_bad", name: "Broken" },
+      // ms_ok: real numbers, must be untouched by the sibling's failure.
+      { id: "ms_ok", name: "Healthy", progress: { done: 3, total: 5, discarded: 0, fraction: 0.6 } },
+    ];
+    await renderView();
+
+    // The failing milestone shows its named error, not `0 / 0`.
+    const errText = await screen.findByTestId("milestone-ms_bad-progress-error-text");
+    expect(errText.textContent).toContain("Broken");
+    expect(errText.textContent?.toLowerCase()).toContain("could not be computed");
+    // It offers a retry (MSL-35's retryable affordance).
+    expect(screen.getByTestId("milestone-ms_bad-progress-retry")).toBeTruthy();
+    // The failing row shows NO numeric readout…
+    expect(screen.queryByTestId("milestone-ms_bad-readout")).toBeNull();
+
+    // …while the healthy sibling shows its real numbers simultaneously.
+    const okReadout = screen.getByTestId("milestone-ms_ok-readout");
+    expect(okReadout.textContent).toContain("3");
+    expect(okReadout.textContent).toContain("5");
+    // And the healthy sibling shows NO error row.
+    expect(screen.queryByTestId("milestone-ms_ok-progress-error")).toBeNull();
+  });
+});
+
 describe("MilestonesView — full-card click (MSL-39)", () => {
   // @verifies MSL-39
   it("clicking anywhere on the card opens the milestone", async () => {
@@ -294,5 +331,55 @@ describe("MilestonesView — status breakdown (MSL-41)", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("milestone-ms_1-breakdown")).toBeNull();
     });
+  });
+});
+
+describe("MilestonesView — create affordance + copy (K105)", () => {
+  it("subhead describes the page and carries NO 'Settings → Milestones' pointer", async () => {
+    MILESTONES = [
+      { id: "ms_1", name: "v1", progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 } },
+    ];
+    await renderView();
+
+    // K105: Ken retired the "Manage them in Settings → Milestones" prose.
+    // The subhead still exists (describes the page) but points at nothing.
+    const sub = await screen.findByTestId("milestones-subhead");
+    expect(sub.textContent?.toLowerCase()).not.toContain("settings");
+    expect(sub.querySelector("a")).toBeNull();
+  });
+
+  it("'+ New milestone' in the header opens the shared create dialog in place", async () => {
+    MILESTONES = [
+      { id: "ms_1", name: "v1", progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 } },
+    ];
+    await renderView();
+
+    // The affordance is a button on the page, not a deep link to a
+    // Settings form.
+    const newBtn = await screen.findByTestId("milestones-new");
+    expect(newBtn.tagName).toBe("BUTTON");
+    expect(screen.queryByTestId("milestone-create-dialog")).toBeNull();
+
+    // Clicking it opens the SHARED dialog in its create mode, in place.
+    fireEvent.click(newBtn);
+    const dialog = await screen.findByTestId("milestone-create-dialog");
+    expect(dialog).toBeTruthy();
+    // The create-mode fields are present (name), confirming mode="create".
+    expect(screen.getByTestId("milestone-create-name")).toBeTruthy();
+  });
+
+  it("empty state gives a '+ New milestone' button (no 'Settings → Milestones' prose)", async () => {
+    MILESTONES = [];
+    await renderView();
+
+    const empty = await screen.findByTestId("milestones-empty");
+    // K105: the prose "Create one in Settings → Milestones" link is gone.
+    expect(empty.textContent?.toLowerCase()).not.toContain("settings");
+    expect(empty.querySelector("a")).toBeNull();
+
+    // In its place, a button that opens the shared create dialog in place.
+    const emptyNew = screen.getByTestId("milestones-empty-new");
+    fireEvent.click(emptyNew);
+    expect(await screen.findByTestId("milestone-create-dialog")).toBeTruthy();
   });
 });

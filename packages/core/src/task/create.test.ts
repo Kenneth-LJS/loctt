@@ -260,5 +260,55 @@ describe("createTask", () => {
       expect(stamped).toBe(inZone);
     });
   });
+
+  describe("parent → tree relationship edge", () => {
+    // The tree axis key comes from config, not the literal "parent".
+    // A workspace that renames its `graph: tree` relationship must get
+    // an edge under the renamed key — otherwise the create writes an
+    // edge under a type the config never declares (P3).
+    it("uses the config's tree relationship key, not a hard-coded 'parent'", async () => {
+      const state = makeState();
+      const workflowConfig = {
+        key: { prefix: "T" },
+        statuses: [{ key: "todo", label: "Todo", category: "pending" as const }],
+        priorities: [],
+        task_types: [{ key: "task", label: "Task" }],
+        // The tree axis is deliberately NOT named "parent".
+        relationships: [
+          { key: "child_of", label: "Child of", graph: "tree" as const },
+          { key: "blocks", label: "Blocks", graph: "acyclic" as const },
+        ],
+        custom_fields: [],
+      };
+      const parentId = "01HZ0000000000000000000000";
+      const task = await createTask({
+        locttDir,
+        state,
+        options: { project: "task", title: "child", parent: parentId },
+        workflowConfig,
+      });
+
+      const edges = task.frontmatter.relationships ?? [];
+      expect(edges).toEqual([{ type: "child_of", target: parentId }]);
+      // Explicitly: the old hard-coded key is not used.
+      expect(edges.some(e => e.type === "parent")).toBe(false);
+    });
+
+    // Without config there is nothing to resolve the axis from, so the
+    // shipped default's key is the sensible fallback rather than
+    // dropping the caller's parent silently.
+    it("falls back to 'parent' when no workflow config is given", async () => {
+      const state = makeState();
+      const parentId = "01HZ0000000000000000000000";
+      const task = await createTask({
+        locttDir,
+        state,
+        options: { project: "task", title: "child", parent: parentId },
+      });
+      expect(task.frontmatter.relationships ?? []).toEqual([
+        { type: "parent", target: parentId },
+      ]);
+    });
+  });
 });
 

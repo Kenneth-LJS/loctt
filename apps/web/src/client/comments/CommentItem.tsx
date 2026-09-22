@@ -4,6 +4,8 @@ import { useState } from "react";
 import type { MentionCandidate } from "../editor/MentionMenu.tsx";
 import { relativeTime } from "../list/format.ts";
 import { avatarPalette, initials } from "../ui/avatar.ts";
+import { Button } from "../ui/Button.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { CommentComposer } from "./CommentComposer.tsx";
 import { formatCommentEditors } from "./editors.ts";
 import type { MentionResolver } from "./renderMarkdown.tsx";
@@ -135,31 +137,34 @@ export function CommentItem({
           )}
 
           <span className="ml-auto flex gap-1">
-            <button
-              type="button"
-              data-testid="comment-copy-link"
+            <Button
+              variant="ghost"
+              size="sm"
+              testId="comment-copy-link"
               aria-label="Copy link to this comment"
               onClick={onCopyLink}
-              className="rounded px-1.5 py-0.5 text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
             >
+              <Icon name="link" size={14} />
               Copy link
-            </button>
-            <button
-              type="button"
-              data-testid="comment-edit"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              testId="comment-edit"
               onClick={onStartEdit}
-              className="rounded px-1.5 py-0.5 text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
             >
+              <Icon name="edit" size={14} />
               Edit
-            </button>
-            <button
-              type="button"
-              data-testid="comment-delete"
+            </Button>
+            <Button
+              variant="ghost-danger"
+              size="sm"
+              testId="comment-delete"
               onClick={onDelete}
-              className="rounded px-1.5 py-0.5 text-[0.8571rem] text-text-tertiary hover:bg-bg-muted hover:text-danger-fg"
             >
+              <Icon name="trash" size={14} />
               Delete
-            </button>
+            </Button>
           </span>
         </div>
 

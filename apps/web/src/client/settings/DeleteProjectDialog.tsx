@@ -7,7 +7,10 @@ import type {
   DeleteProjectResult,
   DeleteProjectVars,
 } from "../api/hooks/useProjectMutations.ts";
+import { Button } from "../ui/Button.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Modal } from "../ui/Modal.tsx";
+import { Radio } from "../ui/Radio.tsx";
 
 /**
  * PRU-17, PRU-33, PRU-34.
@@ -60,13 +63,9 @@ export function DeleteProjectDialog({
             : `Deleted "${project.name}".`}
         </p>
         <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast"
-          >
+          <Button variant="primary" onClick={onClose}>
             Done
-          </button>
+          </Button>
         </div>
       </Modal>
     );
@@ -85,8 +84,7 @@ export function DeleteProjectDialog({
           <fieldset className="grid gap-2 text-[0.9286rem]">
             <legend className="sr-only">What happens to those tasks</legend>
             <label className="flex items-center gap-2">
-              <input
-                type="radio"
+              <Radio
                 name="project-delete-disposition"
                 data-testid="project-delete-choice-remap"
                 checked={disposition === "remap"}
@@ -95,24 +93,37 @@ export function DeleteProjectDialog({
               <span className="text-text-secondary">Move them to another project</span>
             </label>
             {disposition === "remap" && (
-              <label className="ml-6 grid gap-1">
-                <span className="sr-only">Move those tasks to</span>
-                <select
-                  data-testid="project-delete-remap"
-                  value={remapTo}
-                  onChange={e => { setRemapTo(e.target.value); }}
-                  className="h-8 rounded-md border border-border-default bg-bg-surface px-2 text-[0.9286rem]"
-                >
-                  <option value="">Choose a project…</option>
-                  {others.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </label>
+              <div className="ml-6 grid gap-1">
+                <span className="sr-only" id="project-delete-remap-label">Move those tasks to</span>
+                {/* A211: the project list grows with the workspace — a
+                    searchable Combobox, not a native <select>. Dialog-safe
+                    (Combobox's Escape stops propagation so it does not also
+                    close the Modal). */}
+                <Combobox
+                  label="Move those tasks to"
+                  options={others.map((p): ComboboxOption => ({ key: p.id, label: p.name }))}
+                  value={remapTo === "" ? undefined : remapTo}
+                  onSelect={v => { setRemapTo(v); }}
+                  listTestId="project-delete-remap-list"
+                  optionTestId={o => `project-delete-remap-option-${o.key}`}
+                  searchTestId="project-delete-remap-search"
+                  trigger={p => (
+                    <ComboboxButton
+                      {...p}
+                      testId="project-delete-remap"
+                      dataValue={remapTo}
+                      aria-label="Move those tasks to"
+                      placeholder="Choose a project…"
+                      className="w-full"
+                    >
+                      {others.find(o => o.id === remapTo)?.name ?? ""}
+                    </ComboboxButton>
+                  )}
+                />
+              </div>
             )}
             <label className="flex items-center gap-2">
-              <input
-                type="radio"
+              <Radio
                 name="project-delete-disposition"
                 data-testid="project-delete-choice-clear"
                 checked={disposition === "clear"}
@@ -140,17 +151,16 @@ export function DeleteProjectDialog({
         )}
 
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            data-testid="project-delete-cancel"
+          <Button
+            variant="ghost"
+            testId="project-delete-cancel"
             onClick={onClose}
-            className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary"
           >
             Cancel
-          </button>
-          <button
-            type="button"
-            data-testid="project-delete-confirm"
+          </Button>
+          <Button
+            variant="danger"
+            testId="project-delete-confirm"
             disabled={blocked}
             onClick={() => {
               mutation.mutate({
@@ -160,10 +170,9 @@ export function DeleteProjectDialog({
                   : remapTo !== "" ? { remapTo } : {}),
               });
             }}
-            className="h-8 rounded-md bg-danger-fg px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
           >
             {mutation.isPending ? "Deleting…" : "Delete project"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

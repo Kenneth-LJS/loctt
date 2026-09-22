@@ -5,6 +5,9 @@ import type {
   WorkflowConfig,
 } from "@loctt/contracts";
 
+import type { GroupEntry } from "../grouping/catalog.ts";
+import { isValidGrouping } from "../grouping/catalog.ts";
+
 /**
  * Resolves the timeline's three display settings (M3.3a).
  *
@@ -79,13 +82,59 @@ export function resolveZoom(input: SettingsInput): Resolved<TimelineZoom> {
   );
 }
 
-export function resolveGrouping(input: SettingsInput): Resolved<TimelineGrouping> {
-  return resolve(
-    input.urlGrouping,
-    input.view?.display?.grouping,
-    input.workflow?.timeline?.default_grouping,
-    BUILTIN_GROUPING,
-  );
+/**
+ * The grouping resolution, extended with catalog validation and a
+ * dangling report.
+ *
+ * A grouping value can now name a custom field (`field.<key>`) whose
+ * field may have been deleted or changed to multi/non-enum — an
+ * unresolvable reference, exactly like a dangling
+ * `dependency_relationship`. Unlike `zoom` (a closed enum that never
+ * dangles), grouping must therefore reject a value the live catalog does
+ * not offer.
+ *
+ * The rejection **defers** rather than falling straight to `none`: a
+ * saved view pinned to a now-deleted custom field should still honour a
+ * workspace `default_grouping`, and only reach `none` when every layer's
+ * value is unresolvable too. So the chain walks url → view → workspace →
+ * `none`, skipping any layer whose value is not `isValidGrouping`.
+ *
+ * `dangling` names the FIRST rejected value encountered (in precedence
+ * order), so the view can show a one-line notice naming what was
+ * dropped. It is set only when a value was present and rejected — an
+ * absent layer defers silently, which is not a dangle.
+ */
+export interface ResolvedGrouping extends Resolved<TimelineGrouping> {
+  /** The first present-but-unresolvable value, if any, for a notice. */
+  readonly dangling?: string | undefined;
+}
+
+export function resolveGrouping(
+  input: SettingsInput,
+  catalog: readonly GroupEntry[],
+): ResolvedGrouping {
+  const layers: readonly { source: SettingSource; value: string | undefined }[] = [
+    { source: "url", value: input.urlGrouping },
+    { source: "view", value: input.view?.display?.grouping },
+    { source: "workspace", value: input.workflow?.timeline?.default_grouping },
+  ];
+
+  let dangling: string | undefined;
+  for (const layer of layers) {
+    if (layer.value === undefined) continue;
+    if (isValidGrouping(layer.value, catalog)) {
+      return dangling === undefined
+        ? { value: layer.value, source: layer.source }
+        : { value: layer.value, source: layer.source, dangling };
+    }
+    // Present but unresolvable: remember the first one for the notice,
+    // then defer to the next layer.
+    if (dangling === undefined) dangling = layer.value;
+  }
+
+  return dangling === undefined
+    ? { value: BUILTIN_GROUPING, source: "builtin" }
+    : { value: BUILTIN_GROUPING, source: "builtin", dangling };
 }
 
 export function resolveArrows(input: SettingsInput): Resolved<boolean> {

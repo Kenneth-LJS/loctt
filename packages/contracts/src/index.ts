@@ -12,6 +12,21 @@ export {
   CalendarConfigSchema,
   HolidayDefSchema,
 } from "./calendar.js";
+export type {
+  ColorMode,
+  DoubleColor,
+  EntityColor,
+  PaletteColorRef,
+} from "./color.js";
+export {
+  ColorModeSchema,
+  DoubleColorSchema,
+  EntityColorSchema,
+  isDoubleColor,
+  isPaletteColorRef,
+  isSingleColor,
+  PaletteColorRefSchema,
+} from "./color.js";
 export type { BrokenEntry } from "./health.js";
 export { BrokenEntrySchema } from "./health.js";
 export type { HistoryEntry, HistoryKind } from "./history.js";
@@ -39,23 +54,38 @@ export {
   ProjectsConfigSchema,
 } from "./projects.js";
 export type {
+  AdvancedFilter,
+  ArchivedScope,
   BoardGrouping,
   BrokenSavedQuery,
+  ComparisonOp,
+  DateFn,
+  DateOffset,
+  Filter,
   QueriesConfig,
   QuerySort,
+  QueryValue,
   SavedQuery,
   SavedViewDisplay,
   SavedViewMode,
+  SimpleFilter,
   SortDirection,
 } from "./query.js";
 export {
+  AdvancedFilterSchema,
+  ArchivedScopeSchema,
   BoardGroupingSchema,
   BrokenSavedQuerySchema,
+  ComparisonOpSchema,
+  DEFAULT_ARCHIVED_SCOPE,
+  FilterSchema,
   QueriesConfigSchema,
   QuerySortSchema,
+  QueryValueSchema,
   SavedQuerySchema,
   SavedViewDisplaySchema,
   SavedViewModeSchema,
+  SimpleFilterSchema,
   SortDirectionSchema,
 } from "./query.js";
 export type {
@@ -97,6 +127,7 @@ export type {
   ConfigResponse,
   CreateTaskRequest,
   DoctorCheckResponse,
+  DoctorRepairResponse,
   ErrorCode,
   ErrorDataState,
   ErrorItemFailure,
@@ -121,6 +152,7 @@ export type {
 } from "./service.js";
 export type {
   CreateViewRequest,
+  DoctorRepairRequest,
   EditViewRequest,
   InitRequest,
   PutWorkflowRequest,
@@ -133,6 +165,7 @@ export {
   BulkMoveRequestSchema,
   BulkSetRequestSchema,
   CreateViewRequestSchema,
+  DoctorRepairRequestSchema,
   EditCommentRequestSchema,
   EditViewRequestSchema,
   InitRequestSchema,

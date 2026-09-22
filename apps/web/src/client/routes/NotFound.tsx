@@ -24,7 +24,7 @@ export function NotFound() {
         </h1>
         <p className="mb-1 text-[0.9286rem] text-text-secondary">
           Nothing is routed at{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+          <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
             {pathname}
           </code>
           .

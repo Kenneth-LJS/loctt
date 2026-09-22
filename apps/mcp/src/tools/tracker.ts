@@ -56,12 +56,21 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "doctor",
-    description: "Runs diagnostic checks on the tracker. Returns structured JSON {healthy, counts:{ok,warn,error}, checks:[{name,status,message}]} — branch on `healthy` or on a check's `status` rather than reading the messages. `healthy` is false when any check is in error. Pass `rebuild_index: true` to also rebuild the key-lookup cache (recovery path for out-of-band frontmatter edits).",
+    description: "Runs diagnostic checks on the tracker. Returns structured JSON {healthy, counts:{ok,warn,error}, checks:[{name,status,message,fix?}]} — branch on `healthy` or on a check's `status` rather than reading the messages. `healthy` is false when any check is in error. A check's optional `fix` names the programmatic repair for it: \"rebuild-index\" (pass rebuild_index:true) or \"restore-missing\" (pass restore_missing:true). Pass `rebuild_index: true` to rebuild the key-lookup cache (recovery for out-of-band frontmatter edits); pass `restore_missing: true` to recreate missing core config/state files with defaults (existence-guarded — never overwrites surviving data).",
     inputSchema: {
       rebuild_index: z.boolean().optional().describe("If true, rebuild the on-disk key index after checks. Use after manual frontmatter edits to a task's key or key_history."),
+      restore_missing: z.boolean().optional().describe("If true, recreate any missing core config/state files with defaults (initLoctt repair). Existence-guarded: surviving files and tasks are untouched."),
     },
     handler: async ({ root }, args) => {
       const rebuildIndex = args["rebuild_index"] === true;
+      // restore-missing parity (K-diagnostics-repair): the web Diagnostics
+      // panel and CLI `init --repair` both offer this; MCP must too. Runs
+      // BEFORE the checks so the returned findings reflect the repaired
+      // state. Gap-fill only — `initLoctt({repair:true})` recreates missing
+      // core files with defaults and never overwrites what survives.
+      if (args["restore_missing"] === true) {
+        await initLoctt(root, { repair: true });
+      }
       const checks = await runDoctor(root, { rebuildIndex });
       // Structured, not prose (ONB-C7). An agent deciding whether to
       // proceed had to substring-match "[error]" in a human sentence —
@@ -78,7 +87,12 @@ export const TOOLS: readonly ToolDef[] = [
         // block the next operation. Errors do.
         healthy: counts.error === 0,
         counts,
-        checks: checks.map(c => ({ name: c.name, status: c.status, message: c.message })),
+        checks: checks.map(c => ({
+          name: c.name,
+          status: c.status,
+          message: c.message,
+          ...(c.fix !== undefined ? { fix: c.fix } : {}),
+        })),
       }, null, 2));
     },
   },
@@ -132,7 +146,9 @@ export const TOOLS: readonly ToolDef[] = [
       "what would change — migration rewrites task frontmatter across the " +
       "whole tracker and some steps are marked risky. Only call with " +
       "confirm: true once the user has seen the plan and agreed. A backup " +
-      "is written before any step runs and is never deleted.",
+      "is written before any step runs and is never deleted. Unlike the " +
+      "delete tools, `confirm` here is a preview/apply toggle, not a safety " +
+      "gate.",
     inputSchema: {
       confirm: z.boolean().optional()
         .describe("false/omitted previews the plan; true performs the migration."),

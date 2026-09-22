@@ -48,6 +48,13 @@ export function DateField({
   onClear,
   /** Flags a start/due inversion (TSK-8, fourth bullet). */
   problem,
+  /**
+   * L2: action-phrased empty-state copy for the unset read state
+   * ("Set due date"), so an editable empty row invites action rather
+   * than reading as read-only absence ("—"). The accessible name keeps
+   * "not set" regardless, so screen readers are unaffected.
+   */
+  emptyText = "—",
 }: {
   readonly label: string;
   readonly value: string | undefined;
@@ -55,6 +62,7 @@ export function DateField({
   readonly onCommit: (value: string) => void;
   readonly onClear: () => void;
   readonly problem?: string | undefined;
+  readonly emptyText?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
@@ -93,10 +101,10 @@ export function DateField({
           data-testid={`meta-edit-${slug}`}
           aria-label={`${label}: ${value ?? "not set"}. Change`}
           onClick={() => { setEditing(true); }}
-          className="-mx-1 w-full rounded px-1 py-0.5 text-left text-[0.9286rem] text-text-primary hover:bg-bg-muted"
+          className="-mx-1 flex min-h-7 w-full items-center rounded px-1 py-0.5 text-left text-[0.9286rem] text-text-primary hover:bg-bg-muted"
         >
           {value === undefined
-            ? <span className="text-text-tertiary">—</span>
+            ? <span className="text-text-tertiary">{emptyText}</span>
             // `shortDate` renders in UTC and includes the year outside
             // the current one, so 1970-01-01 reads "Jan 1, 1970"
             // rather than "Jan 1" (TSK-28).
@@ -141,7 +149,7 @@ export function DateField({
             triggerRef.current?.focus();
           }
         }}
-        className="w-full rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.9286rem] text-text-primary"
+        className="min-h-7 w-full rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.9286rem] text-text-primary"
       />
       <DateNotes
         value={draft === "" ? undefined : draft}

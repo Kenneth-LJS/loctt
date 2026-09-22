@@ -1,13 +1,22 @@
-import type { SavedQuery } from "@loctt/contracts";
+import type { ArchivedScope, SavedQuery } from "@loctt/contracts";
+// Per-file subpath, NOT the barrel: the barrel drags node:path into the
+// browser bundle (A37).
+import { filtersToSummary } from "@loctt/core/query/filters.js";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { apiClient,ApiError } from "../api/client.ts";
-import { useViews } from "../api/hooks/sidebarData.ts";
+import { useViewsScoped } from "../api/hooks/sidebarData.ts";
+import { useDeleteView } from "../api/hooks/useDeleteView.ts";
+import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
+import { Callout } from "../ui/Callout.tsx";
+import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { ViewFormDialog } from "./ViewFormDialog.tsx";
+import { hashDeepLinkPresent } from "./deepLinkHash.ts";
+import { RowActions } from "./RowActions.tsx";
+import { type BrokenViewContext, ViewFormDialog, type ViewFormTarget } from "./ViewFormDialog.tsx";
 
 /**
  * Settings → Data → Saved views (VUE-25, VUE-26, VUE-27, VUE-36,
@@ -30,15 +39,6 @@ import { ViewFormDialog } from "./ViewFormDialog.tsx";
  * this panel want different subsets of the same document.
  */
 
-function useDeleteView() {
-  const qc = useQueryClient();
-  return useMutation<unknown, Error, { id: string; soft?: boolean }>({
-    mutationFn: ({ id, soft }) =>
-      apiClient.delete(`/api/views/${encodeURIComponent(id)}${soft === true ? "?soft=true" : ""}`),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["views"] }); },
-  });
-}
-
 function useUnarchiveView() {
   const qc = useQueryClient();
   return useMutation<unknown, Error, { id: string }>({
@@ -52,12 +52,20 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
   const unarchive = useUnarchiveView();
   const [confirming, setConfirming] = useState(false);
   const archived = view.archived === true;
+  const summary = filtersToSummary(view.filters);
 
   return (
     <li
+      // K100 deep-link anchor: a point-of-use "Edit view…" link scrolls
+      // to `/settings/saved-views#row-<id>`. `useScrollToHash` resolves it
+      // by DOM id, so the row carries one alongside its test id.
+      id={`row-${view.id}`}
       data-testid={`view-row-${view.id}`}
       data-view-archived={archived ? "true" : "false"}
-      className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
+      // flex-wrap so on a narrow pane the query drops to its own line
+      // instead of a fixed-width chip pushing the actions off-screen
+      // (reviewer FAIL). At >= sm it stays a single inline row.
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-subtle py-2 last:border-0"
     >
       <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
         {view.name}
@@ -68,100 +76,118 @@ function ViewRow({ view, onEdit }: { readonly view: SavedQuery; readonly onEdit?
         )}
       </span>
       {/*
-        VUE-26: the query is shown exactly as the file holds it, so a
-        view the CLI wrote is visibly the same view.
+        VUE-26: what the view matches, shown exactly as the file holds it,
+        so a view the CLI wrote is visibly the same view. K102: a view no
+        longer stores a query string, so the row renders the shared
+        display-only summary of its ordered filters — computed here, never
+        persisted and never parsed back. Order-last on mobile so it wraps
+        to a full-width line below the name+actions; capped on desktop.
+        `min-w-0` lets it truncate rather than force the row wide.
       */}
       <code
         data-testid="view-query"
-        className="w-80 shrink-0 truncate rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
-        title={view.query}
+        className="order-last min-w-0 w-full shrink truncate rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary sm:order-none sm:w-auto sm:max-w-80"
+        title={summary}
       >
-        {view.query}
+        {summary}
       </code>
 
       {/* VUE-41: rename + edit-query, on active views. An archived view
           is restored first (its query still resolves by id), so the Edit
           control belongs on the active row. */}
-      {!archived && onEdit !== undefined && (
-        <Button
-          variant="secondary"
-          size="sm"
-          testId="view-edit"
-          onClick={() => { onEdit(view); }}
-        >
-          Edit
-        </Button>
+      {/* Row actions collapse into a kebab (responsive GROUP A) so the
+          view name + query chip + actions no longer overflow the row.
+          Edit only on an active row (an archived view is restored first). */}
+      <RowActions
+        label={`Actions for view ${view.name}`}
+        actions={[
+          ...(!archived && onEdit !== undefined
+            ? [{ label: "Edit", testId: "view-edit", onSelect: () => { onEdit(view); } }]
+            : []),
+          archived
+            ? { label: "Unarchive", testId: "view-unarchive", disabled: unarchive.isPending, onSelect: () => { unarchive.mutate({ id: view.id }); } }
+            : { label: "Archive", testId: "view-archive", disabled: del.isPending, onSelect: () => { del.mutate({ id: view.id, soft: true }); } },
+          { label: "Delete", testId: "view-delete", danger: true, onSelect: () => { setConfirming(true); } },
+        ]}
+      />
+
+      {/* A211 / consistency: the bespoke inline "Delete permanently?" row
+          with two secondary buttons is replaced by the shared
+          ConfirmDialog the other Data panels use, so the destructive
+          confirm reads and behaves the same everywhere (and inherits the
+          focus trap + inert background). See decisions.md §8. */}
+      {confirming && (
+        <ConfirmDialog
+          title={`Delete “${view.name}”?`}
+          testId="view-delete-dialog"
+          confirmTestId="view-delete-confirm"
+          confirmLabel="Delete view"
+          body={
+            <>
+              The view <span className="font-medium text-text-primary">{view.name}</span>{" "}
+              is deleted permanently. Tasks are not affected, and built-in
+              filters are unchanged.
+            </>
+          }
+          // Before this the permanent-delete mutation had no error path:
+          // a failed DELETE just left the dialog open with no word of why
+          // (the confirm only closes onSuccess). Surface it in the dialog,
+          // mirroring RemapDeleteDialog, so a swallowed failure is shown.
+          error={del.isError
+            ? (del.error instanceof ApiError ? del.error.message : "The view could not be deleted.")
+            : undefined}
+          onConfirm={() => {
+            del.reset();
+            del.mutate({ id: view.id }, { onSuccess: () => { setConfirming(false); } });
+          }}
+          onCancel={() => { del.reset(); setConfirming(false); }}
+        />
       )}
 
-      {archived
-        ? (
-            <button
-              type="button"
-              data-testid="view-unarchive"
-              disabled={unarchive.isPending}
-              onClick={() => { unarchive.mutate({ id: view.id }); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-            >
-              Unarchive
-            </button>
-          )
-        : (
-            <button
-              type="button"
-              data-testid="view-archive"
-              disabled={del.isPending}
-              onClick={() => { del.mutate({ id: view.id, soft: true }); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem] disabled:opacity-50"
-            >
-              Archive
-            </button>
-          )}
-
-      {confirming
-        ? (
-            <span className="flex shrink-0 items-center gap-2 text-[0.8571rem]">
-              <span className="text-text-secondary">Delete permanently?</span>
-              <button
-                type="button"
-                data-testid="view-delete-confirm"
-                disabled={del.isPending}
-                onClick={() => {
-                  del.mutate({ id: view.id }, { onSuccess: () => { setConfirming(false); } });
-                }}
-                className="rounded border border-border-subtle px-2 py-1 disabled:opacity-50"
-              >
-                Delete
-              </button>
-              <button
-                type="button"
-                onClick={() => { setConfirming(false); }}
-                className="rounded border border-border-subtle px-2 py-1"
-              >
-                Cancel
-              </button>
-            </span>
-          )
-        : (
-            <button
-              type="button"
-              data-testid="view-delete"
-              onClick={() => { setConfirming(true); }}
-              className="rounded border border-border-subtle px-2 py-1 text-[0.8571rem]"
-            >
-              Delete
-            </button>
-          )}
+      {/* Archive (soft delete) and unarchive are kebab actions with no
+          dialog — a failure had nowhere to show and read as done while
+          nothing changed on disk (mirrors MilestonesPanel's bug-3 fix).
+          Surface it inline on the row. `basis-full` drops it to its own
+          line under the flex row. */}
+      {del.isError && !confirming && (
+        <Callout tone="danger" role="alert" testId="view-archive-error" className="basis-full">
+          {del.error instanceof ApiError ? del.error.message : "The view could not be archived."}
+        </Callout>
+      )}
+      {unarchive.isError && (
+        <Callout tone="danger" role="alert" testId="view-unarchive-error" className="basis-full">
+          {unarchive.error instanceof ApiError ? unarchive.error.message : "The view could not be unarchived."}
+        </Callout>
+      )}
     </li>
   );
 }
 
 export function SavedViewsPanel() {
-  const views = useViews();
+  // K107: default `active` (hide archived); the tri-state control reveals
+  // archived. Previously this panel showed archived always in a separate
+  // "Archived" section off a fetch-all; now the server filters by scope. A
+  // deep-link hash widens the fetch to `all` so a `#row-<id>` anchor to an
+  // archived view still resolves (K100).
+  const [scope, setScope] = useState<ArchivedScope>("active");
+  const [hashPresent] = useState(hashDeepLinkPresent);
+  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
+  const views = useViewsScoped(effectiveScope);
   // VUE-40 (create) and VUE-41 (edit) share one dialog: `null` closed,
   // `{ mode: "create" }` a new view, `{ mode: "edit", view }` a rename /
   // edit-query of an existing one.
+  //
+  // A broken entry can also be opened here, and when it is, the dialog
+  // gets its `broken` context: the parse error plus the YAML still on
+  // disk in `rawText`, with Save held inert behind an explicit
+  // confirmation. This panel never had a plain Edit on a broken row, so
+  // it never carried the sidebar's silent-overwrite defect — but it also
+  // showed the user nothing they could act on beyond "go edit the file",
+  // without showing them the file. Same dialog, same guard.
   const [dialog, setDialog] = useState<
-    { mode: "create" } | { mode: "edit"; view: SavedQuery } | null
+    | { mode: "create" }
+    | { mode: "edit"; view: ViewFormTarget; broken?: BrokenViewContext }
+    | null
   >(null);
 
   if (views.isError) {
@@ -175,7 +201,7 @@ export function SavedViewsPanel() {
     const envelope = views.error instanceof ApiError ? views.error.envelope : undefined;
     const isConfigInvalid = envelope?.code === "config_invalid";
     return (
-      <div className="p-8" data-testid="saved-views-panel">
+      <div data-testid="saved-views-panel">
         <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
           Saved views
         </h1>
@@ -196,7 +222,7 @@ export function SavedViewsPanel() {
             <p className="mt-2 text-[0.9286rem] text-text-secondary">
               Your saved views have not been deleted — the file could not be
               parsed, so none of them could be loaded. Fix{" "}
-              <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+              <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                 .loctt/config/queries.yaml
               </code>{" "}
               and reload. Built-in filters are unaffected, since they do not
@@ -221,7 +247,7 @@ export function SavedViewsPanel() {
   const broken = views.data.broken ?? [];
 
   return (
-    <div className="p-8" data-testid="saved-views-panel">
+    <div data-testid="saved-views-panel">
       <div className="mb-1 flex items-start justify-between gap-3">
         <h1 data-testid="settings-panel-title" className="text-lg font-semibold text-text-primary">
           Saved views
@@ -229,26 +255,33 @@ export function SavedViewsPanel() {
         {/* VUE-40: create a saved view from the UI. This is the panel's
             entry point; the sidebar's "+ New filter" opens the same
             dialog once the Sidebar lane wires it (see handoff note). */}
-        <Button
-          variant="primary"
-          size="sm"
-          testId="saved-views-new"
-          onClick={() => { setDialog({ mode: "create" }); }}
-        >
-          + New view
-        </Button>
+        <div className="flex items-center gap-3">
+          <ArchivedScopeControl
+            testId="saved-views-archived-scope"
+            value={scope}
+            onChange={setScope}
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            testId="saved-views-new"
+            onClick={() => { setDialog({ mode: "create" }); }}
+          >
+            + New view
+          </Button>
+        </div>
       </div>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Stored in{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
-          .loctt/config/queries.yaml
-        </code>. Archived views stay runnable by their URL but are hidden
+        Archived views stay runnable by their URL but are hidden
         from the sidebar.
       </p>
 
       {dialog !== null && (
         <ViewFormDialog
           {...(dialog.mode === "edit" ? { existing: dialog.view } : {})}
+          {...(dialog.mode === "edit" && dialog.broken !== undefined
+            ? { broken: dialog.broken }
+            : {})}
           onClose={() => { setDialog(null); }}
         />
       )}
@@ -256,7 +289,7 @@ export function SavedViewsPanel() {
       {all.length === 0 && broken.length === 0
         ? (
             <p data-testid="saved-views-empty" data-views-state="empty" className="text-[0.9286rem] text-text-tertiary">
-              No saved views yet.
+              {scope === "archived" ? "No archived views." : "No saved views yet."}
             </p>
           )
         : (
@@ -286,16 +319,19 @@ export function SavedViewsPanel() {
                     Broken
                   </h2>
                   <p className="mb-2 text-[0.8571rem] text-text-secondary">
-                    These views are still in the file, but their query no longer
-                    parses. Fix them from the list view or by hand in{" "}
-                    <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+                    These views are still in the file, and LocTT has not
+                    changed them. Their original text is shown below — fix
+                    it by hand in{" "}
+                    <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                       .loctt/config/queries.yaml
-                    </code>.
+                    </code>{" "}
+                    to keep what you wrote, or replace the view here.
                   </p>
                   <ul className="m-0 list-none p-0" data-testid="saved-views-broken-list">
                     {broken.map(b => (
                       <li
                         key={b.id}
+                        id={`row-${b.id}`}
                         data-testid={`view-row-${b.id}`}
                         data-view-broken="true"
                         className="flex flex-col gap-0.5 border-b border-border-subtle py-2 last:border-0"
@@ -306,11 +342,46 @@ export function SavedViewsPanel() {
                             (broken)
                           </span>
                         </span>
-                        <code className="font-mono text-[0.8571rem] text-text-secondary">{b.query}</code>
+                        <code className="text-[0.8571rem] text-text-secondary">{b.summary}</code>
                         <span className="text-[0.8571rem] text-danger-fg">
                           {b.error}
                           {b.position !== undefined ? ` (at position ${String(b.position)})` : ""}
                         </span>
+                        {/* The bytes still on disk. This is the only
+                            surviving record of what the user meant, so it
+                            is shown rather than described — "fix it in the
+                            file" is not actionable advice without it. */}
+                        <pre
+                          data-testid={`view-broken-raw-${b.id}`}
+                          className="m-0 mt-1 overflow-x-auto rounded bg-bg-muted px-2 py-1 font-mono text-[0.7857rem] text-text-secondary"
+                        >
+                          {b.rawText}
+                        </pre>
+                        <div className="mt-1">
+                          {/* Deliberately labelled "Replace…", not
+                              "Edit…": whatever is built in the dialog
+                              REPLACES the text above, and the dialog
+                              makes the user confirm that before it will
+                              save. */}
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            testId={`view-broken-replace-${b.id}`}
+                            onClick={() => {
+                              setDialog({
+                                mode: "edit",
+                                view: { id: b.id, name: b.name, filters: [] },
+                                broken: {
+                                  error: b.error,
+                                  rawText: b.rawText,
+                                  ...(b.position !== undefined ? { position: b.position } : {}),
+                                },
+                              });
+                            }}
+                          >
+                            Replace…
+                          </Button>
+                        </div>
                       </li>
                     ))}
                   </ul>

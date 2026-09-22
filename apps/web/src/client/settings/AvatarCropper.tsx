@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Button } from "../ui/Button.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import {
   clampCrop,
@@ -191,23 +192,21 @@ export function AvatarCropper({
         </label>
 
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            data-testid={`avatar-crop-cancel-${testIdSuffix}`}
+          <Button
+            variant="ghost"
+            testId={`avatar-crop-cancel-${testIdSuffix}`}
             onClick={onCancel}
-            className="h-8 rounded-md px-3 text-[0.9286rem] text-text-secondary"
           >
             Cancel
-          </button>
-          <button
-            type="button"
-            data-testid={`avatar-crop-confirm-${testIdSuffix}`}
+          </Button>
+          <Button
+            variant="primary"
+            testId={`avatar-crop-confirm-${testIdSuffix}`}
             disabled={busy}
             onClick={confirm}
-            className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast disabled:opacity-50"
           >
             {busy ? "Preparing…" : "Use this crop"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

@@ -82,9 +82,10 @@ export async function exportTasks(args: string[], root: string): Promise<void> {
       ...(baseQuery !== undefined ? { query: baseQuery } : {}),
       ...(view !== undefined ? { view } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-      // The archived flag is applied by filterForExport below, matching
-      // the web handler, so it is not passed into the query filter.
-      includeArchived,
+      // The archived filter is applied by filterForExport below, matching
+      // the web handler, so the query filter is left wide open (K107: the
+      // `all` scope injects no archived term).
+      archivedScope: "all",
       ...(today !== undefined ? { today } : {}),
       limit: Number.MAX_SAFE_INTEGER,
     },

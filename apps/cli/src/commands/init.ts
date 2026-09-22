@@ -7,7 +7,7 @@ import { getArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
  * documented and parsed but could never work, since `projects.yaml`
  * stores no slug. Passing it now fails rather than being ignored.
  */
-const INIT_FLAGS = ["prefix", "project-label", "timezone", "no-docs", "repair"] as const;
+const INIT_FLAGS = ["prefix", "project-label", "timezone", "no-docs", "repair", "json", "quiet"] as const;
 
 /**
  * `loctt init` — bootstrap a new tracker at the current cwd (or
@@ -32,6 +32,12 @@ export async function run(args: string[], root: string): Promise<void> {
   // their tasks — which refusing did, since the only route back was
   // deleting the directory (ONB-C3).
   const repair = hasFlag(args, "--repair");
+  // Output modes. `--json` emits a machine-readable summary and no prose;
+  // `--quiet` suppresses the human guidance (the "Next steps" block and
+  // the summary lines) while leaving errors intact. Neither changes what
+  // init writes to disk.
+  const json = hasFlag(args, "--json");
+  const quiet = hasFlag(args, "--quiet");
   const result = await initLoctt(root, {
     prefix,
     docs,
@@ -39,7 +45,17 @@ export async function run(args: string[], root: string): Promise<void> {
     ...(projectLabel ? { projectName: projectLabel } : {}),
     ...(timezone ? { timezone } : {}),
   });
+  if (json) {
+    console.log(JSON.stringify({
+      repaired: repair,
+      locttDir: result.locttDir,
+      created: result.created,
+      stateRebuilt: result.created.includes("state.yaml"),
+    }, null, 2));
+    return;
+  }
   if (repair) {
+    if (quiet) return;
     console.log(`Repaired .loctt at ${result.locttDir}`);
     console.log(
       result.created.length > 0
@@ -53,6 +69,17 @@ export async function run(args: string[], root: string): Promise<void> {
     }
     return;
   }
+  if (quiet) return;
   console.log(`Initialized .loctt at ${result.locttDir}`);
   console.log(`Created ${result.created.length} files`);
+  // Next steps — orient a first-time user who has nothing but a fresh
+  // tracker. Suppressed by --json/--quiet above.
+  console.log("");
+  console.log("Next steps:");
+  console.log("  Create a task:   loctt create \"<title>\"");
+  console.log("  Open the web UI: loctt ui");
+  if (docs) {
+    // The helper docs only exist when --no-docs was not passed.
+    console.log("  Read the docs:   .loctt/docs/");
+  }
 }

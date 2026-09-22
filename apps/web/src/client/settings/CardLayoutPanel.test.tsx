@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CardLayoutPanel } from "./CardLayoutPanel.tsx";
@@ -128,5 +128,46 @@ describe("CardLayoutPanel", () => {
     // The title is the un-hideable anchor, so a card is never a blank
     // unclickable rectangle.
     expect(preview.textContent).toContain("Rewrite the export pipeline");
+  });
+
+  // A failed save carries the server's reason + a Retry (the ErrorState
+  // standard), not a generic "not saved" line. Red-proven: the pre-fix
+  // panel showed a fixed string and had no Retry control.
+  it("shows the server message and a Retry when the save fails", async () => {
+    const { fireEvent } = await import("@testing-library/react");
+    SETTINGS = { card_layout: ["assignee", "labels", "due_date"] };
+    // Fail PUTs with a message envelope; reads still succeed.
+    vi.stubGlobal("fetch", vi.fn((input: unknown, init?: RequestInit) => {
+      const path = String(input).replace(/^https?:\/\/[^/]+/, "");
+      if (path.startsWith("/api/user-settings") && init?.method === "PUT") {
+        return Promise.resolve(new Response(
+          JSON.stringify({ message: "settings.yaml is read-only", code: "rejected_write" }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        ));
+      }
+      if (path.startsWith("/api/user-settings")) {
+        return Promise.resolve(new Response(JSON.stringify({ user: "u1", settings: SETTINGS }), {
+          status: 200, headers: { "content-type": "application/json" },
+        }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ items: [], total: 0, offset: 0, limit: 1000 }), {
+        status: 200, headers: { "content-type": "application/json" },
+      }));
+    }));
+    renderPanel();
+
+    (await screen.findByTestId("card-field-toggle-due_date")).click();
+
+    const host = await screen.findByTestId("card-layout-save-error");
+    // The server's own reason is shown, not a canned line.
+    expect(host.textContent).toContain("read-only");
+    // And a repeatable recovery control exists (re-sends the last write).
+    expect(within(host).getByRole("button", { name: "Retry" })).toBeTruthy();
+    // A second click re-issues the write.
+    const before = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    fireEvent.click(within(host).getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
+    });
   });
 });

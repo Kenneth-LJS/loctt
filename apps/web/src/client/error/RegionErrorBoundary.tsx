@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { Button } from "../ui/Button.tsx";
+
 /**
  * A render-crash boundary scoped to one named region.
  *
@@ -123,7 +125,7 @@ export function RegionErrorFallback({
         <p className="mb-2 text-[0.9286rem] text-text-secondary">
           Something in the app failed to draw — a bug on our side, not a
           problem with your data. Your tasks are files in{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">.loctt/</code>{" "}
+          <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">.loctt/</code>{" "}
           and a rendering fault cannot change them.
         </p>
         {writeInFlight ? (
@@ -133,20 +135,12 @@ export function RegionErrorFallback({
           </p>
         ) : null}
         <div className="mb-3 flex gap-2">
-          <button
-            type="button"
-            onClick={onRetry}
-            className="h-8 rounded-md bg-accent px-3 text-[0.9286rem] font-medium text-accent-contrast hover:bg-accent-hover"
-          >
+          <Button variant="primary" onClick={onRetry}>
             Try {region} again
-          </button>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="h-8 rounded-md border border-border-default bg-bg-surface px-3 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
-          >
+          </Button>
+          <Button variant="secondary" onClick={() => window.location.reload()}>
             Reload
-          </button>
+          </Button>
           {offerListLink ? (
             // SHL-42: reload alone leaves a user whose route is broken
             // reloading the same broken route. A way *out* is the other
@@ -161,16 +155,17 @@ export function RegionErrorFallback({
         </div>
         <details className="text-[0.8571rem] text-text-tertiary">
           <summary className="cursor-pointer select-none">Show details</summary>
-          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-bg-muted p-2 font-mono text-[0.7857rem]">
+          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-bg-muted p-2 text-[0.7857rem]">
             {details}
           </pre>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => void navigator.clipboard?.writeText(details)}
-            className="mt-2 rounded border border-border-default px-2 py-1 hover:bg-bg-muted"
+            className="mt-2"
           >
             Copy details
-          </button>
+          </Button>
         </details>
       </div>
     </div>

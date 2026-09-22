@@ -8,6 +8,7 @@
  */
 
 import {
+  applyArchivedScope,
   archiveSprint,
   createSprint,
   deleteSprint,
@@ -22,7 +23,7 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
-import { configListInputSchema, getQ, pageConfigList } from "../runtime/config-list.js";
+import { configListInputSchema, getArchivedScope, getQ, pageConfigList } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { text } from "../runtime/errors.js";
 import type { ToolDef } from "../types.js";
@@ -36,10 +37,16 @@ export const TOOLS: readonly ToolDef[] = [
       "progress: true to include done/total per sprint — computed from " +
       "status CATEGORY (so a renamed or deleted `done` status does not " +
       "break it), with discarded tasks excluded from the denominator so " +
-      "abandoned work does not stall a sprint below 100% forever. When any " +
-      "task file cannot be read, the response carries an `unreadable` list " +
-      "naming them — the totals count only the readable corpus, so a short " +
-      "total is explained rather than silent.",
+      "abandoned work does not stall a sprint below 100% forever. A sprint " +
+      "whose own progress could not be computed (an unreadable member " +
+      "attributed to it) carries `progress: { unavailable: true, reason }` " +
+      "in place of the numbers — that one sprint fails independently; the " +
+      "others still report real numbers. When an unreadable task cannot be " +
+      "attributed to any sprint, the response carries a top-level " +
+      "`unreadable` list naming them — the totals count only the readable " +
+      "corpus, so a short total is explained rather than silent. "
+      + "By default archived sprints are hidden (K107); pass "
+      + "`archived: archived` for only archived or `archived: all` for both.",
     inputSchema: {
       progress: z.boolean().optional()
         .describe("Include done/total per sprint. Scans every task, so opt in only when needed."),
@@ -47,9 +54,11 @@ export const TOOLS: readonly ToolDef[] = [
     },
     handler: async ({ locttDir }, args) => {
       const cfg = await loadSprintsConfig(locttDir);
-      // K90 order (matching the web `handleListSprints`): name filter,
-      // then page. Progress is computed over the paged window only.
-      const sprints = pageConfigList(filterByName(cfg.sprints, getQ(args)), args);
+      // K90/K107 order (matching the web `handleListSprints`): archived
+      // scope, then name filter, then page. Progress is computed over the
+      // paged window only.
+      const scoped = applyArchivedScope(cfg.sprints, getArchivedScope(args));
+      const sprints = pageConfigList(filterByName(scoped, getQ(args)), args);
       if (args["progress"] !== true) {
         return text(JSON.stringify({ ...cfg, sprints }, null, 2));
       }

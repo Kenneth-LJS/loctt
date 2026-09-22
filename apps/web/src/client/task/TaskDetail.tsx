@@ -17,6 +17,7 @@ import {
 } from "../api/hooks/sidebarData.ts";
 import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
+import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
 import { useSetField } from "../api/hooks/useSetField.ts";
 import { useTask } from "../api/hooks/useTask.ts";
 import { useTaskGraph } from "../api/hooks/useTaskGraph.ts";
@@ -31,11 +32,17 @@ import { AttachmentsPanel } from "../attachments/AttachmentsPanel.tsx";
 import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { RelationshipsPanel } from "../relationships/RelationshipsPanel.tsx";
+import { useAnnouncer } from "../ui/Announcer.tsx";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { DeleteTaskDialog } from "./DeleteTaskDialog.tsx";
+import { EditableTitle } from "./EditableTitle.tsx";
 import type { FieldFailure } from "./fieldFailure.ts";
 import { buildLabelIndex, toFieldFailure } from "./fieldFailure.ts";
+import { fieldLabel } from "./fieldLabel.ts";
 import { MetaPanel } from "./MetaPanel.tsx";
 import { MoveTaskDialog } from "./MoveTaskDialog.tsx";
 import { TaskNotFound } from "./TaskNotFound.tsx";
@@ -91,6 +98,12 @@ export function TaskDetail({
   const task = useTask(taskRef);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // A11Y-24: the shell's screen-reader channel, so a field save's
+  // outcome is spoken. A successful `set` has no durable surface of its
+  // own (the value simply updates in place), and its failure notice is
+  // an anchored `role="alert"` — this makes both perceptible to a
+  // non-sighted user through the one announcement region.
+  const { announce } = useAnnouncer();
 
   const projects = useProjects();
   const users = useUsers();
@@ -99,6 +112,10 @@ export function TaskDetail({
   const sprints = useSprints();
   const calendar = useCalendar();
   const workflow = useWorkflow();
+  // L3: the active user, for MetaPanel's "Assign to me" quick action.
+  // `data === null` is the identity-unknown state (SHL-40) — no users
+  // registered or the read failed; the button is hidden there.
+  const currentUser = useCurrentUser();
   // The whole graph, for the relationships panel's tree render. Called
   // unconditionally with the other queries: hooks cannot sit below the
   // pending / error returns.
@@ -207,9 +224,13 @@ export function TaskDetail({
     // way as a load in progress.
     return (
       <div className="grid h-full place-items-center p-8">
-        <p aria-busy="true" className="text-[0.9286rem] text-text-tertiary">
+        {/* LoadingState carries role="status" + aria-busy, so the load is
+            announced — the bare <p aria-busy> here was silent to a screen
+            reader (design-review §A3). The centered wrapper and the muted
+            treatment are preserved. */}
+        <LoadingState className="text-[0.9286rem] text-text-tertiary">
           Loading {taskRef}…
-        </p>
+        </LoadingState>
       </div>
     );
   }
@@ -333,11 +354,31 @@ export function TaskDetail({
    * through a retired key or a ULID must still be told about `T-12`
    * (XS-57's first bullet, and P4 generally).
    */
+  /**
+   * A11Y-24. Announce the save outcome exactly once per write, from the
+   * mutation's own callbacks — never from render, which would re-speak on
+   * every unrelated re-paint (a background poll, a sibling field's edit)
+   * and read out a stale backlog. The `Announcer` keys each message by a
+   * counter, so two identical outcomes still both announce.
+   *
+   *  - Success is polite ("Status saved"): the value updated in place
+   *    without moving focus, and a poll interrupt would be the wrong
+   *    shape for a routine confirmation.
+   *  - Failure is assertive and carries the *same message the notice
+   *    shows* (`failure.message`) — a silent failure is A11Y-24's named
+   *    worst case, and the field's `role="alert"` notice and this
+   *    channel agree word-for-word so the two are never in conflict.
+   */
   const writeField = (vars: { field: string; value?: unknown }): void => {
     setFieldError(null);
     setField.mutate(vars, {
+      onSuccess: () => {
+        announce(`${fieldLabel(vars.field)} saved`);
+      },
       onError: (err: Error) => {
-        setFieldError(toFieldFailure(err, vars, labelIndex, fm.key));
+        const failure = toFieldFailure(err, vars, labelIndex, fm.key);
+        setFieldError(failure);
+        announce(failure.message, "assertive");
       },
     });
   };
@@ -449,7 +490,7 @@ export function TaskDetail({
                   is live (TSK-2). */}
               <span
                 data-testid="task-key-chip"
-                className="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-[0.8571rem] font-medium text-text-secondary"
+                className="rounded bg-bg-muted px-1.5 py-0.5 text-[0.8571rem] font-medium text-text-secondary"
               >
                 {fm.key}
               </span>
@@ -462,14 +503,23 @@ export function TaskDetail({
                 </span>
               )}
             </div>
-            {/* `title` makes the full string recoverable on hover even
-                when it wraps to a clamped height (TSK-24). */}
-            <h1
+            {/* L1: the title is editable in place, closing the GUI's
+                core/surface parity hole (core/CLI/MCP can all rename via
+                the `title` field). It writes through the same `writeField`
+                path the MetaPanel editors use, so a rejection renders the
+                shared FieldFailureNotice under the heading. `title` hover,
+                break-words, and the K26 key fallback all live in the
+                component. */}
+            <EditableTitle
               title={fm.title}
-              className="break-words text-[1.4286rem] font-semibold leading-tight text-text-primary"
-            >
-              {fm.title}
-            </h1>
+              taskKey={fm.key}
+              onCommit={t => { onSet("title", t); }}
+              {...(fieldError?.field === "title" ? { error: fieldError } : {})}
+              {...(fieldError?.field === "title" && fieldError.retry !== undefined
+                ? { onRetry: retryWith(fieldError.retry, writeField) }
+                : {})}
+              onDismiss={() => { setFieldError(null); }}
+            />
             {navigatedByRetired && (
               <p className="mt-1.5 text-[0.8571rem] text-text-tertiary">
                 {/* GIT-19: the "renumbered while you had it open" copy is
@@ -483,7 +533,7 @@ export function TaskDetail({
                 {rekeyedWhileOpen === true
                   ? "This task was renumbered while you had it open. It used to be "
                   : "You followed "}
-                <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.7857rem]">
+                <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem]">
                   {retiredKey}
                 </code>
                 {rekeyedWhileOpen === true
@@ -504,16 +554,15 @@ export function TaskDetail({
               aria-label={`Actions for ${fm.key}`}
               align="end"
               trigger={t => (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
                   onClick={t.toggle}
                   aria-haspopup={t["aria-haspopup"]}
                   aria-expanded={t["aria-expanded"]}
                   id={t.id}
-                  className="rounded-md border border-border-subtle px-2.5 py-1.5 text-[0.9286rem] text-text-secondary hover:bg-bg-muted"
                 >
                   More
-                </button>
+                </Button>
               )}
             >
               {({ close }) => (
@@ -526,6 +575,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="copy" size={14} />
                     Copy key
                   </MenuItem>
                   <MenuItem
@@ -540,6 +590,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="link" size={14} />
                     Copy link
                   </MenuItem>
                   <MenuItem
@@ -548,6 +599,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="plus" size={14} />
                     Duplicate
                   </MenuItem>
                   <MenuItem
@@ -557,6 +609,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="chevronRight" size={14} />
                     Move to project…
                   </MenuItem>
                   <MenuItem
@@ -568,6 +621,7 @@ export function TaskDetail({
                     {/* No dialog either way: archive is reversible, and
                         friction proportionate to consequence is the
                         whole distinction from delete (TSK-23). */}
+                    <Icon name={archived ? "unarchive" : "archive"} size={14} />
                     {archived ? "Unarchive" : "Archive"}
                   </MenuItem>
                   <MenuItem
@@ -578,6 +632,7 @@ export function TaskDetail({
                       close();
                     }}
                   >
+                    <Icon name="trash" size={14} />
                     Delete…
                   </MenuItem>
                 </>
@@ -606,7 +661,13 @@ export function TaskDetail({
           the title pushes the grid wider than the pane (TSK-24). */}
       <div className="flex-1 overflow-auto">
         <div className="grid grid-cols-1 gap-6 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="min-w-0 space-y-6">
+          {/* On a single column (mobile) the meta panel is ordered FIRST so
+              Status / Priority / Assignee / Due sit directly under the
+              title, above the description and comments — the most-used
+              fields are otherwise unreachable at the bottom of the page.
+              At `lg` the grid is two columns and source order (content
+              left, meta right) is restored with `lg:order-none`. */}
+          <div className="order-2 min-w-0 space-y-6 lg:order-none">
             <Section title="Description">
               {/* M2.3. Keyed by the task so navigating A → B builds a
                   fresh editor rather than re-seeding one that still
@@ -717,6 +778,11 @@ export function TaskDetail({
             </div>
           </div>
 
+          {/* Ordered FIRST on mobile (see the content column's note) so it
+              sits under the title; `lg:order-none` restores the right-hand
+              column at two-up. The wrapper is the grid item; the panel's
+              own width comes from the 280px track. */}
+          <div className="order-1 min-w-0 lg:order-none">
           <MetaPanel
             frontmatter={fm}
             {...(task.data.health !== undefined ? { health: task.data.health } : {})}
@@ -727,6 +793,8 @@ export function TaskDetail({
             milestones={milestones.data?.items ?? []}
             sprints={sprints.data?.items ?? []}
             calendar={calendar.data}
+            {...(currentUser.data != null ? { currentUser: currentUser.data } : {})}
+            identityUnknown={currentUser.data === null}
             onSet={onSet}
             onUnset={onUnset}
             onCreateLabel={onCreateLabel}
@@ -749,6 +817,7 @@ export function TaskDetail({
               : {})}
             onDismissFieldError={() => { setFieldError(null); }}
           />
+          </div>
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-comments-activity.md —
+ * Transcribed from tests/cases/ui-test-cases/flow-comments-activity.md —
  * M2.4b, the Activity feed (CMT-13..38, XS-53).
  *
  * **`actor` is a ULID on disk.** Every assertion about who did

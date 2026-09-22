@@ -1,15 +1,18 @@
 import type { WorkflowConfig } from "@loctt/contracts";
+import { effectiveInverseKey, isSymmetricRelationship } from "@loctt/contracts";
 import {
   appendTaskBody,
   bodyToken,
   buildListContext,
   buildShowModel,
+  bulkDelete,
   bulkMoveTasksToProject,
   bulkSetFields,
+  computeProgressFromStatuses,
   createTask,
   deleteTask,
   duplicateTask,
-  getCurrentUser,
+  filtersToScannableText,  getCurrentUser,
   listTasks,
   loadAllTasksDetailed,
   loadAllUsers,
@@ -39,7 +42,7 @@ import {
 
 import type { HistoryDisplayContext } from "../format/history.js";
 import { formatHistoryEntry } from "../format/history.js";
-import { getArg, getNonNegativeIntArg, hasFlag, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, getNonNegativeIntArg, hasFlag, parseOptionalArchivedScope, rejectUnknownFlags } from "../runtime/args.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, UsageError } from "../runtime/errors.js";
 import { assertWorkflowEnumKey } from "../runtime/workflow-assert.js";
@@ -66,7 +69,7 @@ const TASK_CREATE_FLAGS: readonly string[] = [
   // the first four meant a create had to be followed by `set` calls for
   // the rest, and MCP accepted a different subset again (TSK-C5).
   "--assignee", "--reporter", "--due", "--start", "--estimate",
-  "--milestone", "--sprint", "--label", "--body",
+  "--milestone", "--sprint", "--label", "--body", "--parent",
 ];
 const TASK_LIST_FLAGS: readonly string[] = ["--limit", "--project", "--archived", "--query", "--view", "--sort", "--dir", "--offset"];
 const TASK_SHOW_FLAGS: readonly string[] = [];
@@ -133,6 +136,10 @@ export async function create(args: string[], root: string): Promise<void> {
   const milestone = getArg(args, "--milestone");
   const sprint = getArg(args, "--sprint");
   const body = getArg(args, "--body");
+  // Pre-link the new task under the configured tree axis (e.g. "+ New
+  // child"). Core resolves the actual relationship key from workflow.yaml
+  // — the value here is the parent target (a key or id).
+  const parent = getArg(args, "--parent");
 
   const archivedGuard = await loadArchivedGuardConfigs(locttDir);
   const task = await withStateLock(locttDir, async () => {
@@ -157,6 +164,7 @@ export async function create(args: string[], root: string): Promise<void> {
         ...(sprint !== undefined ? { sprint } : {}),
         ...(labels.length > 0 ? { labels } : {}),
         ...(body !== undefined ? { body } : {}),
+        ...(parent !== undefined ? { parent } : {}),
       },
     });
     await saveState(locttDir, state);
@@ -242,18 +250,21 @@ export async function list(args: string[], root: string): Promise<void> {
   const currentUser = await getCurrentUser(locttDir);
 
   // CMT-10: build the list context, loading comment mentions only when the
-  // effective query (the ad-hoc `--query` or a resolved saved view's
-  // query) actually references `comment_mentions`. A list that doesn't
+  // effective filter set (the ad-hoc `--query` or a resolved saved view's
+  // filters) actually references `comment_mentions`. A list that doesn't
   // filter on mentions pays zero comment I/O — the load-bearing gate.
+  // A view contributes one scannable string per filter (K102).
   const viewQuery = view !== undefined && queriesConfig !== undefined
-    ? resolveView(queriesConfig, view)?.query
-    : undefined;
+    ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
+    : [];
   const ctx = await resolveCommentMentionsContext(
     locttDir,
     tasks,
     buildListContext(tasks),
-    [baseQuery, viewQuery],
+    [baseQuery, ...viewQuery],
   );
+
+  const requestedScope = parseOptionalArchivedScope(args);
 
   const result = listTasks({
     tasks,
@@ -263,7 +274,10 @@ export async function list(args: string[], root: string): Promise<void> {
       ...(limit !== undefined ? { limit } : {}),
       ...(sort !== undefined ? { sort } : {}),
       ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-      includeArchived: hasFlag(args, "--archived"),
+      // Only when the user actually passed a flag — otherwise a saved
+      // view's own `archivedScope` (K102) would be shadowed by the
+      // default and a view saved as `all` would still hide archived rows.
+      ...(requestedScope !== undefined ? { archivedScope: requestedScope } : {}),
       ...(today !== undefined ? { today } : {}),
       ...(now !== undefined ? { now } : {}),
       ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
@@ -377,6 +391,24 @@ async function buildHistoryDisplayContext(
   return ctx;
 }
 
+/**
+ * The type key of the *child* side of the `graph: "tree"` axis — the
+ * side a parent holds to point at its children (`child` by default,
+ * whatever `inverse` renames it to). `undefined` when there is no tree
+ * axis, or when it is symmetric (no distinct child direction).
+ *
+ * Config-driven, matching `create.ts`'s tree-axis resolution and the web
+ * panel's `treeChildSideKey` — never a literal `"child"`.
+ */
+function treeChildSideKey(
+  workflow: WorkflowConfig | undefined,
+): string | undefined {
+  const treeDef = workflow?.relationships.find(r => r.graph === "tree");
+  if (treeDef === undefined) return undefined;
+  if (isSymmetricRelationship(treeDef)) return undefined;
+  return effectiveInverseKey(treeDef);
+}
+
 export async function show(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_SHOW_FLAGS);
   const ref = args[1];
@@ -458,6 +490,26 @@ export async function show(args: string[], root: string): Promise<void> {
           .filter(Boolean).join("  ");
       }
       console.log(`  ${r.type} → ${display}${detail ? `  ${detail}` : ""}`);
+    }
+  }
+  // L4: a done/active/todo summary of this task's direct children, on the
+  // child side of the tree axis only (the inverse of `parent` — the
+  // forward side points at ancestors, where a progress meter is
+  // meaningless). Config-driven, mirroring the web meter and MCP
+  // `get_task`'s `children` block; discarded children are excluded from
+  // the total exactly as milestones do.
+  const childSideKey = treeChildSideKey(workflowConfig);
+  if (childSideKey !== undefined) {
+    const childStatuses = model.relationships
+      .filter(r => r.type === childSideKey)
+      .map(r => r.resolvedStatus);
+    if (childStatuses.length > 0 && workflowConfig !== undefined) {
+      const p = computeProgressFromStatuses(childStatuses, workflowConfig);
+      const discardedNote = p.discarded > 0 ? ` (${String(p.discarded)} discarded excluded)` : "";
+      console.log(
+        `Child progress: ${String(p.done)} done, ${String(p.active)} active `
+        + `/ ${String(p.total)}${discardedNote}`,
+      );
     }
   }
   // REL-49: an unreadable `attachments/` degrades **this section** and
@@ -658,7 +710,7 @@ export async function set(args: string[], root: string): Promise<void> {
  *
  * Empty segments are dropped so a trailing comma is not an error.
  */
-function splitRefs(raw: string): string[] {
+export function splitRefs(raw: string): string[] {
   return raw.split(",").map(r => r.trim()).filter(Boolean);
 }
 
@@ -666,12 +718,23 @@ function splitRefs(raw: string): string[] {
  * Prints a bulk result. Failures are listed individually and set a
  * non-zero exit code, so a script does not read a partial success as
  * a complete one.
+ *
+ * `unchanged` (archive's no-op tasks, already in the target state) is a
+ * subset of `succeeded`; it is surfaced as a parenthetical so a mixed
+ * selection reads honestly — parity with the web, which returns it in
+ * the same bulk shape (BLK-27).
  */
-function reportBulk(
+export function reportBulk(
   action: string,
-  result: { succeeded: readonly string[]; failed: readonly { taskId: string; error: string }[] },
+  result: {
+    succeeded: readonly string[];
+    failed: readonly { taskId: string; error: string }[];
+    unchanged?: readonly string[];
+  },
 ): void {
-  console.log(`${action} on ${result.succeeded.length} task(s)`);
+  const noop = result.unchanged?.length ?? 0;
+  const suffix = noop > 0 ? ` (${String(noop)} already in that state)` : "";
+  console.log(`${action} on ${result.succeeded.length} task(s)${suffix}`);
   if (result.failed.length > 0) {
     console.error(`${result.failed.length} failed:`);
     for (const f of result.failed) console.error(`  ${f.taskId}: ${f.error}`);
@@ -719,10 +782,30 @@ export async function deleteCmd(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, TASK_DELETE_CMD_FLAGS);
   const ref = args[1];
   if (!ref) {
-    throw new UsageError("missing task ref", "loctt delete <task> [--yes]");
+    throw new UsageError("missing task ref", "loctt delete <task>[,<task>...] [--yes]");
   }
   const locttDir = resolveLocttDir(root);
-  const task = await lookupTask(locttDir, ref);
+  const refs = splitRefs(ref);
+
+  if (refs.length > 1) {
+    // The confirm gate covers the whole batch — a single "yes" for the
+    // set, not one per task. Core resolves each ref inside the lock and
+    // reports per-ref outcomes, so an invalid ref does not abort the rest
+    // (matching set/move and the web bulk-delete route).
+    const outcome = await confirmHardDelete(
+      args,
+      `Permanently delete ${String(refs.length)} tasks? (use 'loctt archive' for a reversible alternative)`,
+    );
+    if (outcome !== "yes") {
+      process.exitCode = outcome === "refused" ? EXIT.USAGE : EXIT.SUCCESS;
+      return;
+    }
+    const result = await bulkDelete({ locttDir, taskRefs: refs });
+    reportBulk("Deleted", result);
+    return;
+  }
+
+  const task = await lookupTask(locttDir, refs[0] as string);
   const outcome = await confirmHardDelete(
     args,
     `Permanently delete task ${task.frontmatter.key}? (use 'loctt archive' for a reversible alternative)`,

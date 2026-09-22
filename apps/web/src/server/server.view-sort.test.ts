@@ -59,7 +59,11 @@ describe("a saved view with five sort fields", () => {
     fetch(`${base}/api/views`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Loctt-Client": "test" },
-      body: JSON.stringify({ name, query: "status = backlog", sort }),
+      body: JSON.stringify({
+        name,
+        filters: [{ kind: "advanced", query: "status = backlog" }],
+        sort,
+      }),
     });
 
   // @verifies VUE-17

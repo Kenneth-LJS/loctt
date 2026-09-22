@@ -20,7 +20,7 @@ import { useBuiltinCounts } from "./useBuiltinCounts.ts";
 const OVERDUE: BuiltinFilter = {
   id: "overdue",
   label: "Overdue",
-  icon: "!",
+  icon: "alert",
   resolve: () => ({ q: "due_date < 2026-06-08" }),
 };
 

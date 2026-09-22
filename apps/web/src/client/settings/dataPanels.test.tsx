@@ -9,6 +9,20 @@ import { LabelsPanel } from "./LabelsPanel.tsx";
 import { MilestonesPanel } from "./MilestonesPanel.tsx";
 
 /**
+ * Row actions (Edit/Archive/Delete) now live behind a per-row kebab
+ * overflow menu (responsive GROUP A: inline actions overflowed a narrow
+ * row). Open the row's kebab, then click the action MenuItem by testid.
+ */
+function openRowAction(row: HTMLElement, actionTestId: string): void {
+  const kebab = row.querySelector<HTMLButtonElement>("[aria-label^='Actions for']");
+  if (kebab === null) throw new Error("row has no actions kebab");
+  fireEvent.click(kebab);
+  const item = document.querySelector<HTMLButtonElement>(`[data-testid='${actionTestId}']`);
+  if (item === null) throw new Error(`no menu item ${actionTestId}`);
+  fireEvent.click(item);
+}
+
+/**
  * Settings → Data panel behaviour that turns on what the client sends
  * and what it renders, rather than on the server round-trip (which the
  * server tests cover against a real tracker).
@@ -142,6 +156,10 @@ describe("LabelsPanel", () => {
     render(<LabelsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("labels-list");
 
+    // K100 / Part-D: create is now the shared mode-aware dialog, opened
+    // from the panel, not an always-present inline form.
+    fireEvent.click(screen.getByTestId("label-create-open"));
+    await screen.findByTestId("label-create-dialog");
     fireEvent.change(screen.getByTestId("label-create-name"), { target: { value: "bug" } });
 
     const warning = await screen.findByTestId("label-duplicate-warning");
@@ -158,6 +176,8 @@ describe("LabelsPanel", () => {
     render(<LabelsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("labels-list");
 
+    fireEvent.click(screen.getByTestId("label-create-open"));
+    await screen.findByTestId("label-create-dialog");
     fireEvent.change(screen.getByTestId("label-create-name"), { target: { value: "new" } });
     fireEvent.change(screen.getByTestId("label-create-color"), { target: { value: "notacolour" } });
 
@@ -184,18 +204,30 @@ describe("LabelsPanel", () => {
     render(<LabelsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("labels-list");
 
-    const deleteButton = screen
+    // The row's actions now live behind a kebab overflow menu (responsive
+    // GROUP A: inline Edit/Archive/Delete overflowed the row on a narrow
+    // pane). Open the menu, then choose Delete.
+    const kebab = screen
       .getByTestId("label-row-L1")
-      .querySelector<HTMLButtonElement>("[data-testid='label-delete']");
-    expect(deleteButton).not.toBeNull();
-    fireEvent.click(deleteButton as HTMLButtonElement);
+      .querySelector<HTMLButtonElement>("[aria-label^='Actions for label']");
+    expect(kebab).not.toBeNull();
+    fireEvent.click(kebab as HTMLButtonElement);
+    const deleteButton = await screen.findByTestId("label-delete");
+    fireEvent.click(deleteButton);
 
     // MSL-32: with references present and nothing chosen, the confirm
     // is disabled — the delete cannot be issued at all.
     const confirm = await screen.findByTestId("remap-confirm");
     expect(confirm).toHaveProperty("disabled", true);
 
-    // Choosing the remap target enables it.
+    // A211/A242: the alternatives are a searchable Combobox behind a
+    // "reassign" radio now, not one radio per alternative. Control type
+    // changed, not behavior: choose reassign, open the picker, pick L2 by
+    // its (unchanged) per-option testid. The confirm is still gated on a
+    // concrete target — reassign with nothing picked stays disabled.
+    fireEvent.click(screen.getByTestId("remap-reassign"));
+    expect(screen.getByTestId("remap-confirm")).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByTestId("remap-to"));
     fireEvent.click(screen.getByTestId("remap-to-L2"));
     expect(screen.getByTestId("remap-confirm")).toHaveProperty("disabled", false);
     fireEvent.click(screen.getByTestId("remap-confirm"));
@@ -213,6 +245,31 @@ describe("LabelsPanel", () => {
       expect(del).toBeDefined();
       expect(String(del?.[0])).toContain("remap_to=L2");
     });
+  });
+
+  /**
+   * @verifies ERR-13
+   *
+   * Before the fix the archive toggle had no error path (mirroring the
+   * MilestonesPanel bug-3): a failed POST /api/labels/:id/archive read as
+   * done while nothing changed on disk. Red-proven — without the
+   * `archive.isError` Callout this row does not render.
+   */
+  it("surfaces a failed archive on the row rather than swallowing it", async () => {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> =>
+      Promise.resolve(
+        String(url).includes("/api/labels/L1/archive")
+          ? jsonResponse({ message: "could not write labels.yaml", code: "rejected_write" }, 500)
+          : jsonResponse(twoLabels),
+      ),
+    );
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    openRowAction(screen.getByTestId("label-row-L1"), "label-archive-toggle");
+
+    const err = await screen.findByTestId("label-archive-error");
+    expect(err.textContent).toContain("could not write");
   });
 
   /**
@@ -271,6 +328,133 @@ describe("LabelsPanel", () => {
   });
 });
 
+/**
+ * @verifies K100
+ *
+ * Point-of-use editing (K100): Labels / Milestones edit through a single
+ * self-contained dialog the Settings panel ALSO renders (the sidebar opens
+ * the same one). These turn on: the panel's Edit opens the extracted
+ * dialog prefilled, and Save issues the PUT through the dialog's own hook.
+ *
+ * These previously asserted the panel's *inline row form* (a
+ * `label-name-input` rendered in the row, with an in-row Save). That form
+ * was replaced by the shared `LabelEditDialog` / `MilestoneEditDialog`
+ * this ticket extracted; the tests were updated to open the dialog and
+ * assert the same fields + the same PUT.
+ */
+describe("K100 point-of-use edit dialogs", () => {
+  const labels = {
+    items: [{ id: "L1", name: "bug", color: "#ff0000", taskCount: 3 }],
+    total: 1,
+  };
+  const milestones = {
+    items: [{ id: "M1", name: "v1", target_date: "2026-03-31", taskCount: 2 }],
+    total: 2,
+  };
+
+  it("LabelsPanel Edit opens the shared dialog prefilled and saves via PUT", async () => {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> =>
+      Promise.resolve(
+        String(url).includes("/api/labels/")
+          ? jsonResponse({ id: "L1", name: "defect", color: "#00ff00" })
+          : jsonResponse(labels),
+      ));
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    openRowAction(screen.getByTestId("label-row-L1"), "label-edit");
+
+    // The SAME dialog component the sidebar renders.
+    await screen.findByTestId("label-edit-dialog");
+    const name = screen.getByTestId<HTMLInputElement>("label-name-input");
+    const color = screen.getByTestId<HTMLInputElement>("label-color-input");
+    expect(name.value).toBe("bug");
+    expect(color.value).toBe("#ff0000");
+
+    fireEvent.change(name, { target: { value: "defect" } });
+    fireEvent.change(color, { target: { value: "#00ff00" } });
+    fireEvent.click(screen.getByTestId("label-save"));
+
+    await waitFor(() => {
+      const put = (fetchMock.mock.calls as readonly (readonly unknown[])[]).find((c) => {
+        const init = c[1] as RequestInit | undefined;
+        return String(c[0]).includes("/api/labels/L1")
+          && String(init?.method).toUpperCase() === "PUT";
+      });
+      expect(put).toBeDefined();
+      const raw = (put?.[1] as RequestInit).body;
+      const body = JSON.parse(typeof raw === "string" ? raw : "") as unknown;
+      expect(body).toEqual({ name: "defect", color: "#00ff00" });
+    });
+  });
+
+  it("MilestonesPanel Edit opens the shared dialog prefilled and saves via PUT", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "M1", name: "v1.1", target_date: "2026-06-30" }));
+      }
+      return Promise.resolve(jsonResponse(milestones));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    openRowAction(screen.getByTestId("milestone-row-M1"), "milestone-edit");
+
+    await screen.findByTestId("milestone-edit-dialog");
+    const name = screen.getByTestId<HTMLInputElement>("milestone-name-input");
+    const date = screen.getByTestId<HTMLInputElement>("milestone-date-input");
+    expect(name.value).toBe("v1");
+    expect(date.value).toBe("2026-03-31");
+
+    fireEvent.change(name, { target: { value: "v1.1" } });
+    fireEvent.change(date, { target: { value: "2026-06-30" } });
+    fireEvent.click(screen.getByTestId("milestone-save"));
+
+    await waitFor(() => {
+      const put = (fetchMock.mock.calls as readonly (readonly unknown[])[]).find((c) => {
+        const init = c[1] as RequestInit | undefined;
+        return String(c[0]).includes("/api/milestones/M1")
+          && String(init?.method).toUpperCase() === "PUT";
+      });
+      expect(put).toBeDefined();
+      const raw = (put?.[1] as RequestInit).body;
+      const body = JSON.parse(typeof raw === "string" ? raw : "") as unknown;
+      expect(body).toEqual({ name: "v1.1", target_date: "2026-06-30" });
+    });
+  });
+
+  it("MilestoneEditDialog sends target_date: null when the date is cleared (MSL-14)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "M1", name: "v1" }));
+      }
+      return Promise.resolve(jsonResponse(milestones));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    openRowAction(screen.getByTestId("milestone-row-M1"), "milestone-edit");
+    await screen.findByTestId("milestone-edit-dialog");
+    fireEvent.change(screen.getByTestId("milestone-date-input"), { target: { value: "" } });
+    fireEvent.click(screen.getByTestId("milestone-save"));
+
+    // MSL-14: a cleared date is null (drops the key), never "" or an epoch.
+    await waitFor(() => {
+      const put = (fetchMock.mock.calls as readonly (readonly unknown[])[]).find((c) => {
+        const init = c[1] as RequestInit | undefined;
+        return String(c[0]).includes("/api/milestones/M1")
+          && String(init?.method).toUpperCase() === "PUT";
+      });
+      expect(put).toBeDefined();
+      const raw = (put?.[1] as RequestInit).body;
+      const body = JSON.parse(typeof raw === "string" ? raw : "") as { target_date: unknown };
+      expect(body.target_date).toBeNull();
+    });
+  });
+});
+
 describe("MilestonesPanel", () => {
   const twoMilestones = {
     items: [
@@ -307,7 +491,7 @@ describe("MilestonesPanel", () => {
     // Archiving M1 sends the archived flag on the milestone PUT — the row
     // toggle only ever sent name/date before, so the flag had no caller.
     const activeRow = screen.getByTestId("milestone-row-M1");
-    fireEvent.click(activeRow.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+    openRowAction(activeRow, 'milestone-archive-toggle');
 
     await waitFor(() => {
       const put = fetchMock.mock.calls.find((c) => {
@@ -336,7 +520,10 @@ describe("MilestonesPanel", () => {
     await screen.findByTestId("milestones-list");
 
     const archivedRow = screen.getByTestId("milestone-row-M2");
-    const toggle = archivedRow.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement;
+    // Open the kebab to reveal the action, assert its label reads
+    // "Unarchive" (an archived milestone), then click it.
+    fireEvent.click(archivedRow.querySelector<HTMLButtonElement>("[aria-label^='Actions for']") as HTMLButtonElement);
+    const toggle = document.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement;
     expect(toggle.textContent).toMatch(/unarchive/i);
     fireEvent.click(toggle);
 
@@ -376,7 +563,7 @@ describe("MilestonesPanel silent-write + staleness (B2 bugs 3, 4, 5)", () => {
     await screen.findByTestId("milestones-list");
 
     const row = screen.getByTestId("milestone-row-M1");
-    fireEvent.click(row.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+    openRowAction(row, 'milestone-archive-toggle');
 
     const err = await screen.findByTestId("milestone-archive-error");
     expect(err.textContent).toContain("Archive write failed.");
@@ -408,7 +595,7 @@ describe("MilestonesPanel silent-write + staleness (B2 bugs 3, 4, 5)", () => {
     await screen.findByTestId("milestones-list");
 
     const row = screen.getByTestId("milestone-row-M1");
-    fireEvent.click(row.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+    openRowAction(row, 'milestone-archive-toggle');
 
     // After a successful archive, the milestones-progress key (the
     // /milestones view's query) must be invalidated — the exact fix for
@@ -447,14 +634,14 @@ describe("MilestonesPanel silent-write + staleness (B2 bugs 3, 4, 5)", () => {
     // Trigger the external rename to land: archiving M1 invalidates
     // ["milestones"], so the row re-renders with the new name.
     const row = screen.getByTestId("milestone-row-M1");
-    fireEvent.click(row.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement);
+    openRowAction(row, 'milestone-archive-toggle');
     await waitFor(() => {
       expect(screen.getByTestId("milestone-row-M1").textContent).toContain("v1 renamed");
     });
 
     // Regression: the name draft was seeded once at mount ("v1") and not
     // reset on Edit-open, so Save would revert the external rename.
-    fireEvent.click(screen.getByTestId("milestone-row-M1").querySelector("[data-testid='milestone-edit']") as HTMLButtonElement);
+    openRowAction(screen.getByTestId("milestone-row-M1"), "milestone-edit");
     const input = screen.getByTestId<HTMLInputElement>("milestone-name-input");
     expect(input.value).toBe("v1 renamed");
   });
@@ -698,5 +885,229 @@ describe("DiagnosticsPanel", () => {
     // Unmount aborted the fetch — nothing is left running behind a gone
     // component, which is what "no permanently spinning check" means.
     expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  // ── Repair buttons (K-diagnostics-repair) ────────────────────────────
+
+  it("shows a Rebuild-key-index button only when a fix:rebuild-index finding is present", async () => {
+    fetchMock.mockResolvedValue(ndjsonResponse([
+      { name: "key index", status: "warn", message: "1 stale entry", fix: "rebuild-index" },
+    ]));
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    expect(await screen.findByTestId("diagnostics-fix-rebuild-index")).toBeTruthy();
+    // No restore-missing finding → no restore button.
+    expect(screen.queryByTestId("diagnostics-fix-restore-missing")).toBeNull();
+  });
+
+  it("shows NO repair buttons when no finding carries a fix", async () => {
+    fetchMock.mockResolvedValue(ndjsonResponse([
+      { name: "workflow.yaml", status: "ok", message: "valid" },
+      { name: "relationships", status: "warn", message: "a manual finding, no fix" },
+    ]));
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("diagnostics-checks");
+    await waitFor(() => { expect(screen.queryByTestId("diagnostics-check-running")).toBeNull(); });
+    expect(screen.queryByTestId("diagnostics-repairs")).toBeNull();
+    expect(screen.queryByTestId("diagnostics-fix-rebuild-index")).toBeNull();
+    expect(screen.queryByTestId("diagnostics-fix-restore-missing")).toBeNull();
+  });
+
+  it("Rebuild key index POSTs the repair action then re-runs the doctor", async () => {
+    const posts: { url: string; body: unknown }[] = [];
+    let doctorRuns = 0;
+    fetchMock.mockImplementation((url: unknown, init?: unknown) => {
+      const u = String(url);
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (u.includes("/api/doctor/repair") && method === "POST") {
+        const raw = (init as RequestInit).body;
+        posts.push({ url: u, body: typeof raw === "string" ? JSON.parse(raw) : undefined });
+        return Promise.resolve(new Response(JSON.stringify({ action: "rebuild-index", entries: 5 }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      }
+      // /api/doctor: first run has the stale finding; after repair, clean.
+      doctorRuns += 1;
+      return Promise.resolve(doctorRuns === 1
+        ? ndjsonResponse([{ name: "key index", status: "warn", message: "1 stale entry", fix: "rebuild-index" }])
+        : ndjsonResponse([{ name: "key index", status: "ok", message: "consistent" }]));
+    });
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByTestId("diagnostics-fix-rebuild-index"));
+    await waitFor(() => { expect(posts.length).toBe(1); });
+    expect(posts[0]?.body).toEqual({ action: "rebuild-index" });
+    // Re-ran the doctor (2nd /api/doctor GET), and the repaired state has
+    // no more fixable finding → the button is gone.
+    await waitFor(() => { expect(screen.queryByTestId("diagnostics-fix-rebuild-index")).toBeNull(); });
+    expect(doctorRuns).toBeGreaterThanOrEqual(2);
+  });
+
+  it("Restore missing files confirms before POSTing", async () => {
+    const posts: unknown[] = [];
+    fetchMock.mockImplementation((url: unknown, init?: unknown) => {
+      const u = String(url);
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (u.includes("/api/doctor/repair") && method === "POST") {
+        posts.push(JSON.parse((init as RequestInit).body as string));
+        return Promise.resolve(new Response(JSON.stringify({ action: "restore-missing", created: 2 }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        }));
+      }
+      return Promise.resolve(ndjsonResponse([
+        { name: "queries.yaml", status: "warn", message: "missing", fix: "restore-missing" },
+      ]));
+    });
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByTestId("diagnostics-fix-restore-missing"));
+    // A confirm appears; nothing POSTed yet.
+    await screen.findByTestId("diagnostics-restore-confirm");
+    expect(posts.length).toBe(0);
+    fireEvent.click(screen.getByTestId("diagnostics-restore-confirm-button"));
+    await waitFor(() => { expect(posts.length).toBe(1); });
+    expect(posts[0]).toEqual({ action: "restore-missing" });
+  });
+});
+
+/**
+ * Part D: the Label and Milestone create + edit forms are unified into one
+ * mode-aware dialog each. These pin the create side going through the
+ * shared dialog (opened from the panel), that a create issues the POST,
+ * and that the create-mode duplicate caution (MSL-34) still shows — a
+ * create-only branch of the shared component, not a separate form.
+ */
+describe("Part D — unified Label create+edit dialog", () => {
+  const twoLabels = {
+    items: [
+      { id: "L1", name: "bug", color: "#ff0000", taskCount: 3 },
+      { id: "L2", name: "chore", taskCount: 0 },
+    ],
+    total: 2,
+  };
+
+  it("creates a label through the shared dialog (POST /api/labels)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/labels") && method === "POST") {
+        return Promise.resolve(jsonResponse({ id: "L3", name: "feature", color: "#00ff00" }, 201));
+      }
+      return Promise.resolve(jsonResponse(twoLabels));
+    });
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    fireEvent.click(screen.getByTestId("label-create-open"));
+    await screen.findByTestId("label-create-dialog");
+    fireEvent.change(screen.getByTestId("label-create-name"), { target: { value: "feature" } });
+    fireEvent.change(screen.getByTestId("label-create-color"), { target: { value: "#00ff00" } });
+    fireEvent.click(screen.getByTestId("label-create-submit"));
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(c =>
+        String(c[0]).includes("/api/labels")
+        && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "POST");
+      expect(post).toBeDefined();
+      const body = JSON.parse((post?.[1] as RequestInit | undefined)?.body as string) as unknown;
+      expect(body).toEqual({ name: "feature", color: "#00ff00" });
+    });
+  });
+
+  it("edits a label through the same dialog (PUT /api/labels/:id)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/labels/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "L1", name: "defect", color: "#ff0000" }));
+      }
+      return Promise.resolve(jsonResponse(twoLabels));
+    });
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    openRowAction(screen.getByTestId("label-row-L1"), "label-edit");
+    await screen.findByTestId("label-edit-dialog");
+    fireEvent.change(screen.getByTestId("label-name-input"), { target: { value: "defect" } });
+    fireEvent.click(screen.getByTestId("label-save"));
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(c =>
+        String(c[0]).includes("/api/labels/L1")
+        && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "PUT");
+      expect(put).toBeDefined();
+    });
+  });
+
+  /** @verifies MSL-34 (create-only branch preserved) */
+  it("shows the duplicate-name caution in create mode, non-blocking", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(twoLabels));
+    render(<LabelsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("labels-list");
+
+    fireEvent.click(screen.getByTestId("label-create-open"));
+    await screen.findByTestId("label-create-dialog");
+    fireEvent.change(screen.getByTestId("label-create-name"), { target: { value: "bug" } });
+
+    const warning = await screen.findByTestId("label-duplicate-warning");
+    expect(warning.textContent).toMatch(/already exists/i);
+    // Non-blocking — the submit is enabled, it becomes "Create anyway".
+    expect(screen.getByTestId("label-create-submit")).not.toHaveProperty("disabled", true);
+  });
+});
+
+describe("Part D — unified Milestone create+edit dialog", () => {
+  const twoMilestones = {
+    items: [
+      { id: "M1", name: "v1", target_date: "2026-03-31", taskCount: 2 },
+      { id: "M2", name: "old", archived: true, taskCount: 0 },
+    ],
+    total: 2,
+  };
+
+  it("creates a milestone through the shared dialog (POST /api/milestones)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones") && method === "POST") {
+        return Promise.resolve(jsonResponse({ id: "M3", name: "v2", target_date: "2026-09-30" }, 201));
+      }
+      return Promise.resolve(jsonResponse(twoMilestones));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    fireEvent.click(screen.getByTestId("milestone-create-open"));
+    await screen.findByTestId("milestone-create-dialog");
+    fireEvent.change(screen.getByTestId("milestone-create-name"), { target: { value: "v2" } });
+    fireEvent.change(screen.getByTestId("milestone-create-date"), { target: { value: "2026-09-30" } });
+    fireEvent.click(screen.getByTestId("milestone-create-submit"));
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(c =>
+        String(c[0]).includes("/api/milestones")
+        && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "POST");
+      expect(post).toBeDefined();
+      const body = JSON.parse((post?.[1] as RequestInit | undefined)?.body as string) as unknown;
+      expect(body).toEqual({ name: "v2", target_date: "2026-09-30" });
+    });
+  });
+
+  it("edits a milestone through the same dialog (PUT /api/milestones/:id)", async () => {
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (String(url).includes("/api/milestones/") && method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: "M1", name: "v1.1", target_date: "2026-03-31" }));
+      }
+      return Promise.resolve(jsonResponse(twoMilestones));
+    });
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("milestones-list");
+
+    openRowAction(screen.getByTestId("milestone-row-M1"), "milestone-edit");
+    await screen.findByTestId("milestone-edit-dialog");
+    fireEvent.change(screen.getByTestId("milestone-name-input"), { target: { value: "v1.1" } });
+    fireEvent.click(screen.getByTestId("milestone-save"));
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(c =>
+        String(c[0]).includes("/api/milestones/M1")
+        && String((c[1] as RequestInit | undefined)?.method).toUpperCase() === "PUT");
+      expect(put).toBeDefined();
+    });
   });
 });

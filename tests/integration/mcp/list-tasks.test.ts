@@ -43,7 +43,7 @@ describe("MCP list_tasks (stdio)", () => {
     });
   });
 
-  it("includes archived tasks when include_archived=true", async () => {
+  it("includes archived tasks when archived=all", async () => {
     await withTmpLoctt(async ({ root }) => {
       await runCli(["create", "active task"], { cwd: root });
       await runCli(["create", "to be archived"], { cwd: root });
@@ -51,7 +51,7 @@ describe("MCP list_tasks (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("list_tasks", { include_archived: true });
+        const result = await client.callTool("list_tasks", { archived: "all" });
         expect(result.isError).toBeFalsy();
         const text = result.content[0]?.text ?? "";
         expect(text).toContain("active task");

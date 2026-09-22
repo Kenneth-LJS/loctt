@@ -1,5 +1,5 @@
 /**
- * Reconciliation UI cases from docs/dev/ui-test-cases/flow-git-sync.md:
+ * Reconciliation UI cases from tests/cases/ui-test-cases/flow-git-sync.md:
  * GIT-5, 6, 7, 11, 12, 13, 14, 15, 17, 18, 26, 31.
  *
  * These build the two-sided divergence the panel needs: a task is
@@ -194,8 +194,14 @@ test("GIT-11: same custom-field key differing is a conflict; enum renders labels
   await expect(row).toHaveCount(1);
   // enum values render as labels, not raw keys.
   await expect(row.getByTestId("git-reconcile-keep-local-value")).not.toHaveText("high");
-  // pick-value is a select (the enum), not a free-text box.
-  await expect(row.getByTestId("git-reconcile-pick-value")).toHaveJSProperty("tagName", "SELECT");
+  // A211/A242: pick-value is the searchable Combobox (the enum), not a
+  // free-text box. Control type changed, not behavior: the trigger is a
+  // <button> carrying aria-haspopup="listbox", where it was a native
+  // <select>. Opening it and picking is exercised by the enum options
+  // check in GIT-14 below.
+  const pickTrigger = row.getByTestId("git-reconcile-pick-value");
+  await expect(pickTrigger).toHaveJSProperty("tagName", "BUTTON");
+  await expect(pickTrigger).toHaveAttribute("aria-haspopup", "listbox");
   void key;
   expect(errors).toEqual([]);
 });
@@ -286,7 +292,10 @@ test("GIT-14: a drift value renders with a marker; keep-remote warns; pick-value
   await row.getByTestId("git-reconcile-keep-remote").click();
   await expect(row.getByTestId("git-reconcile-drift-warning")).toBeVisible();
   // pick-value offers only existing statuses — not the drifted one.
-  const options = await row.getByTestId("git-reconcile-pick-value").locator("option").allTextContents();
+  // Control type changed (native <select> → Combobox), not behavior: open
+  // the trigger, then read the listbox options.
+  await row.getByTestId("git-reconcile-pick-value").click();
+  const options = await row.getByTestId("git-reconcile-pick-value-list").getByRole("option").allTextContents();
   expect(options.join(" ")).not.toContain("in_progress");
   expect(errors).toEqual([]);
 });
@@ -316,8 +325,11 @@ test("GIT-13: a parent conflict renders tasks (not ULIDs), a picker, and fixes t
   // Rendered as task key + title, not a raw ULID.
   await expect(row.getByTestId("git-reconcile-keep-local-value")).toContainText(p1);
   await expect(row.getByTestId("git-reconcile-keep-remote-value")).toContainText(p2);
-  // pick-value is a task picker (select of tasks).
-  await expect(row.getByTestId("git-reconcile-pick-value")).toHaveJSProperty("tagName", "SELECT");
+  // pick-value is a task picker. A211/A242: control type changed (native
+  // <select> → searchable Combobox), not behavior — the trigger is a
+  // <button> with aria-haspopup="listbox".
+  await expect(row.getByTestId("git-reconcile-pick-value")).toHaveJSProperty("tagName", "BUTTON");
+  await expect(row.getByTestId("git-reconcile-pick-value")).toHaveAttribute("aria-haspopup", "listbox");
 
   // Choose keep-remote (p2), apply.
   await row.getByTestId("git-reconcile-keep-remote").click();

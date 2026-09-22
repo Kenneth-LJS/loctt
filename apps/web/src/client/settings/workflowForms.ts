@@ -1,6 +1,7 @@
 import type {
   CustomFieldDef,
   CustomFieldType,
+  EntityColor,
   PriorityDef,
   RelationshipDef,
   StatusDef,
@@ -44,6 +45,15 @@ export function keyFromLabel(label: string): string {
 export interface EntryDraft {
   readonly key: string;
   readonly label: string;
+  /**
+   * Optional presentational fields. Threaded through the builders so a
+   * Create dialog that sets an icon/colour writes them (before this they
+   * were dropped, and only survived a hand-authored round-trip). Undefined
+   * drops the field off the stored row.
+   */
+  readonly icon?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }
 
 export interface EntryProblems {
@@ -102,12 +112,39 @@ export function buildStatus(draft: {
   readonly key: string;
   readonly label: string;
   readonly category: StatusDef["category"];
+  readonly icon?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }): StatusDef {
   return {
     key: draft.key.trim(),
     label: draft.label.trim(),
     category: draft.category,
+    ...presentational(draft),
   };
+}
+
+/**
+ * The optional icon/colour pair, included only when set — an empty string
+ * or undefined drops the key so the stored row stays clean and the schema
+ * (which rejects a blank icon and a malformed colour) never sees one.
+ */
+function presentational(
+  draft: { readonly icon?: string | undefined; readonly color?: EntityColor | undefined },
+): { icon?: string; color?: EntityColor } {
+  const out: { icon?: string; color?: EntityColor } = {};
+  const icon = draft.icon?.trim();
+  if (icon !== undefined && icon.length > 0) out.icon = icon;
+  // K103: a colour is no longer necessarily a string, so it cannot be
+  // trimmed. The only "empty" values are `undefined` and an empty
+  // single hex; the object shapes are never empty. Trimming an object
+  // was a type error here, but the same pattern elsewhere widened
+  // through inference and silently produced `[object Object]`.
+  const color = draft.color;
+  if (color !== undefined && !(typeof color === "string" && color.trim().length === 0)) {
+    out.color = typeof color === "string" ? color.trim() : color;
+  }
+  return out;
 }
 
 /**
@@ -117,11 +154,11 @@ export function buildStatus(draft: {
  * key/label shape.
  */
 export function buildPriority(draft: EntryDraft): PriorityDef {
-  return { key: draft.key.trim(), label: draft.label.trim() };
+  return { key: draft.key.trim(), label: draft.label.trim(), ...presentational(draft) };
 }
 
 export function buildTaskType(draft: EntryDraft): TaskTypeDef {
-  return { key: draft.key.trim(), label: draft.label.trim() };
+  return { key: draft.key.trim(), label: draft.label.trim(), ...presentational(draft) };
 }
 
 /**
@@ -145,7 +182,8 @@ export interface RelationshipDraft {
    * knows the fields it renders.
    */
   readonly icon?: string | undefined;
-  readonly color?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }
 
 export function buildRelationship(draft: RelationshipDraft): RelationshipDef {
@@ -203,6 +241,15 @@ export interface CustomFieldDraft {
   readonly type: CustomFieldType;
   readonly multi: boolean;
   readonly searchable: boolean;
+  /**
+   * K91/TSK-12: an optional allowlist of task_type keys this field is
+   * scoped to. Undefined (or empty from the dialog) = global — the field
+   * shows for every type. When non-empty the field shows only for a task
+   * whose task_type is listed (see `customFieldInScope`). Threaded here so
+   * the authoring control reaches the stored row on both create and edit;
+   * the consumption side (create-modal + detail filtering) already shipped.
+   */
+  readonly task_types?: readonly string[] | undefined;
   /** Only meaningful when `type === "enum"`. */
   readonly values: readonly {
     readonly key: string;
@@ -214,7 +261,8 @@ export interface CustomFieldDraft {
      * label does not wipe its icon/color.
      */
     readonly icon?: string | undefined;
-    readonly color?: string | undefined;
+    /** K103: one of the three colour shapes, not a hex string. */
+    readonly color?: EntityColor | undefined;
   }[];
 }
 
@@ -265,6 +313,15 @@ export function buildCustomField(draft: CustomFieldDraft): CustomFieldDef {
     type: draft.type,
     multi: draft.multi,
     searchable: draft.searchable,
+    // K91: only carry `task_types` when the field is scoped. An empty
+    // allowlist is a valid "shows for no type" config, but the dialog
+    // treats empty as "global" (the consumption default when absent), so
+    // an empty selection drops the key rather than storing a field that
+    // shows nowhere — that is the semantic the create-modal/detail
+    // consumption side reads via `customFieldInScope` (absent ⇒ global).
+    ...(draft.task_types !== undefined && draft.task_types.length > 0
+      ? { task_types: [...draft.task_types] }
+      : {}),
   };
   if (draft.type !== "enum") return base;
   return {

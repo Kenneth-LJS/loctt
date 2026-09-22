@@ -24,6 +24,7 @@ import {
   getConfigDir,
   getHistoryFilePath,
   getStateFilePath,
+  getTaskDir,
   getTaskFilePath,
   getTasksDir,
   getUserDir,
@@ -155,6 +156,40 @@ async function readAttachments(
   }
   // A task with no attachments carries no attachment structure at all
   // (BAK-C5) — an empty array would be a lie about the source.
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Reads a task's `displaced-body-<ulid>.md` files (BAK-C13), in a stable
+ * order, as UTF-8 text.
+ *
+ * `restore --overwrite` writes a displaced body into the task dir and
+ * names it in its report (K17 ruling 6); nothing else did, and the
+ * earlier exporter carried only task.md/_comments/_history/attachments,
+ * so a subsequent backup dropped the preserved text. Carrying it as
+ * task-dir content — rather than inventing a new top-level record kind
+ * that no case describes — is the smaller fix.
+ */
+async function readDisplacedBodies(
+  locttDir: string,
+  taskId: string,
+): Promise<{ name: string; content: string }[] | undefined> {
+  const dir = getTaskDir(locttDir, taskId);
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw err;
+  }
+  const out: { name: string; content: string }[] = [];
+  // Sorted so two exports of one tracker produce identical files.
+  for (const name of [...names].sort()) {
+    if (!/^displaced-body-.+\.md$/.test(name)) continue;
+    const info = await stat(join(dir, name)).catch(() => undefined);
+    if (info === undefined || !info.isFile()) continue;
+    out.push({ name, content: await readFile(join(dir, name), "utf-8") });
+  }
   return out.length > 0 ? out : undefined;
 }
 
@@ -323,6 +358,7 @@ export async function exportBackup(
       ? await readRawList(getHistoryFilePath(locttDir, id))
       : undefined;
     const attachments = await readAttachments(locttDir, id);
+    const displacedBodies = await readDisplacedBodies(locttDir, id);
     await writer.write({
       kind: "task",
       id,
@@ -330,6 +366,7 @@ export async function exportBackup(
       ...(comments !== undefined ? { comments } : {}),
       ...(history !== undefined ? { history } : {}),
       ...(attachments !== undefined ? { attachments } : {}),
+      ...(displacedBodies !== undefined ? { displacedBodies } : {}),
     });
     tasks += 1;
   }
