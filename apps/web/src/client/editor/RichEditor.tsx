@@ -229,6 +229,18 @@ export function RichEditor({
    */
   const onFocusOut = (e: React.FocusEvent<HTMLDivElement>): void => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    // A dropdown this editor owns (the toolbar's block-type picker)
+    // PORTALS its panel to `document.body` (K106), so focus moving into
+    // it is not "within the wrapper" even though it is within the
+    // editor's own UI. Without this, opening that picker unmounted the
+    // toolbar mid-click and the transform never applied — the same bug
+    // as TSK-59 in `BodyEditor`, which carries the identical guard.
+    //
+    // `MarkdownField` always passes `hideToolbar`, so the vulnerable
+    // branch is dead there; `CreateTaskModal` is the one caller that
+    // omits it, which is why this instance outlived the first fix.
+    const related = e.relatedTarget as Element | null;
+    if (related?.closest("[data-dropdown-panel]") != null) return;
     setFocused(false);
   };
 

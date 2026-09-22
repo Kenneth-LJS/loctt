@@ -317,24 +317,11 @@ suite from **155 failed** to **19**. The remaining failures were left RED
 on purpose: they are app defects, not migration artifacts, and weakening
 the tests to go green would have destroyed the only signal.
 
-**VERIFIED BY ME directly against the running app or the source:**
-
-- **MSL-25 — archived milestones are unreachable from the milestones
-  view.** `api/hooks/useMilestoneProgress.ts:61` requests
-  `/api/milestones?progress=true&limit=…` with **no `archived` param**,
-  while every other K107 config hook passes `archived=all`. So
-  `archivedCount` is always 0, `MilestonesView.tsx:212` never renders the
-  reveal control, and there is no route to them. Confirmed by reading the
-  hook. One-line fix.
-- **TSK-59 — opening the block-type dropdown tears down the description
-  editor. CAUSED BY THIS SESSION'S K106 WORK.** `BodyEditor`'s
-  `onWrapperBlur` guard is
-  `e.currentTarget.contains(e.relatedTarget)` (`BodyEditor.tsx:286-287`)
-  — confirmed still present. K106 step 2 portals the dropdown panel to
-  `document.body`, so focus moving into it is no longer "within the
-  wrapper" and the editor collapses to the read view. **This is a
-  regression we introduced**, and the portal migration's blast radius was
-  wider than the dropdown call sites.
+**ALL of these were subsequently fixed.** Kept only as a record of what
+the e2e repair surfaced; none is an open gap. MSL-25 (archived milestones
+unreachable — `useMilestoneProgress` omitted `archived=all`) and TSK-59
+(the block-type dropdown tearing down the description editor, caused by
+K106's portal migration) are both closed.
 
 **SINCE VERIFIED AND FIXED:**
 - **A11Y-31 / PRU-26 / PRU-33** — confirmed: `MenuItem` had no `disabled`
@@ -672,3 +659,56 @@ first.
 **Both "known flakes" in this suite have now turned out to be real
 bugs** (NEW-10, SPR-6). A test labelled flaky is a hypothesis about the
 test, and this file recorded that hypothesis as fact twice.
+
+## Pre-merge code review of PR #5 — three findings, all fixed
+
+A review of the whole branch before squash-merge, aimed at the two places
+it is genuinely risky: the on-disk format changes, and K106's portal
+migration.
+
+**1. A THIRD portal regression, in `RichEditor`.** `onFocusOut` used
+`e.currentTarget.contains(e.relatedTarget)` to mean "focus is still
+mine", exactly as `BodyEditor` did before TSK-59 — and never got the
+`[data-dropdown-panel]` escape hatch that fix added. Opening the
+toolbar's block-type picker unmounted the toolbar mid-click, so the
+transform never applied.
+
+It survived the first sweep because `MarkdownField` always passes
+`hideToolbar`, making the vulnerable branch dead there; `CreateTaskModal`
+is the only caller that omits it. **Three instances now** — the portal
+migration's blast radius reached every component that used DOM
+containment to mean ownership, and a grep for `contains(relatedTarget)`
+should be standard whenever a panel is portalled.
+
+**2. The FIFTH hand-rolled copy of a schema rule, in `doctor`.**
+`invalidLabelColors` (`core/src/diagnostics/integrity.ts`) matched
+colours with a line-oriented hex regex. That was sound when every colour
+was a single-line string; K103 made two of three shapes nested blocks, so
+
+```yaml
+color:
+  light: "#CC6600"
+  dark: "not-a-hex"
+```
+
+was dropped on load by `dropInvalidColor` **and reported by nobody** —
+the one mechanism meant to tell the user was blind to it. Now parses the
+YAML and asks `EntityColorSchema`. Verified both ways on a real tracker:
+the invalid block is reported, and all three valid shapes produce no
+false positive. The message named only hex; it now names all three
+shapes.
+
+*This is the fifth instance of the same pattern on this branch*
+(`dropInvalidColor`, `cells.tsx`, `LabelEditDialog`, a client type
+declaring a field the server never sends, and now this). **The rule: a
+hand-rolled copy of a validation rule is a data-loss bug the moment the
+schema widens. Ask the contract.**
+
+**3. Dead `ui/ColorInput.tsx` deleted.** Zero callers, but its docstring
+still advertised it as the control for entity colour, and its
+`isValidHexColor(value: string)` would silently reject both object
+shapes — precisely the API a new dialog would reach for.
+
+**One reviewer claim did not hold:** that K102 carries no `Status:` line.
+It does. Checked rather than actioned — the session's rate of
+confidently-reported-but-wrong findings is why.
