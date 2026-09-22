@@ -57,7 +57,7 @@ const CASES: Array<{ heading: string; schema: { shape: Record<string, unknown> }
 
 describe("schema-reference.md matches the shipped schemas", () => {
   it.each(CASES)("documents exactly $heading's real fields", async ({ heading, schema }) => {
-    const doc = await readFile(path.join(repoRoot, "docs/dev/schema-reference.md"), "utf-8");
+    const doc = await readFile(path.join(repoRoot, "docs/dev/reference/schema-reference.md"), "utf-8");
     const documented = documentedFields(doc, heading);
     // Guard the extractor: an empty result would make every assertion
     // below vacuously true.
@@ -67,7 +67,7 @@ describe("schema-reference.md matches the shipped schemas", () => {
   });
 
   it("does not describe these entities as keyed by `key`", async () => {
-    const doc = await readFile(path.join(repoRoot, "docs/dev/schema-reference.md"), "utf-8");
+    const doc = await readFile(path.join(repoRoot, "docs/dev/reference/schema-reference.md"), "utf-8");
 
     // The specific stale sentence MSL-C3 names. `workflow.yaml` genuinely
     // uses key/label, so this is scoped to the four id/name entities
@@ -82,7 +82,7 @@ describe("schema-reference.md matches the shipped schemas", () => {
   });
 
   it("shows id/name in the worked YAML examples, not key/label", async () => {
-    const doc = await readFile(path.join(repoRoot, "docs/dev/schema-reference.md"), "utf-8");
+    const doc = await readFile(path.join(repoRoot, "docs/dev/reference/schema-reference.md"), "utf-8");
 
     // The tables can be right while the copy-pasteable example above
     // them is still wrong — which is the half a reader actually uses.

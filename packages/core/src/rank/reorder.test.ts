@@ -287,6 +287,69 @@ describe("reorderRelationship", () => {
       }),
     ).rejects.toThrow(/has no/);
   });
+
+  // REL-33: a rerank against a kind switched to `ranked: false` between
+  // page load and drop is refused — the guard reads the live `ranked`
+  // flag from workflow.yaml. Before this, `reorderRelationship` never
+  // loaded the config, so the write landed on an unranked kind.
+  it("REL-33: refuses a rerank when the kind is no longer ranked", async () => {
+    const { readFile, writeFile } = await import("node:fs/promises");
+    const { join: joinPath } = await import("node:path");
+    const [pKey, c1, c2] = await makeTasks(3) as [string, string, string];
+    await linkChildren(pKey, [c1, c2]);
+    // Establish ranks while `parent` is still ranked.
+    await reorderRelationship({ locttDir, sourceRef: pKey, relationshipType: "parent", targetRef: c1 });
+    await reorderRelationship({ locttDir, sourceRef: pKey, relationshipType: "parent", targetRef: c2 });
+
+    // Another process flips `parent` to ranked: false mid-session.
+    const wf = joinPath(locttDir, "config", "workflow.yaml");
+    const text = await readFile(wf, "utf8");
+    const rewritten = text.replace(
+      /(- key: parent\n(?:.*\n)*?\s+)ranked: true/,
+      "$1ranked: false",
+    );
+    expect(rewritten).not.toBe(text);
+    await writeFile(wf, rewritten, "utf8");
+
+    // A rerank is now refused, and the message names the kind.
+    await expect(
+      reorderRelationship({
+        locttDir, sourceRef: pKey, relationshipType: "parent",
+        targetRef: c2, before: c1,
+      }),
+    ).rejects.toThrow(ReorderError);
+    await expect(
+      reorderRelationship({
+        locttDir, sourceRef: pKey, relationshipType: "parent",
+        targetRef: c2, before: c1,
+      }),
+    ).rejects.toThrow(/parent.*no longer ranked/);
+
+    // Nothing was written: the stored ranks are exactly what they were.
+    const parent = await lookupByKey(locttDir, pKey);
+    const c1Id = (await lookupByKey(locttDir, c1)).frontmatter.id;
+    const c2Id = (await lookupByKey(locttDir, c2)).frontmatter.id;
+    const ranks = new Map(
+      (parent.frontmatter.relationships ?? [])
+        .filter(r => r.type === "parent")
+        .map(r => [r.target, r.rank]),
+    );
+    // c1 ranked before c2 (c1 appended first), and both still present.
+    expect(ranks.get(c1Id)).toBeDefined();
+    expect(ranks.get(c2Id)).toBeDefined();
+  });
+
+  // REL-33 sibling: a rerank against a kind that is not declared in
+  // workflow.yaml at all is refused for the same reason (no def to say
+  // it is ranked).
+  it("refuses a rerank when the kind is not declared in workflow.yaml", async () => {
+    const [pKey, c1] = await makeTasks(2) as [string, string];
+    await expect(
+      reorderRelationship({
+        locttDir, sourceRef: pKey, relationshipType: "not_a_real_kind", targetRef: c1,
+      }),
+    ).rejects.toThrow(/not_a_real_kind.*not declared/);
+  });
 });
 
 describe("reorderBoardRank", () => {

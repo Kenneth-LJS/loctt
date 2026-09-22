@@ -31,7 +31,17 @@ import { useEffect } from "react";
  * (clicking a deep link while already on the page), not only on a cold
  * load.
  */
-const MAX_FRAMES = 30; // ~0.5s at 60fps — long enough for an async list.
+// A wall-clock deadline, not a frame count. A frame budget (~0.5s at 60fps)
+// is fragile: a deep-link target can mount only AFTER an async config fetch
+// resolves and, for an archived row, after a "Show archived" state flip
+// re-renders it (K100 deep links) — a chain that can exceed 30 frames on a
+// slow load, and rAF is throttled in a background tab. Poll each frame until
+// the element appears or the deadline passes.
+const SCROLL_DEADLINE_MS = 3000;
+// A hard frame cap as a backstop so the poll always terminates even where the
+// clock does not advance between frames (e.g. fake timers in tests). ~3s at
+// 60fps, matching the wall-clock deadline; whichever fires first wins.
+const MAX_FRAMES = 180;
 const HIGHLIGHT_MS = 1600;
 
 export function useScrollToHash(): void {
@@ -44,6 +54,7 @@ export function useScrollToHash(): void {
     const id = hash.replace(/^#/, "");
     if (id === "") return undefined;
 
+    const deadline = performance.now() + SCROLL_DEADLINE_MS;
     let frame = 0;
     let rafId = 0;
     let highlightTimer: ReturnType<typeof setTimeout> | undefined;
@@ -61,7 +72,9 @@ export function useScrollToHash(): void {
         return;
       }
       frame += 1;
-      if (frame < MAX_FRAMES) rafId = requestAnimationFrame(tryScroll);
+      if (frame < MAX_FRAMES && performance.now() < deadline) {
+        rafId = requestAnimationFrame(tryScroll);
+      }
     };
     rafId = requestAnimationFrame(tryScroll);
 

@@ -1,6 +1,7 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { loadQueriesConfig, serializeQueriesConfig } from "@loctt/core";
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../adapters/cli-spawn.js";
@@ -20,17 +21,26 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
  */
 describe("a saved multi-value view runs identically on CLI and MCP", () => {
   /**
-   * Appends a view the way the web API writes one. Each entry carries a
-   * ULID id, so a hand-built fixture must too or the config will not
-   * parse.
+   * Appends a view the way the web API writes one: an entry with a ULID
+   * id and an ordered `filters` list (K102). The DSL under test is
+   * carried as a single ADVANCED filter — that is exactly what the web
+   * sends for a hand-typed query, and it is the case this test exists to
+   * pin: the DSL the UI writes must run everywhere.
    */
   const saveView = async (root: string, name: string, query: string): Promise<void> => {
-    const file = path.join(root, ".loctt/config/queries.yaml");
-    const existing = await readFile(file, "utf-8");
+    const locttDir = path.join(root, ".loctt");
+    const config = await loadQueriesConfig(locttDir);
     const id = `01M${name.toUpperCase().replace(/[^0-9A-HJKMNP-TV-Z]/g, "X").padEnd(23, "0").slice(0, 23)}`;
+    const next = {
+      ...config,
+      queries: [
+        ...config.queries,
+        { id, name, filters: [{ kind: "advanced" as const, query }] },
+      ],
+    };
     await writeFile(
-      file,
-      `${existing.trimEnd()}\n  - id: ${id}\n    name: ${name}\n    query: "${query}"\n`,
+      path.join(locttDir, "config/queries.yaml"),
+      serializeQueriesConfig(next),
       "utf-8",
     );
   };

@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-list.md.
+ * Transcribed from tests/cases/ui-test-cases/flow-list.md.
  *
  * One `test` per case, named by case ID, with a `@verifies` tag so the
  * coverage gate can see it. Assertions follow the case's bullets in order
@@ -11,8 +11,48 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { DEFAULT_EXPORT_COLUMNS } from "@loctt/core";
+import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/tracker.ts";
+
+/**
+ * Opens the list toolbar's "View options" (⋯) menu.
+ *
+ * Export and "Save as view" moved off the toolbar and into this overflow
+ * menu (`053cf571`, "toolbar overflow menu"). Their triggers only exist
+ * while it is open, so every caller that reaches for them opens this
+ * first. The panel is portalled to `document.body` (K106 step 2), so the
+ * items are addressed from `page`, not from the menu's subtree.
+ */
+async function openViewActions(page: Page): Promise<void> {
+  const menu = page.getByTestId("view-actions-menu");
+  if ((await menu.getAttribute("aria-expanded")) !== "true") {
+    await menu.click();
+  }
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+}
+
+
+// The list-toolbar redesign folded advanced querying INTO the filter
+// system: the leading "Advanced" pill (`advanced-query-toggle`) is gone.
+// It is now reached one level in — open the "+ Add filter" menu, then
+// pick the "Advanced query…" item (`advanced-open`). This mirrors the
+// FilterBar unit test's `openAdvanced` helper (FilterBar.test.tsx).
+const openAdvanced = async (page: Page): Promise<void> => {
+  await page.getByTestId("add-filter").click();
+  await page.getByTestId("advanced-open").click();
+};
+
+// A non-default facet (Reporter/Label/Milestone/Sprint or a custom
+// field) is no longer a permanent pill: the toolbar shows only the
+// resolved visible set (default: Project/Status/Priority/Assignee, per
+// K97/A210). Such a facet must be ADDED via the "+ Add filter" picker
+// before its "Filter <label>" pill exists. `facetId` is the FacetKey
+// (e.g. "reporter", "label"), matching `add-filter-<id>` in FilterBar.
+const addFacet = async (page: Page, facetId: string): Promise<void> => {
+  await page.getByTestId("add-filter").click();
+  await page.getByTestId(`add-filter-${facetId}`).click();
+};
 
 // Sixty rows, written straight to disk. `seed` spawns one
 // `loctt create` per task at ~250ms, so these specs each paid ~15s
@@ -772,6 +812,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const menu = page.getByRole("menu", { name: "Export" });
 
@@ -787,6 +828,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list?priority=high`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     await expect(page.getByRole("menu", { name: "Export" })).toContainText("Export 2 tasks");
   });
@@ -803,6 +845,7 @@ test.describe("BLK — export", () => {
     // The keys on screen, to compare against — not merely the count.
     const onScreen = await page.getByRole("cell", { name: /^[A-Z]+-\d+$/ }).allTextContents();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
     expect(href).toContain("priority=high");
@@ -829,6 +872,7 @@ test.describe("BLK — export", () => {
     // Select one row; the export must still carry all three.
     await page.locator("tbody input[type=checkbox]").first().check();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     await expect(page.getByRole("menu", { name: "Export" })).toContainText("Export 3 tasks");
     const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
@@ -844,6 +888,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const href = await page.getByRole("menuitem", { name: "JSON" }).getAttribute("href");
 
@@ -865,6 +910,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
     const csv = await (await page.request.get(`${tracker.baseURL}${href ?? ""}`)).text();
@@ -885,6 +931,7 @@ test.describe("BLK — export", () => {
 
     // Either an empty file or a disabled control — never a "0 tasks
     // exported" success next to a file the user did not get.
+    await openViewActions(page);
     await expect(page.getByRole("button", { name: "Export" })).toBeDisabled();
   });
 
@@ -894,6 +941,7 @@ test.describe("BLK — export", () => {
     await page.goto(`${tracker.baseURL}/list?priority=high`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
 
+    await openViewActions(page);
     await page.getByRole("button", { name: "Export" }).click();
     const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
 
@@ -1436,7 +1484,7 @@ test.describe("BLK — archive undo", () => {
   });
 
   // @verifies BLK-10
-  test("BLK-10: the archived tasks are visible under Show archived", async ({
+  test("BLK-10: the archived tasks are visible under the archived-scope control", async ({
     page,
     tracker,
   }) => {
@@ -1448,7 +1496,8 @@ test.describe("BLK — archive undo", () => {
     await page.getByRole("button", { name: "Archive", exact: true }).click();
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByRole("checkbox", { name: "Show archived" }).check();
+    await page.getByTestId("view-actions-menu").click();
+    await page.getByTestId("view-actions-archived-scope").selectOption("all");
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
     // With a badge, not a dimmed row: opacity alone is invisible to a
     // screen reader and to anyone the contrast drop does not reach.
@@ -1702,6 +1751,7 @@ test.describe("BLK — scale", () => {
     await expect(page.locator("tbody tr").first()).toBeVisible();
 
     const download = page.waitForEvent("download");
+    await openViewActions(page);
     await page.getByRole("button", { name: /Export/i }).click();
     await page.getByRole("menuitem", { name: /CSV/i }).click();
 
@@ -1901,7 +1951,8 @@ test.describe("BLK — refused and stale writes", () => {
     await tracker.run(["archive", String(seeded[0])]);
 
     await page.goto(`${tracker.baseURL}/list`);
-    await page.getByRole("checkbox", { name: "Show archived" }).check();
+    await page.getByTestId("view-actions-menu").click();
+    await page.getByTestId("view-actions-archived-scope").selectOption("all");
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
     await page.getByRole("checkbox", { name: "Select all on this page" }).check();
 
@@ -2055,6 +2106,7 @@ test.describe("BLK — stale vocabulary and export columns", () => {
     await expect(page.locator("tbody tr").first()).toBeVisible();
 
     const download = page.waitForEvent("download");
+    await openViewActions(page);
     await page.getByRole("button", { name: /Export/i }).click();
     await page.getByRole("menuitem", { name: /CSV/i }).click();
     const header = (await readFile(await (await download).path(), "utf8"))
@@ -2113,6 +2165,7 @@ test.describe("BLK — failures that must not be silent", () => {
       });
     });
 
+    await openViewActions(page);
     await page.getByRole("button", { name: /Export/i }).click();
     await page.getByRole("menuitem", { name: /CSV/i }).click();
 
@@ -2368,18 +2421,39 @@ test.describe("SHL — narrow viewports", () => {
     // Narrow. At 532px the expanded sidebar took 240px and left the
     // table 165px — the content the user came for was the smallest
     // thing on screen.
+    //
+    // R2 (Ken 2026-09-20) made the narrow collapsed state render NOTHING
+    // rather than a `w-14` icon rail: the header hamburger is the sole
+    // nav and the drawer carries the labels, so the rail was noise
+    // stealing the width the content came for. So the claim "the sidebar
+    // stops eating the content's width" is now satisfied at 0px, and
+    // there is no `<aside>` to carry `data-collapsed`. Asserted as the
+    // width it actually occupies, which is the property the 80px bound
+    // was a proxy for.
     await page.setViewportSize({ width: 532, height: 800 });
-    await expect(aside).toHaveAttribute("data-collapsed", "true");
-    // The width transitions over 150ms; poll rather than measure once.
     await expect
-      .poll(() => aside.evaluate(el => el.getBoundingClientRect().width))
+      .poll(async () => {
+        if (await aside.count() === 0) return 0;
+        return aside.evaluate(el => el.getBoundingClientRect().width);
+      })
       .toBeLessThan(80);
 
-    // The table stays reachable. Clipping it made seven of ten columns
-    // unreachable by any input, which is worse than honest overflow.
-    const wrapper = page.locator("table").locator("xpath=ancestor::div[1]");
-    expect(await wrapper.evaluate(el => getComputedStyle(el).overflowX))
-      .toBe("auto");
+    // The rows stay reachable. Clipping the table made seven of ten
+    // columns unreachable by any input, which is worse than honest
+    // overflow — so the case asserted the wrapper scrolled.
+    //
+    // Below `sm` the table is now REPLACED by a stacked card per task
+    // (`abceb888`, the responsive list): the content reflows instead of
+    // overflowing, which satisfies the same requirement more strongly —
+    // nothing is off-screen to reach for. Asserted as "the task is
+    // present and readable at this width", which is what "reachable"
+    // meant.
+    await expect(page.getByTestId("task-cards")).toBeVisible();
+    await expect(page.locator('[data-testid^="task-card-"]').first()).toBeVisible();
+    // And the page itself does not pan sideways.
+    expect(await page.evaluate(() =>
+      document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    )).toBe(true);
 
     // The toggle is ENABLED at narrow width (R2 / A173): it opens the
     // sidebar as a transient off-canvas overlay so a phone user can read
@@ -2396,6 +2470,10 @@ test.describe("SHL — narrow viewports", () => {
     // must be untouched — a rotation must not silently discard a choice,
     // and the transient mobile-open must not have been persisted.
     await toggle.click();
+    // The transient mobile-open is a modal drawer (R2), not the in-grid
+    // column — so widening is what brings the persistent `<aside>` back,
+    // and it must come back EXPANDED: the narrow-width click was never
+    // written to the stored preference.
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(aside).toHaveAttribute("data-collapsed", "false");
     await expect(toggle).toBeEnabled();
@@ -4010,7 +4088,7 @@ test.describe("LST — the filter bar (M1.3)", () => {
   });
 
   // @verifies LST-12
-  test("LST-12: Show archived toggles the param on and off, and marks the rows", async ({
+  test("LST-12: the archived-scope control toggles the param on and off, and marks the rows", async ({
     page,
     tracker,
   }) => {
@@ -4021,16 +4099,18 @@ test.describe("LST — the filter bar (M1.3)", () => {
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
     await expect(page).not.toHaveURL(/archived/);
 
-    await page.getByRole("checkbox", { name: "Show archived" }).check();
-    await expect(page).toHaveURL(/archived=true/);
+    await page.getByTestId("view-actions-menu").click();
+    const scope = page.getByTestId("view-actions-archived-scope");
+    await scope.selectOption("all");
+    await expect(page).toHaveURL(/archived=all/);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
     // Marked, so an archived row is distinguishable from a live one.
     await expect(
       page.locator("tbody tr").filter({ hasText: "Gone" }),
     ).toContainText("Archived");
 
-    // Off removes the param rather than writing archived=false.
-    await page.getByRole("checkbox", { name: "Show archived" }).uncheck();
+    // Back to active removes the param rather than writing archived=active.
+    await scope.selectOption("active");
     await expect(page).not.toHaveURL(/archived/);
   });
 
@@ -4115,13 +4195,16 @@ test.describe("LST — URL params that could lie (M1.3)", () => {
 
     for (const falsey of ["false", "0"]) {
       await page.goto(`${tracker.baseURL}/list?archived=${falsey}`);
-      // A coerced-boolean parse turning "false" into true is exactly
-      // what this case exists to catch.
+      // An unrecognized scope value falling back to "active" (rather
+      // than being coerced into "all") is exactly what this case exists
+      // to catch.
       await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
       await expect(page.locator("tbody")).not.toContainText("Gone");
-      // The toggle's visual state agrees with the result set.
-      await expect(page.getByRole("checkbox", { name: "Show archived" }))
-        .not.toBeChecked();
+      // The control's visual state agrees with the result set.
+      await page.getByTestId("view-actions-menu").click();
+      await expect(page.getByTestId("view-actions-archived-scope"))
+        .toHaveValue("active");
+      await page.keyboard.press("Escape");
     }
   });
 
@@ -4526,10 +4609,16 @@ test.describe("VUE — saving a view (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list`);
 
     // Reachable — the assertion whose absence let six blockers pass.
-    const toggle = page.getByTestId("advanced-query-toggle");
-    await expect(toggle).toBeVisible();
-    await toggle.click();
-    await expect(page.getByTestId("advanced-query-editor")).toBeVisible();
+    // The redesign folds advanced querying into the "+ Add filter" menu
+    // ("Advanced query…", `advanced-open`); there is no leading pill.
+    await openAdvanced(page);
+    const surface = page.getByTestId("advanced-query-surface");
+    await expect(surface).toBeVisible();
+    // An empty `q` opens the surface directly in TEXT mode (the raw DSL
+    // editor), by design (AdvancedQuerySurface: "no query yet" → text box
+    // with the visual builder one click away), so `dsl-input` is reachable
+    // without a mode switch. Assert the mode to keep the intent explicit.
+    await expect(surface).toHaveAttribute("data-mode", "text");
 
     // And it runs: a valid query narrows the list to the matching row.
     await page.getByTestId("dsl-input").fill("status = in_progress");
@@ -4578,7 +4667,8 @@ test.describe("VUE — saving a view (M1.3)", () => {
     const before = await readFile(queries, "utf8");
     await writeFile(
       queries,
-      `${before.trimEnd()}\n  - id: 01M1GHOSTFIELD00000000001\n    name: By squad\n    query: "fields.squad = alpha"\n`,
+      `${before.trimEnd()}\n  - id: 01M1GHOSTFIELD00000000001\n    name: By squad\n`
+      + `    filters:\n      - kind: advanced\n        query: "fields.squad = alpha"\n`,
       "utf8",
     );
     // Now delete the field the view depends on.
@@ -4620,18 +4710,19 @@ test.describe("VUE — saving a view (M1.3)", () => {
       { title: "Bug", fields: { status: "in_progress" } },
       { title: "Other" },
     ]);
-    // The two default views are already in queries.yaml, so a
-    // malformed write shows up as *their* loss rather than only as a
-    // missing new entry.
+    // The default view is already in queries.yaml, so a malformed write
+    // shows up as *its* loss rather than only as a missing new entry.
+    // (K102 trimmed the seed to one view — Ken: "we don't ship a demo.")
     const before = await tracker.run(["views"]);
     expect(before).toContain("recent-open");
 
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("my-open-bugs");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     // The sidebar picks it up without a restart.
     await expect(page.getByRole("link", { name: "my-open-bugs" })).toBeVisible();
@@ -4666,9 +4757,10 @@ test.describe("VUE — saving a view (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("keys-not-labels");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     // The sidebar picks the new view up without a restart, which is
     // also the settle signal for reading the file below.
     await expect(page.getByRole("link", { name: "keys-not-labels" })).toBeVisible();
@@ -4693,14 +4785,26 @@ test.describe("VUE — saving a view (M1.3)", () => {
 
     await tracker.seed([{ title: "Alpha" }, { title: "Beta" }]);
 
-    // Append a view whose query will not parse — the case's own "hand
+    // Append a view whose FILTERS will not load — the case's own "hand
     // edit" of queries.yaml. It sits *after* the two default views, so
     // its blast radius (or lack of one) is visible against them.
+    //
+    // The break has to be one the LOADER rejects. This previously wrote
+    // `{kind: advanced, query: "status = = done"}`, which is a perfectly
+    // shape-valid advanced filter: `parseQueriesConfig` runs the filters
+    // through `FilterSchema` and never parses the DSL string, so that
+    // entry loaded into `queries` as healthy and nothing was ever marked
+    // broken. The DSL only fails later, when the view is run. A bad `op`
+    // on a simple filter is rejected by the schema, which is what puts
+    // the entry in `broken` with its `rawText` — the state this case is
+    // about.
     const queries = path.join(tracker.root, ".loctt", "config", "queries.yaml");
     const before = await readFile(queries, "utf8");
     await writeFile(
       queries,
-      `${before.trimEnd()}\n  - id: 01M2BROKENVIEW0000000000001\n    name: Busted\n    query: "status = = done"\n`,
+      `${before.trimEnd()}\n  - id: 01M2BROKENVIEW0000000000001\n    name: Busted\n`
+      + `    filters:\n      - kind: simple\n        field: status\n        op: "= ="\n`
+      + `        values:\n          - done\n`,
       "utf8",
     );
 
@@ -4723,16 +4827,27 @@ test.describe("VUE — saving a view (M1.3)", () => {
     const banner = page.getByTestId("broken-view");
     await expect(banner).toBeVisible();
     await expect(banner).toContainText(/Busted/);
-    await expect(page.getByTestId("broken-view-position")).toBeVisible();
+    // The offending position, as the loader can honestly report it. A
+    // Zod shape failure has no character offset, so it names the failing
+    // path inside the message instead — `[0].op`, the first filter's
+    // operator. `broken-view-position` is the separate offset span and is
+    // rendered only when there IS one; requiring it here would assert an
+    // optional field rather than the case's "with the offending position".
+    await expect(page.getByTestId("broken-view-error")).toContainText("[0].op");
     // Not an empty result masquerading as "no matches".
     await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
 
-    // Bullet 3: the advanced editor opens pre-populated with the broken
-    // query so it can be repaired in place.
-    await page.getByTestId("broken-view-fix").click();
-    const dsl = page.getByTestId("dsl-input");
-    await expect(dsl).toBeVisible();
-    await expect(dsl).toHaveValue("status = = done");
+    // Bullet 3 (as amended by K102): the entry's original YAML is shown,
+    // so the text the user wrote is visible and they can fix the file by
+    // hand and keep it. Repair-in-place is gone — the only client write
+    // path is a typed `EditViewRequest`, which cannot express arbitrary
+    // YAML — so the banner shows the bytes and points at Saved views,
+    // where Replace… sits behind an explicit confirmation.
+    const raw = page.getByTestId("broken-view-raw");
+    await expect(raw).toBeVisible();
+    await expect(raw).toContainText("name: Busted");
+    await expect(raw).toContainText("op: = =");
+    await expect(page.getByTestId("broken-view-manage")).toBeVisible();
 
     expect(pageErrors).toEqual([]);
   });
@@ -4764,7 +4879,7 @@ test.describe("VUE — saving a view (M1.3)", () => {
       `${before.trimEnd()}\n`
         + `  - id: 01M2CLIADDED000000000000001\n`
         + `    name: cli-added\n`
-        + `    query: text ~ "alpha"\n`
+        + `    filters:\n      - kind: advanced\n        query: text ~ "alpha"\n`
         + `    sort:\n      - field: key\n        direction: asc\n`,
       "utf8",
     );
@@ -4819,16 +4934,17 @@ test.describe("VUE — saving a view (M1.3)", () => {
       `${before.trimEnd()}\n`
         + `  - id: 01M2CONCURRENTA00000000001\n`
         + `    name: view-a\n`
-        + `    query: text ~ "bug"\n`,
+        + `    filters:\n      - kind: advanced\n        query: text ~ "bug"\n`,
       "utf8",
     );
 
     // Now save view B through the UI.
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("view-b");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("link", { name: "view-b" })).toBeVisible();
 
     // Both A and B survive — asserted off disk, and the default views
@@ -4942,7 +5058,8 @@ test.describe("XS — UI/CLI parity (M1.3)", () => {
     await writeFile(
       cfg,
       `${await readFile(cfg, "utf8")}  - id: 01M0HANDWRITTEN00000000000\n`
-      + `    name: hand-written\n    query: status = backlog\n`,
+      + `    name: hand-written\n`
+      + `    filters:\n      - kind: simple\n        field: status\n        op: "="\n        values:\n          - backlog\n`,
       "utf8",
     );
 
@@ -5079,6 +5196,9 @@ test.describe("MSL — clicking label pills (M1.3)", () => {
 
     // Open the Label dropdown; the All/Any toggle appears now that 2 are
     // selected. Switch to All (AND) → only the task with both labels.
+    // Label is not in the default visible set (K97/A210), so add it via
+    // "+ Add filter" before its pill exists.
+    await addFacet(page, "labels");
     await page.getByRole("button", { name: "Filter Label" }).click();
     await page.getByTestId("labels-match-all").check();
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
@@ -5276,9 +5396,10 @@ test.describe("The last of M1.3", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("from-ui");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("link", { name: "from-ui" })).toBeVisible();
 
     // On disk, not in browser storage — so it survives a restart and
@@ -5333,10 +5454,16 @@ test.describe("MSL — many labels, and a dangling one (M1.3)", () => {
 
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    // Label is not in the default visible set (K97/A210); add it first.
+    await addFacet(page, "labels");
     await page.getByRole("button", { name: "Filter Label" }).click();
 
-    // Searchable rather than a forty-item unfiltered list.
-    const search = page.getByRole("searchbox", { name: /Search Label/i });
+    // Searchable rather than a forty-item unfiltered list. The box is a
+    // `role="combobox"` — the correct role for a text input that filters
+    // an owned listbox (it carries aria-expanded/-controls/-autocomplete),
+    // which is what `ui/Dropdown` renders. Still the same claim: 40
+    // labels get a filter, and typing narrows to one.
+    const search = page.getByRole("combobox", { name: /Search label/i });
     await expect(search).toBeVisible();
     expect(await page.getByRole("menuitemcheckbox").count()).toBe(40);
 
@@ -5423,9 +5550,10 @@ test.describe("Closing out M1.3", () => {
 
     await page.goto(`${tracker.baseURL}/list?sort=priority&dir=desc`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("by-priority");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("link", { name: "by-priority" })).toBeVisible();
 
     // Persisted as field + direction, not as a URL fragment.
@@ -5452,9 +5580,10 @@ test.describe("Closing out M1.3", () => {
     ]);
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
-    await page.getByRole("button", { name: /Save as view/i }).click();
+    await openViewActions(page);
+    await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("open-work");
-    await page.getByRole("button", { name: "Save view" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
@@ -5614,7 +5743,17 @@ test.describe("SHL — the app shell (M1.1)", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await page.getByRole("link", { name: "Board" }).click();
     await expect(page).toHaveURL(/\/board/);
-    await expect(page.locator("aside a[aria-current='page']")).toHaveCount(1);
+    // Exactly one entry IN THIS GROUP is highlighted — the same scoping
+    // the loop above already uses. The Projects group's "All projects"
+    // row is also legitimately `aria-current` on any view route with no
+    // project facet (`allActive` in Sidebar.tsx, U11): it marks a
+    // different nav axis — which project scope applies, not which view
+    // surface you are on — so a page-wide count of 1 was never the claim.
+    for (const name of ["List", "Board", "Timeline"]) {
+      const link = page.getByRole("link", { name, exact: true });
+      if (name === "Board") await expect(link).toHaveAttribute("aria-current", "page");
+      else await expect(link).not.toHaveAttribute("aria-current", "page");
+    }
   });
 });
 
@@ -5771,10 +5910,19 @@ test.describe("SHL — the sidebar groups (M1.1)", () => {
     await expect(aside.getByRole("link", { name: /\bold\b/ })).toHaveCount(0);
     await expect(aside.getByRole("link", { name: /bug/ })).toBeVisible();
 
-    // Clicking filters the view and shows it in the URL.
+    // Clicking a milestone opens its DETAIL page. K105/U14 (d25b2105)
+    // deliberately repointed this from `/list?milestone=` to
+    // `/milestones/$id` so the sidebar and "All milestones" reach the
+    // same surface — see the comment in `shell/Sidebar.tsx`. The claim
+    // this case makes (the row navigates to that milestone's scope, and
+    // shows the one task in it) is unchanged; the surface moved.
     await aside.getByRole("link", { name: /v1/ }).click();
-    await expect(page).toHaveURL(/milestone=/);
-    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page).toHaveURL(/\/milestones\//);
+    // …and the page is scoped to that milestone: its heading names it,
+    // and the one task in it is listed. That is the "filters the view"
+    // half of the case, at the surface it now lands on.
+    await expect(page.getByRole("heading", { name: "v1", level: 1 })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("cell", { name: "One" })).toBeVisible();
   });
 });
 
@@ -5895,7 +6043,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
     // Land on a `q` the builder cannot represent (a negation, K83-iii).
     await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("not status = done")}`);
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     const surface = page.getByTestId("advanced-query-surface");
     await expect(surface).toBeVisible();
     // K83-i: the TEXT box, never the visual builder that would misrepresent it.
@@ -5913,7 +6061,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
     await tracker.seed([{ title: "Alpha", fields: { priority: "high" } }]);
     await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent("priority = high")}`);
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     const surface = page.getByTestId("advanced-query-surface");
     await expect(surface).toHaveAttribute("data-mode", "builder");
     await expect(page.getByTestId("query-builder")).toBeVisible();
@@ -5937,7 +6085,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
       `${tracker.baseURL}/list?status=in_progress&q=${encodeURIComponent("title ~ foo")}`,
     );
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     await expect(page.getByTestId("query-builder")).toBeVisible();
 
     // Edit the free-text value foo → Alpha, apply.
@@ -5962,7 +6110,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
       `${tracker.baseURL}/list?status=in_progress&q=${encodeURIComponent("title ~ foo")}`,
     );
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     await expect(page.getByTestId("query-builder")).toBeVisible();
 
     // Remove the sole condition, then apply the now-empty builder.
@@ -5988,7 +6136,7 @@ test.describe("K83 — visual query builder in the Advanced surface (step 3)", (
     const original = 'status = "true"';
     await page.goto(`${tracker.baseURL}/list?q=${encodeURIComponent(original)}`);
 
-    await page.getByTestId("advanced-query-toggle").click();
+    await openAdvanced(page);
     await expect(page.getByTestId("query-builder")).toBeVisible();
     await page.getByTestId("qb-apply").click();
 

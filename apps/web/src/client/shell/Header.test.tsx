@@ -204,6 +204,53 @@ describe("Header avatar menu", () => {
   });
 
   /**
+   * @verifies CONFIG-5
+   *
+   * P4/config-discoverability: the menu's one generic "Settings" link
+   * taught nothing about *where* a user's own settings live. The menu now
+   * offers differentiated deep links — My profile (to the current user's
+   * row), My preferences, Customize sidebar… — each pointing at the exact
+   * section that owns the concept, alongside the kept catch-all Settings.
+   */
+  it("deep-links the user-menu items to the sections that own them", async () => {
+    await renderHeader();
+    await click(screen.getByLabelText("User menu"));
+
+    const profile = (await screen.findByTestId("user-menu-profile")).closest("a") as HTMLAnchorElement;
+    // My profile → the Users section, anchored at the current user's row
+    // (the `#row-<id>` anchor UsersPanel exposes).
+    expect(profile.getAttribute("href")).toBe("/settings/users#row-u_ken");
+
+    const prefs = screen.getByTestId("user-menu-preferences").closest("a") as HTMLAnchorElement;
+    expect(prefs.getAttribute("href")).toContain("/settings/preferences");
+
+    const sidebar = screen.getByTestId("user-menu-sidebar").closest("a") as HTMLAnchorElement;
+    expect(sidebar.getAttribute("href")).toContain("/settings/sidebar-groups");
+
+    // The catch-all Settings link is kept.
+    const settings = screen.getByTestId("user-menu-settings").closest("a") as HTMLAnchorElement;
+    expect(settings.getAttribute("href")).toContain("/settings/");
+  });
+
+  /**
+   * @verifies CONFIG-5
+   *
+   * "My profile" anchors at the *current* user's row, so an unknown
+   * identity (SHL-40) has no row to point at — the item is omitted rather
+   * than deep-linking to `#row-` with no id.
+   */
+  it("omits My profile when the signed-in user is unknown", async () => {
+    UNKNOWN = true;
+    await renderHeader();
+    await click(screen.getByLabelText(/^User menu/));
+    expect(screen.queryByTestId("user-menu-profile")).toBeNull();
+    // Preferences and Customize sidebar do not depend on the identity and
+    // stay reachable.
+    expect(screen.getByTestId("user-menu-preferences")).toBeTruthy();
+    expect(screen.getByTestId("user-menu-sidebar")).toBeTruthy();
+  });
+
+  /**
    * @verifies SHL-3
    *
    * Selecting a different user has to actually attribute subsequent

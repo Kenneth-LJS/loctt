@@ -53,11 +53,15 @@ describe("SchemaBanner", () => {
     expect(text).toMatch(/not reinitialize|Do not\s+reinitialize/i);
   });
 
-  it("warns and points at `loctt migrate` for an outdated schema", () => {
+  it("warns and points at the in-app Migrate now button for an outdated schema", () => {
     render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
     const alert = screen.getByRole("alert");
     expect(alert.getAttribute("data-kind")).toBe("outdated");
-    expect(alert.textContent).toContain("loctt migrate");
+    // The outdated banner now points at its OWN "Migrate now" button
+    // rather than the `loctt migrate` CLI command — a GUI user should not
+    // be sent to the terminal when the button is right there (Ken's report).
+    expect(alert.textContent).toContain("Migrate now");
+    expect(alert.textContent).not.toContain("loctt migrate");
     expect(alert.textContent).toContain("v2");
     expect(alert.textContent).toContain("v3");
     // Was `expect(screen.queryByRole("button")).toBeNull()` with the
@@ -139,13 +143,15 @@ describe("SchemaBanner distinguishes the four kinds", () => {
    * the backup is part of the copy rather than a detail they have to
    * already know.
    */
-  it("outdated: shows both versions, the literal command, and the backup reassurance", () => {
+  it("outdated: shows both versions, points at the in-app button, and the backup reassurance", () => {
     render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
     const text = textOf();
 
     expect(text).toContain("v2");
     expect(text).toContain("v3");
-    expect(text).toContain("loctt migrate");
+    // Points at the in-app "Migrate now" button, not the CLI command.
+    expect(text).toContain("Migrate now");
+    expect(text).not.toContain("loctt migrate");
     expect(text).toMatch(/backup/i);
     // Distinct from `future`: the tracker is behind the app, not ahead.
     expect(text).not.toMatch(/ahead of this build/i);
@@ -194,7 +200,13 @@ describe("SchemaBanner distinguishes the four kinds", () => {
     expect(text).toContain("abc");
     expect(text).toMatch(/schema version/i);
     expect(text).toMatch(/untouched|nothing has been changed/i);
-    expect(text).toContain("loctt doctor");
+    // Points a GUI user at Settings → Diagnostics (the in-app equivalent
+    // of `loctt doctor`) rather than the terminal command. The raw
+    // `.schema-version` file is still named — that IS the corruption case
+    // where hand-editing is a legitimate remedy (Ken's YAML rule).
+    expect(text).toMatch(/Diagnostics/i);
+    expect(text).not.toContain("loctt doctor");
+    expect(text).toContain(".schema-version");
     // It must not borrow the `outdated` remedy for a state it does not
     // understand.
     expect(text).not.toContain("loctt migrate");

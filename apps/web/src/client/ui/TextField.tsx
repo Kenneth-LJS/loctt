@@ -24,6 +24,16 @@ export interface TextFieldProps
   readonly invalid?: boolean;
   readonly leadingIcon?: ReactNode;
   readonly size?: TextFieldSize;
+  /**
+   * Whether the field fills its container. Defaults to `true` (the
+   * historical behaviour — every existing call site expects `w-full`).
+   * Set `false` for a fixed-width input (query-builder value inputs, the
+   * `w-32` estimate field): `w-full` is dropped so the caller's own width
+   * class in `className` (or the input's intrinsic `size`) applies. This
+   * is needed because `cn` is a plain join, not `tailwind-merge`, so a
+   * `className="w-32"` cannot otherwise override the baked-in `w-full`.
+   */
+  readonly fullWidth?: boolean;
   /** Escape hatch on the wrapper (with leadingIcon) or the input: layout only. */
   readonly className?: string;
 }
@@ -34,16 +44,17 @@ const FIELD_SIZE: Record<TextFieldSize, string> = {
 };
 
 const FIELD_BASE =
-  "w-full rounded-md border border-border-default bg-bg-surface " +
+  "rounded-md border border-border-default bg-bg-surface " +
   "px-2.5 text-text-primary placeholder:text-text-tertiary transition-colors " +
   "disabled:bg-bg-muted disabled:text-text-disabled " +
   "aria-invalid:border-danger-fg";
 
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
   function TextField(
-    { invalid = false, leadingIcon, size = "md", className, ...rest },
+    { invalid = false, leadingIcon, size = "md", fullWidth = true, className, ...rest },
     ref,
   ) {
+    const hasIcon = leadingIcon !== undefined && leadingIcon !== null;
     const input = (
       <input
         ref={ref}
@@ -51,17 +62,27 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
         className={cn(
           FIELD_BASE,
           FIELD_SIZE[size],
-          leadingIcon !== undefined && leadingIcon !== null && "pl-7",
-          leadingIcon === undefined || leadingIcon === null ? className : undefined,
+          // When wrapped for an icon, the wrapper owns the width; the
+          // input always fills the wrapper. Standalone, the input carries
+          // w-full itself (unless the caller opted out).
+          (hasIcon || fullWidth) && "w-full",
+          hasIcon && "pl-7",
+          hasIcon ? undefined : className,
         )}
         {...rest}
       />
     );
 
-    if (leadingIcon === undefined || leadingIcon === null) return input;
+    if (!hasIcon) return input;
 
     return (
-      <span className={cn("relative inline-flex w-full items-center", className)}>
+      <span
+        className={cn(
+          "relative inline-flex items-center",
+          fullWidth && "w-full",
+          className,
+        )}
+      >
         <span
           aria-hidden="true"
           className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-meta text-text-tertiary"

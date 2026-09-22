@@ -38,7 +38,6 @@ export {
   abandonReconcile,
   applyReconcileDecisions,
   confirmRekey,
-  getReconcileState,
   loadReconcileSession,
   saveReconcileDecisions,
 } from "./reconcile-session.js";

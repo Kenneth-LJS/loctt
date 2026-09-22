@@ -1,12 +1,15 @@
 import type { SprintState } from "@loctt/contracts";
 import {
+  applyArchivedScope,
   archiveSprint,
   createSprint,
   deleteSprint,
   editSprint,
   filterByName,
+  isProgressUnavailable,
   loadSprintsConfig,
   loadWorkflowConfig,
+  type MilestoneProgressResult,
   readBurndownSeries,
   resolveLocttDir,
   resolveSprintIdFromInput,
@@ -15,7 +18,7 @@ import {
 } from "@loctt/core";
 
 import { formatNumber, pad } from "../format/value.js";
-import { getArg, hasFlag, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { getArg, hasFlag, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
 import { getConfigPagination, getFilterArg, pageConfigList, renderBrokenEntries, truncationNotice } from "../runtime/config-list.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
@@ -35,7 +38,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--end", "--filter", "--force", "--format", "--goal", "--ids", "--limit", "--name", "--offset", "--progress", "--remap-to", "--start", "--state", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--end", "--filter", "--force", "--format", "--goal", "--ids", "--limit", "--name", "--offset", "--progress", "--remap-to", "--start", "--state", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -43,21 +46,23 @@ export async function run(args: string[], root: string): Promise<void> {
   const locttDir = resolveLocttDir(root);
   switch (sub) {
     case "list": {
-      const includeArchived = hasFlag(args, "--all");
+      const scope = parseArchivedScope(args);
       const showIds = hasFlag(args, "--ids");
       const showProgress = hasFlag(args, "--progress");
       const cfg = await loadSprintsConfig(locttDir);
-      // K90 order (matching the web `handleListSprints`): archived
-      // filter, then name filter, then page. Progress is computed over
-      // the paged window only, so a page's `--progress` scan is bounded.
-      const visible = cfg.sprints.filter(s => includeArchived || s.archived !== true);
+      // K90/K107 order (matching the web `handleListSprints`): archived
+      // scope, then name filter, then page. Progress is computed over the
+      // paged window only, so a page's `--progress` scan is bounded.
+      // Default scope `active` hides archived; `--archived archived|all`
+      // (and the deprecated `--all` alias) widen it.
+      const visible = applyArchivedScope(cfg.sprints, scope);
       const matched = filterByName(visible, getFilterArg(args));
       const page = pageConfigList(matched, getConfigPagination(args));
       const shown = page.items;
 
       // Opt-in: progress scans every task, and `sprint list` is
       // otherwise a config read. Mirrors `milestone list --progress`.
-      let progress: Record<string, { done: number; total: number; discarded: number }> = {};
+      let progress: Record<string, MilestoneProgressResult> = {};
       if (showProgress) {
         const workflow = await loadWorkflowConfig(locttDir);
         const report = await sprintProgressDetailed(locttDir, shown.map(s => s.id), workflow);
@@ -80,12 +85,16 @@ export async function run(args: string[], root: string): Promise<void> {
         const arch = s.archived === true ? "  (archived)" : "";
         const idCol = showIds ? `\t${s.id}` : "";
         const p = progress[s.id];
-        // Name the excluded discarded tasks where the number is shown:
-        // silently shrinking a denominator is as confusing as leaving
-        // dead work in it.
-        const prog = p
-          ? `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`
-          : "";
+        // MSL-35: a per-sprint failure reads "progress unavailable" for
+        // THIS row only; the other rows still print real done/total. Name
+        // the excluded discarded tasks where the number is shown: silently
+        // shrinking a denominator is as confusing as leaving dead work in
+        // it.
+        const prog = p === undefined
+          ? ""
+          : isProgressUnavailable(p)
+            ? "  (progress unavailable)"
+            : `  ${p.done}/${p.total}${p.discarded > 0 ? ` (${p.discarded} discarded, excluded)` : ""}`;
         console.log(`${s.name}${idCol}\t[${s.state}]\t${s.start_date}..${s.end_date}${goal}${prog}${arch}`);
       }
       // DEG-C3: a hand-broken sprint entry is preserved by the tolerant

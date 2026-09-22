@@ -6,9 +6,10 @@ import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useSaveCalendar } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { Select } from "../ui/Select.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
   blankHoliday,
@@ -43,7 +44,7 @@ export function CalendarPanel() {
 
   if (calendar.isError) {
     return (
-      <div className="p-8">
+      <div>
         <h1 className="mb-2 text-lg font-semibold text-text-primary">Calendar</h1>
         <ErrorState
           error={calendar.error}
@@ -117,7 +118,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
   };
 
   return (
-    <div className="p-8" data-testid="calendar-panel">
+    <div data-testid="calendar-panel">
       <h1 className="mb-1 text-lg font-semibold text-text-primary">Calendar</h1>
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Working days, holidays and the workspace timezone. Date pickers
@@ -129,17 +130,33 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
             field a GUI nudge (K75) links to. The `field-<key>` id scheme
             is what `useScrollToHash` targets; other settings fields adopt
             the same pattern as links to them are added. */}
-        <label id="field-timezone" className="grid gap-1">
+        <div id="field-timezone" className="grid gap-1">
           <span className="text-text-secondary">Timezone</span>
-          <Select
-            data-testid="calendar-timezone"
-            value={tzOk ? draft.timezone : ""}
-            onChange={e => { setDraft(prev => ({ ...prev, timezone: e.target.value })); }}
-            className="w-64"
-          >
-            {!tzOk && <option value="">Pick a valid timezone…</option>}
-            {options.map(z => <option key={z} value={z}>{z}</option>)}
-          </Select>
+          {/* A211: ~400 IANA zones — a searchable Combobox, not a native
+              <select>. SET-24: an unresolvable stored zone is not offered
+              (options omits it) and the trigger reads empty until a valid
+              one is picked. */}
+          <Combobox
+            label="Timezone"
+            options={options.map((z): ComboboxOption => ({ key: z, label: z }))}
+            value={tzOk ? draft.timezone : undefined}
+            onSelect={z => { setDraft(prev => ({ ...prev, timezone: z })); }}
+            listTestId="calendar-timezone-list"
+            optionTestId={o => `calendar-timezone-option-${o.key}`}
+            searchTestId="calendar-timezone-search"
+            trigger={p => (
+              <ComboboxButton
+                {...p}
+                testId="calendar-timezone"
+                dataValue={tzOk ? draft.timezone : ""}
+                aria-label="Timezone"
+                placeholder="Pick a valid timezone…"
+                className="w-64"
+              >
+                {tzOk ? draft.timezone : ""}
+              </ComboboxButton>
+            )}
+          />
           {!tzOk && (
             <div
               role="alert"
@@ -147,7 +164,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
               className="text-[0.7857rem] text-danger-fg"
             >
               <p>
-                <code className="font-mono">{draft.timezone}</code> is the
+                <code>{draft.timezone}</code> is the
                 value stored in .loctt/config/calendar.yaml, and this
                 browser cannot resolve it — it may have been renamed or
                 removed from the IANA database.
@@ -158,21 +175,20 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
               </p>
             </div>
           )}
-        </label>
+        </div>
 
         <fieldset className="border-0 p-0">
           <legend className="mb-1 text-text-secondary">First day of week</legend>
-          <Select
-            data-testid="calendar-first-day"
+          <SelectCombobox
+            testId="calendar-first-day"
             value={String(draft.first_day_of_week)}
-            onChange={e => {
-              setDraft(prev => ({ ...prev, first_day_of_week: Number(e.target.value) }));
+            onChange={v => {
+              setDraft(prev => ({ ...prev, first_day_of_week: Number(v) }));
             }}
             aria-label="First day of week"
             className="w-40"
-          >
-            {DAY_NAMES.map((n, i) => <option key={n} value={String(i)}>{n}</option>)}
-          </Select>
+            options={DAY_NAMES.map((n, i) => ({ value: String(i), label: n }))}
+          />
         </fieldset>
 
         <fieldset className="border-0 p-0" data-testid="calendar-working-days">
@@ -244,7 +260,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
                           invalid={isInvalid}
                           aria-label={`Holiday date, row ${String(i + 1)}`}
                           onChange={e => { setHoliday(i, { ...h, date: e.target.value }); }}
-                          className="w-32 font-mono"
+                          className="w-32"
                         />
                       </td>
                       <td className="p-1">
@@ -316,11 +332,11 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
         {/* SET-25: the panel states which fields move with the zone. */}
         <p data-testid="calendar-timezone-note" className="text-[0.8571rem] text-text-tertiary">
           Changing the timezone rewrites nothing already stored. Task{" "}
-          <code className="font-mono">due_date</code> and{" "}
-          <code className="font-mono">start_date</code> are date-only and
+          <code>due_date</code> and{" "}
+          <code>start_date</code> are date-only and
           are unaffected; only datetimes such as{" "}
-          <code className="font-mono">created_at</code> and{" "}
-          <code className="font-mono">updated_at</code> change how they
+          <code>created_at</code> and{" "}
+          <code>updated_at</code> change how they
           are displayed. Reverting the zone restores the previous display
           exactly.
         </p>
@@ -338,8 +354,8 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
         {save.isError && (
           <p role="alert" data-testid="calendar-save-error" className="text-[0.8571rem] text-danger-fg">
             {tooLarge
-              ? `The calendar was too large to send: ${String(draft.holidays.length)} holidays exceeded the request size limit. The configuration already on disk is still in effect — trim the list and save again.`
-              : `Not saved to .loctt/config/calendar.yaml: ${saveError ?? "unknown error"}`}
+              ? `The calendar was too large to send: ${String(draft.holidays.length)} holidays exceeded the request size limit. Your existing calendar is still in effect — trim the list and save again.`
+              : `Your change wasn’t saved: ${saveError ?? "unknown error"}`}
           </p>
         )}
         {save.isSuccess && !save.isPending && (

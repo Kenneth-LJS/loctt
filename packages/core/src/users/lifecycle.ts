@@ -31,7 +31,10 @@ import { loadUserProfile, saveUserProfile, userExists } from "./profile.js";
 function assertValidEmail(email: string | null | undefined): void {
   if (email === null || email === undefined) return;
   if (!EmailSchema.safeParse(email).success) {
-    throw new UserError(`invalid email: ${JSON.stringify(email)}`);
+    // Anchor on `email` (ERR-14) so a surface that renders field-level
+    // rejections at the input places it correctly without re-deriving
+    // which field failed — the web route reads `envelope.field`.
+    throw new UserError(`invalid email: ${JSON.stringify(email)}`, { field: "email" });
   }
 }
 

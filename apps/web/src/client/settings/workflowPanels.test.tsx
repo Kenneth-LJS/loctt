@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { CustomFieldsPanel } from "./CustomFieldsPanel.tsx";
 import { EnumCollectionPanel } from "./EnumCollectionPanel.tsx";
 import { RelationshipsSettingsPanel } from "./RelationshipsSettingsPanel.tsx";
@@ -141,6 +142,20 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+describe("WorkflowPanelFrame — config path (SET-3)", () => {
+  /** @verifies SET-3 — the panel names the file it reflects. This had
+   * regressed to a vague "changes appear after you refresh" line that
+   * dropped the path entirely; the frame now shows the usage path. */
+  it("shows the config file path the panel reflects", async () => {
+    mockWorkflow();
+    render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
+    const foot = await screen.findByTestId("workflow-config-path");
+    expect(foot.textContent).toContain("/abs/.loctt/config/workflow.yaml");
+    // The old vague copy is gone.
+    expect(foot.textContent).not.toMatch(/after you refresh/i);
+  });
+});
+
 describe("EnumCollectionPanel — statuses (SET-46)", () => {
   /** @verifies SET-46 */
   it("creates a status: the Create dialog PUTs the augmented document in file order", async () => {
@@ -151,7 +166,7 @@ describe("EnumCollectionPanel — statuses (SET-46)", () => {
     fireEvent.click(screen.getByTestId("statuses-create"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "Blocked" } });
-    fireEvent.change(within(dialog).getByTestId("statuses-entry-category"), { target: { value: "active" } });
+    pickCombo("statuses-entry-category", "active");
     fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
 
     await waitFor(() => { expect(putBodies.length).toBe(1); });
@@ -179,6 +194,37 @@ describe("EnumCollectionPanel — statuses (SET-46)", () => {
     expect(within(dialog).getByTestId("statuses-entry-save")).toHaveProperty("disabled", true);
     // No request left the client.
     expect(putBodies.length).toBe(0);
+  });
+
+  /**
+   * The entry editor migrated from a fixed centered Dialog to the
+   * responsive primitive (A273). At narrow width it renders as a bottom
+   * sheet, but the SAME testids resolve and it still opens/edits/saves
+   * through the same PUT — no forked state. jsdom lacks matchMedia, so
+   * `useIsNarrow` reads innerWidth. Red-proof: the testids are the only
+   * handle the spec has, so a broken switch that dropped them would fail
+   * `findByTestId` here.
+   */
+  it("still opens, edits and saves at narrow (mobile-drawer) width, testids stable", async () => {
+    const original = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      const { putBodies } = mockWorkflow();
+      render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
+      await screen.findByTestId("statuses-list");
+
+      fireEvent.click(screen.getByTestId("statuses-create"));
+      const dialog = await screen.findByTestId("statuses-entry-dialog");
+      fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "Blocked" } });
+      pickCombo("statuses-entry-category", "active");
+      fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
+
+      await waitFor(() => { expect(putBodies.length).toBe(1); });
+      const put = putBodies[0] as { workflow: WorkflowConfig };
+      expect(put.workflow.statuses.find(s => s.key === "blocked")).toMatchObject({ label: "Blocked" });
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
   });
 });
 
@@ -227,7 +273,9 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
     // The label is a read-out span, not an <input> that auto-saves on blur.
     const label = screen.getByTestId("statuses-label-todo");
     expect(label.tagName.toLowerCase()).not.toBe("input");
-    // The Edit control opens the dialog.
+    // The Edit control opens the dialog. Row actions live behind a kebab
+    // (K105 affordance rule): open it, then the Edit item is present.
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "To do"/ }));
     expect(screen.getByTestId("statuses-edit-todo")).toBeTruthy();
   });
 
@@ -237,6 +285,7 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
     render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
     await screen.findByTestId("statuses-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "In progress" } });
@@ -257,6 +306,7 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
     render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
     await screen.findByTestId("statuses-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "In progress" } });
@@ -270,7 +320,7 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
   });
 
   /** @verifies SET-28 */
-  it("refuses an Edit-dialog Save when the file changed underneath, naming the file", async () => {
+  it("refuses an Edit-dialog Save when the settings changed underneath", async () => {
     // The pre-PUT re-read returns a document whose "doing" status was
     // hand-edited — the panel must refuse rather than clobber it.
     const handEdited: WorkflowConfig = {
@@ -281,16 +331,20 @@ describe("EnumCollectionPanel — edit-model (SET-28, SET-51)", () => {
     render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
     await screen.findByTestId("statuses-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "In progress" } });
     fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
 
-    // SET-28: the save is refused, the error names the file, and nothing
-    // was written (the throw happens in `apply`, before the PUT).
+    // SET-28: the save is refused and nothing was written (the throw
+    // happens in `apply`, before the PUT). The error tells the user the
+    // settings changed and to reload — it deliberately does NOT name the
+    // backing `.yaml` file any more (Ken's report: the GUI should not
+    // expose the storage layer for a routine concurrent-edit conflict).
     const err = await within(dialog).findByTestId("statuses-entry-error");
-    expect(err.textContent).toMatch(/workflow\.yaml/i);
     expect(err.textContent).toMatch(/reload|changed/i);
+    expect(err.textContent).not.toMatch(/\.yaml/i);
     expect(putBodies.length).toBe(0);
   });
 });
@@ -306,6 +360,7 @@ describe("EnumCollectionPanel — edit preserves presentational fields", () => {
     render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
     await screen.findByTestId("statuses-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
     fireEvent.click(screen.getByTestId("statuses-edit-doing"));
     const dialog = await screen.findByTestId("statuses-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "In progress" } });
@@ -394,6 +449,8 @@ describe("RelationshipsSettingsPanel — edit preserves presentational fields", 
     render(<RelationshipsSettingsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("relationships-list");
 
+    // Row actions moved behind a kebab (responsive GROUP A): open it, then Edit.
+    fireEvent.click(screen.getByRole("button", { name: /Actions for relationship/ }));
     fireEvent.click(screen.getByTestId("relationships-edit-blocks"));
     const dialog = await screen.findByTestId("relationships-entry-dialog");
     fireEvent.change(within(dialog).getByTestId("relationships-entry-label"), { target: { value: "Is blocking" } });
@@ -420,7 +477,7 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     fireEvent.click(screen.getByTestId("custom-fields-create"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Team" } });
-    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-type"), { target: { value: "enum" } });
+    pickCombo("custom-field-dialog-type", "enum");
     fireEvent.click(within(dialog).getByTestId("custom-field-dialog-value-add"));
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-key-0"), { target: { value: "web" } });
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-label-0"), { target: { value: "Web" } });
@@ -439,6 +496,7 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     render(<CustomFieldsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("custom-fields-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Story points"/ }));
     fireEvent.click(screen.getByTestId("custom-field-edit-story_points"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     // SET-16: the type control is DISABLED (not merely validated on submit).
@@ -457,6 +515,7 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     render(<CustomFieldsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("custom-fields-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Story points"/ }));
     fireEvent.click(screen.getByTestId("custom-field-edit-story_points"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Points" } });
@@ -479,6 +538,7 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     render(<CustomFieldsPanel />, { wrapper: wrapper() });
     await screen.findByTestId("custom-fields-list");
 
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Size"/ }));
     fireEvent.click(screen.getByTestId("custom-field-edit-size"));
     const dialog = await screen.findByTestId("custom-field-dialog");
     // Change the field label and one value's label — nothing else.
@@ -515,5 +575,188 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     expect(size?.values?.map(v => v.key)).toEqual(["l"]);
     // …and the clear (null) is in the remap table the server validates.
     expect(put.remap).toEqual({ custom_fields: { size: { s: null } } });
+  });
+});
+
+describe("Part A — icon + color on statuses (create + edit)", () => {
+  it("create carries the chosen icon and color onto the new status", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
+    await screen.findByTestId("statuses-list");
+
+    fireEvent.click(screen.getByTestId("statuses-create"));
+    const dialog = await screen.findByTestId("statuses-entry-dialog");
+    fireEvent.change(within(dialog).getByTestId("statuses-entry-label"), { target: { value: "Blocked" } });
+    fireEvent.click(within(dialog).getByTestId("statuses-entry-icon"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-flag"));
+    fireEvent.change(within(dialog).getByTestId("statuses-entry-color"), { target: { value: "#123456" } });
+    fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.statuses.find(s => s.key === "blocked");
+    expect(added).toMatchObject({ key: "blocked", label: "Blocked", icon: "flag", color: "#123456" });
+  });
+
+  it("edit sets an icon and color on a status that had none", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
+    await screen.findByTestId("statuses-list");
+
+    fireEvent.click(screen.getByRole("button", { name: /Actions for status "Doing"/ }));
+    fireEvent.click(screen.getByTestId("statuses-edit-doing"));
+    const dialog = await screen.findByTestId("statuses-entry-dialog");
+    fireEvent.click(within(dialog).getByTestId("statuses-entry-icon"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-star"));
+    fireEvent.change(within(dialog).getByTestId("statuses-entry-color"), { target: { value: "#abcdef" } });
+    fireEvent.click(within(dialog).getByTestId("statuses-entry-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const edited = put.workflow.statuses.find(s => s.key === "doing");
+    expect(edited).toMatchObject({ key: "doing", icon: "star", color: "#abcdef" });
+  });
+});
+
+describe("Part A — icon + color on relationships (create + edit)", () => {
+  it("create carries the chosen icon and color onto the new relationship", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<RelationshipsSettingsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("relationships-list");
+
+    fireEvent.click(screen.getByTestId("relationships-create"));
+    const dialog = await screen.findByTestId("relationships-entry-dialog");
+    fireEvent.change(within(dialog).getByTestId("relationships-entry-label"), { target: { value: "Duplicates" } });
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-symmetric"));
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-icon"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-link"));
+    fireEvent.change(within(dialog).getByTestId("relationships-entry-color"), { target: { value: "#0a0b0c" } });
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.relationships.find(r => r.key === "duplicates");
+    expect(added).toMatchObject({ key: "duplicates", label: "Duplicates", icon: "link", color: "#0a0b0c" });
+  });
+
+  it("edit can change a relationship's icon while keeping its color", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<RelationshipsSettingsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("relationships-list");
+
+    // Row actions live behind a kebab (responsive GROUP A): open it, then Edit.
+    fireEvent.click(screen.getByRole("button", { name: /Actions for relationship/ }));
+    fireEvent.click(screen.getByTestId("relationships-edit-blocks"));
+    const dialog = await screen.findByTestId("relationships-entry-dialog");
+    // WORKFLOW's `blocks` starts with icon "ban", color "#ff0000".
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-icon"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-flag"));
+    fireEvent.click(within(dialog).getByTestId("relationships-entry-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const edited = put.workflow.relationships.find(r => r.key === "blocks");
+    expect(edited).toMatchObject({ key: "blocks", icon: "flag", color: "#ff0000" });
+  });
+});
+
+describe("Part A — icon + color on a custom-field enum value", () => {
+  it("create sets an enum value's icon and color", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByTestId("custom-fields-create"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Severity" } });
+    pickCombo("custom-field-dialog-type", "enum");
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-value-add"));
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-key-0"), { target: { value: "high" } });
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-label-0"), { target: { value: "High" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-value-icon-0"));
+    // The K104 picker's grid is PORTALLED to document.body (A279), so it
+    // is addressed through `screen`, not through the dialog subtree.
+    fireEvent.click(screen.getByTestId("icon-option-alert"));
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-value-color-0"), { target: { value: "#ee0000" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.custom_fields.find(f => f.key === "severity");
+    const high = added?.values?.find(v => v.key === "high");
+    expect(high).toMatchObject({ key: "high", label: "High", icon: "alert", color: "#ee0000" });
+  });
+});
+
+describe("Part C1 — custom-field task_types scope (create + edit)", () => {
+  /** @verifies K91 */
+  it("create scopes a field to the chosen task types", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByTestId("custom-fields-create"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Repro steps" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope"));
+    // K106 step 2: the options panel now PORTALS to document.body, so it
+    // is no longer a descendant of the dialog — the trigger still is.
+    // Addressed from `screen` rather than `within(dialog)`; the testid
+    // and the assertion are unchanged.
+    fireEvent.click(screen.getByTestId("custom-field-dialog-scope-option-task"));
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.custom_fields.find(f => f.key === "repro_steps");
+    expect(added?.task_types).toEqual(["task"]);
+  });
+
+  /** @verifies K91 */
+  it("an empty scope selection stores no task_types (field is global)", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByTestId("custom-fields-create"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "Notes" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const added = put.workflow.custom_fields.find(f => f.key === "notes");
+    expect(added).not.toHaveProperty("task_types");
+  });
+
+  /** @verifies K91 */
+  it("edit can add a task_types scope to a field that had none", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByRole("button", { name: /Actions for custom field "Story points"/ }));
+    fireEvent.click(screen.getByTestId("custom-field-edit-story_points"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.click(within(dialog).getByTestId("custom-field-dialog-scope"));
+    // K106 step 2: the options panel now PORTALS to document.body, so it
+    // is no longer a descendant of the dialog — the trigger still is.
+    // Addressed from `screen` rather than `within(dialog)`; the testid
+    // and the assertion are unchanged.
+    fireEvent.click(screen.getByTestId("custom-field-dialog-scope-option-task"));
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+    const put = putBodies[0] as { workflow: WorkflowConfig };
+    const edited = put.workflow.custom_fields.find(f => f.key === "story_points");
+    expect(edited?.task_types).toEqual(["task"]);
   });
 });

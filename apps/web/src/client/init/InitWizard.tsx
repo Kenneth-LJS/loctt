@@ -140,10 +140,10 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
         */}
         <p className="mt-2 text-[0.9286rem] text-text-secondary">
           {alreadyThere
-            ? <>A <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">.loctt</code> folder already
+            ? <>A <code className="rounded bg-bg-muted px-1 py-0.5">.loctt</code> folder already
               exists in <strong className="font-medium text-text-primary break-all">{info.cwd}</strong> but
               is empty. Setting up will fill it in — there is nothing in it to overwrite.</>
-            : <>LocTT will create its <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">.loctt</code> folder
+            : <>LocTT will create its <code className="rounded bg-bg-muted px-1 py-0.5">.loctt</code> folder
               in <strong className="font-medium text-text-primary break-all">{info.cwd}</strong>. Everything
               it tracks lives in that folder.</>}
         </p>
@@ -210,7 +210,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
                   ? `${prefixId}-err ${prefixId}-help`
                   : `${prefixId}-help`
               }
-              className="mt-1 font-mono"
+              className="mt-1"
             />
             <p id={`${prefixId}-help`} className="mt-1 text-[0.8571rem] text-text-secondary">
               {/*
@@ -220,7 +220,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
                 rejection would promise a key that cannot exist.
               */}
               {prefixIssue === null
-                ? <>First task will be <code className="font-mono text-text-primary">{firstKeyPreview(prefix)}</code>.</>
+                ? <>First task will be <code className="text-text-primary">{firstKeyPreview(prefix)}</code>.</>
                 : <>No key preview — fix the prefix below.</>}
             </p>
             {showProblems && prefixIssue !== null && (
@@ -253,7 +253,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
               */}
               <p className="text-[0.8571rem] text-text-secondary">
                 LocTT normally writes a few short markdown files into{" "}
-                <code className="font-mono">.loctt/docs/</code> explaining how tasks,
+                <code>.loctt/docs/</code> explaining how tasks,
                 statuses and queries work in this tracker. Tick this to start with an
                 empty tracker instead; you can add them later.
               </p>

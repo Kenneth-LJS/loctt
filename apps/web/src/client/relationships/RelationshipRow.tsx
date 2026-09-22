@@ -5,8 +5,8 @@ import { useState } from "react";
 import { StatusBadge } from "../list/cells.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { ICON } from "../ui/icons.ts";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import type { RelationshipRow as Row } from "./group.ts";
 
@@ -126,12 +126,12 @@ export function RelationshipRowView({
             {missingCorrupt ? (
               <>
                 Corrupt task — cannot be read; repair its file{" "}
-                <code className="font-mono text-[0.8571rem]">{row.target}</code>
+                <code className="text-[0.8571rem]">{row.target}</code>
               </>
             ) : (
               <>
                 Broken link — no task with id{" "}
-                <code className="font-mono text-[0.8571rem]">{row.target}</code>
+                <code className="text-[0.8571rem]">{row.target}</code>
               </>
             )}
           </span>
@@ -147,7 +147,7 @@ export function RelationshipRowView({
             title={row.resolvedTitle}
             className="flex min-w-0 flex-1 items-center gap-2 no-underline"
           >
-            <span className="shrink-0 font-mono text-[0.8571rem] text-text-secondary">
+            <span className="shrink-0 text-[0.8571rem] text-text-secondary">
               {row.resolvedKey ?? row.target}
             </span>
             <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
@@ -207,7 +207,7 @@ export function RelationshipRowView({
                 disabled={removing}
                 onClick={t.toggle}
               >
-                <span aria-hidden="true">{ICON.more}</span>
+                <Icon name="more" />
               </IconButton>
             )}
           >

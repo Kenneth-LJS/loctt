@@ -8,14 +8,15 @@
  * `ICON.close` instead of typing a glyph, so there is one close in the
  * whole app.
  *
- * This is **not** an `<Icon>` component. The app's decision (see
- * `docs/dev/decisions.md`) is literal Unicode glyphs, no icon font and
- * no icon component — glyphs are text. A string map is the whole fix;
- * do not grow this into a React component.
- *
- * Migration of existing call sites is B4's job (mechanical, lazy). This
- * file only introduces the canonical values so new/migrated code has
- * one place to import from.
+ * This map now holds ONLY the glyphs that are legitimately text: the ★
+ * saved/favourite marker and the ⚠ status marker. Interactive/decorative
+ * AFFORDANCES — carets, close, kebab, reorder — are drawn by the SVG
+ * `<Icon>` component in `ui/Icon.tsx`, not typed as glyphs (they read as
+ * gross ASCII otherwise; Ken's report). An earlier version of this comment
+ * claimed "the app's decision is literal Unicode glyphs, no icon
+ * component"; there is no such decision in `decisions.md` — that was an
+ * unsupported constraint. Reach for `<Icon>` for affordances; keep this
+ * map only for text glyphs.
  */
 export const ICON = {
   /** Emphasis / default / favourite marker. Was `★` (Sidebar) vs `⭑` (Save-as-view). */

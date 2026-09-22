@@ -91,8 +91,8 @@ day, so a task due today at any time matches `due_date = today` and
 `currentUser()` resolves to the id of whoever runs the query, so a saved
 view like `assignee = currentUser()` means "assigned to me" for each
 person who opens it — the web signed-in user, the CLI's configured user
-(`loctt whoami` / the current-user file), or the MCP caller. The bare
-form `currentUser` (no parentheses) is accepted too.
+(`loctt user current`), or the MCP caller. The bare form `currentUser`
+(no parentheses) is accepted too.
 
 ```
 assignee = currentUser()
@@ -150,7 +150,7 @@ Two functions cover link queries:
 
 ```
 has_link("blocks")                 # blocks something
-has_link("blocked_by")             # is blocked by something
+has_link("is_blocked_by")          # is blocked by something
 has_link("blocks", "T-2")          # blocks T-2 specifically
 has_link()                         # has any link at all
 not has_link()                     # orphan — no links
@@ -165,7 +165,7 @@ both**.
 `link_count(kind)` yields a number, so it takes the numeric operators —
 `=`, `!=`, `<`, `<=`, `>`, `>=`. Comparing it against a list
 (`link_count("child") in (1, 2)`) is rejected: it could never match, and
-before it was rejected it returned nothing, which looks exactly like
+an unrejected version would return nothing, which looks exactly like
 "no tasks have that many children".
 
 ### One edge, not two
@@ -181,9 +181,10 @@ Given a task with `blocks → T-20` and `parent → T-10`:
 | `has_link("blocks", "T-10")` | no | no single edge is *(blocks, T-10)* |
 | `has_link("blocks") and has_link("parent", "T-10")` | yes | and it says so plainly — two separate facts |
 
-The older `relationship.type = blocks and relationship.target = T-10`
-matched the task above while appearing to mean "blocks T-10". That form
-is removed; queries using it fail with an error naming the replacement.
+Kind and target cannot be written as two separate conditions
+(`relationship.type = blocks and relationship.target = T-10`): that
+reads as one edge but does not mean it, so it is rejected with an error
+naming `has_link` as the replacement.
 
 ### Kind names are values, not fields
 
@@ -198,11 +199,11 @@ Targets match on either the stored ULID or the current key, so
 ### Both directions are queryable
 
 **Each task stores its own outbound edges.** Linking `A blocks B` writes a
-`blocks` edge on A **and** a `blocked_by` edge on B. So "what blocks T-2"
+`blocks` edge on A **and** an `is_blocked_by` edge on B. So "what blocks T-2"
 is an ordinary forward lookup on the inverse key:
 
-- `has_link("blocks")` matches **A only** — B holds `blocked_by`.
-- `has_link("blocked_by", "T-2")` finds the tasks blocked by T-2.
+- `has_link("blocks")` matches **A only** — B holds `is_blocked_by`.
+- `has_link("is_blocked_by", "T-2")` finds the tasks blocked by T-2.
 - For a symmetric kind (`kind: symmetric`, e.g. `relates_to`) both tasks
   hold the same edge type, so both match. There is no source/target
   distinction to worry about.
@@ -271,7 +272,7 @@ queries:
 
   - id: 01JCQ8ZKD6G8J0L2N4Q6S8U0W2
     name: blocked
-    query: archived != true and status = blocked
+    query: archived != true and has_link("is_blocked_by")
     sort:
       - field: priority
         direction: desc

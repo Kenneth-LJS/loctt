@@ -60,9 +60,9 @@ function HistoryRewrittenRefusal({
       <p className="font-semibold">The history of {where} was rewritten.</p>
       <p className="mt-1 text-text-secondary">
         The last commit LocTT synced against —{" "}
-        <code className="font-mono text-[0.8571rem]">{info.missing_commit.slice(0, 8)}</code>{" "}
+        <code className="text-[0.8571rem]">{info.missing_commit.slice(0, 8)}</code>{" "}
         — is no longer part of the branch (its head is now{" "}
-        <code className="font-mono text-[0.8571rem]">{info.remote_head.slice(0, 8)}</code>).
+        <code className="text-[0.8571rem]">{info.remote_head.slice(0, 8)}</code>).
         This is not an ordinary conflict: a force-push or history rewrite
         happened on {info.remote !== null ? `"${info.remote}"` : "the remote"}.
       </p>
@@ -71,14 +71,14 @@ function HistoryRewrittenRefusal({
         untouched and the last-synced commit was not changed. LocTT will not
         silently re-base onto the new head, because that would discard local
         changes you have made since{" "}
-        <code className="font-mono text-[0.8571rem]">{info.missing_commit.slice(0, 8)}</code>.
+        <code className="text-[0.8571rem]">{info.missing_commit.slice(0, 8)}</code>.
       </p>
       <p className="mt-2 text-text-secondary">Recover in git (LocTT cannot do this for you):</p>
       <ul className="mt-1 ml-4 list-disc text-text-secondary">
         <li data-testid={`${testId}-inspect`}>
           <strong>Inspect the branch in git.</strong> Run{" "}
           <code className="font-mono text-[0.8571rem]">git log {info.branch}</code>{" "}
-          and compare it with your local <code className="font-mono text-[0.8571rem]">.loctt/</code>{" "}
+          and compare it with your local <code className="text-[0.8571rem]">.loctt/</code>{" "}
           so you can see what the rewrite dropped. This only reads — it changes nothing.
         </li>
         <li data-testid={`${testId}-rebase`}>
@@ -140,9 +140,9 @@ function SchemaRemoteNewerRefusal({
       </p>
       <p className="mt-1 text-text-secondary">
         The branch is at{" "}
-        <code className="font-mono text-[0.8571rem]">{remote}</code>, but this
+        <code className="text-[0.8571rem]">{remote}</code>, but this
         installation only understands up to{" "}
-        <code className="font-mono text-[0.8571rem]">schema v{info.local_version}</code>.
+        <code className="text-[0.8571rem]">schema v{info.local_version}</code>.
         Applying it could corrupt or drop data.
       </p>
       <p className="mt-2 text-text-secondary">
@@ -217,7 +217,7 @@ function WorktreeMissingRefusal({
       </p>
       <p className="mt-1 text-text-secondary">
         LocTT&rsquo;s temporary git worktree at{" "}
-        <code className="font-mono text-[0.8571rem]">{info.worktree}</code>{" "}
+        <code className="text-[0.8571rem]">{info.worktree}</code>{" "}
         is registered by git but its directory is gone (most likely deleted
         by hand while git had it locked), so it cannot be re-created. This is
         not an opaque git error — the worktree named above is the specific
@@ -226,7 +226,7 @@ function WorktreeMissingRefusal({
       <p className="mt-2 text-text-secondary">
         <strong>Your local task files were not modified.</strong> The {info.operation}{" "}
         never reached the point of writing to{" "}
-        <code className="font-mono text-[0.8571rem]">.loctt/</code>, so nothing
+        <code className="text-[0.8571rem]">.loctt/</code>, so nothing
         was applied.
       </p>
       <p className="mt-2 text-text-secondary">Repair with either:</p>
@@ -239,7 +239,7 @@ function WorktreeMissingRefusal({
           or <code className="font-mono text-[0.8571rem]">git worktree unlock {info.worktree}</code>),
           then {info.operation} again. This clears git&rsquo;s stale
           bookkeeping only — your{" "}
-          <code className="font-mono text-[0.8571rem]">.loctt/</code> task files
+          <code className="text-[0.8571rem]">.loctt/</code> task files
           are left exactly as they are.
         </li>
         <li data-testid={`${testId}-reenable`}>
@@ -247,7 +247,7 @@ function WorktreeMissingRefusal({
           <code className="font-mono text-[0.8571rem]">loctt git disable</code>{" "}
           then <code className="font-mono text-[0.8571rem]">loctt git enable</code>.
           This rebuilds LocTT&rsquo;s git setup from scratch and also leaves your{" "}
-          <code className="font-mono text-[0.8571rem]">.loctt/</code> task files
+          <code className="text-[0.8571rem]">.loctt/</code> task files
           exactly as they are on disk.
         </li>
       </ul>
@@ -495,21 +495,22 @@ function DisabledState({ status, onAdopted }: {
               <ul className="mb-3 ml-4 list-disc text-[0.9286rem] text-text-secondary">
                 <li>
                   create a dedicated{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+                  <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                     {status.branch}
                   </code>{" "}
-                  branch, published through a temporary worktree so your
-                  working tree and current branch are never switched;
+                  branch and publish to it in the background, so your own
+                  working files and the branch you have checked out are
+                  never touched or switched;
                 </li>
                 <li>
                   publish the tracker&apos;s task and config files to that branch;
                 </li>
                 <li>
                   leave{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">local/</code>,{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">.current-user</code>{" "}
+                  <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">local/</code>,{" "}
+                  <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">.current-user</code>{" "}
                   and{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+                  <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                     users/&lt;id&gt;/settings.yaml
                   </code>{" "}
                   gitignored — they are never published.
@@ -532,13 +533,13 @@ function DisabledState({ status, onAdopted }: {
                     >
                       <p className="mb-2 text-[0.9286rem] text-text-primary">
                         An existing{" "}
-                        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+                        <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                           {adoptInfo.branch}
                         </code>{" "}
                         branch was found from a previous setup, at{" "}
                         <code
                           data-testid="git-adopt-head"
-                          className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] select-all"
+                          className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] select-all"
                         >
                           {adoptInfo.branch_head.slice(0, 12)}
                         </code>
@@ -681,11 +682,11 @@ function EnabledState({ status, checkedAt, onRefresh }: {
       <section className="mb-5">
         <h2 className="mb-2 text-[0.9286rem] font-semibold text-text-primary">Status</h2>
         <Row label="Branch" testId="git-branch">
-          <code className="font-mono text-[0.8571rem]">{status.branch}</code>
+          <code className="text-[0.8571rem]">{status.branch}</code>
         </Row>
         <Row label="Remote" testId="git-remote">
           {canPush
-            ? <code className="font-mono text-[0.8571rem]">{status.remote}</code>
+            ? <code className="text-[0.8571rem]">{status.remote}</code>
             : (
                 // GIT-27: `remote` always holds a name because it
                 // defaults to "origin", so the name alone would announce
@@ -696,7 +697,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               )}
         </Row>
         <Row label="Last synced commit" testId="git-last-synced">
-          <code className="font-mono text-[0.8571rem]">{short(status.lastSyncedCommit)}</code>
+          <code className="text-[0.8571rem]">{short(status.lastSyncedCommit)}</code>
           {status.lastSyncedCommit === undefined && (
             <span className="ml-2 text-text-tertiary">never synced</span>
           )}
@@ -948,7 +949,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               <ul className="mt-1 ml-4 list-disc" data-testid="git-sync-malformed-list">
                 {sync.data.malformed.map(m => (
                   <li key={m.id} data-task-id={m.id}>
-                    <code className="font-mono text-[0.8571rem]">{m.path}</code>
+                    <code className="text-[0.8571rem]">{m.path}</code>
                     {" — "}
                     <span className="text-text-secondary">{m.reason}</span>
                   </li>
@@ -1085,7 +1086,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                 */}
                 <p className="mb-2 text-[0.9286rem] text-text-secondary">
                   Disabling stops publishing and syncing. The{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+                  <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                     {status.branch}
                   </code>{" "}
                   branch and its full history are <strong>left intact</strong> —
@@ -1137,7 +1138,7 @@ export function GitSyncPanel() {
   >(undefined);
 
   return (
-    <div className="p-8" data-testid="git-panel">
+    <div data-testid="git-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Sync
       </h1>
@@ -1172,7 +1173,7 @@ export function GitSyncPanel() {
             whether git mode is on.
           </p>
           <p className="text-[0.9286rem] text-text-secondary">
-            <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">
+            <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               {status.data.unreadable.path}
             </code>{" "}
             — {status.data.unreadable.reason}. Fix or restore that file and
@@ -1194,7 +1195,7 @@ export function GitSyncPanel() {
           className="mb-3 rounded-md border border-border-subtle bg-bg-muted p-3 text-[0.9286rem] text-text-secondary"
         >
           Adopted the existing{" "}
-          <code className="rounded bg-bg-canvas px-1 py-0.5 font-mono text-[0.8571rem]">
+          <code className="rounded bg-bg-canvas px-1 py-0.5 text-[0.8571rem]">
             {adoptReport.branch}
           </code>{" "}
           branch as the sync baseline.{" "}

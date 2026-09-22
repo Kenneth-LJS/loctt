@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { TaskFrontmatterPublic, WorkflowConfig } from "@loctt/contracts";
+import type { LabelDef, TaskFrontmatterPublic, UserProfile, WorkflowConfig } from "@loctt/contracts";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -41,6 +41,12 @@ function renderPanel(overrides: {
   frontmatter?: Partial<TaskFrontmatterPublic>;
   health?: readonly WireHealth[];
   onUnset?: (field: string) => void;
+  onSet?: (field: string, value: unknown) => void;
+  users?: readonly UserProfile[];
+  currentUser?: UserProfile | null;
+  identityUnknown?: boolean;
+  labels?: readonly LabelDef[];
+  workflow?: WorkflowConfig;
 }) {
   const fm: TaskFrontmatterPublic = {
     id: "01TASK0000000000000000000",
@@ -50,18 +56,21 @@ function renderPanel(overrides: {
     ...overrides.frontmatter,
   };
   const onUnset = overrides.onUnset ?? vi.fn();
+  const onSet = overrides.onSet ?? vi.fn();
   render(
     <MetaPanel
       frontmatter={fm}
       {...(overrides.health !== undefined ? { health: overrides.health } : {})}
       lookups={LOOKUPS}
-      workflow={WORKFLOW}
-      users={[]}
-      labels={[]}
+      workflow={overrides.workflow ?? WORKFLOW}
+      users={overrides.users ?? []}
+      labels={overrides.labels ?? []}
       milestones={[]}
       sprints={[]}
       calendar={undefined}
-      onSet={vi.fn()}
+      {...(overrides.currentUser !== undefined ? { currentUser: overrides.currentUser } : {})}
+      {...(overrides.identityUnknown !== undefined ? { identityUnknown: overrides.identityUnknown } : {})}
+      onSet={onSet}
       onUnset={onUnset}
       onCreateLabel={vi.fn(() => Promise.resolve(undefined))}
       searchLabels={vi.fn(() => Promise.resolve([]))}
@@ -70,7 +79,7 @@ function renderPanel(overrides: {
       searchUsers={vi.fn(() => Promise.resolve([]))}
     />,
   );
-  return { onUnset };
+  return { onUnset, onSet };
 }
 
 afterEach(cleanup);
@@ -328,5 +337,185 @@ describe("DEG-7 / DEG-29 — unrecognised preserved fields render in a client gr
   it("omits the group entirely when nothing is unrecognised", () => {
     renderPanel({ health: [] });
     expect(screen.queryByTestId("meta-unrecognised-group")).toBeNull();
+  });
+});
+
+describe("L2 — an unset editable row invites action, not a bare —", () => {
+  // Ken's own report ("fields that are meant to be dropdowns don't look like
+  // dropdowns"), at the copy layer: an empty editable row shows an
+  // action-phrased placeholder ("Add assignee", "Set due date") rather than
+  // the "—" glyph reserved for read-only absence.
+
+  // @verifies L2
+  it("shows action-phrased placeholders on unset editable rows", () => {
+    renderPanel({
+      frontmatter: {
+        assignee: undefined,
+        reporter: undefined,
+        milestone: undefined,
+        sprint: undefined,
+        start_date: undefined,
+        due_date: undefined,
+        task_type: undefined,
+        priority: undefined,
+      },
+    });
+    expect(screen.getByTestId("meta-edit-assignee").textContent).toContain("Add assignee");
+    expect(screen.getByTestId("meta-edit-reporter").textContent).toContain("Add reporter");
+    expect(screen.getByTestId("meta-edit-milestone").textContent).toContain("Add milestone");
+    expect(screen.getByTestId("meta-edit-sprint").textContent).toContain("Add to sprint");
+    expect(screen.getByTestId("meta-edit-start").textContent).toContain("Set start date");
+    expect(screen.getByTestId("meta-edit-due").textContent).toContain("Set due date");
+    expect(screen.getByTestId("meta-edit-type").textContent).toContain("Set type");
+    expect(screen.getByTestId("meta-edit-priority").textContent).toContain("Set priority");
+  });
+
+  // @verifies L2
+  it("keeps the accessible 'not set' name so screen readers are unaffected", () => {
+    // The visible words change; the accessible name must still say "not set"
+    // (A11Y — empty editable fields keep a "not set" accessible name).
+    renderPanel({ frontmatter: { assignee: undefined, due_date: undefined } });
+    expect(screen.getByTestId("meta-edit-assignee").getAttribute("aria-label"))
+      .toContain("not set");
+    expect(screen.getByTestId("meta-edit-due").getAttribute("aria-label"))
+      .toContain("not set");
+  });
+
+  // @verifies L2
+  it("keeps '—' for a genuinely read-only row (Project when unset)", () => {
+    // Project is not editable (a move rekeys); its empty state stays "—",
+    // not an action phrase.
+    renderPanel({ frontmatter: { project: undefined } });
+    // No edit trigger for Project — it renders plain text.
+    expect(screen.queryByTestId("meta-edit-project")).toBeNull();
+    // The panel still contains the read-only dash rather than an "Add
+    // project" phrase.
+    expect(screen.getByTestId("meta-panel").textContent).not.toContain("Add project");
+  });
+});
+
+describe("L3 — 'Assign to me' quick action", () => {
+  const ME: UserProfile = {
+    id: "01USERME000000000000000AA",
+    name: "Ada Byron",
+  } as unknown as UserProfile;
+
+  // @verifies L3
+  it("writes the current user's id when the task is not assigned to me", () => {
+    const { onSet } = renderPanel({
+      frontmatter: { assignee: undefined },
+      users: [ME],
+      currentUser: ME,
+    });
+    fireEvent.click(screen.getByTestId("meta-assign-to-me"));
+    expect(onSet).toHaveBeenCalledWith("assignee", ME.id);
+  });
+
+  // @verifies L3
+  it("is hidden when I am already the assignee", () => {
+    renderPanel({
+      frontmatter: { assignee: ME.id },
+      users: [ME],
+      currentUser: ME,
+    });
+    expect(screen.queryByTestId("meta-assign-to-me")).toBeNull();
+  });
+
+  // @verifies L3
+  it("is hidden when identity is unknown (SHL-40)", () => {
+    renderPanel({
+      frontmatter: { assignee: undefined },
+      users: [],
+      currentUser: null,
+      identityUnknown: true,
+    });
+    expect(screen.queryByTestId("meta-assign-to-me")).toBeNull();
+  });
+
+  // @verifies L3
+  it("is hidden when the current user is archived", () => {
+    const archivedMe = { ...ME, archived: true } as unknown as UserProfile;
+    renderPanel({
+      frontmatter: { assignee: undefined },
+      users: [archivedMe],
+      currentUser: archivedMe,
+    });
+    expect(screen.queryByTestId("meta-assign-to-me")).toBeNull();
+  });
+
+  // @verifies L3
+  it("renders the assignee's avatar beside the picker", () => {
+    renderPanel({
+      frontmatter: { assignee: ME.id },
+      users: [ME],
+      currentUser: ME,
+    });
+    expect(screen.getByTestId("meta-assignee-avatar")).not.toBeNull();
+  });
+});
+
+/**
+ * #15 (WCAG 2.5.8 AA): the chip ✕-remove controls in the meta panel carry
+ * a ≥24px hit target, and the single-line meta editors share one control
+ * height (`min-h-7`) rather than varying 17–50px in a viewport.
+ *
+ * The ✕ glyph stays 12px; the button's `min-h-6 min-w-6` (24px) is the
+ * clickable target. Red-proof: before the fix the buttons rendered a bare
+ * `Icon size={12}` with no min hit area, so this assertion fails.
+ */
+describe("#15 — tap targets and control-height normalization", () => {
+  const LABELS: readonly LabelDef[] = [
+    { id: "l_fe", name: "frontend", color: "#1e6fcb" } as unknown as LabelDef,
+  ];
+
+  const WF_WITH_MULTI: WorkflowConfig = {
+    statuses: [{ key: "todo", label: "To do", category: "todo" }],
+    priorities: [],
+    task_types: [],
+    relationship_types: [],
+    custom_fields: [
+      {
+        key: "areas",
+        label: "Areas",
+        type: "enum",
+        multi: true,
+        searchable: false,
+        values: [
+          { key: "ui", label: "UI" },
+          { key: "api", label: "API" },
+        ],
+      },
+    ],
+  } as unknown as WorkflowConfig;
+
+  it("gives the label ✕-remove a ≥24px hit target (glyph stays 12px)", () => {
+    renderPanel({ frontmatter: { labels: ["l_fe"] }, labels: LABELS });
+    const remove = screen.getByRole("button", { name: "Remove label frontend" });
+    expect(remove.className).toContain("min-h-6");
+    expect(remove.className).toContain("min-w-6");
+    // The glyph itself is untouched — still the small 12px icon.
+    const svg = remove.querySelector("svg");
+    expect(svg?.getAttribute("width")).toBe("12");
+  });
+
+  it("gives the multi-select custom-field ✕-remove a ≥24px hit target", () => {
+    renderPanel({
+      frontmatter: { fields: { areas: ["ui"] } },
+      workflow: WF_WITH_MULTI,
+    });
+    const remove = screen.getByRole("button", { name: "Remove UI from Areas" });
+    expect(remove.className).toContain("min-h-6");
+    expect(remove.className).toContain("min-w-6");
+  });
+
+  it("normalizes single-line meta editors to the standard control height (min-h-7)", () => {
+    // The Status / Type / Priority editors are OptionPicker triggers; the
+    // Estimate editor (numeric) is a TextField display. Both must share the
+    // one control height so the panel does not show 17–50px variance.
+    // Red-proof: before the fix the triggers used `py-0.5` with no height
+    // floor, so no `min-h-7` was present.
+    renderPanel({ frontmatter: { status: "todo" } });
+    const statusTrigger = screen.getByRole("button", { name: /Status/ });
+    expect(statusTrigger.className).toContain("min-h-7");
   });
 });

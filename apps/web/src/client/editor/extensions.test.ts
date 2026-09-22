@@ -1,8 +1,10 @@
+import type { JSONContent } from "@tiptap/core";
 import { getSchema } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { describe, expect, it } from "vitest";
 
 import { LOCTT_EXTENSIONS } from "./extensions.ts";
+import { fromMarkdown, toMarkdown } from "./markdown.ts";
 
 /**
  * These assert the schema actually registers each node, which is what
@@ -58,4 +60,58 @@ describe("LocTT TipTap extensions", () => {
       expect(schema.nodes[name]).toBeDefined();
     },
   );
+
+  // A task-list item's `checked` state must survive the ProseMirror schema.
+  // markdown.ts parses `- [x]` into a listItem with attrs.checked and
+  // serializes it back, but StarterKit's listItem declares no such
+  // attribute, so without TaskItemAttr the schema drops it on the first
+  // rich edit — every checkbox is silently erased and re-serialized as a
+  // plain bullet. Removing TaskItemAttr from LOCTT_EXTENSIONS turns these
+  // red (verified). markdown.test.ts's parse/serialize cases pass without
+  // the fix because they never route the doc through the schema.
+  describe("task-list checked attribute survives the schema", () => {
+    it("keeps `checked` on a listItem round-tripped through nodeFromJSON", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "bulletList",
+            content: [
+              {
+                type: "listItem",
+                attrs: { checked: true },
+                content: [{ type: "paragraph", content: [{ type: "text", text: "done" }] }],
+              },
+              {
+                type: "listItem",
+                attrs: { checked: false },
+                content: [{ type: "paragraph", content: [{ type: "text", text: "todo" }] }],
+              },
+            ],
+          },
+        ],
+      };
+      // Route through the schema exactly as the editor does, then read the
+      // attrs back off the reconstructed node.
+      const node = schema.nodeFromJSON(doc);
+      const json = node.toJSON() as typeof doc;
+      const items = json.content[0]?.content ?? [];
+      expect((items[0] as { attrs?: { checked?: unknown } }).attrs?.checked).toBe(true);
+      expect((items[1] as { attrs?: { checked?: unknown } }).attrs?.checked).toBe(false);
+    });
+
+    it("preserves `[x]`/`[ ]` across fromMarkdown → schema → toMarkdown", () => {
+      const md = "- [x] done\n- [ ] todo";
+      // fromMarkdown → through the schema (the step that dropped it) → back.
+      // toMarkdown appends a trailing newline; trim for the comparison.
+      const roundTripped = schema.nodeFromJSON(fromMarkdown(md)).toJSON() as JSONContent;
+      expect(toMarkdown(roundTripped).trimEnd()).toBe(md);
+    });
+
+    it("leaves a plain bullet as a plain bullet (no phantom checkbox)", () => {
+      const md = "- plain item";
+      const roundTripped = schema.nodeFromJSON(fromMarkdown(md)).toJSON() as JSONContent;
+      expect(toMarkdown(roundTripped).trimEnd()).toBe(md);
+    });
+  });
 });

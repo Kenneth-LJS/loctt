@@ -10,8 +10,18 @@ import {
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CreateTaskProvider } from "../create/CreateTaskProvider.tsx";
 import { listSearchSchema } from "../router/listSearch.ts";
 import { ListView } from "./ListView.tsx";
+
+/** ListView calls `useCreateTask`; wrap it as the shell does. */
+function WrappedListView() {
+  return (
+    <CreateTaskProvider>
+      <ListView />
+    </CreateTaskProvider>
+  );
+}
 
 /**
  * ERR-1: a server that is down and a tracker that is empty must be
@@ -52,7 +62,7 @@ function mount() {
     getParentRoute: () => rootRoute,
     path: "/list",
     validateSearch: listSearchSchema,
-    component: ListView,
+    component: WrappedListView,
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([listRoute]),

@@ -171,6 +171,58 @@ describe("runDoctor", () => {
     expect(checks.find(c => c.name === "list-view.yaml references")).toBeUndefined();
   });
 
+  // K102 removed the `query`/`conditions` derivation path along with the
+  // `migrated` signal that reported it. There is no migration anymore: a
+  // legacy `query`-only entry (no `filters`) is an unrecognized-key
+  // failure at the object-fatal loader schema (`.strict()`), not a
+  // per-view degradation — so it now surfaces as a queries.yaml PARSE
+  // ERROR, not a warn. Confirmed directly against
+  // `parseQueriesConfig`: it throws `queries[0] has unrecognized key(s):
+  // "query"` for exactly this fixture. Recording this here instead of
+  // deleting the case outright, since "a legacy file now hard-fails
+  // instead of warning" is a real behaviour change future readers of this
+  // file should not have to rediscover.
+  it("reports a parse error for a legacy query-only entry (no filters) — no migration path anymore", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const { getQueriesConfigPath, resolveLocttDir } = await import("../paths/index.js");
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    // A pre-K102 (legacy) entry: `query`, no `filters` array. `filters` is
+    // the only stored form now, so this key is simply unrecognized.
+    await writeFile(
+      getQueriesConfigPath(locttDir),
+      `queries:\n  - id: 01HQ00000000000000000LEGACY\n    name: legacy\n    query: status = backlog\n`,
+      "utf-8",
+    );
+    const checks = await runDoctor(root);
+    const q = checks.find(c => c.name === "queries.yaml");
+    expect(q?.status).toBe("error");
+    expect(q?.message).toContain("parse error");
+  });
+
+  it("warns when a saved view's filters are unreadable (per-view degradation)", async () => {
+    // Per north-star principle 5: one entry whose `filters` do not
+    // validate must not blank the whole catalog. Unlike the legacy
+    // `query`-only case above, an unrecognized *value* inside a
+    // present-but-broken `filters` array degrades that one entry to
+    // `broken` while the file still loads.
+    const { writeFile } = await import("node:fs/promises");
+    const { getQueriesConfigPath, resolveLocttDir } = await import("../paths/index.js");
+    await initLoctt(root);
+    const locttDir = resolveLocttDir(root);
+    await writeFile(
+      getQueriesConfigPath(locttDir),
+      `queries:\n  - id: 01HQ000000000000000DBLBAD\n    name: double-broken\n    filters:\n      - kind: not-a-real-kind\n`,
+      "utf-8",
+    );
+    const checks = await runDoctor(root);
+    const q = checks.find(c => c.name === "queries.yaml" && c.status === "warn");
+    expect(q?.message).toContain("could not be loaded");
+    expect(q?.message).toContain("double-broken");
+    // Per-view degradation: the file loads, so this is not a parse error.
+    expect(checks.find(c => c.name === "queries.yaml" && c.status === "error")).toBeUndefined();
+  });
+
   it("warns on key-index drift after an out-of-band frontmatter edit", async () => {
     const { readFile, writeFile } = await import("node:fs/promises");
     const { resolveLocttDir } = await import("../paths/index.js");
@@ -201,6 +253,9 @@ describe("runDoctor", () => {
     const idx = checks.find(c => c.name === "key index");
     expect(idx?.status).toBe("warn");
     expect(idx?.message).toContain("--rebuild-index");
+    // K-diagnostics-repair: the finding carries the machine-readable repair
+    // so surfaces gate a "Rebuild key index" button on data, not the prose.
+    expect(idx?.fix).toBe("rebuild-index");
   });
 
   it("rebuild-index option rebuilds the index in place", async () => {

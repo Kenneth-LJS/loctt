@@ -178,7 +178,6 @@ function ShellChrome({
         />
         <Sidebar
           collapsed={collapsed}
-          info={info}
           currentUserId={currentUser?.id ?? null}
           today={today}
         />

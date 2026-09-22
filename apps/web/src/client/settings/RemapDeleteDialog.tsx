@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { Radio } from "../ui/Radio.tsx";
 
@@ -71,7 +72,12 @@ export function RemapDeleteDialog({
   const [choice, setChoice] = useState<RemapChoice | null>(null);
 
   const inUse = count > 0;
-  const blocked = pending || (inUse && choice === null);
+  const blocked =
+    pending ||
+    (inUse && choice === null) ||
+    // "Reassign" chosen but no target picked yet — nothing to remap onto,
+    // so the delete stays blocked (mirrors UserDeleteDialog).
+    (choice?.kind === "remap" && choice.to === "");
 
   return (
     <Modal title={`Delete ${noun} "${itemLabel}"`} onClose={onClose}>
@@ -79,7 +85,7 @@ export function RemapDeleteDialog({
         {inUse
           ? `${String(count)} task${count === 1 ? "" : "s"} currently ${count === 1 ? "uses" : "use"} `
           : `No tasks use `}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">{itemKey}</code>
+        <code className="rounded bg-bg-muted px-1 py-0.5">{itemKey}</code>
         {inUse ? "." : " — deleting it affects nothing."}
       </p>
 
@@ -88,21 +94,58 @@ export function RemapDeleteDialog({
           <legend className="mb-1 text-[0.9286rem] text-text-secondary">
             What should happen to {count === 1 ? "that task" : `those ${String(count)} tasks`}?
           </legend>
-          {alternatives.map(alt => (
-            <label key={alt.key} className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
-              <Radio
-                name="remap-target"
-                data-testid={`remap-to-${alt.key}`}
-                checked={choice?.kind === "remap" && choice.to === alt.key}
-                onChange={() => { setChoice({ kind: "remap", to: alt.key }); }}
+          {/* A211/A242: the alternative-value set grows with the
+              collection (statuses, priorities, enum values) — a searchable
+              Combobox rather than one radio per alternative, matching how
+              DeleteProjectDialog / UserDeleteDialog remap. A "reassign"
+              radio gates the picker; the "clear" radio is the no-remap
+              path. Per-option testids stay `remap-to-<key>` so the option
+              targets are unchanged; the trigger carries `remap-to`.
+              Dialog-safe: the Combobox's Escape stops propagation, so it
+              does not also close the Modal. */}
+          <label className="flex items-center gap-2 py-0.5 text-[0.9286rem]">
+            <Radio
+              name="remap-target"
+              data-testid="remap-reassign"
+              checked={choice?.kind === "remap"}
+              onChange={() => {
+                setChoice(prev =>
+                  prev?.kind === "remap" ? prev : { kind: "remap", to: "" });
+              }}
+            />
+            <span>
+              Move {count === 1 ? "it" : "them"} to another {noun}
+            </span>
+          </label>
+          {choice?.kind === "remap" && (
+            <div className="ml-6 mb-1 grid gap-1">
+              <Combobox
+                label={`Move ${count === 1 ? "it" : "them"} to`}
+                options={alternatives.map((alt): ComboboxOption => ({
+                  key: alt.key,
+                  label: alt.label,
+                  hint: alt.key,
+                }))}
+                value={choice.to === "" ? undefined : choice.to}
+                onSelect={v => { setChoice({ kind: "remap", to: v }); }}
+                listTestId="remap-to-list"
+                optionTestId={o => `remap-to-${o.key}`}
+                searchTestId="remap-to-search"
+                trigger={p => (
+                  <ComboboxButton
+                    {...p}
+                    testId="remap-to"
+                    dataValue={choice.to}
+                    aria-label={`Move ${count === 1 ? "it" : "them"} to`}
+                    placeholder={`Choose a ${noun}…`}
+                    className="w-full"
+                  >
+                    {alternatives.find(a => a.key === choice.to)?.label ?? ""}
+                  </ComboboxButton>
+                )}
               />
-              <span>
-                Move {count === 1 ? "it" : "them"} to{" "}
-                <strong className="font-medium">{alt.label}</strong>{" "}
-                <code className="font-mono text-text-tertiary">{alt.key}</code>
-              </span>
-            </label>
-          ))}
+            </div>
+          )}
           <label className="mt-1 flex items-start gap-2 py-0.5 text-[0.9286rem]">
             <Radio
               name="remap-target"
@@ -115,7 +158,7 @@ export function RemapDeleteDialog({
               <span data-testid="remap-clear-warning" className="text-warn-fg">
                 {count === 1 ? "That task" : `Those ${String(count)} tasks`} will have
                 no {noun} — the field is emptied. This is permanent; the {noun}{" "}
-                <code className="font-mono">{itemKey}</code> is not kept as a dangling
+                <code>{itemKey}</code> is not kept as a dangling
                 reference.
               </span>
             </span>

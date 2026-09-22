@@ -21,7 +21,7 @@
 
 import { z } from "zod";
 
-import { QuerySortSchema } from "./query.js";
+import { ArchivedScopeSchema, FilterSchema, QuerySortSchema } from "./query.js";
 import { WorkflowConfigSchema } from "./workflow.js";
 
 /**
@@ -39,11 +39,20 @@ export type ValidateQueryRequest = z.infer<typeof ValidateQueryRequestSchema>;
 
 /**
  * Body of `POST /api/views`. Mirrors `core/views/manage.CreateViewInput`.
+ *
+ * A view carries an ORDERED list of filters (K102), each either a `simple`
+ * field/op/values filter or an `advanced` DSL string. All three surfaces
+ * author the same shape — there is no separate "web sends structure, CLI
+ * sends DSL" split any more, and no derived canonical query string.
+ *
+ * `filters` may be empty (a view that matches everything in its scope).
  */
 export const CreateViewRequestSchema = z.object({
   name: z.string().min(1),
-  query: z.string().min(1),
+  filters: z.array(FilterSchema),
   sort: z.array(QuerySortSchema).optional(),
+  archivedScope: ArchivedScopeSchema.optional(),
+  icon: z.string().min(1).optional(),
 }).strict();
 export type CreateViewRequest = z.infer<typeof CreateViewRequestSchema>;
 
@@ -52,11 +61,28 @@ export type CreateViewRequest = z.infer<typeof CreateViewRequestSchema>;
  *
  * `sort: null` is the explicit "clear sort" signal — distinct from
  * `sort: undefined` (leave unchanged). The schema accepts both.
+ *
+ * `filters` replaces the whole ordered list when present; omitting it
+ * leaves the view's filters untouched. There is no partial-filter patch:
+ * order is meaningful (K102), so the client sends the list it wants.
  */
 export const EditViewRequestSchema = z.object({
   name: z.string().min(1).optional(),
-  query: z.string().min(1).optional(),
+  filters: z.array(FilterSchema).optional(),
   sort: z.array(QuerySortSchema).nullable().optional(),
+  archivedScope: ArchivedScopeSchema.optional(),
+  icon: z.string().min(1).nullable().optional(),
+  /**
+   * Explicit opt-in to REPLACE a broken entry — one whose stored filters
+   * did not load, so `queries.yaml` still holds its original text
+   * (K102-broken-repair). Without it a write aimed at such an entry is
+   * rejected with a message naming the view and what the flag does.
+   *
+   * It has NO effect on a healthy view: the gate is on the resolved
+   * entry, never on the flag, so the ordinary edit path is unchanged
+   * whether the flag is sent or not.
+   */
+  replaceBroken: z.boolean().optional(),
 }).strict();
 export type EditViewRequest = z.infer<typeof EditViewRequestSchema>;
 
@@ -183,3 +209,13 @@ export const EditCommentRequestSchema = z.object({
   body: z.string().min(1),
 }).strict();
 export type EditCommentRequest = z.infer<typeof EditCommentRequestSchema>;
+
+/**
+ * Body of `POST /api/doctor/repair` — the one programmatic repair action to
+ * run (K-diagnostics-repair). Mirrors a finding's `fix` value: not a blanket
+ * "repair all" (core has no such action).
+ */
+export const DoctorRepairRequestSchema = z.object({
+  action: z.enum(["rebuild-index", "restore-missing"]),
+}).strict();
+export type DoctorRepairRequest = z.infer<typeof DoctorRepairRequestSchema>;

@@ -30,24 +30,66 @@ Commands:
   info
   doctor [--rebuild-index]         Run diagnostic checks; with --rebuild-index, rebuild
                                    the key-lookup cache after out-of-band frontmatter edits
-  views                            List saved views from queries.yaml
+  views [--archived <active|archived|all>]
+                                   List saved views from queries.yaml
+                                   --archived: active (default, hides archived)
+                                   | archived (only) | all (both)
   schema                           Show the workflow config (statuses, priorities, etc.)
   project <list|create|edit|archive|unarchive|delete|set-default> ...
-                                   list --all: include archived projects
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (remap_to required if tasks exist; use 'archive' for soft)
   user <list|current|switch|create|edit|archive|unarchive|delete|settings> ...
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (use 'archive' for the reversible alternative)
   label <list|create|edit|archive|unarchive|delete> ...
-                                   list --all: include archived labels
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (drops key from every task; use 'archive' for soft)
+  palette [list] [--format <table|json>]
+                                   List the built-in colour palette (ids + light/dark values)
+                                   for use as --color palette:<id>
   milestone <list|create|edit|archive|unarchive|delete> ...
-                                   list --all: include archived milestones
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (clears milestone field on tasks; use 'archive' for soft)
   sprint <list|create|edit|archive|unarchive|delete|burndown> ...
-                                   list --all: include archived sprints
+                                   list [--archived <active|archived|all>]: default active
+                                   hides archived (--all = deprecated alias for 'all')
                                    delete: permanent (clears sprint field on tasks; use 'archive' for soft)
                                    burndown <key> [--format <table|json>]
   calendar show                   Print the calendar config (timezone, working days, holidays)
+  status <list|add|edit|rm|reorder> ...
+                                   Edit workflow statuses. add <key> --label --category
+                                   <pending|active|completed|discarded> [--default][--icon][--color];
+                                   rm <key> [--remap-to <key>]; reorder <key,key,...>
+                                   --color takes #rrggbb, palette:<id> (see 'loctt palette'),
+                                   or light:#rrggbb,dark:#rrggbb; '-' clears it on edit
+  priority <list|add|edit|rm|reorder> ...
+                                   Edit workflow priorities (NO --value; reorder sets value).
+                                   rm <key> [--remap-to <key>]; reorder <key,key,...>
+  task-type <list|add|edit|rm|reorder> ...
+                                   Edit workflow task types. rm <key> [--remap-to <key>]
+  relationship <list|add|edit|rm> ...
+                                   Edit workflow relationships (no reorder). add <key> --label
+                                   [--kind <directional|symmetric>][--inverse][--inverse-label]
+                                   [--graph <none|acyclic|tree>][--ranked]; rm <key> [--remap-to <key>]
+  custom-field <list|add|edit|rm|value> ...
+                                   Edit custom fields. add <key> --label --type
+                                   <string|number|date|boolean|enum> [--multi][--searchable]
+                                   [--task-types a,b]; rm <key> (clear-only, NO --remap-to)
+                                   value <field> <add|edit|rm|reorder>  (enum values;
+                                   rm <key> [--remap-to <key>])
+  board-column <list|add|edit|rm|reorder> ...
+                                   Edit board columns. add <key> --label --statuses <s,s,..>
+                                   [--wip <n>]; reorder <key,key,...>
+  estimation <show|set>            Edit estimation config. set [--enabled][--unit <u>]
+                                   [--unit-label][--scale <free|linear|fibonacci>]
+                                   [--preset a,b,c][--weight key=n]...
+  timeline <show|set>              Edit timeline config. set [--dependency-relationship <key|->]
+                                   [--default-zoom <day|week|month>][--show-arrows]
+                                   [--default-grouping <builtin|field.key>]
   rerank <source> <relationship> <target> [--before <task>] [--after <task>]
   board-rerank <task> [--before <task>] [--after <task>]
   board-move <task> [--status <s>] [--before <task>] [--after <task>]

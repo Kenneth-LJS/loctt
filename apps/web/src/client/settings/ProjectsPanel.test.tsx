@@ -1,10 +1,48 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectsPanel } from "./ProjectsPanel.tsx";
+
+
+/**
+ * Row actions now live behind a per-row kebab overflow menu (responsive:
+ * inline buttons clipped/overflowed the row on a narrow pane). Open the
+ * row's kebab, then return the action MenuItem for `actionTestId` (which
+ * the caller clicks or inspects).
+ */
+async function openProjectMenu(projectId: string): Promise<void> {
+  const row = await screen.findByTestId(`project-row-${projectId}`);
+  const kebab = row.querySelector<HTMLButtonElement>("[aria-label^='Actions for project']");
+  if (kebab === null) throw new Error(`no actions kebab on project row ${projectId}`);
+  fireEvent.click(kebab);
+}
+
+/**
+ * K100: the row's edit affordances (name, prefix, Make default, Archive)
+ * now live inside the shared `ProjectEditDialog`, which the sidebar also
+ * renders — not inline in the row. Open the row kebab, click Edit…, and
+ * the dialog with those controls is mounted. The tests below that used to
+ * find `project-set-default-*` / `project-archive-*` / `project-name-*` as
+ * row-kebab items or inline row markup now find them in the dialog; the
+ * change is the K100 extraction, so those tests were updated to open the
+ * dialog first (they previously asserted the in-row/in-kebab form).
+ */
+async function openProjectEdit(projectId: string): Promise<void> {
+  await openProjectMenu(projectId);
+  fireEvent.click(screen.getByTestId(`project-edit-${projectId}`));
+  await screen.findByTestId(`project-edit-dialog-${projectId}`);
+}
 
 /**
  * @verifies PRU-6, PRU-44, PRU-45, PRU-48
@@ -21,6 +59,13 @@ import { ProjectsPanel } from "./ProjectsPanel.tsx";
  * round-trip (server tests cover that against a real tracker).
  */
 
+/**
+ * The panel now renders a TanStack `<Link>` (the CONFIG-5 cross-link to
+ * My preferences), so a bare render throws in `useLinkProps` — the panel
+ * always lives under a router in the app. The wrapper therefore mounts a
+ * memory router at `/settings/projects` whose route renders `children`,
+ * in addition to the QueryClient the panel's fetches need.
+ */
 function wrapper() {
   const qc = new QueryClient({
     defaultOptions: {
@@ -28,9 +73,23 @@ function wrapper() {
       mutations: { retry: false },
     },
   });
-  return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-  );
+  return ({ children }: { children: ReactNode }) => {
+    const rootRoute = createRootRoute({ component: Outlet });
+    const settingsRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/settings/$section",
+      component: () => <>{children}</>,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([settingsRoute]),
+      history: createMemoryHistory({ initialEntries: ["/settings/projects"] }),
+    });
+    return (
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>
+    );
+  };
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -108,13 +167,38 @@ function stubHappyPath(): void {
 
 /** Enter the Web row's edit form and return its prefix input. */
 async function openWebEditPrefix(): Promise<HTMLInputElement> {
-  fireEvent.click(await screen.findByTestId("project-edit-p-web"));
+  await openProjectMenu("p-web");
+    fireEvent.click(screen.getByTestId("project-edit-p-web"));
   return screen.findByTestId<HTMLInputElement>("project-prefix-p-web");
 }
 
 function saveButton(): HTMLButtonElement {
   return screen.getByTestId<HTMLButtonElement>("project-prefix-save-p-web");
 }
+
+describe("ProjectsPanel empty state", () => {
+  // Before the fix the tbody mapped items with no length guard, so zero
+  // projects rendered a header-only blank table (reads as broken, not as
+  // "nothing here yet"). Red-proven: without the guard neither the teach
+  // copy nor the create CTA render.
+  it("shows a teach + create empty state at zero projects, not a blank table", async () => {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> => {
+      const urlStr = String(url);
+      if (urlStr.includes("/api/projects")) {
+        return Promise.resolve(jsonResponse({ items: [], total: 0, offset: 0, limit: 100, default: null, task_counts: {} }));
+      }
+      if (urlStr.includes("/api/info")) return Promise.resolve(jsonResponse({ schemaVersion: 1 }));
+      return Promise.resolve(jsonResponse({}));
+    });
+    render(<ProjectsPanel />, { wrapper: wrapper() });
+
+    const empty = await screen.findByTestId("projects-empty");
+    expect(empty.textContent).toMatch(/No projects yet/i);
+    // The CTA opens the same create dialog the panel's own button does.
+    fireEvent.click(screen.getByTestId("projects-empty-create"));
+    expect(await screen.findByTestId("project-create-name")).toBeTruthy();
+  });
+});
 
 describe("ProjectsPanel edit-model (PRU-6)", () => {
   it("shows the name as read-only text by default, editable only after Edit", async () => {
@@ -127,6 +211,7 @@ describe("ProjectsPanel edit-model (PRU-6)", () => {
     expect(screen.queryByTestId("project-name-input-p-web")).toBeNull();
     expect(screen.queryByTestId("project-prefix-p-web")).toBeNull();
 
+    await openProjectMenu("p-web");
     fireEvent.click(screen.getByTestId("project-edit-p-web"));
     expect(screen.getByTestId("project-name-input-p-web")).toBeTruthy();
     // The prefix control is now reachable — inside the edit form only.
@@ -137,7 +222,8 @@ describe("ProjectsPanel edit-model (PRU-6)", () => {
     stubHappyPath();
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    fireEvent.click(await screen.findByTestId("project-edit-p-web"));
+    await openProjectMenu("p-web");
+    fireEvent.click(screen.getByTestId("project-edit-p-web"));
     const input = screen.getByTestId("project-name-input-p-web");
     fireEvent.change(input, { target: { value: "Web App" } });
 
@@ -156,7 +242,8 @@ describe("ProjectsPanel edit-model (PRU-6)", () => {
     stubHappyPath();
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    fireEvent.click(await screen.findByTestId("project-edit-p-web"));
+    await openProjectMenu("p-web");
+    fireEvent.click(screen.getByTestId("project-edit-p-web"));
     fireEvent.change(screen.getByTestId("project-name-input-p-web"), { target: { value: "Nope" } });
     fireEvent.click(screen.getByTestId("project-edit-cancel-p-web"));
 
@@ -168,24 +255,30 @@ describe("ProjectsPanel edit-model (PRU-6)", () => {
 });
 
 describe("ProjectsPanel set-default (PRU-48)", () => {
-  it("marks the current default and makes its button inert", async () => {
+  it("marks the current default and makes its Make-default control inert", async () => {
     stubHappyPath();
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    // p-api is the default in PROJECTS.
+    // p-api is the default in PROJECTS — the marker is in the read-only row.
     await screen.findByTestId("project-default-marker-p-api");
     expect(screen.queryByTestId("project-default-marker-p-web")).toBeNull();
+    // K100: Make default now lives inside the edit dialog. For the current
+    // default it is a disabled <button> labelled so marker and control
+    // can't disagree.
+    await openProjectEdit("p-api");
     const apiBtn = screen.getByTestId<HTMLButtonElement>("project-set-default-p-api");
     expect(apiBtn.disabled).toBe(true);
-    expect(apiBtn.textContent).toMatch(/^Default$/);
+    expect(apiBtn.textContent).toMatch(/Default \(current\)/);
   });
 
   it("PUTs { default: true } for a non-default project", async () => {
     stubHappyPath();
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    const webBtn = await screen.findByTestId<HTMLButtonElement>("project-set-default-p-web");
-    expect(webBtn.disabled).toBe(false);
+    // K100: Make default is inside the edit dialog now.
+    await openProjectEdit("p-web");
+    const webBtn = screen.getByTestId("project-set-default-p-web");
+    expect(webBtn.textContent).toMatch(/Make default/);
     fireEvent.click(webBtn);
 
     // PRU-48: the marker moves by a plain project PUT carrying default:true.
@@ -213,7 +306,9 @@ describe("ProjectsPanel silent-write surfacing (B2 bug 3)", () => {
     });
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    fireEvent.click(await screen.findByTestId("project-set-default-p-web"));
+    // K100: Make default is inside the edit dialog now.
+    await openProjectEdit("p-web");
+    fireEvent.click(screen.getByTestId("project-set-default-p-web"));
 
     const err = await screen.findByTestId("project-set-default-error-p-web");
     expect(err.textContent).toContain("Default write failed.");
@@ -232,7 +327,9 @@ describe("ProjectsPanel silent-write surfacing (B2 bug 3)", () => {
     });
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    fireEvent.click(await screen.findByTestId("project-archive-p-web"));
+    // K100: Archive is inside the edit dialog now.
+    await openProjectEdit("p-web");
+    fireEvent.click(screen.getByTestId("project-archive-p-web"));
 
     const err = await screen.findByTestId("project-archive-error-p-web");
     expect(err.textContent).toContain("Archive write failed.");
@@ -268,17 +365,21 @@ describe("ProjectsPanel stale name draft (B2 bug 5)", () => {
     });
     render(<ProjectsPanel />, { wrapper: wrapper() });
 
-    // Force the external rename to land: set-default invalidates projects,
-    // so the row re-renders with the new name text.
-    fireEvent.click(await screen.findByTestId("project-set-default-p-web"));
+    // Force the external rename to land: set-default (now inside the edit
+    // dialog) invalidates projects, so the row re-renders with the new name
+    // text. Close the dialog afterwards.
+    await openProjectEdit("p-web");
+    fireEvent.click(screen.getByTestId("project-set-default-p-web"));
     await waitFor(() => {
       expect(screen.getByTestId("project-name-p-web").textContent).toBe("Web Renamed");
     });
+    fireEvent.click(screen.getByTestId("project-edit-cancel-p-web"));
 
-    // The regression: Edit seeded its draft from the mount value ("Web")
-    // and never reset it, so Save would write the stale name back. After
-    // the fix, opening Edit shows the CURRENT name.
-    fireEvent.click(screen.getByTestId("project-edit-p-web"));
+    // K100: the dialog mounts fresh on open and seeds `useState(project.name)`
+    // from the CURRENT prop, so re-opening Edit shows the renamed value — the
+    // B2 bug-5 stale-draft trap (draft seeded once and never reset) cannot
+    // recur. This previously asserted the inline row form's input value.
+    await openProjectEdit("p-web");
     const input = screen.getByTestId<HTMLInputElement>("project-name-input-p-web");
     expect(input.value).toBe("Web Renamed");
   });
@@ -335,5 +436,22 @@ describe("ProjectsPanel editable prefix (PRU-44/PRU-45)", () => {
     await openWebEditPrefix();
     expect(saveButton().disabled).toBe(true);
     expect(screen.queryByTestId("project-prefix-error-p-web")).toBeNull();
+  });
+
+  /**
+   * @verifies CONFIG-5
+   *
+   * P4: the row-level "Make default" here sets the *workspace* default;
+   * each user can also set a *personal* default. This panel cross-links to
+   * My preferences so the two "default project" concepts are not conflated.
+   */
+  it("cross-links the workspace default to the personal default in My preferences", async () => {
+    stubHappyPath();
+    render(<ProjectsPanel />, { wrapper: wrapper() });
+
+    const link = (await screen.findByTestId("projects-personal-default-link"))
+      .closest("a") as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    expect(link.getAttribute("href")).toContain("/settings/preferences");
   });
 });

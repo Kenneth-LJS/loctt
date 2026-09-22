@@ -16,10 +16,11 @@
  *   `SaveIndicator`, autosave, and `BodyConflictDialog`. The raw/rich
  *   toggle lives HERE, inside edit mode, only.
  *
- * Leaving edit (TSK-71): a blur flushes the idle autosave and returns
- * to the rendered view; Escape cancels and returns to rendered showing
- * the last-saved content. A FAILED save keeps the editor open in its
- * unsaved state (TSK-48) rather than dropping back to a stale render.
+ * Leaving edit (TSK-71, K96): a blur, Escape, or Cmd/Ctrl+Enter flushes
+ * the pending edit and returns to the rendered view KEEPING the text —
+ * there is no discard gesture (K96). A FAILED save keeps the editor open
+ * in its unsaved state (TSK-48) rather than dropping back to a stale
+ * render.
  *
  * This SUPERSEDES TSK-64 (toolbar-collapses-until-focus): the whole
  * surface is read-only until entered, so there is no toolbar to
@@ -36,12 +37,13 @@
 import type { JSONContent } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useUnsavedGuard } from "../router/useUnsavedGuard.ts";
 import { BodyConflictDialog } from "./BodyConflictDialog.tsx";
 import { BodyRenderedView } from "./BodyRenderedView.tsx";
 import { RichBuffer } from "./markdown.ts";
-import { MarkdownEditor } from "./MarkdownEditor.tsx";
+import type { EditorMode } from "./MarkdownField.tsx";
+import { MarkdownField } from "./MarkdownField.tsx";
 import type { MentionCandidate } from "./MentionMenu.tsx";
-import { RichEditor } from "./RichEditor.tsx";
 import { SaveIndicator } from "./SaveIndicator.tsx";
 import { useBodyAutosave } from "./useBodyAutosave.ts";
 
@@ -60,12 +62,10 @@ export interface BodyEditorProps {
   readonly onSaved?: (token: string) => void;
 }
 
-type Mode = "rich" | "raw";
-
 export function BodyEditor({
   taskRef, body, bodyToken, lossyConstructs, mentionCandidates, onSaved,
 }: BodyEditorProps): React.JSX.Element {
-  /** K33: rendered read state by default; a click enters edit. */
+  /** K33: rendered read state by default; the Edit button enters edit. */
   const [editing, setEditing] = useState(false);
 
   if (!editing) {
@@ -114,7 +114,7 @@ function BodyEditSurface({
    * so every client applies one rule; this is the half that acts on it.
    */
   const forcedRaw = lossyConstructs.length > 0;
-  const [mode, setMode] = useState<Mode>(forcedRaw ? "raw" : "rich");
+  const [mode, setMode] = useState<EditorMode>(forcedRaw ? "raw" : "rich");
 
   const bufferRef = useRef<RichBuffer>(new RichBuffer(body));
   // Mirrors the buffer for rendering only; the buffer is the truth.
@@ -127,7 +127,18 @@ function BodyEditSurface({
     ...(onSaved !== undefined ? { onSaved } : {}),
   });
 
-  const { edit, flush, cancel } = autosave;
+  const { edit, flush, flushForNav, hasUnsavedWork } = autosave;
+
+  /**
+   * A246: in-app navigation while the body is dirty/failed is intercepted
+   * by the router. It flushes first; the route change proceeds only if
+   * the flush lands clean. A refused write blocks the navigation and
+   * keeps this edit surface mounted, so its SaveIndicator /
+   * BodyConflictDialog stay on screen rather than the route tearing the
+   * editor down and losing the text silently. This mirrors the
+   * `beforeunload` guard (tab close / reload) for the in-app-nav exit.
+   */
+  useUnsavedGuard({ hasUnsavedWork, onNavigateAway: flushForNav });
 
   // A fresh body from the server (task switch, or an adopted refetch)
   // reseeds the buffer. Guarded on it actually differing so a
@@ -199,46 +210,75 @@ function BodyEditSurface({
   }, [flush]);
 
   /**
-   * Ctrl/Cmd+S forces an immediate save (kept from before). Escape
-   * cancels the edit and returns to the rendered read view showing the
-   * last-saved content (TSK-71). Escape does not flush: it is a cancel,
-   * and the rendered view shows the last-saved body.
+   * Keyboard exits (K96, Ken 2026-09-19). The editor autosaves and there
+   * is no "discard my edits" gesture: Escape, Cmd/Ctrl+Enter, and
+   * Cmd/Ctrl+S all EXIT KEEPING the text — they flush the pending edit and
+   * return to the rendered read view once the save settles. This replaces
+   * the old Escape-cancels-to-last-save behaviour, which reverted to the
+   * last autosave and so silently discarded everything typed in the idle
+   * window since (the data-loss bug the editor review found). `cancel()` is
+   * no longer used here.
+   *
+   * Escape must not steal the key from an overlay that owns it: when the
+   * mention menu or the conflict dialog is open, Escape belongs to that
+   * overlay (it closes the menu / dismisses the dialog). Those overlays
+   * stop propagation when they handle it, but we also guard here so a
+   * capture-phase ordering difference can never turn "close the menu" into
+   * "leave the editor".
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        void flush();
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        // Cancel (TSK-71): discard the in-editor edit and return to the
-        // rendered view showing the LAST-SAVED content. `cancel()` reverts
-        // the autosave hook's buffer to the saved baseline and clears the
-        // pending idle timer, so the editor's unmount-flush finds nothing
-        // dirty and does NOT silently write the edit we are cancelling
-        // (the Escape-writes bug the fix-review found). We also revert the
-        // local mirror buffer so a re-enter shows the saved body, not the
-        // discarded text.
-        cancel();
-        bufferRef.current.reset(body);
-        setText(body);
-        onLeave();
-      }
+      const save = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s";
+      const cmdEnter = (e.metaKey || e.ctrlKey) && e.key === "Enter";
+      const esc = e.key === "Escape";
+      if (!save && !cmdEnter && !esc) return;
+
+      // An open overlay owns Escape; leave the editor alone.
+      if (esc && autosave.conflict !== null) return;
+      if (esc && wrapperRef.current?.querySelector('[data-testid="mention-menu"]')) return;
+
+      e.preventDefault();
+      // Cmd/Ctrl+S is a plain force-save that stays in the editor; Escape
+      // and Cmd/Ctrl+Enter flush and leave, keeping the text.
+      if (save) { void flush(); return; }
+      requestLeave();
     };
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); };
-  }, [flush, cancel, body, onLeave]);
+  }, [flush, requestLeave, autosave.conflict]);
 
   // Focus the active surface as soon as the editor mounts (TSK-69: the
   // click that entered edit leaves the editor focused, ready to type).
   const wrapperRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const surface = wrapperRef.current?.querySelector<HTMLElement>(
-      mode === "rich" ? '[data-testid="rich-editor"]' : '[data-testid="markdown-editor"]',
-    );
-    surface?.focus();
+    if (mode === "rich") {
+      // The rich surface used to focus ITSELF: `RichEditor`'s
+      // caret-at-coords effect placed the caret where the user clicked
+      // the rendered body. A247 removed click-to-edit (a click target
+      // wrapping the description also wraps its links and images —
+      // nested-interactive, WCAG 4.1.2), so there are no coords to place
+      // a caret at and nothing focused the editor at all. Entering edit
+      // left focus on the "Edit" button, and the user had to click a
+      // second time before they could type — TSK-69's "ready to type"
+      // stopped being true when the gesture it assumed went away.
+      const richId = requestAnimationFrame(() => {
+        wrapperRef.current
+          ?.querySelector<HTMLElement>('[data-testid="rich-editor"]')
+          ?.focus();
+      });
+      return () => { cancelAnimationFrame(richId); };
+    }
+    // Raw mode: the host `<div data-testid="markdown-editor">` is not
+    // itself focusable — focus CodeMirror's editable `.cm-content`
+    // instead, which is what accepts typing. Deferred to the next frame
+    // so the view has mounted its content element.
+    const id = requestAnimationFrame(() => {
+      const cm = wrapperRef.current?.querySelector<HTMLElement>(
+        '[data-testid="markdown-editor"] .cm-content',
+      );
+      cm?.focus();
+    });
+    return () => { cancelAnimationFrame(id); };
     // Focus only on entering edit / switching surface, never on every
     // keystroke.
   }, [mode]);
@@ -256,6 +296,16 @@ function BodyEditSurface({
    */
   const onWrapperBlur = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    // A dropdown this editor owns (the block-type picker) PORTALS its
+    // panel to `document.body`, so focus moving into it is not "within
+    // the wrapper" even though it is within the editor's own UI. Without
+    // this, opening the block-type dropdown tore the editor down and the
+    // transform never applied (TSK-59) — a regression from K106 step 2's
+    // portal migration, whose blast radius reached past the dropdown
+    // call sites to every component that used containment to mean
+    // "still mine".
+    const related = e.relatedTarget as Element | null;
+    if (related?.closest("[data-dropdown-panel]") != null) return;
     // The conflict dialog is part of the edit flow; a blur while it is
     // open must not tear the editor down — flush is suppressed by the
     // hook while a conflict is open, so just keep the editor.
@@ -264,66 +314,57 @@ function BodyEditSurface({
   }, [autosave.conflict, requestLeave]);
 
   return (
-    <div data-testid="body-editor" ref={wrapperRef} onBlur={onWrapperBlur}>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div role="group" aria-label="Editing mode" className="flex gap-1">
-          <button
-            type="button"
-            data-testid="mode-rich"
-            aria-pressed={mode === "rich"}
-            disabled={forcedRaw}
-            onClick={() => { setMode("rich"); }}
-            className={modeClass(mode === "rich", forcedRaw)}
-          >
-            Rich
-          </button>
-          <button
-            type="button"
-            data-testid="mode-raw"
-            aria-pressed={mode === "raw"}
-            onClick={() => { setMode("raw"); }}
-            className={modeClass(mode === "raw", false)}
-          >
-            Markdown
-          </button>
-        </div>
-        <SaveIndicator state={autosave.state} onRetry={() => { void autosave.retry(); }} />
-      </div>
-
-      {forcedRaw && (
-        <p
-          data-testid="lossy-banner"
-          // `aria-live`, not `role="status"` — see SaveIndicator. This
-          // banner is also permanently on screen for a lossy body, so
-          // it would make `getByRole("status")` ambiguous the same way.
-          aria-live="polite"
-          className="mb-2 rounded border border-border-subtle bg-bg-muted px-3 py-2 text-[0.8571rem] text-text-secondary"
-        >
-          This task body contains markdown features that can’t be edited
-          visually ({lossyNote}). Edit in source mode.
-        </p>
-      )}
-
-      {mode === "rich" ? (
-        <RichEditor
-          // Remount when the *task* changes, never on every keystroke —
-          // a key tied to the text would rebuild the editor mid-word
-          // and cost the user their caret.
-          key={taskRef}
-          markdown={text}
-          onDocChange={onRichDoc}
-          onBlur={() => { void flush(); }}
-          mentionCandidates={mentionCandidates}
-        />
-      ) : (
-        <MarkdownEditor
-          value={text}
-          onChange={onRawChange}
-          ariaLabel="Description (markdown source)"
-          placeholder={PLACEHOLDER}
-          className="rounded border border-border-subtle px-3 py-2"
-        />
-      )}
+    <div
+      data-testid="body-editor"
+      ref={wrapperRef}
+      onBlur={onWrapperBlur}
+      // `-mx-3` mirrors the read view (BodyRenderedView): the framed edit
+      // box extends 12px into the section gutter on both sides so the
+      // editor's own px-3 content padding lands the text flush-left with
+      // the section label — entering edit does not shift the body text
+      // horizontally.
+      className="-mx-3 rounded border border-border-subtle"
+    >
+      {/* The shared editing chrome (MarkdownField): the same always-visible
+          icon toolbar, mode toggle, and rich/source surfaces the comment
+          composer uses. What is specific to the description — the mode
+          toggle's bare testids, the SaveIndicator in the trailing slot, the
+          lossy banner, autosave-on-blur, and the caret-at-click — is passed
+          as props, not forked. */}
+      <MarkdownField
+        mode={mode}
+        onModeChange={setMode}
+        forcedRaw={forcedRaw}
+        text={text}
+        onRichDoc={onRichDoc}
+        onRawChange={onRawChange}
+        mentionCandidates={mentionCandidates}
+        // Remount the rich surface when the *task* changes, never on every
+        // keystroke — a key tied to the text would rebuild the editor
+        // mid-word and cost the user their caret.
+        richEditorKey={taskRef}
+        ariaLabel="Description"
+        placeholder={PLACEHOLDER}
+        onRichBlur={() => { void flush(); }}
+        toolbarTrailing={
+          <SaveIndicator state={autosave.state} onRetry={() => { void autosave.retry(); }} />
+        }
+        banner={forcedRaw
+          ? (
+              <p
+                data-testid="lossy-banner"
+                // `aria-live`, not `role="status"` — see SaveIndicator. This
+                // banner is also permanently on screen for a lossy body, so
+                // it would make `getByRole("status")` ambiguous the same way.
+                aria-live="polite"
+                className="mb-2 rounded border border-border-subtle bg-bg-muted px-3 py-2 text-[0.8571rem] text-text-secondary"
+              >
+                This task body contains markdown features that can’t be edited
+                visually ({lossyNote}). Edit in source mode.
+              </p>
+            )
+          : undefined}
+      />
 
       {autosave.conflict !== null && (
         <BodyConflictDialog
@@ -334,16 +375,5 @@ function BodyEditSurface({
         />
       )}
     </div>
-  );
-}
-
-function modeClass(active: boolean, disabled: boolean): string {
-  return (
-    "rounded px-2 py-1 text-[0.8571rem] "
-    + (disabled
-      ? "cursor-not-allowed text-text-tertiary"
-      : active
-        ? "bg-accent-muted text-text-primary"
-        : "text-text-secondary hover:bg-bg-muted")
   );
 }

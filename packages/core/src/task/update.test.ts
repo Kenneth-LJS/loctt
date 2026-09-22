@@ -779,3 +779,140 @@ describe("setField / unsetField", () => {
     });
   });
 });
+
+// TML-45: start_date must not be after due_date, enforced in core so every
+// surface (web, CLI, MCP) refuses the same write. Previously only the web
+// route checked it inline.
+describe("date ordering (start_date <= due_date)", () => {
+  let locttDir: string;
+
+  beforeEach(async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "loctt-dates-"));
+    locttDir = join(tmp, ".loctt");
+  });
+
+  afterEach(async () => {
+    await rm(join(locttDir, ".."), { recursive: true, force: true });
+  });
+
+  const seed: Task = {
+    frontmatter: {
+      id: "abc",
+      key: "T-1",
+      title: "Original",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      status: "not_started",
+    },
+    body: "Body.\n",
+  };
+
+  describe("setField (one field at a time)", () => {
+    it("refuses setting start_date after the existing due_date", async () => {
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: { ...seed.frontmatter, due_date: "2026-03-01" },
+      });
+      await expect(
+        setField({ locttDir, taskId: "abc", field: "start_date", value: "2026-03-05" }),
+      ).rejects.toThrow(/start date .* cannot be after the due date/i);
+      // Nothing written: the stored frontmatter still lacks a start_date.
+      const after = await readTask(locttDir, "abc");
+      expect(after.frontmatter.start_date).toBeUndefined();
+    });
+
+    it("refuses setting due_date before the existing start_date", async () => {
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: { ...seed.frontmatter, start_date: "2026-03-10" },
+      });
+      await expect(
+        setField({ locttDir, taskId: "abc", field: "due_date", value: "2026-03-01" }),
+      ).rejects.toThrow(/cannot be after the due date/i);
+      const after = await readTask(locttDir, "abc");
+      expect(after.frontmatter.due_date).toBeUndefined();
+    });
+
+    it("anchors the error on the field being set", async () => {
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: { ...seed.frontmatter, due_date: "2026-03-01" },
+      });
+      try {
+        await setField({ locttDir, taskId: "abc", field: "start_date", value: "2026-03-05" });
+        throw new Error("expected rejection");
+      } catch (err) {
+        expect(err).toBeInstanceOf(TaskUpdateError);
+        expect((err as TaskUpdateError).toEnvelope().field).toBe("start_date");
+      }
+    });
+
+    it("allows setting a start_date that is on or before the due_date", async () => {
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: { ...seed.frontmatter, due_date: "2026-03-01" },
+      });
+      const updated = await setField({ locttDir, taskId: "abc", field: "start_date", value: "2026-03-01" });
+      expect(updated.frontmatter.start_date).toBe("2026-03-01");
+    });
+
+    it("does not false-refuse when clearing the due_date leaves start_date alone", async () => {
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: { ...seed.frontmatter, start_date: "2026-03-10", due_date: "2026-03-20" },
+      });
+      // Clearing due_date removes one side of the pair — no conflict possible.
+      const updated = await unsetField(locttDir, "abc", "due_date");
+      expect(updated.frontmatter.due_date).toBeUndefined();
+      expect(updated.frontmatter.start_date).toBe("2026-03-10");
+    });
+  });
+
+  describe("setFields (change set)", () => {
+    it("refuses an invalid start/due pair in one call", async () => {
+      await writeTask(locttDir, "abc", seed);
+      await expect(
+        setFields({
+          locttDir,
+          taskId: "abc",
+          changes: [
+            { field: "start_date", value: "2026-04-10" },
+            { field: "due_date", value: "2026-04-01" },
+          ],
+        }),
+      ).rejects.toThrow(/cannot be after the due date/i);
+      const after = await readTask(locttDir, "abc");
+      // Atomic: neither date landed.
+      expect(after.frontmatter.start_date).toBeUndefined();
+      expect(after.frontmatter.due_date).toBeUndefined();
+    });
+
+    it("refuses a single-edge change against the stored other date", async () => {
+      await writeTask(locttDir, "abc", {
+        ...seed,
+        frontmatter: { ...seed.frontmatter, due_date: "2026-04-01" },
+      });
+      await expect(
+        setFields({
+          locttDir,
+          taskId: "abc",
+          changes: [{ field: "start_date", value: "2026-04-10" }],
+        }),
+      ).rejects.toThrow(/cannot be after the due date/i);
+    });
+
+    it("accepts a valid start/due pair", async () => {
+      await writeTask(locttDir, "abc", seed);
+      const updated = await setFields({
+        locttDir,
+        taskId: "abc",
+        changes: [
+          { field: "start_date", value: "2026-04-01" },
+          { field: "due_date", value: "2026-04-10" },
+        ],
+      });
+      expect(updated.frontmatter.start_date).toBe("2026-04-01");
+      expect(updated.frontmatter.due_date).toBe("2026-04-10");
+    });
+  });
+});

@@ -25,9 +25,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { RichBuffer } from "../editor/markdown.ts";
-import { MarkdownEditor } from "../editor/MarkdownEditor.tsx";
+import type { EditorMode } from "../editor/MarkdownField.tsx";
+import { MarkdownField } from "../editor/MarkdownField.tsx";
 import type { MentionCandidate } from "../editor/MentionMenu.tsx";
-import { RichEditor } from "../editor/RichEditor.tsx";
 import { Button } from "../ui/Button.tsx";
 
 export interface CommentComposerProps {
@@ -72,10 +72,25 @@ export interface CommentComposerProps {
    * same one `BodyEditor` ships, over the same `RichBuffer`, so
    * flipping to rich in an edit gets the picker back.
    */
-  readonly initialMode?: Mode;
+  readonly initialMode?: EditorMode;
+  /**
+   * Embedded attachments (GOAL 2). When present, the toolbar shows an
+   * Attach button; the chosen files are handed here. The composer does
+   * not upload — its owner (`CommentsPanel`) uploads to the ticket's
+   * attachment store and, on success, inserts the embed into the body via
+   * `insertEmbed` below. Absent → no Attach button (an edit composer with
+   * no upload wiring simply does not offer it).
+   */
+  readonly onAttachFiles?: (files: readonly File[]) => void;
+  readonly attachPending?: boolean;
+  /**
+   * Called once by the composer on mount with an `insert` function the
+   * owner can use to splice an attachment embed into the current buffer
+   * after a successful upload. This is how an uploaded file lands in the
+   * comment body without the owner reaching into the editor's internals.
+   */
+  readonly onEmbedReady?: (insert: (markdown: string) => void) => void;
 }
-
-type Mode = "rich" | "raw";
 
 export function CommentComposer({
   initial,
@@ -89,8 +104,11 @@ export function CommentComposer({
   testId,
   resetToken = 0,
   initialMode = "rich",
+  onAttachFiles,
+  attachPending = false,
+  onEmbedReady,
 }: CommentComposerProps): React.JSX.Element {
-  const [mode, setMode] = useState<Mode>(initialMode);
+  const [mode, setMode] = useState<EditorMode>(initialMode);
   const bufferRef = useRef<RichBuffer>(new RichBuffer(initial));
   const [text, setText] = useState(initial);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,6 +176,36 @@ export function CommentComposer({
   }, []);
 
   /**
+   * Splices an attachment embed into the composer's buffer after a
+   * successful upload (GOAL 2). The embed is its own block, so it is
+   * appended after the current text with a blank line between — the same
+   * shape a user pasting the reference would get. `reset` makes the new
+   * bytes the baseline (like a raw edit), and bumping `embedNonce`
+   * remounts the rich surface so it reflects the added embed. Exposed to
+   * the owner via `onEmbedReady` so the upload flow (which lives in the
+   * panel, next to the attachment store) can call it without reaching
+   * into the editor.
+   */
+  const [embedNonce, setEmbedNonce] = useState(0);
+  const insertEmbed = useCallback((embedMarkdown: string) => {
+    const current = bufferRef.current.text;
+    const joined = current.trim() === ""
+      ? embedMarkdown
+      : `${current.replace(/\n+$/, "")}\n\n${embedMarkdown}`;
+    bufferRef.current.reset(joined);
+    setText(joined);
+    setEmbedNonce(n => n + 1);
+  }, []);
+
+  // Publish the inserter once (and on identity change) so the owner can
+  // call it after an upload settles.
+  const onEmbedReadyRef = useRef(onEmbedReady);
+  onEmbedReadyRef.current = onEmbedReady;
+  useEffect(() => {
+    onEmbedReadyRef.current?.(insertEmbed);
+  }, [insertEmbed]);
+
+  /**
    * CMT-2's last bullet. Whitespace only is not a comment — and the
    * server agrees (`postComment` throws on a blank body), so allowing
    * the click would spend a round trip to be told what the client
@@ -203,53 +251,43 @@ export function CommentComposer({
 
   return (
     <div ref={containerRef} data-testid={testId} className="space-y-2">
-      <div role="group" aria-label="Editing mode" className="flex gap-1">
-        <button
-          type="button"
-          data-testid={`${testId}-mode-rich`}
-          aria-pressed={mode === "rich"}
-          onClick={() => { setMode("rich"); }}
-          className={modeClass(mode === "rich")}
-        >
-          Rich
-        </button>
-        <button
-          type="button"
-          data-testid={`${testId}-mode-raw`}
-          aria-pressed={mode === "raw"}
-          onClick={() => { setMode("raw"); }}
-          className={modeClass(mode === "raw")}
-        >
-          Markdown
-        </button>
-      </div>
-
-      {mode === "rich" ? (
-        <RichEditor
-          // Remounts on reset, and only then — a key tied to the text
-          // would rebuild the editor mid-word and cost the user their
-          // caret.
-          key={`${testId}-${String(resetToken)}`}
-          markdown={text}
-          onDocChange={onDocChange}
-          onBlur={() => {}}
+      {/* The SAME editing chrome the description body uses (MarkdownField):
+          the always-visible icon toolbar with its mobile "More" overflow,
+          the `</>`-style icon mode toggle with tooltips, and the
+          rich/source surfaces. The composer differs only in what it
+          brackets this with — the submit/cancel footer below, its
+          submit-on-click buffer handling, and (when wired) an Attach
+          button — all passed as props, not forked. */}
+      <div className="rounded border border-border-subtle">
+        <MarkdownField
+          mode={mode}
+          onModeChange={setMode}
+          text={text}
+          onRichDoc={onDocChange}
+          onRawChange={onRawChange}
           mentionCandidates={mentionCandidates}
+          // Remounts on reset, and only then — a key tied to the text would
+          // rebuild the editor mid-word and cost the user their caret. The
+          // embed nonce bumps it deliberately when a file is spliced in.
+          richEditorKey={`${testId}-${String(resetToken)}-${String(embedNonce)}`}
+          // Distinct from the description body's `rich-editor` (TSK-67):
+          // the two editors coexist on the task-detail page.
+          richEditorTestId={`${testId}-rich-editor`}
+          // Scope the mode toggle's testids to this composer for the same
+          // reason — the description body's are the bare `mode-rich`/`-raw`.
+          modeTestIdPrefix={`${testId}-mode`}
           ariaLabel={ariaLabel}
-          // Distinct from the description body's `rich-editor` (TSK-67).
-          // The two editors coexist on the task-detail page, so a bare
-          // `rich-editor` matched both and made the DOM ambiguous.
-          testId={`${testId}-rich-editor`}
           placeholder="Write a comment…"
+          rawSurfaceClassName="px-3 py-2"
+          {...(onAttachFiles !== undefined
+            ? {
+                onAttachFiles,
+                attachPending,
+                attachInputTestId: `${testId}-attach-input`,
+              }
+            : {})}
         />
-      ) : (
-        <MarkdownEditor
-          value={text}
-          onChange={onRawChange}
-          ariaLabel={`${ariaLabel} (markdown source)`}
-          placeholder="Write a comment…"
-          className="rounded border border-border-subtle px-3 py-2"
-        />
-      )}
+      </div>
 
       {error !== undefined && (
         <p role="alert" data-testid={`${testId}-error`} className="text-[0.8571rem] text-danger-fg">
@@ -292,14 +330,5 @@ export function CommentComposer({
         )}
       </div>
     </div>
-  );
-}
-
-function modeClass(active: boolean): string {
-  return (
-    "rounded px-2 py-1 text-[0.8571rem] "
-    + (active
-      ? "bg-accent-muted text-text-primary"
-      : "text-text-secondary hover:bg-bg-muted")
   );
 }

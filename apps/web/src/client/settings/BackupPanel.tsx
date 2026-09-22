@@ -45,10 +45,19 @@ interface RestoreReport {
   readonly badLines: readonly { line: number; file: string; reason: string }[];
 }
 
+// Human-readable label for each restore mode. The raw mode value
+// (bare/merge/overwrite) is API/CLI vocabulary and is not shown as the
+// primary label — a user should read what the mode DOES (Ken's report).
+const MODE_LABEL: Record<RestoreMode, string> = {
+  bare: "Into an empty tracker only",
+  merge: "Add missing tasks only",
+  overwrite: "Replace matching tasks",
+};
+
 const MODE_HELP: Record<RestoreMode, string> = {
   bare: "Only writes into an empty tracker; refuses one that already has tasks.",
-  merge: "Adds only ids that are missing here; never edits a task that is present.",
-  overwrite: "Replaces any task the backup carries. Displaced bodies are kept in the task's folder.",
+  merge: "Adds only tasks that are missing here; never edits a task that is present.",
+  overwrite: "Replaces any task the backup carries. Existing descriptions are preserved.",
 };
 
 export function BackupPanel() {
@@ -92,7 +101,7 @@ export function BackupPanel() {
   }
 
   return (
-    <div className="p-8" data-testid="backup-panel">
+    <div data-testid="backup-panel">
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Backup &amp; restore
       </h1>
@@ -109,7 +118,7 @@ export function BackupPanel() {
         <h2 className="mb-1 text-[1rem] font-semibold text-text-primary">Export</h2>
         <p className="mb-3 text-[0.9286rem] text-text-secondary">
           Downloads the whole-tracker backup as a single{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">.jsonl</code> file.
+          <code className="rounded bg-bg-muted px-1 py-0.5">.jsonl</code> file.
           History is included. Machine-local files (user settings and
           recents) are deliberately excluded.
         </p>
@@ -165,7 +174,7 @@ export function BackupPanel() {
                 className="mt-0.5"
               />
               <span>
-                <span className="font-medium text-text-primary">{m}</span>
+                <span className="font-medium text-text-primary">{MODE_LABEL[m]}</span>
                 {" — "}
                 {MODE_HELP[m]}
               </span>
@@ -182,7 +191,7 @@ export function BackupPanel() {
             <p className="mb-2 text-text-primary">
               Overwrite replaces every task this backup carries and can
               lose work in this tracker. Type{" "}
-              <code className="rounded bg-bg-muted px-1 py-0.5 font-mono">OVERWRITE</code>{" "}
+              <code className="rounded bg-bg-muted px-1 py-0.5">OVERWRITE</code>{" "}
               to enable it.
             </p>
             <TextField
@@ -191,7 +200,7 @@ export function BackupPanel() {
               value={confirmText}
               onChange={(e) => { setConfirmText(e.target.value); }}
               aria-label="Type OVERWRITE to confirm"
-              className="w-40 font-mono"
+              className="w-40"
             />
           </div>
         )}
@@ -241,20 +250,20 @@ export function BackupPanel() {
             </ul>
             {report.reallocatedKeys.length > 0 && (
               <p className="mt-1">
-                {report.reallocatedKeys.length} key
-                {report.reallocatedKeys.length === 1 ? "" : "s"} reallocated on collision.
+                {report.reallocatedKeys.length} task
+                {report.reallocatedKeys.length === 1 ? " was" : "s were"} given a new key to avoid a clash.
               </p>
             )}
             {report.displacedBodies.length > 0 && (
               <p className="mt-1">
-                {report.displacedBodies.length} displaced
-                {report.displacedBodies.length === 1 ? " body was" : " bodies were"} kept in the task folder.
+                {report.displacedBodies.length} existing task
+                {report.displacedBodies.length === 1 ? " description was" : " descriptions were"} preserved.
               </p>
             )}
             {report.badLines.length > 0 && (
               <p className="mt-1 text-danger-fg">
-                {report.badLines.length} malformed line
-                {report.badLines.length === 1 ? "" : "s"} were skipped.
+                {report.badLines.length} unreadable line
+                {report.badLines.length === 1 ? " was" : "s were"} skipped.
               </p>
             )}
           </div>

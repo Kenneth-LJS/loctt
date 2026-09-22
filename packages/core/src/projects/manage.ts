@@ -700,11 +700,11 @@ async function applyProjectConfigDeletion(locttDir: string, id: string): Promise
   };
   await saveProjectsConfig(locttDir, newConfig);
 
-  // Move the project's counter to retired_keys. Re-creating the same
-  // prefix later won't restore numbering automatically (ids are
-  // unique per creation), but retired_keys preserves the high-water
-  // mark so an admin recovery script can re-set the counter
-  // explicitly if needed.
+  // Move the project's counter to retired_keys, preserving the
+  // high-water mark. Re-creating a project with the same prefix later
+  // reclaims this counter (PRU-18, see `createProject`), so key
+  // numbering continues past the retired maximum rather than restarting
+  // at 1 and colliding with keys still referenced in history.
   const state = await loadState(locttDir);
   const newKeys: Record<string, { prefix: string; next_number: number }> = {};
   for (const [k, v] of Object.entries(state.keys)) {

@@ -2,7 +2,9 @@ import type { ProjectDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 
 /**
  * Move one task to another project.
@@ -18,9 +20,10 @@ import { Dialog, DialogActions } from "../ui/Dialog.tsx";
  *
  * K71: routed through `Dialog` (over `Modal`) for the focus trap, inert
  * background and focus restoration it previously hand-rolled its overlay
- * without; the raw action `<button>`s are now `Button` (design-review
- * §B2). The destination `<select>` stays raw for now — migrating it to
- * `ui/Select` is design-review §B4, a separate item.
+ * without; the raw action `<button>`s are now `Button`
+ * (docs/dev/design/design-review.md §B2). A211: the destination picker is the searchable `ui/Combobox`
+ * (single-select) — the project list grows with the workspace — with the
+ * current project offered present-but-disabled.
  */
 export function MoveTaskDialog({
   taskKey,
@@ -43,7 +46,7 @@ export function MoveTaskDialog({
   const choices = projects.filter(p => p.archived !== true);
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={`Move ${taskKey} to another project`}
       onClose={onCancel}
       testId="move-task-dialog"
@@ -72,29 +75,46 @@ export function MoveTaskDialog({
         </DialogActions>
       }
     >
-      <label className="block text-[0.8571rem] font-medium text-text-secondary">
+      <div className="block text-[0.8571rem] font-medium text-text-secondary">
         Destination project
-        <select
-          value={selected}
-          onChange={e => { setSelected(e.target.value); }}
-          aria-label="Destination project"
-          className="mt-1 w-full rounded-md border border-border-subtle bg-bg-canvas px-2.5 py-1.5 text-[0.9286rem] text-text-primary"
-        >
-          <option value="">Choose a project…</option>
-          {choices.map(p => (
-            <option key={p.id} value={p.id} disabled={p.id === currentProject}>
-              {p.name}
-              {p.id === currentProject ? " (current)" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
+        <Combobox
+          label="Destination project"
+          options={choices.map((p): ComboboxOption => ({
+            key: p.id,
+            label: p.name,
+            // The current project is offered but disabled: seeing where
+            // the task is now makes the choice meaningful, and moving to
+            // the same project is a no-op.
+            ...(p.id === currentProject
+              ? { disabled: true, suffix: "(current)" }
+              : {}),
+          }))}
+          value={selected === "" ? undefined : selected}
+          onSelect={v => { setSelected(v); }}
+          disabledReason="This task is already in that project."
+          listTestId="move-task-project-list"
+          optionTestId={o => `move-task-project-option-${o.key}`}
+          searchTestId="move-task-project-search"
+          trigger={p => (
+            <ComboboxButton
+              {...p}
+              testId="move-task-project"
+              dataValue={selected}
+              aria-label="Destination project"
+              placeholder="Choose a project…"
+              className="mt-1 w-full"
+            >
+              {choices.find(c => c.id === selected)?.name ?? ""}
+            </ComboboxButton>
+          )}
+        />
+      </div>
 
       {error !== undefined && (
         <p role="alert" className="mt-3 text-[0.9286rem] text-danger-fg">
           {error}
         </p>
       )}
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

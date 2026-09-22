@@ -5,6 +5,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+
+import { panelStyle, usePortalPlacement } from "./usePortalPlacement.ts";
 
 /**
  * A minimal popover menu: a trigger button and a floating panel that
@@ -12,10 +15,11 @@ import {
  * item. Used by the header's user menu in M1.1 and by the filter and
  * bulk dropdowns in later list-view tickets.
  *
- * The panel is positioned with CSS (absolute, anchored to the
- * trigger's wrapper) rather than measured-at-runtime like the mockup's
- * vanilla JS — React owns layout here, and an anchored panel avoids
- * the scroll/resize recomputation the mockup needed.
+ * The panel renders into `document.body` via `createPortal` and is
+ * positioned with runtime-measured coordinates — see
+ * `usePortalPlacement.ts` for why (MENU-PORTAL). K106 stage 2 moved that
+ * machinery into the shared hook so `ui/Dropdown` sits on the same
+ * substrate; the behaviour here is unchanged.
  */
 
 export interface MenuProps {
@@ -45,16 +49,29 @@ export function Menu({
   const wrapRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerId = useId();
+  const pos = usePortalPlacement(open, wrapRef, panelRef, align);
 
   useEffect(() => {
     if (!open) return undefined;
     const onDocMouseDown = (e: MouseEvent): void => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      // The panel is portalled to `document.body`, so it is no longer a
+      // descendant of `wrapRef`. Outside-click therefore has to treat a
+      // click inside *either* the trigger wrapper or the portalled panel
+      // as "inside" — otherwise every click on a menu item would close
+      // the menu before the item's own handler runs.
+      if (wrapRef.current?.contains(target) === true) return;
+      if (panelRef.current?.contains(target) === true) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      // Close only this layer. A menu can be opened from inside a modal
+      // (the panel is a sibling of the modal in the body, both listen on
+      // document keydown); swallowing the event here stops the same
+      // Escape from also closing the modal behind the menu.
+      e.stopPropagation();
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDocMouseDown);
     document.addEventListener("keydown", onKey);
@@ -146,33 +163,67 @@ export function Menu({
         "aria-expanded": open,
         id: triggerId,
       })}
-      {open ? (
-        <div
-          ref={panelRef}
-          role="menu"
-          aria-label={ariaLabel}
-          aria-labelledby={ariaLabel ? undefined : triggerId}
-          onKeyDown={onPanelKeyDown}
-          className={[
-            "absolute top-full z-20 mt-1 min-w-[200px] rounded-lg border border-border-default",
-            "bg-bg-surface-raised p-1 shadow-overlay",
-            align === "end" ? "right-0" : "left-0",
-            panelClassName ?? "",
-          ].join(" ")}
-        >
-          {children({ close })}
-        </div>
-      ) : null}
+      {open
+        ? createPortal(
+            <div
+              ref={panelRef}
+              role="menu"
+              aria-label={ariaLabel}
+              aria-labelledby={ariaLabel ? undefined : triggerId}
+              onKeyDown={onPanelKeyDown}
+              className={[
+                // `z-[65]` sits above the modal layers (Modal `z-50`,
+                // CreateTaskModal `z-[55]`) so a menu opened from inside
+                // a dialog shows above it, and under the shortcut-help
+                // dialog (`z-[70]`), which hosts no menus.
+                "fixed z-[65] min-w-[200px] rounded-lg border border-border-default",
+                "bg-bg-surface-raised p-1 shadow-overlay",
+                panelClassName ?? "",
+              ].join(" ")}
+              style={panelStyle(pos)}
+            >
+              {children({ close })}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
 
-/** A single clickable row inside a Menu panel. */
+/**
+ * A single clickable row inside a Menu panel.
+ *
+ * ## `disabled` is a real `disabled`, not a dimmed no-op (A11Y-31)
+ *
+ * An unavailable action used to be expressed by dropping `onSelect` and
+ * adding `opacity-50`. That is the exact failure A11Y-31's third bullet
+ * names: the control is inert but *announces as actionable* — no
+ * `disabled` property, no `aria-disabled`, still focusable, so a screen
+ * reader user activates it and nothing happens.
+ *
+ * So it carries the native attribute, which gives all three properties
+ * at once: the `disabled` IDL property, the implicit `aria-disabled`,
+ * and removal from the tab/focus order. The roving-focus query in `Menu`
+ * above already excludes `:not([disabled])`, so a disabled item also
+ * drops out of arrow-key travel without any further wiring.
+ *
+ * `title` is the reason, and it belongs on the **button**, not on an
+ * inner `<span>`. A `title` on a child is a pointer tooltip on that
+ * child and nothing more; on the button itself every current browser
+ * also exposes it as the accessible *description* when no other
+ * description source exists — which is what A11Y-31's second bullet
+ * asks for. This matches `Dropdown`'s disabled option exactly, which
+ * already spells `disabled={…}` + `title={disabled ? reason : undefined}`
+ * on the row button.
+ */
 export function MenuItem({
   children,
   onSelect,
   className,
   testId,
+  disabled = false,
+  title,
 }: {
   readonly children: ReactNode;
   readonly onSelect?: () => void;
@@ -186,16 +237,27 @@ export function MenuItem({
    * own `<button>` and forwards nothing.
    */
   readonly testId?: string;
+  /** Inert and announced as such. See the note above. */
+  readonly disabled?: boolean | undefined;
+  /**
+   * Why the item is unavailable, on the button so it is the accessible
+   * description and not merely a hover tooltip on a child span.
+   */
+  readonly title?: string | undefined;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
+      disabled={disabled}
+      title={title}
       onClick={onSelect}
       {...(testId !== undefined ? { "data-testid": testId } : {})}
       className={[
         "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem]",
-        "text-text-secondary hover:bg-bg-muted hover:text-text-primary",
+        disabled
+          ? "cursor-not-allowed text-text-disabled opacity-50"
+          : "text-text-secondary hover:bg-bg-muted hover:text-text-primary",
         className ?? "",
       ].join(" ")}
     >

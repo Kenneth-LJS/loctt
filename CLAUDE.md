@@ -12,32 +12,26 @@ Local task tracker — CLI tool, MCP server, and GUI for managing tasks stored a
 ## Key Design Decisions
 
 User-facing documentation lives in `docs/`. Developer documentation lives in `docs/dev/`. Cross-reference before implementing:
-- `docs/dev/architecture.md` — monorepo layout, data model, task identity
-- `docs/dev/schema-reference.md` — file formats (task.md, workflow.yaml, etc.)
-- `docs/dev/invariants.md` — **rules a change must not break** (project identity, key allocation, sprint state). Check against this before touching those areas
+- `docs/dev/reference/architecture.md` — monorepo layout, data model, task identity
+- `docs/dev/reference/schema-reference.md` — file formats (task.md, workflow.yaml, etc.)
+- `docs/dev/reference/invariants.md` — **rules a change must not break** (project identity, key allocation, sprint state). Check against this before touching those areas
 - `docs/dev/decisions.md` — locked design decisions, incl. things deliberately NOT built
-- `docs/dev/build-loop.md` — **how a web-UI ticket gets built and verified**; the gates that decide "done"
-- `docs/dev/lessons.md` — **build discipline distilled from the v1 run**: testing/verification traps, core-surface parity, the stop conditions, the which-layer rule. Read before more UI work
+- `docs/dev/process/build-loop.md` — **how a web-UI ticket gets built and verified**; the gates that decide "done"
 - `docs/dev/known-gaps.md` — understood defects not yet fixed (and the roster of cases that cannot be satisfied yet); check before reporting one as new
-- `docs/dev/corruption-handling-guide.md` — **how to make a new field/object/surface degrade instead of crash**: the field-local-vs-object-fatal decision, the building blocks, per-thing checklists, and what to add to `doctor`. Read before adding a field or config object
-- `docs/dev/ui-test-cases/` + `docs/dev/surface-test-cases/` — acceptance criteria (997 cases). Indexed in `docs/dev/case-index.json`; see `tools/README.md`
+- `docs/dev/reference/corruption-handling-guide.md` — **how to make a new field/object/surface degrade instead of crash**: the field-local-vs-object-fatal decision, the building blocks, per-thing checklists, and what to add to `doctor`. Read before adding a field or config object
+- `tests/cases/ui-test-cases/` + `tests/cases/surface-test-cases/` — acceptance criteria (997 cases). Indexed in `tests/cases/case-index.json`; see `tools/README.md`
 - `docs/user/cli/reference.md` — CLI commands
 - `docs/user/mcp/reference.md` — MCP tools and agent guidelines
 
-**Pre-publish work.** `docs/dev/TEMP-TODO.md` (moved out of the published
-root 2026-09-18, B3) is the pre-publish
-backlog: outstanding gaps and unresolved spec items — correctness
-defects, a11y (WCAG AA) failures, contract changes, deferred features,
-and the case/doc remainders. **Ken ruled (decisions.md K73) the whole
-list is required before publishing** — not a "build later" queue; its
-~13 open rulings (TEMP-TODO § 0) are the critical path. The
-packaging/security blockers live in `docs/dev/release-readiness.md` and
-the UI-adoption blockers in `docs/dev/design-review.md`; the three
-together are the release gate. Each item closes only once codified as a
-case + `@verifies` test + a `decisions.md` entry, not on a decision
-alone. (The v1 build's run-scaffolding files were deleted once resolved;
-their durable lessons are in `docs/dev/lessons.md` and the
-unsatisfiable-case roster is in `docs/dev/known-gaps.md`.)
+**Pre-publish work.** The pre-publish backlog is closed; what remains
+before publishing is the release gate: the packaging/security blockers in
+`docs/dev/process/release-readiness.md` and the UI-adoption blockers in
+`docs/dev/design/design-review.md`. Each item closes only once codified as
+a case + `@verifies` test + a `decisions.md` entry, not on a decision
+alone. Understood-but-unfixed defects and the unsatisfiable-case roster
+live in `docs/dev/known-gaps.md`. (The v1 build's run-scaffolding files
+were deleted once resolved; their durable lessons are folded into the
+topic docs under `docs/dev/reference/` and `docs/dev/process/`.)
 
 **Recording decisions is part of the work, not paperwork.** A decision
 that lives only in a session's context is lost at the next compaction,
@@ -55,9 +49,8 @@ work, read `decisions.md` (§ 8 agent-made, § 9 Ken's) and
 
 **A capability in core is not done until CLI and MCP have it.** Core
 exists so two surfaces answer the same question the same way; adding
-to it for one surface is drift with a good address. `unarchiveView` is
-exported from core and called by nothing at all. See `lessons.md`
-§ Core / surface parity.
+to it for one surface is drift with a good address — a core export no
+surface calls is unfinished, not done.
 
 **Check before claiming something does not exist.** An audit claimed
 milestone progress "does not exist anywhere"; it is
@@ -66,7 +59,7 @@ repeated twice before anyone looked.
 
 **Do not stop for things you can decide.** Stop only when a call changes
 scope, invents a requirement, violates a P-principle or a recorded
-decision, or is load-bearing — see `lessons.md` § Process. Everything
+decision, or is load-bearing. Everything
 else is decided, recorded in `docs/dev/decisions.md` § 8 with a revert
 path, and you continue.
 

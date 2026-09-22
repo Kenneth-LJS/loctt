@@ -11,8 +11,8 @@ describe("MCP unarchive_task (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        await client.callTool("archive_task", { ref: "T-1" });
-        const unarchive = await client.callTool("unarchive_task", { ref: "T-1" });
+        await client.callTool("archive_task", { refs: ["T-1"] });
+        const unarchive = await client.callTool("unarchive_task", { refs: ["T-1"] });
         expect(unarchive.isError).toBeFalsy();
 
         const get = await client.callTool("get_task", { ref: "T-1" });

@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-relationships.md —
+ * Transcribed from tests/cases/ui-test-cases/flow-relationships.md —
  * M2.5b, the Attachments panel (REL-35..41).
  *
  * ## Files go in through the input, not through a synthetic drop

@@ -1,18 +1,19 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 
 import { Button } from "./Button.tsx";
+import { Callout } from "./Callout.tsx";
 import { Dialog, DialogActions } from "./Dialog.tsx";
 import { TextField } from "./TextField.tsx";
 
 /**
- * The shared confirmation primitive (K71 / design-review §B1).
+ * The shared confirmation primitive (K71 / docs/dev/design/design-review.md §B1).
  *
  * Before this, seven delete/confirm dialogs each hand-rolled their own
  * `fixed inset-0 … bg-black/40` overlay and panel. Four of them
  * (`DeleteViewDialog`, `DeleteCommentDialog`, `DeleteConfirmDialog`, and
  * others) skipped the focus trap, the inert background, and focus
  * restoration entirely — a real keyboard/screen-reader regression
- * (design-review §A1, K71): Tab escaped the modal into the frozen page,
+ * (docs/dev/design/design-review.md §A1, K71): Tab escaped the modal into the frozen page,
  * and focus was not returned to the trigger on close.
  *
  * `ConfirmDialog` is a thin wrapper over `Dialog` (hence `Modal`), so it
@@ -39,11 +40,27 @@ export interface ConfirmDialogProps {
   readonly onCancel: () => void;
   /** Extra content between body and actions (e.g. a pin warning). */
   readonly children?: ReactNode;
+  /**
+   * A failure from the confirmed action, rendered inside the dialog so a
+   * rejected delete/archive is shown rather than swallowed by a confirm
+   * that just closes (mirrors RemapDeleteDialog). The caller keeps the
+   * dialog open on failure (close only `onSuccess`) so this message has
+   * somewhere to appear.
+   */
+  readonly error?: ReactNode;
   readonly testId?: string;
   /** testId for the confirm button, for specs that target it. */
   readonly confirmTestId?: string;
   /** testId for the cancel button (e.g. to assert it holds focus). */
   readonly cancelTestId?: string;
+  /**
+   * Explicit focus-restore target for when the control that opened this
+   * confirm will have unmounted by the time it closes — e.g. a kebab menu
+   * item on a row that is deleted, or the sidebar's saved-filter kebab,
+   * which the Menu removes on select. Falls through to `Dialog`/`Modal`
+   * into `useFocusTrap`'s `returnFocusTo`.
+   */
+  readonly returnFocusTo?: RefObject<HTMLElement | null>;
 }
 
 export function ConfirmDialog({
@@ -55,15 +72,18 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   children,
+  error,
   testId,
   confirmTestId,
   cancelTestId,
+  returnFocusTo,
 }: ConfirmDialogProps) {
   return (
     <Dialog
       title={title}
       onClose={onCancel}
       {...(testId !== undefined ? { testId } : {})}
+      {...(returnFocusTo !== undefined ? { returnFocusTo } : {})}
       actions={
         <DialogActions>
           <Button
@@ -88,6 +108,11 @@ export function ConfirmDialog({
     >
       <div className="text-body text-text-secondary">{body}</div>
       {children}
+      {error !== undefined && error !== null && (
+        <Callout tone="danger" role="alert" testId="confirm-dialog-error" className="mt-3">
+          {error}
+        </Callout>
+      )}
     </Dialog>
   );
 }
@@ -143,7 +168,7 @@ export function TypedConfirmDialog({
         <>
           {body}
           <label className="mt-4 block text-label font-medium text-text-secondary">
-            Type <code className="font-mono text-text-primary">{requiredWord}</code> to confirm
+            Type <code className="text-text-primary">{requiredWord}</code> to confirm
             {typeHint !== undefined && typeHint !== null ? (
               <span className="ml-1 font-normal text-text-tertiary">{typeHint}</span>
             ) : null}
@@ -153,7 +178,7 @@ export function TypedConfirmDialog({
               value={typed}
               onChange={e => { setTyped(e.target.value); }}
               aria-label={`Type ${requiredWord} to confirm`}
-              className="mt-1 font-mono"
+              className="mt-1"
             />
           </label>
         </>

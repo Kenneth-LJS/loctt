@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-sprints.md — M3.5, the
+ * Transcribed from tests/cases/ui-test-cases/flow-sprints.md — M3.5, the
  * `/sprints` overview. `/sprints/$key` (detail + burndown) is M4.7 and
  * is not exercised here.
  *
@@ -16,7 +16,26 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { comboValues, expectComboValue, pickCombo } from "./fixtures/dropdown.ts";
 import { expect, test } from "./fixtures/tracker.ts";
+
+/**
+ * The sprint detail page's displayed NAME.
+ *
+ * The name/dates/state read-out moved out of `SprintMetaHeader` and into
+ * the page's `PageHeader` (Ken 2026-09-20, the `foldReadMeta` prop), so
+ * the name is the page's `<h1>` rather than a `sprint-meta-name-value`
+ * field. The claim each caller makes — "the read view shows the name
+ * from sprints.yaml" — is unchanged; only where it is rendered moved.
+ */
+async function expectSprintName(
+  page: import("@playwright/test").Page,
+  name: string,
+): Promise<void> {
+  await expect(
+    page.getByTestId("sprint-detail-header").getByRole("heading", { level: 1 }),
+  ).toHaveText(name);
+}
 
 /** Reads one task's `task.md` from disk by key. */
 async function readTaskFile(root: string, key: string): Promise<string> {
@@ -99,6 +118,8 @@ async function dragCard(
   page: import("@playwright/test").Page,
   sourceKey: string,
   target: { readonly x: number; readonly y: number },
+  /** When given, the column is re-measured mid-drag — see below. */
+  targetColumnId?: string,
 ): Promise<void> {
   const card = page.getByTestId(`board-card-${sourceKey}`);
   const box = await card.boundingBox();
@@ -108,6 +129,29 @@ async function dragCard(
   // Past the threshold first, so the drag is armed before we aim.
   await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 20, { steps: 4 });
   await page.mouse.move(target.x, target.y, { steps: 12 });
+
+  // RE-MEASURE the target column now, mid-drag, if the caller named one.
+  //
+  // The drop is decided by `elementFromPoint` at the pointer
+  // (`useBoardDrag.slotAt`), and coordinates captured BEFORE the drag can
+  // be stale: lifting the card out of the flow reflows the board, so the
+  // column that was at those coordinates may have moved. Measured over
+  // repeated runs, the passing drops aimed at x≈684 and the failing ones
+  // at x≈394 — landing on the SPRINT column instead of "No sprint", so
+  // no write was issued at all (`posts=[]`). This was filed as a flake
+  // and is not one; it is a stale-coordinate bug in the helper.
+  if (targetColumnId !== undefined) {
+    const fresh = await page
+      .getByTestId(`sprint-column-${targetColumnId}`)
+      .boundingBox();
+    if (fresh !== null) {
+      await page.mouse.move(
+        fresh.x + fresh.width / 2,
+        fresh.y + fresh.height - 40,
+        { steps: 4 },
+      );
+    }
+  }
   await page.mouse.up();
 
   // Wait for the write AND the re-render it triggers, not just for the
@@ -421,7 +465,7 @@ test.describe("SPR — sprints overview", () => {
     await assign(tracker, [[String(key), "Held"]]);
 
     await page.goto(`${tracker.baseURL}/sprints`);
-    await dragCard(page, String(key), await columnPoint(page, "__no_sprint__"));
+    await dragCard(page, String(key), await columnPoint(page, "__no_sprint__"), "__no_sprint__");
 
     await expect(page.getByTestId("sprint-count-__no_sprint__")).toHaveText("1");
 
@@ -722,7 +766,11 @@ test.describe("SPR — sprints overview", () => {
     const empty = page.getByTestId("sprints-empty");
     await expect(empty).toBeVisible();
     await expect(empty).toContainText("No sprints yet");
-    await expect(empty).toContainText("Settings");
+    // The empty state still teaches the next step, but K105 (b7a39db7)
+    // replaced "go to Settings" prose with the action itself: a
+    // "+ New sprint" button that creates in place. Same claim — the
+    // empty state is an affordance, not a dead end — at its new shape.
+    await expect(empty.getByTestId("sprints-empty-new")).toBeVisible();
     await expect(page.getByTestId("sprints-load-error")).toHaveCount(0);
 
     // A failed fetch: an error with a retry, NEVER the same empty state.
@@ -831,7 +879,7 @@ test.describe("SPR — sprints overview", () => {
   });
 
   // @verifies SPR-40
-  test("SPR-40: the overview hides archived sprints until the show-archived toggle is on", async ({
+  test("SPR-40: the overview hides archived sprints until the archived-scope control is set to show them", async ({
     tracker,
     page,
   }) => {
@@ -852,6 +900,12 @@ test.describe("SPR — sprints overview", () => {
     const yamlBefore = await readFile(
       path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",
     );
+    // The overview's reveal is a checkbox ("Show archived (n)"), not the
+    // Settings panel's tri-state `sprints-archived-scope` select — see
+    // `SprintsView.tsx`, which cites SPR-1/SPR-40 for it. The claim this
+    // case makes (hidden by default, revealed by a LOCAL toggle that
+    // writes nothing) is unchanged; the yaml comparison below is what
+    // enforces the "no write" half.
     await page.getByTestId("sprints-show-archived").check();
     await expect(page.getByTestId(`sprint-column-${retiredId}`)).toBeVisible();
     const yamlAfter = await readFile(
@@ -868,11 +922,21 @@ test.describe("SPR — sprints overview", () => {
     await tracker.run(["sprint", "create", "Live", "--start", "2026-06-01", "--end", "2026-06-14", "--state", "active"]);
 
     await page.goto(`${tracker.baseURL}/sprints`);
+    // K105 (b7a39db7) turned the prose link into a gear IconButton, and
+    // moved CREATE onto the overview itself. The roster-level actions
+    // (delete-with-remap, reorder, unarchive) still live in Settings,
+    // which is what this case is about: the overview reaches them in one
+    // click.
     await page.getByTestId("sprints-manage-link").click();
 
-    // Lands on the Settings Sprints panel, where create/delete/archive live.
+    // Lands on the Settings Sprints panel, where the roster actions live.
     await expect(page.getByTestId("sprints-panel")).toBeVisible();
-    await expect(page.getByTestId("sprint-create-form")).toBeVisible();
+    await expect(page.getByTestId("sprints-archived-scope")).toBeVisible();
+
+    // And creating is reachable without going there at all (K105).
+    await page.goto(`${tracker.baseURL}/sprints`);
+    await page.getByTestId("sprints-new").click();
+    await expect(page.getByTestId("sprint-create-dialog")).toBeVisible();
   });
 });
 
@@ -945,10 +1009,13 @@ test.describe("SPR — sprint detail (M4.7)", () => {
 
     // SPR-8: the header is read-by-default. The read view shows every
     // field from the config, not from a default.
-    await expect(page.getByTestId("sprint-meta-name-value")).toHaveText("Cadence");
-    await expect(page.getByTestId("sprint-meta-start_date-value")).toHaveText("2026-04-06");
-    await expect(page.getByTestId("sprint-meta-end_date-value")).toHaveText("2026-04-17");
-    await expect(page.getByTestId("sprint-meta-state-value")).toHaveText("Active");
+    // The name/dates/state read-out moved from `SprintMetaHeader` into
+    // the page's `PageHeader` (Ken 2026-09-20, `foldReadMeta`), so they
+    // are asserted at their new home. Same claim: every field comes from
+    // sprints.yaml, not from a default. The goal is still the header's.
+    await expectSprintName(page, "Cadence");
+    await expect(page.getByTestId("sprint-detail-window")).toHaveText("2026-04-06 → 2026-04-17");
+    await expect(page.getByTestId("sprint-detail-state")).toHaveText("Active");
     await expect(page.getByTestId("sprint-meta-goal-value")).toHaveText("Land the importer");
 
     // Opening Edit exposes the controls, populated from the config.
@@ -956,14 +1023,16 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     await expect(page.getByTestId("sprint-meta-name")).toHaveValue("Cadence");
     await expect(page.getByTestId("sprint-meta-start_date")).toHaveValue("2026-04-06");
     await expect(page.getByTestId("sprint-meta-end_date")).toHaveValue("2026-04-17");
-    await expect(page.getByTestId("sprint-meta-state")).toHaveValue("active");
+    // K106: the state control is a button-based picker. `expectComboValue`
+    // asserts the reported value AND that it is genuinely offered —
+    // `data-value` alone echoes draft state even for a value with no row.
+    await expectComboValue(page, "sprint-meta-state", "active");
     await expect(page.getByTestId("sprint-meta-goal")).toHaveValue("Land the importer");
 
     // The state control offers EXACTLY the three schema states — no
-    // invented fourth, no blank option.
-    const stateOptions = page.getByTestId("sprint-meta-state").locator("option");
-    await expect(stateOptions).toHaveCount(3);
-    expect(await stateOptions.evaluateAll(os => os.map(o => (o as HTMLOptionElement).value)))
+    // invented fourth, no blank option. Read from the portalled listbox's
+    // `role="option"` rows rather than from `<option>` children.
+    expect(await comboValues(page, "sprint-meta-state"))
       .toEqual(["active", "completed", "future"]);
 
     // The URL is pasteable: a cold load of the same address reopens
@@ -972,7 +1041,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     await page.goto("about:blank");
     await page.goto(pasted);
     await expect(page.getByTestId("sprint-detail")).toHaveAttribute("data-sprint-id", id);
-    await expect(page.getByTestId("sprint-meta-name-value")).toHaveText("Cadence");
+    await expectSprintName(page, "Cadence");
   });
 
   // @verifies SPR-7
@@ -1046,7 +1115,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
 
     // And a reload shows it (read view), plus the task still listed.
     await page.reload();
-    await expect(page.getByTestId("sprint-meta-name-value")).toHaveText("After");
+    await expectSprintName(page, "After");
     await expect(page.getByTestId(`sprint-task-${String(seeded[0])}`)).toBeVisible();
   });
 
@@ -1063,7 +1132,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     await page.goto(`${tracker.baseURL}/sprints/${id}`);
     // SPR-8: state changes behind Edit, then Save.
     await page.getByTestId("sprint-meta-edit").click();
-    await page.getByTestId("sprint-meta-state").selectOption("completed");
+    await pickCombo(page, "sprint-meta-state", "completed");
     await page.getByTestId("sprint-meta-save").click();
 
     await expect
@@ -1087,7 +1156,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     const id = String((await readSprints(tracker.root))[0]?.id);
 
     await page.goto(`${tracker.baseURL}/sprints/${id}`);
-    await expect(page.getByTestId("sprint-meta-name-value")).toHaveText("Concurrent");
+    await expectSprintName(page, "Concurrent");
 
     // The CLI changes `goal` underneath the open page.
     await tracker.run(["sprint", "edit", "Concurrent", "--goal", "Set from the CLI"]);
@@ -1107,7 +1176,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     expect(record["goal"]).toBe("Set from the CLI");
 
     // And the page (back in read view after Save) reflects both.
-    await expect(page.getByTestId("sprint-meta-name-value")).toHaveText("Renamed in UI");
+    await expectSprintName(page, "Renamed in UI");
     await expect(page.getByTestId("sprint-meta-goal-value")).toHaveText("Set from the CLI");
   });
 
@@ -1148,7 +1217,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
       .poll(async () => (await readSprintRecord(tracker.root, id))["end_date"])
       .toBe("2026-08-21");
     // Back in read view, showing the corrected value.
-    await expect(page.getByTestId("sprint-meta-end_date-value")).toHaveText("2026-08-21");
+    await expect(page.getByTestId("sprint-detail-window")).toContainText("2026-08-21");
     // SPR-33: the field-level problem CLEARS on the successful re-save —
     // it does not linger past the fix (A148 dropped this; restored).
     await expect(page.getByTestId("sprint-meta-end_date-problem")).toHaveCount(0);
@@ -1165,7 +1234,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     const id = String((await readSprints(tracker.root))[0]?.id);
 
     await page.goto(`${tracker.baseURL}/sprints/${id}`);
-    await expect(page.getByTestId("sprint-meta-name-value")).toHaveText("Flaky");
+    await expectSprintName(page, "Flaky");
 
     // The write fails in flight, after leaving the browser.
     await page.route(`**/api/sprints/${id}`, route => {
@@ -1202,7 +1271,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     // Abandoning the edit returns the read view to the on-disk value,
     // never the attempted one shown as though saved.
     await page.getByTestId("sprint-meta-cancel").click();
-    await expect(page.getByTestId("sprint-meta-name-value")).toHaveText("Flaky");
+    await expectSprintName(page, "Flaky");
   });
 
   // @verifies SPR-37
@@ -1223,7 +1292,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
 
     await page.goto(`${tracker.baseURL}/sprints/${id}`);
     await page.getByTestId("sprint-meta-edit").click();
-    await page.getByTestId("sprint-meta-state").selectOption("active");
+    await pickCombo(page, "sprint-meta-state", "active");
     await page.getByTestId("sprint-meta-save").click();
 
     // Anchored under State, naming the transition; NOT under End date.
@@ -1276,7 +1345,7 @@ test.describe("SPR — sprint detail (M4.7)", () => {
     // Reachable by URL, even though the overview omits its column.
     await page.goto(`${tracker.baseURL}/sprints/${id}`);
     await expect(page.getByTestId("sprint-detail")).toBeVisible();
-    await expect(page.getByTestId("sprint-meta-name-value")).toHaveText("Retired");
+    await expectSprintName(page, "Retired");
     // Shown as archived rather than looking like an ordinary sprint.
     await expect(page.getByTestId("sprint-meta-archived")).toBeVisible();
 
@@ -1914,7 +1983,7 @@ test.describe("SPR — sprint-scoped task list (M4.7)", () => {
     // "Here". The route param wins — the header and the list must not
     // describe two different sprints.
     await page.goto(`${tracker.baseURL}/sprints/${here}?sprint=${there}`);
-    await expect(page.getByTestId("sprint-meta-name-value")).toHaveText("Here");
+    await expectSprintName(page, "Here");
     await expect(page.getByTestId(`sprint-task-${String(seeded[0])}`)).toBeVisible();
     await expect(page.getByTestId(`sprint-task-${String(seeded[1])}`)).toHaveCount(0);
   });

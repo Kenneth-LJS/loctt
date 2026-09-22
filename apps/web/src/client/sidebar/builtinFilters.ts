@@ -1,6 +1,7 @@
 import type { PriorityDef } from "@loctt/contracts";
 
 import type { ListSearch } from "../router/listSearch.ts";
+import type { IconName } from "../ui/Icon.tsx";
 
 /**
  * Built-in saved filters shown in the sidebar's "Saved filters" group.
@@ -35,8 +36,8 @@ import type { ListSearch } from "../router/listSearch.ts";
 export interface BuiltinFilter {
   readonly id: string;
   readonly label: string;
-  /** Single-glyph icon matching the mockup. */
-  readonly icon: string;
+  /** Icon drawn beside the filter row (see the shared `Icon` component). */
+  readonly icon: IconName;
   /**
    * Resolves the URL search state this filter applies, or `null` when
    * it can't be resolved yet (e.g. needs a current user that isn't
@@ -100,7 +101,7 @@ export const BUILTIN_FILTERS: readonly BuiltinFilter[] = [
   {
     id: "assigned-to-me",
     label: "Assigned to me",
-    icon: "\u{1F464}", // 👤
+    icon: "user",
     resolve: ({ currentUserId }) =>
       currentUserId === null
         ? null
@@ -109,7 +110,7 @@ export const BUILTIN_FILTERS: readonly BuiltinFilter[] = [
   {
     id: "reported-by-me",
     label: "Reported by me",
-    icon: "✎", // ✎
+    icon: "edit",
     resolve: ({ currentUserId }) =>
       currentUserId === null
         ? null
@@ -118,7 +119,7 @@ export const BUILTIN_FILTERS: readonly BuiltinFilter[] = [
   {
     id: "mentions-me",
     label: "Mentions me",
-    icon: "@",
+    icon: "atSign",
     // CMT-10 / A183: resolves to the `comment_mentions` query field, which
     // matches a task when any of its comments mention this user. Like
     // "Assigned to me", the concrete ULID is inlined rather than the DSL's
@@ -133,7 +134,7 @@ export const BUILTIN_FILTERS: readonly BuiltinFilter[] = [
   {
     id: "due-this-week",
     label: "Due this week",
-    icon: "\u{1F4C5}", // 📅
+    icon: "calendar",
     resolve: ({ today }) => ({
       q: `due_date >= ${today} and due_date <= ${addDays(today, 7)} and ${NOT_CLOSED}`,
     }),
@@ -141,7 +142,7 @@ export const BUILTIN_FILTERS: readonly BuiltinFilter[] = [
   {
     id: "overdue",
     label: "Overdue",
-    icon: "!",
+    icon: "alert",
     resolve: ({ today }) => ({
       q: `due_date < ${today} and ${NOT_CLOSED}`,
     }),
@@ -149,7 +150,7 @@ export const BUILTIN_FILTERS: readonly BuiltinFilter[] = [
   {
     id: "high-priority",
     label: "High priority",
-    icon: "▲", // ▲
+    icon: "arrowUp",
     // Resolved against the workspace's own priorities (VUE-24). A
     // workspace whose scale cannot express "high" — one priority, or
     // none — resolves to null, so the row renders inert rather than

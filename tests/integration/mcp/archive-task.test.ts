@@ -11,7 +11,7 @@ describe("MCP archive_task (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const archive = await client.callTool("archive_task", { ref: "T-1" });
+        const archive = await client.callTool("archive_task", { refs: ["T-1"] });
         expect(archive.isError).toBeFalsy();
 
         const get = await client.callTool("get_task", { ref: "T-1" });

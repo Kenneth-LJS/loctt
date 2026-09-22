@@ -7,6 +7,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UsersPanel } from "./UsersPanel.tsx";
 
 /**
+ * Part C3 relies on the decode → crop → prepared-file flow. Decoding uses
+ * canvas/ImageBitmap (not in jsdom) and the cropper is a heavy interactive
+ * surface, so both are mocked to the shape the create form consumes: a
+ * decode that yields a trivial DecodedImage, and a cropper that
+ * immediately confirms with a prepared File. The create-then-set wiring
+ * under test — attach the prepared file to the new user's id after create
+ * — is exercised directly.
+ */
+vi.mock("./prepareAvatar.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./prepareAvatar.ts")>();
+  return {
+    ...actual,
+    decodeImageFile: vi.fn(() => Promise.resolve({
+      animated: false,
+      revoke: () => {},
+    })),
+  };
+});
+
+vi.mock("./AvatarCropper.tsx", () => ({
+  AvatarCropper: ({ onConfirm }: { onConfirm: (r: { file: File }) => void }) => (
+    <button
+      type="button"
+      data-testid="mock-cropper-confirm"
+      onClick={() => { onConfirm({ file: new File(["x"], "cropped.png", { type: "image/png" }) }); }}
+    >
+      confirm crop
+    </button>
+  ),
+}));
+
+/**
  * @verifies PRU-47
  *
  * The Edit dialog that lets an existing user's name, email and timezone
@@ -93,7 +125,10 @@ function stubHappyPath(): void {
   });
 }
 
+// U26/K105: a user row's actions are now a "⋯" kebab (RowActions). Open it
+// first, then click the Edit MenuItem — the item testids are unchanged.
 async function openAliceEditDialog(): Promise<void> {
+  fireEvent.click(await screen.findByRole("button", { name: 'Actions for user "Alice"' }));
   const edit = await screen.findByTestId("user-edit-u-alice");
   fireEvent.click(edit);
   await screen.findByTestId("user-edit-dialog-u-alice");
@@ -124,9 +159,15 @@ describe("UsersPanel Edit dialog (PRU-47)", () => {
     fireEvent.change(screen.getByTestId("user-edit-email-u-alice"), {
       target: { value: "new@example.com" },
     });
-    fireEvent.change(screen.getByTestId("user-edit-timezone-u-alice"), {
-      target: { value: "America/New_York" },
+    // The timezone picker is now a searchable Combobox (A211), not a
+    // native <select>: open the trigger, filter, and click the option.
+    fireEvent.click(screen.getByTestId("user-edit-timezone-u-alice"));
+    fireEvent.change(await screen.findByTestId("user-edit-timezone-search-u-alice"), {
+      target: { value: "New_York" },
     });
+    fireEvent.click(
+      await screen.findByTestId("user-edit-timezone-option-u-alice-America/New_York"),
+    );
 
     fireEvent.click(screen.getByTestId("user-edit-save-u-alice"));
 
@@ -249,17 +290,67 @@ describe("UsersPanel Edit dialog (PRU-47)", () => {
 
   /** @verifies PRU-47 */
   it("no longer offers a '(none)' timezone option that cannot clear the zone (B2 bug 2)", async () => {
+    // The picker is now a Combobox (A211); this once read `select.options`
+    // off the native <select> — the pre-migration control. It now opens
+    // the list and asserts the same thing: no "(none)"/clear row exists,
+    // because the Combobox is built without a `clear` prop (a clear would
+    // report a zone-clear that core does not perform).
     stubHappyPath();
     render(<UsersPanel />, { wrapper: wrapper() });
 
     await openAliceEditDialog();
-    const select = screen.getByTestId<HTMLSelectElement>("user-edit-timezone-u-alice");
-    const optionValues = [...select.options].map(o => o.value);
-    const optionLabels = [...select.options].map(o => o.textContent ?? "");
-    // The lying "(none)" clear option is gone.
-    expect(optionLabels).not.toContain("(none)");
-    // Alice has a real zone, so there is no empty-value option at all.
-    expect(optionValues).not.toContain("");
+    // The trigger shows the stored zone.
+    expect(
+      screen.getByTestId("user-edit-timezone-u-alice").getAttribute("data-value"),
+    ).toBe("UTC");
+    fireEvent.click(screen.getByTestId("user-edit-timezone-u-alice"));
+    const list = await screen.findByTestId("user-edit-timezone-list-u-alice");
+    // No lying "(none)"/clear row: every rendered option is a real zone.
+    const optionLabels = [...list.querySelectorAll('[role="option"]')].map(
+      o => o.textContent ?? "",
+    );
+    expect(optionLabels.some(l => /\(none\)/i.test(l))).toBe(false);
+    expect(optionLabels.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * @verifies PRU-47
+   *
+   * A211: the ~400-zone list is unusable without search, so the whole
+   * point of the migration is that typing narrows it. Red proof: with the
+   * pre-migration native <select> there was no search box (no
+   * `user-edit-timezone-search-*` testid) and no filtering, so the query
+   * and the "London gone" assertion both fail.
+   */
+  it("filters the timezone list as the search box is typed into (A211)", async () => {
+    stubHappyPath();
+    render(<UsersPanel />, { wrapper: wrapper() });
+
+    await openAliceEditDialog();
+    fireEvent.click(screen.getByTestId("user-edit-timezone-u-alice"));
+
+    // The full list is long enough that the search box is shown at all.
+    const list = await screen.findByTestId("user-edit-timezone-list-u-alice");
+    const countBefore = list.querySelectorAll('[role="option"]').length;
+    expect(countBefore).toBeGreaterThan(50);
+
+    fireEvent.change(await screen.findByTestId("user-edit-timezone-search-u-alice"), {
+      target: { value: "New_York" },
+    });
+
+    await waitFor(() => {
+      const labels = [
+        ...list.querySelectorAll('[role="option"]'),
+      ].map(o => o.textContent ?? "");
+      // The list collapses to the matches (plus the pinned current value,
+      // "UTC", which the Combobox keeps present so a selection never
+      // vanishes) — far fewer than the full list.
+      expect(labels.length).toBeLessThan(countBefore);
+      // The matching zone is present…
+      expect(labels.some(l => /america\/new_york/i.test(l))).toBe(true);
+      // …and an unrelated, unselected zone is filtered out.
+      expect(labels.some(l => /london/i.test(l))).toBe(false);
+    });
   });
 
   /** @verifies PRU-47 */
@@ -279,6 +370,7 @@ describe("UsersPanel Edit dialog (PRU-47)", () => {
     });
 
     render(<UsersPanel />, { wrapper: wrapper() });
+    fireEvent.click(await screen.findByRole("button", { name: 'Actions for user "Zed"' }));
     fireEvent.click(await screen.findByTestId("user-edit-u-notz"));
     await screen.findByTestId("user-edit-dialog-u-notz");
 
@@ -298,5 +390,147 @@ describe("UsersPanel Edit dialog (PRU-47)", () => {
     // bare inline `<input type=file>`.
     const input = screen.getByTestId<HTMLInputElement>("user-avatar-input-u-alice");
     expect(input.className).toContain("sr-only");
+  });
+});
+
+describe("CreateUserForm avatar (Part C3)", () => {
+  /**
+   * Records POSTs so the test can assert BOTH the create and the
+   * follow-on avatar upload to the new user's id (create-then-set).
+   */
+  function stubCreateFlow(): { posts: { url: string; isFile: boolean }[] } {
+    const posts: { url: string; isFile: boolean }[] = [];
+    fetchMock.mockImplementation((url: unknown, init?: unknown): Promise<Response> => {
+      const urlStr = String(url);
+      const method = String((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (urlStr.includes("/avatar") && method === "POST") {
+        posts.push({ url: urlStr, isFile: true });
+        return Promise.resolve(jsonResponse({ id: "u-new", name: "Carol", avatar: "carol.png" }));
+      }
+      if (/\/api\/users$/.test(urlStr) && method === "POST") {
+        posts.push({ url: urlStr, isFile: false });
+        return Promise.resolve(jsonResponse({ id: "u-new", name: "Carol", timezone: "UTC" }, 201));
+      }
+      if (urlStr.includes("/api/user/current")) return Promise.resolve(jsonResponse(BOB));
+      if (urlStr.includes("/api/users")) return Promise.resolve(jsonResponse(USERS));
+      return Promise.resolve(jsonResponse({}));
+    });
+    return { posts };
+  }
+
+  it("attaches the chosen avatar to the new user after create (create-then-set)", async () => {
+    const { posts } = stubCreateFlow();
+    render(<UsersPanel />, { wrapper: wrapper() });
+
+    fireEvent.click(await screen.findByTestId("user-create-open"));
+    fireEvent.change(await screen.findByTestId("user-create-name"), { target: { value: "Carol" } });
+
+    // Choose a file → mocked decode → mocked cropper → confirm prepares it.
+    const fileInput = screen.getByTestId<HTMLInputElement>("user-create-avatar-input");
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["y"], "raw.png", { type: "image/png" })] },
+    });
+    fireEvent.click(await screen.findByTestId("mock-cropper-confirm"));
+    await screen.findByTestId("user-create-avatar-preview");
+
+    fireEvent.click(screen.getByTestId("user-create-submit"));
+
+    // Both the create and the avatar upload to the NEW id fire.
+    await waitFor(() => {
+      expect(posts.some(p => p.url.endsWith("/api/users") && !p.isFile)).toBe(true);
+      expect(posts.some(p => p.url.includes("/api/users/u-new/avatar") && p.isFile)).toBe(true);
+    });
+  });
+
+  it("creates the user with no avatar upload when none is chosen", async () => {
+    const { posts } = stubCreateFlow();
+    render(<UsersPanel />, { wrapper: wrapper() });
+
+    fireEvent.click(await screen.findByTestId("user-create-open"));
+    fireEvent.change(await screen.findByTestId("user-create-name"), { target: { value: "Carol" } });
+    fireEvent.click(screen.getByTestId("user-create-submit"));
+
+    await waitFor(() => {
+      expect(posts.some(p => p.url.endsWith("/api/users") && !p.isFile)).toBe(true);
+    });
+    // No avatar upload fired.
+    expect(posts.some(p => p.isFile)).toBe(false);
+  });
+});
+
+describe("UsersPanel — archived separation + self-user note (U24/U25)", () => {
+  const CAROL_ARCHIVED = {
+    id: "u-carol", name: "Carol", email: "carol@example.com", timezone: "UTC", archived: true,
+  };
+  function stubWithArchived(): void {
+    fetchMock.mockImplementation((url: unknown): Promise<Response> => {
+      const urlStr = String(url);
+      if (urlStr.includes("/api/user/current")) return Promise.resolve(jsonResponse(BOB));
+      if (urlStr.includes("/api/users")) {
+        // K107: honour the `?archived` scope like the endpoint, so the
+        // panel's default `active` scope hides the archived user.
+        const scope = new URL(urlStr, "http://x").searchParams.get("archived") ?? "active";
+        const all: { id: string; archived?: boolean }[] = [ALICE, BOB, CAROL_ARCHIVED];
+        const items = all.filter(u =>
+          scope === "all" ? true : scope === "archived" ? u.archived === true : u.archived !== true,
+        );
+        return Promise.resolve(jsonResponse({ items, total: items.length, offset: 0, limit: 100 }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+  }
+
+  it("collapses row actions into a kebab, not text buttons (U26)", async () => {
+    stubWithArchived();
+    render(<UsersPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("user-row-u-alice");
+    // No Edit action is visible until the kebab opens.
+    expect(screen.queryByTestId("user-edit-u-alice")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for user "Alice"' }));
+    // The kebab reveals Edit / Archive / Delete as menu items.
+    expect(await screen.findByTestId("user-edit-u-alice")).toBeTruthy();
+    expect(screen.getByTestId("user-archive-u-alice")).toBeTruthy();
+    expect(screen.getByTestId("user-delete-u-alice")).toBeTruthy();
+  });
+
+  // U25 / K107: the U25 "Show archived" checkbox is replaced by the shared
+  // tri-state scope control, and the split is now server-side. Default
+  // `active` hides the archived user; choosing "all" refetches and reveals
+  // it. (This test asserted the old boolean toggle + client-side split.)
+  it("hides archived users until the scope control reveals them (U25)", async () => {
+    stubWithArchived();
+    render(<UsersPanel />, { wrapper: wrapper() });
+    // Active users show; the archived one does not, by default.
+    await screen.findByTestId("user-row-u-alice");
+    expect(screen.queryByTestId("user-row-u-carol")).toBeNull();
+    // Choosing "all" reveals it.
+    fireEvent.change(screen.getByTestId("users-archived-scope"), { target: { value: "all" } });
+    expect(await screen.findByTestId("user-row-u-carol")).toBeTruthy();
+  });
+
+  it("does not render an inline self-user note that reflows the row (U24)", async () => {
+    stubWithArchived();
+    render(<UsersPanel />, { wrapper: wrapper() });
+    // BOB is the current user (self). The reason lives as an sr-only note
+    // (kept off-layout) plus the disabled Archive menu item's tooltip —
+    // NOT a visible inline paragraph that changes the row height.
+    const note = await screen.findByTestId("user-archive-blocked-u-bob");
+    expect(note.className).toContain("sr-only");
+    // Open Bob's kebab; the Archive item is disabled and carries the reason.
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for user "Bob"' }));
+    const archiveItem = await screen.findByTestId("user-archive-u-bob");
+    // A disabled RowActions item is REALLY disabled (A11Y-31): the native
+    // attribute, so it exposes the disabled property and refuses focus —
+    // not merely dimmed-and-unresponsive.
+    //
+    // This assertion previously read the title off `archiveItem
+    // .querySelector("[title]")`, i.e. off an inner `<span>`. That was
+    // asserting the bug: a `title` on a child is a pointer tooltip on
+    // that child and is never the button's accessible description, which
+    // is exactly what A11Y-31's second bullet asks for. The reason now
+    // lives on the button itself.
+    expect(archiveItem).toHaveProperty("disabled", true);
+    expect(archiveItem.textContent).toMatch(/archive/i);
+    expect(archiveItem.getAttribute("title")).toMatch(/cannot archive/i);
   });
 });

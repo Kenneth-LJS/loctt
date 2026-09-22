@@ -20,8 +20,14 @@ import { useBoardDrag } from "../board/useBoardDrag.ts";
 import { buildLookups } from "../list/lookups.ts";
 import type { Progress, Readout } from "../milestones/model.ts";
 import { progressState } from "../milestones/model.ts";
+import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
+import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import type { CollapseOverrides } from "./collapse.ts";
 import { isExpanded, readOverrides, toggle, writeOverrides } from "./collapse.ts";
 import type { SprintColumn } from "./columns.ts";
@@ -126,6 +132,9 @@ export function SprintsView() {
   // parity (A166). A local view toggle only: it never writes, and
   // `deriveSprintColumns` already took the option nothing was passing.
   const [showArchived, setShowArchived] = useState(false);
+  // K105: "+ New sprint" opens the shared dialog in place (was a prose link
+  // to the Settings page).
+  const [creating, setCreating] = useState(false);
   const archivedCount = sprintDefs.filter(s => s.archived === true).length;
 
   // SPR-39: `progress` off the `?progress=true` list, keyed by id, so the
@@ -270,13 +279,13 @@ export function SprintsView() {
           <h2 className="text-[1.0714rem] font-semibold text-text-primary">
             The sprint configuration could not be read
           </h2>
-          <p className="mt-2 whitespace-pre-wrap font-mono text-[0.8571rem] text-danger-fg">
+          <p className="mt-2 whitespace-pre-wrap text-[0.8571rem] text-danger-fg">
             {sprintsConfigError.envelope?.message ?? sprintsConfigError.message}
           </p>
           <p className="mt-3 text-[0.9286rem] text-text-secondary">
             No sprints could be loaded — the whole file failed to parse, so
             this is not an empty tracker. Fix{" "}
-            <code className="font-mono">.loctt/config/sprints.yaml</code> and
+            <code>.loctt/config/sprints.yaml</code> and
             reload. LocTT will not repair the file for you.
           </p>
         </div>
@@ -291,7 +300,7 @@ export function SprintsView() {
   // which is a 400 the user must fix rather than retry.
   if (!loading && (tasks.isError || sprints.isError)) {
     return (
-      <div className="p-4" data-testid="sprints-load-error">
+      <div data-testid="sprints-load-error">
         <ErrorState
           error={sprints.error ?? tasks.error}
           context="Could not load sprints"
@@ -313,30 +322,56 @@ export function SprintsView() {
           RemapDeleteDialog, so the two surfaces cannot drift); the
           overview links there in one click, and reveals archived
           sprints in place with a local view toggle that never writes. */}
-      <header className="flex items-center justify-between gap-3">
-        <Link
-          to="/settings/$section"
-          params={{ section: "sprints" }}
-          data-testid="sprints-manage-link"
-          className="text-[0.8571rem] text-accent no-underline hover:underline"
-        >
-          Manage sprints in Settings →
-        </Link>
-        {archivedCount > 0 && (
-          // SPR-1: archived sprints appear only behind this affordance.
-          // A checkbox so the state is announced; nothing here writes to
-          // sprints.yaml (unarchiving is a Settings action).
-          <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
-            <input
-              type="checkbox"
-              data-testid="sprints-show-archived"
-              checked={showArchived}
-              onChange={e => { setShowArchived(e.target.checked); }}
-            />
-            Show archived ({archivedCount})
-          </label>
-        )}
-      </header>
+      {/* The titled header (Ken 2026-09-20): a "Sprints" h1, with the
+          lifecycle affordances (A166) in the actions slot — the manage
+          link and the local archived-reveal toggle. Create, delete and
+          archive *act* in Settings → Sprints (the shared
+          RemapDeleteDialog, so the two surfaces cannot drift); the
+          overview links there in one click, and reveals archived sprints
+          in place with a local view toggle that never writes. */}
+      <PageHeader
+        title="Sprints"
+        testId="sprints-header"
+        actions={
+          <>
+            {archivedCount > 0 && (
+              // SPR-1: archived sprints appear only behind this affordance.
+              // A checkbox so the state is announced; nothing here writes to
+              // sprints.yaml (unarchiving is a Settings action).
+              <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
+                <Checkbox
+                  data-testid="sprints-show-archived"
+                  checked={showArchived}
+                  onChange={e => { setShowArchived(e.target.checked); }}
+                />
+                Show archived ({archivedCount})
+              </label>
+            )}
+            {/* K105: create in place via the shared dialog — not a prose
+                link to Settings. Roster-level actions (delete-with-remap,
+                reorder, unarchive) still live in the Settings panel, reached
+                by a proper gear button, not scattered prose. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              testId="sprints-new"
+              onClick={() => { setCreating(true); }}
+            >
+              <Icon name="plus" size={14} />
+              New sprint
+            </Button>
+            <IconButton
+              size="sm"
+              aria-label="Manage sprints in Settings"
+              title="Manage sprints in Settings"
+              testId="sprints-manage-link"
+              onClick={() => { void navigate({ to: "/settings/$section", params: { section: "sprints" } }); }}
+            >
+              <Icon name="settings" size={14} />
+            </IconButton>
+          </>
+        }
+      />
 
       {pending !== null && (
         <SprintWriter
@@ -412,7 +447,7 @@ export function SprintsView() {
               ? "1 sprint could not be read from sprints.yaml"
               : `${String(brokenSprints.length)} sprints could not be read from sprints.yaml`}
             {" "}— fix{" "}
-            <code className="font-mono">.loctt/config/sprints.yaml</code> and
+            <code>.loctt/config/sprints.yaml</code> and
             reload to restore {brokenSprints.length === 1 ? "it" : "them"}.
             LocTT will not repair the file for you.
           </p>
@@ -433,7 +468,7 @@ export function SprintsView() {
                     {b.id ?? `Sprint entry #${String(b.index + 1)}`}
                   </span>
                   <span className="text-text-tertiary"> (broken)</span>
-                  <span className="mt-0.5 block break-words font-mono text-[0.7857rem] text-danger-fg/90">
+                  <span className="mt-0.5 block break-words text-[0.7857rem] text-danger-fg/90">
                     {b.error}
                   </span>
                 </span>
@@ -468,16 +503,19 @@ export function SprintsView() {
       {!loading && realColumns.length === 0 && brokenSprints.length === 0 && (
         <div
           data-testid="sprints-empty"
-          className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
+          className="flex flex-col items-center gap-3 rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
-          No sprints yet.{" "}
-          <button
-            type="button"
-            onClick={() => void navigate({ to: "/settings/$section", params: { section: "sprints" } })}
-            className="underline underline-offset-2 hover:text-text-primary"
+          <span>No sprints yet.</span>
+          {/* K105: create in place, not a link to Settings. */}
+          <Button
+            variant="secondary"
+            size="sm"
+            testId="sprints-empty-new"
+            onClick={() => { setCreating(true); }}
           >
-            Settings → Sprints
-          </button>
+            <Icon name="plus" size={14} />
+            New sprint
+          </Button>
         </div>
       )}
 
@@ -530,6 +568,12 @@ export function SprintsView() {
           />
         </div>
       )}
+
+      {/* K105: the shared create dialog, opened in place from "+ New
+          sprint" (header + empty state). */}
+      {creating ? (
+        <SprintEditDialog mode="create" onClose={() => { setCreating(false); }} />
+      ) : null}
     </div>
   );
 }
@@ -728,7 +772,7 @@ function Column({
             {column.sprint !== undefined && (
               <span
                 data-testid={`sprint-window-${column.id}`}
-                className="block truncate font-mono text-[0.7143rem] text-text-tertiary"
+                className="block truncate text-[0.7143rem] text-text-tertiary"
               >
                 {column.sprint.start_date} → {column.sprint.end_date}
               </span>
@@ -855,8 +899,8 @@ function Column({
           className="border-b border-border-subtle px-3 py-2 text-[0.7857rem] text-text-secondary"
         >
           These tasks name a sprint that{" "}
-          <code className="font-mono">sprints.yaml</code> does not define:{" "}
-          <code className="font-mono" data-testid={`sprint-missing-id-${column.id}`}>
+          <code>sprints.yaml</code> does not define:{" "}
+          <code data-testid={`sprint-missing-id-${column.id}`}>
             {column.missingId}
           </code>
           .

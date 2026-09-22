@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-degradation.md — the
+ * Transcribed from tests/cases/ui-test-cases/flow-degradation.md — the
  * corruption surfaces on the task-detail meta panel (B3 Task-meta lane).
  *
  * DEG-29 (UX-7): a corrupt field must render with an inline warning and

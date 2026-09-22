@@ -20,6 +20,10 @@ describe("E2E journey: MCP schema contract", () => {
           [
             {
               "hasDescription": true,
+              "name": "abandon_reconcile",
+            },
+            {
+              "hasDescription": true,
               "name": "append_task_body",
             },
             {
@@ -172,6 +176,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "edit_workflow_entity",
+            },
+            {
+              "hasDescription": true,
               "name": "enable_git",
             },
             {
@@ -308,6 +316,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "resolve_reconcile",
+            },
+            {
+              "hasDescription": true,
               "name": "restore",
             },
             {
@@ -320,11 +332,19 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "set_estimation_config",
+            },
+            {
+              "hasDescription": true,
               "name": "set_project_prefix",
             },
             {
               "hasDescription": true,
               "name": "set_sidebar_groups",
+            },
+            {
+              "hasDescription": true,
+              "name": "set_timeline_config",
             },
             {
               "hasDescription": true,

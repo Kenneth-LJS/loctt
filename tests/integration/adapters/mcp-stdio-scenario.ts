@@ -47,13 +47,13 @@ export function opToToolCall(op: Op): { name: string; args: Record<string, unkno
     case "append_body":
       return { name: "append_task_body", args: { ref: op.ref, text: op.text } };
     case "archive":
-      return { name: "archive_task", args: { ref: op.ref } };
+      return { name: "archive_task", args: { refs: [op.ref] } };
     case "unarchive":
-      return { name: "unarchive_task", args: { ref: op.ref } };
+      return { name: "unarchive_task", args: { refs: [op.ref] } };
     case "delete":
-      return { name: "delete_task", args: { ref: op.ref, confirm: true } };
+      return { name: "delete_task", args: { refs: [op.ref], confirm: true } };
     case "link":
-      return { name: "link_tasks", args: { ref: op.from, type: op.type, target: op.to } };
+      return { name: "link_tasks", args: { refs: [op.from], type: op.type, target: op.to } };
     case "unlink":
       return { name: "unlink_tasks", args: { ref: op.from, type: op.type, target: op.to } };
   }

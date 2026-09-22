@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-task-create.md — M3.4,
+ * Transcribed from tests/cases/ui-test-cases/flow-task-create.md — M3.4,
  * the create-task modal.
  *
  * These are browser specs because what they assert is browser
@@ -915,9 +915,14 @@ test.describe("NEW — create task modal", () => {
     await page.getByTestId("create-field-points").fill("8");
     await page.getByTestId("create-field-reviewed_on").fill("2026-06-01");
     await page.getByTestId("create-field-urgent").check();
-    // The multi enum shows LABELS...
+    // A211/A242: the multi enum is a searchable Combobox now (control type
+    // changed, not behavior) — open the trigger, then the options show
+    // LABELS and clicking one (by its unchanged per-value testid) selects
+    // it. It stays open after a pick (multi-select), so close with Escape.
+    await page.getByTestId("create-field-tags").click();
     await expect(page.getByTestId("create-field-tags-alpha")).toContainText("Alpha Label");
     await page.getByTestId("create-field-tags-alpha").click();
+    await page.keyboard.press("Escape");
 
     await page.getByTestId("create-submit").click();
     await expect(page.getByTestId("create-task-modal")).toBeHidden();
@@ -1400,13 +1405,13 @@ test.describe("NEW — create task modal", () => {
     const labels = page.getByTestId("create-labels");
     for (let i = 1; i <= 25; i++) {
       await labels.getByTestId("meta-add-label").click();
-      const input = labels.getByTestId("meta-label-input");
+      const input = page.getByTestId("meta-label-input");
       // An exact name: typing "lbl-1" also matches lbl-10..lbl-19, and
       // Enter attaches the *first* candidate — which would silently
       // attach the wrong label and still leave 25 on the task, so the
       // count assertion below would pass on the wrong data.
       await input.fill(`lbl-${String(i)}`);
-      await labels.getByRole("option", { name: `lbl-${String(i)}`, exact: true }).click();
+      await page.getByRole("option", { name: `lbl-${String(i)}`, exact: true }).click();
     }
 
     // The submit control is still reachable and clickable.
@@ -1479,6 +1484,23 @@ test.describe("NEW — create task modal", () => {
     // same reason — the chart opens scrolled to today, and a drag aimed
     // at an off-screen box presses on nothing at all.
     await bar.scrollIntoViewIfNeeded();
+
+    // The timeline redesign pins a sticky task-name gutter over the
+    // chart's left edge, above the bars. A bar scrolled hard left sits
+    // BEHIND it, so the press lands on the gutter and the resize never
+    // starts — silently, because a press on nothing still completes.
+    // Nudge the bar clear of the gutter first, exactly as
+    // flow-timeline.spec.ts's own drag helper does.
+    const gutterBox = await page.getByTestId("timeline-gutter").boundingBox();
+    const chartScroll = page.getByTestId("timeline-scroll");
+    for (let i = 0; i < 3; i += 1) {
+      const box0 = await bar.boundingBox();
+      if (box0 === null || gutterBox === null) break;
+      const clearing = gutterBox.x + gutterBox.width + 12;
+      if (box0.x >= clearing) break;
+      await chartScroll.evaluate((node, dx) => { node.scrollLeft -= dx; }, clearing - box0.x + 8);
+    }
+
     const endHandle = page.getByTestId(`timeline-handle-end-${card}`);
     const endBox = await endHandle.boundingBox();
     expect(endBox, "the end handle should have a box").not.toBeNull();
@@ -1525,12 +1547,12 @@ test.describe("NEW — create task modal", () => {
     await labels.getByTestId("meta-add-label").click();
 
     // An existing label filters as you type.
-    await labels.getByTestId("meta-label-input").fill("existing");
-    await expect(labels.getByRole("option", { name: "existing-one" })).toBeVisible();
+    await page.getByTestId("meta-label-input").fill("existing");
+    await expect(page.getByRole("option", { name: "existing-one" })).toBeVisible();
 
     // An unmatched string offers creation instead.
-    await labels.getByTestId("meta-label-input").fill("brand-new-label");
-    const create = labels.getByTestId("meta-create-label");
+    await page.getByTestId("meta-label-input").fill("brand-new-label");
+    const create = page.getByTestId("meta-create-label");
     await expect(create).toBeVisible();
     await create.click();
 
@@ -1769,14 +1791,14 @@ test.describe("NEW — create task modal", () => {
 
     // A label past entry 1000 — the tail the old fetch window dropped. It
     // must be found by the server search and offered as existing...
-    await labels.getByTestId("meta-label-input").fill("lbl-1099");
-    await expect(labels.getByRole("option", { name: "lbl-1099", exact: true })).toBeVisible();
+    await page.getByTestId("meta-label-input").fill("lbl-1099");
+    await expect(page.getByRole("option", { name: "lbl-1099", exact: true })).toBeVisible();
     // ...and must NOT be offered for creation, which would duplicate it.
-    await expect(labels.getByTestId("meta-create-label")).toHaveCount(0);
+    await expect(page.getByTestId("meta-create-label")).toHaveCount(0);
 
     // Filtering is real: an unmatched string offers creation instead.
-    await labels.getByTestId("meta-label-input").fill("zzz-nothing-matches");
-    await expect(labels.getByTestId("meta-create-label")).toBeVisible();
+    await page.getByTestId("meta-label-input").fill("zzz-nothing-matches");
+    await expect(page.getByTestId("meta-create-label")).toBeVisible();
   });
 
   // @verifies K90
@@ -1801,12 +1823,15 @@ test.describe("NEW — create task modal", () => {
     const picker = page.getByTestId("create-milestone");
     // Open the dropdown, then search for a milestone past entry 1000.
     await picker.getByTestId("meta-edit-milestone").click();
-    await picker.getByTestId("meta-search-milestone").fill("ms-1099");
+    await page.getByTestId("meta-search-milestone").fill("ms-1099");
     // The server search finds it and offers it as an option.
-    await expect(picker.getByRole("option", { name: "ms-1099", exact: true })).toBeVisible();
+    await expect(page.getByRole("option", { name: "ms-1099", exact: true })).toBeVisible();
     // A string matching nothing shows the empty state, not a stale list.
-    await picker.getByTestId("meta-search-milestone").fill("zzz-no-such-milestone");
-    await expect(picker.getByText("No matches.")).toBeVisible();
+    await page.getByTestId("meta-search-milestone").fill("zzz-no-such-milestone");
+    // The empty state lives in the portalled panel, not in the field's
+    // container — only the trigger stayed behind (K106 step 2).
+    await expect(page.getByTestId("meta-options-milestone")
+      .getByText("No matches.")).toBeVisible();
   });
 
   // @verifies NEW-30
@@ -1971,8 +1996,8 @@ test.describe("NEW — create task modal", () => {
     await page.getByTestId("create-title").fill("Label write fails");
     const labels = page.getByTestId("create-labels");
     await labels.getByTestId("meta-add-label").click();
-    await labels.getByTestId("meta-label-input").fill("never-created");
-    await labels.getByTestId("meta-create-label").click();
+    await page.getByTestId("meta-label-input").fill("never-created");
+    await page.getByTestId("meta-create-label").click();
 
     // The message names the label and says it could not be created.
     const labelErr = labels.getByTestId("meta-label-error");

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import type { LabelDef, LabelsConfig } from "@loctt/contracts";
-import { LabelDefSchema } from "@loctt/contracts";
+import { EntityColorSchema, LabelDefSchema } from "@loctt/contracts";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
@@ -70,9 +70,15 @@ const RawLabelsConfigSchema = z.object({
 function dropInvalidColor(l: unknown): unknown {
   if (typeof l !== "object" || l === null) return l;
   const entry = l as Record<string, unknown>;
-  const color = entry["color"];
-  if (typeof color !== "string") return l;
-  if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return l;
+  if (!("color" in entry)) return l;
+  // K103: `color` is no longer only a hex string — an explicit
+  // `{light, dark}` pair and a `{palette: id}` reference are equally
+  // valid. Let the contract schema be the judge of every shape rather
+  // than re-implementing it here; this function's job is only to drop
+  // a colour the schema REJECTS, and a shape it accepts must survive.
+  // (Before K103 this tested the hex regex directly, which would now
+  // silently delete every palette and per-mode colour on load.)
+  if (EntityColorSchema.safeParse(entry["color"]).success) return l;
   const { color: _dropped, ...rest } = entry;
   return rest;
 }

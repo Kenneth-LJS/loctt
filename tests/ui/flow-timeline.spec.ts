@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-timeline.md, section A
+ * Transcribed from tests/cases/ui-test-cases/flow-timeline.md, section A
  * ("Happy path", TML-1..17).
  *
  * M3.3a builds the rendering half; the drag layer (the write half of
@@ -32,6 +32,89 @@ async function setTimelineConfig(root: string, body: string | null): Promise<voi
     throw new Error("timeline block present but not replaced");
   }
   await writeFile(file, body === null ? without : `${without.trimEnd()}\n${body}\n`, "utf8");
+}
+
+/**
+ * Replaces the `custom_fields: []` line of workflow.yaml with one or more
+ * single-value enum fields, so the group-by catalog offers `field.<key>`
+ * for each.
+ */
+async function setCustomEnumFields(
+  root: string,
+  fields: readonly { key: string; label: string; values: readonly { key: string; label: string }[] }[],
+): Promise<void> {
+  const file = path.join(root, ".loctt", "config", "workflow.yaml");
+  const text = await readFile(file, "utf8");
+  const block =
+    `custom_fields:\n`
+    + fields.map(field =>
+      `  - key: ${field.key}\n`
+      + `    label: ${field.label}\n`
+      + `    type: enum\n`
+      + `    multi: false\n`
+      + `    searchable: false\n`
+      + `    values:\n`
+      + field.values.map(v => `      - key: ${v.key}\n        label: ${v.label}\n`).join(""),
+    ).join("");
+  const next = text.replace(/^custom_fields: \[\]\s*$/m, block.trimEnd());
+  if (next === text) throw new Error("custom_fields: [] not found to replace");
+  await writeFile(file, next, "utf8");
+}
+
+/**
+ * Writes a top-level frontmatter scalar straight into a task's file.
+ *
+ * The CLI now REFUSES a due_date before its start_date ("The start date
+ * … cannot be after the due date …"), which is correct — but TML-18 is
+ * explicitly about a pair that reached disk by a **hand edit**, which is
+ * the only way such a pair can exist now. So the reversed pair is
+ * written here rather than through `loctt set`, which is what the case
+ * describes and what the degradation path has to survive.
+ */
+async function handEditTaskField(
+  root: string,
+  taskKey: string,
+  field: string,
+  value: string,
+): Promise<void> {
+  const { readdir } = await import("node:fs/promises");
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    const p = path.join(tasksDir, id, "task.md");
+    let text: string;
+    try { text = await readFile(p, "utf8"); } catch { continue; }
+    if (!new RegExp(`^key: ${taskKey}$`, "m").test(text)) continue;
+    const line = `${field}: ${value}`;
+    const next = new RegExp(`^${field}:.*$`, "m").test(text)
+      ? text.replace(new RegExp(`^${field}:.*$`, "m"), line)
+      : text.replace(/\n---\n/, `\n${line}\n---\n`);
+    await writeFile(p, next, "utf8");
+    return;
+  }
+  throw new Error(`no task file for ${taskKey}`);
+}
+
+/** Sets one enum custom-field value on a task's frontmatter, by key. */
+async function setTaskField(
+  root: string,
+  taskKey: string,
+  field: string,
+  value: string,
+): Promise<void> {
+  const { readdir } = await import("node:fs/promises");
+  const tasksDir = path.join(root, ".loctt", "tasks");
+  for (const id of await readdir(tasksDir)) {
+    const p = path.join(tasksDir, id, "task.md");
+    let text: string;
+    try { text = await readFile(p, "utf8"); } catch { continue; }
+    if (!new RegExp(`^key: ${taskKey}$`, "m").test(text)) continue;
+    // Insert (or extend) a `fields:` map just before the closing `---`.
+    const line = `fields:\n  ${field}: ${value}\n`;
+    const next = text.replace(/\n---\n/, `\n${line}---\n`);
+    await writeFile(p, next, "utf8");
+    return;
+  }
+  throw new Error(`no task file for ${taskKey}`);
 }
 
 /** Overwrites calendar.yaml wholesale. */
@@ -184,6 +267,53 @@ async function barBox(
   return { left, width };
 }
 
+/**
+ * The group-by control is no longer a native `<select>` — it is the
+ * shared searchable Combobox (the `GroupByPicker`). These helpers replace
+ * the old `selectOption` / `toHaveValue`:
+ *  - the selected value is on the trigger as `data-value` (the parity
+ *    with a `<select>`'s `value`), so assertions read that;
+ *  - to change it, open the trigger and click the option row
+ *    (`timeline-grouping-opt-<id>`; `none` is the pinned clear row).
+ */
+async function expectGrouping(
+  page: import("@playwright/test").Page,
+  id: string,
+): Promise<void> {
+  const trigger = page.getByTestId("timeline-grouping");
+  await expect(trigger).toHaveAttribute("data-value", id);
+
+  // The other half, which `data-value` alone lost (known-gaps.md): a
+  // native `<select>`'s `.value` could only report a value that HAD a
+  // matching `<option>`, while `data-value` echoes draft state whether
+  // or not the control offers it. So also prove the value is genuinely
+  // on offer — otherwise this passes for a grouping the picker does not
+  // have, which is exactly how three escape-hatch branches were deleted
+  // with the unit suite staying green.
+  await trigger.click();
+  if (id === "none") {
+    // `none` is the pinned CLEAR row, and `Dropdown` renders that row
+    // only while something is selected — so when grouping already IS
+    // none there is correctly nothing to clear. What has to hold here is
+    // that the picker is a real, populated control rather than an empty
+    // one that would make any `data-value` claim vacuous.
+    await expect(page.getByTestId("timeline-grouping-options")
+      .getByRole("option")).not.toHaveCount(0);
+  } else {
+    await expect(page.getByTestId(`timeline-grouping-opt-${id}`)).toHaveCount(1);
+  }
+  await page.keyboard.press("Escape");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+}
+
+async function chooseGrouping(
+  page: import("@playwright/test").Page,
+  id: string,
+): Promise<void> {
+  await page.getByTestId("timeline-grouping").click();
+  await page.getByTestId(`timeline-grouping-opt-${id}`).click();
+}
+
 test.describe("TML — timeline view", () => {
   // @verifies TML-1
   test("TML-1: opens at the zoom from workflow.timeline.default_zoom", async ({ page, tracker }) => {
@@ -214,15 +344,26 @@ test.describe("TML — timeline view", () => {
     await setTimelineConfig(tracker.root, "timeline:\n  default_zoom: month");
 
     // A saved view authored for the timeline at day zoom.
+    //
+    // Written in the CURRENT view shape: a structured `filters:` block
+    // and a ULID id. The legacy `query:` scalar this used to seed was
+    // removed with structured conditions (`9c673e71`/`596725fe`), and
+    // queries.yaml now rejects the whole file over the unknown key — so
+    // the old seed made the view unreadable rather than exercising the
+    // zoom precedence this case is about.
+    const viewId = "01M2TIMELINEVIEW00000000001";
     const queriesPath = path.join(tracker.root, ".loctt", "config", "queries.yaml");
     const before = await readFile(queriesPath, "utf8");
     await writeFile(
       queriesPath,
-      `${before.trimEnd()}\n  - id: tmlview\n    name: Day view\n    query: archived != true\n    display:\n      mode: timeline\n      zoom: day\n`,
+      `${before.trimEnd()}\n  - id: ${viewId}\n    name: Day view\n`
+      + `    filters:\n      - kind: simple\n        field: archived\n        op: "!="\n`
+      + `        values:\n          - "true"\n`
+      + `    display:\n      mode: timeline\n      zoom: day\n`,
       "utf8",
     );
 
-    await page.goto(`${tracker.baseURL}/timeline?view=tmlview`);
+    await page.goto(`${tracker.baseURL}/timeline?view=${viewId}`);
     await expect(page.getByTestId("timeline-zoom-day")).toHaveAttribute("aria-pressed", "true");
 
     // Changing the zoom updates the URL but must NOT rewrite
@@ -234,7 +375,7 @@ test.describe("TML — timeline view", () => {
     await expect.poll(async () => readFile(queriesPath, "utf8")).toBe(savedBefore);
 
     // Reopening the view returns to day.
-    await page.goto(`${tracker.baseURL}/timeline?view=tmlview`);
+    await page.goto(`${tracker.baseURL}/timeline?view=${viewId}`);
     await expect(page.getByTestId("timeline-zoom-day")).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -309,14 +450,19 @@ test.describe("TML — timeline view", () => {
 
     await page.goto(`${tracker.baseURL}/timeline`);
 
-    // All three undated shapes are in the lane, with an honest count.
+    // The drawer header is always visible with an honest count — even
+    // while collapsed (the redesign: the count-on-header stays; the rows
+    // live behind an expand).
     await expect(page.getByTestId("timeline-unscheduled")).toBeVisible();
     await expect(page.getByTestId("timeline-unscheduled-count")).toHaveText("(3)");
+    // The dated one DOES get a bar — positive control.
+    await expect(page.getByTestId(`timeline-bar-${both}`)).toBeVisible();
+
+    // Expand the drawer to reach the rows (collapsed-by-default redesign).
+    await page.getByTestId("timeline-unscheduled-toggle").click();
     // Listed by key and title, and no bar is drawn for them.
     await expect(page.getByTestId(`timeline-unscheduled-row-${onlyStart}`)).toContainText("Only start");
     await expect(page.getByTestId(`timeline-bar-${onlyStart}`)).toHaveCount(0);
-    // The dated one DOES get a bar — positive control.
-    await expect(page.getByTestId(`timeline-bar-${both}`)).toBeVisible();
 
     // Clicking an unscheduled row opens the task detail.
     await page.getByTestId(`timeline-unscheduled-row-${onlyDue}`).click();
@@ -426,23 +572,77 @@ test.describe("TML — timeline view", () => {
     await setTimelineConfig(tracker.root, "timeline:\n  default_grouping: assignee");
 
     await page.goto(`${tracker.baseURL}/timeline`);
-    await expect(page.getByTestId("timeline-grouping")).toHaveValue("assignee");
+    await expectGrouping(page, "assignee");
 
-    // Changing to none flattens and updates the URL.
-    await page.getByTestId("timeline-grouping").selectOption("none");
+    // Changing to none flattens and updates the URL. `none` is the
+    // picker's pinned clear row.
+    await chooseGrouping(page, "none");
     await expect(page).toHaveURL(/grouping=none/);
     await expect(page.getByTestId("timeline-band-all")).toBeVisible();
 
     // The `none` URL opens ungrouped even though the default is
     // assignee — `none` is a value, not an absence.
     await page.goto(`${tracker.baseURL}/timeline?grouping=none`);
-    await expect(page.getByTestId("timeline-grouping")).toHaveValue("none");
+    await expectGrouping(page, "none");
     await expect(page.getByTestId("timeline-band-all")).toBeVisible();
 
     // With default_grouping absent, the view opens at none.
     await setTimelineConfig(tracker.root, null);
     await page.goto(`${tracker.baseURL}/timeline`);
-    await expect(page.getByTestId("timeline-grouping")).toHaveValue("none");
+    await expectGrouping(page, "none");
+  });
+
+  // @verifies TML-8
+  test("TML-8: the picker groups by a single-value enum custom field, found via search", async ({ page, tracker }) => {
+    // The full group-by set (Ken): a single-value enum custom field is
+    // groupable as `field.<key>`, and the searchable picker is how it is
+    // reached once the list is long. The two dated tasks carry different
+    // Area values, so grouping bands them apart and the total holds.
+    const [a, b] = await seedDated(tracker);
+    // Enough single-value enum fields that the catalog (7 builtins as
+    // options + these + the pinned None row) crosses the Combobox search
+    // threshold (12), so the search box appears on its own. `area` is the
+    // one we group by; the rest are padding to force search on.
+    await setCustomEnumFields(tracker.root, [
+      { key: "area", label: "Area", values: [{ key: "fe", label: "Frontend" }, { key: "be", label: "Backend" }] },
+      { key: "risk", label: "Risk", values: [{ key: "lo", label: "Low" }] },
+      { key: "tier", label: "Tier", values: [{ key: "t1", label: "T1" }] },
+      { key: "phase", label: "Phase", values: [{ key: "p1", label: "P1" }] },
+      { key: "squad", label: "Squad", values: [{ key: "s1", label: "S1" }] },
+      { key: "domain", label: "Domain", values: [{ key: "d1", label: "D1" }] },
+    ]);
+    await setTaskField(tracker.root, a as string, "area", "fe");
+    await setTaskField(tracker.root, b as string, "area", "be");
+
+    await page.goto(`${tracker.baseURL}/timeline`);
+
+    // Open the picker and type into the search box (it appears once the
+    // list crosses the threshold) to find the custom field by its label.
+    await page.getByTestId("timeline-grouping").click();
+    await expect(page.getByTestId("timeline-grouping-search")).toBeVisible();
+    await page.getByTestId("timeline-grouping-search").fill("area");
+    await page.getByTestId("timeline-grouping-opt-field.area").click();
+
+    // The URL and the trigger both reflect the custom-field grouping.
+    await expect(page).toHaveURL(/grouping=field\.area/);
+    await expectGrouping(page, "field.area");
+
+    // Bands read by the value LABELS from workflow.yaml, never the keys.
+    await expect(page.getByTestId("timeline-band-fe")).toContainText("Frontend");
+    await expect(page.getByTestId("timeline-band-be")).toContainText("Backend");
+    await expect(page.getByTestId("timeline-band-fe")).not.toContainText("fe(");
+
+    // TML-7: switching to a custom-field grouping does not change the set.
+    // seedDated makes three tasks (two dated + one undated); the undated
+    // one sits in the Unscheduled lane but is still counted in the total.
+    await expect(page.getByTestId("timeline-total")).toHaveText("3 tasks");
+
+    // A search for "custom" surfaces the custom field (its hint), not the
+    // builtins — the group reads as its own thing.
+    await page.getByTestId("timeline-grouping").click();
+    await page.getByTestId("timeline-grouping-search").fill("custom");
+    await expect(page.getByTestId("timeline-grouping-opt-field.area")).toBeVisible();
+    await expect(page.getByTestId("timeline-grouping-opt-status")).toHaveCount(0);
   });
 
   // @verifies TML-13
@@ -514,7 +714,11 @@ test.describe("TML — timeline view", () => {
     await expect(page.getByTestId("timeline-arrows")).not.toBeChecked();
     await expect(page.getByTestId("timeline-arrow")).toHaveCount(0);
 
-    // Turning it on draws arrows with no refetch of task data.
+    // Turning it on draws arrows with no refetch of task data. Settle
+    // any in-flight/background loads first (the shared FilterBar issues
+    // its own sidebar queries on mount), so the counter attributes only
+    // the requests the *toggle* causes — the property under test.
+    await page.waitForLoadState("networkidle");
     let taskRequests = 0;
     page.on("request", r => {
       if (r.url().includes("/api/tasks")) taskRequests += 1;
@@ -568,7 +772,7 @@ test.describe("TML — timeline view", () => {
     await page.goBack();
     await expect(page).toHaveURL(/\/timeline/);
     await expect(page.getByTestId("timeline-zoom-day")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("timeline-grouping")).toHaveValue("status");
+    await expectGrouping(page, "status");
     await expect(page.getByTestId("timeline-arrows")).not.toBeChecked();
   });
 });
@@ -658,6 +862,24 @@ async function barPoints(
   // bar into view first is what makes these gestures land.
   const el = page.getByTestId(`timeline-bar-${key}`);
   await el.scrollIntoViewIfNeeded();
+
+  // The redesign adds a sticky task-name gutter pinned over the chart
+  // body's left edge (z above the bars). A bar scrolled hard against the
+  // left edge lands *behind* the gutter, where a press hits the gutter
+  // instead of the bar. Nudge the horizontal scroll so the bar clears the
+  // gutter before measuring — this mirrors what a user does (scroll the
+  // bar into the open chart area) rather than pressing on a covered bar.
+  const gutter = page.getByTestId("timeline-gutter");
+  const gutterBox = await gutter.boundingBox();
+  const scroll = page.getByTestId("timeline-scroll");
+  for (let i = 0; i < 3; i += 1) {
+    const box0 = await el.boundingBox();
+    if (box0 === null || gutterBox === null) break;
+    const clearing = gutterBox.x + gutterBox.width + 12;
+    if (box0.x >= clearing) break;
+    await scroll.evaluate((node, dx) => { node.scrollLeft -= dx; }, clearing - box0.x + 8);
+  }
+
   const box = await el.boundingBox();
   if (box === null) throw new Error(`no bounding box for ${key}`);
   const y = box.y + box.height / 2;
@@ -1062,9 +1284,12 @@ test.describe("TML — timeline edge cases (section B)", () => {
   // @verifies TML-18
   test("TML-18: a due_date before start_date is flagged, not drawn backwards", async ({ page, tracker }) => {
     const [bad, good] = await tracker.seed([{ title: "Reversed" }, { title: "Normal" }]);
-    // Via the CLI, which permits the pair — the case says "hand-edit".
-    await tracker.run(["set", bad as string, "start_date", "2026-03-10"]);
-    await tracker.run(["set", bad as string, "due_date", "2026-03-04"]);
+    // The case says "hand-edit", and that is now the only way this pair
+    // can exist: `loctt set` rejects a due_date before its start_date.
+    // Written straight to the file, which is what the timeline has to
+    // degrade against.
+    await handEditTaskField(tracker.root, bad as string, "start_date", "2026-03-10");
+    await handEditTaskField(tracker.root, bad as string, "due_date", "2026-03-04");
     await tracker.run(["set", good as string, "start_date", "2026-03-02"]);
     await tracker.run(["set", good as string, "due_date", "2026-03-06"]);
 
@@ -1104,6 +1329,9 @@ test.describe("TML — timeline edge cases (section B)", () => {
     // visibly distinct from the two-date bar next to it.
     await expect(page.getByTestId(`timeline-bar-${only}`)).toHaveCount(0);
     await expect(page.getByTestId(`timeline-bar-${both}`)).toBeVisible();
+
+    // Expand the collapsed-by-default drawer to reach the row.
+    await page.getByTestId("timeline-unscheduled-toggle").click();
     await expect(page.getByTestId(`timeline-unscheduled-row-${only}`)).toBeVisible();
 
     // The reason is stated, not merely implied by the placement.
@@ -1125,6 +1353,8 @@ test.describe("TML — timeline edge cases (section B)", () => {
 
     await page.goto(`${tracker.baseURL}/timeline?zoom=day`);
     await expect(page.getByTestId(`timeline-bar-${only}`)).toHaveCount(0);
+    // Every task here is unscheduled, so the chart has no bars and the
+    // drawer auto-expands (TML-41) — no manual expand needed.
     const reason = page.getByTestId(`timeline-unscheduled-reason-${only}`);
     await expect(reason).toContainText("No start date");
     await expect(reason).toContainText("2026-03-06");
@@ -1714,6 +1944,8 @@ test.describe("TML — timeline error cases (section C)", () => {
      * date was object-fatal and surfaced only through the unreadable
      * notice — that is no longer how the loader behaves.)
      */
+    // Expand the collapsed-by-default drawer to reach the flagged row.
+    await page.getByTestId("timeline-unscheduled-toggle").click();
     const row = page.getByTestId(`timeline-unscheduled-row-${bad}`);
     await expect(row).toBeVisible();
     const reason = page.getByTestId(`timeline-unscheduled-reason-${bad}`);
@@ -1778,7 +2010,7 @@ test.describe("TML — timeline error cases (section C)", () => {
     await expect(page).toHaveURL(/zoom=day/);
 
     // The zoom survives a re-render driven by other interaction.
-    await page.getByTestId("timeline-grouping").selectOption("status");
+    await chooseGrouping(page, "status");
     await expect(page.getByTestId("timeline-zoom-day")).toHaveAttribute("aria-pressed", "true");
   });
 });
@@ -2201,7 +2433,12 @@ test.describe("TML — remaining section B cases (M3.3b)", () => {
     }));
     expect(metrics.scrollH).toBeGreaterThan(metrics.clientH);
 
-    const header = page.getByTestId("timeline-header");
+    // Scoped to the chart's scroll container: `timeline-header` is
+    // carried by BOTH the chart's sticky date-header row and the page's
+    // `PageHeader` (the latter added by `6b7ac9dc`). This case is about
+    // the sticky one — the page title never scrolls either, so an
+    // unscoped locator could pass against the wrong element.
+    const header = page.getByTestId("timeline-scroll").getByTestId("timeline-header");
     const headerTopBefore = await header.evaluate(el => el.getBoundingClientRect().top);
     await scroll.evaluate(el => { el.scrollTop = 400; });
     // A last row that only exists if all 60 laid out: scroll reaches it.

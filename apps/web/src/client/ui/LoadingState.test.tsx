@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { LoadingState } from "./LoadingState.tsx";
 
 /**
- * design-review §A3: loading placeholders must announce to screen
+ * docs/dev/design/design-review.md §A3: loading placeholders must announce to screen
  * readers. The ~14 ad-hoc `<div>Loading…</div>` spellings had no live
  * region; this component bakes one in. If the region ever loses its
  * status role, these go red.

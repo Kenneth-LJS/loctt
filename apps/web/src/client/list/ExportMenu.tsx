@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
-import { ICON } from "../ui/icons.ts";
+import { Icon } from "../ui/Icon.tsx";
 
 /**
  * Export menu (BLK-14, 15, 16).
@@ -129,7 +129,13 @@ export function ExportMenu({
         disabled={total === 0}
         onClick={() => { setOpen(o => !o); }}
       >
-        {pending ? "Preparing…" : <>Export <span aria-hidden="true">{ICON.caretDown}</span></>}
+        {pending ? "Preparing…" : (
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="download" size={14} />
+            Export
+            <Icon name="chevronDown" size={12} />
+          </span>
+        )}
       </Button>
 
       {open && (
@@ -199,7 +205,7 @@ export function ExportMenu({
         <span role="status" data-export-skipped="true" className="ml-2 text-[0.8571rem] text-warn-fg">
           {skipped.length} task{skipped.length === 1 ? "" : "s"} could not be read and
           {" "}{skipped.length === 1 ? "is" : "are"} missing from the file:
-          {" "}<span className="font-mono">{skipped.join(", ")}</span>.
+          {" "}<span>{skipped.join(", ")}</span>.
           {" "}Run <code className="font-mono">loctt doctor</code> to see why.
         </span>
       )}

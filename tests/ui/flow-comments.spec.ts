@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-comments-activity.md —
+ * Transcribed from tests/cases/ui-test-cases/flow-comments-activity.md —
  * M2.4a, the Comments section (CMT-1..12).
  *
  * **The far end is `_comments.yaml`**, read off disk, never off the

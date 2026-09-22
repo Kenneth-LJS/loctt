@@ -68,6 +68,38 @@ describe("create accepts the same initial fields on CLI and MCP", () => {
     });
   });
 
+  it("pre-links a parent under the tree axis on the CLI (--parent)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "the parent"], { cwd: root });
+      const res = await runCli(["create", "the child", "--parent", "T-1"], { cwd: root });
+      expect(res.exitCode, `${res.stdout}${res.stderr}`).toBe(0);
+
+      // The default tree axis is `parent`, so the child carries a
+      // `parent → T-1` edge — created by the create, not a follow-up link.
+      const show = await runCli(["show", "T-2"], { cwd: root });
+      expect(show.stdout).toContain("Relationships:");
+      expect(show.stdout).toMatch(/parent → T-1/);
+    });
+  });
+
+  it("pre-links a parent under the tree axis on MCP (parent)", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      await runCli(["create", "the parent"], { cwd: root });
+      const client = await startMcpClient(root);
+      try {
+        const res = await client.callTool("create_task", {
+          title: "the child",
+          parent: "T-1",
+        });
+        expect(res.isError, res.content[0]?.text).toBeFalsy();
+      } finally {
+        await client.close();
+      }
+      const show = await runCli(["show", "T-2"], { cwd: root });
+      expect(show.stdout).toMatch(/parent → T-1/);
+    });
+  });
+
   it("fails naming the field rather than discarding it", async () => {
     await withTmpLoctt(async ({ root }) => {
       // An unknown field must be refused: a create that silently drops

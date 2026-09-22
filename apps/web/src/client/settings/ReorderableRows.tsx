@@ -28,6 +28,13 @@ export interface ReorderableRowsProps<T> {
   /** False while a write is in flight or the panel cannot reorder. */
   readonly enabled?: boolean;
   readonly testIdPrefix: string;
+  /**
+   * The DOM `id` for a row's outer `<li>` — the deep-link anchor a
+   * point-of-use "Edit X…" link scrolls to (K100). Defaults to
+   * `row-<rowKey>`, matching the K100 `#row-<id>` convention that
+   * `useScrollToHash` resolves. Returning `undefined` omits the id.
+   */
+  readonly rowId?: (item: T) => string | undefined;
   readonly children: (item: T, index: number) => ReactNode;
 }
 
@@ -38,6 +45,7 @@ export function ReorderableRows<T>({
   onMove,
   enabled = true,
   testIdPrefix,
+  rowId = item => `row-${rowKey(item)}`,
   children,
 }: ReorderableRowsProps<T>) {
   const [dragging, setDragging] = useState<number | null>(null);
@@ -63,6 +71,7 @@ export function ReorderableRows<T>({
         {items.map((item, i) => (
           <li
             key={rowKey(item)}
+            id={rowId(item)}
             data-testid={`${testIdPrefix}-row-${rowKey(item)}`}
             data-position={String(i + 1)}
             // SET-6: the live drop indicator, exposed so a test can see

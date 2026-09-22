@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-tasks.md — M2.1, the
+ * Transcribed from tests/cases/ui-test-cases/flow-tasks.md — M2.1, the
  * task detail read shell.
  *
  * These are browser specs because what they assert is browser
@@ -17,6 +17,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { expectComboValueOn, pickComboOn } from "./fixtures/dropdown.ts";
 import { expect, test } from "./fixtures/tracker.ts";
 
 /** Reads the frontmatter block of the task with the given key. */
@@ -87,16 +88,20 @@ function listRow(page: import("@playwright/test").Page, title: string) {
 /**
  * The sidebar's Recently viewed group, as its own scope.
  *
- * Anchored to the group's own label rather than to a class or a
- * position: the group is a plain `div` with no landmark role, and the
- * only stable thing about it is that it is the sidebar subtree
- * containing that heading. `:has()` keeps the scope to the innermost
- * such div, so a match cannot leak into the whole sidebar and count
- * project links as recents.
+ * The sidebar's sections became collapsible `SectionShell`s: the label
+ * is now the section's toggle `<button>` (`sidebar-section-toggle-recents`)
+ * and the rows live in a sibling body `#sidebar-section-recents`. The old
+ * `div:has(> div:text-is(…))` anchor assumed a plain `<div>` label and no
+ * longer matches anything.
+ *
+ * Scoping to the shell that contains the toggle keeps exactly the
+ * property the old locator was chosen for — the scope is this group and
+ * not the whole sidebar, so project links cannot be counted as recents —
+ * while also covering the label text the callers assert.
  */
 function recentsGroup(page: import("@playwright/test").Page) {
   return page.locator(
-    "aside div:has(> div:text-is('Recently viewed'))",
+    "aside div:has(> [data-testid='sidebar-section-toggle-recents'])",
   );
 }
 
@@ -540,7 +545,7 @@ test.describe("TSK — task detail read shell", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await expect(listRow(page, "Untouched task")).toHaveCount(1);
     await expect(listRow(page, "Archivable task")).toHaveCount(0);
-    await page.goto(`${tracker.baseURL}/list?archived=true`);
+    await page.goto(`${tracker.baseURL}/list?archived=all`);
     await expect(listRow(page, "Archivable task")).toHaveCount(1);
 
     // Unarchive from the same menu restores it in place.
@@ -593,8 +598,12 @@ test.describe("TSK — task detail read shell", () => {
     if (titleBox === null) throw new Error("no title box");
     expect(titleBox.width).toBeLessThanOrEqual(1280);
 
-    // The full string is recoverable — the case's third bullet.
-    await expect(page.getByRole("heading", { level: 1 })).toHaveAttribute("title", longTitle);
+    // The full string is recoverable — the case's third bullet. The title
+    // became editable in place (L1), so the `title` attribute now rides
+    // on the heading's inner edit button rather than the `<h1>` itself;
+    // `EditableTitle.tsx` names TSK-24 as the reason it is there.
+    await expect(page.getByRole("heading", { level: 1 }).getByTestId("task-title-edit"))
+      .toHaveAttribute("title", longTitle);
   });
 
   // @verifies TSK-44
@@ -635,7 +644,11 @@ test.describe("TSK — task detail read shell", () => {
     // Move: choose a destination, then dismiss both ways.
     await page.getByRole("button", { name: "More" }).click();
     await page.getByRole("menuitem", { name: "Move to project…" }).click();
-    await page.getByRole("dialog").getByLabel("Destination project").selectOption({ label: "Web App" });
+    // A211: the destination picker is a searchable Combobox, not a native
+    // <select> (control type changed, not behavior) - open the trigger,
+    // then click the option.
+    await page.getByTestId("move-task-project").click();
+    await page.getByTestId("move-task-project-list").getByRole("option", { name: "Web App" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(await frontmatterOf(tracker.root, key)).toBe(before);
@@ -643,7 +656,13 @@ test.describe("TSK — task detail read shell", () => {
     await page.getByRole("button", { name: "More" }).click();
     await page.getByRole("menuitem", { name: "Move to project…" }).click();
     // Fresh: the previous selection is gone, so Move is disabled.
-    await expect(page.getByRole("dialog").getByLabel("Destination project")).toHaveValue("");
+    // K106: a button, not an `<input>` — the "nothing is pre-selected"
+    // claim reads `data-value` (empty) and is backed by the Move button
+    // staying disabled, which is the user-visible half of the same fact.
+    await expect(page.getByRole("dialog").getByTestId("move-task-project"))
+      .toHaveAttribute("data-value", "");
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Move task" }))
+      .toBeDisabled();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(await frontmatterOf(tracker.root, key)).toBe(before);
@@ -948,17 +967,23 @@ test.describe("TSK — task detail read shell", () => {
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await page.getByRole("button", { name: "More" }).click();
     await page.getByRole("menuitem", { name: "Move to project…" }).click();
-    const select = page.getByRole("dialog").getByLabel("Destination project");
-    await expect(select).toBeVisible();
+    // K106: the picker is a button-triggered listbox. The TRIGGER is
+    // still inside the dialog; the PANEL is portalled to `document.body`,
+    // so the option rows are located from `page`.
+    const trigger = page.getByRole("dialog").getByTestId("move-task-project");
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    const list = page.getByTestId("move-task-project-list");
+    await expect(list).toBeVisible();
 
     // The archived project is not offered at all.
-    await expect(select.getByRole("option", { name: /Retired/ })).toHaveCount(0);
+    await expect(list.getByRole("option", { name: /Retired/ })).toHaveCount(0);
     // A live one is — the positive control, so the assertion above
     // cannot pass merely because the picker is empty or unrendered.
-    await expect(select.getByRole("option", { name: /Web App/ })).toHaveCount(1);
+    await expect(list.getByRole("option", { name: /Web App/ })).toHaveCount(1);
 
     // The current project is present but not selectable, and says so.
-    const current = select.getByRole("option", { name: /current/ });
+    const current = list.getByRole("option", { name: /current/ });
     await expect(current).toHaveCount(1);
     await expect(current).toHaveJSProperty("disabled", true);
   });
@@ -1008,7 +1033,11 @@ test.describe("TSK — task detail read shell", () => {
 
     await page.getByRole("button", { name: "More" }).click();
     await page.getByRole("menuitem", { name: "Move to project…" }).click();
-    await page.getByRole("dialog").getByLabel("Destination project").selectOption({ label: "Web App" });
+    // A211: the destination picker is a searchable Combobox, not a native
+    // <select> (control type changed, not behavior) - open the trigger,
+    // then click the option.
+    await page.getByTestId("move-task-project").click();
+    await page.getByTestId("move-task-project-list").getByRole("option", { name: "Web App" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Move task" }).click();
 
     // Named, not generic. The reason the server gave is what tells the
@@ -1056,7 +1085,11 @@ test.describe("TSK — task detail read shell", () => {
 
     await page.getByRole("button", { name: "More" }).click();
     await page.getByRole("menuitem", { name: "Move to project…" }).click();
-    await page.getByRole("dialog").getByLabel("Destination project").selectOption({ label: "Web App" });
+    // A211: the destination picker is a searchable Combobox, not a native
+    // <select> (control type changed, not behavior) - open the trigger,
+    // then click the option.
+    await page.getByTestId("move-task-project").click();
+    await page.getByTestId("move-task-project-list").getByRole("option", { name: "Web App" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Move task" }).click();
 
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -1172,14 +1205,19 @@ function bodyRich(page: import("@playwright/test").Page) {
 /**
  * Enter edit mode from the K33 rendered read state (TSK-68/69).
  *
- * The description now renders read-only by default; the editor (and its
- * `rich-editor` surface + toolbar) only exist after a click on the
- * rendered body. Every B3 editor test that reaches for `rich-editor`
- * first has to make that click — this is the one gesture that does it.
+ * The description renders read-only by default; the editor (and its
+ * `rich-editor` surface + toolbar) only exist once edit is entered.
+ * Every B3 editor test that reaches for `rich-editor` goes through this.
+ *
+ * The gesture is the explicit `body-edit` button, not a click on the
+ * rendered text: A247 deliberately removed click-to-edit from the
+ * content region so the `<a>` and `<img>` inside a description are
+ * reachable and are not nested inside an interactive ancestor
+ * (WCAG 4.1.2) — see `editor/BodyRenderedView.tsx`.
  */
 async function enterEdit(page: import("@playwright/test").Page): Promise<void> {
   await expect(page.getByTestId("body-editor")).toBeVisible();
-  await page.getByTestId("body-rendered").click();
+  await page.getByTestId("body-edit").click();
   await expect(bodyRich(page)).toBeVisible();
 }
 
@@ -1199,14 +1237,24 @@ test.describe("TSK — rich-text editor (B3)", () => {
     await bodyRich(page).click();
     await page.keyboard.type("A heading line");
 
+    // The DESCRIPTION's picker. The `fmt-*` test ids are shared with the
+    // always-mounted comment composer (both are one `MarkdownField`
+    // since `8b65f5ce`), so an unscoped `fmt-block-type` matches two
+    // controls. This case is about the description's, so it is scoped.
+    const blockType = page.getByTestId("body-editor").getByTestId("fmt-block-type");
+
     // The picker offers every level. Apply each one and confirm the
     // rendered block becomes a heading of that level — the caret stays
     // in the line across picks (TSK-60), so each transform targets it.
     for (const level of [1, 2, 3, 4, 5, 6]) {
-      await page.getByTestId("fmt-block-type").selectOption(String(level));
+      // K106: a button-based picker. `pickComboOn` throws when the level
+      // is not offered, which is how "the picker offers every level" is
+      // still asserted now that there are no `<option>` children to count.
+      await pickComboOn(page, blockType, String(level));
       await expect(bodyRich(page).getByRole("heading", { level })).toContainText("A heading line");
-      // The control reflects the block it just produced.
-      await expect(page.getByTestId("fmt-block-type")).toHaveValue(String(level));
+      // The control reflects the block it just produced — and still
+      // offers it, which `data-value` alone would not establish.
+      await expectComboValueOn(page, blockType, String(level));
     }
 
     // Save the last level (6) via the blur+flush path, and confirm it
@@ -1217,14 +1265,13 @@ test.describe("TSK — rich-text editor (B3)", () => {
     // Reload: the stored `#{1,6}` parses back to a heading whose level
     // the picker reflects — the parse half of the round trip.
     await page.reload();
-    // Enter edit by clicking the heading itself, so the caret lands in
-    // the heading block (a click on the container's empty lower area
-    // would place the caret in a trailing paragraph).
-    await expect(page.getByTestId("body-editor")).toBeVisible();
-    await page.getByTestId("body-rendered").getByRole("heading", { name: "A heading line" }).click();
-    await expect(bodyRich(page)).toBeVisible();
+    // Enter edit through the explicit Edit button (A247 removed
+    // click-to-edit from the rendered region), then click the heading
+    // inside the editor so the caret lands in the heading block — which
+    // is what makes the picker report that block's level.
+    await enterEdit(page);
     await bodyRich(page).getByRole("heading", { name: "A heading line" }).click();
-    await expect(page.getByTestId("fmt-block-type")).toHaveValue("6");
+    await expectComboValueOn(page, blockType, "6");
     await expect(bodyRich(page).getByRole("heading", { level: 6 })).toContainText("A heading line");
   });
 
@@ -1239,8 +1286,12 @@ test.describe("TSK — rich-text editor (B3)", () => {
 
     await bodyRich(page).click();
     await page.keyboard.type("first item");
-    await page.getByTestId("fmt-orderedList").click();
-    await expect(page.getByTestId("fmt-orderedList")).toHaveAttribute("aria-pressed", "true");
+    // Scoped to the description: `fmt-*` ids are shared with the
+    // always-mounted comment composer (one `MarkdownField` since
+    // `8b65f5ce`), so an unscoped id matches two buttons.
+    const orderedList = page.getByTestId("body-editor").getByTestId("fmt-orderedList");
+    await orderedList.click();
+    await expect(orderedList).toHaveAttribute("aria-pressed", "true");
 
     await page.getByTestId("meta-panel").click();
     await expect
@@ -1334,19 +1385,27 @@ test.describe("TSK — rich-text editor (B3)", () => {
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
     // Merely viewing (K33 rendered read state): no editor, no toolbar,
-    // no format button in any state — the whole surface is read-only.
+    // no format button in any state — the whole DESCRIPTION surface is
+    // read-only.
+    //
+    // Scoped to `body-editor`. The claim was always about the
+    // description, and a page-wide query is now simply the wrong
+    // question: since `8b65f5ce` the comment composer shares the same
+    // `MarkdownField`, so it renders its own always-on Formatting
+    // toolbar lower down the page. Asserting page-wide would assert the
+    // composer has no toolbar, which is a different — and false — claim.
+    const bodyPane = page.getByTestId("body-editor");
     await expect(page.getByTestId("body-rendered")).toBeVisible();
     await expect(bodyRich(page)).toHaveCount(0);
-    await expect(page.getByRole("toolbar", { name: "Formatting" })).toHaveCount(0);
-    await expect(page.getByTestId("fmt-bold")).toHaveCount(0);
-    await expect(page.getByTestId("fmt-block-type")).toHaveCount(0);
+    await expect(bodyPane.getByRole("toolbar", { name: "Formatting" })).toHaveCount(0);
+    await expect(bodyPane.getByTestId("fmt-bold")).toHaveCount(0);
+    await expect(bodyPane.getByTestId("fmt-block-type")).toHaveCount(0);
 
-    // Entering edit (a click on the rendered body) reveals the editor
-    // and, once focused, its toolbar.
+    // Entering edit reveals the editor and, once focused, its toolbar.
     await enterEdit(page);
     await bodyRich(page).click();
-    await expect(page.getByRole("toolbar", { name: "Formatting" })).toBeVisible();
-    await expect(page.getByTestId("fmt-block-type")).toBeVisible();
+    await expect(bodyPane.getByRole("toolbar", { name: "Formatting" })).toBeVisible();
+    await expect(bodyPane.getByTestId("fmt-block-type")).toBeVisible();
   });
 
   // @verifies TSK-67
@@ -1397,11 +1456,15 @@ test.describe("TSK — K33 read-then-edit description", () => {
     await expect(page.getByTestId("body-rendered")).not.toContainText("# Heading");
 
     // …with no editor, no toolbar, no mode toggle in the read state.
+    // Scoped to the description pane: the always-mounted comment
+    // composer has its own Formatting toolbar and mode toggle, which
+    // this case never meant to deny (see the note in TSK-64/TSK-68).
+    const bodyPane = page.getByTestId("body-editor");
     await expect(bodyRich(page)).toHaveCount(0);
-    await expect(page.getByTestId("markdown-editor")).toHaveCount(0);
-    await expect(page.getByRole("toolbar", { name: "Formatting" })).toHaveCount(0);
-    await expect(page.getByTestId("mode-rich")).toHaveCount(0);
-    await expect(page.getByTestId("mode-raw")).toHaveCount(0);
+    await expect(bodyPane.getByTestId("markdown-editor")).toHaveCount(0);
+    await expect(bodyPane.getByRole("toolbar", { name: "Formatting" })).toHaveCount(0);
+    await expect(bodyPane.getByTestId("mode-rich")).toHaveCount(0);
+    await expect(bodyPane.getByTestId("mode-raw")).toHaveCount(0);
   });
 
   // @verifies TSK-68
@@ -1417,7 +1480,7 @@ test.describe("TSK — K33 read-then-edit description", () => {
   });
 
   // @verifies TSK-69
-  test("TSK-69: clicking the rendered description text enters edit, ready to type", async ({
+  test("TSK-69: the explicit edit affordance enters edit, ready to type", async ({
     page, tracker,
   }) => {
     const [key] = await tracker.seed([{ title: "Enter edit" }]);
@@ -1426,7 +1489,12 @@ test.describe("TSK — K33 read-then-edit description", () => {
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByTestId("body-rendered")).toBeVisible();
 
-    await page.getByText("Click me to edit.").click();
+    // A247 removed click-to-edit on the body text: a click target
+    // wrapping the rendered description also wraps its links and images,
+    // which is nested-interactive (WCAG 4.1.2) and made TSK-70's "a link
+    // opens and does NOT enter edit" a contradiction. The route is the
+    // explicit control; the coverage below is unchanged.
+    await page.getByTestId("body-edit").click();
 
     // The editor and the raw/rich toggle appear (and only now).
     await expect(bodyRich(page)).toBeVisible();

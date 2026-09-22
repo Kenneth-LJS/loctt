@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-accessibility.md.
+ * Transcribed from tests/cases/ui-test-cases/flow-accessibility.md.
  *
  * ## What these specs can and cannot claim
  *
@@ -1373,24 +1373,26 @@ test.describe("A11Y — state exposure", () => {
     await collapse.click();
     await expect(collapse).toHaveAttribute("aria-expanded", "true");
 
-    // "Show archived". Second bullet: it "announces its current state,
-    // so a user cannot be unknowingly filtered" — the case's point is
-    // that a user must be able to tell whether archived rows are being
-    // hidden from them.
+    // The archived-scope control (K107 replaced the "Show archived"
+    // checkbox with a tri-state select). Second bullet: it "announces
+    // its current state, so a user cannot be unknowingly filtered" — the
+    // case's point is that a user must be able to tell whether archived
+    // rows are being hidden from them.
     //
     // Third bullet: "a toggle rendered as a checkbox announces
-    // checked". `getByRole("checkbox")` resolves the browser's own
-    // semantics, and `toBeChecked` reads the state a reader would
-    // announce.
-    const archived = page.getByRole("checkbox", { name: /Show archived/i });
-    await expect(archived).not.toBeChecked();
-    await archived.check();
-    await expect(archived).toBeChecked();
+    // checked" — for the select, the equivalent is that its accessible
+    // value reflects the current scope. `getByRole("combobox")` resolves
+    // the browser's own semantics for a `<select>`.
+    await page.getByTestId("view-actions-menu").click();
+    const archived = page.getByRole("combobox", { name: "Archived scope" });
+    await expect(archived).toHaveValue("active");
+    await archived.selectOption("all");
+    await expect(archived).toHaveValue("all");
 
-    // And the state is real, not decorative: checking it changed the
-    // query. Without this the test would pass against a checkbox that
+    // And the state is real, not decorative: changing it changed the
+    // query. Without this the test would pass against a control that
     // announces correctly and filters nothing.
-    await expect(page).toHaveURL(/archived=true/);
+    await expect(page).toHaveURL(/archived=all/);
   });
 
   // @verifies A11Y-31
@@ -1415,6 +1417,13 @@ test.describe("A11Y — state exposure", () => {
     // Wait for the panel's own table to render before selecting the row
     // control, so the assertion is not racing an empty list.
     await expect(page.getByRole("columnheader", { name: "Name" })).toBeVisible();
+    // The row's actions moved behind a `RowActions` kebab (U26/K105):
+    // the Delete item only exists while the menu is open, and since
+    // K106 step 2 the panel is portalled to `document.body`, so it is
+    // located from `page`. The trigger is scoped to `main` because the
+    // sidebar carries a same-named `Actions for project "Tasks"` button.
+    await page.getByRole("main")
+      .getByRole("button", { name: /^Actions for project / }).first().click();
     const del = page.locator('[data-testid^="project-delete-"]');
     await expect(del).toHaveCount(1);
 
@@ -1542,6 +1551,74 @@ test.describe("ERR — error surfaces across routes and layers", () => {
 });
 
 test.describe("A11Y — failure communication", () => {
+  /**
+   * A11Y-24: a field save's outcome is announced in the shell's live
+   * region, so a non-sighted user knows the edit landed (or did not)
+   * without inspecting the field. Both halves in one flow: a real
+   * successful save, then the same field forced to fail.
+   *
+   * The two announcements go to different regions — success polite,
+   * failure assertive — and the failure carries the same text the
+   * anchored notice shows, so the channel and the notice never disagree.
+   *
+   * @verifies A11Y-24
+   */
+  test("A11Y-24: a field save's success and forced failure are both announced in a live region", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([
+      { title: "Announced save subject", fields: { priority: "low" } },
+    ]);
+    const taskKey = keys[0] ?? "T-1";
+
+    await page.goto(`${tracker.baseURL}/tasks/${taskKey}`);
+    await expect(page.getByText("Announced save subject").first()).toBeVisible();
+
+    const polite = page.getByTestId("announcer-polite");
+    const assertive = page.getByTestId("announcer-assertive");
+
+    // (1) A real, successful save. First bullet: the success is announced
+    // ("Priority saved") politely, and focus is NOT moved by the
+    // announcement — the picker's own focus behaviour is unchanged.
+    const priority = page.getByTestId("meta-edit-priority");
+    await priority.click();
+    await page.getByRole("option", { name: /high/i }).first().click();
+
+    await expect(polite).toContainText(/priority saved/i);
+    // A success is not an interruption, so the assertive channel is silent.
+    await expect(assertive).not.toContainText(/saved/i);
+
+    // (2) Now force the same field's write to fail. Second bullet: the
+    // failure is announced ASSERTIVELY (interrupting) with the same
+    // message the notice shows — a silent failure is A11Y-24's worst
+    // case. Fourth bullet: a non-sighted user can tell the two apart —
+    // here, the failure text lands in the assertive region, the success
+    // never did.
+    await page.route(`**/api/tasks/**/set`, route =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "io_failed",
+          message: "Could not write the task file: the disk is full.",
+          error: "Could not write the task file: the disk is full.",
+          field: "priority",
+          data_state: "not_saved",
+          recovery: { kind: "retry" },
+        }),
+      }),
+    );
+
+    await priority.click();
+    await page.getByRole("option", { name: /medium|low/i }).first().click();
+
+    // The assertive region carries the reason (same words as the notice).
+    await expect(assertive).toContainText(/disk is full/i);
+    // And the notice shows the identical message, so the two agree.
+    await expect(page.getByTestId("meta-field-error")).toContainText(/disk is full/i);
+  });
+
   // @verifies A11Y-46
   test("A11Y-46: a failed field save is announced and the rollback is perceivable", async ({
     page,
@@ -1839,16 +1916,29 @@ test.describe("A11Y — drag affordances have keyboard alternatives", () => {
     await handle.focus();
     await expect(handle).toBeFocused();
 
+    // REL-15's pickup model: an arrow moves the row VISUALLY (a buffered
+    // pickup, so Escape is a true cancel with no write), and the single
+    // rerank is committed on Enter. Pressing only ArrowUp therefore
+    // reorders the screen and leaves the file untouched — which is why
+    // the reload assertion below needs the commit.
     await handle.press("ArrowUp");
 
-    // First bullet, first half: the row moved. Asserted on the
-    // rendered order, and then on disk — a visual swap that never
-    // reached a file is the failure this catches.
+    // First bullet, first half: the row moved on screen...
     await expect(rows.nth(0)).toHaveAttribute("data-target", secondId);
 
-    // First bullet, second half: "with the new position announced."
+    // ...and it is announced while picked up, before any write.
     await expect(page.getByTestId("reorder-announcement"))
       .toContainText(`${b ?? ""} moved to position 1 of 2`);
+
+    // Drop: the one write leaves here, and the drop is announced too.
+    const reranked = page.waitForResponse(
+      r => r.url().includes("/rerank") && r.request().method() === "POST",
+      { timeout: 15_000 },
+    );
+    await handle.press("Enter");
+    await reranked;
+    await expect(page.getByTestId("reorder-announcement"))
+      .toContainText(`${b ?? ""} dropped at position 1 of 2`);
 
     // The far end agrees, and survives a reload.
     await page.reload();
@@ -2004,12 +2094,19 @@ test.describe("A11Y — layered dismissal", () => {
     await picker.focus();
     await page.keyboard.press("Enter");
     // The dropdown is the topmost layer now.
-    await expect(dialog.getByTestId("meta-options-project")).toBeVisible();
+    //
+    // K106 step 2: the listbox PANEL is portalled to `document.body`, so
+    // it is no longer a descendant of the dialog — only the trigger is.
+    // Scoped to `page` for that reason. The layered-Escape proof is
+    // untouched: the dialog is still asserted visible after the first
+    // Escape, and focus still returns to the trigger INSIDE it.
+    const options = page.getByTestId("meta-options-project");
+    await expect(options).toBeVisible();
     await expect(picker).toHaveAttribute("aria-expanded", "true");
 
     // First Esc: the dropdown goes, the modal stays.
     await page.keyboard.press("Escape");
-    await expect(dialog.getByTestId("meta-options-project")).toBeHidden();
+    await expect(options).toBeHidden();
     // The modal is still open — this is the assertion the case is
     // really about. A single Escape handler on `document` would have
     // closed both, and only this line would catch it.
@@ -2581,6 +2678,26 @@ test.describe("A11Y — colour and focus visibility", () => {
         await page.evaluate(() => document.documentElement.classList.contains("dark")),
       ).toBe(theme === "dark");
 
+      // The focus ring's colour is TRANSITIONED: every control carries
+      // `transition-colors`, whose property list includes `outline-color`.
+      // Reading `getComputedStyle` in the same tick as `.focus()` samples
+      // the animation MID-FLIGHT — it returns the colour being
+      // transitioned *from* (the control's previous outline, i.e. its own
+      // text colour) rather than the settled `--text-primary`.
+      //
+      // That is what made this spec report `ring rgb(255,255,255) —
+      // 1.00:1` on the header's primary button: the app's CSS is correct
+      // and settles at `#0f172a`, but the measurement never waited for it.
+      // Two separate attempts to "fix" the CSS failed because there was
+      // nothing wrong with it.
+      //
+      // Disabling transitions for the scan measures the resting state,
+      // which is what WCAG's 3:1 is about — a ring a user looks at, not a
+      // frame of its fade-in.
+      await page.addStyleTag({
+        content: "*, *::before, *::after { transition: none !important; animation: none !important; }",
+      });
+
       const weak = await page.evaluate(() => {
         const parse = (css: string): [number, number, number, number] | null => {
           const m = /rgba?\(([^)]+)\)/.exec(css);
@@ -2712,7 +2829,7 @@ test.describe("A11Y — colour and focus visibility", () => {
       { title: "Archived task", fields: { status: "backlog", priority: "low" } },
     ]);
     await tracker.run(["archive", String(archived)]);
-    await page.goto(`${tracker.baseURL}/list?archived=true`);
+    await page.goto(`${tracker.baseURL}/list?archived=all`);
     await expect(page.getByText("Live task")).toBeVisible();
 
     const liveRow = page.locator("tbody tr").filter({ hasText: String(live) });
@@ -2939,9 +3056,22 @@ test.describe("A11Y — focus through change", () => {
           : el.closest("main") !== null ? "main"
           : "other";
         // A stable-enough identity for one stop, to detect the wrap.
+        //
+        // `aria-label` is part of the identity: several header controls
+        // are now icon-only with no text and no testid (the brand pass
+        // and the responsive header), so without it two DIFFERENT
+        // buttons collapse to the same key (`BUTTON||`), the walk reads
+        // that as having wrapped, and it breaks inside the header —
+        // recording one region instead of three and failing against the
+        // app's correct tab order.
         return {
           region,
-          id: `${el.tagName}|${el.getAttribute("data-testid") ?? ""}|${(el.textContent ?? "").trim().slice(0, 20)}`,
+          id: [
+            el.tagName,
+            el.getAttribute("data-testid") ?? "",
+            el.getAttribute("aria-label") ?? "",
+            (el.textContent ?? "").trim().slice(0, 20),
+          ].join("|"),
         };
       });
       if (stop.region === "body" || stop.region === "other") continue;
@@ -3037,106 +3167,105 @@ test.describe("A11Y — undo without a pointer", () => {
 
 test.describe("A11Y — sidebar and full-cycle keyboard operation", () => {
   /**
-   * A11Y-9 is **deliberately not tagged**. See known-gaps.md.
+   * A11Y-9: the list → open → change status → save → back cycle, driven
+   * with no pointer. Real key events throughout — a `.click()` anywhere
+   * in the open/traverse/commit path would prove nothing about keyboard
+   * operability.
    *
-   * The case requires the whole list → open → edit → save → close
-   * cycle to work with no mouse, and names five specifics. Three fail
-   * against this app, and each is an implementation gap rather than a
-   * transcription difficulty:
+   * Four of the case's five bullets are exercised here:
    *
-   * 1. **"Table rows are reachable and activatable — a row that only
-   *    responds to a click is a blocker."** A row is a bare `<tr>`
-   *    with an `onClick` and no key handler. The key cell's `<a>` is
-   *    the only keyboard route into a task, so the row itself is
-   *    exactly the click-only affordance the bullet calls a blocker.
+   * 1. **Row keyboard-activatable, not click-only.** The row's key link
+   *    is a real `<a>` and the row's single, ARIA-correct Tab target
+   *    (no `tabIndex` on the `<tr>`, which would double the stop and
+   *    make a reader announce the row twice). Focusing it and pressing
+   *    Enter opens the task — the thing a bare `<tr onClick>` could not.
+   * 2. **Status dropdown opens on Enter, options arrow-traversable,
+   *    Enter commits.** The picker is `ui/Combobox` (via OptionPicker),
+   *    whose keyboard model is proven in Combobox.test.tsx; here it is
+   *    driven end to end and the committed value is checked *on disk*,
+   *    so the keyboard path is verified no more weakly than the pointer
+   *    one (the A11Y-28 discipline).
+   * 5. **Return restores focus at/near the opened row.** Back lands
+   *    focus on that row's key-link anchor, not on `document.body`.
    *
-   * 2. **"The status dropdown ... options are traversable with arrow
-   *    keys."** `OptionPicker` has no `ArrowDown`/`ArrowUp`/`Home`/
-   *    `End` handling and no `aria-activedescendant` — the only key it
-   *    listens for is Escape. Options are reachable by Tab, which is
-   *    not what the bullet says.
+   * The fourth bullet — "the save outcome is announced (A11Y-24)" — is
+   * now satisfied: A11Y-24 landed, and the field-save path announces the
+   * outcome through the shell's live region. This test asserts the
+   * successful status save IS announced ("Status saved") in the polite
+   * region, which is what A11Y-9's fourth bullet requires; the flip from
+   * the previous negative assertion is deliberate and is the day the
+   * A11Y-9 note in known-gaps.md said to revisit.
    *
-   * 3. **"Returning to the list restores focus at or near the row that
-   *    was opened, not at the top of the document."** Task detail is a
-   *    route, and nothing anywhere records which row was opened; there
-   *    is no restore to write a test against.
-   *
-   * The fourth bullet also fails for a different reason: `MetaPanel`
-   * has no live region, so a successful field save is silent (A11Y-24's
-   * subject, not this case's, but it is part of this cycle).
-   *
-   * A test asserting only the parts that work would tag a blocker as
-   * satisfied while three of its five bullets are unimplemented. The
-   * gaps are recorded instead; this asserts them so the note cannot
-   * quietly go stale.
+   * @verifies A11Y-9
    */
-  test("A11Y-9 (partial): the keyboard cycle is broken in three named places", async ({
+  test("A11Y-9: the list → open → change status → save → back cycle works with no pointer", async ({
     page,
     tracker,
   }) => {
     const [key] = await tracker.seed([{ title: "Keyboard cycle subject" }]);
+    const taskKey = String(key);
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Keyboard cycle subject")).toBeVisible();
 
-    // (1) The row is not activatable from the keyboard: focusing it
-    // does not take, and it carries no key handler. Asserted with a
-    // positive control — the key link *is* reachable — so this is a
-    // statement about rows, not about an empty table.
-    await expect(page.getByRole("link", { name: String(key) })).toBeVisible();
-    const rowActivatable = await page.evaluate(() => {
-      const tr = document.querySelector("tbody tr");
-      if (tr === null) return true;
-      (tr as HTMLElement).focus();
-      return document.activeElement === tr;
-    });
-    expect(
-      rowActivatable,
-      "rows became keyboard-activatable — revisit A11Y-9",
-    ).toBe(false);
+    // (1) Reach the row and open it from the keyboard. The key link is
+    // the row's keyboard-operable primary action; Enter on a real anchor
+    // navigates natively.
+    const rowLink = page.getByRole("link", { name: taskKey });
+    await rowLink.focus();
+    await expect(rowLink).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/tasks/${taskKey}$`));
 
-    // (2) The status dropdown does not traverse with arrow keys.
-    // Driven entirely from the keyboard, as the case requires.
-    await page.goto(`${tracker.baseURL}/tasks/${String(key)}`);
+    // The stored status before the edit, so the disk assertion later is
+    // about a value we watched change.
+    const before = await readTaskFile(tracker.root, taskKey);
+    const statusBefore = /^status:\s*(\S+)\s*$/m.exec(before)?.[1];
+
+    // (2) Open the status dropdown on Enter, traverse with ArrowDown,
+    // commit with Enter — entirely from the keyboard.
     const trigger = page.getByTestId("meta-edit-status");
     await trigger.focus();
     await page.keyboard.press("Enter");
     const listbox = page.getByTestId("meta-options-status");
     await expect(listbox).toBeVisible();
 
-    // Focus stays on the trigger — nothing moved into the list, and
-    // ArrowDown does not move between options.
-    await expect(trigger).toBeFocused();
+    // ArrowDown moves the active option and Enter picks it. The default
+    // status set has several options under the search threshold, so the
+    // trigger's ArrowDown moves focus into the list; a further ArrowDown
+    // advances past the first option so the pick is a real change.
     await page.keyboard.press("ArrowDown");
-    const movedByArrow = await listbox.evaluate(
-      el => el.contains(document.activeElement),
-    );
-    expect(
-      movedByArrow,
-      "the status listbox gained arrow traversal — revisit A11Y-9",
-    ).toBe(false);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(listbox).toBeHidden();
 
-    // The Tab-and-Enter path *does* work, which is why the case is a
-    // partial rather than a total failure — and why asserting only
-    // this would have looked like a pass.
-    await page.keyboard.press("Tab");
-    expect(await listbox.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    // The commit landed on disk — the keyboard path verified against the
+    // file, not just the DOM (A11Y-28 discipline).
+    await expect
+      .poll(async () => {
+        const text = await readTaskFile(tracker.root, taskKey);
+        return /^status:\s*(\S+)\s*$/m.exec(text)?.[1];
+      }, { timeout: 10_000 })
+      .not.toBe(statusBefore);
 
-    // (3) Nothing records the opened row, so there is no restore to
-    // assert. Going back lands focus nowhere near it.
+    // Fourth bullet, now satisfied (A11Y-24 landed): the successful save
+    // is announced politely in the shell's live region, so a non-sighted
+    // user knows the edit landed. Naming the field ("Status saved"), and
+    // in the polite region — a routine confirmation is not an interrupt.
+    await expect(page.getByTestId("announcer-polite")).toContainText(/status saved/i);
+
+    // (5) Return to the list; focus lands on the opened row's anchor,
+    // not on document.body / the top of the page.
     await page.goBack();
-    // Scoped to the table: after visiting the task it also appears in
-    // the sidebar's "Recently viewed".
     await expect(
       page.locator("tbody tr").filter({ hasText: "Keyboard cycle subject" }),
     ).toHaveCount(1);
-    const restored = await page.evaluate(() => {
-      const el = document.activeElement;
-      return el !== null && el !== document.body && el.closest("tbody tr") !== null;
-    });
-    expect(
-      restored,
-      "focus is now restored into a row on return — revisit A11Y-9",
-    ).toBe(false);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const el = document.activeElement as HTMLElement | null;
+          return el?.getAttribute("data-task-key") ?? null;
+        }), { timeout: 5_000 })
+      .toBe(taskKey);
   });
 });
 

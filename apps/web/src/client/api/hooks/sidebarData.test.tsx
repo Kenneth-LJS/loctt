@@ -87,13 +87,15 @@ describe("sidebar picker hooks request a limit past the server's default page", 
 
   it("keeps archived users in the request that also carries the limit", async () => {
     // The limit was added to a URL that already had a query string.
-    // Appending with `?` instead of `&` would silently drop
-    // `include_archived`, and LST-25 depends on it — an assignee
-    // archived since is otherwise rendered as a raw id.
+    // Appending with `?` instead of `&` would silently drop the archived
+    // scope, and LST-25 depends on it — an assignee archived since is
+    // otherwise rendered as a raw id. K107: the scope is now
+    // `archived=all` (was `include_archived=true`).
     const { result } = renderHook(() => useUsers(), { wrapper: wrapper() });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
     const params = new URL(calledUrl(), "http://x").searchParams;
-    expect(params.get("include_archived")).toBe("true");
+    expect(params.get("archived")).toBe("all");
+    expect(params.get("include_archived")).toBeNull();
     expect(Number(params.get("limit"))).toBeGreaterThan(100);
   });
 });

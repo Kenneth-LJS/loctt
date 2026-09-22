@@ -1,11 +1,16 @@
 import { parseQuery, tokenize } from "@loctt/core";
 import { describe, expect, it } from "vitest";
 
-import { buildDslFromSearch } from "./buildDsl.ts";
 import { dslToSearch } from "./dslToSearch.ts";
 
 /**
- * The Basic ↔ Advanced bridge (VUE-10, VUE-11, VUE-18).
+ * The Advanced → Basic bridge (VUE-10, VUE-11, VUE-18).
+ *
+ * K102 deleted the Basic → Advanced half (`buildDslFromSearch`): saving
+ * the current filters now stores each facet as its OWN simple filter
+ * (`buildFilters.ts`) instead of merging them into one DSL string. This
+ * direction survives because the DSL editor still offers "switch to
+ * basic" over a hand-typed `q`.
  *
  * Round-trips assert the **parsed structure**, not the string. A
  * string-equality check passes for an editor that does nothing at all,
@@ -14,37 +19,26 @@ import { dslToSearch } from "./dslToSearch.ts";
  * does the query still mean the same thing?
  */
 
-/** Structural identity, independent of formatting. */
-const ast = (dsl: string): unknown => JSON.parse(JSON.stringify(parseQuery(tokenize(dsl))));
 
 describe("Basic → Advanced is lossless", () => {
   // @verifies VUE-10
-  it("reproduces every predicate, and back again, with nothing dropped or added", () => {
-    const search = {
+  it("reproduces every predicate as its own control, with nothing dropped or added", () => {
+    // Authored the way a user types it — membership regardless of value
+    // count (Ken's ruling: no count-based `=` downgrade for a facet).
+    const dsl =
+      "status in (backlog, in_progress) and priority in (high) " +
+      "and assignee in (alice) and labels in (api, urgent)";
+
+    const back = dslToSearch(dsl);
+    expect(back.expressible).toBe(true);
+    if (!back.expressible) return;
+    // Every predicate becomes exactly one facet control, none invented.
+    expect(back.search).toEqual({
       status: ["backlog", "in_progress"],
       priority: ["high"],
       assignee: ["alice"],
       labels: ["api", "urgent"],
-    };
-
-    const dsl = buildDslFromSearch(search);
-
-    // Every predicate survives the trip out...
-    expect(dsl).toContain("status in (backlog, in_progress)");
-    expect(dsl).toContain("priority = high");
-    expect(dsl).toContain("assignee = alice");
-    expect(dsl).toContain("labels in (api, urgent)");
-
-    // ...and the trip back restores the identical controls.
-    const back = dslToSearch(dsl);
-    expect(back.expressible).toBe(true);
-    if (!back.expressible) return;
-    expect(back.search).toEqual(search);
-
-    // The second generation is structurally identical to the first —
-    // this is what "lossless" means, and a string compare would not
-    // survive a reordering that means the same thing.
-    expect(ast(buildDslFromSearch(back.search))).toEqual(ast(dsl));
+    });
   });
 
   // @verifies VUE-10
@@ -52,8 +46,9 @@ describe("Basic → Advanced is lossless", () => {
     const back = dslToSearch("status = backlog and archived != true");
     expect(back.expressible).toBe(true);
     if (!back.expressible) return;
-    // `archived != true` is the default scope buildDsl always appends;
-    // round-tripping it as a chip would invent a filter.
+    // `archived != true` is the default scope, carried as the archived
+    // SCOPE rather than a filter (K107); surfacing it as a chip would
+    // invent a filter the user never set.
     expect(back.search).not.toHaveProperty("archived");
     expect(back.search).toEqual({ status: ["backlog"] });
   });

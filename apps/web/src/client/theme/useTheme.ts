@@ -20,6 +20,18 @@ function readStored(): ThemePreference {
 
 function systemPrefersDark(): boolean {
   if (typeof window === "undefined") return false;
+  // `matchMedia` is guarded as well as `window` itself. The two are not
+  // the same check: a DOM can exist without it (jsdom ships none by
+  // default, and it is absent in some embedded webviews). Before K103
+  // only the theme picker and the shell read this, so the gap was
+  // invisible; now every entity colour resolves against the mode, so an
+  // absent `matchMedia` would take down any view that renders a
+  // coloured status, label or priority.
+  //
+  // Absent → light, matching the `:root` default in tokens.css and the
+  // no-`dark`-class DOM state, so the resolved mode agrees with what is
+  // actually painted rather than guessing the opposite.
+  if (typeof window.matchMedia !== "function") return false;
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
@@ -96,6 +108,10 @@ export function useTheme(): {
   useEffect(() => {
     if (preference !== "system") return undefined;
     if (typeof window === "undefined") return undefined;
+    // Same guard as `systemPrefersDark`: with no `matchMedia` there is
+    // no OS preference to track, and the initial resolve already fell
+    // back to light.
+    if (typeof window.matchMedia !== "function") return undefined;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = (): void => {
       const next: "light" | "dark" = mq.matches ? "dark" : "light";

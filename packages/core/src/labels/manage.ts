@@ -1,4 +1,4 @@
-import type { LabelDef, LabelsConfig } from "@loctt/contracts";
+import type { EntityColor, LabelDef, LabelsConfig } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import {
@@ -113,7 +113,16 @@ export function assertLabelIdsRegistered(
 /** Input to createLabel. Core generates the id. */
 export interface CreateLabelInput {
   readonly name: string;
-  readonly color?: string;
+  /**
+   * K103: any of the three colour shapes — a bare hex (single), a
+   * `{light, dark}` pair, or a `{palette: id}` reference. Typed as
+   * `EntityColor` rather than `string` so a label can STORE what every
+   * other entity can: the read path already handled all three, and
+   * leaving the writer at `string` silently narrowed anything the picker
+   * produced, which is why the label dialog could not have a swatch
+   * picker.
+   */
+  readonly color?: EntityColor;
   readonly archived?: boolean;
 }
 
@@ -140,7 +149,7 @@ export async function createLabel(
 export async function editLabel(
   locttDir: string,
   id: string,
-  changes: { name?: string; color?: string | null },
+  changes: { name?: string; color?: EntityColor | null },
 ): Promise<void> {
   await withStateLock(locttDir, async () => {
     const config = await loadLabelsConfig(locttDir);

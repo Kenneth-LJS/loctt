@@ -1,3 +1,4 @@
+import { ArchivedScopeSchema } from "@loctt/contracts";
 import { z } from "zod";
 
 /**
@@ -112,8 +113,19 @@ export const listSearchSchema = z.object({
   page: urlInt(1, Number.MAX_SAFE_INTEGER),
   limit: urlInt(1, 200),
 
-  // Toggles
-  archived: urlBool,
+  // K107: the tri-state archived scope, replacing the old `archived`
+  // boolean toggle. `active` (default) hides archived; `archived` shows
+  // only archived; `all` shows both — the same three values the server's
+  // `?archived=` param and core's `archivedScope` understand. Anything
+  // absent or unrecognised falls through to `undefined` so the consumer
+  // applies the `active` default (the URL stays clean — no `?archived=`
+  // when the scope is the default), and bookmarking / back-forward keep
+  // working because the URL carries the literal scope. Passthrough means
+  // an old bookmarked `?archived=true` no longer parses to this field;
+  // it rides through untouched and the list opens at the default scope,
+  // which is the deliberate K107 behaviour change (show-all was never
+  // the default; hide-archived is).
+  archived: ArchivedScopeSchema.optional().catch(undefined),
 
   // VUE-22: open the advanced DSL editor on load, pre-populated from
   // `q`. Set by the "fix this view" affordance on a broken saved view,

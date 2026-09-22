@@ -14,6 +14,13 @@ import type { MilestoneDef } from "@loctt/contracts";
 export interface Progress {
   /** Tasks in a `completed`-category status. */
   readonly done: number;
+  /**
+   * Tasks in an `active`-category status. Optional: the milestone/sprint
+   * progress endpoint carries it, but a caller building a `Progress`
+   * from resolved status keys (the tree-child meter) may omit it, in
+   * which case the readout renders a single fill rather than segments.
+   */
+  readonly active?: number;
   /** Tasks counted toward the goal: everything except discarded. */
   readonly total: number;
   /** Excluded from `total`, reported so the UI can explain the number. */
@@ -51,6 +58,17 @@ export interface Readout {
   readonly discarded: number;
   /** Bar fill, 0–1. Always 0 when there is nothing to fill from. */
   readonly fill: number;
+  /**
+   * The `active` share of the bar, 0–1, when the source `Progress`
+   * carried an `active` count. `undefined` when it did not — the single
+   * milestone/sprint fill has no middle segment, and a segmented caller
+   * checks for the field's presence rather than treating 0 as "none".
+   *
+   * `fill` (the done share) and `activeFill` are disjoint and sum to at
+   * most 1; the remainder `1 - fill - activeFill` is the un-started
+   * track a three-segment bar leaves empty.
+   */
+  readonly activeFill: number | undefined;
   /** Whole-number percent, or `undefined` when it must be suppressed. */
   readonly percent: number | undefined;
   /** True at `n / n` with `n > 0` (MSL-18). */
@@ -75,12 +93,13 @@ export function progressState(progress: Progress | undefined): Readout {
       total: 0,
       discarded: 0,
       fill: 0,
+      activeFill: undefined,
       percent: undefined,
       complete: false,
     };
   }
 
-  const { done, total, discarded } = progress;
+  const { done, total, discarded, active } = progress;
 
   // MSL-15: zero denominator. Percent is *suppressed*, not computed —
   // `done / total` here is `0 / 0` = NaN, and `NaN%` is one of the
@@ -92,6 +111,7 @@ export function progressState(progress: Progress | undefined): Readout {
       total: 0,
       discarded,
       fill: 0,
+      activeFill: undefined,
       percent: undefined,
       // An empty milestone is *not* complete. "Nothing to do" and
       // "everything done" are different states, and a full bar on an
@@ -106,12 +126,23 @@ export function progressState(progress: Progress | undefined): Readout {
   // field is how they drift apart when one of them is stale.
   const fill = done / total;
 
+  // The active segment is present only when the source carried an
+  // `active` count — the milestone/sprint endpoint does; a caller that
+  // built `Progress` from resolved status keys without it does not, and
+  // gets the single-fill bar unchanged. Clamped so a hand-edited corpus
+  // where `done + active` momentarily exceeds `total` cannot overflow
+  // the track.
+  const activeFill = active === undefined
+    ? undefined
+    : Math.max(0, Math.min(active / total, 1 - fill));
+
   return {
     kind: "counted",
     done,
     total,
     discarded,
     fill,
+    activeFill,
     percent: Math.round(fill * 100),
     complete: done >= total,
   };

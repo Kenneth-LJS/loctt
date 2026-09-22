@@ -30,7 +30,8 @@ interface SearchPage {
  * is the narrower change and is confined to this picker.
  *
  * **Archived tasks are excluded** (REL-30's first bullet): `/api/search`
- * omits them unless `archived=true`, which is not sent. The direct
+ * defaults to the `active` scope (K107) and no `archived` param is sent,
+ * so archived tasks are omitted from the search index. The direct
  * lookup can still surface one — it resolves by ref regardless — and
  * that is deliberate: REL-30's second bullet wants a pasted archived
  * key to be *refused by name*, which needs it to be reachable at all.

@@ -250,6 +250,29 @@ export function orderRows(
 }
 
 /**
+ * The type key of the *child* side of the `graph: "tree"` axis — the
+ * side a parent task holds to point at its children (`child` in the
+ * shipped default, whatever `inverse` renames it to).
+ *
+ * The forward side of the tree def (`parent`) points at ancestors, where
+ * a child-progress meter would be meaningless; only the inverse side
+ * shows a group of children worth summarising. Config-driven: resolved
+ * from the def marked `graph: "tree"`, never a literal `"child"`.
+ *
+ * `undefined` when there is no tree axis, or when the tree axis is
+ * symmetric (its two sides are one key, so there is no distinct "child"
+ * direction to single out).
+ */
+export function treeChildSideKey(
+  workflow: WorkflowConfig | undefined,
+): string | undefined {
+  const treeDef = workflow?.relationships.find(r => r.graph === "tree");
+  if (treeDef === undefined) return undefined;
+  if (isSymmetricRelationship(treeDef)) return undefined;
+  return effectiveInverseKey(treeDef);
+}
+
+/**
  * The panel's groups, in render order.
  *
  * @param resolved the response's `relationships`

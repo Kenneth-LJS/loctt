@@ -1,5 +1,5 @@
 /**
- * Transcribed from docs/dev/ui-test-cases/flow-tasks.md,
+ * Transcribed from tests/cases/ui-test-cases/flow-tasks.md,
  * flow-errors.md and flow-cross-surface.md — M2.2b, the meta panel's
  * failure and concurrency behaviour.
  *
@@ -276,7 +276,12 @@ test.describe("XS-7 / TSK-34 / XS-8 — the shape of the write", () => {
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     // The page has loaded and cached a task with no assignee. That
     // cached copy is what must not be written back.
-    await expect(trigger(page, "assignee")).toContainText("—");
+    //
+    // The unset presentation is the row's accessible name: the bare "—"
+    // became a labelled "Add assignee"/"Set priority" affordance (the
+    // K105 empty-state pattern — a dash gave no cue the row was
+    // clickable). The name is the stable signal for "not set".
+    await expect(trigger(page, "assignee")).toHaveAttribute("aria-label", /not set/i);
 
     // The CLI sets assignee. The UI is not told and does not refetch.
     await tracker.run(["set", key, "assignee", userId]);
@@ -728,7 +733,7 @@ test.describe("ERR-4 / XS-57 — outcomes the app cannot or must not guess", () 
     if (key === undefined) throw new Error("seed returned no key");
 
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await expect(trigger(page, "priority")).toContainText("—");
+    await expect(trigger(page, "priority")).toHaveAttribute("aria-label", /not set/i);
 
     // The request leaves and nothing ever comes back — the state the
     // case describes. The client's own deadline is what turns silence
@@ -741,7 +746,7 @@ test.describe("ERR-4 / XS-57 — outcomes the app cannot or must not guess", () 
         .__LOCTT_SET_FIELD_TIMEOUT_MS__ = 1_500;
     });
     await page.reload();
-    await expect(trigger(page, "priority")).toContainText("—");
+    await expect(trigger(page, "priority")).toHaveAttribute("aria-label", /not set/i);
 
     await page.route(`**/api/tasks/*/set`, async () => {
       // Never fulfilled, never aborted.
@@ -815,7 +820,7 @@ test.describe("ERR-4 / XS-57 — outcomes the app cannot or must not guess", () 
     expect(text).not.toMatch(/\b[0-9A-HJKMNP-TV-Z]{26}\b/);
 
     // Second bullet: the optimistic change rolled back visibly.
-    await expect(trigger(page, "priority")).toContainText("—");
+    await expect(trigger(page, "priority")).toHaveAttribute("aria-label", /not set/i);
     await expect(trigger(page, "priority")).not.toContainText("Someday");
 
     // Third bullet: a different sentence from "server unreachable",

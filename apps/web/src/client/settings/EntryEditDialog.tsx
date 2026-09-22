@@ -1,10 +1,14 @@
-import type { PriorityDef, StatusDef, TaskTypeDef } from "@loctt/contracts";
+import type { EntityColor, PriorityDef, StatusDef, TaskTypeDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
-import { Select } from "../ui/Select.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
+import { isValidEntityColor } from "../ui/entityColor.ts";
+import { IconColorFields } from "../ui/IconColorFields.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
   type EntryProblems,
@@ -46,6 +50,10 @@ export interface EntryDialogResult {
   readonly label: string;
   readonly category?: StatusDef["category"];
   readonly makeDefault?: boolean;
+  /** Optional presentational fields (undefined = none). */
+  readonly icon?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }
 
 export function EntryEditDialog({
@@ -81,6 +89,12 @@ export function EntryEditDialog({
   const [makeDefault, setMakeDefault] = useState(
     (initial as StatusDef | undefined)?.default === true,
   );
+  // Presentational fields — seeded from the row on edit so an unrelated
+  // edit does not drop them, editable on both create and edit.
+  const [icon, setIcon] = useState<string | undefined>(initial?.icon);
+  // K103: the colour is now the stored `EntityColor` itself, not a hex
+  // string being typed. `undefined` is "no colour".
+  const [color, setColor] = useState<EntityColor | undefined>(initial?.color);
 
   // On create, the key tracks the label until the user edits the key
   // directly — the same derive-then-detach behaviour project slugs use.
@@ -91,7 +105,11 @@ export function EntryEditDialog({
       ? validateNewEntry({ key: effectiveKey, label }, existingKeys)
       : (label.trim().length === 0 ? { label: "A label is required." } : {});
 
-  const canSubmit = hasNoProblems(problems) && !pending;
+  // K103: the swatch picker itself can only produce shapes the schema
+  // accepts, but the hex alias beside it still takes free text, so the
+  // gate stays — a malformed colour must not reach the wire.
+  const colorOk = isValidEntityColor(color);
+  const canSubmit = hasNoProblems(problems) && colorOk && !pending;
 
   const submit = (): void => {
     if (!canSubmit) return;
@@ -100,11 +118,13 @@ export function EntryEditDialog({
       label: label.trim(),
       ...(isStatus ? { category } : {}),
       ...(isStatus ? { makeDefault } : {}),
+      icon: icon !== undefined && icon.trim().length > 0 ? icon.trim() : undefined,
+      color,
     });
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={mode === "create" ? `New ${noun}` : `Edit ${noun}`}
       onClose={onClose}
       testId={`${collection}-entry-dialog`}
@@ -167,7 +187,7 @@ export function EntryEditDialog({
           ) : (
             <code
               data-testid={`${collection}-entry-key-readonly`}
-              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
+              className="inline-block rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary"
               title="A key is permanent: task files store it, so renaming it in place would orphan them."
             >
               {initial?.key}
@@ -178,22 +198,20 @@ export function EntryEditDialog({
         {isStatus && (
           <label className="block">
             <span className="mb-1 block text-text-secondary">Category</span>
-            <Select
+            <SelectCombobox
               size="sm"
-              data-testid={`${collection}-entry-category`}
+              testId={`${collection}-entry-category`}
               value={category}
-              onChange={e => { setCategory(e.target.value as StatusDef["category"]); }}
+              onChange={v => { setCategory(v as StatusDef["category"]); }}
               aria-label={`Category for the ${noun}`}
-            >
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </Select>
+              options={CATEGORIES.map(c => ({ value: c, label: c }))}
+            />
           </label>
         )}
 
         {isStatus && (
           <label className="flex items-center gap-2 text-text-secondary">
-            <input
-              type="checkbox"
+            <Checkbox
               data-testid={`${collection}-entry-default`}
               checked={makeDefault}
               onChange={e => { setMakeDefault(e.target.checked); }}
@@ -201,6 +219,22 @@ export function EntryEditDialog({
             Make this the default status — new tasks land here.
           </label>
         )}
+
+        {/* K104: the icon picker and the colour control, with the
+            emoji-disables-colour rule between them. */}
+        <IconColorFields
+          icon={icon}
+          onIconChange={setIcon}
+          color={color}
+          onColorChange={setColor}
+          iconTestId={`${collection}-entry-icon`}
+          iconListTestId={`${collection}-entry-icon-list`}
+          iconSearchTestId={`${collection}-entry-icon-search`}
+          iconClearTestId={`${collection}-entry-icon-clear`}
+          colorTestId={`${collection}-entry-color-picker`}
+          colorAliasTestId={`${collection}-entry-color`}
+          noun={noun}
+        />
 
         {/* SET-51: a failed save is anchored here, not thrown as a toast,
             and the dialog stays open with the edit un-committed. */}
@@ -210,6 +244,6 @@ export function EntryEditDialog({
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }

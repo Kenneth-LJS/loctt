@@ -1,10 +1,15 @@
-import type { CustomFieldDef, CustomFieldType } from "@loctt/contracts";
+import type { CustomFieldDef, CustomFieldType, EntityColor } from "@loctt/contracts";
 import { useState } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
-import { Dialog, DialogActions } from "../ui/Dialog.tsx";
-import { Select } from "../ui/Select.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
+import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { SelectCombobox } from "../ui/Combobox.tsx";
+import { DialogActions } from "../ui/Dialog.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
+import { IconColorFields } from "../ui/IconColorFields.tsx";
+import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import {
   buildCustomField,
@@ -30,13 +35,29 @@ import {
 
 const TYPES = ["string", "number", "date", "boolean", "enum"] as const;
 
+/**
+ * Human labels for the stored custom-field type keys. Display-only — the
+ * value written to `field.type` is still the raw key, and the type is
+ * locked after creation regardless. The tokens
+ * `string`/`number`/`date`/`boolean`/`enum` leaked verbatim before. See
+ * decisions.md §8.
+ */
+const TYPE_LABEL: Record<CustomFieldType, string> = {
+  string: "Text",
+  number: "Number",
+  date: "Date",
+  boolean: "Yes / No",
+  enum: "Choice list",
+};
+
 interface ValueRow {
   readonly key: string;
   readonly label: string;
   readonly value?: number;
   /** Presentational fields the dialog does not edit — carried through. */
   readonly icon?: string | undefined;
-  readonly color?: string | undefined;
+  /** K103: one of the three colour shapes, not a hex string. */
+  readonly color?: EntityColor | undefined;
 }
 
 export interface CustomFieldDialogResult {
@@ -46,6 +67,7 @@ export interface CustomFieldDialogResult {
 export function CustomFieldEditDialog({
   mode,
   existingKeys,
+  taskTypes = [],
   initial,
   pending,
   error,
@@ -54,6 +76,13 @@ export function CustomFieldEditDialog({
 }: {
   readonly mode: "create" | "edit";
   readonly existingKeys: readonly string[];
+  /**
+   * K91/TSK-12: the workflow's task types, for the scope allowlist
+   * multi-select. Each is `{ key, label }`; the stored scope holds keys.
+   * Defaults to none — the scope control then offers no types (still
+   * usable to clear a scope back to global on an existing field).
+   */
+  readonly taskTypes?: readonly { readonly key: string; readonly label: string }[];
   readonly initial?: CustomFieldDef | undefined;
   readonly pending: boolean;
   readonly error?: string | undefined;
@@ -76,6 +105,9 @@ export function CustomFieldEditDialog({
       ...(v.color !== undefined ? { color: v.color } : {}),
     })),
   );
+  // K91/TSK-12: the scope allowlist. Seeded from the stored field; empty
+  // means global (shows for every type). Editable on both create and edit.
+  const [scope, setScope] = useState<readonly string[]>(initial?.task_types ?? []);
 
   const effectiveKey = mode === "create" && !keyTouched ? keyFromLabel(label) : key;
 
@@ -86,6 +118,9 @@ export function CustomFieldEditDialog({
     multi,
     searchable,
     values,
+    // Empty selection = global; the builder drops the key so the field is
+    // stored without `task_types` (the consumption default is absent ⇒ all).
+    task_types: scope.length > 0 ? scope : undefined,
   };
 
   const problems =
@@ -135,7 +170,7 @@ export function CustomFieldEditDialog({
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       title={mode === "create" ? "New custom field" : `Edit field "${initial?.label ?? ""}"`}
       onClose={onClose}
       testId="custom-field-dialog"
@@ -197,7 +232,7 @@ export function CustomFieldEditDialog({
           ) : (
             <code
               data-testid="custom-field-dialog-key-readonly"
-              className="inline-block rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] text-text-secondary"
+              className="inline-block rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] text-text-secondary"
             >
               {initial?.key}
             </code>
@@ -206,23 +241,21 @@ export function CustomFieldEditDialog({
 
         <label className="block">
           <span className="mb-1 block text-text-secondary">Type</span>
-          <Select
+          <SelectCombobox
             size="sm"
-            data-testid="custom-field-dialog-type"
+            testId="custom-field-dialog-type"
             value={type}
             // SET-16: disabled on edit, not validated-on-submit.
             disabled={mode === "edit"}
             aria-describedby={mode === "edit" ? "custom-field-dialog-type-lock" : undefined}
-            onChange={e => { setType(e.target.value as CustomFieldType); }}
+            onChange={v => { setType(v as CustomFieldType); }}
             aria-label="Field type"
-          >
-            {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-          </Select>
+            options={TYPES.map(t => ({ value: t, label: TYPE_LABEL[t] }))}
+          />
         </label>
 
         <label className="flex items-center gap-2 text-text-secondary">
-          <input
-            type="checkbox"
+          <Checkbox
             data-testid="custom-field-dialog-multi"
             checked={multi}
             // SET-16: multi is locked on edit alongside type.
@@ -248,8 +281,7 @@ export function CustomFieldEditDialog({
         )}
 
         <label className="flex items-center gap-2 text-text-secondary">
-          <input
-            type="checkbox"
+          <Checkbox
             data-testid="custom-field-dialog-searchable"
             checked={searchable}
             onChange={e => { setSearchable(e.target.checked); }}
@@ -257,12 +289,54 @@ export function CustomFieldEditDialog({
           Searchable — this field is matched by full-text search.
         </label>
 
+        {/* K91/TSK-12: scope the field to specific task types. Empty =
+            shows for every type (the backward-compatible default). The
+            consumption side (create modal + detail) already filters on
+            this; this is the authoring control it lacked. */}
+        <div className="block">
+          <span className="mb-1 block text-text-secondary">Task types</span>
+          <Combobox
+            mode="multi"
+            label="Task types this field applies to"
+            options={taskTypes.map((t): ComboboxOption => ({ key: t.key, label: t.label }))}
+            selected={scope}
+            onToggle={(key, on) => {
+              setScope(prev => on ? [...prev, key] : prev.filter(k => k !== key));
+            }}
+            listTestId="custom-field-dialog-scope-list"
+            searchTestId="custom-field-dialog-scope-search"
+            optionTestId={o => `custom-field-dialog-scope-option-${o.key}`}
+            trigger={p => (
+              <ComboboxButton
+                {...p}
+                size="sm"
+                testId="custom-field-dialog-scope"
+                dataValue={scope.join(",")}
+                aria-label="Task types this field applies to"
+                placeholder="All task types"
+              >
+                {scope.length === 0
+                  ? ""
+                  : scope
+                      .map(k => taskTypes.find(t => t.key === k)?.label ?? k)
+                      .join(", ")}
+              </ComboboxButton>
+            )}
+          />
+          <span
+            data-testid="custom-field-dialog-scope-hint"
+            className="mt-1 block text-[0.8571rem] text-text-tertiary"
+          >
+            Leave empty to show this field for every task type.
+          </span>
+        </div>
+
         {type === "enum" && (
           <div>
             <span className="mb-1 block text-text-secondary">Values</span>
-            <div data-testid="custom-field-dialog-values" className="space-y-1">
+            <div data-testid="custom-field-dialog-values" className="space-y-2">
               {values.map((v, i) => (
-                <div key={i} className="flex items-center gap-1">
+                <div key={i} className="flex flex-wrap items-center gap-1">
                   <TextField
                     size="sm"
                     data-testid={`custom-field-dialog-value-key-${i}`}
@@ -294,15 +368,33 @@ export function CustomFieldEditDialog({
                     aria-label={`Value weight ${i + 1}`}
                     className="w-20"
                   />
-                  <button
-                    type="button"
-                    data-testid={`custom-field-dialog-value-remove-${i}`}
+                  {/* Per-value icon + colour (schema `icon`/`color` on a
+                      CustomFieldValueDef). They round-tripped but had no
+                      control — now editable on create and edit. */}
+                  <IconColorFields
+                    icon={v.icon}
+                    onIconChange={next => { updateValue(i, { icon: next }); }}
+                    color={v.color}
+                    onColorChange={next => { updateValue(i, { color: next }); }}
+                    iconTestId={`custom-field-dialog-value-icon-${i}`}
+                    iconListTestId={`custom-field-dialog-value-icon-list-${i}`}
+                    iconSearchTestId={`custom-field-dialog-value-icon-search-${i}`}
+                    iconClearTestId={`custom-field-dialog-value-icon-clear-${i}`}
+                    colorTestId={`custom-field-dialog-value-color-picker-${i}`}
+                    colorAliasTestId={`custom-field-dialog-value-color-${i}`}
+                    noun={`value ${i + 1}`}
+                    layout="inline"
+                  />
+                  <IconButton
+                    variant="secondary"
+                    size="sm"
+                    testId={`custom-field-dialog-value-remove-${i}`}
                     onClick={() => { setValues(prev => prev.filter((_, idx) => idx !== i)); }}
-                    className="h-7 rounded-md border border-border-default px-2 text-[0.8571rem] text-danger-fg"
+                    className="text-danger-fg"
                     aria-label={`Remove value ${i + 1}`}
                   >
                     ✕
-                  </button>
+                  </IconButton>
                 </div>
               ))}
             </div>
@@ -329,7 +421,7 @@ export function CustomFieldEditDialog({
           </Callout>
         )}
       </div>
-    </Dialog>
+    </ResponsiveDialog>
   );
 }
 

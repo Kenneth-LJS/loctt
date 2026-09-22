@@ -1,6 +1,6 @@
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import { initLoctt } from "@loctt/core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -159,6 +159,136 @@ describe("web server attachments", () => {
         body,
       });
       expect(res.status).toBe(403);
+    });
+  });
+
+  // Direct route-level tests for hostile multipart filenames. The
+  // path-confinement suite exercised core `attachFile` directly; these
+  // drive the HTTP multipart route end to end (known-gaps "The
+  // multipart upload route has no direct hostile-filename tests"). The
+  // invariant: a hostile declared filename is EITHER rejected (4xx, no
+  // file written) OR stored under a safe basename inside the tracker —
+  // never escaping `.loctt/`. These document/lock the already-safe
+  // behaviour; a green run here is the point.
+  describe("POST /api/tasks/:ref/attachments — hostile filenames", () => {
+    // Every regular file under the tracker root, as absolute paths.
+    async function allFiles(dir: string): Promise<string[]> {
+      const out: string[] = [];
+      const walk = async (d: string): Promise<void> => {
+        const entries = await readdir(d, { withFileTypes: true });
+        for (const e of entries) {
+          const p = join(d, e.name);
+          if (e.isDirectory()) await walk(p);
+          else out.push(p);
+        }
+      };
+      await walk(dir);
+      return out;
+    }
+
+    // POST a raw multipart body (so we can send bytes the string helper
+    // cannot, e.g. a truncated part). `raw` is the exact request body.
+    async function postRaw(raw: Buffer): Promise<Response> {
+      return fetch(`${base}/api/tasks/${key}/attachments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${BOUNDARY}`,
+          "X-Loctt-Client": "1",
+        },
+        body: bufferToArrayBuffer(raw),
+      });
+    }
+
+    // Assert the outcome is safe: either a 4xx rejection with no new file
+    // on disk, or a 201 whose stored name is a plain basename living
+    // inside the task's attachments/ dir. Never a file outside `.loctt/`.
+    async function assertSafeOutcome(res: Response, before: Set<string>): Promise<void> {
+      const after = await allFiles(root);
+      const created = after.filter(p => !before.has(p));
+      const locttDir = join(root, ".loctt");
+      const attachmentsSeg = `${sep}attachments${sep}`;
+
+      // The invariant, in both branches: NOTHING escaped `.loctt/`
+      // (nothing created outside it — an escape would land in `root/` or
+      // above), and no attachment file was created outside a task's
+      // attachments/ dir. `.loctt/` bookkeeping the task-create wrote
+      // (e.g. local/key-index.yaml) is allowed — it is not the upload.
+      for (const p of created) {
+        expect(p.startsWith(locttDir + sep)).toBe(true);
+      }
+
+      if (res.status >= 400) {
+        // Rejected: the upload wrote no attachment anywhere.
+        const attachmentsWritten = created.filter(p => p.includes(attachmentsSeg));
+        expect(attachmentsWritten).toEqual([]);
+        return;
+      }
+
+      expect(res.status).toBe(201);
+      const json = await res.json() as { name: string };
+      // Stored name is a plain basename — no traversal, no separators.
+      expect(json.name).not.toContain("/");
+      expect(json.name).not.toContain("\\");
+      expect(json.name).not.toBe("..");
+      expect(json.name).not.toBe("");
+      // Any file the upload created lives under a task's attachments/
+      // dir with exactly the returned basename — inside `.loctt/`.
+      const attachmentsWritten = created.filter(p => p.includes(attachmentsSeg));
+      for (const p of attachmentsWritten) {
+        expect(p).toContain(`${join(".loctt", "tasks")}`);
+        expect(p.endsWith(`${sep}attachments${sep}${json.name}`)).toBe(true);
+      }
+    }
+
+    it("handles a bare '..' filename safely", async () => {
+      const before = new Set(await allFiles(root));
+      const { body } = buildMultipart("file", "..", "x");
+      const res = await postRaw(Buffer.from(body));
+      await assertSafeOutcome(res, before);
+    });
+
+    it("handles '../../etc/passwd' safely", async () => {
+      const before = new Set(await allFiles(root));
+      const { body } = buildMultipart("file", "../../etc/passwd", "x");
+      const res = await postRaw(Buffer.from(body));
+      await assertSafeOutcome(res, before);
+    });
+
+    it("handles a backslash traversal name safely", async () => {
+      const before = new Set(await allFiles(root));
+      const { body } = buildMultipart("file", "..\\..\\windows\\system32\\evil", "x");
+      const res = await postRaw(Buffer.from(body));
+      await assertSafeOutcome(res, before);
+    });
+
+    it("handles an absolute-path filename safely", async () => {
+      const before = new Set(await allFiles(root));
+      const { body } = buildMultipart("file", "/etc/passwd", "x");
+      const res = await postRaw(Buffer.from(body));
+      await assertSafeOutcome(res, before);
+    });
+
+    it("rejects an empty filename without writing anything", async () => {
+      const before = new Set(await allFiles(root));
+      const { body } = buildMultipart("file", "", "x");
+      const res = await postRaw(Buffer.from(body));
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      await assertSafeOutcome(res, before);
+    });
+
+    it("handles a truncated multipart body (name cut off mid-header) safely", async () => {
+      const before = new Set(await allFiles(root));
+      // A part whose Content-Disposition header is cut off before the
+      // body/closing boundary — busboy sees an incomplete stream.
+      const truncated = Buffer.from(
+        `--${BOUNDARY}\r\n`
+          + `Content-Disposition: form-data; name="file"; filenam`,
+        "utf-8",
+      );
+      const res = await postRaw(truncated);
+      // However it lands (parse error 400, or "no file" 400), nothing
+      // may have escaped or been written.
+      await assertSafeOutcome(res, before);
     });
   });
 

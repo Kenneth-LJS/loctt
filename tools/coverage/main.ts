@@ -22,7 +22,7 @@ import type { CaseIndex } from "../case-index/parse.ts";
 import { collectTags, report, uncoveredFor } from "./scan.ts";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const INDEX_PATH = path.join(REPO_ROOT, "docs/dev/case-index.json");
+const INDEX_PATH = path.join(REPO_ROOT, "tests/cases/case-index.json");
 
 function flag(name: string): string | undefined {
   const idx = process.argv.indexOf(`--${name}`);
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     for (const tag of result.unknown) {
       console.error(`    ${tag.file}:${tag.line} → ${tag.caseId}`);
     }
-    console.error(`  Case IDs come from docs/dev/case-index.json. Do not invent them.`);
+    console.error(`  Case IDs come from tests/cases/case-index.json. Do not invent them.`);
   }
 
   const required = flag("require");

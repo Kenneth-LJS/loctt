@@ -143,7 +143,7 @@ describe("queryReferencesCommentMentions gate (CMT-10)", () => {
     );
     const result = listTasks({
       tasks: [bad, good],
-      options: { query: 'comment_mentions = "u_alice"', includeArchived: true },
+      options: { query: 'comment_mentions = "u_alice"', archivedScope: "all" },
       ctx,
     });
     expect(result.map(t => t.frontmatter.key)).toEqual(["T-1"]);

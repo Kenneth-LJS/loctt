@@ -1,13 +1,29 @@
 import type { WorkflowConfig } from "@loctt/contracts";
-import type { BuilderTree } from "@loctt/core/query/builderTree.js";
-// The per-file subpath, NOT the barrel: the barrel drags node:path/sharp
-// into the browser bundle (see dslToSearch.ts's parser.js import). The
-// component derives the live `q` preview from the same core serializer
-// the DSL editor round-trips through, so builder and text share one
-// grammar rather than two that agree by coincidence.
-import { builderTreeToQuery } from "@loctt/core/query/builderTree.js";
+// `ComparisonOp`/`QueryValue` come from core by per-file subpath, NOT the
+// barrel: the barrel drags node:path/sharp into the browser bundle (see
+// dslToSearch.ts's parser.js import, A37). The tree model itself is
+// web-client-local — K102 removed it from core along with the saved-view
+// storage that once used it; see builderTree.ts's header.
 import type { ComparisonOp, QueryValue } from "@loctt/core/query/parser.js";
 import { useMemo } from "react";
+
+import { Button } from "../ui/Button.tsx";
+import { Checkbox } from "../ui/Checkbox.tsx";
+import {
+  Combobox,
+  ComboboxButton,
+  type ComboboxOption,
+  type ComboboxSearch,
+  SelectCombobox,
+} from "../ui/Combobox.tsx";
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
+import { TextField } from "../ui/TextField.tsx";
+import type { BuilderTree } from "./builderTree.ts";
+// The component derives the live `q` preview from the same serializer the
+// surface applies through, so the preview and the applied query share one
+// grammar rather than two that agree by coincidence.
+import { builderTreeToQuery } from "./builderTree.ts";
 
 /**
  * The visual query builder's FORM (K83, step 2) — a controlled renderer
@@ -81,14 +97,43 @@ export interface BuilderField {
    * For `enum`/`entity`/`user` fields: the closed set of choosable
    * values (value = stored key/ULID, label = human). Absent for the
    * free-value kinds (text/date/number/boolean).
+   *
+   * For an `entity`/`user` field with a {@link search}, this is only the
+   * SEED list (the capped initial fetch) — used before the user types and
+   * to keep the current selection's label resolvable; the live candidates
+   * come from `search`.
    */
   readonly options?: readonly ValueOption[];
+  /**
+   * K90: server-side value search for `entity`/`user` fields. When present
+   * the value picker queries the server `?q=` as the user types rather than
+   * filtering the capped {@link options} in memory — so a workspace past the
+   * fetch window (hundreds of users/labels/milestones/sprints, A211) is
+   * searchable, matching the rest of the app (task-meta, the filter facets).
+   * Absent for enum fields (a closed config set, never large) and the
+   * free-value kinds. Returns `{ value, label }` rows already mapped, plus
+   * a `disabled`/`suffix` for archived entities so they stay visible but
+   * unselectable (the option mapper carries the same rule the sidebar hooks
+   * apply).
+   */
+  readonly search?: EntitySearch;
 }
 
 export interface ValueOption {
   readonly value: string;
   readonly label: string;
+  /** Present-but-disabled (archived entities), with the reason as a suffix. */
+  readonly disabled?: boolean;
+  readonly suffix?: string;
 }
+
+/**
+ * K90: an imperative entity search. `q` is the trimmed search text (empty
+ * before the user types); resolves to the bounded, already-mapped matches.
+ * Mirrors {@link ComboboxSearch.onQuery}'s contract so it threads straight
+ * through to the value Combobox.
+ */
+export type EntitySearch = (q: string) => Promise<readonly ValueOption[]>;
 
 /**
  * Everything the builder needs to populate its pickers. Step 3 builds
@@ -147,6 +192,20 @@ export function buildBuilderConfig(input: {
   readonly labels: readonly ValueOption[];
   readonly milestones: readonly ValueOption[];
   readonly sprints: readonly ValueOption[];
+  /**
+   * K90: per-entity-type server search. Threaded onto the matching
+   * `entity`/`user` fields so their value pickers query the server as the
+   * user types instead of filtering the capped seed list. Optional — the
+   * step-2 tests and any caller that only has the seed lists omit it, and
+   * the picker falls back to client-side filtering over `options`.
+   */
+  readonly search?: {
+    readonly projects?: EntitySearch;
+    readonly users?: EntitySearch;
+    readonly labels?: EntitySearch;
+    readonly milestones?: EntitySearch;
+    readonly sprints?: EntitySearch;
+  };
 }): BuilderConfig {
   const entityOptions: Record<string, readonly ValueOption[]> = {
     project: input.projects,
@@ -158,6 +217,18 @@ export function buildBuilderConfig(input: {
     sprint: input.sprints,
   };
 
+  // The search fn for each entity field, by the SAME field→source mapping
+  // as entityOptions above, so a field's live search matches its seed list.
+  const entitySearch: Record<string, EntitySearch | undefined> = {
+    project: input.search?.projects,
+    assignee: input.search?.users,
+    reporter: input.search?.users,
+    comment_mentions: input.search?.users,
+    labels: input.search?.labels,
+    milestone: input.search?.milestones,
+    sprint: input.search?.sprints,
+  };
+
   const enumFields: BuilderField[] = [
     { field: "status", label: "Status", kind: "enum",
       options: (input.workflow?.statuses ?? []).map(s => ({ value: s.key, label: s.label })) },
@@ -167,11 +238,18 @@ export function buildBuilderConfig(input: {
       options: (input.workflow?.task_types ?? []).map(t => ({ value: t.key, label: t.label })) },
   ];
 
-  const builtins: BuilderField[] = BUILTIN_FIELDS.map(f =>
-    f.field in entityOptions
-      ? { ...f, options: entityOptions[f.field] ?? [] }
-      : { ...f },
-  );
+  const builtins: BuilderField[] = BUILTIN_FIELDS.map((f): BuilderField => {
+    if (!(f.field in entityOptions)) return { ...f };
+    // Bind to a local so the `!== undefined` narrowing sticks — a record
+    // index access re-widens to `EntitySearch | undefined` at each use,
+    // which exactOptionalPropertyTypes rejects for the optional `search`.
+    const search = entitySearch[f.field];
+    return {
+      ...f,
+      options: entityOptions[f.field] ?? [],
+      ...(search !== undefined ? { search } : {}),
+    };
+  });
 
   const customFields: BuilderField[] = (input.workflow?.custom_fields ?? []).map(cf => {
     const field = `fields.${cf.key}`;
@@ -270,6 +348,22 @@ function isListOp(op: ComparisonOp): boolean {
 }
 
 // ── Value construction ───────────────────────────────────────────────
+
+/**
+ * Maps a config/search {@link ValueOption} to the value picker's
+ * {@link ComboboxOption}, carrying an archived entity's disabled+suffix so
+ * it stays visible-but-unselectable — the same rule the task-meta pickers'
+ * option mappers apply, so the builder and the rest of the app render an
+ * archived value the same way.
+ */
+function valueOptionToCombobox(o: ValueOption): ComboboxOption {
+  return {
+    key: o.value,
+    label: o.label,
+    ...(o.disabled === true ? { disabled: true } : {}),
+    ...(o.suffix !== undefined ? { suffix: o.suffix } : {}),
+  };
+}
 
 /**
  * The empty/default value for a (field, op) pair — used when the op
@@ -388,7 +482,7 @@ export function QueryBuilder({ tree, onChange, config }: QueryBuilderProps) {
         <span className="text-[0.7857rem] font-medium text-text-tertiary">Query</span>
         <code
           data-testid="query-builder-preview"
-          className="min-w-0 flex-1 overflow-x-auto whitespace-pre font-mono text-[0.8571rem] text-text-secondary"
+          className="min-w-0 flex-1 overflow-x-auto whitespace-pre text-[0.8571rem] text-text-secondary"
         >
           {preview}
         </code>
@@ -458,7 +552,17 @@ function GroupNode({
           <p className="text-[0.8571rem] text-text-tertiary">No conditions yet.</p>
         ) : (
           node.children.map((child, i) => (
-            <div key={i} className="flex items-start gap-1.5">
+            // A leaf's remove button centers with its single row of h-7
+            // controls; a nested group is tall, so its remove button aligns
+            // to the top of the group card instead.
+            <div
+              key={i}
+              className={
+                child.kind === "leaf"
+                  ? "flex items-center gap-1.5"
+                  : "flex items-start gap-1.5"
+              }
+            >
               <div className="min-w-0 flex-1">
                 {child.kind === "leaf" ? (
                   <LeafRow
@@ -468,7 +572,7 @@ function GroupNode({
                     fields={fields}
                     fieldByName={fieldByName}
                   />
-                ) : (
+                ) : child.kind === "group" ? (
                   <GroupNode
                     node={child}
                     path={[...path, i]}
@@ -476,39 +580,43 @@ function GroupNode({
                     fields={fields}
                     fieldByName={fieldByName}
                   />
-                )}
+                ) : null /* not/has_link are stored-conditions kinds the
+                  visual builder never produces (queryToBuilderTree refuses
+                  them); nothing to render here. */}
               </div>
-              <button
-                type="button"
-                data-testid="qb-remove"
+              <IconButton
+                size="xs"
+                testId="qb-remove"
                 aria-label="Remove condition"
                 onClick={() => { edit([...path, i], () => null); }}
-                className="mt-0.5 shrink-0 cursor-pointer rounded px-1 text-text-tertiary hover:bg-bg-muted hover:text-text-primary"
+                className={child.kind === "leaf" ? "shrink-0" : "mt-1.5 shrink-0"}
               >
-                ×
-              </button>
+                <Icon name="close" size={14} />
+              </IconButton>
             </div>
           ))
         )}
       </div>
 
       <div className="flex items-center gap-2 pl-3">
-        <button
-          type="button"
-          data-testid="qb-add-condition"
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="qb-add-condition"
           onClick={addCondition}
-          className="rounded border border-border-subtle px-2 py-0.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
         >
-          + Condition
-        </button>
-        <button
-          type="button"
-          data-testid="qb-add-group"
+          <Icon name="plus" size={12} />
+          Condition
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          testId="qb-add-group"
           onClick={addGroup}
-          className="rounded border border-border-subtle px-2 py-0.5 text-[0.8571rem] text-text-secondary hover:bg-bg-muted"
         >
-          + Group
-        </button>
+          <Icon name="plus" size={12} />
+          Group
+        </Button>
       </div>
     </div>
   );
@@ -538,7 +646,7 @@ function AndOrToggle({
           className={
             "px-2 py-0.5 " +
             (value === op
-              ? "bg-accent text-white"
+              ? "bg-accent text-accent-contrast"
               : "bg-bg-surface text-text-secondary hover:bg-bg-muted")
           }
         >
@@ -613,47 +721,56 @@ function LeafRow({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded bg-bg-surface/60 px-1 py-0.5">
+    // A consistent column rhythm so rows line up (Bug: ragged rows). The
+    // three controls share one height (all `size="sm"` → h-7) and sit in
+    // stable columns: field and operator take fixed, sensible widths; the
+    // value control fills the rest (`flex-1 min-w-0`) rather than shrinking
+    // to its content — an enum picker showing "—" is no longer awkwardly
+    // narrower than the text box beside it. `flex-wrap` keeps it usable at
+    // phone width, where the value drops to its own full-width row.
+    <div
+      data-testid="qb-leaf-row"
+      className="flex flex-wrap items-center gap-1.5 rounded bg-bg-surface/60 px-1 py-0.5"
+    >
       {/* Field picker */}
-      <select
-        data-testid="qb-field"
+      <SelectCombobox
+        size="sm"
+        className="w-[9.5rem] shrink-0"
+        testId="qb-field"
         aria-label="Field"
         value={node.field}
-        onChange={e => { onFieldChange(e.target.value); }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
-      >
-        {/* An out-of-config field still needs to show as the current
-            selection rather than silently snapping to the first option. */}
-        {fieldDef === undefined && (
-          <option value={node.field}>{node.field}</option>
-        )}
-        {fields.map(f => (
-          <option key={f.field} value={f.field}>{f.label}</option>
-        ))}
-      </select>
+        onChange={onFieldChange}
+        options={[
+          // An out-of-config field still needs to show as the current
+          // selection rather than silently snapping to the first option.
+          ...(fieldDef === undefined ? [{ value: node.field, label: node.field }] : []),
+          ...fields.map(f => ({ value: f.field, label: f.label })),
+        ]}
+      />
 
       {/* Operator picker — filtered to the field kind's renderable ops. */}
-      <select
-        data-testid="qb-op"
+      <SelectCombobox
+        size="sm"
+        className="w-[8.5rem] shrink-0"
+        testId="qb-op"
         aria-label="Operator"
         value={node.op}
-        onChange={e => { onOpChange(e.target.value as ComparisonOp); }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
-      >
-        {ops.map(op => (
-          <option key={op} value={op}>{OP_LABELS[op]}</option>
-        ))}
-      </select>
+        onChange={v => { onOpChange(v as ComparisonOp); }}
+        options={ops.map(op => ({ value: op, label: OP_LABELS[op] }))}
+      />
 
-      {/* Value control — omitted entirely for presence ops. */}
+      {/* Value control — omitted entirely for presence ops. It fills the
+          remaining width of the row so every row's value column aligns. */}
       {!isPostfix(node.op) && (
-        <ValueControl
-          kind={kind}
-          op={node.op}
-          field={fieldDef}
-          value={node.value}
-          onChange={value => { setLeaf({ value }); }}
-        />
+        <div className="min-w-[8rem] flex-1 basis-40">
+          <ValueControl
+            kind={kind}
+            op={node.op}
+            field={fieldDef}
+            value={node.value}
+            onChange={value => { setLeaf({ value }); }}
+          />
+        </div>
       )}
     </div>
   );
@@ -675,6 +792,15 @@ function ValueControl({
   readonly onChange: (v: QueryValue) => void;
 }) {
   const constrained = field?.options; // enum/entity/user closed sets
+  // K90: server-side value search for the entity/user fields that carry
+  // one. Threaded straight into the Combobox's `search` prop, whose
+  // `onQuery` shape this matches: the field's search yields ValueOptions,
+  // which map to ComboboxOptions exactly as the seed `options` do.
+  const entitySearch = field?.search;
+  const search: ComboboxSearch | undefined =
+    entitySearch === undefined
+      ? undefined
+      : { onQuery: q => entitySearch(q).then(rows => rows.map(valueOptionToCombobox)) };
 
   // Multi-value control for in / not in.
   if (isListOp(op)) {
@@ -684,9 +810,13 @@ function ValueControl({
       .filter(s => s.length > 0);
 
     if (constrained !== undefined) {
-      // A checkbox list constrained to config values — the multi-value
-      // analogue of the single enum dropdown, so `in (…)` can never name
-      // a value the validator rejects.
+      // A multi-select combobox constrained to config values — the
+      // multi-value analogue of the single enum picker, so `in (…)` can
+      // never name a value the validator rejects. A searchable list, not
+      // a wall of checkboxes: a label or user set can run to hundreds
+      // (A211). With a `search` the candidates come from the server
+      // (K90 parity); without one, the box appears once the seed list
+      // passes the threshold and filters in memory.
       const toggle = (optValue: string, on: boolean): void => {
         const nextKeys = on
           ? [...selectedKeys, optValue]
@@ -696,27 +826,53 @@ function ValueControl({
           values: nextKeys.map(k => scalarFromString(kind, k)),
         });
       };
+      // The options the Combobox must always be able to render: in server
+      // mode only the current selections must persist (the rest arrive from
+      // `search`), so a chosen value's label survives even when it is not in
+      // the latest result page. In static mode this is the whole seed list.
+      const options: ComboboxOption[] =
+        search !== undefined
+          ? selectedKeys.map(k => ({
+              key: k,
+              label: constrained.find(o => o.value === k)?.label ?? k,
+            }))
+          : constrained.map(valueOptionToCombobox);
+      const chosen = selectedKeys.map(k => constrained.find(o => o.value === k)?.label ?? k);
+      const summary =
+        chosen.length === 0 ? undefined
+        : chosen.length <= 3 ? chosen.join(", ")
+        : `${String(chosen.length)} selected`;
       return (
-        <span data-testid="qb-value" className="inline-flex flex-wrap items-center gap-1.5">
-          {constrained.map(opt => (
-            <label key={opt.value} className="inline-flex items-center gap-1 text-[0.8571rem] text-text-secondary">
-              <input
-                type="checkbox"
-                data-testid={`qb-value-opt-${opt.value}`}
-                checked={selectedKeys.includes(opt.value)}
-                onChange={e => { toggle(opt.value, e.target.checked); }}
-              />
-              {opt.label}
-            </label>
-          ))}
-        </span>
+        <Combobox
+          mode="multi"
+          label="Values"
+          options={options}
+          search={search}
+          selected={selectedKeys}
+          onToggle={toggle}
+          optionTestId={o => `qb-value-opt-${o.key}`}
+          listTestId="qb-value-options"
+          trigger={p => (
+            <ComboboxButton
+              {...p}
+              size="sm"
+              testId="qb-value"
+              aria-label="Values"
+              placeholder="Choose values…"
+              className="w-full"
+            >
+              {summary}
+            </ComboboxButton>
+          )}
+        />
       );
     }
 
     // Free multi-value: comma-separated text for the unconstrained kinds.
     return (
-      <input
+      <TextField
         type="text"
+        size="sm"
         data-testid="qb-value"
         aria-label="Values (comma-separated)"
         value={selectedKeys.join(", ")}
@@ -725,74 +881,113 @@ function ValueControl({
           const parts = e.target.value.split(",").map(s => s.trim()).filter(s => s.length > 0);
           onChange({ type: "list", values: parts.map(p => scalarFromString(kind, p)) });
         }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
       />
     );
   }
 
-  // Single enum/entity/user value: a dropdown constrained to config
-  // values — you cannot type an arbitrary value (LST/TSK precedent).
+  // Single enum/entity/user value: a picker constrained to config
+  // values — you cannot type an arbitrary value (LST/TSK precedent). The
+  // shared Combobox rather than the plain Select: an assignee/label/
+  // milestone set can be large, and the search box appears once the
+  // list passes the threshold (A211). Status/priority/type ride the
+  // same control and simply never grow a box.
   if (constrained !== undefined) {
     const current = value.type === "current_user" ? "@currentUser" : scalarToString(value);
+    // In server mode the picker's candidates come from `search`; `options`
+    // then carries only what must ALWAYS be present regardless of the query:
+    // the currentUser affordance and the current selection (so its label —
+    // or "(not in config)" note — survives when the latest result page does
+    // not include it, XS-27). In static mode it is the whole seed list.
+    const currentOption =
+      current.length > 0 && current !== "@currentUser"
+        ? {
+            key: current,
+            label:
+              constrained.find(o => o.value === current)?.label ??
+              `${current} (not in config)`,
+          }
+        : undefined;
+    const options: ComboboxOption[] = [
+      // K80: user fields offer the querying user as a live value.
+      ...(kind === "user" ? [{ key: "@currentUser", label: "Current user" }] : []),
+      ...(search !== undefined
+        ? currentOption !== undefined
+          ? [currentOption]
+          : []
+        : [
+            ...constrained.map(valueOptionToCombobox),
+            // A stored value outside the current config stays selectable so
+            // it isn't silently dropped (XS-27 precedent).
+            ...(currentOption !== undefined &&
+              !constrained.some(o => o.value === current)
+              ? [{ ...currentOption, label: `${current} (not in config)` }]
+              : []),
+          ]),
+    ];
+    const selected = current.length > 0 ? options.find(o => o.key === current) : undefined;
     return (
-      <select
-        data-testid="qb-value"
-        aria-label="Value"
-        value={current}
-        onChange={e => {
-          const v = e.target.value;
+      <Combobox
+        label="Value"
+        options={options}
+        search={search}
+        value={selected?.key}
+        onSelect={v => {
           if (v === "@currentUser") { onChange({ type: "current_user" }); return; }
           onChange(scalarFromString(kind, v));
         }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
-      >
-        <option value="">—</option>
-        {/* K80: user fields offer the querying user as a live value. */}
-        {kind === "user" && <option value="@currentUser">Current user</option>}
-        {constrained.map(opt => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-        {/* A stored value outside the current config stays selectable so
-            it isn't silently dropped (XS-27 precedent). */}
-        {current.length > 0 &&
-          current !== "@currentUser" &&
-          !constrained.some(o => o.value === current) && (
-            <option value={current}>{current} (not in config)</option>
-          )}
-      </select>
+        clear={{ label: "Clear value", onClear: () => { onChange(scalarFromString(kind, "")); } }}
+        listTestId="qb-value-options"
+        trigger={p => (
+          <ComboboxButton
+            {...p}
+            size="sm"
+            testId="qb-value"
+            aria-label="Value"
+            placeholder="—"
+            className="w-full"
+          >
+            {selected?.label}
+          </ComboboxButton>
+        )}
+      />
     );
   }
 
   if (kind === "boolean") {
     return (
-      <select
-        data-testid="qb-value"
+      <SelectCombobox
+        size="sm"
+        className="w-full"
+        testId="qb-value"
         aria-label="Value"
         value={value.type === "boolean" ? String(value.value) : "false"}
-        onChange={e => { onChange({ type: "boolean", value: e.target.value === "true" }); }}
-        className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
-      >
-        <option value="true">true</option>
-        <option value="false">false</option>
-      </select>
+        onChange={v => { onChange({ type: "boolean", value: v === "true" }); }}
+        options={[
+          { value: "true", label: "true" },
+          { value: "false", label: "false" },
+        ]}
+      />
     );
   }
 
   if (kind === "date") {
     const isToday = value.type === "today";
     return (
-      <span data-testid="qb-value" className="inline-flex items-center gap-1.5">
+      <span data-testid="qb-value" className="flex min-w-0 items-center gap-1.5">
+        {/* Share the row's h-7 and the standard select border/radius so the
+            date input lines up with the field/operator controls instead of
+            sitting a few pixels short. It flexes to fill; the "today"
+            toggle keeps its intrinsic width at the end. */}
         <input
           type="date"
           aria-label="Value"
           disabled={isToday}
           value={value.type === "date" ? value.value : ""}
           onChange={e => { onChange({ type: "date", value: e.target.value }); }}
-          className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary disabled:opacity-50"
+          className="h-7 min-w-0 flex-1 rounded-md border border-border-default bg-bg-surface px-2 text-[0.8571rem] text-text-primary disabled:opacity-50"
         />
-        <label className="inline-flex items-center gap-1 text-[0.8571rem] text-text-secondary">
-          <input
-            type="checkbox"
+        <label className="inline-flex shrink-0 items-center gap-1 text-[0.8571rem] text-text-secondary">
+          <Checkbox
             data-testid="qb-value-today"
             checked={isToday}
             onChange={e => {
@@ -807,26 +1002,26 @@ function ValueControl({
 
   if (kind === "number") {
     return (
-      <input
+      <TextField
         type="number"
+        size="sm"
         data-testid="qb-value"
         aria-label="Value"
         value={value.type === "number" ? String(value.value) : ""}
         onChange={e => { onChange(scalarFromString("number", e.target.value)); }}
-        className="w-24 rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
       />
     );
   }
 
   // Free text (title/text/id/key + string custom fields), incl. `~`.
   return (
-    <input
+    <TextField
       type="text"
+      size="sm"
       data-testid="qb-value"
       aria-label="Value"
       value={scalarToString(value)}
       onChange={e => { onChange({ type: "string", value: e.target.value }); }}
-      className="rounded border border-border-subtle bg-bg-surface px-1.5 py-0.5 text-[0.8571rem] text-text-primary"
     />
   );
 }

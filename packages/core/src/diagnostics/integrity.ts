@@ -24,7 +24,8 @@
  *     the user to resolve, not a reason to refuse their publish.
  */
 
-import { type BrokenEntry,IanaTimezone } from "@loctt/contracts";
+import { type BrokenEntry,EntityColorSchema,IanaTimezone } from "@loctt/contracts";
+import { parse as parseYaml } from "yaml";
 
 import { getCalendarConfigPath, loadCalendarConfig } from "../config/calendar.js";
 import { getLabelsConfigPath, loadLabelsConfig } from "../config/labels.js";
@@ -227,9 +228,12 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
           severity: "inconsistent",
           path: getLabelsConfigPath(locttDir),
           message:
-            `label "${name}" has colour "${color}", which is not a hex value `
-            + `(e.g. #1e6fcb or #f00). The label still renders, with the `
-            + `default colour; fix the value to restore its own.`,
+            `label "${name}" has colour ${color}, which is not a valid `
+            + `colour. Use a hex value (#1e6fcb), a palette reference `
+            + `({ palette: teal }), or a per-mode pair `
+            + `({ light: "#1e6fcb", dark: "#8ab4f8" }). The label still `
+            + `renders, with the default colour; fix the value to restore `
+            + `its own.`,
         });
       }
     }
@@ -408,16 +412,49 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
  * on the way past — by the time a parsed config exists, the bad value
  * is gone and there is nothing left to report.
  */
+/**
+ * Labels whose stored `color` the schema REJECTS — the values
+ * `dropInvalidColor` silently drops on load, which is the whole reason
+ * this sweep exists.
+ *
+ * It parses the YAML and asks `EntityColorSchema`, rather than matching
+ * lines with a hex regex as it once did. That regex was written when a
+ * colour was always a single-line string; K103 made a colour one of
+ * THREE shapes, two of which are nested blocks:
+ *
+ *     color:
+ *       light: "#CC6600"
+ *       dark: "not-a-hex"
+ *
+ * A line-oriented matcher cannot see that at all, so an invalid per-mode
+ * or palette colour was dropped on load and then reported by nobody —
+ * the one mechanism meant to tell the user stayed silent. This is the
+ * same hand-rolled-copy-of-a-schema-rule bug already fixed in
+ * `dropInvalidColor`, `cells.tsx` and `LabelEditDialog`; asking the
+ * contract is the only form that cannot drift when the schema widens.
+ */
 function invalidLabelColors(yamlContent: string): { name: string; color: string }[] {
   const out: { name: string; color: string }[] = [];
-  let name = "";
-  for (const line of yamlContent.split("\n")) {
-    const n = /^\s*(?:- )?name:\s*(.+?)\s*$/.exec(line);
-    if (n?.[1] !== undefined) { name = n[1]; continue; }
-    const c = /^\s*color:\s*"?([^"\s]+)"?\s*$/.exec(line);
-    if (c?.[1] === undefined) continue;
-    if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(c[1])) continue;
-    out.push({ name, color: c[1] });
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(yamlContent);
+  } catch {
+    // A whole-file YAML failure is reported elsewhere; nothing to add.
+    return out;
+  }
+  const labels = (parsed as { labels?: unknown } | null)?.labels;
+  if (!Array.isArray(labels)) return out;
+  for (const entry of labels) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const row = entry as { name?: unknown; color?: unknown };
+    if (row.color === undefined) continue;
+    if (EntityColorSchema.safeParse(row.color).success) continue;
+    out.push({
+      name: typeof row.name === "string" ? row.name : "(unnamed)",
+      // Rendered for the user, so a nested shape reads as itself rather
+      // than `[object Object]`.
+      color: typeof row.color === "string" ? row.color : JSON.stringify(row.color),
+    });
   }
   return out;
 }

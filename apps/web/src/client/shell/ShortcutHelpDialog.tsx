@@ -1,5 +1,8 @@
+import { Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import { GLOBAL_SHORTCUTS, type ShortcutSpec } from "./shortcuts.ts";
@@ -69,16 +72,15 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
       >
         <div className="mb-3 flex items-start justify-between gap-3">
           <h2 className="text-[1.0714rem] font-semibold text-text-primary">Keyboard shortcuts</h2>
-          <button
+          <IconButton
             ref={closeRef}
-            type="button"
             onClick={onClose}
-            data-testid="shortcut-help-close"
+            testId="shortcut-help-close"
             aria-label="Close keyboard shortcuts"
-            className="shrink-0 rounded px-1 text-text-tertiary hover:text-text-primary"
+            className="shrink-0"
           >
-            {"×"}
-          </button>
+            <Icon name="close" />
+          </IconButton>
         </div>
 
         {groupsOf(GLOBAL_SHORTCUTS).map(({ group, items }) => (
@@ -98,7 +100,7 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
                     {s.keys.map((k, i) => (
                       <span key={`${k}-${String(i)}`}>
                         {i > 0 ? <span className="mx-1 text-[0.7857rem] text-text-tertiary">then</span> : null}
-                        <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 font-mono text-[0.7857rem] text-text-primary">
+                        <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] text-text-primary">
                           {k}
                         </kbd>
                       </span>
@@ -116,6 +118,22 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
               mode-switch note the case asks for. */}
           Single-key shortcuts are ignored while a text field, editor,
           or dialog has focus, so they never shadow typing.
+        </p>
+
+        {/* CONFIG-5 / P4: this overlay is the discoverable summary; the
+            full, rebindable reference lives in Settings → Keyboard. A
+            deep link (labelled as navigation) keeps the two from being
+            two disconnected surfaces. Closes the dialog on the way. */}
+        <p className="mt-3 text-[0.8571rem] text-text-secondary">
+          <Link
+            to="/settings/$section"
+            params={{ section: "keyboard" }}
+            onClick={onClose}
+            data-testid="shortcut-help-keyboard-link"
+            className="text-accent underline hover:text-text-primary"
+          >
+            Full reference in Settings → Keyboard
+          </Link>
         </p>
       </div>
     </div>

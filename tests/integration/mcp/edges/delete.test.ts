@@ -11,7 +11,7 @@ describe("MCP delete_task edge cases (stdio)", () => {
 
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("delete_task", { ref: "T-1" });
+        const result = await client.callTool("delete_task", { refs: ["T-1"] });
         expect(result.isError).toBe(true);
         expect(result.content[0]?.text ?? "").toContain("confirm");
 
@@ -28,8 +28,7 @@ describe("MCP delete_task edge cases (stdio)", () => {
     await withTmpLoctt(async ({ root }) => {
       const client = await startMcpClient(root);
       try {
-        const result = await client.callTool("delete_task", {
-          ref: "T-99",
+        const result = await client.callTool("delete_task", { refs: ["T-99"],
           confirm: true,
         });
         expect(result.isError).toBe(true);

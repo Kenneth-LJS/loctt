@@ -2,7 +2,8 @@ import type { CustomFieldDef } from "@loctt/contracts";
 import { customFieldInScope } from "@loctt/contracts";
 
 import { Checkbox } from "../../ui/Checkbox.tsx";
-import { ICON } from "../../ui/icons.ts";
+import { resolveRowColors } from "../../ui/entityColor.ts";
+import { Icon } from "../../ui/Icon.tsx";
 import { DateField } from "./DateField.tsx";
 import type { PickerOption } from "./OptionPicker.tsx";
 import { OptionPicker } from "./OptionPicker.tsx";
@@ -65,6 +66,7 @@ export function customFieldRows({
   values,
   onSet,
   onUnset,
+  colorMode,
 }: {
   /**
    * ALL declared custom fields — unfiltered. Scope filtering happens
@@ -79,6 +81,13 @@ export function customFieldRows({
   readonly values: Readonly<Record<string, unknown>>;
   readonly onSet: (field: string, value: unknown) => void;
   readonly onUnset: (field: string) => void;
+  /**
+   * K103: the active theme, for resolving each enum value's stored
+   * colour. Passed in rather than read from a hook because this is a
+   * plain function, not a component — it builds nodes for its caller
+   * to render, so it cannot call `useColorMode` itself.
+   */
+  readonly colorMode: "light" | "dark";
 }): readonly CustomFieldRow[] {
   const rows: CustomFieldRow[] = [];
 
@@ -88,7 +97,7 @@ export function customFieldRows({
       rows.push({
         key: def.key,
         label: def.label,
-        node: renderControl(def, values[def.key], onSet, onUnset),
+        node: renderControl(def, values[def.key], onSet, onUnset, colorMode),
       });
       continue;
     }
@@ -156,16 +165,19 @@ function renderControl(
   raw: unknown,
   onSet: (field: string, value: unknown) => void,
   onUnset: (field: string) => void,
+  colorMode: "light" | "dark",
 ): React.ReactNode {
   const set = (v: unknown): void => { onSet(def.key, v); };
   const clear = (): void => { onUnset(def.key); };
 
   if (def.type === "enum") {
-    const options: PickerOption[] = (def.values ?? []).map(v => ({
-      key: v.key,
-      label: v.label,
-      ...(v.color !== undefined ? { color: v.color } : {}),
-    }));
+    // K103: each value's stored colour is resolved for the active
+    // theme; an unresolvable one drops the key and the option renders
+    // with no dot, which is the existing "no colour" path.
+    const options: PickerOption[] = resolveRowColors(
+      (def.values ?? []).map(v => ({ key: v.key, label: v.label, color: v.color })),
+      colorMode,
+    );
     if (def.multi) {
       return (
         <MultiEnum
@@ -290,9 +302,12 @@ function MultiEnum({
                 type="button"
                 aria-label={`Remove ${opt?.label ?? key} from ${def.label}`}
                 onClick={() => { onChange(selected.filter(k => k !== key)); }}
-                className="opacity-60 hover:opacity-100"
+                // #15 (WCAG 2.5.8): 12px glyph, ≥24px hit target. Negative
+                // margins keep the chip's visual height unchanged while the
+                // clickable square meets the 24px minimum.
+                className="-my-1 -mr-1 grid min-h-6 min-w-6 shrink-0 place-items-center rounded opacity-60 hover:opacity-100"
               >
-                {ICON.close}
+                <Icon name="close" size={12} />
               </button>
             </span>
           );

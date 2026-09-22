@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import type { TrackerInfoResponse } from "@loctt/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -21,19 +20,6 @@ import { Sidebar } from "./Sidebar.tsx";
  * so a failure made them disappear entirely — the user saw a sidebar
  * with no Sprints section and no reason to think anything was wrong.
  */
-
-const INFO: TrackerInfoResponse = {
-  exists: true,
-  initState: "ready",
-  defaultUserName: "you",
-  taskCount: 7,
-  keyPrefix: "WEB-",
-  nextKey: "WEB-8",
-  schemaStatus: { kind: "current", version: 3 },
-  cwd: "~/PDev/loctt",
-  today: "2026-08-14",
-    timezone: "UTC",
-};
 
 const OK = { items: [], total: 0, offset: 0, limit: 100 };
 
@@ -65,7 +51,7 @@ async function renderSidebar(failing: string | string[], collapsed = false) {
     path: "/list",
     validateSearch: (s: Record<string, unknown>) => s,
     component: () => (
-      <Sidebar collapsed={collapsed} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+      <Sidebar collapsed={collapsed} currentUserId="u_ken" today="2026-06-08" />
     ),
   });
   const router = createRouter({
@@ -220,7 +206,7 @@ describe("a sidebar group that has not been answered yet", () => {
       path: "/list",
       validateSearch: (search: Record<string, unknown>) => search,
       component: () => (
-        <Sidebar collapsed={false} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+        <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
       ),
     });
     const router = createRouter({
@@ -260,7 +246,7 @@ function renderSidebarOk(): void {
     path: "/list",
     validateSearch: (search: Record<string, unknown>) => search,
     component: () => (
-      <Sidebar collapsed={false} info={INFO} currentUserId="u_ken" today="2026-06-08" />
+      <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
     ),
   });
   const router = createRouter({

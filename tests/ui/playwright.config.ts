@@ -6,7 +6,7 @@ import { defineConfig, devices } from "@playwright/test";
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * UI acceptance specs, transcribed from docs/dev/ui-test-cases/.
+ * UI acceptance specs, transcribed from tests/cases/ui-test-cases/.
  *
  * Each spec drives the real `loctt ui` server against a real seeded
  * `.loctt/` — no mocked API. The flow docs assert observable behaviour

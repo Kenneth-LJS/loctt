@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SprintsView } from "./SprintsView.tsx";
@@ -129,6 +129,16 @@ afterEach(() => {
   BROKEN_SPRINTS = [];
   SPRINTS = [{ id: "sp_12", name: "Sprint 12", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" }];
   TASKS = [];
+});
+
+describe("SprintsView — titled header (Ken 2026-09-20)", () => {
+  it("renders a 'Sprints' h1 title with the manage link in the header", async () => {
+    await renderView();
+    const heading = await screen.findByRole("heading", { name: "Sprints", level: 1 });
+    expect(heading.tagName).toBe("H1");
+    // The manage link moved into the PageHeader actions slot; still there.
+    expect(screen.getByTestId("sprints-manage-link")).toBeTruthy();
+  });
 });
 
 describe("SprintsView — corrupt sprint-config entry (A138)", () => {
@@ -285,10 +295,20 @@ describe("SprintsView — SPR-40 overview affordances (show archived + manage li
   });
 
   // @verifies SPR-40
-  it("offers a manage-in-settings link for create/delete/archive lifecycle", async () => {
+  it("creates in place via '+ New sprint' and reaches roster actions via the settings entry (K105)", async () => {
+    // K105 changed the SPR-40 lifecycle affordances: CREATE is now an
+    // in-place "+ New sprint" dialog (not the manage link), while
+    // delete/archive/reorder stay in the Settings panel reached by a
+    // proper gear entry (not a prose link). This replaces the old
+    // assertion that create lived behind the manage-in-settings link.
     await renderView();
-    const link = await screen.findByTestId("sprints-manage-link");
-    expect(link).toBeTruthy();
+    // Create in place:
+    expect(await screen.findByTestId("sprints-new")).toBeTruthy();
+    expect(screen.queryByTestId("sprint-create-dialog")).toBeNull();
+    fireEvent.click(screen.getByTestId("sprints-new"));
+    expect(await screen.findByTestId("sprint-create-dialog")).toBeTruthy();
+    // Roster actions still reachable via the settings entry:
+    expect(screen.getByTestId("sprints-manage-link")).toBeTruthy();
   });
 
   // @verifies SPR-40

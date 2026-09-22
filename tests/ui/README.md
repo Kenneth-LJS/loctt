@@ -1,6 +1,6 @@
 # UI acceptance specs
 
-Playwright specs transcribed from `docs/dev/ui-test-cases/`. One `test`
+Playwright specs transcribed from `tests/cases/ui-test-cases/`. One `test`
 per case, named by case ID, tagged with `@verifies` so the coverage gate
 sees it.
 

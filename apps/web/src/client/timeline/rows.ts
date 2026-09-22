@@ -1,4 +1,5 @@
 import type {
+  CustomFieldDef,
   MilestoneDef,
   SprintDef,
   TaskFrontmatterPublic,
@@ -292,10 +293,26 @@ export function buildRows(
     };
   }
 
+  // A custom-field grouping is `field.<key>`; resolve the def and bucket
+  // on the stored value. An unresolvable ref should never reach here —
+  // `resolveGrouping` rejects it before `buildRows` is called — but if
+  // one does, fall through to a single flat band rather than crashing.
+  if (grouping.startsWith("field.")) {
+    const key = grouping.slice("field.".length);
+    const def = (lookups.workflow?.custom_fields ?? []).find(f => f.key === key);
+    const bands = def === undefined
+      ? (rows.length > 0 ? [{ id: "all", label: "All tasks", rows }] : [])
+      : byCustomField(rows, key, def);
+    return { bands, unscheduled };
+  }
+
   const bands =
     grouping === "milestone" ? byMilestone(rows, lookups)
     : grouping === "sprint" ? bySprint(rows, lookups)
     : grouping === "assignee" ? byAssignee(rows, lookups)
+    : grouping === "project" ? byProject(rows)
+    : grouping === "priority" ? byPriority(rows, lookups)
+    : grouping === "task_type" ? byTaskType(rows, lookups)
     : byStatus(rows, lookups);
 
   return { bands, unscheduled };
@@ -397,6 +414,74 @@ function byStatus(rows: readonly TimelineRow[], lookups: RowLookups): readonly T
   const defs = lookups.workflow?.statuses ?? [];
   const order = defs.map(s => ({ id: s.key, label: s.label }));
   return bucket(rows, t => t.status ?? NONE, order, "No status");
+}
+
+/**
+ * Group by the free `project` string. There is no config list of
+ * projects — a project is any distinct string a task carries — so the
+ * band order is the order projects are first seen among the rows, with
+ * the "No project" band last. `bucket` already puts anything not named
+ * in `order` before the NONE band; passing an empty `order` means every
+ * project falls into that first-seen path, which preserves encounter
+ * order.
+ */
+function byProject(rows: readonly TimelineRow[]): readonly TimelineBand[] {
+  const seen: { id: string; label: string }[] = [];
+  const seenIds = new Set<string>();
+  for (const row of rows) {
+    const p = row.task.project;
+    if (p !== undefined && !seenIds.has(p)) {
+      seenIds.add(p);
+      seen.push({ id: p, label: p });
+    }
+  }
+  return bucket(rows, t => t.project ?? NONE, seen, "No project");
+}
+
+/**
+ * Group by priority, using priority `label`s from workflow.yaml in
+ * declaration order, never keys — matching how `byStatus` treats
+ * statuses.
+ */
+function byPriority(rows: readonly TimelineRow[], lookups: RowLookups): readonly TimelineBand[] {
+  const defs = lookups.workflow?.priorities ?? [];
+  const order = defs.map(p => ({ id: p.key, label: p.label }));
+  return bucket(rows, t => t.priority ?? NONE, order, "No priority");
+}
+
+/**
+ * Group by task type, using task-type `label`s from workflow.yaml in
+ * declaration order, never keys.
+ */
+function byTaskType(rows: readonly TimelineRow[], lookups: RowLookups): readonly TimelineBand[] {
+  const defs = lookups.workflow?.task_types ?? [];
+  const order = defs.map(t => ({ id: t.key, label: t.label }));
+  return bucket(rows, t => t.task_type ?? NONE, order, "No type");
+}
+
+/**
+ * Group by a single-value enum custom field. Bands follow the field's
+ * declared `values` order, labelled by each value's `label` (never its
+ * stored key), with a "No <field label>" band for tasks that carry no
+ * value. The stored value lives under `fields[key]`; only a string is a
+ * valid enum value, so a non-string (a corrupt or multi array) falls to
+ * the NONE band rather than becoming a band of its own.
+ */
+function byCustomField(
+  rows: readonly TimelineRow[],
+  key: string,
+  def: CustomFieldDef,
+): readonly TimelineBand[] {
+  const order = (def.values ?? []).map(v => ({ id: v.key, label: v.label }));
+  return bucket(
+    rows,
+    t => {
+      const raw = t.fields?.[key];
+      return typeof raw === "string" ? raw : NONE;
+    },
+    order,
+    `No ${def.label}`,
+  );
 }
 
 /** Total rows across bands plus the lane — TML-7's identical-count check. */

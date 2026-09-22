@@ -6,9 +6,9 @@ A mental model for how LocTT works. If you've used Git, most of this will feel f
 
 When you run `loctt init`, LocTT creates a `.loctt/` directory in your project. **That directory is your tracker.** Everything LocTT knows about your tasks, workflow, users, sprints, and so on lives there.
 
-If you delete `.loctt/`, you delete your tracker. If you copy it to another machine, you've copied your tracker. If you commit it to Git, you've versioned your tracker. There is no server, no database, no cloud account holding a "real" copy somewhere else. The directory on disk is the source of truth.
+If you delete `.loctt/`, you delete your tracker. If you copy it to another machine, you've copied your tracker. If you commit it to Git, you've versioned your tracker. There is no cloud account and no hosted database holding a "real" copy somewhere else. The directory on disk is the source of truth.
 
-This has practical consequences worth internalizing:
+This has practical consequences:
 
 - **It's all yours.** No one can shut down your tracker, change its pricing, lose your data, or hold it hostage behind an export feature.
 - **It moves with the project.** Clone the repo, get the tasks. Move the repo, the tasks come too.
@@ -18,9 +18,11 @@ The CLI, the web UI, and the MCP server are all just three different ways of rea
 
 ## What gets shared, and how
 
-The interesting question for a local-first tool is: **what happens when more than one machine is involved?**
+A local-first tool has to answer one question: **what happens when more than one machine is involved?**
 
-LocTT doesn't push your tasks anywhere by default. If you want your tasks on a second machine, or in a teammate's hands, you have to choose how to share them. There are two reasonable approaches.
+LocTT doesn't push your tasks anywhere by default. If you want your tasks on a second machine, or in a teammate's hands, you have to choose how to share them. There are three reasonable approaches.
+
+**Not sure which?** Commit `.loctt/` to your repo — approach 1. It's the simplest, needs no extra setup, and is the right default for most solo and small-team projects. Reach for the others only when task-churn commits on your main branch bother you (approach 2) or you want tasks to stay off Git entirely (approach 3).
 
 ### Approach 1: Commit `.loctt/` to your repo
 
@@ -56,17 +58,15 @@ See [git-sync.md](git-sync.md) for the operational details.
 
 Perfectly valid. Add `.loctt/` to `.gitignore` and use LocTT as a purely local tracker. Your tasks never leave your machine. This is the right answer for plenty of personal projects.
 
-## Why publish/sync exists at all
+## Why publish/sync is its own step
 
-The first time you see `loctt git publish` and `loctt git sync`, it's reasonable to ask: "isn't this just `git push` and `git pull` with extra steps?"
-
-Sort of, but not quite. The reason LocTT has its own sync commands is that **the local data you work with and the data that gets shared are intentionally different things**. Specifically:
+`loctt git publish` and `loctt git sync` exist because **the data you work with locally and the data that gets shared are different things**:
 
 - Your local `.loctt/` includes machine-specific state — which user you're acting as, whether git sync is enabled on _this_ machine, which commit you last synced from. None of that should be shared.
-- The shared `loctt` branch contains only the tracker's "public" state — tasks, config, users, etc.
-- When you publish or sync, LocTT decides what crosses the boundary, handles key collisions (what if two people created `T-42` at the same time?), and runs the 3-way merge.
+- The shared `loctt` branch contains only the tracker's public state — tasks, config, users.
+- Publish and sync decide what crosses that boundary, handle key collisions (two people creating `T-42` at once), and run the 3-way merge.
 
-You _could_ do this with raw Git if you wanted. The publish/sync commands just make it routine instead of fiddly.
+Raw Git can do this too; the publish/sync commands make it routine instead of fiddly.
 
 ## Identity: `id` vs `key`
 
@@ -93,7 +93,10 @@ The configurability matters because LocTT isn't trying to impose someone else's 
 
 ## Where to go next
 
-- [Getting Started](getting-started.md) — install and first steps
+- [Quick Start](../quickstart.md) — install and first steps
 - [Configuration](configuration.md) — customizing the workflow
 - [Git Sync](git-sync.md) — details of the sync model
 - [Query Language](query-language.md) — filtering tasks
+- [Recovery & health](recovery.md) — undo, lost tasks, hand-editing, `doctor`
+- [Data portability](data-portability.md) — reading and exporting your data
+- [Upgrading & migrations](upgrading.md) — updating safely

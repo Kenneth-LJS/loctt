@@ -146,14 +146,38 @@ function renderNode(
         </code>
       );
 
-    case "attachmentEmbed":
-      // Attachments are M2.5. Showing the reference is honest; guessing
-      // a URL for it would render a broken image.
+    case "attachmentEmbed": {
+      /**
+       * An embedded attachment (GOAL 2). A comment can now carry a file
+       * embedded from the composer — the file is uploaded to the ticket's
+       * attachment store and referenced here by its inline URL. This
+       * mirrors `BodyRenderedView`'s embed rendering so a file reads the
+       * same in a comment as in the description: a safe `http(s)`/relative
+       * `src` becomes a real `<img>`; an unsafe scheme
+       * (`javascript:`/`data:`) still falls back to plain reference text
+       * rather than becoming an `<img src="javascript:…">` (CMT-22 — the
+       * injection point does not exist).
+       */
+      const src = String(node.attrs?.["src"] ?? "");
+      const alt = String(node.attrs?.["alt"] ?? "");
+      if (src !== "" && isSafeHref(src)) {
+        return (
+          <img
+            data-testid="comment-image"
+            src={src}
+            alt={alt}
+            // Withhold the referrer from external hosts (see BodyRenderedView).
+            referrerPolicy="no-referrer"
+            className="my-1.5 max-h-64 rounded border border-border-subtle"
+          />
+        );
+      }
       return (
         <span className="text-text-tertiary">
-          {String(node.attrs?.["alt"] ?? "") || String(node.attrs?.["src"] ?? "")}
+          {alt || src}
         </span>
       );
+    }
 
     case "text":
       return renderText(node);
@@ -232,7 +256,7 @@ function renderText(node: JSONContent): React.ReactNode {
               <span data-testid="comment-unsafe-link" className="text-text-secondary">
                 {out}
                 {" ("}
-                <span className="font-mono text-[0.8571rem]">{href}</span>
+                <span className="text-[0.8571rem]">{href}</span>
                 {" — link not followed)"}
               </span>
             );

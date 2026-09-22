@@ -1,6 +1,7 @@
 export type { AttachOptions, AttachResult, DetachOptions } from "./attachments.js";
 export {
   attachFile,
+  AttachmentCaseCollisionError,
   AttachmentExistsError,
   AttachmentNotFoundError,
   AttachmentSourceError,
@@ -90,13 +91,16 @@ export type {
   MoveTaskResult,
 } from "./move.js";
 export { bulkMoveTasksToProject, MoveTaskError,moveTaskToProject } from "./move.js";
-export type { MilestoneProgressOptions, Progress, ProgressReport } from "./progress.js";
+export type { MilestoneProgressOptions, MilestoneProgressResult, Progress, ProgressReport, ProgressUnavailable } from "./progress.js";
 export {
   computeProgress,
+  computeProgressFromStatuses,
+  isProgressUnavailable,
   milestoneProgress,
   milestoneProgressDetailed,
   sprintProgress,
   sprintProgressDetailed,
+  tallyStatusCategories,
 } from "./progress.js";
 export type { LinkTaskOptions, UnlinkTaskOptions } from "./relationships.js";
 export { linkTask, RelationshipError,unlinkTask } from "./relationships.js";

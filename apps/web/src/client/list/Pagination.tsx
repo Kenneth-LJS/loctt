@@ -1,3 +1,5 @@
+import { Button } from "../ui/Button.tsx";
+
 /**
  * The list view's footer: how much of the filtered set is on screen,
  * and the control that loads the rest.
@@ -51,14 +53,9 @@ export function Pagination({
         genuine exhaustion (LST-49).
       */}
       {hasMore && (
-        <button
-          type="button"
-          onClick={onLoadMore}
-          disabled={isLoadingMore}
-          className="rounded-md border border-border-subtle bg-bg-surface px-3 py-1.5 text-[0.8571rem] font-medium text-text-secondary hover:bg-bg-muted disabled:opacity-50"
-        >
+        <Button variant="secondary" onClick={onLoadMore} disabled={isLoadingMore}>
           {isLoadingMore ? "Loading…" : error !== undefined ? "Retry" : "Load more"}
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -31,7 +31,11 @@ function tokenOpts(args: Record<string, unknown>): { expectedToken?: string } {
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "append_task_body",
-    description: "Append text to a task's markdown body.",
+    description:
+      "Append text to a task's markdown body, inserting the canonical " +
+      "separator blank line so you need not manage spacing. Pass " +
+      "`expected_token` (from get_task) to make the write fail rather than " +
+      "silently clobber a concurrent edit.",
     inputSchema: {
       ref: z.string(),
       text: z.string(),
@@ -47,7 +51,10 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "replace_task_body",
-    description: "Replace a task's entire markdown body.",
+    description:
+      "Replace a task's entire markdown body, overwriting whatever was " +
+      "there. Pass `expected_token` (from get_task) to make the write fail " +
+      "rather than silently clobber a concurrent edit.",
     inputSchema: {
       ref: z.string(),
       body: z.string(),

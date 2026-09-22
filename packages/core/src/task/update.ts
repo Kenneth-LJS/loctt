@@ -31,6 +31,38 @@ function touchedFor(field: string): ReadonlySet<string> {
 }
 
 /**
+ * Rejects a task whose effective `start_date` is after its effective
+ * `due_date` (TML-45). Enforced in core so every surface — web, CLI, MCP —
+ * refuses the same write; previously only the web `handleSetDates` route
+ * checked it inline, so `loctt set <task> start_date …` and MCP
+ * `update_task` could persist a start-after-due anomaly the timeline then
+ * had to draw around.
+ *
+ * `updated` is the *effective* frontmatter after the write is applied, so
+ * a single-field edit (setField) or a partial change set (setFields that
+ * carries only one of the two dates) is compared against the value already
+ * on the task. Clearing either date leaves a non-string on that side and
+ * so cannot conflict — nothing to compare.
+ *
+ * `touchedStart` names which side this write carried, so the error anchors
+ * on the field the user actually set (matching the web route's behaviour).
+ */
+function assertDateOrdering(updated: TaskFrontmatter, touchedStart: boolean): void {
+  const start = updated.start_date;
+  const due = updated.due_date;
+  if (
+    typeof start === "string" && typeof due === "string"
+    && start.slice(0, 10) > due.slice(0, 10)
+  ) {
+    throw new TaskUpdateError(
+      `The start date (${start.slice(0, 10)}) cannot be after the due date `
+      + `(${due.slice(0, 10)}).`,
+      { field: touchedStart ? "start_date" : "due_date" },
+    );
+  }
+}
+
+/**
 /**
  * Does a health entry belong to `field`?
  *
@@ -528,6 +560,10 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
     assertNotArchivedReferences(updated, task.frontmatter, archivedGuard);
   }
 
+  // TML-45: refuse a start-after-due write, against the effective pair
+  // (the value not being set here comes from the existing frontmatter).
+  assertDateOrdering(updated, field === "start_date");
+
   // Carry the preserved health forward (preserve-others): every degraded
   // /unrecognised field except the one just written stays in `health` so
   // its raw value is re-emitted. Writing `field` repairs it, so its entry
@@ -1011,6 +1047,12 @@ export async function setFieldsLocked(
   if (archivedGuard) {
     assertNotArchivedReferences(updated, task.frontmatter, archivedGuard);
   }
+
+  // TML-45: refuse a start-after-due write, against the effective pair.
+  // A single-edge change set carries only one date; the other comes from
+  // the task on disk. Anchor the error on start_date when this batch
+  // carried it, else due_date — matching the web route it replaces.
+  assertDateOrdering(updated, changes.some(c => c.field === "start_date"));
 
   // Carry health for every field the batch did NOT touch (preserve-
   // others); each touched field's entries drop (override-on-direct-write).

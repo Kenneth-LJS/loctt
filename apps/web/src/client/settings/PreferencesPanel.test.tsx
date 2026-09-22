@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -49,13 +57,29 @@ function stubFetch(): void {
   }));
 }
 
+/**
+ * The panel now renders a TanStack `<Link>` (the CONFIG-5 cross-link to
+ * Projects), so a bare render throws in `useLinkProps` — the panel always
+ * lives under a router in the app. Mount it inside a memory router at
+ * `/settings/preferences` in addition to the QueryClient.
+ */
 function renderPanel() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  const rootRoute = createRootRoute({ component: Outlet });
+  const settingsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/$section",
+    component: () => <PreferencesPanel />,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([settingsRoute]),
+    history: createMemoryHistory({ initialEntries: ["/settings/preferences"] }),
+  });
   return render(
     <QueryClientProvider client={client}>
-      <PreferencesPanel />
+      <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
 }
@@ -130,11 +154,74 @@ describe("PreferencesPanel", () => {
     SETTINGS = { default_project: "archive_me" };
     renderPanel();
 
-    const select = await screen.findByTestId("default-project-select");
+    // The default-project picker is now a searchable Combobox (A211), not
+    // a native <select>; this once drove it via fireEvent.change on the
+    // <select> element — the pre-migration control. Open the trigger and
+    // click the option instead.
     const { fireEvent } = await import("@testing-library/react");
-    fireEvent.change(select, { target: { value: "p_backend" } });
+    fireEvent.click(await screen.findByTestId("default-project-select"));
+    fireEvent.click(await screen.findByTestId("default-project-option-p_backend"));
 
     await waitFor(() => { expect(PUTS.length).toBe(1); });
     expect(PUTS[0]?.["default_project"]).toBe("p_backend");
+  });
+
+  /**
+   * @verifies CONFIG-5
+   *
+   * P4: the personal default here and the workspace default in Projects
+   * are two different "default project" concepts. This panel cross-links
+   * to the other so they are not mistaken for one.
+   */
+  it("cross-links the personal default to the workspace default in Projects", async () => {
+    renderPanel();
+    const link = (await screen.findByTestId("preferences-workspace-default-link"))
+      .closest("a") as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    expect(link.getAttribute("href")).toContain("/settings/projects");
+  });
+
+  // A failed save carries the server's reason + a Retry (the ErrorState
+  // standard), not a canned "not saved" line with no recovery. Red-proven:
+  // the pre-fix panel showed a fixed string and had no Retry.
+  it("shows the server message and a Retry when the save fails", async () => {
+    const { fireEvent, within } = await import("@testing-library/react");
+    SETTINGS = { default_project: "p_backend" };
+    // Fail PUTs; reads still succeed.
+    vi.stubGlobal("fetch", vi.fn((input: unknown, init?: RequestInit) => {
+      const path = String(input).replace(/^https?:\/\/[^/]+/, "");
+      if (path.startsWith("/api/user-settings") && init?.method === "PUT") {
+        return Promise.resolve(new Response(
+          JSON.stringify({ message: "settings.yaml is read-only", code: "rejected_write" }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        ));
+      }
+      if (path.startsWith("/api/user-settings")) {
+        return Promise.resolve(new Response(JSON.stringify({ user: "u1", settings: SETTINGS }), {
+          status: 200, headers: { "content-type": "application/json" },
+        }));
+      }
+      if (path.startsWith("/api/projects")) {
+        return Promise.resolve(new Response(
+          JSON.stringify({ items: PROJECTS, total: PROJECTS.length, offset: 0, limit: 1000 }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ items: [], total: 0, offset: 0, limit: 1000 }), {
+        status: 200, headers: { "content-type": "application/json" },
+      }));
+    }));
+    renderPanel();
+
+    (await screen.findByTestId("theme-dark")).click();
+
+    const host = await screen.findByTestId("preferences-save-error");
+    expect(host.textContent).toContain("read-only");
+    expect(within(host).getByRole("button", { name: "Retry" })).toBeTruthy();
+    const before = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    fireEvent.click(within(host).getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
+    });
   });
 });

@@ -32,7 +32,10 @@ describe("MCP comments (stdio)", () => {
         expect(afterEdit[0]?.body).toBe("goodbye");
         expect(afterEdit[0]?.edited).toBe(true);
 
-        await client.callTool("delete_comment", { ref: "T-1", comment_id: id });
+        // delete_comment now requires confirm: true, matching every other
+        // destructive delete_* tool (A221). This call previously omitted it
+        // and passed only because the gate did not yet exist.
+        await client.callTool("delete_comment", { ref: "T-1", comment_id: id, confirm: true });
         const afterDelete = JSON.parse(
           (await client.callTool("list_comments", { ref: "T-1" })).content[0]?.text ?? "[]",
         ) as unknown[];
