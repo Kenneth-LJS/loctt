@@ -14,6 +14,7 @@ import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import { SrOnly } from "../ui/Tooltip.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 import { IntegrityBadge } from "./IntegrityBadge.tsx";
 
@@ -97,7 +98,13 @@ export function Header({
       <IconButton
         onClick={onToggleSidebar}
         disabled={!canToggleSidebar}
-        title={canToggleSidebar ? undefined : "The sidebar stays collapsed at this width"}
+        // UI-23e: a disabled control's reason is its accessible
+        // DESCRIPTION, not a hover tooltip and not its name. Wired
+        // explicitly rather than left to the browser's
+        // `title`-as-description fallback; the `sr-only` node it points
+        // at is rendered below, outside the button so it cannot join the
+        // name.
+        {...(canToggleSidebar ? {} : { "aria-describedby": SIDEBAR_TOGGLE_REASON_ID })}
         aria-label="Toggle sidebar"
         // A11Y-21: the control exposes its *state*, not only its
         // label. `aria-expanded` is the right property for a
@@ -109,6 +116,11 @@ export function Header({
       >
         <HamburgerIcon />
       </IconButton>
+      {!canToggleSidebar && (
+        <SrOnly id={SIDEBAR_TOGGLE_REASON_ID}>
+          The sidebar stays collapsed at this width
+        </SrOnly>
+      )}
 
       <div className="flex shrink-0 items-center gap-2 pr-1 text-[1rem] font-semibold text-text-primary sm:pr-2">
         <LogoMark size={22} />
@@ -136,7 +148,10 @@ export function Header({
       <Button
         variant="primary"
         disabled={createBlocked !== undefined}
-        title={createBlocked}
+        // UI-23e: same rule as the sidebar toggle above — the reason why
+        // creating is blocked is a description, so it never displaces
+        // "New task" as the button's name.
+        {...(createBlocked === undefined ? {} : { "aria-describedby": NEW_TASK_REASON_ID })}
         onClick={() => { createTask.open(); }}
         aria-label="New task"
         testId="header-new-task"
@@ -147,11 +162,24 @@ export function Header({
             keeps its accessible name via aria-label either way. */}
         <span className="hidden sm:inline">New task</span>
       </Button>
+      {createBlocked !== undefined && (
+        <SrOnly id={NEW_TASK_REASON_ID}>{createBlocked}</SrOnly>
+      )}
 
       <UserMenu currentUser={currentUser} identityUnknown={identityUnknown} />
     </header>
   );
 }
+
+/**
+ * Ids for the two disabled-reason description nodes above (UI-23e).
+ *
+ * Module constants rather than `useId()` because there is exactly one
+ * header on the page, so there is nothing to collide with, and a stable
+ * id is far easier to assert against than a generated one.
+ */
+const SIDEBAR_TOGGLE_REASON_ID = "header-sidebar-toggle-reason";
+const NEW_TASK_REASON_ID = "header-new-task-reason";
 
 /**
  * The global header search (SHL-46).

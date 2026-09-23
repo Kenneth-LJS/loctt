@@ -7,6 +7,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { SrOnly } from "./Tooltip.tsx";
 import { panelStyle, usePortalPlacement } from "./usePortalPlacement.ts";
 
 /**
@@ -20,6 +21,30 @@ import { panelStyle, usePortalPlacement } from "./usePortalPlacement.ts";
  * `usePortalPlacement.ts` for why (MENU-PORTAL). K106 stage 2 moved that
  * machinery into the shared hook so `ui/Dropdown` sits on the same
  * substrate; the behaviour here is unchanged.
+ *
+ * ## Focus restore on close
+ *
+ * Escape and outside-click return focus to whatever triggered the menu
+ * (the known-gaps "`ui/Menu` never restores focus" entry) — otherwise a
+ * keyboard user is dumped on `document.body` and has to Tab from the top
+ * of the page. Selecting an item does NOT restore focus: `close()`,
+ * called by `MenuItem`/consumers on selection, is a plain `setOpen(false)`
+ * with no restore. An item's action is often a navigation (a `Link`) or a
+ * focus move the item itself owns (opening a dialog); forcing focus back
+ * onto a trigger that may no longer even be on screen would fight
+ * whatever the selection just did. Escape and outside-click have no such
+ * competing claim, so they are the two paths that restore.
+ *
+ * The trigger is captured via `document.activeElement` at open time, not
+ * looked up again at close time, because it can be gone by then — A11Y-15:
+ * a row's ⋯ trigger unmounts with its row after a delete. Restoring
+ * re-checks `isConnected` and no-ops otherwise, the same guard
+ * `useFocusTrap` uses for the identical problem (see its `returnFocusTo`
+ * doc). `Menu` does not use `useFocusTrap` itself — a menu panel is not a
+ * focus trap (Tab is free to leave it) — so this restore logic is
+ * separate, deliberately small, and does not touch the dialog gap
+ * (`ViewFormDialog`/`LabelEditDialog` not passing `returnFocusTo`), which
+ * is tracked and fixed independently.
  */
 
 export interface MenuProps {
@@ -51,6 +76,34 @@ export function Menu({
   const triggerId = useId();
   const pos = usePortalPlacement(open, wrapRef, panelRef, align);
 
+  // A11Y: focus restore on close (the Menu-specific gap — see
+  // docs/dev/known-gaps.md "`ui/Menu` never restores focus on close").
+  // Recorded on open, not read lazily on close, because by close time the
+  // trigger may have already been replaced by a different element (a
+  // toggle button whose label/state changed) or removed outright (A11Y-15:
+  // a row's ⋯ trigger unmounts with its row on delete). Capturing the
+  // exact node up front and re-checking `isConnected` at restore time is
+  // the same pattern `useFocusTrap` uses for the identical problem.
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    // The trigger is whatever currently owns focus when the panel opens —
+    // true whether it was opened by a click or by keyboard activation.
+    triggerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }, [open]);
+
+  const restoreFocus = (): void => {
+    const el = triggerRef.current;
+    // `isConnected` guards the A11Y-15 case: the trigger's row (and the
+    // trigger with it) was removed by the very action the menu just took.
+    // Focusing a detached node is a no-op that silently leaves focus on
+    // `document.body` — exactly the failure being fixed — so skip it
+    // rather than throw or restore to nowhere.
+    if (el !== null && el.isConnected) el.focus();
+  };
+
   useEffect(() => {
     if (!open) return undefined;
     const onDocMouseDown = (e: MouseEvent): void => {
@@ -63,6 +116,10 @@ export function Menu({
       if (wrapRef.current?.contains(target) === true) return;
       if (panelRef.current?.contains(target) === true) return;
       setOpen(false);
+      // Outside click: nothing else is claiming focus, so return it to
+      // the trigger rather than leaving it on whatever was clicked (or
+      // on `body`, if the click landed somewhere inert).
+      restoreFocus();
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== "Escape") return;
@@ -72,6 +129,7 @@ export function Menu({
       // Escape from also closing the modal behind the menu.
       e.stopPropagation();
       setOpen(false);
+      restoreFocus();
     };
     document.addEventListener("mousedown", onDocMouseDown);
     document.addEventListener("keydown", onKey);
@@ -208,14 +266,28 @@ export function Menu({
  * above already excludes `:not([disabled])`, so a disabled item also
  * drops out of arrow-key travel without any further wiring.
  *
- * `title` is the reason, and it belongs on the **button**, not on an
- * inner `<span>`. A `title` on a child is a pointer tooltip on that
- * child and nothing more; on the button itself every current browser
- * also exposes it as the accessible *description* when no other
- * description source exists — which is what A11Y-31's second bullet
- * asks for. This matches `Dropdown`'s disabled option exactly, which
- * already spells `disabled={…}` + `title={disabled ? reason : undefined}`
- * on the row button.
+ * ## The reason is an explicit description, not a `title` (UI-23e)
+ *
+ * The `title` prop still names the reason, but it is now wired as
+ * `aria-describedby` pointing at a sibling `sr-only` node rather than a
+ * `title` attribute on the button.
+ *
+ * It used to rely on the browser fallback: `title` on a button is
+ * exposed as the accessible *description* "when no other description
+ * source exists". That fallback is real but it is a fallback — it is
+ * also a ~1s pointer tooltip, it is not keyboard-reachable, and it
+ * evaporates the moment any other description source appears. Naming
+ * the description outright supersedes it cleanly and keeps A11Y-31's
+ * second bullet satisfied by construction instead of by browser
+ * goodwill.
+ *
+ * What did NOT change, and must not: this is a *description*, not the
+ * name. Moving the reason to `aria-label` would make a disabled Delete
+ * announce "A tracker must have at least one project" INSTEAD of
+ * "Delete", losing the name. Nor is this a `Tooltip`: a description has
+ * to reach a screen reader with no pointer anywhere near the control.
+ *
+ * `Dropdown`'s disabled option carries the same migration.
  */
 export function MenuItem({
   children,
@@ -223,6 +295,7 @@ export function MenuItem({
   className,
   testId,
   disabled = false,
+  danger = false,
   title,
 }: {
   readonly children: ReactNode;
@@ -240,28 +313,57 @@ export function MenuItem({
   /** Inert and announced as such. See the note above. */
   readonly disabled?: boolean | undefined;
   /**
+   * Marks a destructive action (delete, archive) so it does not read as
+   * a peer of Edit or Rename.
+   *
+   * A REAL PROP, not a `className` a caller appends. `className` is
+   * concatenated after the base classes, and `cn()`/string-join does
+   * NOT resolve Tailwind conflicts — so a caller passing
+   * `text-danger-fg` lost to the hardcoded `text-text-secondary` below
+   * and rendered plain grey. Measured 2026-09-22: every "Delete" row in
+   * the settings panels carried `text-danger-fg` (twice, even) and
+   * computed to `rgb(168,168,174)` — the exact grey of "Edit…" beside
+   * it. Six destructive actions looked benign for as long as that
+   * pattern stood.
+   */
+  readonly danger?: boolean | undefined;
+  /**
    * Why the item is unavailable, on the button so it is the accessible
    * description and not merely a hover tooltip on a child span.
    */
   readonly title?: string | undefined;
 }) {
+  const reasonId = useId();
+  // The reason is a description, so it is announced only when there IS
+  // one. An `aria-describedby` pointing at an element that does not
+  // exist is not harmless: it is a dangling reference.
+  const described = title !== undefined && title !== "";
   return (
-    <button
-      type="button"
-      role="menuitem"
-      disabled={disabled}
-      title={title}
-      onClick={onSelect}
-      {...(testId !== undefined ? { "data-testid": testId } : {})}
-      className={[
-        "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem]",
-        disabled
-          ? "cursor-not-allowed text-text-disabled opacity-50"
-          : "text-text-secondary hover:bg-bg-muted hover:text-text-primary",
-        className ?? "",
-      ].join(" ")}
-    >
-      {children}
-    </button>
+    <>
+      <button
+        type="button"
+        role="menuitem"
+        disabled={disabled}
+        {...(described ? { "aria-describedby": reasonId } : {})}
+        onClick={onSelect}
+        {...(testId !== undefined ? { "data-testid": testId } : {})}
+        className={[
+          "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem]",
+          disabled
+            ? "cursor-not-allowed text-text-disabled opacity-50"
+            : danger
+              ? "text-danger-fg hover:bg-danger-bg hover:text-danger-fg"
+              : "text-text-secondary hover:bg-bg-muted hover:text-text-primary",
+          className ?? "",
+        ].join(" ")}
+      >
+        {children}
+      </button>
+      {/* OUTSIDE the button on purpose: text inside would join the
+          button's accessible NAME ("Delete A tracker must have at least
+          one project."), which is the very conflation this migration
+          exists to prevent. As a sibling it is description only. */}
+      {described && <SrOnly id={reasonId}>{title}</SrOnly>}
+    </>
   );
 }

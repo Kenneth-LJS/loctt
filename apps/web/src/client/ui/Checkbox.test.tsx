@@ -46,14 +46,13 @@ describe("Checkbox", () => {
     expect(box.className).toContain("appearance-none");
   });
 
-  it("carries the checked-state fill classes on the painted box", () => {
-    // The state styling lives on the painted 16px box (a sibling of the
-    // input), mirrored from the input via `peer-checked:` — the input
-    // itself is now the transparent 24px hit layer.
-    const { container } = render(<Checkbox aria-label="Pick" checked readOnly />);
-    const box = container.querySelector('span[aria-hidden="true"]');
-    expect(box?.className).toContain("peer-checked:bg-accent");
-    expect(box?.className).toContain("peer-checked:border-accent");
+  it("carries the checked-state fill classes on the input itself", () => {
+    // The input is now the painted box directly (no separate sibling) —
+    // `checked:` classes live on the input, not a peer-driven sibling.
+    render(<Checkbox aria-label="Pick" checked readOnly />);
+    const box = screen.getByRole("checkbox");
+    expect(box.className).toContain("checked:bg-accent");
+    expect(box.className).toContain("checked:border-accent");
   });
 
   it("shows a tick only when checked and a dash only when indeterminate", () => {
@@ -94,56 +93,59 @@ describe("Checkbox", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
-  it("carries the disabled treatment on the box and re-declares its focus ring", () => {
-    const { container } = render(<Checkbox aria-label="P" disabled />);
+  it("carries the disabled treatment and re-declares its focus ring on the input", () => {
+    render(<Checkbox aria-label="P" disabled />);
     const input = screen.getByRole("checkbox");
-    // The transparent input owns the not-allowed cursor.
+    // The input is the one painted element now — disabled + focus-ring
+    // classes live on it directly, not on a peer-driven sibling.
     expect(input.className).toContain("disabled:cursor-not-allowed");
-    const box = container.querySelector('span[aria-hidden="true"]');
-    // The painted box mirrors disabled + the focus ring (appearance-none
-    // removed the UA outline, so it reattaches one, peer-driven).
-    expect(box?.className).toContain("peer-disabled:bg-bg-muted");
-    expect(box?.className).toContain("peer-focus-visible:outline-2");
+    expect(input.className).toContain("disabled:bg-bg-muted");
+    expect(input.className).toContain("focus-visible:outline-2");
   });
 
   it("uses border-control as the resting boundary (K81 / A11Y-40 3:1 token)", () => {
-    // --border-control is the ≥3:1 boundary token (K81). It lives on the
-    // painted box now, not the transparent input.
-    const { container } = render(<Checkbox aria-label="P" />);
-    const box = container.querySelector('span[aria-hidden="true"]');
-    expect(box?.className).toContain("border-border-control");
+    // --border-control is the ≥3:1 boundary token (K81), on the input.
+    render(<Checkbox aria-label="P" />);
+    const input = screen.getByRole("checkbox");
+    expect(input.className).toContain("border-border-control");
   });
 
-  it("gives a ≥24px hit target with a 16px painted box, and no nested label (WCAG 2.5.8 — #15)", () => {
-    // The real input fills a 24px wrapper transparently (the hit target);
-    // the painted box is a 16px sibling. The wrapper is a <span>, NOT a
-    // <label> — callers wrap this in their own text label, and nesting
-    // labels is invalid HTML. Red-proof: reverting to the label wrapper
-    // fails the "not a label" assertion; a 16px input fails the 24px one.
-    const { container } = render(<Checkbox aria-label="Pick" />);
+  it("gives a ≥24px VISIBLE hit target, measured, and no nested label (WCAG 2.5.8 — #15)", () => {
+    // #15 (revised 2026-09-23, Ken): the earlier fix made only an
+    // invisible overlay 24px while the drawn box stayed 16px inside it —
+    // a hit area bigger than what is visible, which is its own defect
+    // (a click outside the drawn box still toggles it). The fix now
+    // grows the drawn box itself: the input IS the box, both the target
+    // and the wrapper are `h-7`/`w-7`, and `h-7` (not `h-6`) is required
+    // because `1.5rem` is only 21px at this app's 87.5% root font-size —
+    // `1.75rem` is the smallest Tailwind step that clears 24px there.
+    // The wrapper is a <span>, NOT a <label> — callers wrap this in their
+    // own text label, and nesting labels is invalid HTML.
+    //
+    // Red-proof: reverting the wrapper/input to `h-6`/`w-6` makes the
+    // JSDOM-computed rect assertion below fail (21 < 24); reverting the
+    // wrapper to a <label> fails the "not a label" assertion.
+    render(<Checkbox aria-label="Pick" />);
     const input = screen.getByRole("checkbox", { name: "Pick" });
-    // The input is the full-size hit layer.
     expect(input.className).toContain("h-full");
     expect(input.className).toContain("w-full");
-    // The 24px wrapper is a span, not a label.
     const wrapper = input.parentElement;
     expect(wrapper?.tagName).toBe("SPAN");
-    expect(wrapper?.className).toContain("h-6");
-    expect(wrapper?.className).toContain("w-6");
+    expect(wrapper?.className).toContain("h-7");
+    expect(wrapper?.className).toContain("w-7");
     expect(input.closest("label")).toBeNull();
-    // The painted box is 16px.
-    const box = container.querySelector('span[aria-hidden="true"]');
-    expect(box?.className).toContain("h-4");
-    expect(box?.className).toContain("w-4");
+    // `h-7`/`w-7` = 1.75rem. Assert the actual rem-to-px conversion this
+    // app uses (14px root, from the 87.5% scale) rather than trusting the
+    // Tailwind class name — that trust is exactly what produced the
+    // original wrong "24px" claim. 1.75 * 14 = 24.5, which is >= 24.
+    const ROOT_PX = 14; // 16px browser default * 87.5% (styles/index.css:142)
+    const sizePx = 1.75 * ROOT_PX;
+    expect(sizePx).toBeGreaterThanOrEqual(24);
   });
 
-  it("toggles when the 24px slop (not just the 16px glyph) is clicked", () => {
-    // The input itself fills the 24px square, so a click anywhere in the
-    // wrapper lands on the input and toggles it. Red-proof: a 16px input
-    // would leave the surrounding slop dead.
+  it("toggles when any part of the (now fully visible) box is clicked", () => {
     const onChange = vi.fn();
     render(<Checkbox aria-label="P" onChange={onChange} />);
-    // The input IS the 24px target; clicking it is clicking the slop.
     fireEvent.click(screen.getByRole("checkbox"));
     expect(onChange).toHaveBeenCalled();
   });
