@@ -10,7 +10,7 @@ import {
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
+import { comboValue, expectComboValueSelectable, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { Sidebar } from "./Sidebar.tsx";
 
 /**
@@ -116,8 +116,9 @@ function routeFetch(path: string): unknown {
       items: [
         { id: "sp_12", name: "Sprint 12", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
         { id: "sp_11", name: "Sprint 11", start_date: "2026-05-18", end_date: "2026-05-31", state: "completed" },
+        { id: "sp_13", name: "Sprint 13", start_date: "2026-06-15", end_date: "2026-06-28", state: "future" },
       ],
-      total: 2,
+      total: 3,
       offset: 0,
       limit: 100,
     };
@@ -346,6 +347,44 @@ describe("Sidebar", () => {
     expect(screen.queryByText("Sprint 11")).toBeNull();
   });
 
+  it("colours a sprint row's state chip distinctly per state, and drops the old dot", async () => {
+    // Ken, 2026-09-23: the dot was DERIVED from state but only
+    // distinguished two of the three states (active vs. everything
+    // else), so completed and future rendered identical grey — the
+    // fix drops the dot and colours the chip instead, which must make
+    // every state visually distinct. `Sprint 11` (completed) is
+    // filtered out of the sidebar by design (see the test above), so
+    // this asserts against the two states the sidebar actually shows
+    // (active, future) plus the dot's removal.
+    await renderSidebarAt("/list");
+    const activeName = await screen.findByText("Sprint 12");
+    const futureName = await screen.findByText("Sprint 13");
+
+    const activeRow = activeName.closest("a") as HTMLElement;
+    const futureRow = futureName.closest("a") as HTMLElement;
+
+    // The dot is gone entirely — no rounded-full mark in either row.
+    expect(activeRow.querySelector(".rounded-full")).toBeNull();
+    expect(futureRow.querySelector(".rounded-full")).toBeNull();
+
+    const activeChipEl = Array.from(activeRow.querySelectorAll("span"))
+      .find(el => el.textContent === "active" && el.children.length === 0);
+    const futureChipEl = Array.from(futureRow.querySelectorAll("span"))
+      .find(el => el.textContent === "future" && el.children.length === 0);
+    expect(activeChipEl, "no chip found for active sprint").toBeTruthy();
+    expect(futureChipEl, "no chip found for future sprint").toBeTruthy();
+
+    // Distinct classNames prove distinct visual treatment — the whole
+    // point (the dot's failure mode was two states sharing one look).
+    expect(activeChipEl?.className).not.toBe(futureChipEl?.className);
+    // active reinforces with the app's existing success feedback token
+    // (the same one the old dot used for "active").
+    expect(activeChipEl?.className).toContain("text-success-fg");
+    // future uses the accent Chip variant, distinct from active's
+    // success tint and from the plain neutral Chip completed would get.
+    expect(futureChipEl?.className).toContain("text-accent");
+  });
+
   it("'+ New milestone' opens the shared create dialog in place (K105)", async () => {
     await renderSidebarAt("/list");
     const btn = await screen.findByTestId("sidebar-new-milestone");
@@ -501,61 +540,33 @@ describe("Sidebar Views section active state (UI-16b)", () => {
  * would not go to — the one thing the mark is for.
  */
 describe("Sidebar default project (SHL-5)", () => {
-  it("stars the per-user effective default over the workspace default", async () => {
-    EFFECTIVE_DEFAULT = "p_api";
-    await renderSidebarAt("/list");
-
-    const api = (await screen.findByText("API")).closest("a") as HTMLElement;
-    const web = (screen.getByText("Web")).closest("a") as HTMLElement;
-    expect(within(api).getByTitle("Default project")).toBeTruthy();
-    expect(within(web).queryByTitle("Default project")).toBeNull();
-  });
-
-  it("falls back to the workspace default when the server sends no effective default", async () => {
-    EFFECTIVE_DEFAULT = undefined;
-    await renderSidebarAt("/list");
-
-    const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
-    const api = (screen.getByText("API")).closest("a") as HTMLElement;
-    expect(within(web).getByTitle("Default project")).toBeTruthy();
-    expect(within(api).queryByTitle("Default project")).toBeNull();
-  });
-
-  it("stars nothing when neither default resolves", async () => {
-    EFFECTIVE_DEFAULT = null;
-    await renderSidebarAt("/list");
-
-    await screen.findByText("Web");
-    expect(screen.queryByTitle("Default project")).toBeNull();
-  });
-
-  it("UI-16a: renders exactly one dot-shaped mark on the default project row, not two", async () => {
-    // UI-16a: the default marker used to be `<Icon name="dot">`, drawn
-    // right beside the `ColorDot` every project row used to carry — two
-    // visually identical filled circles on one row. The fix swapped the
-    // marker back to `star` (not shape-identical to a dot).
+  it("UI-26d: no project row carries a default marker at all", async () => {
+    // The sidebar used to star the effective default project. Ken ruled
+    // it out (2026-09-23): *"no star for default project, take it out"*.
+    // The same `star` was ALSO the saved-view fallback icon, so one
+    // glyph meant two unrelated things in one sidebar — and a star
+    // conventionally reads "favourite", which is neither.
     //
-    // UI-20 (2026-09-23) then removed the row's `ColorDot` entirely — it
-    // was a hardcoded constant colour encoding nothing (every project
-    // drew the identical dot) — so the row now has ZERO dot-shaped
-    // marks, not one. This test used to assert exactly one (the
-    // ColorDot); it was asserting the very mark UI-20 deletes, so it is
-    // rewritten to the new contract: no dot at all, and the star stays
-    // the row's only mark. This counts *filled circle* shapes
-    // specifically — `ColorDot` is a `<span>` with a `rounded-full`
-    // background, so this must count both the CSS-rounded ColorDot AND
-    // any filled `<circle>` SVG a regression might reintroduce.
-    EFFECTIVE_DEFAULT = "p_web";
-    await renderSidebarAt("/list");
-
-    const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
-    const cssRoundedDots = web.querySelectorAll("span.rounded-full").length;
-    const svgCircleDots = web.querySelectorAll("svg circle").length;
-    expect(cssRoundedDots + svgCircleDots).toBe(0);
-    // And the default marker itself is present and is a star, not a dot.
-    const marker = within(web).getByTitle("Default project");
-    expect(marker.querySelector("svg")).not.toBeNull();
-    expect(marker.querySelector("circle")).toBeNull();
+    // This asserts across ALL the resolution states the removed tests
+    // covered (per-user default, workspace fallback, nothing resolving),
+    // because the point is that NO state draws a marker — a test fixing
+    // one state would stay green if another started drawing one again.
+    //
+    // SHL-5's resolution logic itself is NOT untested by this removal:
+    // it is covered where it changes behaviour rather than pixels —
+    // `server.projects-default.test.ts` for the wire, and
+    // `create/projectChoice.test.ts` for which project a new task
+    // actually lands in.
+    for (const state of ["p_api", undefined, null] as const) {
+      EFFECTIVE_DEFAULT = state;
+      await renderSidebarAt("/list");
+      await screen.findByText("Web");
+      expect(screen.queryByTitle("Default project")).toBeNull();
+      // Nor by accessible name — the marker must not come back wearing
+      // an aria-label instead of the `title` it used to carry.
+      expect(screen.queryByLabelText("Default project")).toBeNull();
+      cleanup();
+    }
   });
 
   it("UI-20: no project row draws a constant-colour dot", async () => {
@@ -1214,7 +1225,9 @@ describe("Sidebar saved-filter row actions", () => {
     // filters. Prefilled name, and the first row shows `status`.
     await screen.findByTestId("view-filter-field-0");
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("My open bugs");
-    expect(comboValue("view-filter-field-0")).toBe("status");
+    // B14: this must be a value the user could keep/reselect, not merely
+    // a stale trigger label — assert it is offered, not just displayed.
+    expectComboValueSelectable("view-filter-field-0", "status");
     expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
@@ -1275,6 +1288,85 @@ describe("Sidebar saved-filter row actions", () => {
     expect(screen.queryByText(/was removed from queries\.yaml/)).toBeNull();
   });
 
+  /**
+   * @verifies A328 (B6)
+   *
+   * Before this fix, `confirmDelete` called `dismiss(view.id)`, the
+   * pin-removal write and `setDialog(null)` EAGERLY — before the DELETE
+   * had even settled. A FAILED delete still closed the dialog and told
+   * `useVanishedViews` the view was gone, so the app believed an
+   * unconfirmed delete had succeeded and showed the user nothing. This
+   * red-proves against that old eager ordering: a failed DELETE must
+   * leave the dialog open, with an inline notice, and the row must still
+   * be there.
+   *
+   * Red-proof: restore the eager `dismiss`/pin-write/`setDialog(null)`
+   * ordering in `Sidebar.tsx`'s `confirmDelete` (call them unconditionally
+   * before `del.mutate`, not from its `onSuccess`) and every assertion
+   * below goes red — the dialog closes and the row disappears despite the
+   * DELETE having failed.
+   */
+  function failDeletes(): void {
+    const realFetch = globalThis.fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? "GET";
+      if (method === "DELETE" && url.includes("/api/views/v_mine")) {
+        return Promise.resolve(new Response(
+          JSON.stringify({ code: "git_failed", message: "boom", data_state: "not_saved" }),
+          { status: 500, headers: { "Content-Type": "application/json" } },
+        ));
+      }
+      return realFetch(input, init);
+    });
+  }
+
+  it("a FAILED delete keeps the dialog open, shows the not-saved notice, and does not dismiss/close", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    failDeletes();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    await screen.findByTestId("delete-view-dialog");
+    fireEvent.click(screen.getByTestId("delete-view-confirm"));
+
+    const notice = await screen.findByTestId("delete-view-error");
+    expect(notice.getAttribute("role")).toBe("alert");
+    expect(notice.textContent).toContain("The view wasn't deleted. Try again.");
+
+    // The dialog is still open and the row is still there — a FAILED
+    // delete must not read as a completed one. ("My open bugs" also
+    // appears inside the dialog's own body, so this counts occurrences
+    // rather than asserting a single match.)
+    expect(screen.getByTestId("delete-view-dialog")).toBeTruthy();
+    expect(screen.getAllByText("My open bugs").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("Try again on a failed delete re-fires the DELETE", async () => {
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    failDeletes();
+
+    fireEvent.click(screen.getByRole("button", { name: 'Actions for saved filter "My open bugs"' }));
+    fireEvent.click(screen.getByTestId("view-delete"));
+    await screen.findByTestId("delete-view-dialog");
+    fireEvent.click(screen.getByTestId("delete-view-confirm"));
+    await screen.findByTestId("delete-view-error");
+
+    const fetchSpy = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const before = fetchSpy.mock.calls.filter(
+      c => String(c[0]).includes("/api/views/v_mine") && (c[1] as RequestInit | undefined)?.method === "DELETE",
+    ).length;
+    fireEvent.click(screen.getByTestId("delete-view-error-retry"));
+    await waitFor(() => {
+      const after = fetchSpy.mock.calls.filter(
+        c => String(c[0]).includes("/api/views/v_mine") && (c[1] as RequestInit | undefined)?.method === "DELETE",
+      ).length;
+      expect(after).toBeGreaterThan(before);
+    });
+  });
+
   it("Pin issues one merged PUT /api/user-settings carrying the pin", async () => {
     await renderSidebarAt("/list");
     await screen.findByText("My open bugs");
@@ -1328,7 +1420,7 @@ describe("Sidebar saved-filter row actions", () => {
    *
    * A broken entry's full original YAML survives on disk in `rawText` and
    * is re-emitted verbatim by every unrelated write (P-11 / K28 /
-   * Phase-Z-C2). Edit… seeds an EMPTY picker (K102 — the stored filters
+   * Phase-Z-C2). Edit seeds an EMPTY picker (K102 — the stored filters
    * did not load, so there is nothing faithful to seed), and Save used to
    * fire a plain `editView`, replacing that preserved text with
    * `filters: []`. The one control offered to repair the entry was the
@@ -1430,7 +1522,7 @@ describe("Sidebar saved-filter row actions", () => {
   });
 
   it("deleting a broken row sends the replaceBroken opt-in the server requires", async () => {
-    // The broken row's Delete… goes through DeleteViewDialog, whose
+    // The broken row's Delete goes through DeleteViewDialog, whose
     // confirmation IS the explicit consent. Without carrying it to the
     // server the delete comes back 400 and the dead control stays dead.
     BROKEN_VIEWS = [BROKEN_ONE];
@@ -1615,7 +1707,7 @@ describe("Sidebar cross-view filter scope (2026-09-20)", () => {
       status: "in_progress",
       project: "p_api",
       labels: "l_fe",
-      archived: "true",
+      archived: "all",
     });
     // The Board and Timeline switcher links keep the scope. (Decoded and
     // matched by value, since this harness JSON-encodes array params
@@ -1625,7 +1717,9 @@ describe("Sidebar cross-view filter scope (2026-09-20)", () => {
       expect(href, `${name} keeps status`).toContain("in_progress");
       expect(href, `${name} keeps project`).toContain("p_api");
       expect(href, `${name} keeps labels`).toContain("l_fe");
-      expect(href, `${name} keeps archived`).toContain("archived=true");
+      // K121 #1: a stray `archived` param is not a scope any view honours,
+      // so the switcher does not carry it.
+      expect(href, `${name} drops archived`).not.toContain("archived");
     }
   });
 
@@ -1713,19 +1807,16 @@ describe("Sidebar tokens and icon glyphs (S-11, S-8)", () => {
     expect(web.querySelector("span[style]")).toBeNull();
   });
 
-  it("the default-project star is an SVG icon, not a text glyph", async () => {
-    // Was: `expect(marker.textContent).toBe("⭑")` — asserting the marker
-    // IS a Unicode character. That pinned the defect. Ken, 2026-09-22:
-    // "what did i say about fucking using unicode characters for icons?!
-    // ... only acceptable thing are user-assigned icons for saved views."
-    // A208 (2026-09-19) had already ruled glyph affordances out and built
-    // `ui/Icon.tsx`; seven call sites were missed by that migration and
-    // this test held one of them in place.
+  it("UI-26d: the default-project marker is gone, in glyph or icon form", async () => {
+    // This test used to assert the marker was an SVG and not a Unicode
+    // glyph — itself a fix for an earlier version that asserted
+    // `textContent === "⭑"` and so pinned the very defect A208 banned.
+    // Ken has now removed the marker outright, so the contract is
+    // absence: neither a glyph nor an icon, under any spelling.
     await renderSidebarAt("/list");
-    const marker = await screen.findByTitle("Default project");
-    expect(marker.querySelector("svg")).not.toBeNull();
-    // No text glyph of any kind — neither the old ★ nor ICON.star's ⭑.
-    expect(marker.textContent).toBe("");
+    await screen.findByText("Web");
+    expect(screen.queryByTitle("Default project")).toBeNull();
+    expect(screen.queryByLabelText("Default project")).toBeNull();
   });
 });
 
@@ -1758,19 +1849,38 @@ describe("Sidebar saved-view icon (UI-19)", () => {
     expect(row.querySelector("svg")).not.toBeNull();
   });
 
-  it("falls back to the star when the view has no icon", async () => {
+  it("UI-26d: falls back to a grey dot when the view has no icon", async () => {
+    // Was a `star`, which the default-project marker also used — one
+    // glyph, two meanings in one sidebar. Ken ruled the fallback is the
+    // label row's circle (2026-09-23: *"fallback icon = the circle (same
+    // as how we do for labels)"*) and that it is grey, NOT the view's
+    // own colour (*"fallback icon = circle, and grey"*) — a tinted dot
+    // would read as a deliberately configured mark rather than "nothing
+    // was picked". The slot must stay filled either way, or the
+    // sidebar's label edge goes ragged (UI-26b).
     VIEWS = [
       {
         id: "v_mine",
         name: "My open bugs",
         filters: [{ kind: "simple", field: "status", op: "in", values: ["backlog"] }],
+        // A colour but NO icon — the case that separates "grey" from
+        // "the view's colour". Without a colour set, a tinted fallback
+        // and a grey one render identically and the assertion below is
+        // vacuous (proven: mutating `<ColorDot />` to
+        // `<ColorDot color={tint} />` left this test green until the
+        // colour was added here).
+        color: "red",
       },
     ];
     await renderSidebarAt("/list");
 
     const row = (await screen.findByText("My open bugs")).closest("a") as HTMLElement;
-    const starPath = 'path[d^="M8 2.5l1.7 3.5"]';
-    expect(row.querySelector(starPath)).not.toBeNull();
+    // `ColorDot` is a rounded-full span, not an SVG.
+    const dot = row.querySelector("span.rounded-full");
+    expect(dot).not.toBeNull();
+    expect((dot as HTMLElement).style.background).toBe("var(--text-tertiary)");
+    // And no star survives anywhere on the row.
+    expect(row.querySelector('path[d^="M8 2.5l1.7 3.5"]')).toBeNull();
   });
 });
 
@@ -2127,32 +2237,29 @@ describe("Sidebar point-of-use editing (K100)", () => {
     expect(sprintsLink.querySelector("svg")).toBeNull();
   });
 
-  it("UI-25: every top-level row's mark slot is the same width, so labels share one x", async () => {
+  it("UI-25: a row that draws a mark wraps it in the same w-4 slot, so marked rows share one x", async () => {
     // UI-25 measured eight distinct label-left positions live, split
     // between a `w-4` icon slot (glyph rows) and a bare 8px `ColorDot`
     // with no slot at all (dot rows) — a 7px ragged edge. The fix wraps
-    // every dot in the same `w-4` slot the icon rows use (or leaves an
-    // empty `w-4` slot where UI-20 removed the mark), rather than
-    // special-casing dot rows. This checks the DOM-structural cause
-    // directly: jsdom has no layout engine, so it cannot assert the
-    // live pixel position UI-25 measured, but every representative row's
-    // FIRST child element is the mark slot, and it must carry `w-4` —
-    // that class is what produced one shared x live (re-measured against
-    // the dev server: 38.5px for every one of these rows before and
-    // after, see the ticket's before/after table).
+    // every dot in the same `w-4` slot the icon rows use, rather than
+    // special-casing dot rows.
+    //
+    // Scope narrowed by Ken's ruling (2026-09-23): "missing gap is
+    // ugly". An earlier reading of UI-25 kept an EMPTY `w-4` slot on
+    // rows whose mark UI-20 removed, so every row — marked or not —
+    // shared one label x. That reserved a blank 16px column that read
+    // as a missing thing. Rows with no mark now close up, and only rows
+    // that actually draw a mark are asserted here. Alignment was never
+    // the goal in itself; an even edge was, and a hole is not even.
     await renderSidebarAt("/list");
-    const rowsByLabel: [label: string, testId?: string][] = [
-      ["All projects"],
-      ["Web"], // project item (dot slot, now empty — UI-20)
-      ["Assigned to me"], // built-in filter (icon slot)
-      ["My open bugs"], // saved view (icon slot)
-      ["All milestones"],
-      ["v1.0"], // milestone item
-      ["All sprints"],
-      ["Sprint 12"], // sprint item (dot slot — unchanged content)
-      ["frontend"], // label item (dot slot — unchanged content)
+    // Rows that draw a mark, and so must share the w-4 slot.
+    const markedRows = [
+      "All projects", // anchor row (icon slot)
+      "Assigned to me", // built-in filter (icon slot)
+      "My open bugs", // saved view (icon slot)
+      "frontend", // label item (dot slot)
     ];
-    for (const [label] of rowsByLabel) {
+    for (const label of markedRows) {
       const el = await screen.findByText(label);
       const row = el.closest("a") as HTMLElement;
       // <a> > ItemShell's <span data-active|title|class> > mark slot
@@ -2162,6 +2269,26 @@ describe("Sidebar point-of-use editing (K100)", () => {
       const slot = itemShell?.firstElementChild ?? null;
       expect(slot, `${label}: no first-child slot found`).toBeTruthy();
       expect(slot?.className, `${label}: slot missing w-4`).toMatch(/\bw-4\b/);
+    }
+    // Rows whose mark UI-20 removed close up: no reserved blank slot.
+    // Asserting the absence is the half that encodes Ken's ruling — a
+    // test that only checked the marked rows would stay green if the
+    // empty slots came back.
+    const unmarkedRows = [
+      "Web", // project item — dot dropped (UI-26b)
+      "All milestones", // anchor row — flag glyph dropped (UI-20)
+      "v1.0", // milestone item
+      "All sprints", // anchor row
+    ];
+    for (const label of unmarkedRows) {
+      const el = await screen.findByText(label);
+      const row = el.closest("a") as HTMLElement;
+      const itemShell = row.firstElementChild as HTMLElement | null;
+      const slot = itemShell?.firstElementChild ?? null;
+      expect(
+        slot?.className ?? "",
+        `${label}: has a reserved w-4 mark slot but draws no mark`,
+      ).not.toMatch(/\bw-4\b/);
     }
   });
 
@@ -2470,5 +2597,219 @@ describe("K104-view-colour — a saved view's icon carries its colour", () => {
     // it as the stroke colour.
     const painted = `${svg?.getAttribute("color") ?? ""}${svg?.getAttribute("stroke") ?? ""}${svg?.style.color ?? ""}`;
     expect(painted.toLowerCase()).toContain("b02f17");
+  });
+});
+
+/**
+ * @verifies K118
+ *
+ * Ken's ruling: "the sidebar has exactly one selection". Before this,
+ * each group derived its own active state from whatever slice of the
+ * route it read: Projects lit "All projects" whenever no `project` was
+ * scoped (regardless of a view/filter also being selected), a
+ * saved-view/sprint/label click only ADDED its own param instead of
+ * clearing the others (so a built-in's `q` survived under a saved
+ * view), and Milestones/Sprints/Labels/Recently-viewed computed no
+ * active state at all. This suite renders the full route set
+ * (list/board/timeline/milestones/milestones/$id/tasks/$key) and
+ * asserts exactly one `[data-active]` mark exists across the whole
+ * sidebar for every URL in the table, plus the specific transitions
+ * Ken called out by name.
+ */
+describe("Sidebar exactly-one-selection (K118)", () => {
+  async function renderShellAt(pathname: string, search: Record<string, unknown> = {}) {
+    if (priorQc) {
+      await priorQc.cancelQueries();
+      priorQc.clear();
+    }
+    stubFetch();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    priorQc = qc;
+
+    const rootRoute = createRootRoute();
+    const sidebar = () => (
+      <Sidebar collapsed={false} currentUserId="u_ken" today="2026-06-08" />
+    );
+    const searchRoutes = (["/list", "/board", "/timeline"] as const).map(path =>
+      createRoute({
+        getParentRoute: () => rootRoute,
+        path,
+        validateSearch: (s: Record<string, unknown>) => s,
+        component: sidebar,
+      }),
+    );
+    const plainRoutes = (["/milestones", "/sprints"] as const).map(path =>
+      createRoute({ getParentRoute: () => rootRoute, path, component: sidebar }),
+    );
+    const milestoneDetail = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/milestones/$id",
+      component: sidebar,
+    });
+    const taskDetail = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/tasks/$key",
+      component: sidebar,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([
+        ...searchRoutes,
+        ...plainRoutes,
+        milestoneDetail,
+        taskDetail,
+      ]),
+      history: createMemoryHistory({
+        initialEntries: [
+          `${pathname}?${new URLSearchParams(
+            Object.fromEntries(Object.entries(search).map(([k, v]) => [k, String(v)])),
+          ).toString()}`,
+        ],
+      }),
+    });
+
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Settings");
+  }
+
+  /** Every `[data-active]` mark anywhere in the rendered sidebar. */
+  function activeMarks(): Element[] {
+    return [...document.querySelectorAll("[data-active]")];
+  }
+
+  beforeEach(() => {
+    RECENTS = [{ key: "T-9", title: "A recent task" }];
+  });
+
+  it("project then view: only the view is lit and the URL has no project", async () => {
+    // Simulates the sequence Ken described: pick a project, then a view
+    // link. The view link's `search` never carries `project` forward
+    // (TanStack's plain `to` drops all params), so landing on /list with
+    // no project param is exactly what that second click produces.
+    await renderShellAt("/list", {});
+    const list = (await screen.findByText("List")).closest("a");
+    expect(list?.querySelector("[data-active]")).not.toBeNull();
+    expect(list?.getAttribute("href")).not.toContain("project");
+    expect(activeMarks().length).toBe(1);
+  });
+
+  it("view then project: only the project is lit", async () => {
+    await renderShellAt("/list", { project: "p_api" });
+    const api = (await screen.findByText("API")).closest("a");
+    expect(api?.querySelector("[data-active]")).not.toBeNull();
+    const list = (await screen.findByText("List")).closest("a");
+    expect(list?.querySelector("[data-active]")).toBeNull();
+    expect(activeMarks().length).toBe(1);
+  });
+
+  it("built-in then saved view: only the saved view is lit, even though q survives in the URL", async () => {
+    // Regression for the exact carry-over bug: before this fix, the
+    // saved-view link only ADDED `view` and left a prior built-in's `q`
+    // in place, so both rows lit. `deriveActiveRow` gives `view`
+    // priority over `q`, so even a URL that still has a stale `q`
+    // (simulated here) resolves to one row.
+    await renderShellAt("/list", {
+      q: "due_date < 2026-06-08 and status.category not in (completed, discarded)",
+      view: "v_mine",
+    });
+    const savedView = (await screen.findByText("My open bugs")).closest("a");
+    expect(savedView?.querySelector("[data-active]")).not.toBeNull();
+    const overdue = (await screen.findByText("Overdue")).closest("a");
+    expect(overdue?.querySelector("[data-active]")).toBeNull();
+    expect(activeMarks().length).toBe(1);
+  });
+
+  it("a saved-view click's own href clears a prior built-in's q", async () => {
+    // The other half of the fix: not just that the derivation prefers
+    // `view`, but that the LINK itself stops carrying `q` forward, so a
+    // fresh load of that href does not silently re-resolve to the
+    // built-in. Red-proven by reverting the saved-view search callback
+    // to `{ ...clearSort(prev), view: v.id }` (no `clearFilters`): this
+    // assertion fails because the href still contains the old `q`.
+    await renderShellAt("/list", {
+      q: "due_date < 2026-06-08 and status.category not in (completed, discarded)",
+    });
+    const href = (await screen.findByText("My open bugs")).closest("a")?.getAttribute("href") ?? "";
+    expect(decodeURIComponent(href)).not.toContain("due_date");
+  });
+
+  it("lights the Milestones row on /milestones", async () => {
+    await renderShellAt("/milestones");
+    const all = (await screen.findByText("All milestones")).closest("a");
+    expect(all?.querySelector("[data-active]")).not.toBeNull();
+    expect(activeMarks().length).toBe(1);
+  });
+
+  it("lights the specific milestone row on /milestones/$id", async () => {
+    await renderShellAt("/milestones/m_v1");
+    const milestone = (await screen.findByText("v1.0")).closest("a");
+    expect(milestone?.querySelector("[data-active]")).not.toBeNull();
+    expect(activeMarks().length).toBe(1);
+  });
+
+  it("lights a sprint row when scoped by sprint, clearing any prior scope", async () => {
+    await renderShellAt("/list", { project: "p_api", sprint: "sp_12" });
+    const sprint = (await screen.findByText("Sprint 12")).closest("a");
+    expect(sprint?.querySelector("[data-active]")).not.toBeNull();
+    expect(activeMarks().length).toBe(1);
+  });
+
+  it("lights a label row when scoped by label", async () => {
+    await renderShellAt("/list", { labels: "l_fe" });
+    const label = (await screen.findByText("frontend")).closest("a");
+    expect(label?.querySelector("[data-active]")).not.toBeNull();
+    expect(activeMarks().length).toBe(1);
+  });
+
+  it("lights the recent-task row on /tasks/$key", async () => {
+    await renderShellAt("/tasks/T-9");
+    const recent = (await screen.findByText("A recent task")).closest("a");
+    expect(recent?.querySelector("[data-active]")).not.toBeNull();
+    expect(activeMarks().length).toBe(1);
+  });
+
+  it("a project click made from /board stays on /board (Ken 2026-09-20, preserved)", async () => {
+    // K118 must not regress the cross-view scope fix: a project row
+    // clicked from /board still targets /board, not /list.
+    await renderShellAt("/board", {});
+    const web = (await screen.findByText("Web")).closest("a");
+    expect(web?.getAttribute("href")?.startsWith("/board")).toBe(true);
+  });
+
+  it("never lights more than one row across the whole sidebar, for a table of URLs", async () => {
+    // Each case names the row whose text proves the relevant group has
+    // finished loading (data-driven groups render from an async query;
+    // reading `activeMarks()` before that settles undercounts, not
+    // overcounts — a false pass, not a false fail — so the wait is for
+    // correctness of the assertion, not a red herring).
+    const cases: { pathname: string; search?: Record<string, unknown>; settledText: string }[] = [
+      { pathname: "/list", settledText: "List" },
+      { pathname: "/board", settledText: "Board" },
+      { pathname: "/timeline", settledText: "Timeline" },
+      { pathname: "/list", search: { project: "p_web" }, settledText: "Web" },
+      { pathname: "/list", search: { view: "v_mine" }, settledText: "My open bugs" },
+      {
+        pathname: "/list",
+        search: { q: "due_date < 2026-06-08 and status.category not in (completed, discarded)" },
+        settledText: "Overdue",
+      },
+      { pathname: "/list", search: { sprint: "sp_12" }, settledText: "Sprint 12" },
+      { pathname: "/list", search: { labels: "l_fe" }, settledText: "frontend" },
+      { pathname: "/milestones", settledText: "All milestones" },
+      { pathname: "/milestones/m_v1", settledText: "v1.0" },
+      { pathname: "/tasks/T-9", settledText: "A recent task" },
+    ];
+    for (const c of cases) {
+      await renderShellAt(c.pathname, c.search ?? {});
+      await screen.findByText(c.settledText);
+      const marks = activeMarks();
+      expect(marks.length, `${c.pathname}${c.search ? ` ${JSON.stringify(c.search)}` : ""}`).toBeLessThanOrEqual(1);
+      cleanup();
+    }
   });
 });

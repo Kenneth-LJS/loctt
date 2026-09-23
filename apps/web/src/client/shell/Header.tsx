@@ -419,7 +419,7 @@ function UserMenu({
                 : undefined
           }
           className={[
-            "grid h-[22px] w-[22px] place-items-center rounded-full text-[0.7857rem] font-semibold",
+            "grid h-[24px] w-[24px] place-items-center rounded-full text-[0.7857rem] font-semibold",
             // An explicit unknown mark, not a blank circle and not a
             // palette slot borrowed from an id we do not have. An
             // archived actor keeps their palette colour but gains a
@@ -565,7 +565,7 @@ function UserMenu({
               data-testid="user-menu-sidebar"
               className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
             >
-              Customize sidebar…
+              Customize sidebar
             </Link>
             <Link
               to="/settings/$section"

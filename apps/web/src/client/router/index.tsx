@@ -32,24 +32,46 @@ const rootRoute = createRootRoute({
   // used to sit here read "Route stub: 404", which names neither the
   // problem nor the path and offers no way out.
   notFoundComponent: NotFound,
-  // Deliberately no `errorComponent` here.
+  // A320: previously deliberately omitted, on the reasoning that the
+  // root route's component *is* the shell, so an error component here
+  // replaces the shell — header and sidebar included — which is the
+  // white page SHL-42 and ERR-34 both rule out.
   //
-  // The root route's component *is* the shell, so an error component
-  // on it replaces the shell — header and sidebar included. That is
-  // the white page SHL-42 and ERR-34 both rule out, and it is what
-  // this did until the browser spec caught it: the boundary rendered
-  // the right words with nothing around them.
+  // That reasoning covered a throw from a *child* route, which already
+  // has its own `errorComponent` (`RouteError`, below) catching it
+  // before it reaches here. It did not cover a throw from the shell
+  // itself — `AppBootstrap`/`AppShell`/`Header`, which render *above*
+  // the child outlet. Ken's screenshot: a throw from `Header.tsx`
+  // (inside the shell, above the outlet) had no boundary above it at
+  // all, so it escaped every boundary this app owns and hit TanStack
+  // Router's own built-in fallback ("Something went wrong!" / "Hide
+  // Error" / the raw error, full-span, top-left, unstyled).
   //
-  // The boundary belongs on the child routes, which render inside the
-  // root's outlet, so a throw takes the main pane and leaves the
-  // chrome.
+  // So this is the true last resort — the shell is already gone by
+  // the time it renders, there being no shell left to preserve — and
+  // it must not depend on anything the shell's own providers supply.
+  // `RootError` is checked against exactly that: it renders below
+  // `QueryClientProvider` (`App.tsx` puts that above `RouterProvider`)
+  // and below `RouterProvider` itself, but above `AppShell`'s
+  // `CreateTaskProvider`/`ToastProvider`/`AnnouncerProvider` and every
+  // shell-local hook (`useTheme`, `useSidebarCollapse`, …) — it uses
+  // none of those, only `window.location.reload()`, which is exactly
+  // how a throw from `Header.tsx` escaped in the first place.
+  errorComponent: RootError,
 });
 
 /**
  * The main pane's boundary. Named per-route so the message says "the
  * task list" rather than a component name (ERR-36).
+ *
+ * Exported for its own test: the two decisions it encodes — suppress
+ * the back link on `/list`, suppress the narrow retry at every route —
+ * live *here*, not in the fallback, so a test of `RegionErrorFallback`
+ * alone proves the fallback can render both shapes without proving
+ * this caller asks for the right one. Deleting `offerRetry={false}`
+ * below was measured against the whole web suite and broke nothing.
  */
-function RouteError({ error, reset }: { error: Error; reset: () => void }) {
+export function RouteError({ error, reset }: { error: Error; reset: () => void }) {
   const pathname = typeof window === "undefined" ? "" : window.location.pathname;
   const region = ROUTE_REGIONS[pathname] ?? "this page";
   return (
@@ -61,6 +83,15 @@ function RouteError({ error, reset }: { error: Error; reset: () => void }) {
       // Not on `/list` itself: offering to navigate to the page the
       // user is already on is not a way out (SHL-42).
       offerListLink={pathname !== "/list"}
+      // No narrow retry at route level (Ken's call). `reset` remounts
+      // the route with the same props and the same data, and a
+      // route-level render crash is rarely state-dependent — so the
+      // button overwhelmingly refires the crash it claims to fix.
+      // Reload, plus a way out, is what this scope can honestly offer.
+      offerRetry={false}
+      // A320: the whole main pane is gone, so the fallback reads as a
+      // bounded, centered content box rather than a full-span block.
+      fullPage
       onRetry={reset}
     />
   );
@@ -74,6 +105,41 @@ const ROUTE_REGIONS: Record<string, string> = {
   "/sprints": "the sprints view",
   "/milestones": "the milestones view",
 };
+
+/**
+ * A320: the root route's `errorComponent` — the true last resort for a
+ * throw escaping the app shell itself (`AppBootstrap`/`AppShell`/
+ * `Header`), which render above the child outlet and so above every
+ * other boundary this app owns.
+ *
+ * Deliberately independent of the shell it is standing in for: no
+ * `useCreateTask`/`useAnnouncer`/`useTheme`/`useSidebarCollapse`, none
+ * of `AppShell`'s own providers — a throw from inside the shell means
+ * none of that is known to be safe to call. `RouterProvider` and
+ * `QueryClientProvider` are still above this (`App.tsx`), so `Link`
+ * resolves, but nothing shell-scoped is assumed.
+ *
+ * Reuses `RegionErrorFallback` in its `fullPage` shape rather than a
+ * second hand-rolled screen — restyling the one full-page variant is
+ * the point of A320, not growing a third look.
+ */
+export function RootError({ error, reset }: { error: Error; reset: () => void }) {
+  return (
+    <RegionErrorFallback
+      region="the app"
+      error={error}
+      componentStack={null}
+      writeInFlight={false}
+      // The shell (sidebar, header) is exactly what may be gone —
+      // there is no list to point "back" to that is any more trustworthy
+      // than the reload this already offers.
+      offerListLink={false}
+      offerRetry={false}
+      fullPage
+      onRetry={reset}
+    />
+  );
+}
 
 // `/` redirects to `/list`. TanStack Router uses `throw redirect(...)`
 // to short-circuit the loader chain — the thrown value is a
@@ -360,6 +426,14 @@ export const router = createRouter({
   defaultPreload: "intent",
   stringifySearch,
   parseSearch,
+  // A320: the router-wide fallback for a route that ships without its
+  // own `errorComponent` (every route above sets one, and the root's
+  // own `errorComponent` — `RootError` — already covers a throw from
+  // the shell). Belt and suspenders: TanStack's own built-in fallback
+  // ("Something went wrong!" / "Hide Error") must never be what a user
+  // sees, on *any* path this router owns, not only the ones a human
+  // remembered to wire up.
+  defaultErrorComponent: RootError,
   /**
    * Scroll restoration is *not* the router's here — see
    * `useMainScrollRestoration`. The option resolves the saved element

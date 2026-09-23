@@ -1,8 +1,9 @@
 import type { MigrateResponse, SchemaStatusResponse } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { apiClient,ApiError } from "../api/client.ts";
+import { Button } from "../ui/Button.tsx";
 
 /**
  * Schema-mismatch banner (CW-18). Surfaces above the app shell when
@@ -76,8 +77,13 @@ export function SchemaBanner({ status }: { status: SchemaStatusResponse }) {
 function MigrateNow({ from, to }: { readonly from: number; readonly to: number }) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  // NEW-29's guard, which this button never got: `isPending` only turns
+  // true after React commits, so two clicks in the same tick both read
+  // false and both POST /api/migrate. A ref flips synchronously.
+  const inFlight = useRef(false);
   const migrate = useMutation<MigrateResponse, Error, void>({
     mutationFn: () => apiClient.post<MigrateResponse>("/api/migrate", {}),
+    onSettled: () => { inFlight.current = false; },
     onSuccess: () => {
       // The banner reads `/api/info`; dropping it is what clears the
       // banner without a page reload, and re-enables the rest of the
@@ -120,14 +126,15 @@ function MigrateNow({ from, to }: { readonly from: number; readonly to: number }
 
   if (!confirming) {
     return (
-      <button
-        type="button"
-        data-testid="schema-migrate-now"
+      <Button
+        variant="current"
+        size="sm"
+        testId="schema-migrate-now"
         onClick={() => { setConfirming(true); }}
-        className="rounded border border-current/30 px-2 py-0.5 text-[0.8571rem] font-medium"
+        className="text-[0.8571rem]"
       >
         Migrate now
-      </button>
+      </Button>
     );
   }
 
@@ -137,22 +144,38 @@ function MigrateNow({ from, to }: { readonly from: number; readonly to: number }
         This will copy `.loctt/` to a sibling backup directory, then step the
         schema from v{String(from)} to v{String(to)}.
       </span>
-      <button
-        type="button"
-        data-testid="schema-migrate-confirm-button"
-        disabled={migrate.isPending}
-        onClick={() => { migrate.mutate(); }}
-        className="rounded border border-current/30 px-2 py-0.5 text-[0.8571rem] font-medium disabled:opacity-50"
+      {/*
+        A311: the matched set (Migrate now / Run migration / Cancel)
+        moved onto `ui/Button`'s `variant="current"` — the banner-toned
+        outline variant added for exactly this case (a container whose
+        warn/danger tone is decided at render time). `loading` replaces
+        the hand-rolled invisible-label + centred-spinner mechanism;
+        `aria-label` stays explicit because "Run migration" is this
+        button's only accessible name and `loading` hides it from AT.
+      */}
+      <Button
+        variant="current"
+        size="sm"
+        testId="schema-migrate-confirm-button"
+        loading={migrate.isPending}
+        aria-label="Run migration"
+        onClick={() => {
+          if (inFlight.current) return;
+          inFlight.current = true;
+          migrate.mutate();
+        }}
+        className="text-[0.8571rem]"
       >
-        {migrate.isPending ? "Migrating…" : "Run migration"}
-      </button>
-      <button
-        type="button"
+        Run migration
+      </Button>
+      <Button
+        variant="current"
+        size="sm"
         onClick={() => { setConfirming(false); }}
-        className="rounded border border-current/30 px-2 py-0.5 text-[0.8571rem]"
+        className="text-[0.8571rem]"
       >
         Cancel
-      </button>
+      </Button>
     </span>
   );
 }

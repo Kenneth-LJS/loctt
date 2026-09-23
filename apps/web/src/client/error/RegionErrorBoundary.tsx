@@ -1,7 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
-import { Button } from "../ui/Button.tsx";
+import {
+  Button,
+  BUTTON_BASE,
+  BUTTON_SIZE,
+  BUTTON_VARIANT,
+} from "../ui/Button.tsx";
+import { cn } from "../ui/cn.ts";
+import { Disclosure } from "../ui/Disclosure.tsx";
 
 /**
  * A render-crash boundary scoped to one named region.
@@ -16,9 +23,24 @@ import { Button } from "../ui/Button.tsx";
  *   - it names the region in user terms, not a component name
  *   - it says this is a *display* fault and that the tasks on disk are
  *     unaffected — without claiming an in-flight write landed
- *   - it offers reload, and a narrower "try this region again" that
- *     does not cost the rest of the page
+ *   - it offers reload, and — at region scope — a narrower "try this
+ *     region again" that does not cost the rest of the page
  *   - it keeps the stack out of the headline but retrievable
+ *
+ * The action row has two shapes, by scope (Ken's call):
+ *
+ *   - **Region-scoped** (a sidebar group, an editor): "Try {region}
+ *     again" + "Reload". No back link — a sidebar group that broke has
+ *     not taken the page away. The remount is cheap, occasionally
+ *     recovers a state-dependent crash, and the alternative (a full
+ *     reload) destroys unsaved description-editor text and open UI
+ *     state elsewhere on the page.
+ *   - **Route-level** (the whole main pane is gone): "Reload" + "Back
+ *     to the task list". The narrow retry is *not* offered: at route
+ *     level a render crash is rarely state-dependent, so a pure
+ *     remount with unchanged props and unchanged data mostly refires
+ *     the same crash — the button reproduces the error rather than
+ *     recovering from it.
  */
 
 interface Props {
@@ -35,11 +57,35 @@ interface Props {
    */
   readonly offerListLink?: boolean;
   /**
+   * Offer the narrow "Try {region} again" remount. On by default,
+   * which is the region-scoped shape.
+   *
+   * Turned *off* by the route-level boundary: with the whole main pane
+   * gone, a remount with unchanged props and unchanged data mostly
+   * refires the same crash, so the button reproduces the error instead
+   * of recovering. Reload + a way out is the honest pair there.
+   */
+  readonly offerRetry?: boolean;
+  /**
    * True when a write may have been in flight. ERR-35 forbids claiming
    * the last action landed; with this set the copy says so explicitly
    * rather than reassuring past what is known.
    */
   readonly writeInFlight?: boolean;
+  /**
+   * A320: renders the fallback as a bounded, centered content box
+   * filling the viewport, instead of the inline region shape.
+   *
+   * Set by the route-level caller (`RouteError` in `router/index.tsx`)
+   * and by the root-level boundary that catches a throw escaping the
+   * app shell itself — both replace the *entire* page, so the card
+   * needs to read as one screen rather than a region bounded by
+   * surrounding chrome. A region-scoped boundary (a sidebar group, a
+   * panel) keeps the default inline shape: it sits inside a layout
+   * that already bounds it, and a second nested box would be a card
+   * inside a card.
+   */
+  readonly fullPage?: boolean;
   readonly children: ReactNode;
 }
 
@@ -85,6 +131,12 @@ export class RegionErrorBoundary extends Component<Props, State> {
         componentStack={this.state.componentStack}
         writeInFlight={this.props.writeInFlight === true}
         offerListLink={this.props.offerListLink === true}
+        // `!== false`, not `=== true`: this prop defaults *on*, so the
+        // `=== true` idiom the other optional props use would silently
+        // invert the default for every region-scoped caller that omits
+        // it — which is all of them.
+        offerRetry={this.props.offerRetry !== false}
+        fullPage={this.props.fullPage === true}
         onRetry={this.retry}
       />
     );
@@ -97,6 +149,8 @@ export function RegionErrorFallback({
   componentStack,
   writeInFlight,
   offerListLink = false,
+  offerRetry = true,
+  fullPage = false,
   onRetry,
 }: {
   readonly region: string;
@@ -104,6 +158,9 @@ export function RegionErrorFallback({
   readonly componentStack: string | null;
   readonly writeInFlight: boolean;
   readonly offerListLink?: boolean;
+  readonly offerRetry?: boolean;
+  /** A320: the bounded, centered full-page card. See `Props.fullPage`. */
+  readonly fullPage?: boolean;
   readonly onRetry: () => void;
 }) {
   const details = [
@@ -116,58 +173,111 @@ export function RegionErrorFallback({
     .filter(line => line !== "")
     .join("\n");
 
-  return (
-    <div role="alert" className="grid h-full place-items-center p-8">
-      <div className="max-w-lg">
-        <h2 className="mb-2 text-[1.0714rem] font-semibold text-danger-fg">
-          Something went wrong displaying {region}
-        </h2>
-        <p className="mb-2 text-[0.9286rem] text-text-secondary">
-          Something in the app failed to draw — a bug on our side, not a
-          problem with your data. Your tasks are files in{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">.loctt/</code>{" "}
-          and a rendering fault cannot change them.
+  const content = (
+    <div
+      className={
+        fullPage
+          ? // A320: a bounded content box, not a full-span block. Same
+            // width as `Modal`'s dialog panel (`max-w-md`) so the two
+            // "one centered card" surfaces in this app agree on a
+            // size, and the same card chrome (`rounded-lg` +
+            // `border-border-default` + `bg-bg-surface-raised` +
+            // `shadow-overlay`) `Modal.tsx` uses for its panel.
+            "w-full max-w-md rounded-lg border border-border-default bg-bg-surface-raised p-6 shadow-overlay"
+          : "max-w-lg"
+      }
+      data-testid={fullPage ? "error-fallback-card" : undefined}
+    >
+      <h2 className="mb-2 text-[1.0714rem] font-semibold text-danger-fg">
+        Something went wrong displaying {region}
+      </h2>
+      <p className="mb-2 text-[0.9286rem] text-text-secondary">
+        Your tasks weren&rsquo;t affected.
+      </p>
+      {writeInFlight ? (
+        <p className="mb-2 text-[0.9286rem] text-warn-fg">
+          A change was being saved, so it may not have been. Reload to check
+          before trying it again.
         </p>
-        {writeInFlight ? (
-          <p className="mb-2 text-[0.9286rem] text-warn-fg">
-            A change was being saved when this happened, so we can&rsquo;t tell you
-            whether that one landed. Reload and check before repeating it.
-          </p>
-        ) : null}
-        <div className="mb-3 flex gap-2">
+      ) : null}
+      <div className="mb-3 flex gap-2">
+        {offerRetry ? (
           <Button variant="primary" onClick={onRetry}>
             Try {region} again
           </Button>
-          <Button variant="secondary" onClick={() => window.location.reload()}>
-            Reload
-          </Button>
-          {offerListLink ? (
-            // SHL-42: reload alone leaves a user whose route is broken
-            // reloading the same broken route. A way *out* is the other
-            // half of the recovery.
-            <Link
-              to="/list"
-              className="flex h-8 items-center rounded-md border border-border-default bg-bg-surface px-3 text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted"
-            >
-              Back to the task list
-            </Link>
-          ) : null}
-        </div>
-        <details className="text-[0.8571rem] text-text-tertiary">
-          <summary className="cursor-pointer select-none">Show details</summary>
-          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-bg-muted p-2 text-[0.7857rem]">
-            {details}
-          </pre>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void navigator.clipboard?.writeText(details)}
-            className="mt-2"
+        ) : null}
+        {/* Primary when it is the only action that acts on this page
+            — with the retry withdrawn at route level, Reload is the
+            thing to do, and leaving it secondary beside the back
+            link would give the row no primary at all. */}
+        <Button
+          variant={offerRetry ? "secondary" : "primary"}
+          onClick={() => window.location.reload()}
+        >
+          Reload
+        </Button>
+        {offerListLink ? (
+          // SHL-42: reload alone leaves a user whose route is broken
+          // reloading the same broken route. A way *out* is the other
+          // half of the recovery.
+          //
+          // Styled from the same constants `Button` uses rather than
+          // a hand-spelled imitation: it sits beside Reload as a peer
+          // now, and the hand-rolled copy had drifted (no
+          // `font-medium`, no `transition-colors`, no
+          // `cursor-pointer`, a literal `text-[0.9286rem]` instead of
+          // `text-body`, and no `justify-center`), so the two read as
+          // subtly different controls in the same row.
+          <Link
+            to="/list"
+            className={cn(
+              BUTTON_BASE,
+              BUTTON_SIZE.md,
+              BUTTON_VARIANT.secondary,
+              "no-underline",
+            )}
           >
-            Copy details
-          </Button>
-        </details>
+            Back to the task list
+          </Link>
+        ) : null}
       </div>
+      {/* ERR-37: the stack stays out of the headline but retrievable.
+          Through the shared `Disclosure` so the summary is drawn with
+          our caret — the native marker was rendering here as a literal
+          `▸ Show details` (Ken's report). */}
+      <Disclosure summary="Show details" className="text-text-tertiary">
+        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-bg-muted p-2 text-[0.7857rem]">
+          {details}
+        </pre>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void navigator.clipboard?.writeText(details)}
+          className="mt-2"
+        >
+          Copy details
+        </Button>
+      </Disclosure>
+    </div>
+  );
+
+  // A320: full-page centers the card on both axes and fills the
+  // viewport, matching `AppBootstrap`'s own `grid h-screen
+  // place-items-center` loading gate so every full-screen state in the
+  // app agrees on how it centers. The inline shape (region scope)
+  // keeps the previous `h-full` grid, which centers within whatever
+  // bounded region already wraps it (a sidebar group, a panel) rather
+  // than the viewport.
+  return (
+    <div
+      role="alert"
+      className={
+        fullPage
+          ? "grid h-screen place-items-center bg-bg-canvas p-4"
+          : "grid h-full place-items-center p-8"
+      }
+    >
+      {content}
     </div>
   );
 }

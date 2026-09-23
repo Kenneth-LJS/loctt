@@ -74,12 +74,10 @@ describe("RegionErrorBoundary", () => {
       </RegionErrorBoundary>,
     );
     const text = screen.getByRole("alert").textContent ?? "";
-    // "Something in the app failed to display — a display fault, not a
-    // data fault." SHL-42 wants the same thing said as "a bug rather
-    // than a data problem", so the copy says both halves.
-    expect(text).toMatch(/failed to draw/i);
-    expect(text).toMatch(/not a problem with your data/i);
-    expect(text).toContain(".loctt/");
+    // K120: the data outcome, in the user's words, and nothing else —
+    // no path, no explanation of the fault (messaging.md).
+    expect(text).toMatch(/your tasks weren.t affected/i);
+    expect(text).not.toContain(".loctt/");
     // Nothing was in flight, so no claim either way is made about one.
     expect(text).not.toMatch(/being saved/i);
     unmount();
@@ -90,7 +88,8 @@ describe("RegionErrorBoundary", () => {
       </RegionErrorBoundary>,
     );
     const inflight = screen.getByRole("alert").textContent ?? "";
-    expect(inflight).toMatch(/can.t tell you whether that one landed/i);
+    expect(inflight).toMatch(/may not have been/i);
+    expect(inflight).toMatch(/reload to check/i);
   });
 
   /**
@@ -336,13 +335,17 @@ describe("the error surface itself", () => {
  * same broken route. A way *out* is the other half.
  */
 describe("RegionErrorBoundary at route level", () => {
-  function mountWithRouter(offerListLink: boolean) {
+  function mountWithRouter(offerListLink: boolean, offerRetry = true) {
     const rootRoute = createRootRoute({ component: () => <Outlet /> });
     const boomRoute = createRoute({
       getParentRoute: () => rootRoute,
       path: "/board",
       component: () => (
-        <RegionErrorBoundary region="the board" offerListLink={offerListLink}>
+        <RegionErrorBoundary
+          region="the board"
+          offerListLink={offerListLink}
+          offerRetry={offerRetry}
+        >
           <Boom explode />
         </RegionErrorBoundary>
       ),
@@ -366,9 +369,8 @@ describe("RegionErrorBoundary at route level", () => {
     const alert = await screen.findByRole("alert");
     // Says what was being displayed, in user terms.
     expect(alert.querySelector("h2")?.textContent).toContain("the board");
-    // A bug on our side, not a data problem.
-    expect(alert.textContent).toMatch(/bug on our side/i);
-    expect(alert.textContent).toMatch(/not a problem with your data/i);
+    // K120: the data outcome, nothing more.
+    expect(alert.textContent).toMatch(/your tasks weren.t affected/i);
     // No raw stack as the primary message — it is behind the
     // disclosure, which is closed.
     expect(alert.querySelector("details")?.hasAttribute("open")).toBe(false);
@@ -383,8 +385,57 @@ describe("RegionErrorBoundary at route level", () => {
 
     await screen.findByRole("alert");
     expect(screen.queryByRole("link", { name: /Back to the task list/ })).toBeNull();
-    // Reload and the narrow retry are still there.
+    // Reload is still there — suppressing the back link must not leave
+    // the row with no action at all.
     expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Try the board again/ })).toBeTruthy();
+  });
+
+  /**
+   * @verifies SHL-42
+   *
+   * Ken's call: at route level the action row is Reload + Back, and
+   * the narrow "Try {region} again" is **withdrawn**.
+   *
+   * The reason is that the button was a lie at this scope: `reset`
+   * remounts the route with unchanged props and unchanged data, and a
+   * route-level render crash is rarely state-dependent, so pressing it
+   * overwhelmingly reproduces the same crash. Offering a recovery that
+   * does not recover is worse than not offering it.
+   */
+  it("withdraws the narrow retry at route level, leaving reload and a way out", async () => {
+    mountWithRouter(true, false);
+
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: /Try the board again/ })).toBeNull();
+    // Asserted as an absence of *any* retry-shaped button, not just the
+    // region-named spelling: a reworded "Try again" would otherwise
+    // slip past and still reproduce the crash.
+    expect(screen.queryByRole("button", { name: /try/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Back to the task list/ })).toBeTruthy();
+  });
+
+  /**
+   * @verifies SHL-42
+   *
+   * The other half of the same call: region scope keeps the retry and
+   * gains no back link. A sidebar group that broke has not taken the
+   * page away, so "Back to the task list" would be a non-sequitur —
+   * and the remount is cheap here, where a full reload would destroy
+   * unsaved editor text elsewhere on the page.
+   *
+   * This is the default shape, so it is what every call site that
+   * passes only `region` gets.
+   */
+  it("keeps the narrow retry and offers no back link at region scope", () => {
+    render(
+      <RegionErrorBoundary region="the sidebar labels">
+        <Boom explode />
+      </RegionErrorBoundary>,
+    );
+
+    expect(screen.getByRole("button", { name: /Try the sidebar labels again/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Back to the task list/ })).toBeNull();
   });
 });

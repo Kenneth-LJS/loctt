@@ -41,7 +41,7 @@ afterEach(() => {
 
 describe("ShortcutHelpDialog", () => {
   /**
-   * @verifies CONFIG-5
+   * @verifies SHL-48
    *
    * P4/config-discoverability: the `?` overlay is a summary; the full,
    * rebindable reference lives in Settings → Keyboard. Without a link the
@@ -55,7 +55,7 @@ describe("ShortcutHelpDialog", () => {
   });
 
   /**
-   * @verifies CONFIG-5
+   * @verifies SHL-48
    *
    * Following the link dismisses the overlay (it is a modal layer): a
    * stale dialog left open over the destination panel would trap focus.

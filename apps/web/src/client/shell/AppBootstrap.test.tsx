@@ -170,6 +170,114 @@ describe("AppBootstrap against a refused schema", () => {
 });
 
 /**
+ * XS-38: schema state is re-evaluated on refetch, not cached from the
+ * first page load — in both directions. `useInfo()`'s `/api/info` read
+ * is what the banner keys off; a `queryClient.invalidateQueries` here
+ * stands in for whatever wakes that query in the app (the `Migrate now`
+ * mutation's own `invalidateQueries`, a window-focus refetch, or the
+ * background poll `queryClient.ts` runs while a query is in error).
+ */
+describe("AppBootstrap re-evaluates schema state on refetch (XS-38)", () => {
+  function stubHealthyInfoFetch() {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      if (MISMATCH !== null) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              code: "schema_mismatch",
+              message: "the tracker's schema does not match this build",
+              error: "the tracker's schema does not match this build",
+              recovery: { kind: "none" },
+              schema_status: MISMATCH,
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      if (path.startsWith("/api/info")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              exists: true,
+              initState: "ready",
+              taskCount: 0,
+              keyPrefix: "WEB-",
+              nextKey: "WEB-1",
+              schemaStatus: { kind: "current", version: 3 },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      const body = path.startsWith("/api/views") ? { queries: [] } : {};
+      return Promise.resolve(
+        new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+    });
+  }
+
+  function mountWithClient() {
+    stubHealthyInfoFetch();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const rootRoute = createRootRoute({ component: AppBootstrap });
+    const listRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/list",
+      validateSearch: (s: Record<string, unknown>) => s,
+      component: () => <div>list pane</div>,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([listRoute]),
+      history: createMemoryHistory({ initialEntries: ["/list"] }),
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    );
+    return qc;
+  }
+
+  /** The schema banner specifically — `data-kind` is unique to it among
+   * this shell's several `role="alert"` elements (a sidebar data-load
+   * failure carries the same role). */
+  const findSchemaBanner = () => screen.findByText("Schema out of date.").then(el => el.closest("[data-kind]"));
+
+  // @verifies XS-38
+  it("the banner clears on refetch once the on-disk schema is fixed, without remounting", async () => {
+    MISMATCH = { kind: "outdated", on_disk: 2, current: 3 };
+    const qc = mountWithClient();
+    await findSchemaBanner();
+
+    // Equivalent of `loctt migrate` having fixed it in a terminal while
+    // this tab sat on the banner.
+    MISMATCH = null;
+    await qc.invalidateQueries({ queryKey: ["info"] });
+
+    await screen.findByText("list pane");
+    expect(screen.queryByText("Schema out of date.")).toBeNull();
+  });
+
+  // @verifies XS-38
+  it("the banner appears on refetch when drift appears under a healthy session, rather than the app carrying on regardless", async () => {
+    MISMATCH = null;
+    const qc = mountWithClient();
+    await screen.findByText("list pane");
+    expect(screen.queryByText("Schema out of date.")).toBeNull();
+
+    // Equivalent of another process (CLI/MCP) bumping the schema, or the
+    // build changing, while this session was already open and healthy.
+    MISMATCH = { kind: "outdated", on_disk: 2, current: 3 };
+    await qc.invalidateQueries({ queryKey: ["info"] });
+
+    const banner = await findSchemaBanner();
+    expect(banner?.getAttribute("data-kind")).toBe("outdated");
+  });
+});
+
+/**
  * @verifies XS-37, SHL-37
  *
  * A crashed migration is the one schema state where the app must not

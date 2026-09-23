@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import type { SchemaStatusResponse } from "@loctt/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render as rtlRender, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SchemaBanner } from "./SchemaBanner.tsx";
 
@@ -53,6 +53,7 @@ describe("SchemaBanner", () => {
     expect(text).toMatch(/not reinitialize|Do not\s+reinitialize/i);
   });
 
+  // @verifies XS-36
   it("warns and points at the in-app Migrate now button for an outdated schema", () => {
     render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
     const alert = screen.getByRole("alert");
@@ -68,6 +69,33 @@ describe("SchemaBanner", () => {
     // note "No in-app migrate button in M1.1 — that lands in M4."
     // This is M4: the button landed (SET-15, XS-36).
     expect(screen.getByTestId("schema-migrate-now")).not.toBeNull();
+  });
+
+  /**
+   * @verifies A311
+   *
+   * The three buttons in this banner (Migrate now / Run migration /
+   * Cancel) are a matched set that must inherit the banner's warn/danger
+   * tone via `currentColor`, not carry a fixed tone of their own —
+   * `ui/Button`'s `variant="current"`. A regression to `secondary` (or
+   * any variant with its own `text-*`/`bg-*`-at-rest utility) would sit
+   * wrong on a coloured banner without necessarily breaking any other
+   * assertion in this file, since none of the others read `className`.
+   */
+  it("renders Migrate now on the current-tone Button variant, not a fixed tone", () => {
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    const cls = screen.getByTestId("schema-migrate-now").className;
+    expect(cls).toContain("border-current");
+    expect(cls).not.toMatch(/border-border-default|bg-bg-surface/);
+  });
+
+  it("renders Run migration and Cancel on the current-tone Button variant", () => {
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    fireEvent.click(screen.getByTestId("schema-migrate-now"));
+    const confirmCls = screen.getByTestId("schema-migrate-confirm-button").className;
+    expect(confirmCls).toContain("border-current");
+    const cancelCls = screen.getByRole("button", { name: "Cancel" }).className;
+    expect(cancelCls).toContain("border-current");
   });
 
   it("tells the user to upgrade for a future schema", () => {
@@ -236,5 +264,182 @@ describe("SchemaBanner distinguishes the four kinds", () => {
       unmount();
     }
     expect(seen.size).toBe(4);
+  });
+});
+
+/**
+ * XS-36: the "Migrate now" button actually calls `POST /api/migrate`,
+ * cannot be double-clicked, and reports a concrete success/failure
+ * outcome — not just the busy-spinner mechanics A307 covers.
+ */
+describe("XS-36: Migrate now drives a real POST /api/migrate to a concrete outcome", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  // @verifies XS-36
+  it("disables the confirm button once the migration is in flight (aria-busy/disabled), so a click while pending does not dispatch a new request", async () => {
+    let resolveFetch!: (r: Response) => void;
+    const fetchMock = vi.fn((_input: RequestInfo | URL) =>
+      new Promise<Response>(resolve => { resolveFetch = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    fireEvent.click(screen.getByTestId("schema-migrate-now"));
+    const confirm = screen.getByTestId("schema-migrate-confirm-button");
+    fireEvent.click(confirm);
+    await waitFor(() => { expect(confirm.getAttribute("aria-busy")).toBe("true"); });
+    // Once React has committed the pending state, the control itself
+    // refuses a second click (disabled), matching what a mouse-driven
+    // double-click would see after the first click's state lands.
+    expect(confirm.hasAttribute("disabled")).toBe(true);
+    resolveFetch(new Response(JSON.stringify({ from: 2, to: 3 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await screen.findByTestId("schema-migrate-success");
+    expect(fetchMock.mock.calls.filter(([input]) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      return url.includes("/api/migrate");
+    })).toHaveLength(1);
+  });
+
+  // @verifies XS-36
+  it("two clicks in the same tick, before React commits the pending state, still POST once", async () => {
+    const fetchMock = vi.fn((_input: RequestInfo | URL) => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    fireEvent.click(screen.getByTestId("schema-migrate-now"));
+    const confirm = screen.getByTestId("schema-migrate-confirm-button");
+    // No await between: the second click lands before `isPending` can
+    // disable the button. Only the synchronous in-flight ref stops it.
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => { expect(confirm.getAttribute("aria-busy")).toBe("true"); });
+    expect(fetchMock.mock.calls.filter(([input]) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      return url.includes("/api/migrate");
+    })).toHaveLength(1);
+  });
+
+  // @verifies XS-36
+  it("on success, clears into a message naming the versions and the backup path", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ from: 2, to: 3, backupPath: "/tmp/loctt-backup-2026" }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ))),
+    );
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    fireEvent.click(screen.getByTestId("schema-migrate-now"));
+    fireEvent.click(screen.getByTestId("schema-migrate-confirm-button"));
+    const success = await screen.findByTestId("schema-migrate-success");
+    expect(success.textContent).toContain("v2");
+    expect(success.textContent).toContain("v3");
+    expect(success.textContent).toContain("/tmp/loctt-backup-2026");
+    // The confirm/cancel controls are gone once settled.
+    expect(screen.queryByTestId("schema-migrate-confirm-button")).toBeNull();
+  });
+
+  // @verifies XS-36
+  it("on failure, names what did not complete and points at the backup/recovery command, without re-offering a bare retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              code: "schema_mismatch",
+              message: "Migration failed while writing task index.",
+              data_state: "unknown",
+              recovery: { kind: "command", command: "loctt migrate --resume" },
+            }),
+            { status: 500, headers: { "Content-Type": "application/json" } },
+          ))),
+    );
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    fireEvent.click(screen.getByTestId("schema-migrate-now"));
+    fireEvent.click(screen.getByTestId("schema-migrate-confirm-button"));
+    const failed = await screen.findByTestId("schema-migrate-failed");
+    expect(failed.getAttribute("data-migrate-state")).toBe("failed");
+    expect(failed.textContent).toContain("did not complete");
+    expect(failed.textContent).toContain("Migration failed while writing task index.");
+    expect(failed.textContent).toContain("check the backup directory");
+    // The server's own recovery command is surfaced verbatim, not a
+    // generic "try again" with no way to know how far the migration got.
+    expect(failed.textContent).toContain("loctt migrate --resume");
+  });
+});
+
+/**
+ * @verifies A307 (progress labels converted to the brand spinner)
+ * @verifies A311 (moved onto `ui/Button`'s `loading`, via `variant="current"`)
+ *
+ * "Run migration" used to re-spell itself as "Migrating…" while the
+ * POST was in flight — the button's width changed mid-action, and no
+ * spinner was shown at all, only `disabled`.
+ *
+ * A307 reproduced `Button`'s `loading` mechanism inline because moving
+ * this button alone would have broken the three-button set's shared
+ * `border-current/30` tone-inheriting look. A311 added that exact look
+ * as `ui/Button`'s `variant="current"` and moved the whole set onto it,
+ * so this button is `ui/Button` now — `Button.test.tsx`'s `loading`
+ * suite covers the invisible-label/spinner/aria-busy mechanism at the
+ * primitive. This describe block stays because it exercises the
+ * mechanism through this component's own state machine (the confirm
+ * step, the in-flight mutation) rather than duplicating the primitive's
+ * unit tests — a regression here would mean the wiring, not the
+ * primitive, broke.
+ */
+describe("A307: the schema migrate button shows the spinner, not a label swap", () => {
+  /** Opens the confirm step and leaves POST /api/migrate in flight. */
+  async function renderPending() {
+    const fetchMock = vi.fn(
+      () => new Promise<Response>(() => { /* never settles: stays pending */ }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    fireEvent.click(screen.getByTestId("schema-migrate-now"));
+    const btn = screen.getByTestId("schema-migrate-confirm-button");
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(btn.getAttribute("aria-busy")).toBe("true");
+    });
+    return btn;
+  }
+
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("keeps the label in the DOM and in flow while migrating, so the button cannot resize", async () => {
+    const btn = await renderPending();
+    // Not swapped for a shorter word, and not unmounted: `invisible`
+    // (visibility:hidden) keeps the box in flow; `hidden`/display:none
+    // would collapse it and resize the button, which is the defect.
+    expect(btn.textContent).toContain("Run migration");
+    expect(btn.textContent).not.toContain("Migrating");
+    const label = screen.getByText("Run migration");
+    expect(label.className).toContain("invisible");
+    expect(label.className).not.toContain("hidden");
+    expect(label.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("keeps its accessible name while migrating", async () => {
+    await renderPending();
+    // The visible label is aria-hidden, so without the explicit
+    // aria-label this button would be nameless while busy.
+    expect(screen.getByRole("button", { name: "Run migration" })).toBeTruthy();
+  });
+
+  it("renders the brand spinner while migrating", async () => {
+    const btn = await renderPending();
+    expect(btn.querySelector("[data-testid='logo-spinner']")).toBeTruthy();
+  });
+
+  it("shows no spinner and is not busy before the migration starts", () => {
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    fireEvent.click(screen.getByTestId("schema-migrate-now"));
+    const btn = screen.getByTestId("schema-migrate-confirm-button");
+    expect(btn.getAttribute("aria-busy")).toBeNull();
+    expect(btn.querySelector("[data-testid='logo-spinner']")).toBeNull();
   });
 });

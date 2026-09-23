@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
+import { Button } from "../ui/Button.tsx";
 
 /**
  * App-level notice that the LocTT server has stopped answering.
@@ -125,13 +126,19 @@ export function ServerUnreachableBanner() {
         The terminal running <code className="font-mono">loctt ui</code> may have
         stopped — restart it and this will clear on its own.
       </span>
-      <button
-        type="button"
+      {/*
+        A311: `variant="current"` inherits this banner's `text-danger-fg`
+        via `currentColor` — same tinted-outline look as the old
+        hand-rolled `border-danger-fg/40`, now the shared primitive.
+      */}
+      <Button
+        variant="current"
+        size="sm"
+        className="ml-auto text-[0.9286rem]"
         onClick={() => { void queryClient.refetchQueries(); }}
-        className="ml-auto rounded border border-danger-fg/40 px-2 py-0.5 hover:bg-danger-fg/10"
       >
         Try now
-      </button>
+      </Button>
     </div>
   );
 }

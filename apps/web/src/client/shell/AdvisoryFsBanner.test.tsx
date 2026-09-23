@@ -61,4 +61,20 @@ describe("AdvisoryFsBanner", () => {
     render(<AdvisoryFsBanner advisory={advisory} cwd="~/Dropbox/tracker" />);
     expect(screen.queryByRole("status")).toBeNull();
   });
+
+  /**
+   * @verifies A311
+   *
+   * "Dismiss" moved onto `ui/Button`'s `variant="current"`, which
+   * inherits this banner's `text-warn-fg` via `currentColor` instead of
+   * carrying a fixed tone. A regression to `secondary` (neutral
+   * border/surface) would sit wrong on the warn banner without failing
+   * any of the other assertions here.
+   */
+  it("renders Dismiss on the current-tone Button variant, not a fixed tone", () => {
+    render(<AdvisoryFsBanner advisory={advisory} cwd="~/Dropbox/tracker" />);
+    const cls = screen.getByRole("button", { name: "Dismiss" }).className;
+    expect(cls).toContain("border-current");
+    expect(cls).not.toMatch(/border-border-default|bg-bg-surface/);
+  });
 });

@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { Button } from "../ui/Button.tsx";
+
 /**
  * XS-50: a boot-time advisory that the tracker sits on a filesystem where
  * POSIX advisory locks are unsafe (iCloud Drive, Dropbox, OneDrive, NFS,
@@ -76,13 +78,19 @@ export function AdvisoryFsBanner({
         For reliable locking, move the tracker to a local disk.{" "}
         Detection is best-effort — see Diagnostics.
       </span>
-      <button
-        type="button"
+      {/*
+        A311: `variant="current"` inherits this banner's `text-warn-fg`
+        via `currentColor` — same tinted-outline look as the old
+        hand-rolled `border-warn-fg/40`, now the shared primitive.
+      */}
+      <Button
+        variant="current"
+        size="sm"
+        className="ml-auto text-[0.9286rem]"
         onClick={dismiss}
-        className="ml-auto rounded border border-warn-fg/40 px-2 py-0.5 hover:bg-warn-fg/10"
       >
         Dismiss
-      </button>
+      </Button>
     </div>
   );
 }
