@@ -11,14 +11,6 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ## Product
 
-### B4. Tap targets up to 24px — in progress
-
-K121 #4 (24px is enough). Done: header avatar (22→24px), label pills
-(`min-h-[24px]`), case A11Y-55 + its e2e. The skip link measured 16px only
-in its hidden state; visible it is well over 24px, no change needed.
-Left: Settings chips (after the settings text work lands), and the
-A11Y-55 e2e red-proof (B18).
-
 ---
 
 ## Tests and tooling

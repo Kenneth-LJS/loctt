@@ -5,6 +5,7 @@ import { useViews } from "../api/hooks/sidebarData.ts";
 import { useDeleteView } from "../api/hooks/useDeleteView.ts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { DeleteViewDialog } from "./DeleteViewDialog.tsx";
@@ -166,17 +167,17 @@ function PinsEditor({
                 >
                   Unpin
                 </button>
-                <button
-                  type="button"
-                  data-testid={`view-delete-${id}`}
+                <Button
+                  variant="ghost-danger"
+                  size="sm"
+                  testId={`view-delete-${id}`}
                   onClick={() => {
                     const v = byId.get(id);
                     if (v !== undefined) setDeleting(v);
                   }}
-                  className="text-[0.8571rem] text-text-tertiary hover:text-danger-fg"
                 >
                   Delete view
-                </button>
+                </Button>
               </div>
             )}
           </ReorderableRows>
@@ -198,22 +199,22 @@ function PinsEditor({
               className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-surface px-2 py-1"
             >
               <span className="flex-1 text-[0.9286rem] text-text-primary">{v.name}</span>
-              <button
-                type="button"
-                data-testid={`pin-add-${v.id}`}
+              <Button
+                variant="ghost"
+                size="sm"
+                testId={`pin-add-${v.id}`}
                 onClick={() => { write([...pinned, v.id]); }}
-                className="text-[0.8571rem] text-accent hover:underline"
               >
                 Pin
-              </button>
-              <button
-                type="button"
-                data-testid={`view-delete-${v.id}`}
+              </Button>
+              <Button
+                variant="ghost-danger"
+                size="sm"
+                testId={`view-delete-${v.id}`}
                 onClick={() => { setDeleting(v); }}
-                className="text-[0.8571rem] text-text-tertiary hover:text-danger-fg"
               >
                 Delete view
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

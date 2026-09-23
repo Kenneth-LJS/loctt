@@ -461,3 +461,4 @@ minority of these.
 - A label pill that filters when clicked (list, LST-5) is at least 24px tall.
 - Checkboxes and the ✕ remove buttons keep the 24px they already meet (K31, A250).
 - A control that is only visible on keyboard focus (the skip link) is measured in its visible state.
+- On every Settings page, every visible button, link and checkbox is at least 24×24px (drag handles, Pin / Hide / Show / Reset / Delete view, the card-layout visibility toggles).
