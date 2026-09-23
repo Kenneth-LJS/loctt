@@ -36,7 +36,7 @@ import { expect, test } from "./fixtures/tracker.ts";
  * for. That is not tidiness — the portalled panel is `position: fixed`
  * and sized to its content, and it lands directly over the rows beneath
  * the one it belongs to: with ken's menu open, `elementFromPoint` at the
- * next row's kebab returns ken's "Edit…" item, and a click on that kebab
+ * next row's kebab returns ken's "Edit" item, and a click on that kebab
  * never lands. A real user's click there hits `Menu`'s outside-click
  * handler and closes the menu, so Playwright's "wait until actionable"
  * is the right model of a real second click only once the first menu is
@@ -574,11 +574,18 @@ test.describe("PRU — the projects panel", () => {
 
     const del = await rowMenuItem(page, `project-row-${only}`, `project-delete-${only}`);
     await expect(del).toBeDisabled();
-    await expect(del).toHaveAttribute("title", /at least one project/i);
+    // A298 moved disabled reasons from `title` to `aria-describedby`
+    // pointing at a permanent `sr-only` node (`ui/Menu.tsx`'s
+    // `MenuItem`) — `title` is unreachable to a screen-reader user, who
+    // never hovers.
+    const describedBy = await del.getAttribute("aria-describedby");
+    expect(describedBy, "disabled control must carry a description").toBeTruthy();
+    await expect(page.locator(`#${describedBy as string}`))
+      .toHaveText(/at least one project/i);
   });
 
   // @verifies PRU-7
-  test("PRU-7: archiving is one click and offers unarchive", async ({
+  test("PRU-7: archiving is one click, and Settings → Archived offers the way back", async ({
     page,
     tracker,
   }) => {
@@ -596,20 +603,24 @@ test.describe("PRU — the projects panel", () => {
     await expect(page.getByTestId(`project-archive-${id}`)).toHaveText("Archive");
     await page.getByTestId(`project-archive-${id}`).click();
 
-    // The row leaves the default (active) scope — archived, not deleted.
+    // The row leaves the panel (K121 #1: active projects only) —
+    // archived, not deleted.
     await expect(page.getByTestId(`project-row-${id}`)).toHaveCount(0);
-    await page.getByTestId("projects-archived-scope-all").click();
-    await expect(page.getByTestId(`project-row-${id}`))
-      .toHaveAttribute("data-archived", "true");
-
-    // ...and the reversal is offered, equally without confirmation —
-    // the "offers unarchive" half of the case.
-    await openProjectEdit(page, id);
-    await expect(page.getByTestId(`project-archive-${id}`)).toHaveText("Unarchive");
-
-    // The far end.
     await expect.poll(async () => projectsYaml(tracker.root))
       .toContain("archived: true");
+
+    // Amended case: the reversal lives in Settings → Archived, equally
+    // without confirmation, and restores it to the panel.
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await page.getByTestId("archived-kind-projects").click();
+    const archivedRow = page.getByTestId(`archived-row-${id}`);
+    await archivedRow.getByRole("button", { name: /^Actions for / }).click();
+    await page.getByTestId(`archived-restore-${id}`).click();
+    await expect(page.getByTestId("archived-outcome")).toHaveText("Restored 1 project.");
+    await expect.poll(async () => projectsYaml(tracker.root))
+      .not.toContain("archived: true");
+    await page.goto(`${tracker.baseURL}/settings/projects`);
+    await expect(page.getByTestId(`project-row-${id}`)).toBeVisible();
   });
 
   // @verifies PRU-48
@@ -916,11 +927,13 @@ test.describe("PRU — the users panel", () => {
     // only by racing the refetch that removes the row).
     await expect(page.getByTestId(`user-row-${otherId}`)).toHaveCount(0);
 
-    // Widening the scope shows the same row, now marked archived — which
-    // separates "archived" from "vanished / failed to render".
-    await page.getByTestId("users-archived-scope-all").click();
-    await expect(page.getByTestId(`user-row-${otherId}`))
-      .toHaveAttribute("data-archived", "true");
+    // Settings → Archived lists the same user — which separates
+    // "archived" from "vanished / failed to render" (K121 #1: the users
+    // panel itself lists active users only).
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await page.getByTestId("archived-kind-users").click();
+    await expect(page.getByTestId(`archived-row-${otherId}`)).toBeVisible();
+    await page.goto(`${tracker.baseURL}/settings/users`);
 
     // And the block on self still stands after a successful sibling
     // archive, so the panel is not merely broken for everyone.
@@ -1628,14 +1641,13 @@ test.describe("PRU-42 — deleting a user who is assignee on many tasks", () => 
     // The reversible path: archive instead.
     await page.getByTestId("user-delete-archive-instead").click();
 
-    // Dave is archived, not deleted — his row leaves the default
-    // (active) scope and is still there, marked, under "all" (K107's
-    // tri-state scope), and the task still names him (archive keeps
-    // references intact, unlike delete).
+    // Dave is archived, not deleted — his row leaves the panel and is
+    // listed in Settings → Archived (K121 #1), and the task still names
+    // him (archive keeps references intact, unlike delete).
     await expect(page.getByTestId(`user-row-${daveId}`)).toHaveCount(0);
-    await page.getByTestId("users-archived-scope-all").click();
-    await expect(page.getByTestId(`user-row-${daveId}`))
-      .toHaveAttribute("data-archived", "true");
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await page.getByTestId("archived-kind-users").click();
+    await expect(page.getByTestId(`archived-row-${daveId}`)).toBeVisible();
     expect(await fmByTitle(tracker.root, "Kept task", "assignee")).toBe(daveId);
     // And the profile still exists (it was archived, not removed).
     expect(await userIdByName(tracker, "Dave")).toBe(daveId);

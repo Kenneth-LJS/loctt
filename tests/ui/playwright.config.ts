@@ -24,6 +24,14 @@ export default defineConfig({
   // worse than no gate — it teaches the agent to re-run instead of fix.
   retries: 0,
   fullyParallel: true,
+  // Pinned at 2 (build-loop.md "Playwright is only trustworthy at 2
+  // workers"): each worker boots its own tracker server, and contention
+  // above 2 produces failures that are not defects (measured: 56 at 5
+  // workers, 23 then 5 at 3, 0 at 2). Override with LOCTT_E2E_WORKERS for
+  // a machine where that measurement does not hold; an explicit
+  // `--workers` on the CLI still wins over both (Playwright's own CLI
+  // flag takes precedence over anything returned here).
+  workers: process.env.LOCTT_E2E_WORKERS ? Number(process.env.LOCTT_E2E_WORKERS) : 2,
   forbidOnly: Boolean(process.env.CI),
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
   timeout: 30_000,

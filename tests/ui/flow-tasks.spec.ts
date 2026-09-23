@@ -458,7 +458,7 @@ test.describe("TSK — task detail read shell", () => {
 
     await page.goto(`${tracker.baseURL}/tasks/${doomed}`);
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
 
     const dialog = page.getByRole("dialog");
     // States the key, that it is permanent, and names archive as the
@@ -495,7 +495,7 @@ test.describe("TSK — task detail read shell", () => {
 
     // Reopen, confirm for real.
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("textbox").fill(doomed);
     await page
       .getByRole("dialog")
@@ -539,14 +539,14 @@ test.describe("TSK — task detail read shell", () => {
     // still there. Archiving must never remove it from disk.
     expect(await frontmatterOf(tracker.root, target)).toMatch(/^archived:\s*true\s*$/m);
 
-    // Gone from the default list, present with archived shown. The
-    // second task is the control — if it vanished too, the filter
+    // Gone from the list, listed in Settings → Archived (amended, K121
+    // #1). The second task is the control — if it vanished too, the list
     // would be hiding everything rather than the archived row.
     await page.goto(`${tracker.baseURL}/list`);
     await expect(listRow(page, "Untouched task")).toHaveCount(1);
     await expect(listRow(page, "Archivable task")).toHaveCount(0);
-    await page.goto(`${tracker.baseURL}/list?archived=all`);
-    await expect(listRow(page, "Archivable task")).toHaveCount(1);
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await expect(page.getByTestId("archived-items")).toContainText("Archivable task");
 
     // Unarchive from the same menu restores it in place.
     await page.goto(`${tracker.baseURL}/tasks/${target}`);
@@ -620,7 +620,7 @@ test.describe("TSK — task detail read shell", () => {
 
     // Delete: type the confirmation, then Cancel.
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("textbox").fill(key);
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -630,7 +630,7 @@ test.describe("TSK — task detail read shell", () => {
     // confirm button is disabled again. This is the bullet a
     // "dialog is visible" check would miss entirely.
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await expect(page.getByRole("dialog").getByRole("textbox")).toHaveValue("");
     await expect(
       page.getByRole("dialog").getByRole("button", { name: new RegExp(`^Delete ${key}$`) }),
@@ -643,7 +643,7 @@ test.describe("TSK — task detail read shell", () => {
 
     // Move: choose a destination, then dismiss both ways.
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // A211: the destination picker is a searchable Combobox, not a native
     // <select> (control type changed, not behavior) - open the trigger,
     // then click the option.
@@ -654,7 +654,7 @@ test.describe("TSK — task detail read shell", () => {
     expect(await frontmatterOf(tracker.root, key)).toBe(before);
 
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // Fresh: the previous selection is gone, so Move is disabled.
     // K106: a button, not an `<input>` — the "nothing is pre-selected"
     // claim reads `data-value` (empty) and is backed by the Move button
@@ -746,7 +746,7 @@ test.describe("TSK — task detail read shell", () => {
     });
 
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("textbox").fill(key);
     await page
       .getByRole("dialog")
@@ -966,7 +966,7 @@ test.describe("TSK — task detail read shell", () => {
 
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // K106: the picker is a button-triggered listbox. The TRIGGER is
     // still inside the dialog; the PANEL is portalled to `document.body`,
     // so the option rows are located from `page`.
@@ -1032,7 +1032,7 @@ test.describe("TSK — task detail read shell", () => {
     });
 
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // A211: the destination picker is a searchable Combobox, not a native
     // <select> (control type changed, not behavior) - open the trigger,
     // then click the option.
@@ -1084,7 +1084,7 @@ test.describe("TSK — task detail read shell", () => {
     await expect(page.getByTestId("task-key-chip")).toHaveText(key);
 
     await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // A211: the destination picker is a searchable Combobox, not a native
     // <select> (control type changed, not behavior) - open the trigger,
     // then click the option.
@@ -1281,6 +1281,10 @@ test.describe("TSK — rich-text editor (B3)", () => {
   }) => {
     const [key] = await tracker.seed([{ title: "Ordered" }]);
     if (key === undefined) throw new Error("seed returned no key");
+    // Wide enough that the bar holds every group flat. At the default
+    // 1280px the lists group folds into its menu (TSK-72), and this case
+    // is about the button, not the fold.
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await enterEdit(page);
 

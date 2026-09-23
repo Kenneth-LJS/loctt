@@ -272,12 +272,14 @@ Write formatted content in TipTap, toggle to CodeMirror.
 
 - Archive requires no typed confirmation — it is reversible.
 - The task gains a visible archived badge in the header immediately.
-- The task disappears from the default list view but appears with
-  "Show archived" on (see [LST-12](flow-list.md)).
+- The task disappears from the list view and is listed in Settings →
+  Archived (see [LST-12](flow-list.md), [SET-52](flow-settings.md)).
 - Unarchive from the same menu restores it in place, with the badge
   removed and the task back in default list results.
 - Archiving sets the archived flag; it never removes the task
   directory from disk.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "appears with Show archived on". Unarchive from the task's own menu (reached by direct link) is unchanged.
 
 ## B. Edge cases
 
@@ -635,7 +637,7 @@ Attempt a field edit while the migration lock is held.
 ### TSK-58 · M2 · minor · P8
 **Duplicate and Move are reachable from the task-detail UI, not CLI/MCP-only.** Open a task's "More" menu on `/tasks/<key>`.
 
-- The menu offers both **Duplicate** and **Move to project…**, so a mouse/keyboard user can reach the core Duplicate (TSK-20) and Move (TSK-44) capabilities without dropping to the CLI. A capability that exists in core/CLI/MCP but has no UI entry point is the reachability gap this case exists to close.
+- The menu offers both **Duplicate** and **Move to project**, so a mouse/keyboard user can reach the core Duplicate (TSK-20) and Move (TSK-44) capabilities without dropping to the CLI. A capability that exists in core/CLI/MCP but has no UI entry point is the reachability gap this case exists to close.
 - Duplicate takes archive-level friction (no typed confirmation — it destroys nothing), and Move opens the destination picker; the detailed behavior of each is TSK-20 and TSK-44 respectively, which this case does not restate.
 - Scope note: these are the *only* two core task verbs that were UI-unreachable; everything else (create, edit, archive, delete, link, attach) already has an affordance.
 
@@ -752,3 +754,24 @@ lost.**
   showing the last-saved content.
 - Nothing is silently lost, and a failed save keeps the editor open in
   its unsaved state (TSK-48), not dropped back to a stale render.
+
+### TSK-72 · M2 · minor · P8
+**The formatting toolbar stays on one row; when it cannot, groups fold
+into menus rather than the row wrapping.** *(UI-23c/UI-23d, Ken
+2026-09-22: "if it can fit in one line, we leave as is. if it goes into
+2 lines, then ... put together into a 'T' button")*
+
+- At every bar width down to the fully folded row, every control sits
+  on a single row. What decides this is the bar's own width, not the
+  window's — the comment composer is far narrower than the viewport.
+- Narrower than the fully folded row (a phone), the bar is deliberately
+  two rows: formatting on the first, undo/redo and the attach/mode
+  controls on the second. It never wraps at an arbitrary point. *(B5,
+  K121)*
+- A group too wide for the bar becomes one menu button. The least-used
+  group folds first; Bold and Italic are the last to go behind a menu.
+- A folded mark still says whether it applies: the group's button takes
+  the active look when any member does, and each menu row is a checkbox
+  item whose checked state matches the caret.
+- Every toolbar glyph is drawn centred in its box, so no control sits
+  out of line with its neighbours.

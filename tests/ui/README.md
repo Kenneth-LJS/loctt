@@ -60,6 +60,13 @@ Two rules learned from this repo's own history:
 `retries: 0` is set on purpose. A spec that needs a retry is flaky, and a
 flaky gate teaches an agent to re-run instead of fix.
 
+`workers` is pinned to 2 by default (build-loop.md: measured 0 failures
+at 2 workers vs. 56 at 5 and 23-then-5 at 3, on contention from each
+worker booting its own tracker server). Override with `LOCTT_E2E_WORKERS`
+for a machine where that measurement does not hold, e.g.
+`LOCTT_E2E_WORKERS=1 npm run test:ui`; an explicit `--workers` on the
+Playwright CLI still wins over both the env var and the config default.
+
 ## Rebuilding before a spec run
 
 `npm run test:ui` builds everything first. Running Playwright directly

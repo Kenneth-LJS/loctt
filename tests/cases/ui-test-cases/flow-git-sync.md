@@ -14,10 +14,19 @@ project key counters that rekeying draws from are in
 ### GIT-1 · M4 · blocker · P4 P10
 **Enabling git-backed mode says what it will do first.** A git repo with a remote, git sync not yet enabled.
 
-- The panel's initial state says git sync is off and that LocTT works fine without it.
-- **Enable** states before running: it will create a dedicated `loctt` branch, published through a temporary worktree, and that `local/`, `.current-user`, and `users/<id>/settings.yaml` are gitignored and never published.
+- The panel's initial state offers a single **Enable git tracking** action.
+- `local/`, `.current-user`, and `users/<id>/settings.yaml` are gitignored and never published (verified on the branch, not by on-screen copy).
 - After enabling, `local/sync.yaml` contains `git.enabled: true` and `git.branch: loctt`; `loctt git status` in a terminal agrees.
 - The panel flips to the enabled layout showing Publish, Sync, and Status; the branch name is displayed, not assumed.
+
+> **Amended (K116, Ken 2026-09-23).** This case required the off state to
+> say "LocTT works fine without it" and the Enable step to explain, before
+> running, the branch, the worktree and the gitignored files. Ken ruled the
+> explainer removed and the button relabelled instead: *"i think we can make
+> the button say … 'Enable git tracking', then we can take out the
+> explainer"*, then, offered one surviving line about what is never
+> published, *"Remove it too"*. The exclusion is still asserted — as
+> behaviour on the branch rather than as text.
 
 ### GIT-2 · M4 · blocker · P1 P4
 **Publish reports what changed, not "OK".** Three tasks edited locally since the last sync; remote unchanged.
@@ -74,17 +83,27 @@ project key counters that rekeying draws from are in
 **Rekeying prints a summary before applying.** After reconciliation, `WEB-14` exists on both sides as two genuinely different tasks with different ULIDs.
 
 - A rekey summary is shown **before** anything is written: which key collided, which task keeps it, which task is renumbered, and what the new key will be.
-- The keeper is the task with the earlier `created_at`; the summary states that rule and shows both timestamps.
+- The keeper is the task with the earlier `created_at` (verified by which task keeps the key). Each row says which task keeps the key and what the other becomes; the rule and the timestamps are not shown.
 - The user must confirm; there is no auto-apply of a rekey.
 - After confirming, the loser's `key` is the next key from `state.yaml` for its project (e.g. `WEB-31`) and `WEB-14` is appended to its `key_history`.
 - Opening `/tasks/WEB-14` still resolves — to the keeper — and searching for the loser's old key finds the loser via `key_history`.
 
+> **Amended (K116 trims, approved by Ken 2026-09-23; A322).** Ken, on the
+> tie-break explanation: *"do we even need to explain? just say we
+> assigned [UUID] to new ID"*. The summary names the outcome, not the rule.
+
 ### GIT-9 · M4 · major · P1 P10
 **ULID breaks a `created_at` tie during rekey.** Two tasks claim `WEB-14` with identical `created_at`.
 
-- The summary states that timestamps tied and that the ULID decided, and shows both ULIDs.
+- Each collision row says which task keeps the key and what the other becomes (`{key} stays with task {id}. Task {id} becomes {newKey}.`). The tie-break rule is not explained on screen.
 - The lower ULID keeps the key; the tiebreak is deterministic — re-running the same reconciliation on a second machine picks the same keeper.
 - The outcome matches what `loctt git sync` would have produced on the same inputs.
+
+> **Amended (K116 trims, approved by Ken 2026-09-23; A322).** The
+> message was trimmed under `docs/dev/design/messaging.md`: it states
+> what happened, the data outcome and the next action, not the
+> reasoning. This case now requires that substance, not the old
+> sentences.
 
 ### GIT-10 · M4 · major · P4 P5
 **Disabling git-backed mode says what it does and does not do.**
@@ -182,14 +201,26 @@ project key counters that rekeying draws from are in
 - Sync detects that `last_synced_commit` is not an ancestor of the remote head and stops.
 - The message says the branch history was rewritten, names the commit that can no longer be found, and does not present the situation as a routine conflict.
 - It does not silently re-base the comparison on the new head — doing so would discard local changes made since the missing base.
-- The offered next actions are concrete: inspect the branch in git, or re-establish a base explicitly; both state what would happen to local changes.
+- The offered next actions are concrete: inspect the branch in git, or re-establish a base explicitly. The message states once that nothing local was changed.
+
+> **Amended (K116 trims, approved by Ken 2026-09-23; A322).** The
+> message was trimmed under `docs/dev/design/messaging.md`: it states
+> what happened, the data outcome and the next action, not the
+> reasoning. This case now requires that substance, not the old
+> sentences.
 
 ### GIT-22 · M4 · major · P4 P7
 **The tracker lives on iCloud Drive or a network share.** Git sync operations require the state lock for key allocation during rekey.
 
-- Enabling git sync in such a location surfaces a warning naming the filesystem class (NFS / SMB / Dropbox / iCloud Drive / OneDrive) and stating that POSIX advisory locks are not reliable there.
+- Enabling git sync in such a location surfaces a warning naming the filesystem class (NFS / SMB / Dropbox / iCloud Drive / OneDrive) and stating that file locking is unreliable there.
 - The warning is shown at enable time, not only after a failure, and the operation can still proceed — it warns rather than silently corrupting.
 - If a rekey then fails on lock contention, the failure names the lock and repeats the filesystem caveat rather than offering a bare retry.
+
+> **Amended (K116 trims, approved by Ken 2026-09-23; A322).** The
+> message was trimmed under `docs/dev/design/messaging.md`: it states
+> what happened, the data outcome and the next action, not the
+> reasoning. This case now requires that substance, not the old
+> sentences.
 
 ### GIT-23 · M4 · major · P1 P9
 **A sync brings in 500 new tasks.**
@@ -234,7 +265,13 @@ project key counters that rekeying draws from are in
 
 - Enable is disabled with a stated reason naming the directory and saying it is not a git repository.
 - The next action is concrete: run `git init` in that directory, or move the tracker into an existing repo.
-- No `loctt` branch or `local/sync.yaml` is created by the failed attempt.
+- No `loctt` branch or `local/sync.yaml` is created by the failed attempt (verified on disk, not stated on screen).
+
+> **Amended (K116 trims, approved by Ken 2026-09-23; A322).** The
+> message was trimmed under `docs/dev/design/messaging.md`: it states
+> what happened, the data outcome and the next action, not the
+> reasoning. This case now requires that substance, not the old
+> sentences.
 
 ### GIT-29 · M4 · blocker · P4
 **Publish fails because the push is rejected.** The remote rejects a non-fast-forward push, or authentication fails.
@@ -264,7 +301,13 @@ project key counters that rekeying draws from are in
 - The result reports the true split: 18 applied (named or counted), 12 not applied, naming the failure on the one that broke.
 - `local/reconcile.yaml` is **not** cleared — the operation is resumable and the panel says so.
 - Reopening the panel shows the remaining 12 rows with their decisions preserved; the 18 already applied are not offered again.
-- The originally-requested publish or sync did not proceed; `last_synced_commit` is unchanged and the panel says the operation is incomplete.
+- The originally-requested publish or sync did not proceed; `last_synced_commit` is unchanged and the panel lists what failed and that it can be retried.
+
+> **Amended (K116 trims, approved by Ken 2026-09-23; A322).** The
+> message was trimmed under `docs/dev/design/messaging.md`: it states
+> what happened, the data outcome and the next action, not the
+> reasoning. This case now requires that substance, not the old
+> sentences.
 
 ### GIT-33 · M4 · blocker · P4 P5
 **Rekey fails after the summary was confirmed.** Key allocation from `state.yaml` fails on the third of five renumbers.

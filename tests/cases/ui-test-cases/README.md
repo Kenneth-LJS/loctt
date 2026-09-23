@@ -116,7 +116,7 @@ See BRD-43, BRD-48, TML-44.
 ## P2 — The URL is the view
 
 Any view reachable by clicking is reachable by pasting a URL — filters,
-sort, pagination, active project, archived toggle. Back and forward
+sort, pagination, active project. Back and forward
 behave.
 
 **Violations:** a filter that lives in React state only; the back button

@@ -202,14 +202,6 @@ below.
 - The status code and the phrase "validation" do not lead the message.
 - If the UI could have caught it client-side, that is a bug worth filing — a well-formed UI should rarely produce a server-side shape rejection. Note any instance found.
 
-### ERR-23 · M2 · major · P4 P1
-**A failure during a multi-step user flow says which step failed and what has already been applied.** Interrupt a create-task submit after the task is created but before a subsequent link/label write lands.
-
-- The message names the step that failed.
-- It says what *did* apply — the task exists, with its key — so the user does not create a duplicate.
-- The offered action targets the remaining step, not the whole flow.
-- Nothing implies the task was not created when it was.
-
 ### ERR-24 · M4 · major · P4 P1
 **An attachment upload failure does not leave a phantom attachment.** Fail an upload mid-transfer.
 
@@ -277,30 +269,12 @@ Failures of the error system itself.
 - The generic message is not used as a catch-all convenience for errors the developer did not want to enumerate.
 - The message does not imply the user did something wrong when the app has no idea what happened.
 
-### ERR-32 · M4 · blocker · P4
-**Audit: no routine failure lands in the generic handler.** Method: temporarily restyle the generic error handler so it is unmistakable — a garish colour, a "GENERIC HANDLER" prefix — then run the milestone E2E suites plus the manual flows below, and record every time it lights up.
-
-- Walk these deliberately, with the loud handler in place:
-  - **Validation rejection** — set an invalid date, an out-of-range custom number, a status value not in `workflow.yaml`.
-  - **Archived reference** — assign an archived user, set an archived milestone, sprint, or label.
-  - **404** — open a task deleted from the CLI; paste a key that never existed.
-  - **Offline** — stop the server and exercise list, detail, create, bulk, and body save.
-  - **Parse error** — corrupt a `task.md`, then a config file.
-  - **Immutability** — attempt to write `key`, `project`, `created_at`, `board_rank`.
-  - **Confirmation guards** — delete without typing the key; bulk delete without confirming.
-  - **Query errors** — an unknown field, an unbalanced paren, an unterminated string.
-  - **Schema drift** — each of the four `.schema-version` kinds from [flow-cross-surface.md](flow-cross-surface.md) XS-33–XS-37.
-  - **Lock contention** — a held state lock and a held migration lock.
-- **Anything that lights up gets a specific message.** The generic handler firing on any of the above is a bug in the error handling, not an acceptable outcome.
-- The audit is repeatable — the loud styling is a flag or build-time switch, not a hand edit someone has to remember — and is re-run at each milestone review gate.
-- The result is recorded: the list of paths that lit up, and what each was changed to.
-
 ### ERR-33 · M4 · major · P4
 **The generic handler is reachable at all, and is tested.** Confirm the fallback exists rather than assuming it is dead code.
 
 - An intentionally unattributable fault produces the ERR-30 surface rather than an unhandled rejection, a blank region, or a console-only error.
 - The fallback is exercised by at least one test, so it does not rot into a path that itself throws.
-- Removing the generic handler entirely is not the fix for ERR-32 — the exception exists because opaque faults are real.
+- The generic handler stays: opaque faults are real, so removing it is not a way to avoid generic copy.
 
 ### Error boundaries
 
@@ -314,16 +288,21 @@ Failures of the error system itself.
 ### ERR-35 · M1 · blocker · P4 P1
 **The error boundary tells the user their data is on disk and unaffected.** Trigger the boundary.
 
-- The message says something in the app failed to display — a display fault, not a data fault.
-- It says explicitly that the user's tasks are files in `.loctt/` and are unaffected by a rendering problem. This is the single most reassuring true thing the app can say here, and it follows directly from P1.
+- The message says the user's tasks were not affected.
 - It does not claim data *was* saved if a write was in flight; it distinguishes "your existing data is fine" from "your last action definitely landed".
 
+
+> **Amended (K120, Ken 2026-09-23).** Previously required naming the
+> `.loctt/` path and explaining "a display fault, not a data fault".
+> Ken chose the wording *"Your tasks weren't affected."* under the
+> messaging rules (`docs/dev/design/messaging.md`): the data-state
+> statement stays; the path and the explanation go.
 ### ERR-36 · M1 · blocker · P4 P6
 **The error boundary offers reload as a control and names what broke.** Trigger the boundary.
 
 - A **Reload** button is present and works.
 - The message names the region that broke in user terms ("the task list", "the description editor"), not the React component name.
-- Where possible, a narrower recovery is offered too — retry just this panel — so the user is not forced to lose their whole page state.
+- A route-level boundary (the whole main pane) pairs **Reload** with **Back to the task list**. A region-scoped boundary (a sidebar group, a single panel) pairs **Reload** with **Try {region} again** — naming the region, not a generic "Try again" — so a fault contained to one part of the page does not cost the user their whole page state.
 
 ### ERR-37 · M1 · major · P4
 **Crash detail is retrievable, just not in the headline.** Trigger the boundary and look for the detail.

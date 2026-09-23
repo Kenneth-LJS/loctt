@@ -207,7 +207,9 @@ is testing the wrong thing.
 **An archived milestone still resolves on tasks and by URL.**
 - Its detail route remains reachable and its task list still renders.
 - It is excluded from the default Milestones view and from pickers.
-- A "show archived" affordance reveals it in the view without unarchiving it.
+- The Milestones view offers no way to reveal it. It is listed in Settings → Archived → Milestones.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "A show archived affordance reveals it in the view without unarchiving it".
 
 ### MSL-26 · M1 · minor · P9 P3
 **A very long label name does not break the pill.**

@@ -213,7 +213,9 @@ config changing underneath a live session is
 ### SHL-27 · M1 · minor · P2
 **Reloading a deep-linked filtered view reproduces it exactly.** Copy the URL of a filtered, sorted, paginated list and open it in a new tab.
 
-- Filters, sort column and direction, page, active project, and archived toggle all match the source tab.
+- Filters, sort column and direction, page, and active project all match the source tab.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Dropped "archived toggle": there is none.
 - The sidebar highlights whatever built-in filter corresponds to that state, if any.
 
 ### SHL-28 · M1 · minor · P6
@@ -342,7 +344,11 @@ a violation of P4.
 **A route-level render failure is caught by the error boundary inside the shell.** Force a component in the main pane to throw.
 
 - The header and sidebar survive; only the main pane is replaced by the error state, so the user can navigate away.
-- The message says what was being displayed, that the failure is a bug rather than a data problem, and offers reload plus a way back to the list.
+- The message says what was being displayed and that the user's tasks were not affected, and offers reload plus a way back to the list.
+
+> **Amended (K120, Ken 2026-09-23).** Dropped "that the failure is a bug":
+> under the messaging rules the screen states the data outcome, not an
+> explanation of the fault.
 - No raw stack trace is presented as the primary message.
 
 ### SHL-43 · M1 · minor · P4 P7
@@ -375,3 +381,36 @@ a violation of P4.
 - Typing in the header "Search tasks…" box and pressing Enter (or as-you-type) queries `/api/search` and shows results / navigates; a real network request fires.
 - The box is not a dead input (the input has no handler today).
 - Once wired, `/` focuses it (A11Y-2 becomes reachable).
+
+### SHL-47 · M1 · minor · P6
+**The brand loading mark spins in place about its own centre at every rendered size — it never orbits or drifts out of its box.** The mark appears wherever `LoadingState` or a loading `Button` renders (onboarding submit, panel loads, `DiagnosticsPanel`), at sizes from ~18px to 32px+.
+
+Ken reported it directly: "the spinner svg is misaligned." The mark
+(`LogoSpinner`, class `loctt-spin` on the outer `<svg>`) rotates via a
+CSS animation; the pivot is `transform-origin`, and on an outer `<svg>`
+that property is measured in CSS pixels of the *rendered box*, not in
+`viewBox` units. A rule copied from the source SVG's native 64px
+(`32px 32px`) is only centred at 64px — at the app's 21–24px sizes it
+sits past the bottom-right corner, so the mark swings in a visible
+orbit instead of rotating on the spot.
+
+- At every size the app renders the mark (at minimum 21px, 24px, and
+  64px), its bounding box stays fixed through the whole animation cycle
+  — the box does not translate, grow, or drift as the mark rotates.
+- The visual centre of the mark (the "L"/"o" pivot) coincides with the
+  centre of its bounding box at every size, not only at one specific
+  size the rule happened to be tuned for.
+- This holds independent of `prefers-reduced-motion` — a reduced-motion
+  user who still sees the frozen frame sees it centred, not offset.
+
+### SHL-48 · M4 · minor · P8
+**Chrome that summarises a Settings concept deep-links to the section that owns it, rather than leaving the user to hunt.** The header's user menu, and the `?` shortcut-reference overlay's footer.
+
+- The user menu's generic "Settings" catch-all link is kept, but sits alongside differentiated items — "My profile" (anchored at the current user's row in Settings → Users), "My preferences", and "Customize sidebar" — each pointing at the exact section that owns the concept, not the Settings landing page.
+- "My profile" is omitted (not shown pointing at a dead anchor) when the signed-in identity is unknown; the identity-independent items stay reachable.
+- The `?` shortcut overlay's footer links to Settings → Keyboard, the full rebindable reference the overlay itself only summarises.
+- Following any of these deep links closes the originating overlay — a modal layer left open over the destination panel would trap focus.
+
+> Added (2026-09-23) to cover behaviour four tests already asserted
+> under an invented `CONFIG-5` tag (`Header.test.tsx`,
+> `ShortcutHelpDialog.test.tsx`) — see `docs/dev/backlog.md` B9.

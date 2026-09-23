@@ -293,15 +293,20 @@ test("the submit control enters a busy state and is not double-submittable", asy
 
     await page.goto(`${t.baseURL}/list`);
     await fillWizard(page, "Website", "WEB");
-    // Located by role+type, not by its label: the label is *part of*
-    // the busy state ("Set up tracker" → "Setting up…"), so a
-    // name-matched locator stops resolving the moment the assertion
-    // becomes meaningful.
+    // Located by role+type rather than by name. The name is now stable
+    // across the busy state (A307: `loading` hides the visible label and
+    // an explicit `aria-label` carries it), but role+type stays the
+    // clearest anchor for "the wizard's submit", independent of wording.
     const submit = page.locator('button[type="submit"]');
     await submit.click();
 
     await expect(submit).toBeDisabled();
-    await expect(submit).toHaveText(/setting up/i);
+    // The busy state is the spinner + aria-busy, not a re-spelled label:
+    // the label must NOT change (that is the width-stability point), and
+    // the accessible name must survive it.
+    await expect(submit).toHaveAttribute("aria-busy", "true");
+    await expect(submit).toHaveAccessibleName("Set up tracker");
+    await expect(submit.getByTestId("logo-spinner")).toBeVisible();
     // Clicking again while busy must not queue a second init.
     await submit.click({ force: true, timeout: 2000 }).catch(() => undefined);
 

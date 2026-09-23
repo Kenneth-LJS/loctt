@@ -874,6 +874,49 @@ test.describe("BRD — board view", () => {
     await expect(page.getByTestId("board-count-backlog")).toHaveText("2");
   });
 
+  // @verifies BRD-39 / K115 (A314)
+  //
+  // Retargeted per K115 (A314): the board's own `useStalledLoad` timer
+  // (`__LOCTT_STALLED_LOAD_MS__`) was retired as a redundant SECOND
+  // mechanism for the same symptom — `apiRequest` now has its own
+  // default read deadline (20s on a GET, overridable via
+  // `__LOCTT_READ_TIMEOUT_MS__`, the same convention
+  // `flow-task-failure.spec.ts` uses for
+  // `__LOCTT_SET_FIELD_TIMEOUT_MS__`), so a hung `/api/tasks` now times
+  // out on its own and reaches the board's ordinary `tasks.isError`
+  // branch without any board-specific escalation code.
+  test("BRD-39: a request stuck past its read deadline escalates to a message with retry", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+
+    // Shortened so the test does not sit out the real 20s default.
+    await page.addInitScript(() => {
+      (globalThis as { __LOCTT_READ_TIMEOUT_MS__?: number })
+        .__LOCTT_READ_TIMEOUT_MS__ = 1_500;
+    });
+
+    // The request leaves and nothing ever comes back — no response, no
+    // error — so only `apiRequest`'s own deadline can end the wait.
+    await page.route("**/api/tasks?**", async () => {
+      await new Promise(() => { /* hangs */ });
+    });
+
+    await page.goto(`${tracker.baseURL}/board`, { waitUntil: "commit" });
+    await expect(page.getByTestId("board-skeleton").first()).toBeVisible();
+
+    // Past the deadline: skeleton gone, a placed alert with Retry instead.
+    await expect(page.getByTestId("board-skeleton").first()).toHaveCount(0, { timeout: 5_000 });
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible();
+    // ERR-5: the message names what was waited for.
+    await expect(alert).toContainText(/loading the board/i);
+    await expect(alert).toContainText(/tasks/i);
+    await expect(alert).toContainText(/did not respond/i);
+    await expect(alert.getByRole("button", { name: /retry/i })).toBeVisible();
+  });
+
   // @verifies BRD-40
   test("BRD-40: an empty tracker shows one board-level empty state, columns intact", async ({
     page,
