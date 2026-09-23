@@ -486,6 +486,31 @@ function inlineNodes(text: string): JSONContent[] {
       "\\^([^^\\s]+)\\^", // 15 superscript
       "~([^~\\s]+)~", // 16 subscript
       "@user:([A-Za-z0-9_-]+)", // 17 mention
+      // 18 underline, 19 highlight — K107. APPENDED at the end of the
+      // alternation on purpose: every branch above is addressed by a
+      // positional capture-group number, so inserting these mid-array
+      // would renumber `m[9]`…`m[17]` and silently rewire bold to
+      // strike. Alternation order is not precedence here — these two
+      // delimiters share no prefix with any pattern above (`<` and `=`
+      // appear in none of them), so the leftmost-match rule settles
+      // every case and appending costs nothing.
+      //
+      // `<ins>` is inline raw HTML (CommonMark §6.6): the tags pass
+      // through as tokens and the text between them is STILL parsed as
+      // markdown, which is why the body recurses through `marked` like
+      // every other mark. Not `<u>` — GitHub's sanitiser allowlist omits
+      // `u` and silently strips it (verified live against
+      // api.github.com/markdown), so an underline stored as `<u>` simply
+      // vanishes on the tool most likely to read the file. `ins` is on
+      // that allowlist and browsers underline it by default. See A251.
+      "<ins>([\\s\\S]+?)</ins>", // 18 underline
+      // `==text==` — Obsidian/pandoc-style highlight. A markdown
+      // extension rather than a tag, so it needs no `ALLOWED_HTML_TAGS`
+      // entry and cannot trip the lossy guardrail. `=` is not a
+      // delimiter anywhere else in this tokeniser (nor in CommonMark
+      // inline syntax), so unlike `__x__` (already bold) it reinterprets
+      // no existing body.
+      "==([\\s\\S]+?)==", // 19 highlight
     ].join("|"),
     "g",
   );
@@ -526,6 +551,10 @@ function inlineNodes(text: string): JSONContent[] {
       out.push(...marked(m[16], "subscript"));
     } else if (m[17] !== undefined) {
       out.push({ type: "mention", attrs: { userId: m[17] } });
+    } else if (m[18] !== undefined) {
+      out.push(...marked(m[18], "underline"));
+    } else if (m[19] !== undefined) {
+      out.push(...marked(m[19], "highlight"));
     }
   }
   if (last < text.length) out.push({ type: "text", text: text.slice(last) });
@@ -702,10 +731,18 @@ const MARK_WRAPPERS: readonly (readonly [string, string, string])[] = [
   ["strike", "~~", "~~"],
   ["superscript", "^", "^"],
   ["subscript", "~", "~"],
+  // K107. Appended rather than interleaved: the ORDER of this list is
+  // the thing that makes serialization independent of the order the
+  // user clicked the toolbar, so moving an existing row would change
+  // the spelling of every already-stored body that combines marks.
+  // Appending only decides where the two new wrappers sit relative to
+  // the old ones, which no stored body can yet depend on.
+  ["underline", "<ins>", "</ins>"],
+  ["highlight", "==", "=="],
 ];
 
 function inlineText(nodes: readonly JSONContent[]): string {
-  return nodes
+  const joined = nodes
     .map(n => {
       if (n.type === "mention") return `@user:${attr(n, "userId")}`;
       if (n.type === "inlineMath") return `$${attr(n, "expr")}$`;
@@ -735,4 +772,17 @@ function inlineText(nodes: readonly JSONContent[]): string {
       return text;
     })
     .join("");
+  // K107. A mark spanning several text runs is wrapped per run, so
+  // `<ins>` over `under ` + bold `bold` emits
+  // `<ins>under </ins><ins>**bold**</ins>`. For the `*`-style delimiters
+  // that split is pre-existing and invisible-ish; for a TAG it is
+  // visible noise in the prose and it GROWS by two tags on every
+  // save-reopen-save cycle, so `<ins>` is stitched back up here.
+  //
+  // Deliberately scoped to the tag pair rather than generalised into a
+  // "merge adjacent runs sharing a mark" pass in the loop above: that
+  // would also change the spelling of `**`/`*`/`~~` output, i.e. rewrite
+  // bodies this feature never touched, which is exactly the
+  // normalization this module exists to avoid.
+  return joined.replace(/<\/ins><ins>/g, "");
 }

@@ -13,7 +13,15 @@ import { fromMarkdown, toMarkdown } from "./markdown.ts";
  * the exact failure B5 exists to prevent.
  */
 describe("LocTT TipTap extensions", () => {
-  const schema = getSchema([StarterKit, ...LOCTT_EXTENSIONS]);
+  // Configured exactly as `RichEditor` configures it. `underline: false`
+  // matters (K107): StarterKit ships an underline mark of the same name
+  // that parses/renders `<u>`, so a schema built without that flag tests
+  // a configuration the app does not use — and `registers the underline
+  // mark` would pass on StarterKit's mark even with ours deleted.
+  const schema = getSchema([
+    StarterKit.configure({ link: false, underline: false }),
+    ...LOCTT_EXTENSIONS,
+  ]);
 
   it.each(["inlineMath", "blockMath", "mention", "attachmentEmbed"])(
     "registers the %s node",
@@ -24,6 +32,46 @@ describe("LocTT TipTap extensions", () => {
 
   it.each(["superscript", "subscript"])("registers the %s mark", name => {
     expect(schema.marks[name]).toBeDefined();
+  });
+
+  // @verifies K107
+  it.each(["underline", "highlight"])("registers the %s mark", name => {
+    // Unregistered marks are DROPPED by the schema, so a mark that
+    // parses and serializes correctly still loses the user's formatting
+    // the moment the doc routes through TipTap. Remove Underline /
+    // Highlight from LOCTT_EXTENSIONS and this goes red.
+    expect(schema.marks[name]).toBeDefined();
+  });
+
+  // @verifies K107
+  it("survives the schema round trip for <ins> and ==, keeping both marks", () => {
+    // The step markdown.test.ts cannot cover: it never routes the doc
+    // through ProseMirror. This does, which is where an unregistered
+    // mark silently vanishes.
+    const md = "A <ins>under</ins> and ==lit== b";
+    const roundTripped = schema.nodeFromJSON(fromMarkdown(md)).toJSON() as JSONContent;
+    expect(toMarkdown(roundTripped).trimEnd()).toBe(md);
+  });
+
+  // @verifies K107
+  it("parses <ins> to underline and <mark> to highlight, not to strike", () => {
+    // The tags each mark claims must be the ones the on-disk syntax
+    // uses, and must not collide with strike (which parses s/del/strike).
+    expect(schema.marks["underline"]?.spec.parseDOM?.[0]?.tag).toBe("ins");
+    expect(schema.marks["highlight"]?.spec.parseDOM?.[0]?.tag).toBe("mark");
+    expect(schema.marks["underline"]).not.toBe(schema.marks["strike"]);
+  });
+
+  // @verifies K107
+  it("never registers <u> as a way to underline", () => {
+    // StarterKit's own underline mark parses `u` and renders `<u>`,
+    // which GitHub strips silently. With `underline: false` the ONLY
+    // underline mark in the schema is LocTT's `<ins>` one. Drop that
+    // flag (in this file or RichEditor) and `u` reappears — red.
+    const tags = (schema.marks["underline"]?.spec.parseDOM ?? [])
+      .map(r => ("tag" in r ? r.tag : undefined));
+    expect(tags).toContain("ins");
+    expect(tags).not.toContain("u");
   });
 
   it("keeps subscript distinct from strikethrough", () => {

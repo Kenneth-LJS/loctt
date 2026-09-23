@@ -42,6 +42,17 @@ const ALLOWED_HTML_TAGS: ReadonlySet<string> = new Set([
   "h1", "h2", "h3", "h4", "h5", "h6",
   "table", "thead", "tbody", "tr", "th", "td",
   "sup", "sub",
+  // `ins` is underline's on-disk spelling (K107/A251) and `mark` is what
+  // the highlight mark renders to. Both have a TipTap mark in
+  // `apps/web/src/client/editor/extensions.ts`, so they round-trip and
+  // must NOT be reported — without an entry here a single underlined
+  // word would banish the whole body to source mode, which is a far
+  // larger regression than the mark is a feature.
+  //
+  // `del` above is likewise earned rather than assumed: StarterKit's
+  // `strike` mark parses `s`, `del` AND `strike` (verified against the
+  // live schema), so all three have a node behind them.
+  "ins", "mark",
 ]);
 
 /** `[^1]: text` definition, or a `[^1]` reference. */
