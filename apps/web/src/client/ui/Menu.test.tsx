@@ -111,7 +111,7 @@ describe("MenuItem disabled", () => {
       >
         {() => (
           <>
-            <MenuItem>Edit…</MenuItem>
+            <MenuItem>Edit</MenuItem>
             <MenuItem
               disabled
               title="A tracker must have at least one project."
@@ -168,7 +168,7 @@ describe("MenuItem disabled", () => {
   it("is skipped by arrow-key roving so the keyboard cursor never lands on it", () => {
     renderWithDisabled();
     const menu = screen.getByRole("menu");
-    const edit = screen.getByRole("menuitem", { name: "Edit…" });
+    const edit = screen.getByRole("menuitem", { name: "Edit" });
     const dup = screen.getByRole("menuitem", { name: "Duplicate" });
     edit.focus();
     // ArrowDown from the first ENABLED item skips the disabled one
@@ -195,11 +195,11 @@ describe("MenuItem disabled", () => {
           <button type="button" onClick={toggle} {...rest}>Open</button>
         )}
       >
-        {() => <MenuItem onSelect={onSelect}>Edit…</MenuItem>}
+        {() => <MenuItem onSelect={onSelect}>Edit</MenuItem>}
       </Menu>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    const edit = screen.getByRole("menuitem", { name: "Edit…" });
+    const edit = screen.getByRole("menuitem", { name: "Edit" });
     expect(edit).toHaveProperty("disabled", false);
     // Described by nothing: no reason was given, so no description node
     // and no dangling `aria-describedby` reference.
@@ -245,6 +245,16 @@ describe("Menu portalling and placement", () => {
     expect(document.body.contains(menu)).toBe(true);
   });
 
+  // Portalled means an owner cannot use `contains(relatedTarget)` to see
+  // focus moving into its own menu. The editors' leave-on-blur guards
+  // ask for this marker instead; without it, picking Bold from the
+  // toolbar's folded Text style menu exited the description's edit mode
+  // (UI-23d). `Dropdown` carries the same one.
+  it("marks the portalled panel so an owner can recognise its own menu", () => {
+    const menu = renderOpen();
+    expect(menu.closest("[data-portal-panel]")).not.toBeNull();
+  });
+
   /**
    * The sidebar-kebab bug: an `align="end"` trigger sitting near the
    * right edge of a narrow column would place a 200px panel off the
@@ -287,7 +297,7 @@ describe("Menu portalling and placement", () => {
           <button type="button" onClick={toggle} {...rest}>Open</button>
         )}
       >
-        {() => <MenuItem>Delete…</MenuItem>}
+        {() => <MenuItem>Delete</MenuItem>}
       </Menu>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
@@ -335,7 +345,7 @@ describe("Menu portalling and placement", () => {
           <button type="button" onClick={toggle} {...rest}>Open</button>
         )}
       >
-        {() => <MenuItem>Delete…</MenuItem>}
+        {() => <MenuItem>Delete</MenuItem>}
       </Menu>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
@@ -366,13 +376,13 @@ describe("Menu dismissal", () => {
           )}
         >
           {({ close }) => (
-            <MenuItem onSelect={() => { onSelect(); close(); }}>Delete…</MenuItem>
+            <MenuItem onSelect={() => { onSelect(); close(); }}>Delete</MenuItem>
           )}
         </Menu>
       </div>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    const item = screen.getByRole("menuitem", { name: "Delete…" });
+    const item = screen.getByRole("menuitem", { name: "Delete" });
 
     // Simulate a real pointer press+click on the item: the document
     // mousedown listener fires first (it must NOT close the menu), then
@@ -694,5 +704,33 @@ describe("Menu z-index", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     const menu = screen.getByRole("menu");
     expect(menu.className).toContain("z-[65]");
+  });
+});
+
+describe("MenuItem checked", () => {
+  // A toggle row must announce its state, as the flat toolbar button's
+  // `aria-pressed` does (TSK-72); an action row has no state to announce.
+  it("is a menuitemcheckbox carrying aria-checked only when `checked` is given", () => {
+    render(
+      <Menu
+        aria-label="Actions"
+        trigger={({ toggle, ...rest }) => (
+          <button type="button" onClick={toggle} {...rest}>Open</button>
+        )}
+      >
+        {() => (
+          <>
+            <MenuItem checked>On</MenuItem>
+            <MenuItem checked={false}>Off</MenuItem>
+            <MenuItem>Action</MenuItem>
+          </>
+        )}
+      </Menu>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(screen.getByRole("menuitemcheckbox", { name: "On" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("menuitemcheckbox", { name: "Off" })).toHaveAttribute("aria-checked", "false");
+    const action = screen.getByRole("menuitem", { name: "Action" });
+    expect(action).not.toHaveAttribute("aria-checked");
   });
 });

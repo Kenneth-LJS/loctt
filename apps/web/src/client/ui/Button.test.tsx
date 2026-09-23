@@ -76,6 +76,41 @@ describe("Button", () => {
     expect(cls).toContain("hover:bg-warn-fg/10");
   });
 
+  /**
+   * @verifies A311
+   *
+   * `current` is for a container whose warn/danger tone is decided at
+   * render time (SchemaBanner's `outdated`/`future`/`unknown`/`missing`
+   * kinds) rather than fixed on the variant name. It must border/hover
+   * off `currentColor` and emit no `text-*`/`bg-*`-at-rest utility of
+   * its own — one would fight the parent's `text-warn-fg`/
+   * `text-danger-fg`, since `cn` concatenates rather than resolving
+   * Tailwind conflicts (see `cn.ts`).
+   */
+  it("renders the current variant as a currentColor outline with no fixed text/bg of its own", () => {
+    render(<Button variant="current">Migrate now</Button>);
+    const cls = screen.getByRole("button", { name: "Migrate now" }).className;
+    expect(cls).toContain("border-current");
+    expect(cls).toContain("hover:bg-current/10");
+    expect(cls).toContain("active:bg-current/20");
+    // No variant-owned text/bg-at-rest colour: it must inherit, not compete.
+    expect(cls).not.toMatch(/(?:^|\s)text-(?!accent-contrast)[a-z-]+-fg(?:\s|$)/);
+    expect(cls).not.toMatch(/(?:^|\s)bg-(?!bg-surface)[a-z-]+(?:\s|$)/);
+  });
+
+  it("lets `current` inherit an ambient text colour set by an ancestor", () => {
+    render(
+      <div className="text-danger-fg">
+        <Button variant="current">Try now</Button>
+      </div>,
+    );
+    const btn = screen.getByRole("button", { name: "Try now" });
+    // jsdom resolves `currentColor` against the computed `color`, which
+    // in jsdom's non-cascading style engine just needs the class present
+    // — the meaningful assertion is that no variant class overrides it.
+    expect(btn.className).not.toMatch(/text-danger-fg|text-warn-fg/);
+  });
+
   it("renders the ghost-danger variant as a ghost surface that reddens on hover, not a filled danger", () => {
     render(<Button variant="ghost-danger">Delete</Button>);
     const cls = screen.getByRole("button", { name: "Delete" }).className;

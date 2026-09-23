@@ -7,8 +7,7 @@ import { cn } from "./cn.ts";
  * painted `appearance-none` as a track + thumb. `role="switch"` keeps
  * the AT announcement A11Y-21 asks for.
  *
- * Intended for the ~3 *view* toggles (FilterBar "Show archived",
- * MilestonesView archived, TimelineView dependencies) — NOT form-field
+ * Intended for *view* toggles (TimelineView dependencies) — NOT form-field
  * booleans (Estimation "Enabled", custom-field booleans stay `Checkbox`).
  * switch-vs-checkbox for those view toggles is a look decision, not a
  * correctness one (spec §1.9 / open decision #1) — this primitive exists

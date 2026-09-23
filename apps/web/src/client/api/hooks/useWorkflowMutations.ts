@@ -100,9 +100,17 @@ export class ConcurrentWorkflowEditError extends Error {
   }
 }
 
+/**
+ * Identifies every workflow-collection save, so a control that does not
+ * own the mutation (a panel header's "New …" button, A329) can still tell
+ * a save is in flight via `useIsMutating`.
+ */
+export const WORKFLOW_SAVE_KEY = ["workflow", "save"] as const;
+
 export function useSaveWorkflowCollection<K extends keyof WorkflowConfig>() {
   const qc = useQueryClient();
   return useMutation<SaveWorkflowResult, Error, CollectionEdit<K>>({
+    mutationKey: WORKFLOW_SAVE_KEY,
     mutationFn: async edit => {
       // The re-read. Straight through the client rather than the query
       // cache, which is exactly the stale copy this exists to avoid.

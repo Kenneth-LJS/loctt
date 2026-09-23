@@ -1,7 +1,7 @@
 import type { ErrorResponse } from "@loctt/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiClient,ApiError } from "../client.ts";
+import { apiClient, ApiError, createDeadline, isAbort } from "../client.ts";
 
 /**
  * Settings → Tracker → Sync, over the five `/api/git/*` routes.
@@ -126,6 +126,35 @@ export interface SyncResult {
   readonly fetchFailure?: GitRemoteFailure;
 }
 
+/**
+ * K115 item 3 ("time out only on silence"): publish, enable, disable and
+ * every reconcile write (apply / abandon / confirm-rekey / save-decisions)
+ * have no progress stream to reset an inactivity deadline against, so
+ * Ken's ruling gives them a fixed 2-minute ceiling instead — long enough
+ * for a real git operation against a slow remote, short enough that the
+ * UI still reports an unknown outcome rather than waiting forever.
+ *
+ * Overridable the same way every other per-hook timeout is.
+ */
+export const GIT_FIXED_TIMEOUT_MS = Number(
+  (globalThis as { __LOCTT_GIT_FIXED_TIMEOUT_MS__?: unknown })
+    .__LOCTT_GIT_FIXED_TIMEOUT_MS__ ?? 120_000,
+);
+
+/**
+ * K115: `streamSync`'s inactivity deadline (60s of silence, including
+ * the pre-first-byte wait) and `streamDoctor`'s (`DiagnosticsPanel.tsx`)
+ * share this value — both stream NDJSON progress lines and both reset
+ * on each one. A single named constant rather than two copies of the
+ * literal `60_000`, in case the two windows are ever tuned separately
+ * later; today they are the same number by design (both are "a
+ * progress-streaming route went silent").
+ */
+export const STREAM_INACTIVITY_TIMEOUT_MS = Number(
+  (globalThis as { __LOCTT_STREAM_INACTIVITY_TIMEOUT_MS__?: unknown })
+    .__LOCTT_STREAM_INACTIVITY_TIMEOUT_MS__ ?? 60_000,
+);
+
 export function useGitStatus() {
   return useQuery({
     queryKey: ["git", "status"],
@@ -148,7 +177,11 @@ function useGitMutation<TResult, TVars = void>(
 ) {
   const qc = useQueryClient();
   return useMutation<TResult, Error, TVars>({
-    mutationFn: (vars: TVars) => apiClient.post<TResult>(path, vars ?? {}),
+    // K115 item 3: publish/enable/disable have no progress stream to
+    // reset an inactivity deadline against, so they get the fixed
+    // 2-minute ceiling rather than the 15s write default.
+    mutationFn: (vars: TVars) =>
+      apiClient.post<TResult>(path, vars ?? {}, { timeoutMs: GIT_FIXED_TIMEOUT_MS }),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["git"] });
       // A sync (or an applied reconciliation) rewrites task files, so the
@@ -195,16 +228,41 @@ export interface SyncProgress {
  */
 async function streamSync(onProgress: (p: SyncProgress) => void): Promise<SyncResult> {
   const endpoint = "/api/git/sync";
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "X-Loctt-Client": "web", "Content-Type": "application/json" },
-    body: "{}",
-  });
+  // K115 item 3: "time out only on silence" — a sync that is genuinely
+  // copying a large tree can run past any FIXED deadline short enough
+  // to be useful, so this resets on every byte/progress line instead of
+  // counting total elapsed time. The deadline starts armed before the
+  // request even leaves, so a hang before the first byte arrives (the
+  // server never answering at all) is covered too, not just a stall
+  // mid-stream.
+  const deadline = createDeadline(STREAM_INACTIVITY_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "X-Loctt-Client": "web", "Content-Type": "application/json" },
+      body: "{}",
+      signal: deadline.controller.signal,
+    });
+  } catch (err) {
+    if (isAbort(err) && deadline.didExpire()) {
+      throw syncSilenceError(endpoint);
+    }
+    throw err;
+  }
+  // The header arrived — bump so the body-read loop below gets its own
+  // full window rather than inheriting whatever was left of the
+  // pre-first-byte wait.
+  deadline.bump();
 
   const contentType = res.headers.get("content-type") ?? "";
   if (!contentType.includes("application/x-ndjson") || !res.body) {
+    deadline.clear();
     // Non-stream reply: a no-op sync's JSON body, or a planning-phase
     // error. Reuse the transport's own parsing + ApiError throwing.
+    // apiRequest gets its own (fixed, write-default) deadline for this
+    // path — a JSON reply this small is not the "large tree" case the
+    // inactivity deadline exists for.
     return apiClient.post<SyncResult>(endpoint, {});
   }
 
@@ -226,16 +284,28 @@ async function streamSync(onProgress: (p: SyncProgress) => void): Promise<SyncRe
     streamError = parsed.error;
   };
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newline = buffer.indexOf("\n");
-    while (newline !== -1) {
-      handleLine(buffer.slice(0, newline));
-      buffer = buffer.slice(newline + 1);
-      newline = buffer.indexOf("\n");
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // A byte arrived: the connection is alive, so the inactivity
+      // window re-arms rather than counting toward a fixed total.
+      deadline.bump();
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1) {
+        handleLine(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+      }
     }
+  } catch (err) {
+    if (isAbort(err) && deadline.didExpire()) {
+      throw syncSilenceError(endpoint);
+    }
+    throw err;
+  } finally {
+    deadline.clear();
   }
   handleLine(buffer);
 
@@ -260,6 +330,28 @@ async function streamSync(onProgress: (p: SyncProgress) => void): Promise<SyncRe
     });
   }
   return result;
+}
+
+/**
+ * K115 item 3: 60s of silence on a streaming sync — never reported as
+ * "failed", because a sync that has copied files may have partially
+ * landed. The recovery names how to check (git status/log outside the
+ * app) rather than offering a bare Retry, which for a write in flight
+ * risks re-sending an operation that may already have applied.
+ */
+function syncSilenceError(endpoint: string): ApiError {
+  return new ApiError(`${endpoint}: the sync went silent`, {
+    status: 0,
+    body: undefined,
+    endpoint,
+    isTimeout: true,
+    envelope: {
+      code: "unknown",
+      message: "The sync stopped reporting progress, so LocTT cannot tell whether it finished. Check `git log`/`git status` in the tracker's repo before syncing again.",
+      data_state: "unknown",
+      recovery: { kind: "reload" },
+    },
+  });
 }
 
 /**
@@ -448,7 +540,8 @@ export function useReconcileSession() {
 export function useSaveReconcileDecisions() {
   const qc = useQueryClient();
   return useMutation<{ saved: boolean }, Error, readonly ReconcileDecision[]>({
-    mutationFn: decisions => apiClient.post("/api/git/reconcile/decisions", { decisions }),
+    mutationFn: decisions =>
+      apiClient.post("/api/git/reconcile/decisions", { decisions }, { timeoutMs: GIT_FIXED_TIMEOUT_MS }),
     onSettled: () => { void qc.invalidateQueries({ queryKey: ["git", "reconcile"] }); },
   });
 }
@@ -457,7 +550,8 @@ export function useSaveReconcileDecisions() {
 export function useApplyReconcile() {
   const qc = useQueryClient();
   return useMutation<ApplyReconcileResponse, Error, readonly ReconcileDecision[]>({
-    mutationFn: decisions => apiClient.post("/api/git/reconcile/apply", { decisions }),
+    mutationFn: decisions =>
+      apiClient.post("/api/git/reconcile/apply", { decisions }, { timeoutMs: GIT_FIXED_TIMEOUT_MS }),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["git"] });
       // Applying a reconciliation writes task files (GIT-7), so the list
@@ -474,7 +568,7 @@ export function useApplyReconcile() {
 export function useAbandonReconcile() {
   const qc = useQueryClient();
   return useMutation<{ abandoned: boolean }, Error, void>({
-    mutationFn: () => apiClient.post("/api/git/reconcile/abandon", {}),
+    mutationFn: () => apiClient.post("/api/git/reconcile/abandon", {}, { timeoutMs: GIT_FIXED_TIMEOUT_MS }),
     onSettled: () => { void qc.invalidateQueries({ queryKey: ["git"] }); },
   });
 }
@@ -488,7 +582,7 @@ export function useAbandonReconcile() {
 export function useConfirmRekey() {
   const qc = useQueryClient();
   return useMutation<ConfirmRekeyResponse, Error, void>({
-    mutationFn: () => apiClient.post("/api/git/reconcile/confirm-rekey", {}),
+    mutationFn: () => apiClient.post("/api/git/reconcile/confirm-rekey", {}, { timeoutMs: GIT_FIXED_TIMEOUT_MS }),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["git"] });
       void qc.invalidateQueries({ queryKey: ["tasks"] });

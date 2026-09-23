@@ -39,7 +39,7 @@ interface Props {
 const DATA_STATE_COPY: Record<NonNullable<ErrorResponse["data_state"]>, string> = {
   saved: "Your change was saved.",
   not_saved: "Your change was not saved.",
-  unknown: "Whether your change was saved is not known — reload to check.",
+  unknown: "Your change may not have been saved. Reload to check.",
 };
 
 /**

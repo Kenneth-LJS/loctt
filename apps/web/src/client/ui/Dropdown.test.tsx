@@ -152,7 +152,7 @@ describe("Dropdown — keyboard", () => {
 });
 
 describe("Dropdown — server-side search (K90)", () => {
-  it("debounces the query, shows Searching… meanwhile, renders the answer, and keeps the current value in the list", async () => {
+  it("debounces the query, shows Loading… meanwhile BELOW the already-selected value, and renders the answer", async () => {
     vi.useFakeTimers();
     const onQuery = vi.fn((q: string): Promise<readonly DropdownOption[]> =>
       Promise.resolve(q === "" ? opts(2) : [{ key: "hit", label: `Hit for ${q}` }]));
@@ -164,8 +164,17 @@ describe("Dropdown — server-side search (K90)", () => {
     fireEvent.click(screen.getByTestId("trigger"));
     // Always searchable in server mode, however short `options` is.
     const search = screen.getByTestId("search");
-    expect(screen.getByText("Searching…")).toBeTruthy();
+    expect(screen.getByText("Loading…")).toBeTruthy();
     expect(onQuery).not.toHaveBeenCalled();
+    // The selected option is not just present but reads FIRST — the
+    // pending row must come after it in the list, not before, so the
+    // value the user already picked is not buried under "Loading…".
+    expect(optionNames()).toEqual(["Current one"]);
+    const listChildren = Array.from(screen.getByTestId("list").children);
+    const currentIndex = listChildren.findIndex(el => el.textContent === "Current one");
+    const loadingIndex = listChildren.findIndex(el => el.textContent === "Loading…");
+    expect(currentIndex).toBeGreaterThanOrEqual(0);
+    expect(loadingIndex).toBeGreaterThan(currentIndex);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
     expect(onQuery).toHaveBeenCalledWith("");
