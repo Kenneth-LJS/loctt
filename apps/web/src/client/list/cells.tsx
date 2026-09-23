@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 
 import type { WireHealth } from "../health/fieldHealth.ts";
 import { useResolvedColor } from "../ui/entityColor.ts";
+import { LABEL_PILL_CLASS, labelPillStyle } from "../ui/labelPillStyle.ts";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
 
 /**
@@ -258,32 +259,6 @@ export function AssigneeCell({ user, raw, health }: { user: UserProfile | undefi
   );
 }
 /**
- * A text colour that stays legible on a 13%-alpha wash of `hex`.
- *
- * The wash sits over the surface, so the effective background is close
- * to the surface itself — which means the *theme* decides readability
- * far more than the label colour does. Returning a token rather than a
- * computed value lets both themes stay legible without the pill
- * knowing which one is active (MSL-23).
- *
- * The label's own colour is kept where it reads on that wash;
- * otherwise the pill hands back to the surface's own text colour,
- * which is legible by construction.
- */
-function readableOn(hex: string): string {
-  const n = hex.length === 4
-    ? hex.slice(1).split("").map(c => parseInt(c + c, 16))
-    : [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-  const [r = 0, g = 0, b = 0] = n;
-  // Rec. 601 luma, which is what browsers' own contrast heuristics use.
-  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  // Too pale to read on a light background, too dark on a dark one:
-  // hand back to the theme rather than guessing.
-  return luma > 0.75 || luma < 0.25 ? "var(--text-primary)" : hex;
-}
-
-
-/**
  * How many label pills a row shows before collapsing the rest.
  *
  * LST-19: 25 labels wrapped freely and turned one row into a block
@@ -341,21 +316,10 @@ function LabelPill({
           }
         : {})}
       title={named?.name}
-      className="inline-flex items-center rounded border border-border-subtle px-1.5 py-0.5 text-[0.7857rem]"
-      style={
-        color
-          // MSL-23: text contrast is computed against the
-          // pill's *own* background. Using the label colour for
-          // both meant a very pale yellow rendered pale-on-pale
-          // and a very dark navy dark-on-dark — legible in the
-          // middle of the range, invisible at the ends.
-          ? {
-              background: `${color}22`,
-              color: readableOn(color),
-              borderColor: `${color}66`,
-            }
-          : { background: "var(--bg-muted)", color: "var(--text-secondary)" }
-      }
+      // Shared with the two-mode preview (`ui/labelPillStyle.ts`) so a
+      // preview cannot report a legibility the real pill does not have.
+      className={LABEL_PILL_CLASS}
+      style={labelPillStyle(color)}
     >
       {/* A label the config no longer defines is named as
           unresolved rather than shown as six characters of its

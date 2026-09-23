@@ -1,4 +1,4 @@
-import type { ArchivedScope, ComparisonOp, Filter, SavedQuery } from "@loctt/contracts";
+import type { ComparisonOp, EntityColor, Filter, SavedQuery } from "@loctt/contracts";
 import { useMemo, useState } from "react";
 
 import {
@@ -14,7 +14,6 @@ import { useValidateQuery } from "../api/hooks/useValidateQuery.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { buildFacetOptions } from "../list/facetOptions.ts";
 import { FilterDropdown } from "../list/FilterDropdown.tsx";
-import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
@@ -22,7 +21,9 @@ import { SelectCombobox } from "../ui/Combobox.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { IconEmojiPicker } from "../ui/IconEmojiPicker.tsx";
+import { IconColorFields } from "../ui/IconColorFields.tsx";
+import { IconGlyph } from "../ui/IconEmojiPicker.tsx";
+import { ThemePreview } from "../ui/ThemePreview.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -75,12 +76,23 @@ import {
  * sits beside it as a quieter, ghost-weight action — present for the
  * people who want the DSL, never the thing the eye lands on first.
  *
- * ## Archived scope is a property, not a row
+ * ## Archived scope is not offered here at all
  *
- * It maps to the view's `archivedScope` field through the shared
- * `ArchivedScopeControl`, so it can never be deleted as if it were a
- * filter (K107 + K102).
+ * Ken's ruling, 2026-09-22 ("archiving is a one-way door, not a filter",
+ * decisions.md § 9): "a view filtering on archived encodes the wrong
+ * model." This dialog used to expose the view's `archivedScope` field
+ * through the shared `ArchivedScopeControl` as an "Include
+ * [Active|Archived|All]" row (K107 + K102) — Ken screenshotted exactly
+ * this control and ruled it out.
  *
+ * The dialog now never reads or writes `archivedScope`: `submit()` omits
+ * the field entirely from every request. Core's merge (`editView`) keeps
+ * whatever value already exists on the stored view when the field is
+ * omitted, so a view someone set to `archived`/`all` via the CLI or MCP
+ * (both still expose the field — this is a web-UI-only change) is not
+ * silently reset back to `active` by an unrelated web edit; a brand
+ * new view gets core's own default (`active`) with no dialog control
+ * pretending to offer a choice about it.
  * ## Editing a BROKEN view is a replacement, and says so
  *
  * A hand-edited `queries.yaml` entry whose `filters` do not validate is
@@ -151,8 +163,8 @@ function emptySimpleRow(): DraftRow {
  * read straight off the stored view, not re-derived from anything.
  */
 export type ViewFormTarget = Pick<SavedQuery, "id" | "name" | "filters"> & {
-  readonly archivedScope?: SavedQuery["archivedScope"];
   readonly icon?: SavedQuery["icon"];
+  readonly color?: SavedQuery["color"];
 };
 
 /**
@@ -192,7 +204,9 @@ export function ViewFormDialog({
   // K104: the icon is now editable here — this is the surface Ken named.
   // Seeded from the stored value so an edit never silently drops it.
   const [icon, setIcon] = useState<string | undefined>(existing?.icon);
-  const [scope, setScope] = useState<ArchivedScope>(existing?.archivedScope ?? "active");
+  // Seeded from the stored value for the same reason as the icon: an
+  // edit that did not touch the colour must not drop it.
+  const [color, setColor] = useState<EntityColor | undefined>(existing?.color);
 
   // Seed ONCE from the stored filters, each row keeping its own kind. A
   // create starts with one empty simple row so the dialog opens on the
@@ -276,11 +290,21 @@ export function ViewFormDialog({
 
   const submit = (): void => {
     if (disabled) return;
+    // Ken's ruling, 2026-09-22: `archivedScope` is deliberately NOT sent.
+    // On create, core applies its own default (`active`). On edit,
+    // omitting it makes `editView` keep whatever the view already has —
+    // so a scope set via the CLI/MCP survives an unrelated web edit
+    // instead of being silently reset by a dialog that no longer offers
+    // a way to choose it.
     const common = {
       name: name.trim(),
       filters,
-      archivedScope: scope,
       ...(icon !== undefined ? { icon } : {}),
+      // Sent whatever the icon is. The emoji rule is about whether the
+      // colour can be APPLIED, not whether it may be stored — clearing
+      // it here would discard a deliberate choice and make
+      // icon → emoji → icon lose it (A279 / P-11).
+      ...(color !== undefined ? { color } : {}),
     };
     if (isEdit) {
       // K102-broken-repair: the tick above is the user's consent, and it
@@ -313,10 +337,12 @@ export function ViewFormDialog({
             variant="primary"
             testId="view-form-save"
             disabled={disabled}
+            loading={pending}
+            aria-label={isBroken ? "Replace view" : "Save"}
             {...(saveTitle !== undefined ? { title: saveTitle } : {})}
             onClick={submit}
           >
-            {pending ? "Saving…" : isBroken ? "Replace view" : "Save"}
+            {isBroken ? "Replace view" : "Save"}
           </Button>
         </DialogActions>
       }
@@ -377,19 +403,51 @@ export function ViewFormDialog({
           />
         </label>
 
-        {/* K104's first surface. A saved view has no `color` field, so
-            the picker stands alone here — the icon/colour coupling rule
-            lives in `IconColorFields`, for the entities that have both. */}
+        {/* A saved view now has BOTH an icon and a colour (Ken,
+            2026-09-23: "if icon and color, then yea"), so it uses the
+            shared pair rather than a lone icon picker. `IconColorFields`
+            carries the UI-14 coupling rule with it: pick an emoji and
+            the colour control goes inert WITH ITS REASON SHOWN — because
+            an emoji carries its own colour and cannot be tinted — while
+            the stored colour is preserved, so switching back to a named
+            icon restores it rather than demanding it be picked again. */}
         <div className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
-          Icon
-          <IconEmojiPicker
-            value={icon}
-            onChange={setIcon}
-            testId="view-form-icon"
-            listTestId="view-form-icon-list"
-            searchTestId="view-form-icon-search"
-            clearTestId="view-form-icon-clear"
-            ariaLabel="Icon for the view"
+          <IconColorFields
+            icon={icon}
+            onIconChange={setIcon}
+            color={color}
+            onColorChange={setColor}
+            iconTestId="view-form-icon"
+            iconListTestId="view-form-icon-list"
+            iconSearchTestId="view-form-icon-search"
+            iconClearTestId="view-form-icon-clear"
+            colorTestId="view-form-color-picker"
+            colorAliasTestId="view-form-color"
+            noun="view"
+            // K104-view-colour: the two-mode preview. Ken, 2026-09-23:
+            // "i dont want users to have to pick a colour, exit, toggle,
+            // see its not good, then edit again" — so both themes are
+            // shown at once rather than one and a trip to the theme
+            // switch.
+            //
+            // `render` is called ONCE PER MODE with that mode's already
+            // resolved hex. It must not be a component that resolves its
+            // own colour: `useColorMode` reads the GLOBAL theme, so a
+            // self-resolving child inside the dark island would paint
+            // dark chrome with the light hex.
+            //
+            // An emoji still previews (Ken overrode the reviewer here):
+            // the glyph does not change between themes but the
+            // BACKGROUNDS do, which is what answers "is this legible in
+            // both". `IconGlyph` already refuses to tint an emoji, so no
+            // branch is needed.
+            preview={(
+              <ThemePreview
+                color={color}
+                testId="view-form-color-preview"
+                render={hex => <IconGlyph icon={icon} size={20} color={hex} />}
+              />
+            )}
           />
         </div>
 
@@ -464,15 +522,6 @@ export function ViewFormDialog({
             </Button>
           </div>
         </div>
-
-        {/* Archived is a SCOPE of the view, not a filter row — so it
-            cannot be deleted by accident along with a filter (K107). */}
-        <ArchivedScopeControl
-          testId="view-form-archived-scope"
-          label="Include"
-          value={scope}
-          onChange={setScope}
-        />
 
         {isBroken && (
           // The deliberate choice. Until this is ticked, Save is disabled

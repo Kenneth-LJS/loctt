@@ -2,19 +2,48 @@ import { z } from "zod";
 
 import { EntityColorSchema } from "./color.js";
 import { BrokenEntrySchema } from "./health.js";
+import { isSingleGrapheme } from "./icon.js";
 
 /**
  * Display-only icon identifier on a workflow entity. The UI renders this
  * as either a Lucide icon (when it matches a known catalog name) or
  * verbatim text (which is how emoji fallback works — they're just
- * strings). Core treats it as opaque: any non-empty, non-blank string
- * is accepted. Pure-whitespace identifiers are rejected so a hand-edited
+ * strings). Pure-whitespace identifiers are rejected so a hand-edited
  * yaml with `icon: "  "` can't slip past.
+ *
+ * ## The one-grapheme rule on a GLYPH (Ken, 2026-09-23)
+ *
+ * *"i shouldnt be able to combine emojis with other characters, or
+ * multiple emojis"*. So a value that is not a catalog-id-shaped slug is
+ * treated as a literal glyph and must be exactly ONE grapheme cluster —
+ * which accepts every legitimate combined form (👨‍👩‍👧 ZWJ, 👍🏽 skin
+ * tone, 🇬🇧 flag, 🏳️‍🌈, ✔️) and rejects `🎈A` and `🎈🎈`. See
+ * `isSingleGrapheme` in `icon.ts` for why `Intl.Segmenter` is the only
+ * correct implementation.
+ *
+ * ## Why the slug branch exists
+ *
+ * `circle-check` is 12 graphemes and must stay valid. Contracts cannot
+ * ask the Lucide catalog — that map lives in `apps/web` and is the
+ * authority on *which* ids draw (`iconCatalog.ts`), deliberately not
+ * duplicated here. So this checks only the SHAPE that a catalog id can
+ * have: ASCII letters/digits/dashes. An unknown slug still parses and
+ * still degrades to verbatim rendering at the surface (A279) — widening
+ * validation into a catalog membership test here would break exactly
+ * that degradation, and would make contracts depend on a UI bundle.
+ *
+ * The two branches cannot overlap ambiguously: a single-grapheme ASCII
+ * letter like `A` satisfies both, and is accepted either way.
  */
 export const IconStringSchema = z
   .string()
   .min(1)
-  .regex(/\S/, "icon must contain at least one non-whitespace character");
+  .regex(/\S/, "icon must contain at least one non-whitespace character")
+  .refine(
+    s => /^[A-Za-z0-9-]+$/.test(s) || isSingleGrapheme(s),
+    "icon must be a single character (emoji or glyph) or an icon name — "
+    + "several characters cannot be combined into one icon",
+  );
 export type IconString = z.infer<typeof IconStringSchema>;
 
 /** Status categories used to group statuses semantically. */
