@@ -758,10 +758,12 @@ export function CreateTaskModal({
               // Button's base carries `disabled:opacity-50` +
               // `disabled:cursor-not-allowed`, so an empty-title Create
               // reads as unavailable instead of inviting a dead click.
-              disabled={!titleFilled || submitting || dateProblem !== undefined}
+              disabled={!titleFilled || dateProblem !== undefined}
+              loading={submitting}
+              aria-label="Create task"
               onClick={() => { void submit(); }}
             >
-              {submitting ? "Creating…" : "Create task"}
+              Create task
             </Button>
           </div>
         </div>

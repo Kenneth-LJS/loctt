@@ -219,3 +219,24 @@ describe("AttachmentsPanel — corruption survival (S7)", () => {
     });
   });
 });
+
+/**
+ * UI-22: the "Upload" affordance inside the dropzone sentence was
+ * styled as a bordered/padded chip AND underlined text at once, reading
+ * as neither. It stays a `<button>` (it proxies a click to a hidden
+ * file input — an action, not navigation), but drops the box treatment
+ * so it reads as inline underlined text matching the sentence around
+ * it, the same shape `GroupError`'s Retry link already uses.
+ */
+describe("AttachmentsPanel Upload affordance (UI-22)", () => {
+  it("has no border/box classes, only the inline-link treatment", () => {
+    render(<AttachmentsPanel taskRef="T-7" attachments={[]} />, { wrapper: wrapper() });
+    const upload = screen.getByTestId("attachment-upload");
+    expect(upload.className).not.toMatch(/\bborder\b/);
+    expect(upload.className).not.toMatch(/\brounded\b/);
+    expect(upload.className).not.toMatch(/\bpx-1\.5\b/);
+    expect(upload.className).not.toMatch(/\bpy-0\.5\b/);
+    // Still reads as an inline text affordance.
+    expect(upload.className).toMatch(/\bunderline\b/);
+  });
+});

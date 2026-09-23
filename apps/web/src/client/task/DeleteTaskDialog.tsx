@@ -126,9 +126,11 @@ export function DeleteTaskDialog({
             type="button"
             variant="danger"
             onClick={onConfirm}
-            disabled={!matches || pending}
+            disabled={!matches}
+            loading={pending}
+            aria-label={`Delete ${taskKey}`}
           >
-            {pending ? "Deleting…" : `Delete ${taskKey}`}
+            Delete {taskKey}
           </Button>
         </div>
       </div>
