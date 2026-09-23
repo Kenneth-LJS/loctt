@@ -4,6 +4,7 @@ import { CARD_LAYOUT_FIELDS } from "@loctt/contracts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { DEFAULT_CARD_LAYOUT, resolveCardLayout } from "../board/cardLayout.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
@@ -142,7 +143,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
                     aria-pressed={isVisible}
                     onClick={() => { toggle(field); }}
                     className={
-                      "rounded px-2 py-0.5 text-[0.8571rem] "
+                      "inline-flex min-h-[24px] items-center rounded px-2 py-0.5 text-[0.8571rem] "
                       + (isVisible
                         ? "bg-accent-muted text-accent"
                         : "bg-bg-muted text-text-tertiary")
@@ -155,14 +156,15 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
             }}
           </ReorderableRows>
 
-          <button
-            type="button"
-            data-testid="card-layout-reset"
+          <Button
+            variant="ghost"
+            size="sm"
+            testId="card-layout-reset"
+            className="mt-3"
             onClick={() => { write(DEFAULT_CARD_LAYOUT); }}
-            className="mt-3 text-[0.8571rem] text-accent hover:underline"
           >
             Reset to the default layout
-          </button>
+          </Button>
         </div>
 
         {/* SET-12's last bullet, and SET-26's first: the outcome is

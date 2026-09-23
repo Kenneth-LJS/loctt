@@ -3,6 +3,7 @@ import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
 
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
@@ -148,28 +149,23 @@ function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; rea
             >
               {LABELS[id]}
             </span>
-            <button
-              type="button"
-              data-testid={`sidebar-group-toggle-${id}`}
+            <Button
+              variant="ghost"
+              size="sm"
+              testId={`sidebar-group-toggle-${id}`}
               aria-pressed={!hidden.has(id)}
               onClick={() => { toggleHidden(id); }}
-              className="text-[0.8571rem] text-text-tertiary hover:text-text-primary"
             >
               {hidden.has(id) ? "Show" : "Hide"}
-            </button>
+            </Button>
           </div>
         )}
       </ReorderableRows>
 
       <div className="mt-6 flex items-center gap-3">
-        <button
-          type="button"
-          data-testid="sidebar-groups-reset"
-          onClick={resetAll}
-          className="text-[0.8571rem] text-text-tertiary hover:text-text-primary"
-        >
+        <Button variant="ghost" size="sm" testId="sidebar-groups-reset" onClick={resetAll}>
           Reset to default
-        </button>
+        </Button>
       </div>
 
       {save.isError ? (

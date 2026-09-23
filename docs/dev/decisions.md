@@ -22371,3 +22371,20 @@ ref and its check.
 **Where it landed.** `apps/web/src/client/settings/ArchivedPanel.tsx`, `apps/web/src/client/api/hooks/useArchived.ts`, `settings/sections.ts`, `settings/SettingsShell.tsx`, `server/server.ts` (`queryNamesArchivedField`, `ARCHIVED_QUERY_MESSAGE`), the six entity panels, `sprints/SprintsView.tsx` + `columns.ts`, `list/*`, `router/listSearch.ts`, `api/hooks/useTasks.ts`, `shell/Sidebar.tsx` (`CARRY_FILTER_KEYS`), `docs/user/ui/guide.md`, `docs/user/common/recovery.md`.
 
 **To revert.** Delete `ArchivedPanel.tsx`, `ArchivedPanel.test.tsx`, `useArchived.ts`, `tests/ui/flow-settings-archived.spec.ts`, the `archived` row in `sections.ts` and its `SettingsShell` branch; restore `ArchivedScopeControl.tsx`, `ArchivedScopeReveal.tsx`, `deepLinkHash.ts`, the SprintsView checkbox, `listSearch`'s `archived` field and the panel scope state from git history (this commit's parent); remove the `queryNamesArchivedField` guard in `handleListTasks` and restore its `onArchivedConflict` callback; put `archived`/`archived_at` back in `QueryBuilder`'s `FIELDS`; revert the case amendments marked "Amended (K121 #1, Ken 2026-09-23)". Ken's ruling (K121 #1) itself is not revertible by an agent; only this shape of it is.
+
+### A334 · Settings pointer targets are at least 24px (B4)
+
+**Ticket:** B4 (K121 #4: "fix"; "24px is enough") · **Date:** 2026-09-23 · **Commit:** (this one)
+
+A live sweep of every Settings page found interactive elements under
+WCAG 2.5.8's 24px: the shared reorder drag handle (15×17px, and a typed
+braille "⠿", an A208 violation the glyph lint list misses), the Pinned
+views "Pin" / "Delete view", Sidebar groups "Hide" / "Show", both "Reset"
+buttons (17px tall) and the Card layout visibility toggles (21px). The
+text buttons now use the shared `Button` (`ghost`, `ghost-danger` for
+Delete view, `size="sm"`, 24.5px); the handle draws `<Icon name="drag">`
+in a `min-h/min-w-[24px]` box; the toggles keep their pressed look with
+`min-h-[24px]`. Earlier in B4: header avatar 22→24px, label pills
+`min-h-[24px]`. The skip link's "16px" was its hidden state; visible it is
+well over. A11Y-55 gained a bullet and an e2e sweep of every Settings page.
+**To revert:** restore the hand-rolled buttons and handle glyph.

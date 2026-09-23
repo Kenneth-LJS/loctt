@@ -3568,4 +3568,37 @@ test.describe("A11Y-55 — pointer targets are at least 24px (WCAG 2.5.8)", () =
     const box = await pill.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(24);
   });
+
+  // @verifies A11Y-55
+  test("A11Y-55: every pointer target on every Settings page is at least 24px", async ({
+    page,
+    tracker,
+  }) => {
+    // Enough content that the reorder handles, pin rows and toggles render.
+    await tracker.run(["label", "create", "infra"]);
+    await tracker.run(["create", "Tagged", "--label", "infra"]);
+    await page.goto(`${tracker.baseURL}/settings/projects`);
+    const sections = await page.locator('a[href^="/settings/"]').evaluateAll(
+      els => [...new Set(els.map(e => e.getAttribute("href") ?? ""))],
+    );
+    const small: string[] = [];
+    for (const href of sections) {
+      await page.goto(`${tracker.baseURL}${href}`);
+      await expect(page.getByTestId("settings-panel-title").or(page.locator("main h1")).first()).toBeVisible();
+      const found = await page.evaluate(() => {
+        const main = document.querySelector("main");
+        const panel = main === null ? null : main.lastElementChild;
+        if (panel === null) return [];
+        return [...panel.querySelectorAll("button,a[href],[role=button],input[type=checkbox]")]
+          .filter(e => (e as HTMLElement).offsetParent !== null)
+          .map(e => ({ e, r: e.getBoundingClientRect() }))
+          .filter(({ r }) => r.width < 24 || r.height < 24)
+          .map(({ e, r }) => `${(e.getAttribute("aria-label") ?? e.textContent ?? "").trim().slice(0, 30)} ${r.width.toFixed(1)}x${r.height.toFixed(1)}`);
+      });
+      for (const f of found) small.push(`${href}: ${f}`);
+    }
+    // Before B4 this listed the drag handles (15x17), Pin, Hide/Show,
+    // Reset and Delete view (17px tall) and the card-layout toggles (21px).
+    expect(small).toEqual([]);
+  });
 });
