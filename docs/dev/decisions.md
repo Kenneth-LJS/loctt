@@ -22388,3 +22388,18 @@ in a `min-h/min-w-[24px]` box; the toggles keep their pressed look with
 `min-h-[24px]`. The skip link's "16px" was its hidden state; visible it is
 well over. A11Y-55 gained a bullet and an e2e sweep of every Settings page.
 **To revert:** restore the hand-rolled buttons and handle glyph.
+
+### A335 · The three "flakes" do not reproduce at the pinned worker count (B10)
+
+**Ticket:** B10 (K121 #10: "fix") · **Date:** 2026-09-23
+
+BLK-24, BRD-4 and GIT-12 had been written off as "pre-existing flake,
+passes on re-run" when the suite ran at 5 workers. Investigated per
+build-loop.md ("flake is a hypothesis"): against a fresh build, each ran
+5× alone at `--workers=1` (15/15 passed) and all three ran 4× together at
+`--workers=2` (12/12 passed). No defect reproduces. Their failures match
+the documented contention above 2 workers (build-loop.md, measured 56
+failures at 5), which B11 closed by pinning Playwright to 2. If any of the
+three fails again at 2 workers, it is a real defect and goes to
+known-gaps with the run's evidence. **To revert:** nothing to revert; no
+code changed.
