@@ -32,11 +32,15 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - No view is configured with an infinite `staleTime` such that a value can be wrong for the lifetime of the tab.
 
 ### XS-3 · M1 · major · P1 P8
-**A manual refresh control exists and is discoverable.** Find the refresh affordance on `/list` and on `/tasks/$key`.
+**Reloading the page is the refresh: it shows fresh data in the same view.** On `/list` with filters and a sort applied, and on `/tasks/$key`, change a task from the CLI, then press F5.
 
-- The user can force a refetch without a full page reload, and the control is reachable without opening a menu three levels deep.
-- Triggering it shows a busy indication and settles into either fresh data or an error — never silently no-ops.
-- Browser reload (F5) is also safe: it produces the same state as the manual refresh, since no view state lives only in React.
+- The reloaded page shows the CLI's change.
+- The view is unchanged: the same filters, sort and page on `/list`, the same task on `/tasks/$key`, because no view state lives only in React.
+
+> **Amended (K122, Ken 2026-09-23).** This case asked for a manual
+> refresh control, which Q4 deliberately does not build (data refetches on
+> tab focus and within the staleness window). Asked, Ken: *"user can
+> refresh the page for this, no?"* — so the reload guarantee is the case.
 
 ### XS-4 · M2 · blocker · P1
 **An open task detail picks up a CLI edit to a field the user is not editing.** Open `/tasks/T-12`, then run `loctt set T-12 status done` in a terminal.
@@ -160,7 +164,9 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - UI "Archive" sets the `archived` flag and is reversible by `loctt unarchive`; the task still exists on disk under `tasks/<id>/`.
 - UI "Delete" removes the task directory permanently, exactly as `loctt delete --yes` and MCP `delete_task` with `confirm: true` do.
 - The UI exposes no third verb, no "soft delete", and no `--hard`-style modifier — there is no such flag anywhere in LocTT.
-- A task archived in the CLI shows the archived badge in the UI and is hidden from default views there too.
+- A task archived in the CLI is hidden from every browsing view in the UI too, is listed in Settings → Archived, and shows the archived badge on its detail page when opened by direct link.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "shows the archived badge in the UI and is hidden from default views there too". The badge used to be read off a revealed list row.
 
 ### XS-20 · M1 · major · P3 P10
 **The UI's filter chips correspond to real config values, not invented buckets.** Open the Status filter dropdown.
@@ -407,7 +413,7 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - The warning names the detected path so the user can confirm which directory triggered it.
 - It is informational, not blocking — the app still works, since the risk is concurrency-dependent.
 - It is dismissible and does not re-nag every refetch within a session.
-- If detection is best-effort and can miss cases, the Diagnostics panel states that so the absence of a warning is not read as a guarantee.
+- If detection is best-effort and can miss cases, that is stated in the UI guide (`docs/user/ui/guide.md` § Diagnostics) so the absence of a warning is not read as a guarantee. It is NOT standing text in the Diagnostics panel: Ken (2026-09-23) ruled the panel shows results, not caveats about a warning the user is not seeing. The boot warning itself is unchanged and still fires when detection catches a risky location.
 
 ### XS-51 · M2 · major · P1 P6
 **A malformed file the UI reads is a genuine hand-edit, never a torn write.** Corrupt a `task.md` mid-YAML and load the list; separately, hammer the UI with writes while reading.

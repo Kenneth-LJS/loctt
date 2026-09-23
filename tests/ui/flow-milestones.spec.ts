@@ -26,7 +26,7 @@ import path from "node:path";
 import { expect, test } from "./fixtures/tracker.ts";
 
 /**
- * Clicks a milestone/label row's kebab action (Edit… / Archive / Delete).
+ * Clicks a milestone/label row's kebab action (Edit / Archive / Delete).
  *
  * These rows put their per-row actions behind the shared `RowActions`
  * kebab (U26/K105): the items only exist while the menu is open, and
@@ -41,23 +41,6 @@ async function rowAction(
 ): Promise<void> {
   await row.getByRole("button", { name: /^Actions for / }).click();
   await page.getByTestId(itemTestId).click();
-}
-
-/**
- * Asserts the label a row's kebab action currently shows, then closes
- * the menu again so the surrounding test sees no state change.
- */
-async function expectRowActionText(
-  page: import("@playwright/test").Page,
-  row: import("@playwright/test").Locator,
-  itemTestId: string,
-  text: string,
-): Promise<void> {
-  const kebab = row.getByRole("button", { name: /^Actions for / });
-  await kebab.click();
-  await expect(page.getByTestId(itemTestId)).toHaveText(text);
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId(itemTestId)).toHaveCount(0);
 }
 
 /** The milestones in `milestones.yaml`, paired id → name. */
@@ -456,7 +439,10 @@ test.describe("MSL — the milestones view", () => {
   });
 
   // @verifies MSL-25
-  test("MSL-25: an archived milestone is out of the default view, revealed without unarchiving", async ({
+  //
+  // Case amended under K121 #1: the view offers no way to reveal an
+  // archived milestone; Settings → Archived → Milestones lists it.
+  test("MSL-25: an archived milestone is out of the /milestones view; its detail route stays reachable", async ({
     page,
     tracker,
   }) => {
@@ -473,12 +459,8 @@ test.describe("MSL — the milestones view", () => {
     // one row, and only then assert which one it is.
     await expect(page.getByTestId("milestone-row")).toHaveCount(1);
     await expect(page.locator(`[data-milestone-id="${empty}"]`)).toHaveCount(1);
-    // Excluded from the default view.
+    // Excluded from the default view — unconditionally now, see above.
     await expect(page.locator(`[data-milestone-id="${alpha}"]`)).toHaveCount(0);
-
-    // Revealed by the affordance.
-    await page.getByTestId("milestones-archived-scope-all").click();
-    await expect(page.locator(`[data-milestone-id="${alpha}"]`)).toHaveCount(1);
 
     // Without unarchiving it: the file still says archived.
     const yaml = await readFile(
@@ -491,6 +473,11 @@ test.describe("MSL — the milestones view", () => {
     await page.goto(`${tracker.baseURL}/milestones/${alpha}`);
     await expect(page.getByTestId("milestone-detail-archived")).toBeVisible();
     await expect(page.getByTestId("milestone-task-row")).toHaveCount(8);
+
+    // Amended third bullet: Settings → Archived lists it.
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await page.getByTestId("archived-kind-milestones").click();
+    await expect(page.getByTestId(`archived-row-${alpha}`)).toBeVisible();
   });
 
   // @verifies MSL-29
@@ -1099,17 +1086,12 @@ test("MSL-14: editing a milestone's target date persists, re-sorts, and clears c
   expect(pageErrors, "the SPA threw while editing a milestone date").toEqual([]);
 });
 
-// @verifies MSL-11
+// @verifies MSL-11 SET-53
 //
-// Retag (B2): this exercises the *management panel's* archive/unarchive
-// TOGGLE — the row stays visible and marked, and `archived: true`
-// reaches milestones.yaml. That is panel CRUD, MSL-11's surface. It is
-// NOT MSL-25, whose claim is that an archived milestone still *resolves
-// on tasks and by URL* (its detail route reachable, excluded from the
-// default /milestones view, revealed by a "show archived" affordance) —
-// a different surface owned by the milestones-view ticket. The mis-tag
-// made MSL-25 look verified here while its task/URL far-end was untested.
-test("the milestones panel archives and unarchives without hiding the row", async ({
+// The management panel archives (one click, reversible), and the row
+// leaves it: K121 #1 lists active milestones only there. The way back is
+// Settings → Archived, whose Restore puts it back in the panel.
+test("a milestone archived from its panel is restored from Settings → Archived", async ({
   page,
   tracker,
 }) => {
@@ -1123,33 +1105,29 @@ test("the milestones panel archives and unarchives without hiding the row", asyn
 
   await page.goto(`${tracker.baseURL}/settings/milestones`);
   const row = page.getByTestId(`milestone-row-${id}`);
-  await expect(row).toHaveAttribute("data-milestone-archived", "false");
+  await expect(row).toBeVisible();
 
   // Archive: one click, no typed confirmation (it is reversible).
-  //
-  // K107 made the panel's list scope-driven: the archived row leaves the
-  // default "active" scope rather than staying in place with a marker.
-  // The case's point — archived is a REVERSIBLE state, not a deletion,
-  // and the row is still reachable — is asserted by revealing it under
-  // "all" and reading the marker there.
   await rowAction(page, row, "milestone-archive-toggle");
   await expect(row).toHaveCount(0);
-  await page.getByTestId("milestones-archived-scope-all").click();
-  await expect(row).toHaveAttribute("data-milestone-archived", "true");
-  await expect(row.getByTestId("milestone-archived-marker")).toBeVisible();
-  await expectRowActionText(page, row, "milestone-archive-toggle", "Unarchive");
   // Far end: the flag reached milestones.yaml.
   await expect.poll(async () =>
     readFile(path.join(tracker.root, ".loctt", "config", "milestones.yaml"), "utf8"),
   ).toMatch(/archived:\s*true/);
 
-  // Unarchive reverses it, and the flag leaves disk.
-  await rowAction(page, row, "milestone-archive-toggle");
-  await expect(row).toHaveAttribute("data-milestone-archived", "false");
-  await expectRowActionText(page, row, "milestone-archive-toggle", "Archive");
+  // Restore from Settings → Archived, and the flag leaves disk.
+  await page.goto(`${tracker.baseURL}/settings/archived`);
+  await page.getByTestId("archived-kind-milestones").click();
+  const archivedRow = page.getByTestId(`archived-row-${id}`);
+  await rowAction(page, archivedRow, `archived-restore-${id}`);
+  await expect(page.getByTestId("archived-outcome")).toHaveText("Restored 1 milestone.");
+  await expect(archivedRow).toHaveCount(0);
   await expect.poll(async () =>
     readFile(path.join(tracker.root, ".loctt", "config", "milestones.yaml"), "utf8"),
   ).not.toMatch(/archived:\s*true/);
+
+  await page.goto(`${tracker.baseURL}/settings/milestones`);
+  await expect(row).toBeVisible();
 
   expect(pageErrors, "the SPA threw while archiving a milestone").toEqual([]);
 });

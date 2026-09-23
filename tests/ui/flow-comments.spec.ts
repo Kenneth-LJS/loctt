@@ -347,10 +347,12 @@ test.describe("CMT — comments", () => {
     // Always visible without hunting: no disclosure to open first.
     await expect(composer(page)).toBeVisible();
 
-    // Empty cannot be submitted, and says why.
+    // Empty cannot be submitted, and says why — as the button's
+    // accessible description, not a visible notice beside it (Ken: "i
+    // dont need the notice").
     await expect(submit(page)).toBeDisabled();
-    await expect(page.getByTestId("comment-composer-reason"))
-      .toContainText("needs some text");
+    await expect(submit(page)).toHaveAccessibleDescription(/needs some text/);
+    await expect(page.getByText("needs some text")).toBeHidden();
 
     // Whitespace-only is still empty.
     await composerSurface(page).click();

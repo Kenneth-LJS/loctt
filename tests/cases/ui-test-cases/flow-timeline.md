@@ -440,9 +440,11 @@ TML-8, TML-29, TML-41).
 ### TML-57 · M3 · major · P2 P10
 **Switching between List, Board and Timeline carries the filter scope and drops each view's private display params.** From a filtered, project-scoped list.
 
-- The view switcher links to Board and Timeline keep the scope params (`q`, `project`, `status`, `assignee`, `milestone`, `sprint`, `priority`, `task_type`, `label`, `archived`, `vf`, `field.*`).
+- The view switcher links to Board and Timeline keep the scope params (`q`, `project`, `status`, `assignee`, `milestone`, `sprint`, `priority`, `task_type`, `label`, `vf`, `field.*`). An `archived` param is not scope and is not carried (K121 #1: no URL parameter shows archived tasks).
 - The same switch drops the view-private display params, so each view opens at its own default: the list's `page`/`sort`/`dir` and the timeline's `zoom`/`grouping`/`arrows` do not ride across.
 - A project (or saved-filter) click made while on the Board or Timeline stays on that view rather than jumping to the list.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* `archived` was in the carried list; the list no longer reads it, so the switcher drops it.
 
 ### TML-58 · M3 · major · P3 P10
 **The full group-by set is reachable through a searchable picker, including a single-value enum custom field.** A workspace with enough single-value enum custom fields that the picker's list crosses the search threshold; two dated tasks carry different values of one such field ("Area").

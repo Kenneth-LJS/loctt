@@ -390,6 +390,10 @@ test.describe("TSK — the body editor", () => {
     page, tracker,
   }) => {
     const key = onlyKey(await tracker.seed([{ title: "Toolbar" }]));
+    // Wide enough that the bar holds every group flat; at the default
+    // 1280px the Text style group folds into its menu (TSK-72), and this
+    // case is about the button.
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByTestId("body-editor")).toBeVisible();
 
@@ -413,6 +417,100 @@ test.describe("TSK — the body editor", () => {
 
     await expect(indicator(page)).toHaveAttribute("data-state", "saved", { timeout: 6000 });
     expect(await bodyOnDisk(tracker.root, key)).toContain("**make me bold**");
+  });
+
+  // @verifies TSK-72
+  test("TSK-72: the formatting bar never wraps; groups fold into menus that keep mark state", async ({
+    page, tracker,
+  }) => {
+    const key = onlyKey(await tracker.seed([{ title: "Toolbar fold" }]));
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+    await typeInBody(page, "fold me");
+    const bar = page.getByTestId("body-editor").getByRole("toolbar", { name: "Formatting" });
+
+    // Sweep the BAR's width, not the window's: the fold is a container
+    // query, and the comment composer is ~400px narrower than the
+    // viewport it sits in. The old viewport breakpoint wrapped this row
+    // at every bar width below ~855px. From 480px up it is one row; below
+    // the fully folded row's own width it is deliberately two (B5, below).
+    const wrapped = await bar.evaluate((el: HTMLElement) => {
+      const bad: string[] = [];
+      for (let w = 480; w <= 1000; w += 5) {
+        el.style.width = `${w}px`;
+        const rows = new Set(
+          [...el.querySelectorAll("button,[role=combobox]")]
+            .filter(c => (c as HTMLElement).offsetParent !== null)
+            .map(c => {
+              const r = c.getBoundingClientRect();
+              return Math.round((r.top + r.height / 2) / 4);
+            }),
+        );
+        if (rows.size !== 1) bad.push(`${w}px: ${rows.size} rows`);
+      }
+      el.style.width = "";
+      return bad;
+    });
+    expect(wrapped).toEqual([]);
+
+    // B5 (K121): on a phone-width bar the layout is an intentional two
+    // rows — formatting first, then history and the attach/mode cluster —
+    // never an arbitrary wrap.
+    const rows = await bar.evaluate((el: HTMLElement) => {
+      const out: Record<number, number> = {};
+      for (const w of [320, 375, 440]) {
+        el.style.width = `${w}px`;
+        const byRow = new Map<number, string[]>();
+        for (const c of el.querySelectorAll("button,[role=combobox]")) {
+          if ((c as HTMLElement).offsetParent === null) continue;
+          const r = c.getBoundingClientRect();
+          const k = Math.round((r.top + r.height / 2) / 4);
+          byRow.set(k, [...(byRow.get(k) ?? []), c.getAttribute("aria-label") ?? ""]);
+        }
+        const sorted = [...byRow.entries()].sort((a, b) => a[0] - b[0]);
+        out[w] = sorted.length;
+        // The second row must be the history row, not a stray overflow.
+        const second = sorted[1]?.[1] ?? [];
+        if (!second.includes("Undo")) out[w] = -1;
+      }
+      el.style.width = "";
+      return out;
+    });
+    expect(rows).toEqual({ 320: 2, 375: 2, 440: 2 });
+
+    // Every glyph centred in its 16-unit box. Superscript, subscript and
+    // the numbered list are offset by design and stay within 1 unit;
+    // undo/redo were drawn 1.75 low (UI-23c).
+    await bar.evaluate((el: HTMLElement) => { el.style.width = "1000px"; });
+    const offCentre = await bar.evaluate((el: HTMLElement) =>
+      [...el.querySelectorAll("button svg")]
+        .filter(svg => (svg as SVGSVGElement).closest("button")?.offsetParent !== null)
+        .map(svg => {
+          const b = (svg as SVGSVGElement).getBBox();
+          const name = svg.closest("button")?.getAttribute("aria-label") ?? "?";
+          return { name, cy: b.y + b.height / 2 };
+        })
+        .filter(g => Math.abs(g.cy - 8) > 1)
+        .map(g => `${g.name}: ink centre ${g.cy}`),
+    );
+    expect(offCentre).toEqual([]);
+
+    // Fully folded: Bold is reached through the Text style menu, and the
+    // fold does not hide whether it applies.
+    await bar.evaluate((el: HTMLElement) => { el.style.width = "470px"; });
+    await expect(bar.getByTestId("fmt-bold")).toBeHidden();
+    await page.keyboard.press("Shift+Home");
+    const textStyle = bar.getByTestId("fmt-group-text");
+    await textStyle.click();
+    await page.getByTestId("fmt-menu-bold").click();
+    await expect(textStyle).toHaveClass(/border-accent/);
+    await textStyle.click();
+    await expect(page.getByTestId("fmt-menu-bold")).toHaveAttribute("role", "menuitemcheckbox");
+    await expect(page.getByTestId("fmt-menu-bold")).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("fmt-menu-italic")).toHaveAttribute("aria-checked", "false");
+    await page.keyboard.press("Escape");
+
+    await page.getByTestId("mode-raw").click();
+    await expect(page.getByTestId("body-editor").getByTestId("markdown-editor")).toContainText("**fold me**");
   });
 
   // @verifies XS-11

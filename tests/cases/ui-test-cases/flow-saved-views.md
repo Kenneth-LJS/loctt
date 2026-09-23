@@ -92,12 +92,6 @@ it from a query that legitimately matches nothing (P4).
 - The disabled control explains *why*: which construct (e.g. nested disjunction) basic mode cannot represent.
 - A query that *is* expressible re-enables the toggle and round-trips per VUE-10.
 
-### VUE-12 · M4 · major · P3 P10
-**Editing a built-in opens the editor with the built-in's DSL pre-populated.**
-- Choosing "edit" on "High priority" opens the editor showing the actual DSL behind it, not an empty box.
-- The pre-populated DSL, run as-is, returns the same rows the built-in returned.
-- Saving it creates a **new** user view rather than mutating the built-in, or, if built-ins are overridable, states clearly which is happening.
-
 ### VUE-13 · M1 · major · P1 P10
 **A saved view's sort persists as `field` + `direction` and applies.**
 - Saving a view with sort `priority desc` writes a `field: priority` /
@@ -194,7 +188,7 @@ ships; do not fold the multi-sort bullets back here.*
 ### VUE-42 · M4 · major · P7
 **Replacing a broken saved view cannot happen by accident.** From a broken
 view's row in the sidebar or the Saved-views panel:
-- The action is labelled "Replace…", not "Edit…", because replacement is
+- The action is labelled "Replace", not "Edit", because replacement is
   what it does.
 - The dialog shows the parse error and the on-disk YAML read-only, above
   the (empty) filter picker.

@@ -120,7 +120,16 @@ test("a future-schema tracker shows the banner in the shell, without looping", a
     const create = page.getByLabel("New task");
     await expect(create).toBeVisible();
     await expect(create).toBeDisabled();
-    await expect(create).toHaveAttribute("title", /schema does not match/i);
+    // A298 moved disabled reasons from `title` to `aria-describedby`
+    // pointing at a permanent `sr-only` node (shell/Header.tsx,
+    // `NEW_TASK_REASON_ID`) — `title` is unreachable to a screen-reader
+    // user, who never hovers. This is unrelated to the archive-policy
+    // change; it is the same accessibility migration already applied
+    // elsewhere (see flow-accessibility.spec.ts A11Y-31).
+    const describedBy = await create.getAttribute("aria-describedby");
+    expect(describedBy, "disabled control must carry a description").toBeTruthy();
+    await expect(page.locator(`#${describedBy as string}`))
+      .toHaveText(/schema does not match/i);
 
     // 4. The page is *settled*. This is the assertion the bug fails:
     //    with the mount-refetch loop the shell never reaches a commit,

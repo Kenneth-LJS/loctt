@@ -27,7 +27,9 @@ comes from `workflow.yaml#estimation` and resolves to one of
 - Columns are ordered by `start_date` ascending; ties broken stably (same order on reload, no shuffling).
 - Each column header shows the sprint `name` as written in config — never the ULID `id`, never a derived slug.
 - Each header shows the date window and a task count; the count equals the number of task cards actually rendered in that column.
-- Archived sprints do not appear unless an explicit "show archived" affordance is enabled.
+- Archived sprints never appear, and the view offers no way to show them. They are listed in Settings → Archived → Sprints.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "Archived sprints do not appear unless an explicit show archived affordance is enabled".
 
 ### SPR-2 · M3 · major · P3
 **Active sprints are visually highlighted; future and completed sprints are collapsed by default.** Tracker has one `active`, two `future`, one `completed`.
@@ -260,6 +262,8 @@ comes from `workflow.yaml#estimation` and resolves to one of
 - The whole card is clickable → detail.
 
 ### SPR-40 · M4 · major · P10
-**Sprint create / delete / archive / unarchive are reachable from the Settings panel**, reaching parity with the CLI (`sprint archive`, `--all`).
-- Archive/unarchive are their own routes — `POST /api/sprints/:id/archive` and `/unarchive` (mirroring labels, since core's `editSprint` preserves `archived` untouched) — with a per-row Archive/Unarchive button and a "show archived" toggle.
+**Sprint create / delete / archive / unarchive are reachable from Settings**, reaching parity with the CLI (`sprint archive`, `--all`).
+- Archive/unarchive are their own routes — `POST /api/sprints/:id/archive` and `/unarchive` (mirroring labels, since core's `editSprint` preserves `archived` untouched). Settings → Sprints has a per-row Archive action and lists active sprints only; unarchive is in Settings → Archived → Sprints.
 - The CLI and MCP already have the concept, so this is web reaching parity (P10).
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "with a per-row Archive/Unarchive button and a show archived toggle" on the Sprints panel.

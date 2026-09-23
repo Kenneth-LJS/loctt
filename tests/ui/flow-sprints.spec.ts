@@ -225,7 +225,7 @@ test.describe("SPR — sprints overview", () => {
       await expect(page.getByTestId(`sprint-window-${String(id)}`)).toBeVisible();
     }
 
-    // The archived sprint is absent with no "show archived" enabled.
+    // The archived sprint is absent, and nothing can reveal it (K121 #1).
     const retiredId = byName.get("Retired");
     await expect(page.getByTestId(`sprint-column-${String(retiredId)}`)).toHaveCount(0);
   });
@@ -878,8 +878,8 @@ test.describe("SPR — sprints overview", () => {
     expect(new URL(page.url()).pathname).toBe(`/sprints/${id}`);
   });
 
-  // @verifies SPR-40
-  test("SPR-40: the overview hides archived sprints until the archived-scope control is set to show them", async ({
+  // @verifies SPR-40 SET-52
+  test("SPR-40: the overview never shows an archived sprint and has no reveal", async ({
     tracker,
     page,
   }) => {
@@ -891,27 +891,22 @@ test.describe("SPR — sprints overview", () => {
     const retiredId = String(byName.get("Retired"));
 
     await page.goto(`${tracker.baseURL}/sprints`);
-
-    // Archived is hidden by default; the live one shows.
     await expect(page.getByTestId(`sprint-column-${liveId}`)).toBeVisible();
     await expect(page.getByTestId(`sprint-column-${retiredId}`)).toHaveCount(0);
+    // K121 #1 (amended SPR-1/SPR-40): no "Show archived" checkbox.
+    await expect(page.getByTestId("sprints-show-archived")).toHaveCount(0);
+    await expect(page.getByText(/show archived/i)).toHaveCount(0);
 
-    // The toggle reveals it in place — a local view state, no write.
-    const yamlBefore = await readFile(
-      path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",
-    );
-    // The overview's reveal is a checkbox ("Show archived (n)"), not the
-    // Settings panel's tri-state `sprints-archived-scope` select — see
-    // `SprintsView.tsx`, which cites SPR-1/SPR-40 for it. The claim this
-    // case makes (hidden by default, revealed by a LOCAL toggle that
-    // writes nothing) is unchanged; the yaml comparison below is what
-    // enforces the "no write" half.
-    await page.getByTestId("sprints-show-archived").check();
-    await expect(page.getByTestId(`sprint-column-${retiredId}`)).toBeVisible();
-    const yamlAfter = await readFile(
-      path.join(tracker.root, ".loctt", "config", "sprints.yaml"), "utf8",
-    );
-    expect(yamlAfter).toBe(yamlBefore);
+    // Settings → Sprints lists active sprints only, with no reveal...
+    await page.goto(`${tracker.baseURL}/settings/sprints`);
+    await expect(page.getByTestId(`sprint-row-${liveId}`)).toBeVisible();
+    await expect(page.getByTestId(`sprint-row-${retiredId}`)).toHaveCount(0);
+    await expect(page.getByTestId("sprints-archived-scope-reveal")).toHaveCount(0);
+
+    // ...and Settings → Archived → Sprints is where it is.
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await page.getByTestId("archived-kind-sprints").click();
+    await expect(page.getByTestId(`archived-row-${retiredId}`)).toContainText("Retired");
   });
 
   // @verifies SPR-40
@@ -933,14 +928,7 @@ test.describe("SPR — sprints overview", () => {
 
     // Lands on the Settings Sprints panel, where the roster actions live.
     await expect(page.getByTestId("sprints-panel")).toBeVisible();
-    // The archived-scope control is DEMOTED behind an icon reveal (Ken's
-    // 2026-09-22 archive ruling: archiving is a one-way door, and the
-    // option to look at archived rows must not read as another filter).
-    // It is still here — this panel is the admin/recovery surface, the
-    // only place the policy allows it — but it is not on screen until
-    // asked for. Open the reveal, then assert the control.
-    await page.getByTestId("sprints-archived-scope-reveal").click();
-    await expect(page.getByTestId("sprints-archived-scope")).toBeVisible();
+    await expect(page.getByTestId("sprint-create-open")).toBeVisible();
 
     // And creating is reachable without going there at all (K105).
     await page.goto(`${tracker.baseURL}/sprints`);

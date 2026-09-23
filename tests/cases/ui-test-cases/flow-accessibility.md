@@ -184,11 +184,12 @@ minority of these.
 - A control whose meaning depends on context includes that context ("Remove attachment: design.png").
 
 ### A11Y-21 · M4 · blocker · P8
-**Toggle controls expose their state, not just their label.** Inspect the sidebar collapse, the "Show archived" toggle, the skip-starter-docs toggle, and the board status chips.
+**Toggle controls expose their state, not just their label.** Inspect the sidebar collapse, the skip-starter-docs toggle, and the board status chips.
 
 - Each announces pressed/expanded/checked state and updates the announcement when toggled.
-- "Show archived" announces its current state, so a user cannot be unknowingly filtered.
 - A toggle rendered as a button announces its pressed state; a toggle rendered as a checkbox announces checked.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Dropped the "Show archived" toggle and its bullet: there is no archived toggle anywhere in the web UI.
 
 ### A11Y-22 · M4 · blocker · P8
 **Every form field has a programmatically associated label.** Inspect the init wizard, the create-task modal, the task meta panel's inline editors, and every settings form.
@@ -268,13 +269,15 @@ minority of these.
 - Neither feature is pointer-only. A drag-only affordance with no alternative is a blocker, not a polish item.
 
 ### A11Y-30 · M4 · blocker · P3 P8
-**Colour is never the sole carrier of meaning.** Inspect status chips, priority indicators, WIP-over-cap columns, archived rows, and the sidebar's active-route highlight in greyscale.
+**Colour is never the sole carrier of meaning.** Inspect status chips, priority indicators, WIP-over-cap columns, an archived task's detail page, and the sidebar's active-route highlight in greyscale.
 
 - Status and priority carry a text label or a distinct shape/icon in addition to colour; a greyscale screenshot remains readable.
 - A WIP-over-cap column is identifiable without colour (a count like "6 / 4" and a warning glyph with an accessible name), not by a red header alone.
-- Archived tasks are marked with an "Archived" badge, not only by being dimmed.
+- An archived task, opened by a direct link, is marked with an "Archived" badge, not only by being dimmed.
 - The active sidebar route is marked by more than a colour change — a persistent indicator bar, bolder weight, or the current-page state exposed to assistive tech.
 - Label pills, whose colour is user-chosen and arbitrary, always render their text name.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Archived rows no longer appear in the list, so the badge bullet now applies where an archived task is still shown: its own detail page.
 
 ### A11Y-31 · M4 · major · P4 P8
 **Unavailable controls are announced as unavailable, with a reason.** Inspect the M1 "Mentions me" filter and any control disabled by state (archive on an already-archived task, migrate on a `future` schema, the Delete button on a tracker's sole project in Settings → Projects).
@@ -450,3 +453,11 @@ minority of these.
 - The fallback's heading is announced and its recovery actions (reload, back to list) are focusable and activatable by keyboard.
 - Focus is moved into the fallback rather than being lost with the unmounted subtree.
 - A raw stack trace, if shown at all, is behind a collapsed disclosure that is not the first thing announced.
+
+### A11Y-55 · M4 · minor · P8
+**Every pointer target is at least 24×24px (WCAG 2.5.8 AA).** Measured in a real browser, not read off class names. *(B4, K121: "24px is enough")*
+
+- The header user-menu (avatar) button is at least 24px in both dimensions.
+- A label pill that filters when clicked (list, LST-5) is at least 24px tall.
+- Checkboxes and the ✕ remove buttons keep the 24px they already meet (K31, A250).
+- A control that is only visible on keyboard focus (the skip link) is measured in its visible state.

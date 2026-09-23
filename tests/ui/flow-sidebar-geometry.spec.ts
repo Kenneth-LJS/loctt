@@ -187,8 +187,8 @@ test.describe("SBG — sidebar geometry (real browser)", () => {
     await expect(menu).toBeVisible();
 
     // The menu items are the real labels from RowActions in Sidebar.tsx.
-    const editItem = menu.getByRole("menuitem", { name: "Edit…" });
-    const deleteItem = menu.getByRole("menuitem", { name: "Delete…" });
+    const editItem = menu.getByRole("menuitem", { name: "Edit" });
+    const deleteItem = menu.getByRole("menuitem", { name: "Delete" });
     await expect(editItem).toBeVisible();
     await expect(deleteItem).toBeVisible();
 
@@ -212,7 +212,7 @@ test.describe("SBG — sidebar geometry (real browser)", () => {
     expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(vw + 1);
 
     // And each item is itself within the viewport horizontally — the
-    // point of the fix was that "Edit…/Delete…" were unreadable off the
+    // point of the fix was that "Edit/Delete" were unreadable off the
     // edge.
     for (const item of [editItem, deleteItem]) {
       const b = await item.boundingBox();
