@@ -99,10 +99,12 @@ describe("filterForExport", () => {
 });
 
 /**
- * @verifies BLK-33
- *
  * RFC 4180 escaping. A CSV that reimports as different data than it
  * exported is worse than one that fails to open.
+ *
+ * (The web-UI export cases that used to tag these were retired with the
+ * web export, K30-web. The primitive itself stays: CLI `loctt export`
+ * and MCP `export_tasks` are its callers, covered by TSK-C7.)
  */
 describe("CSV escaping (RFC 4180)", () => {
   it("doubles embedded quotes and quotes the cell", () => {
@@ -126,8 +128,7 @@ describe("CSV escaping (RFC 4180)", () => {
 
   it("does not collapse a label containing a comma into two labels", () => {
     // `["a,b", "c"]` joined on "," is `a,b,c`, which reimports as three
-    // labels — the export has silently changed the data. BLK-33
-    // forbids exactly this.
+    // labels — the export has silently changed the data.
     const csv = exportTasksToCSV([task({ labels: ["a,b", "c"] })]);
     const cell = csv.trimEnd().split("\n")[1]?.split(",").slice(7).join(",") ?? "";
     expect(cell).not.toContain("a,b,c");
@@ -135,7 +136,6 @@ describe("CSV escaping (RFC 4180)", () => {
 });
 
 describe("CSV formula injection", () => {
-  // @verifies BLK-14
   it("neutralises a leading =, +, - or @ so a spreadsheet does not evaluate it", () => {
     for (const lead of ["=", "+", "-", "@"]) {
       const csv = exportTasksToCSV([task({ title: `${lead}cmd|'/c calc'!A1` })]);
@@ -149,7 +149,6 @@ describe("CSV formula injection", () => {
     }
   });
 
-  // @verifies BLK-14
   it("does not neutralise a value that only contains those characters", () => {
     const csv = exportTasksToCSV([task({ title: "a-b+c" })]);
     // Only a *leading* one is a formula. Quoting mid-string values
@@ -158,7 +157,6 @@ describe("CSV formula injection", () => {
     expect(csv).not.toContain("'a-b+c");
   });
 
-  // @verifies BLK-14
   it("sees through leading whitespace", () => {
     const csv = exportTasksToCSV([task({ title: "\t=cmd" })]);
     // Spreadsheets strip leading whitespace before the formula check,

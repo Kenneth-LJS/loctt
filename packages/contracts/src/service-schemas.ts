@@ -21,8 +21,9 @@
 
 import { z } from "zod";
 
+import { EntityColorSchema } from "./color.js";
 import { ArchivedScopeSchema, FilterSchema, QuerySortSchema } from "./query.js";
-import { WorkflowConfigSchema } from "./workflow.js";
+import { IconStringSchema, WorkflowConfigSchema } from "./workflow.js";
 
 /**
  * Body of `POST /api/query/validate`.
@@ -52,7 +53,9 @@ export const CreateViewRequestSchema = z.object({
   filters: z.array(FilterSchema),
   sort: z.array(QuerySortSchema).optional(),
   archivedScope: ArchivedScopeSchema.optional(),
-  icon: z.string().min(1).optional(),
+  icon: IconStringSchema.optional(),
+  /** K103's three-shape colour. See `SavedQuerySchema.color`. */
+  color: EntityColorSchema.optional(),
 }).strict();
 export type CreateViewRequest = z.infer<typeof CreateViewRequestSchema>;
 
@@ -71,7 +74,9 @@ export const EditViewRequestSchema = z.object({
   filters: z.array(FilterSchema).optional(),
   sort: z.array(QuerySortSchema).nullable().optional(),
   archivedScope: ArchivedScopeSchema.optional(),
-  icon: z.string().min(1).nullable().optional(),
+  icon: IconStringSchema.nullable().optional(),
+  /** `null` clears the colour; omitting it leaves the view's colour alone. */
+  color: EntityColorSchema.nullable().optional(),
   /**
    * Explicit opt-in to REPLACE a broken entry — one whose stored filters
    * did not load, so `queries.yaml` still holds its original text

@@ -215,3 +215,56 @@ describe("CLI saved-view broken repair (--force)", () => {
     expect(await bytes()).toContain("not a list");
   });
 });
+
+/**
+ * @verifies K103 colour on a saved view, CLI half — "a capability in
+ * core is not done until CLI and MCP have it".
+ *
+ * What these catch: a `--color` flag accepted but never threaded to
+ * core (so it silently does nothing), and the `-` clear convention
+ * diverging from `label edit --color`.
+ */
+describe("CLI saved-view colour parity", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-cli-viewcolor-"));
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("stores all three colour shapes through --color", async () => {
+    const locttDir = resolveLocttDir(root);
+    await run(["views", "create", "hexed", "--color", "#1e6fcb"], root);
+    await run(["views", "create", "palled", "--color", "palette:teal"], root);
+    await run(["views", "create", "paired", "--color", "light:#0F766E,dark:#39A88F"], root);
+
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(cfg.queries.find(q => q.name === "hexed")?.color).toBe("#1e6fcb");
+    expect(cfg.queries.find(q => q.name === "palled")?.color).toEqual({ palette: "teal" });
+    expect(cfg.queries.find(q => q.name === "paired")?.color)
+      .toEqual({ light: "#0F766E", dark: "#39A88F" });
+  });
+
+  it("clears a colour with --color -", async () => {
+    const locttDir = resolveLocttDir(root);
+    await run(["views", "create", "temp", "--color", "#1e6fcb"], root);
+    await run(["views", "edit", "temp", "--color", "-"], root);
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(cfg.queries.find(q => q.name === "temp")?.color).toBeUndefined();
+  });
+
+  it("accepts --color alone as a change on edit", async () => {
+    const locttDir = resolveLocttDir(root);
+    await run(["views", "create", "solo", "--filter", "status = backlog"], root);
+    // `--color` on its own must satisfy the nothing-to-change guard, or
+    // setting only a colour is a usage error.
+    await run(["views", "edit", "solo", "--color", "palette:blue"], root);
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(cfg.queries.find(q => q.name === "solo")?.color).toEqual({ palette: "blue" });
+  });
+});

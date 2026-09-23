@@ -156,6 +156,84 @@ describe("Button", () => {
     render(<Button fullWidth>x</Button>);
     expect(screen.getByRole("button").className).toContain("w-full");
   });
+
+  describe("loading", () => {
+    it("keeps the label mounted (not display:none) but hides it from the eye and from AT", () => {
+      const { rerender } = render(<Button>Save changes</Button>);
+      const labelBefore = screen.getByText("Save changes");
+      expect(labelBefore.className).not.toContain("invisible");
+      expect(labelBefore.getAttribute("aria-hidden")).toBeNull();
+
+      rerender(<Button loading>Save changes</Button>);
+      // Still findable via getByText — i.e. still in the DOM and still
+      // laid out (an element with display:none is not "hidden" the same
+      // way for Testing Library's default visibility check, but more to
+      // the point: `visibility: hidden` — unlike `display: none` — keeps
+      // the element's box in flow, which is the "does not resize"
+      // requirement.jsdom has no real layout engine to assert the
+      // pixel width against, so the mechanism itself (invisible, not
+      // unmounted) is what this asserts.
+      const label = screen.getByText("Save changes");
+      expect(label.className).toContain("invisible");
+      expect(label.className).not.toContain("hidden");
+      expect(label.getAttribute("aria-hidden")).toBe("true");
+    });
+
+    it("renders the spinner while loading", () => {
+      render(<Button loading>Save</Button>);
+      expect(screen.getByTestId("logo-spinner")).toBeTruthy();
+    });
+
+    it("does not render a spinner when not loading", () => {
+      render(<Button>Save</Button>);
+      expect(screen.queryByTestId("logo-spinner")).toBeNull();
+    });
+
+    it("never hides the button itself from the accessibility tree, only its stale label", () => {
+      render(<Button loading>Save changes</Button>);
+      const btn = screen.getByRole("button");
+      // The control stays in the tree — aria-hidden would remove it
+      // wholesale, not just the stale label.
+      expect(btn.getAttribute("aria-hidden")).toBeNull();
+    });
+
+    it("forwards a caller-supplied aria-label, so the button is nameable while loading", () => {
+      render(
+        <Button loading aria-label="Saving changes">
+          Save changes
+        </Button>,
+      );
+      // No loading-specific prop for this — Button already forwards
+      // aria-label via ButtonHTMLAttributes; the caller decides the
+      // wording and when it applies.
+      expect(screen.getByRole("button", { name: "Saving changes" })).toBeTruthy();
+    });
+
+    it("disables the button while loading, so a duplicate click cannot fire", () => {
+      const onClick = vi.fn();
+      render(
+        <Button loading onClick={onClick}>
+          Save
+        </Button>,
+      );
+      const btn = screen.getByRole("button");
+      expect(btn.hasAttribute("disabled")).toBe(true);
+      fireEvent.click(btn);
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it("stays disabled if the caller's own disabled is true, independent of loading", () => {
+      render(<Button disabled>Save</Button>);
+      expect(screen.getByRole("button").hasAttribute("disabled")).toBe(true);
+    });
+
+    it("marks the button aria-busy while loading, not otherwise", () => {
+      const { rerender } = render(<Button>Save</Button>);
+      expect(screen.getByRole("button").getAttribute("aria-busy")).toBeNull();
+      rerender(<Button loading>Save</Button>);
+      expect(screen.getByRole("button").getAttribute("aria-busy")).toBe("true");
+    });
+  });
 });
 
 describe("IconButton", () => {

@@ -236,6 +236,28 @@ export const TOOLS: readonly ToolDef[] = [
       // has no stderr to read, so surface it in the response — a bare
       // short list would otherwise read as a definitive answer.
       const warnings: string[] = [];
+      // A296 fallout: `parseQueriesConfig` now classifies a view whose
+      // DSL does not parse as BROKEN, so it is absent from
+      // `config.queries` and core's resolver reports `unknown view`.
+      // That is wrong and misleading here — the view exists, it is in
+      // `queries.yaml` and in `config.broken` WITH its parse message.
+      // An agent told "unknown view" goes hunting for the right id
+      // instead of repairing the DSL.
+      //
+      // The web has a `broken_view` path for exactly this
+      // (`server.ts:4066-4091`) and `list_views` already reads
+      // `config.broken`; this surface simply was not consulting it.
+      // Core knows why the view failed, so say so.
+      if (view !== undefined) {
+        const broken = queriesConfig?.broken?.find(
+          b => b.id === view || b.name === view,
+        );
+        if (broken !== undefined) {
+          return errorResult(
+            `saved view "${broken.name}" cannot run: ${broken.error}`,
+          );
+        }
+      }
       // CMT-10: load comment mentions only when the query references them.
       const listViewQuery = view !== undefined && queriesConfig !== undefined
         ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
@@ -338,8 +360,7 @@ export const TOOLS: readonly ToolDef[] = [
       const columns = args["columns"] as string[] | undefined;
 
       // Detailed load so an unparseable task is named rather than
-      // silently omitted (BLK-44) — the same guarantee the web export
-      // and the CLI export give.
+      // silently omitted — the same guarantee the CLI export gives.
       const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
       const { workflowConfig, queriesConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
       const baseQuery = args["query"] as string | undefined;
@@ -391,7 +412,7 @@ export const TOOLS: readonly ToolDef[] = [
       // The export body is returned as text. An agent cannot read a
       // download header, so unreadable paths ride in the response
       // prose — a short export that hid a bad row would read as a
-      // complete answer (BLK-44, P-4).
+      // complete answer (P-4).
       const notes: string[] = [];
       if (warnings.length > 0) {
         notes.push(`Warning: saved view "${view ?? ""}" — ${warnings.join("; ")}`);

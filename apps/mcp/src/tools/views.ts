@@ -12,7 +12,7 @@
  * and calendar configs verbatim as JSON.
  */
 
-import type { Filter } from "@loctt/contracts";
+import type { EntityColor, Filter } from "@loctt/contracts";
 import { ComparisonOpSchema } from "@loctt/contracts";
 import {
   applyArchivedScope,
@@ -29,10 +29,11 @@ import {
 } from "@loctt/core";
 import { z } from "zod";
 
-import { paletteListing } from "../runtime/color.js";
+import { COLOR_INPUT_DOC, colorInputSchema, nullableColorInputSchema, paletteListing } from "../runtime/color.js";
 import { getArchivedScope } from "../runtime/config-list.js";
 import { requireConfirm } from "../runtime/confirm.js";
 import { errorResult, text } from "../runtime/errors.js";
+import { iconInputSchema } from "../runtime/icon.js";
 import type { ToolDef } from "../types.js";
 
 /**
@@ -100,7 +101,7 @@ const FILTERS_GUIDANCE =
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "list_views",
-    description: "List saved views from queries.yaml. Returns JSON [{id, name, filters, summary, sort?, archivedScope?, icon?, archived?}]. `filters` is the view's ordered filter list — the SOURCE OF TRUTH for what it matches (K102); all filters AND together, and the order is exactly as authored. `summary` is a human-readable one-line rendering of those filters, for DISPLAY ONLY: never parse it, never store it, and never send it back as input — edit a view by passing a new `filters` array. `archivedScope` is the view's own archived scope (a property of the view, not a filter). Address a view by `id`, not `name` — names are not unique, and running a view by an ambiguous name fails. By default archived views are hidden (K107); pass `archived: archived` for only archived or `archived: all` for both. Archived views carry `archived: true` and are still runnable by id. A view whose stored filters no longer parse is returned too, as {id, name, summary, broken: true, error, position?}.",
+    description: "List saved views from queries.yaml. Returns JSON [{id, name, filters, summary, sort?, archivedScope?, icon?, color?, archived?}]. `filters` is the view's ordered filter list — the SOURCE OF TRUTH for what it matches (K102); all filters AND together, and the order is exactly as authored. `summary` is a human-readable one-line rendering of those filters, for DISPLAY ONLY: never parse it, never store it, and never send it back as input — edit a view by passing a new `filters` array. `archivedScope` is the view's own archived scope (a property of the view, not a filter). Address a view by `id`, not `name` — names are not unique, and running a view by an ambiguous name fails. By default archived views are hidden (K107); pass `archived: archived` for only archived or `archived: all` for both. Archived views carry `archived: true` and are still runnable by id. A view whose stored filters no longer parse is returned too, as {id, name, summary, broken: true, error, position?}.",
     inputSchema: {
       archived: z.enum(["active", "archived", "all"]).optional()
         .describe("Archived scope (K107): `active` (default) hides archived, `archived` shows only archived, `all` shows both. Broken views are always listed."),
@@ -157,6 +158,7 @@ export const TOOLS: readonly ToolDef[] = [
         // distinct from the `archived` flag that hides it from lists.
         ...(q.archivedScope !== undefined ? { archivedScope: q.archivedScope } : {}),
         ...(q.icon !== undefined ? { icon: q.icon } : {}),
+        ...(q.color !== undefined ? { color: q.color } : {}),
         ...(q.archived !== undefined ? { archived: q.archived } : {}),
       }));
       const broken = (config.broken ?? []).map(b => ({
@@ -180,7 +182,11 @@ export const TOOLS: readonly ToolDef[] = [
       "Create a saved view in queries.yaml. A view is a named, re-runnable set of " +
       "filters. " + FILTERS_GUIDANCE + " `sort` orders results. `archivedScope` is the " +
       "view's OWN archived scope (whether it looks at active, archived, or all tasks) — " +
-      "a property of the view, never a filter term. `icon` is an optional display icon. " +
+      "a property of the view, never a filter term. `icon` is an optional display icon, and " +
+      "`color` its optional colour. " + COLOR_INPUT_DOC + " NOTE: a colour tints a NAMED " +
+      "icon only — when `icon` is an emoji the emoji carries its own colour and the tint " +
+      "is not applied (the colour is still stored, and applies again if the icon changes " +
+      "to a named one). " +
       "Returns the created view (including its generated id) — address the view by that " +
       "id afterward, since names are not unique.",
     inputSchema: {
@@ -192,18 +198,25 @@ export const TOOLS: readonly ToolDef[] = [
       sort: SortSchema.optional().describe("Ordered sort keys, e.g. [{field: \"priority\", direction: \"desc\"}]"),
       archivedScope: z.enum(["active", "archived", "all"]).optional()
         .describe("The view's own archived scope: `active` (default) / `archived` / `all`. Not a filter."),
-      icon: z.string().optional().describe("Optional display icon for the view."),
+      icon: iconInputSchema.optional().describe(
+        "Optional display icon for the view: a named icon (e.g. \"circle-check\") or a "
+        + "SINGLE emoji. Two emoji, or an emoji combined with other characters, are "
+        + "rejected.",
+      ),
+      color: colorInputSchema,
     },
     handler: async ({ locttDir }, args) => {
       const sort = args["sort"] as Array<{ field: string; direction: "asc" | "desc" }> | undefined;
       const archivedScope = args["archivedScope"] as "active" | "archived" | "all" | undefined;
       const icon = args["icon"] as string | undefined;
+      const color = args["color"] as EntityColor | undefined;
       const created = await createView(locttDir, {
         name: args["name"] as string,
         filters: args["filters"] as Filter[],
         ...(sort !== undefined ? { sort } : {}),
         ...(archivedScope !== undefined ? { archivedScope } : {}),
         ...(icon !== undefined ? { icon } : {}),
+        ...(color !== undefined ? { color } : {}),
       });
       return text(JSON.stringify(created, null, 2));
     },
@@ -213,13 +226,14 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "Edit a saved view. `view` accepts an id or a unique name (an ambiguous name is " +
       "rejected — use the id). Any of `name`, `filters`, `sort`, `archivedScope`, `icon` " +
-      "may be supplied; omitted fields are left unchanged. " + FILTERS_GUIDANCE + " " +
+      "and `color` may be supplied; omitted fields are left unchanged. " + FILTERS_GUIDANCE + " " +
       "Supplying `filters` REPLACES the whole ordered list — there is no partial patch, " +
       "because order is meaningful, so send the full list you want. Omitting `filters` " +
       "leaves the view's filters untouched. To change one row, call `list_views` first, " +
       "modify that array, and send it back whole. Pass `sort: null` to clear an existing " +
-      "sort and `icon: null` to clear the icon (both distinct from omitting them, which " +
-      "leaves them as-is). A view `list_views` reported as `broken: true` can be REPAIRED " +
+      "sort, `icon: null` to clear the icon, and `color: null` to clear the colour (each " +
+      "distinct from omitting it, which leaves it as-is). " + COLOR_INPUT_DOC + " A colour " +
+      "tints a NAMED icon only — an emoji carries its own colour and is never tinted. A view `list_views` reported as `broken: true` can be REPAIRED " +
       "here: its stored filters did not load, so queries.yaml still holds its original " +
       "text, and replacing it discards that text — pass `replaceBroken: true` to consent. " +
       "Without that flag the edit is rejected and the file is left untouched. The repaired " +
@@ -233,7 +247,10 @@ export const TOOLS: readonly ToolDef[] = [
       sort: SortSchema.nullable().optional().describe("New sort keys, or null to clear the sort"),
       archivedScope: z.enum(["active", "archived", "all"]).optional()
         .describe("The view's own archived scope: `active` / `archived` / `all`. Not a filter."),
-      icon: z.string().nullable().optional().describe("New display icon, or null to clear it."),
+      icon: iconInputSchema.nullable().optional().describe(
+        "New display icon (a named icon or a SINGLE emoji), or null to clear it.",
+      ),
+      color: nullableColorInputSchema,
       replaceBroken: z.boolean().optional().describe(
         "Consent to REPLACE a broken view (one `list_views` returned with `broken: true`), "
         + "discarding the original text queries.yaml preserves for it. Required for such a "
@@ -246,6 +263,7 @@ export const TOOLS: readonly ToolDef[] = [
       const sort = args["sort"] as Array<{ field: string; direction: "asc" | "desc" }> | null | undefined;
       const archivedScope = args["archivedScope"] as "active" | "archived" | "all" | undefined;
       const icon = args["icon"] as string | null | undefined;
+      const color = args["color"] as EntityColor | null | undefined;
       const updated = await editView(locttDir, ref, {
         ...(args["name"] !== undefined ? { name: args["name"] as string } : {}),
         // Present → replaces the whole list; absent → untouched. There is
@@ -255,6 +273,8 @@ export const TOOLS: readonly ToolDef[] = [
         // `icon` present-and-null → clear; present-and-string → set;
         // absent → unchanged, mirroring `sort` below.
         ...("icon" in args ? { icon: icon ?? null } : {}),
+        // Same present-and-null → clear convention as `icon`/`sort`.
+        ...("color" in args ? { color: color ?? null } : {}),
         // `sort` present-and-null → clear; present-and-array → set;
         // absent → leave unchanged. `"sort" in args` distinguishes an
         // explicit null from an omitted key.

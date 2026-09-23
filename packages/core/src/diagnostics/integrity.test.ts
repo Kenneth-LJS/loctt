@@ -564,3 +564,69 @@ describe("computeIntegritySummary — the cheap badge count (DEG-31)", () => {
     expect(summary.ok).toBe(true);
   });
 });
+
+/**
+ * The `doctor` check the corruption guide requires for a new field
+ * (K103 colour on a saved view).
+ *
+ * What this catches: the loader DROPS an unresolvable colour so the view
+ * keeps working — which means the bad value is invisible unless
+ * something reports it. That is rule 4, "report, don't hide": a
+ * preserved-but-unsurfaced degrade is a degrade nobody ever fixes. This
+ * test is the only thing standing between "the drop is reported" and
+ * "the colour silently vanished and the user thinks they imagined
+ * setting it".
+ */
+describe("saved-view colour — doctor reports what the loader dropped", () => {
+  async function writeQueries(colorBlock: string): Promise<void> {
+    await mkdir(join(dir, "config"), { recursive: true });
+    await writeFile(
+      join(dir, "config", "queries.yaml"),
+      `queries:\n`
+      + `  - id: 01HQ000000000000000000000C\n`
+      + `    name: my-view\n`
+      + `    filters: []\n`
+      + colorBlock,
+      "utf8",
+    );
+  }
+
+  it("reports an unresolvable colour, naming the view and the value", async () => {
+    await writeQueries(`    color: "not-a-colour"\n`);
+    const findings = await checkDataIntegrity(dir);
+    const hit = findings.find(f => f.message.includes("my-view") && f.message.includes("colour"));
+    expect(hit).toBeDefined();
+    expect(hit?.message).toContain("not-a-colour");
+    // Non-blocking: the bytes were read fine and the view still runs, so
+    // one decorative typo must never make a tracker unpublishable.
+    expect(hit?.severity).not.toBe("unreadable");
+    expect(blockingFindings(findings)).toHaveLength(0);
+  });
+
+  it("reports a NESTED unresolvable colour — the schema is the judge", async () => {
+    // The shape a line-oriented hex regex cannot see. `integrity.ts`
+    // records this exact defect: the label sweep was once a hand-rolled
+    // regex and went silent the moment K103 widened the contract.
+    await writeQueries(`    color:\n      light: "#0F766E"\n      dark: "nonsense"\n`);
+    const findings = await checkDataIntegrity(dir);
+    expect(
+      findings.some(f => f.message.includes("my-view") && f.message.includes("colour")),
+    ).toBe(true);
+  });
+
+  it("stays SILENT for each of the three valid shapes", async () => {
+    for (const block of [
+      `    color: "#1e6fcb"\n`,
+      `    color:\n      light: "#0F766E"\n      dark: "#39A88F"\n`,
+      `    color:\n      palette: teal\n`,
+    ]) {
+      await writeQueries(block);
+      const findings = await checkDataIntegrity(dir);
+      // A false positive here is worse than useless: it trains the user
+      // to ignore doctor.
+      expect(
+        findings.some(f => f.message.includes("my-view") && f.message.includes("colour")),
+      ).toBe(false);
+    }
+  });
+});
