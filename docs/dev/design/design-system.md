@@ -327,3 +327,5 @@ horizontal page scroll.
   B1 type scale, A11Y-39/40 zoom+contrast, and others cited above).
 - **Adoption gaps:** `design-review.md` (the audit of what's built but not
   yet wired up).
+- **Words on screen:** `messaging.md` (when to show a message at all, and
+  how to write one that stays).

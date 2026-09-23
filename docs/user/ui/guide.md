@@ -47,7 +47,7 @@ Groups:
 - **Saved filters** — built-in filters with live counts (Assigned to me,
   Reported by me, Mentions me, Due this week, Overdue, High priority), then
   your saved views, then any view whose query no longer parses (marked,
-  still openable). "+ New filter…" opens the view builder.
+  still openable). "+ New filter" opens the view builder.
 - **Milestones**, **Sprints**, **Labels** — rows that filter the List to
   one milestone, sprint, or label.
 - **Recently viewed** — the tasks you opened most recently.
@@ -197,12 +197,47 @@ user menu. A bare `/settings` opens Projects. The groups:
   holidays).
 - **Personal** — My preferences (theme, default project), Card layout,
   Pinned views, Sidebar groups, Keyboard.
-- **System** — Users, Sync (git-backed mode), Backup & restore,
+- **System** — Users, Sync (git-backed mode), Archived, Backup & restore,
   Diagnostics.
 
 Most concepts are also reachable from where you use them: a sidebar row's
 kebab, a board column's menu, or an error banner will deep-link to the exact
 Settings panel that owns it, so you rarely have to hunt.
+
+### Archived
+
+Archiving takes an item out of every list, board, timeline, picker and
+settings panel. **Settings → Archived** is the one place you can still see
+archived items. Pick a type (tasks, projects, saved views, labels,
+milestones, sprints or users) to see its archived items, then restore or
+delete one, a selection, or all of them. Restoring puts an item back where
+it was. Deleting is permanent and asks you to confirm. Deleting several
+items at once also removes them from any tasks that still use them.
+
+An archived task is still reachable by a direct link to it, and its page
+says it is archived.
+
+### Diagnostics
+
+Settings → Diagnostics checks this tracker's files, config and index for
+problems and reports what it finds. It runs the same checks as
+`loctt doctor` on the command line, so you can use whichever is closer to
+hand — the results are the same.
+
+**A note on filesystem safety.** LocTT's file locks are POSIX *advisory*
+locks, which are not safe on network or sync-service filesystems. If the
+tracker sits inside iCloud Drive, Dropbox, OneDrive, or on an NFS/SMB
+mount, two machines writing at once can corrupt state.
+
+LocTT warns you at startup when it detects one of these, and names the
+directory that triggered it. **That detection is best-effort and can miss
+cases** — so seeing no warning is not a guarantee that the filesystem is
+safe. If you keep a tracker in a synced folder, avoid editing it from two
+machines at the same time regardless of whether LocTT flagged it.
+
+(Both notes used to sit in the Diagnostics panel itself. They moved here
+so the panel shows results rather than caveats — the startup warning still
+fires when detection does catch a risky location.)
 
 <!-- [screenshot: the Settings shell — grouped nav and a panel such as Board columns] -->
 
@@ -221,9 +256,15 @@ one. A restore runs in one of three modes:
 
 A **dry run** predicts the counts and writes nothing, in any mode, and the
 restore reports per-outcome counts plus any key reallocations, renamed
-entities, or skipped lines. A backup taken in split parts must be restored
-with the `loctt restore` CLI, which takes every part at once. (The CLI's
-CSV or JSON export is a report, not a backup — it cannot restore.)
+entities, or skipped lines.
+
+A backup taken in split parts is restored here too: select every part
+together in the file picker. The panel reads each file's header and shows
+which part it is and how many the set expects, so a missing one is visible
+before you upload. An incomplete set, a part belonging to a different
+backup, the same part twice, or a file that is not a backup is refused
+with a message naming what is wrong — and nothing is written. (The CSV or
+JSON task export is a report, not a backup — it cannot restore.)
 
 ## Keyboard shortcuts
 

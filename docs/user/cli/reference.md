@@ -471,6 +471,19 @@ Fix it, replace it, or delete it.
 A healthy view is unaffected by any of this — `--force` changes nothing
 about editing or deleting one.
 
+**Running a broken view.** `loctt list --view <broken-one>` (by name or
+id) is refused, not widened to an unfiltered list:
+
+```bash
+$ loctt list --view broken-one
+Error: saved view "broken-one" cannot run: [0].op must be one of: =, !=, in, not in, is empty, is not empty
+```
+
+This mirrors the web list's `broken_view` banner and MCP's `list_tasks`
+refusal — all three surfaces name the parse fault rather than reporting
+"unknown view" (the view exists; its filters just do not load) or
+silently returning every task in the tracker.
+
 #### Building a view's filters
 
 A view is an **ordered list of filters that all AND together**. You build
