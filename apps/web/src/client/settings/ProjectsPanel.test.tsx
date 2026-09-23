@@ -455,3 +455,36 @@ describe("ProjectsPanel editable prefix (PRU-44/PRU-45)", () => {
     expect(link.getAttribute("href")).toContain("/settings/preferences");
   });
 });
+
+/**
+ * @verifies N-4 / UI-10
+ *
+ * ProjectsPanel was one of the two panels missing `settings-panel-title`
+ * (no testid, no `text-text-primary`) and one of the two whose create
+ * action sat below the list instead of at the top. Both are fixed by
+ * routing the header through the shared `SettingsPanelHeader`.
+ */
+describe("ProjectsPanel header convergence (N-4)", () => {
+  it("renders the canonical title markup via SettingsPanelHeader", async () => {
+    stubHappyPath();
+    render(<ProjectsPanel />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    expect(title.tagName).toBe("H1");
+    expect(title.textContent).toBe("Projects");
+    expect(title.className).toContain("text-text-primary");
+  });
+
+  it("puts the create action in the header row next to the title, not below the list", async () => {
+    stubHappyPath();
+    render(<ProjectsPanel />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    const createBtn = screen.getByTestId("project-create-open");
+    // The header row is the nearest <header> ancestor both the title and
+    // the create action share — SettingsPanelHeader/PageHeader's wrapper.
+    const header = title.closest("header");
+    expect(header).not.toBeNull();
+    expect(header?.contains(createBtn)).toBe(true);
+  });
+});

@@ -136,10 +136,12 @@ export function EntryEditDialog({
           <Button
             variant="primary"
             disabled={!canSubmit}
+            loading={pending}
+            aria-label={mode === "create" ? `Add ${noun}` : "Save"}
             onClick={submit}
             testId={`${collection}-entry-save`}
           >
-            {pending ? "Saving…" : mode === "create" ? `Add ${noun}` : "Save"}
+            {mode === "create" ? `Add ${noun}` : "Save"}
           </Button>
         </DialogActions>
       }

@@ -8,14 +8,15 @@ import { useState } from "react";
 import { apiClient,ApiError } from "../api/client.ts";
 import { useViewsScoped } from "../api/hooks/sidebarData.ts";
 import { useDeleteView } from "../api/hooks/useDeleteView.ts";
-import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
 import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { RowActions } from "./RowActions.tsx";
+import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
 import { type BrokenViewContext, ViewFormDialog, type ViewFormTarget } from "./ViewFormDialog.tsx";
 
 /**
@@ -202,9 +203,7 @@ export function SavedViewsPanel() {
     const isConfigInvalid = envelope?.code === "config_invalid";
     return (
       <div data-testid="saved-views-panel">
-        <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
-          Saved views
-        </h1>
+        <SettingsPanelHeader title="Saved views" />
         <div
           data-testid="saved-views-load-error"
           data-views-state={isConfigInvalid ? "config-invalid" : "unreachable"}
@@ -248,29 +247,32 @@ export function SavedViewsPanel() {
 
   return (
     <div data-testid="saved-views-panel">
-      <div className="mb-1 flex items-start justify-between gap-3">
-        <h1 data-testid="settings-panel-title" className="text-lg font-semibold text-text-primary">
-          Saved views
-        </h1>
-        {/* VUE-40: create a saved view from the UI. This is the panel's
-            entry point; the sidebar's "+ New filter" opens the same
-            dialog once the Sidebar lane wires it (see handoff note). */}
-        <div className="flex items-center gap-3">
-          <ArchivedScopeControl
-            testId="saved-views-archived-scope"
-            value={scope}
-            onChange={setScope}
-          />
-          <Button
-            variant="primary"
-            size="sm"
-            testId="saved-views-new"
-            onClick={() => { setDialog({ mode: "create" }); }}
-          >
-            + New view
-          </Button>
-        </div>
-      </div>
+      {/* VUE-40: create a saved view from the UI. This is the panel's
+          entry point; the sidebar's "+ New filter" opens the same
+          dialog once the Sidebar lane wires it (see handoff note). */}
+      <SettingsPanelHeader
+        title="Saved views"
+        actions={(
+          <>
+            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
+                an icon reveal, not a permanently visible segmented
+                control — see ArchivedScopeReveal. */}
+            <ArchivedScopeReveal
+              testId="saved-views-archived-scope"
+              panelLabel="saved views"
+              value={scope}
+              onChange={setScope}
+            />
+            <Button
+              variant="primary"
+              testId="saved-views-new"
+              onClick={() => { setDialog({ mode: "create" }); }}
+            >
+              + New view
+            </Button>
+          </>
+        )}
+      />
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Archived views stay runnable by their URL but are hidden
         from the sidebar.

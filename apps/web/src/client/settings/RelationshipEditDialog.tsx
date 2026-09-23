@@ -134,10 +134,12 @@ export function RelationshipEditDialog({
           <Button
             variant="primary"
             disabled={!canSubmit}
+            loading={pending}
+            aria-label={mode === "create" ? "Add relationship" : "Save"}
             onClick={submit}
             testId="relationships-entry-save"
           >
-            {pending ? "Saving…" : mode === "create" ? "Add relationship" : "Save"}
+            {mode === "create" ? "Add relationship" : "Save"}
           </Button>
         </DialogActions>
       }

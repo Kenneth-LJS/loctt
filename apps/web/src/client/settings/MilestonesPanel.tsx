@@ -7,14 +7,15 @@ import {
   useCountedMilestones,
   useDeleteMilestone,
 } from "../api/hooks/useDataMutations.ts";
-import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
 import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { MilestoneEditDialog } from "./MilestoneEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
+import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
 
 /**
  * Settings → Data → Milestones (MSL-11, MSL-13, MSL-14).
@@ -240,9 +241,7 @@ export function MilestonesPanel() {
   if (milestones.isError) {
     return (
       <div data-testid="milestones-panel">
-        <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
-          Milestones
-        </h1>
+        <SettingsPanelHeader title="Milestones" />
         <div data-testid="milestones-load-error" data-milestones-state="load-failed">
           <ErrorState
             error={milestones.error}
@@ -266,27 +265,32 @@ export function MilestonesPanel() {
 
   return (
     <div data-testid="milestones-panel">
-      <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
-        Milestones
-      </h1>
+      <SettingsPanelHeader
+        title="Milestones"
+        actions={(
+          <>
+            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
+                an icon reveal, not a permanently visible segmented
+                control — see ArchivedScopeReveal. */}
+            <ArchivedScopeReveal
+              testId="milestones-archived-scope"
+              panelLabel="milestones"
+              value={scope}
+              onChange={setScope}
+            />
+            <Button
+              variant="primary"
+              testId="milestone-create-open"
+              onClick={() => { setCreating(true); }}
+            >
+              New milestone
+            </Button>
+          </>
+        )}
+      />
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Progress is shown on the Milestones view, not here.
       </p>
-
-      <div className="mb-4 flex items-center gap-3">
-        <Button
-          variant="secondary"
-          testId="milestone-create-open"
-          onClick={() => { setCreating(true); }}
-        >
-          New milestone
-        </Button>
-        <ArchivedScopeControl
-          testId="milestones-archived-scope"
-          value={scope}
-          onChange={setScope}
-        />
-      </div>
 
       {creating && (
         <MilestoneEditDialog

@@ -79,9 +79,11 @@ export function MilestoneEditDialog(props: MilestoneDialogProps) {
             variant="primary"
             testId={isEdit ? "milestone-save" : "milestone-create-submit"}
             disabled={blocked}
+            loading={pending}
+            aria-label={isEdit ? "Save changes" : "Create"}
             onClick={submit}
           >
-            {pending ? "Saving…" : isEdit ? "Save changes" : "Create"}
+            {isEdit ? "Save changes" : "Create"}
           </Button>
         </DialogActions>
       }
