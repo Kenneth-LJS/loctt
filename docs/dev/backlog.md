@@ -15,11 +15,6 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ## Tests and tooling
 
-### B10. Investigate the three "flakes" — todo
-
-K121 #10. BLK-24, BRD-4, GIT-12: run alone, repeatedly, at
-`--workers=1`; fix the defect or the test.
-
 ---
 
 ## Housekeeping from this session
