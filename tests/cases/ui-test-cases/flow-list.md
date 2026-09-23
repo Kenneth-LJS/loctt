@@ -2,7 +2,7 @@
 
 The sortable, filterable task table at `/list` — columns, sort, the
 filter bar, URL state, the archived toggle, pagination, and the
-free-text DSL search box. Row selection, the bulk bar, and export live
+free-text DSL search box. Row selection and the bulk bar live
 in [flow-bulk.md](flow-bulk.md); saving and applying named views lives
 in [flow-saved-views.md](flow-saved-views.md); the board and timeline
 renderings of the same task set are in [flow-board.md](flow-board.md)

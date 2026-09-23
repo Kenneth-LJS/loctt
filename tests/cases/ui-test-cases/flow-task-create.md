@@ -1,23 +1,23 @@
 # Flow: Create task modal
 
-The single create-task modal reached from the header `+`, from "+ Add
-task" on a board column, and from the `n` keyboard shortcut — its
-fields, the project resolution chain, "Create another", and the success
-toast. What happens to the created task afterwards is
-[flow-tasks.md](flow-tasks.md); where the new card lands on the board is
-[flow-board.md](flow-board.md); label management beyond inline creation
-is [flow-milestones-labels.md](flow-milestones-labels.md); the full body
+The single create-task modal reached from the header `+` and from the
+`n` keyboard shortcut — its fields, the project resolution chain,
+"Create another", and the success toast. What happens to the created
+task afterwards is [flow-tasks.md](flow-tasks.md); where the new card
+lands on the board is [flow-board.md](flow-board.md); label management
+beyond inline creation is
+[flow-milestones-labels.md](flow-milestones-labels.md); the full body
 editor (as opposed to the compact one here) is
 [flow-tasks.md](flow-tasks.md) § body editor.
 
 ## A. Happy path
 
 ### NEW-1 · M3 · blocker · P8
-**All three entry points open the same modal.** Open it from the header `+`, then from a board column's "+ Add task", then with `n`.
+**Both entry points open the same modal.** Open it from the header `+`, then with `n`.
 
-- The same component renders in all three cases — same field set, same layout, same heading.
-- Only the pre-filled values differ (NEW-3, NEW-4); nothing is present in one entry point and absent in another.
-- Opening from any entry point does not change the underlying route away from the current view; the URL either stays put or gains a modal-state param that back dismisses.
+- The same component renders in both cases — same field set, same layout, same heading.
+- Only the pre-filled values differ (NEW-4); nothing is present in one entry point and absent in another.
+- Opening from either entry point does not change the underlying route away from the current view; the URL either stays put or gains a modal-state param that back dismisses.
 
 ### NEW-2 · M3 · blocker · P8
 **Creating a task with only a title succeeds.** Open the modal, type a title, submit.
@@ -26,13 +26,6 @@ editor (as opposed to the compact one here) is
 - The task is created with the resolved project, and all other fields take their workflow defaults (first status, default priority/type per config) — not blank values that fail validation later.
 - A `task.md` exists on disk with the typed title and a freshly allocated key using the project's `prefix`.
 - The modal closes on success.
-
-### NEW-3 · M3 · major · P8
-**"+ Add task" on a board column pre-fills that column's status.** Click "+ Add task" on the `In review` column.
-
-- The status field is pre-selected to `in_review` (the column's first status if the column collapses several — consistent with the drop behaviour in [flow-board.md](flow-board.md)).
-- The pre-fill is editable: changing the status before submitting creates the task with the chosen status.
-- On success, the new card appears in the column it was created from.
 
 ### NEW-4 · M3 · major · P8
 **The `n` shortcut opens the modal from any view and focuses the title.** Press `n` on `/list`, `/board`, `/timeline`, and a task detail page.
@@ -226,7 +219,7 @@ editor (as opposed to the compact one here) is
 
 - Focus cycles within the modal and never reaches the page behind it.
 - The background is inert to clicks and to keyboard interaction.
-- On close, focus returns to the trigger (`+` button, the board column's "+ Add task", or the element focused when `n` was pressed).
+- On close, focus returns to the trigger (`+` button, or the element focused when `n` was pressed).
 
 ### NEW-29 · M3 · minor · P8
 **Double-submitting does not create two tasks.** Click submit twice rapidly, or press Enter twice.

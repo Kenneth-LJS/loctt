@@ -10,28 +10,9 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { DEFAULT_EXPORT_COLUMNS } from "@loctt/core";
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures/tracker.ts";
-
-/**
- * Opens the list toolbar's "View options" (⋯) menu.
- *
- * Export and "Save as view" moved off the toolbar and into this overflow
- * menu (`053cf571`, "toolbar overflow menu"). Their triggers only exist
- * while it is open, so every caller that reaches for them opens this
- * first. The panel is portalled to `document.body` (K106 step 2), so the
- * items are addressed from `page`, not from the menu's subtree.
- */
-async function openViewActions(page: Page): Promise<void> {
-  const menu = page.getByTestId("view-actions-menu");
-  if ((await menu.getAttribute("aria-expanded")) !== "true") {
-    await menu.click();
-  }
-  await expect(menu).toHaveAttribute("aria-expanded", "true");
-}
-
 
 // The list-toolbar redesign folded advanced querying INTO the filter
 // system: the leading "Advanced" pill (`advanced-query-toggle`) is gone.
@@ -796,170 +777,6 @@ test.describe("BLK — refused bulk op", () => {
   });
 });
 
-test.describe("BLK — export", () => {
-  const MIXED = [
-    { title: 'Fix "quoted", comma', fields: { priority: "high" } },
-    { title: "High two", fields: { priority: "high" } },
-    { title: "Low one", fields: { priority: "low" } },
-  ];
-
-  // @verifies BLK-16
-  test("BLK-16: the menu states the count and offers both formats", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed(MIXED);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
-
-    await openViewActions(page);
-    await page.getByRole("button", { name: "Export" }).click();
-    const menu = page.getByRole("menu", { name: "Export" });
-
-    // The filter total, stated before committing.
-    await expect(menu).toContainText("Export 3 tasks");
-    await expect(menu.getByRole("menuitem", { name: "CSV" })).toBeVisible();
-    await expect(menu.getByRole("menuitem", { name: "JSON" })).toBeVisible();
-  });
-
-  // @verifies BLK-16
-  test("BLK-16: the count follows the filter, not the page", async ({ page, tracker }) => {
-    await tracker.seed(MIXED);
-    await page.goto(`${tracker.baseURL}/list?priority=high`);
-    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
-
-    await openViewActions(page);
-    await page.getByRole("button", { name: "Export" }).click();
-    await expect(page.getByRole("menu", { name: "Export" })).toContainText("Export 2 tasks");
-  });
-
-  // @verifies BLK-14
-  test("BLK-14: CSV carries the filter and the same rows as the screen", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed(MIXED);
-    await page.goto(`${tracker.baseURL}/list?priority=high`);
-    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
-
-    // The keys on screen, to compare against — not merely the count.
-    const onScreen = await page.getByRole("cell", { name: /^[A-Z]+-\d+$/ }).allTextContents();
-
-    await openViewActions(page);
-    await page.getByRole("button", { name: "Export" }).click();
-    const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
-    expect(href).toContain("priority=high");
-
-    const res = await page.request.get(`${tracker.baseURL}${href ?? ""}`);
-    expect(res.headers()["content-type"]).toContain("text/csv");
-    expect(res.headers()["content-disposition"]).toContain("attachment");
-
-    const csv = await res.text();
-    const lines = csv.trimEnd().split("\n");
-    // Stable header order, then one row per matching task.
-    expect(lines[0]?.startsWith("key,id,title")).toBe(true);
-    for (const key of onScreen) {
-      expect(csv).toContain(key);
-    }
-  });
-
-  // @verifies BLK-14
-  test("BLK-14: export follows the filter, not the selection", async ({ page, tracker }) => {
-    await tracker.seed(MIXED);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
-
-    // Select one row; the export must still carry all three.
-    await page.locator("tbody input[type=checkbox]").first().check();
-
-    await openViewActions(page);
-    await page.getByRole("button", { name: "Export" }).click();
-    await expect(page.getByRole("menu", { name: "Export" })).toContainText("Export 3 tasks");
-    const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
-    const res = await page.request.get(`${tracker.baseURL}${href ?? ""}`);
-    const lines = (await res.text()).trimEnd().split("\n");
-    // Header + 3 data rows, not header + 1.
-    expect(lines.length).toBeGreaterThanOrEqual(4);
-  });
-
-  // @verifies BLK-15
-  test("BLK-15: JSON is native-typed and uses stored keys", async ({ page, tracker }) => {
-    await tracker.seed(MIXED);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
-
-    await openViewActions(page);
-    await page.getByRole("button", { name: "Export" }).click();
-    const href = await page.getByRole("menuitem", { name: "JSON" }).getAttribute("href");
-
-    const res = await page.request.get(`${tracker.baseURL}${href ?? ""}`);
-    expect(res.headers()["content-type"]).toContain("application/json");
-    expect(res.headers()["content-disposition"]).toContain("attachment");
-
-    const body = await res.json() as { priority?: string; labels?: unknown }[];
-    expect(Array.isArray(body)).toBe(true);
-    // Stored keys, not rendered labels — the JSON is data.
-    const priorities = body.map(t => t.priority).filter(Boolean);
-    expect(priorities).toContain("high");
-    expect(priorities).not.toContain("High");
-  });
-
-  // @verifies BLK-33
-  test("BLK-33: CSV escapes quotes and commas in a title", async ({ page, tracker }) => {
-    await tracker.seed(MIXED);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
-
-    await openViewActions(page);
-    await page.getByRole("button", { name: "Export" }).click();
-    const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
-    const csv = await (await page.request.get(`${tracker.baseURL}${href ?? ""}`)).text();
-
-    // Doubled quotes, whole cell wrapped — and the row is not split.
-    expect(csv).toContain('"Fix ""quoted"", comma"');
-    expect(csv.trimEnd().split("\n")).toHaveLength(4);
-  });
-
-  // @verifies BLK-35
-  test("BLK-35: zero matches disables export rather than promising a file", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed(MIXED);
-    await page.goto(`${tracker.baseURL}/list?priority=critical`);
-    await expect(page.getByText("No tasks match these filters.")).toBeVisible();
-
-    // Either an empty file or a disabled control — never a "0 tasks
-    // exported" success next to a file the user did not get.
-    await openViewActions(page);
-    await expect(page.getByRole("button", { name: "Export" })).toBeDisabled();
-  });
-
-  // @verifies BLK-37
-  test("BLK-37: the export URL reproduces the identical file", async ({ page, tracker }) => {
-    await tracker.seed(MIXED);
-    await page.goto(`${tracker.baseURL}/list?priority=high`);
-    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
-
-    await openViewActions(page);
-    await page.getByRole("button", { name: "Export" }).click();
-    const href = await page.getByRole("menuitem", { name: "CSV" }).getAttribute("href");
-
-    // Byte-for-byte, not row counts: a filter dropped server-side gives
-    // a same-sized file with different rows.
-    const first = await (await page.request.get(`${tracker.baseURL}${href ?? ""}`)).text();
-    const second = await (await page.request.get(`${tracker.baseURL}${href ?? ""}`)).text();
-    expect(second).toBe(first);
-
-    // And the filter really is in the URL, not only in React state.
-    expect(href).toContain("priority=high");
-    const unfiltered = await (await page.request.get(
-      `${tracker.baseURL}/api/tasks/export?format=csv`,
-    )).text();
-    expect(unfiltered).not.toBe(first);
-  });
-});
-
 test.describe("BLK — entity pickers", () => {
   async function selectOne(page: import("@playwright/test").Page): Promise<void> {
     await page.locator("tbody input[type=checkbox]").first().check();
@@ -1496,8 +1313,7 @@ test.describe("BLK — archive undo", () => {
     await page.getByRole("button", { name: "Archive", exact: true }).click();
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByTestId("view-actions-menu").click();
-    await page.getByTestId("view-actions-archived-scope").selectOption("all");
+    await page.getByTestId("list-archived-scope-all").click();
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
     // With a badge, not a dimmed row: opacity alone is invisible to a
     // screen reader and to anyone the contrast drop does not reach.
@@ -1741,42 +1557,6 @@ test.describe("BLK — scale", () => {
     }
   });
 
-  // @verifies BLK-34
-  test("BLK-34: exporting 5,000 rows completes with every row present", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seedBulk(AT_SCALE);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.locator("tbody tr").first()).toBeVisible();
-
-    const download = page.waitForEvent("download");
-    await openViewActions(page);
-    await page.getByRole("button", { name: /Export/i }).click();
-    await page.getByRole("menuitem", { name: /CSV/i }).click();
-
-    // A pending state, so a multi-second export does not look like a
-    // menu that closed and did nothing.
-    await expect(page.getByRole("button", { name: /Export/i }))
-      .toContainText("Preparing");
-
-    const file = await (await download).path();
-    const text = await readFile(file, "utf8");
-    // Header plus one line per task. These fixtures have no body and no
-    // labels, so no field can hold an embedded newline and a line count
-    // is exact here — the case's "allowing for quoted embedded
-    // newlines" caveat is about real data, and CSV quoting is covered
-    // by the round-trip test in the export suite rather than at scale.
-    const rows = text.trimEnd().split("\n").length;
-    expect(rows).toBe(AT_SCALE + 1);
-    // Every row actually made it, not just the right count of something.
-    expect(text).toContain("Bulk task 1,");
-    expect(text).toContain(`Bulk task ${String(AT_SCALE)},`);
-
-    // The page is still usable afterwards — the export did not leave it
-    // wedged.
-    await expect(page.getByText(`Showing 1–50 of ${String(AT_SCALE)}`)).toBeVisible();
-  });
 });
 
 test.describe("BLK — picker vocabularies", () => {
@@ -1951,8 +1731,7 @@ test.describe("BLK — refused and stale writes", () => {
     await tracker.run(["archive", String(seeded[0])]);
 
     await page.goto(`${tracker.baseURL}/list`);
-    await page.getByTestId("view-actions-menu").click();
-    await page.getByTestId("view-actions-archived-scope").selectOption("all");
+    await page.getByTestId("list-archived-scope-all").click();
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
     await page.getByRole("checkbox", { name: "Select all on this page" }).check();
 
@@ -2081,43 +1860,6 @@ test.describe("BLK — stale vocabulary and export columns", () => {
     ).toHaveCount(0);
   });
 
-  // @verifies BLK-36
-  test("BLK-36: the default export carries core's columns and no custom fields", async ({
-    page,
-    tracker,
-  }) => {
-    // A task with a custom field, which must not add a column unasked.
-    // Custom fields have to be declared in workflow.yaml before a task
-    // can carry one — a bare `set` is refused.
-    const seeded = await tracker.seed([{ title: "One" }]);
-    const cfg = path.join(tracker.root, ".loctt", "config", "workflow.yaml");
-    await writeFile(
-      cfg,
-      (await readFile(cfg, "utf8")).replace(
-        "custom_fields: []",
-        "custom_fields:\n  - key: team\n    label: Team\n    type: string\n"
-        + "    multi: false\n    searchable: false",
-      ),
-      "utf8",
-    );
-    await tracker.run(["set", String(seeded[0]), "team", "platform"]);
-
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.locator("tbody tr").first()).toBeVisible();
-
-    const download = page.waitForEvent("download");
-    await openViewActions(page);
-    await page.getByRole("button", { name: /Export/i }).click();
-    await page.getByRole("menuitem", { name: /CSV/i }).click();
-    const header = (await readFile(await (await download).path(), "utf8"))
-      .split("\n")[0] ?? "";
-
-    // Core owns the default column set; the export must not invent one.
-    expect(header.split(",")).toEqual([...DEFAULT_EXPORT_COLUMNS]);
-    // A sparse per-project custom field is not a default column.
-    expect(header).not.toContain("team");
-    expect(header).not.toContain("fields.");
-  });
 });
 
 test.describe("BLK — failures that must not be silent", () => {
@@ -2146,34 +1888,6 @@ test.describe("BLK — failures that must not be silent", () => {
     // cannot tell them apart.
     await expect(boxes.nth(3)).toBeChecked();
     await expect(boxes.nth(4)).not.toBeChecked();
-  });
-
-  // @verifies BLK-43
-  test("BLK-43: a failed export is reported, not just an absent download", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed([{ title: "One" }]);
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.locator("tbody tr").first()).toBeVisible();
-
-    await page.route(/\/api\/tasks\/export/, async route => {
-      await route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ code: "io_failed", message: "disk is full" }),
-      });
-    });
-
-    await openViewActions(page);
-    await page.getByRole("button", { name: /Export/i }).click();
-    await page.getByRole("menuitem", { name: /CSV/i }).click();
-
-    // The absence of a file is not the only signal.
-    const status = page.getByRole("status").filter({ hasText: /export/i });
-    await expect(status).toContainText(/could not|failed/i);
-    await expect(status).toContainText("disk is full");
-    await expect(status.getByRole("button", { name: /Retry|Try again/i })).toBeVisible();
   });
 
   // @verifies BLK-48
@@ -4099,9 +3813,8 @@ test.describe("LST — the filter bar (M1.3)", () => {
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
     await expect(page).not.toHaveURL(/archived/);
 
-    await page.getByTestId("view-actions-menu").click();
-    const scope = page.getByTestId("view-actions-archived-scope");
-    await scope.selectOption("all");
+    const scope = page.getByTestId("list-archived-scope");
+    await scope.getByTestId("list-archived-scope-all").click();
     await expect(page).toHaveURL(/archived=all/);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
     // Marked, so an archived row is distinguishable from a live one.
@@ -4110,7 +3823,7 @@ test.describe("LST — the filter bar (M1.3)", () => {
     ).toContainText("Archived");
 
     // Back to active removes the param rather than writing archived=active.
-    await scope.selectOption("active");
+    await scope.getByTestId("list-archived-scope-active").click();
     await expect(page).not.toHaveURL(/archived/);
   });
 
@@ -4201,10 +3914,8 @@ test.describe("LST — URL params that could lie (M1.3)", () => {
       await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
       await expect(page.locator("tbody")).not.toContainText("Gone");
       // The control's visual state agrees with the result set.
-      await page.getByTestId("view-actions-menu").click();
-      await expect(page.getByTestId("view-actions-archived-scope"))
-        .toHaveValue("active");
-      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("list-archived-scope"))
+        .toHaveAttribute("data-value", "active");
     }
   });
 
@@ -4719,7 +4430,6 @@ test.describe("VUE — saving a view (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await openViewActions(page);
     await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("my-open-bugs");
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -4757,7 +4467,6 @@ test.describe("VUE — saving a view (M1.3)", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await openViewActions(page);
     await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("keys-not-labels");
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -4941,7 +4650,6 @@ test.describe("VUE — saving a view (M1.3)", () => {
     // Now save view B through the UI.
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
-    await openViewActions(page);
     await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("view-b");
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -5396,7 +5104,6 @@ test.describe("The last of M1.3", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await openViewActions(page);
     await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("from-ui");
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -5550,7 +5257,6 @@ test.describe("Closing out M1.3", () => {
 
     await page.goto(`${tracker.baseURL}/list?sort=priority&dir=desc`);
     await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
-    await openViewActions(page);
     await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("by-priority");
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -5580,7 +5286,6 @@ test.describe("Closing out M1.3", () => {
     ]);
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
-    await openViewActions(page);
     await page.getByTestId("view-actions-save-view").click();
     await page.getByRole("textbox").first().fill("open-work");
     await page.getByRole("button", { name: "Save", exact: true }).click();
