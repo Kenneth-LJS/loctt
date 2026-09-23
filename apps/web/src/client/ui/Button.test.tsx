@@ -368,7 +368,7 @@ describe("ToolbarButton", () => {
   it("applies the accent facet look when active", () => {
     render(<ToolbarButton active>Status</ToolbarButton>);
     const cls = screen.getByRole("button", { name: "Status" }).className;
-    // Verbatim the FilterDropdown active look.
+    // Verbatim the FilterFacet active look.
     expect(cls).toContain("border-accent");
     expect(cls).toContain("bg-accent-muted");
     expect(cls).toContain("text-accent");

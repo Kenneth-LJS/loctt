@@ -9,7 +9,7 @@ import { cn } from "./cn.ts";
  *
  * `invalid` wires `aria-invalid` and a danger border together, so a
  * caller cannot set one without the other. `leadingIcon` is the search-
- * box glyph slot (Sidebar/Header/FilterDropdown search boxes); when set,
+ * box glyph slot (Sidebar/Header/FilterFacet search boxes); when set,
  * the input is wrapped `relative` and padded left for the icon.
  *
  * The placeholder uses `text-text-tertiary`, which now clears AA after

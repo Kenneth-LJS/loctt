@@ -415,7 +415,7 @@ describe("ProjectsPanel editable prefix (PRU-44/PRU-45)", () => {
 });
 
 /**
- * @verifies N-4 / UI-10
+ * @verifies SET-55
  *
  * ProjectsPanel was one of the two panels missing `settings-panel-title`
  * (no testid, no `text-text-primary`) and one of the two whose create

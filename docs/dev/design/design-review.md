@@ -206,7 +206,7 @@ so they're not even the same color.
 ### B5. Hand-rolled menus bypass `ui/Menu` — P2
 `list/ExportMenu.tsx`, `list/BulkBar.tsx` (:345,:369) build `role="menu"`
 dropdowns by hand instead of `ui/Menu` (used correctly by Header,
-TaskDetail, FilterDropdown, RelationshipRow, KeyboardPanel).
+TaskDetail, FilterFacet, RelationshipRow, KeyboardPanel).
 
 ### B6. Chip + icon-glyph adoption partial — P2
 Chip: 4 importers; hand-rolled pills remain in
@@ -215,7 +215,7 @@ Chip: 4 importers; hand-rolled pills remain in
 `create/CreateTaskModal.tsx:1172`, `shell/Sidebar.tsx:353`.
 Glyphs bypassing the `ICON` map (`ui/icons.ts`): `create/CreateTaskModal.tsx:427`
 & `shell/ShortcutHelpDialog.tsx:80` use `"×"` (want `ICON.close` `✕`);
-`list/FilterDropdown.tsx:89`, `relationships/RelationshipsPanel.tsx:241`,
+`list/FilterFacet.tsx:89`, `relationships/RelationshipsPanel.tsx:241`,
 `relationships/TreeRows.tsx:75` use literal `▾`/`▸`.
 
 ### Library health (verified, no redesign needed)

@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
+import { expectComboValueSelectable, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { SavedViewsPanel } from "./SavedViewsPanel.tsx";
 
 /**
@@ -268,8 +268,8 @@ describe("SavedViewsPanel — edit (VUE-41)", () => {
     // picker row it was authored as — NOT as query text.
     await screen.findByTestId("view-filter-field-0");
     expect(screen.getByTestId<HTMLInputElement>("view-form-name").value).toBe("Open bugs");
-    expect(comboValue("view-filter-field-0")).toBe("status");
-    expect(comboValue("view-filter-op-0")).toBe("in");
+    expectComboValueSelectable("view-filter-field-0", "status");
+    expectComboValueSelectable("view-filter-op-0", "in");
     expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
 
     fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Renamed" } });
@@ -392,7 +392,7 @@ describe("SavedViewsPanel — broken views (VUE-22)", () => {
 });
 
 /**
- * @verifies N-4 / UI-10
+ * @verifies SET-55
  *
  * SavedViewsPanel already put its create action in the title row, but at
  * `size="sm"` (24.5px) — the one panel of the six at a different control

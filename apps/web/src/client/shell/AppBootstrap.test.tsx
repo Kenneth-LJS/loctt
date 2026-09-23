@@ -357,4 +357,30 @@ describe("AppBootstrap with an interrupted migration", () => {
     expect(text).toMatch(/not recorded/i);
     expect(text).toContain(SENTINEL);
   });
+
+  /**
+   * @verifies SET-31
+   *
+   * The other three tests in this block cover "dedicated state, not
+   * the schema banner over a working UI" and "no one-click fix". This
+   * one covers the two bullets they don't: the screen states that the
+   * user must investigate before continuing, and it gives the CLI
+   * recovery path (`loctt migrate`, `loctt doctor`) rather than
+   * leaving recovery to guesswork.
+   */
+  it("states that the user must investigate before continuing and gives the CLI recovery path", async () => {
+    MISMATCH = {
+      kind: "interrupted",
+      from: 1,
+      to: 2,
+      backup: BACKUP,
+      sentinel_path: SENTINEL,
+    };
+    mount();
+
+    const text = (await screen.findByRole("alert")).textContent ?? "";
+    expect(text).toMatch(/resolved by hand|by hand/i);
+    expect(text).toContain("loctt migrate");
+    expect(text).toContain("loctt doctor");
+  });
 });

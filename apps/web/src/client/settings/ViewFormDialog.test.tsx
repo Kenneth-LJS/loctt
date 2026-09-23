@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { comboOptions, comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
+import { comboOptions, expectComboValueSelectable, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { ViewFormDialog, type ViewFormTarget } from "./ViewFormDialog.tsx";
 
 /**
@@ -120,14 +120,14 @@ describe("ViewFormDialog — simple filters render as dropdown rows (K102)", () 
     const field = screen.getByTestId("view-filter-field-0");
     expect(field.tagName).toBe("BUTTON");
     expect(field.getAttribute("aria-haspopup")).toBe("listbox");
-    expect(comboValue("view-filter-field-0")).toBe("status");
-    expect(comboValue("view-filter-op-0")).toBe("in");
+    expectComboValueSelectable("view-filter-field-0", "status");
+    expectComboValueSelectable("view-filter-op-0", "in");
 
     // The row is marked simple, and NO query textarea exists for it.
     expect(rows()[0]?.getAttribute("data-row-kind")).toBe("simple");
     expect(screen.queryByTestId("view-filter-query-0")).toBeNull();
 
-    // The value picker is the SAME FilterDropdown the top filter bar
+    // The value picker is the SAME FilterFacet the top filter bar
     // renders — labelled by the field, with the selection count.
     expect(screen.getByRole("button", { name: "Filter Status" })).toBeTruthy();
   });
@@ -187,7 +187,7 @@ describe("ViewFormDialog — simple filters render as dropdown rows (K102)", () 
     );
     await screen.findByTestId("view-filter-field-0");
 
-    expect(comboValue("view-filter-field-0")).toBe("fields.severity");
+    expectComboValueSelectable("view-filter-field-0", "fields.severity");
     expect(comboOptions("view-filter-field-0"))
       .toContainEqual({ value: "fields.severity", label: "fields.severity" });
   });
@@ -226,8 +226,8 @@ describe("ViewFormDialog — order (Ken: 'i dont want things to swap positions')
     expect(screen.getByTestId<HTMLTextAreaElement>("view-filter-query-1").value)
       .toBe("priority = low");
     // The rows either side are untouched.
-    expect(comboValue("view-filter-field-0")).toBe("status");
-    expect(comboValue("view-filter-field-2")).toBe("task_type");
+    expectComboValueSelectable("view-filter-field-0", "status");
+    expectComboValueSelectable("view-filter-field-2", "task_type");
   });
 
   it("removing row N removes exactly that row, leaving the others in order", async () => {
@@ -238,8 +238,8 @@ describe("ViewFormDialog — order (Ken: 'i dont want things to swap positions')
     fireEvent.click(screen.getByTestId("view-filter-remove-1"));
 
     expect(rows().map(r => r.getAttribute("data-row-kind"))).toEqual(["simple", "simple"]);
-    expect(comboValue("view-filter-field-0")).toBe("status");
-    expect(comboValue("view-filter-field-1")).toBe("task_type");
+    expectComboValueSelectable("view-filter-field-0", "status");
+    expectComboValueSelectable("view-filter-field-1", "task_type");
     // The advanced row is gone entirely.
     expect(screen.queryByTestId("view-filter-query-1")).toBeNull();
   });

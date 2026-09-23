@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { comboOptions, comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
+import { comboOptions, comboValue, expectComboValueSelectable, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { TimelinePanel } from "./TimelinePanel.tsx";
 
 /**
@@ -90,14 +90,14 @@ describe("TimelinePanel", () => {
     render(<TimelinePanel />, { wrapper: wrapper() });
 
     await screen.findByTestId("timeline-default-zoom");
-    expect(comboValue("timeline-default-zoom")).toBe("month");
+    expectComboValueSelectable("timeline-default-zoom", "month");
     // Grouping is no longer a native <select> — it is the shared
     // searchable GroupByPicker, whose selected value is exposed on the
     // trigger as `data-value` (asserting `.value` here was asserting the
     // pre-redesign control).
     expect(screen.getByTestId("timeline-default-grouping").getAttribute("data-value")).toBe("milestone");
     expect(screen.getByTestId<HTMLInputElement>("timeline-show-arrows").checked).toBe(false);
-    expect(comboValue("timeline-dependency-relationship")).toBe("blocks");
+    expectComboValueSelectable("timeline-dependency-relationship", "blocks");
   });
 
   it("saves the edited defaults, PUTting the whole document with only the timeline block changed", async () => {

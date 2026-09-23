@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LabelsPanel } from "./LabelsPanel.tsx";
 
 /**
- * @verifies N-4 / UI-10
+ * @verifies SET-55
  *
  * LabelsPanel already carried `settings-panel-title`, but its create
  * action sat in a `secondary`-variant row below the description,

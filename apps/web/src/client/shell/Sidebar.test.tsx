@@ -469,7 +469,7 @@ describe("Sidebar", () => {
 });
 
 /**
- * @verifies UI-16b
+ * @verifies SHL-49
  *
  * `ItemShell` fully supports an active state (`data-active`,
  * `aria-current="page"`, the `bg-accent-muted text-accent` treatment) —
@@ -1645,6 +1645,8 @@ describe("Sidebar strips the ambient sort from nav hrefs (LST-55)", () => {
 });
 
 /**
+ * @verifies TML-57
+ *
  * The cross-view scope fix (Ken 2026-09-20): List/Board/Timeline share
  * the filter scope. The view switcher must CARRY the filter keys and DROP
  * the view-private display params when moving between views, and a project
@@ -2083,7 +2085,7 @@ describe("Sidebar narrow rail suppression (#9)", () => {
 });
 
 /**
- * @verifies UI-16c
+ * @verifies SHL-49
  *
  * A built-in filter row ends in a count `Badge`, inset by `ItemShell`'s
  * own `px-2.5`. A saved-view row ends in a kebab (`RowActions`) that is a

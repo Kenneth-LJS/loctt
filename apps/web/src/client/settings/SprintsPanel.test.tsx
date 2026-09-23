@@ -448,7 +448,7 @@ describe("SprintsPanel — broken-entry degradation (DEG-30)", () => {
 });
 
 /**
- * @verifies N-4 / UI-10
+ * @verifies SET-55
  *
  * SprintsPanel already carried `settings-panel-title`, but its create
  * action sat in its own row below the description (not even sharing a

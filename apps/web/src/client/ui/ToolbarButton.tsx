@@ -10,8 +10,8 @@ import { cn } from "./cn.ts";
  *
  * A **thin preset over `Button`**, not a re-spelling, so there is one
  * button implementation. It fixes `variant="secondary" size="md"` and
- * adds the `active` facet state — verbatim the existing active look at
- * `list/FilterDropdown.tsx:80` (`border-accent bg-accent-muted
+ * adds the `active` facet state — verbatim the existing active look in
+ * `list/FilterFacet.tsx` (`border-accent bg-accent-muted
  * text-accent`), applied via the `className` escape hatch so it layers
  * over the secondary variant.
  *
@@ -28,7 +28,7 @@ export interface ToolbarButtonProps extends Omit<ButtonProps, "variant"> {
 }
 
 /**
- * The active/selected facet look, verbatim from FilterDropdown.tsx:80.
+ * The active/selected facet look, verbatim from FilterFacet.tsx.
  * Overrides the secondary variant's border/bg/text so a selected facet
  * reads as accent-tinted.
  */

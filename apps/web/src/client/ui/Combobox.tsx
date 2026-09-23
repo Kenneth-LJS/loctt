@@ -2,7 +2,7 @@
  * K106 stage 2: `Combobox` became `ui/Dropdown` — ONE primitive spanning
  * the plain single-select, the searchable single-select, and both
  * multi-select shapes (listbox `option` rows, and the filter facets'
- * `menuitemcheckbox` rows that `list/FilterDropdown` used to own).
+ * `menuitemcheckbox` rows that `list/FilterFacet` used to own).
  *
  * The name changed because the component is no longer a combobox in every
  * mode: a `role="menu"` facet is not one. This file stays only as the
