@@ -1,4 +1,4 @@
-import type { ArchivedScope, BrokenEntry, EntityColor, LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
+import type { BrokenEntry, EntityColor, LabelDef, MilestoneDef, SprintDef } from "@loctt/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
@@ -42,14 +42,17 @@ export interface CountedPage<T> {
  * full scan on every page load.
  */
 /**
- * K107: the settings-panel reads take an archived scope, driven by the
- * panel's tri-state control (default `active`). The scope is part of the
- * query key so switching it refetches, and it is sent as `?archived=` so
- * the server does the filtering (via `applyArchivedScope`) rather than the
- * panel splitting a fetch-all client-side. The panels still show a broken
- * entry regardless — `broken` is scope-independent server-side.
+ * The settings-panel reads take an archived scope (K107), sent as
+ * `?archived=` so the server does the filtering. K121 #1: only two
+ * callers exist — the entity panels (`active`, the default) and Settings →
+ * Archived (`archived`). No surface asks for `all`. The scope is part of
+ * the query key, so the two reads cache separately; both sit under the
+ * entity prefix, so every mutation's invalidation reaches both. `broken`
+ * is scope-independent server-side.
  */
-export function useCountedLabels(scope: ArchivedScope = "active") {
+export type PanelScope = "active" | "archived";
+
+export function useCountedLabels(scope: PanelScope = "active") {
   return useQuery({
     queryKey: ["labels", "counted", scope],
     queryFn: ({ signal }) =>
@@ -60,7 +63,7 @@ export function useCountedLabels(scope: ArchivedScope = "active") {
   });
 }
 
-export function useCountedMilestones(scope: ArchivedScope = "active") {
+export function useCountedMilestones(scope: PanelScope = "active") {
   return useQuery({
     queryKey: ["milestones", "counted", scope],
     queryFn: ({ signal }) =>
@@ -71,7 +74,7 @@ export function useCountedMilestones(scope: ArchivedScope = "active") {
   });
 }
 
-export function useCountedSprints(scope: ArchivedScope = "active") {
+export function useCountedSprints(scope: PanelScope = "active") {
   return useQuery({
     queryKey: ["sprints", "counted", scope],
     queryFn: ({ signal }) =>

@@ -55,18 +55,43 @@ describe("Checkbox", () => {
     expect(box.className).toContain("checked:border-accent");
   });
 
-  it("shows a tick only when checked and a dash only when indeterminate", () => {
+  it("draws a tick only when checked and a dash only when indeterminate", () => {
+    // The mark is an <Icon> path, not a typed "✓"/"–" (A208). Identify it
+    // by its drawing: the tick's path vs the dash's.
+    const mark = (): string | null =>
+      document.querySelector("svg path")?.getAttribute("d") ?? null;
+    const TICK = "M3.5 8.5l3 3 6-6.5";
+    const DASH = "M4 8h8";
+
     const { rerender } = render(<Checkbox aria-label="P" />);
-    expect(screen.queryByText("✓")).toBeNull();
-    expect(screen.queryByText("–")).toBeNull();
+    expect(mark()).toBeNull();
 
     rerender(<Checkbox aria-label="P" checked readOnly />);
-    expect(screen.getByText("✓")).toBeTruthy();
-    expect(screen.queryByText("–")).toBeNull();
+    expect(mark()).toBe(TICK);
+    expect(screen.queryByText("✓")).toBeNull();
 
     rerender(<Checkbox aria-label="P" indeterminate />);
-    // Indeterminate wins the glyph even if not checked.
-    expect(screen.getByText("–")).toBeTruthy();
+    // Indeterminate wins the mark even if not checked.
+    expect(mark()).toBe(DASH);
+  });
+
+  it("never lets hover repaint a filled box grey", () => {
+    // A bare `hover:bg-bg-muted-hover` beside `checked:bg-accent` is a
+    // same-specificity pair whose winner is CSS source order — it was
+    // hover, so a checked box went grey under the pointer with a ghost
+    // tick. The grey hover must be scoped away from checked and
+    // indeterminate boxes; filled boxes darken to accent-hover instead.
+    render(<Checkbox aria-label="P" checked readOnly />);
+    const classes = screen.getByRole("checkbox").className.split(/\s+/);
+    expect(classes).not.toContain("hover:bg-bg-muted-hover");
+    const grey = classes.filter(c => c.endsWith("hover:bg-bg-muted-hover"));
+    expect(grey.length).toBeGreaterThan(0);
+    for (const c of grey) {
+      expect(c).toContain(":not(:checked)");
+      expect(c).toContain(":not([data-indeterminate])");
+    }
+    expect(classes).toContain("enabled:checked:hover:bg-accent-hover");
+    expect(classes).toContain("enabled:data-[indeterminate]:hover:bg-accent-hover");
   });
 
   it("sets the DOM indeterminate PROPERTY (BLK-3 select-all header)", () => {
@@ -215,8 +240,8 @@ describe("Radio", () => {
 
 describe("Toggle", () => {
   it("is a native checkbox with role=switch (A11Y-21 announcement)", () => {
-    render(<Toggle aria-label="Show archived" />);
-    const sw = screen.getByRole("switch", { name: "Show archived" });
+    render(<Toggle aria-label="Show dependencies" />);
+    const sw = screen.getByRole("switch", { name: "Show dependencies" });
     expect(sw.tagName).toBe("INPUT");
     expect(asInput(sw).type).toBe("checkbox");
   });

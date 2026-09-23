@@ -7,6 +7,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { Icon } from "./Icon.tsx";
 import { SrOnly } from "./Tooltip.tsx";
 import { panelStyle, usePortalPlacement } from "./usePortalPlacement.ts";
 
@@ -225,6 +226,14 @@ export function Menu({
         ? createPortal(
             <div
               ref={panelRef}
+              // The same marker `Dropdown`'s panel carries: portalled, it
+              // is not a DOM descendant of whatever opened it, so an
+              // owner that uses containment to mean "focus is still
+              // mine" (the editors' leave-on-blur) needs this to see a
+              // move into its own menu as staying. Missing here, picking
+              // Bold from the editor toolbar's folded Text style menu
+              // took the description out of edit mode (UI-23d).
+              data-portal-panel=""
               role="menu"
               aria-label={ariaLabel}
               aria-labelledby={ariaLabel ? undefined : triggerId}
@@ -297,6 +306,7 @@ export function MenuItem({
   disabled = false,
   danger = false,
   title,
+  checked,
 }: {
   readonly children: ReactNode;
   readonly onSelect?: () => void;
@@ -322,7 +332,7 @@ export function MenuItem({
    * `text-danger-fg` lost to the hardcoded `text-text-secondary` below
    * and rendered plain grey. Measured 2026-09-22: every "Delete" row in
    * the settings panels carried `text-danger-fg` (twice, even) and
-   * computed to `rgb(168,168,174)` — the exact grey of "Edit…" beside
+   * computed to `rgb(168,168,174)` — the exact grey of "Edit" beside
    * it. Six destructive actions looked benign for as long as that
    * pattern stood.
    */
@@ -332,6 +342,15 @@ export function MenuItem({
    * description and not merely a hover tooltip on a child span.
    */
   readonly title?: string | undefined;
+  /**
+   * Makes the row a toggle: `menuitemcheckbox` with `aria-checked`, and a
+   * drawn check when on. Omitted, the row is a plain `menuitem` — an
+   * action has no on/off state to announce. The editor toolbar's
+   * collapsed groups (UI-23d) use it so Bold-in-a-menu still says
+   * whether the selection is bold, as the flat button's `aria-pressed`
+   * does.
+   */
+  readonly checked?: boolean | undefined;
 }) {
   const reasonId = useId();
   // The reason is a description, so it is announced only when there IS
@@ -342,7 +361,8 @@ export function MenuItem({
     <>
       <button
         type="button"
-        role="menuitem"
+        role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+        {...(checked !== undefined ? { "aria-checked": checked } : {})}
         disabled={disabled}
         {...(described ? { "aria-describedby": reasonId } : {})}
         onClick={onSelect}
@@ -358,6 +378,11 @@ export function MenuItem({
         ].join(" ")}
       >
         {children}
+        {checked === true && (
+          <span className="ml-auto flex shrink-0 text-accent">
+            <Icon name="check" size={14} />
+          </span>
+        )}
       </button>
       {/* OUTSIDE the button on purpose: text inside would join the
           button's accessible NAME ("Delete A tracker must have at least

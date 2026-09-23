@@ -32,6 +32,15 @@ export interface ChipProps {
   readonly title?: string;
   /** `data-testid` on the rendered `<span>` (declared, not spread). */
   readonly testId?: string;
+  /**
+   * Escape hatch, same contract as `Button`'s: layout/spacing/colour
+   * overrides only, merged AFTER the variant classes via `cn`. Added for
+   * the sidebar's per-sprint-state chip colouring, where the three
+   * `ChipVariant`s alone cannot express "active" as the app's existing
+   * success feedback token — do not use this to invent a new colour
+   * scheme; only apply tokens that already exist.
+   */
+  readonly className?: string | undefined;
 }
 
 const CHIP_BASE =
@@ -54,12 +63,13 @@ export function Chip({
   children,
   title,
   testId,
+  className,
 }: ChipProps) {
   return (
     <span
       {...(title !== undefined ? { title } : {})}
       {...(testId !== undefined ? { "data-testid": testId } : {})}
-      className={cn(CHIP_BASE, CHIP_SHAPE[shape], CHIP_VARIANT[variant])}
+      className={cn(CHIP_BASE, CHIP_SHAPE[shape], CHIP_VARIANT[variant], className)}
     >
       {children}
     </span>

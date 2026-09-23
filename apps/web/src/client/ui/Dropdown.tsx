@@ -603,8 +603,9 @@ export function Dropdown(props: DropdownProps) {
       // descendant. `BodyEditor` relied on exactly that and tore its
       // editor down when the block-type dropdown opened (TSK-59). This
       // marker lets any such owner ask "is this node inside SOME
-      // dropdown panel?" without reaching into our refs.
-      data-dropdown-panel=""
+      // portalled panel?" without reaching into our refs. `Menu` carries
+      // the same one (UI-23d), so the question has one spelling.
+      data-portal-panel=""
       onKeyDown={menuMode ? onMenuKeyDown : undefined}
       {...(menuMode
         ? { role: "menu" as const, "aria-label": `Filter by ${label}` }
@@ -672,9 +673,6 @@ export function Dropdown(props: DropdownProps) {
           >
             {clear.label}
           </button>
-        )}
-        {!loaded && (
-          <p className="px-3 py-1.5 text-label text-text-tertiary">Searching…</p>
         )}
         {loaded && visible.length === 0 && emptyText() !== null && (
           <p className="px-3 py-1.5 text-label text-text-tertiary">{emptyText()}</p>
@@ -758,6 +756,16 @@ export function Dropdown(props: DropdownProps) {
             </button>
           );
         })}
+        {/* Rendered AFTER the rows, not before: `visible` already puts the
+            current single-select value first (see above) while a server
+            query is in flight, so the pending row belongs below it —
+            otherwise the selected option reads as buried under a
+            "Loading…" line it has nothing to do with. Never a `button`/
+            `role="option"` — it must not be reachable by roving focus or
+            become `activeKey`. */}
+        {!loaded && (
+          <p className="px-3 py-1.5 text-label text-text-tertiary">Loading…</p>
+        )}
       </div>
 
       {footer?.({ query: trimmedQuery, loaded, visible, close })}
@@ -933,8 +941,7 @@ export function DropdownButton({
  *   `dataValue` was added for.
  * - **The mobile native picker and type-ahead** are genuinely lost; this
  *   is the listbox's own keyboard model instead (arrows/Home/End/Enter,
- *   Escape to close). `ArchivedScopeControl` stays on the native
- *   `<select>` precisely to keep those for its fixed three-option set.
+ *   Escape to close).
  */
 export interface SelectDropdownOption {
   readonly value: string;

@@ -1,5 +1,4 @@
 import type {
-  ArchivedScope,
   BrokenEntry,
   BrokenSavedQuery,
   LabelDef,
@@ -13,6 +12,7 @@ import type {
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "../client.ts";
+import type { PanelScope } from "./useDataMutations.ts";
 
 /**
  * Sidebar data hooks. Each reads one config/list endpoint the app
@@ -262,13 +262,12 @@ export function useRecents() {
  * K107: scoped reads for the settings panels that manage users / projects
  * / saved views. Separate from the shared `useUsers`/`useProjects`/
  * `useViews` above (which fetch `all` as the app-wide picker/resolver
- * source): a settings panel defaults to `active` and reveals archived
- * through its tri-state control, so its read must be scoped and keyed by
- * scope. They share the same base query key prefix (`["users"]` etc.) so a
+ * source): a settings panel lists `active` only, and Settings → Archived
+ * lists `archived` (K121 #1), so the read is scoped and keyed by scope. They share the same base query key prefix (`["users"]` etc.) so a
  * mutation's `invalidateQueries({ queryKey: ["users"] })` drops both the
  * picker read and every scoped panel read at once.
  */
-export function useUsersScoped(scope: ArchivedScope = "active") {
+export function useUsersScoped(scope: PanelScope = "active") {
   return useQuery({
     queryKey: ["users", "scoped", scope],
     queryFn: ({ signal }) =>
@@ -279,7 +278,7 @@ export function useUsersScoped(scope: ArchivedScope = "active") {
   });
 }
 
-export function useProjectsScoped(scope: ArchivedScope = "active") {
+export function useProjectsScoped(scope: PanelScope = "active") {
   return useQuery({
     queryKey: ["projects", "scoped", scope],
     queryFn: ({ signal }) =>
@@ -290,7 +289,7 @@ export function useProjectsScoped(scope: ArchivedScope = "active") {
   });
 }
 
-export function useViewsScoped(scope: ArchivedScope = "active") {
+export function useViewsScoped(scope: PanelScope = "active") {
   return useQuery({
     queryKey: ["views", "scoped", scope],
     queryFn: ({ signal }) =>
