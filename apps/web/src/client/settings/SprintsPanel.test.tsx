@@ -25,16 +25,6 @@ function openSprintAction(actionTestId: string): void {
 }
 
 /**
- * Ken's ruling, 2026-09-22 (decisions.md § 9): the archived-scope control
- * is demoted behind an icon reveal (`ArchivedScopeReveal`), not a
- * permanently visible segmented control — so a test must open it before a
- * segment (`sprints-archived-scope-<scope>`) is present to click.
- */
-function openSprintsArchivedScope(): void {
-  fireEvent.click(screen.getByTestId("sprints-archived-scope-reveal"));
-}
-
-/**
  * SprintsPanel — SPR-40 create / delete from Settings.
  *
  * The panel was read-only; these turn on the *requests* it now issues to
@@ -312,27 +302,19 @@ describe("SprintsPanel — delete (SPR-40)", () => {
   });
 });
 
-describe("SprintsPanel — archived scope (SPR-40 / K107)", () => {
-  // @verifies SPR-40
-  // K107: the archived split is now driven by the tri-state scope control
-  // (was a "Show archived" checkbox with a client-side split). The panel
-  // trusts the server to filter; choosing "all" refetches with the
-  // archived rows included.
-  it("hides archived sprints until the scope control reveals them", async () => {
+describe("SprintsPanel — active sprints only (K121 #1)", () => {
+  // @verifies SET-52
+  it("fetches and lists active sprints only, with no way to reveal archived ones", async () => {
     renderPanel();
     await screen.findByTestId("sprints-list");
-
-    // Default scope `active`: the archived sprint is not fetched.
     expect(screen.queryByTestId("sprint-row-sp_arch")).toBeNull();
-    // The control is behind the reveal, not directly clickable.
-    expect(screen.queryByTestId("sprints-archived-scope-all")).toBeNull();
-
-    // Open the reveal, then switch the control to "all" — the panel
-    // refetches and the archived row appears (in the archived block).
-    openSprintsArchivedScope();
-    fireEvent.click(await screen.findByTestId("sprints-archived-scope-all"));
-    const row = await screen.findByTestId("sprint-row-sp_arch");
-    expect(row.getAttribute("data-sprint-archived")).toBe("true");
+    // No reveal, no scope control: archived sprints live in Settings →
+    // Archived.
+    expect(screen.queryByTestId("sprints-archived-scope-reveal")).toBeNull();
+    expect(screen.queryByTestId("sprints-archived-scope")).toBeNull();
+    const reads = fetchMock.mock.calls.map(c => String(c[0])).filter(u => u.startsWith("/api/sprints?"));
+    expect(reads.length).toBeGreaterThan(0);
+    for (const u of reads) expect(u).toContain("archived=active");
   });
 });
 
@@ -362,8 +344,7 @@ describe("SprintsPanel — archive (SPR-40)", () => {
 
     renderPanel();
     await screen.findByTestId("sprints-list");
-    // Active sprint present, not yet archived.
-    expect(screen.getByTestId("sprint-row-sp_active").getAttribute("data-sprint-archived")).toBe("false");
+    expect(screen.getByTestId("sprint-row-sp_active")).toBeTruthy();
 
     // The active row's Archive button (the archived row is not in scope).
     openSprintAction("sprint-archive-toggle");
@@ -377,36 +358,8 @@ describe("SprintsPanel — archive (SPR-40)", () => {
     // After the invalidation refetch, sp_active drops out of the active
     // scope's list.
     await waitFor(() => { expect(screen.queryByTestId("sprint-row-sp_active")).toBeNull(); });
-    // Revealing "all" brings it back, now marked archived.
-    openSprintsArchivedScope();
-    fireEvent.click(await screen.findByTestId("sprints-archived-scope-all"));
-    const row = await screen.findByTestId("sprint-row-sp_active");
-    expect(row.getAttribute("data-sprint-archived")).toBe("true");
   });
 
-  // @verifies SPR-40
-  it("POSTs to the unarchive route for an already-archived sprint", async () => {
-    renderPanel();
-    await screen.findByTestId("sprints-list");
-    // Reveal the archived sprint (scope=all), whose button reads "Unarchive".
-    openSprintsArchivedScope();
-    fireEvent.click(await screen.findByTestId("sprints-archived-scope-all"));
-    await screen.findByTestId("sprint-row-sp_arch");
-
-    // Open the archived row's kebab; its toggle reads "Unarchive".
-    const archivedRow = screen.getByTestId("sprint-row-sp_arch");
-    const kebab = archivedRow.querySelector<HTMLButtonElement>("[aria-label^='Actions for sprint']");
-    if (kebab === null) throw new Error("no actions kebab on archived row");
-    fireEvent.click(kebab);
-    const toggle = screen.getByTestId("sprint-archive-toggle");
-    expect(toggle.textContent).toContain("Unarchive");
-    fireEvent.click(toggle);
-
-    await waitFor(() => { expect(fetchMock.mock.calls.some(c =>
-      String(c[0]).includes("/api/sprints/sp_arch/unarchive")
-      && (c[1] as RequestInit | undefined)?.method === "POST",
-    )).toBe(true); });
-  });
 });
 
 describe("SprintsPanel — deep-link row anchors (K100)", () => {
@@ -418,27 +371,6 @@ describe("SprintsPanel — deep-link row anchors (K100)", () => {
     expect(row.getAttribute("id")).toBe("row-sp_active");
   });
 
-  // @verifies K100
-  // K107: with server-side scoping, an archived row is not fetched under
-  // the default `active` scope, so a `#row-<id>` deep link would resolve to
-  // nothing. When a hash is present the panel widens the FETCH to `all` so
-  // the target mounts and useScrollToHash can find it — no visible toggle
-  // to flip any more (the control still reads `active`, but the effective
-  // fetch scope is `all` while the deep link is in play).
-  it("widens the fetch so a deep-linked archived sprint resolves", async () => {
-    renderPanel("/#row-sp_arch");
-    await screen.findByTestId("sprints-list");
-
-    const archivedRow = await screen.findByTestId("sprint-row-sp_arch");
-    expect(archivedRow.getAttribute("id")).toBe("row-sp_arch");
-    expect(archivedRow.getAttribute("data-sprint-archived")).toBe("true");
-    // The user-facing control still shows the default scope; the widen is
-    // internal to make the anchor resolvable. It is demoted behind the
-    // reveal (Ken's ruling, 2026-09-22), so it must be opened to inspect.
-    openSprintsArchivedScope();
-    const control = await screen.findByTestId("sprints-archived-scope");
-    expect(control.getAttribute("data-value")).toBe("active");
-  });
 });
 
 /**
@@ -481,7 +413,10 @@ describe("SprintsPanel — broken-entry degradation (DEG-30)", () => {
     // than vanishing.
     const brokenRow = screen.getByTestId("sprint-broken-sp_bad");
     expect(brokenRow.getAttribute("aria-disabled")).toBe("true");
-    expect(brokenRow.textContent).toContain("couldn't be read");
+    // Wording trimmed under K116 (row 97): the sentence now leads with
+    // "Couldn't be read (...)" rather than "<name> — couldn't be read
+    // (...)", so match case-insensitively.
+    expect(brokenRow.textContent?.toLowerCase()).toContain("couldn't be read");
     expect(brokenRow.textContent).toContain("Expected string, received number");
   });
 

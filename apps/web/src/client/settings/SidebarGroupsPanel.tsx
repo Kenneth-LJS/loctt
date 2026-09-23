@@ -1,6 +1,5 @@
 import type { SidebarItemId, UserSettings } from "@loctt/contracts";
 import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS } from "@loctt/contracts";
-import { Link } from "@tanstack/react-router";
 
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
@@ -129,29 +128,6 @@ function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; rea
           Sidebar groups
         </h1>
       ) : null}
-      <p className="mb-2 max-w-prose text-[0.8571rem] text-text-secondary">
-        Choose which built-in sidebar sections show (Projects, Milestones,
-        Sprints, Labels, Recently viewed, and the built-in filters), and the
-        order they appear in. Reorder by dragging; hide the ones you don't
-        use. Saved against your user.
-      </p>
-      {/* A244: cross-link to the sibling section. The two sidebar-config
-          sections are a confusable pair; each now points at the other so a
-          user who wants the *other* thing (pinning a saved view) is sent
-          there rather than left guessing. */}
-      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-tertiary">
-        Looking to pin a saved view to the sidebar?{" "}
-        <Link
-          to="/settings/$section"
-          params={{ section: "sidebar-pins" }}
-          data-testid="sidebar-groups-see-pins"
-          className="text-accent hover:underline"
-        >
-          See Pinned views
-        </Link>
-        .
-      </p>
-
       <ReorderableRows
         items={order}
         rowKey={id => id}
@@ -204,7 +180,7 @@ function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; rea
         <div className="mt-4" data-testid="sidebar-groups-save-error">
           <ErrorState
             error={save.error}
-            context="Your changes were not saved — the list shows your last saved layout"
+            context="Your changes weren't saved. Showing your last saved layout."
             {...(save.variables !== undefined
               ? { onRetry: () => { save.mutate(save.variables); } }
               : {})}

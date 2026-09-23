@@ -83,8 +83,14 @@ describe("settings sections IA (SET-2, A64)", () => {
     expect(sectionsInGroup("System").map(s => s.id)).toEqual([
       "users",
       "sync",
+      "archived",
       "backup",
       "diagnostics",
     ]);
+  });
+
+  // @verifies SET-52
+  it("has an Archived section in System, beside Backup & restore (K121 #1, A331)", () => {
+    expect(findSection("archived")).toEqual({ id: "archived", label: "Archived", group: "System", built: true });
   });
 });

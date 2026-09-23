@@ -1,5 +1,4 @@
 import type { ThemePreference, UserSettings } from "@loctt/contracts";
-import { Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { useProjects } from "../api/hooks/sidebarData.ts";
@@ -111,11 +110,7 @@ export function PreferencesPanel() {
       <h1 className="mb-6 text-lg font-semibold text-text-primary">My preferences</h1>
 
       <section className="mb-8">
-        <h2 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">Theme</h2>
-        <p className="mb-2 text-[0.8571rem] text-text-secondary">
-          Stored against your user, so it follows you between browsers.
-          <span className="ml-1">system</span> tracks your OS setting.
-        </p>
+        <h2 className="mb-2 text-[0.9286rem] font-semibold text-text-primary">Theme</h2>
         <div role="radiogroup" aria-label="Theme" className="flex gap-2">
           {THEMES.map(t => (
             <ToolbarButton
@@ -134,30 +129,9 @@ export function PreferencesPanel() {
       </section>
 
       <section>
-        <h2 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">
+        <h2 className="mb-2 text-[0.9286rem] font-semibold text-text-primary">
           Default project
         </h2>
-        <p className="mb-2 text-[0.8571rem] text-text-secondary">
-          Where new tasks land when you do not pick a project. An explicit
-          choice in the create form always wins.
-        </p>
-        {/* CONFIG-5 / P4: this is the *personal* default; the workspace
-            default (the fallback when a user has none) is a different
-            setting on a different panel. Cross-link so the two "default
-            project" concepts are not mistaken for one. */}
-        <p className="mb-2 text-[0.7857rem] text-text-tertiary">
-          The workspace-wide fallback is in{" "}
-          <Link
-            to="/settings/$section"
-            params={{ section: "projects" }}
-            data-testid="preferences-workspace-default-link"
-            className="text-accent underline hover:text-text-primary"
-          >
-            Settings → Projects
-          </Link>
-          .
-        </p>
-
         {defaultIsDead ? (
           /* Not `role="alert"`: the user is reading a preferences page,
              not being interrupted. PRU-14 wants it surfaced here and
@@ -234,7 +208,7 @@ export function PreferencesPanel() {
         <div className="mt-4" data-testid="preferences-save-error">
           <ErrorState
             error={save.error}
-            context="Your preferences were not saved — the last saved values are shown"
+            context="Your preferences weren't saved. Showing your last saved values."
             {...(save.variables !== undefined
               ? { onRetry: () => { save.mutate(save.variables); } }
               : {})}

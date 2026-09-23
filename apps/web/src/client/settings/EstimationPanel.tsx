@@ -61,7 +61,6 @@ export function EstimationPanel() {
   return (
     <WorkflowPanelFrame
       title="Estimation"
-      description="How a task's estimate is expressed. Number scales (points, hours, days, or your own) aggregate as a sum; a label scale aggregates as counts per category."
     >
       {({ workflow }) => <EstimationEditor workflow={workflow} />}
     </WorkflowPanelFrame>
@@ -121,10 +120,6 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
         />
         <span>
           Enabled
-          <span className="ml-1 text-text-tertiary">
-            — when off, no Estimate field appears on task detail, in the
-            create modal, or as a list column.
-          </span>
         </span>
       </label>
 
@@ -146,9 +141,6 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
       <div className="grid gap-1">
         <span className="text-text-secondary">
           Scale
-          <span className="ml-1 text-text-tertiary">
-            — which values an estimate may take.
-          </span>
         </span>
         <SelectCombobox
           testId="estimation-scale"
@@ -210,7 +202,7 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
       {draft.unit === "custom_enum" && (
         <label className="grid gap-1">
           <span className="text-text-secondary">
-            Preset values <span className="text-text-tertiary">— comma separated</span>
+            Preset values <span className="text-text-tertiary">(comma separated)</span>
           </span>
           <TextField
             data-testid="estimation-preset-values"
@@ -261,10 +253,6 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
         <div className="grid gap-1" data-testid="estimation-weights">
           <span className="text-text-secondary">
             Weights
-            <span className="ml-1 text-text-tertiary">
-              — optional per-category burndown weight. Leave all blank to
-              burn down by task count.
-            </span>
           </span>
           <div className="grid gap-1">
             {(draft.preset_values ?? []).map(pv => {

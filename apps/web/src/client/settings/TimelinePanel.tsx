@@ -57,7 +57,6 @@ export function TimelinePanel() {
   return (
     <WorkflowPanelFrame
       title="Timeline defaults"
-      description="How the Timeline view first opens. A saved view or the on-screen toolbar can override any of these; they are the fallback when neither says otherwise."
     >
       {({ workflow }) => <TimelineEditor workflow={workflow} />}
     </WorkflowPanelFrame>
@@ -127,16 +126,12 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
         />
         <span>
           Show dependency arrows
-          <span className="ml-1 text-text-tertiary">
-            — draw lines between tasks linked by the relationship below.
-          </span>
         </span>
       </label>
 
       <div id="field-dependency_relationship" className="grid gap-1">
         <span className="text-text-secondary">
           Dependency relationship
-          <span className="ml-1 text-text-tertiary">— which link drives the arrows</span>
         </span>
         <SelectCombobox
           testId="timeline-dependency-relationship"

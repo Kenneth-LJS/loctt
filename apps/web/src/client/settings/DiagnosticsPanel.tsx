@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { createDeadline, DEFAULT_WRITE_TIMEOUT_MS, isAbort } from "../api/client.ts";
+import { STREAM_INACTIVITY_TIMEOUT_MS } from "../api/hooks/useGit.ts";
+import { LogoSpinner } from "../ui/brand/LogoSpinner.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
@@ -101,15 +104,40 @@ type RunPhase = "idle" | "running" | "done" | "failed";
  * (the server's mid-run failure marker) is surfaced as a thrown error
  * so the caller can enter the failed state.
  */
+/**
+ * K115 item 3: the same 60s-of-silence deadline `useGit.ts`'s
+ * `streamSync` uses (`STREAM_INACTIVITY_TIMEOUT_MS`), applied here via
+ * the shared `createDeadline` helper rather than a third hand-rolled
+ * copy. Resets on every parsed line, and starts armed before the
+ * request leaves — so a server that never answers at all is caught the
+ * same way as one that stalls mid-stream.
+ *
+ * `signal` is the caller's own unmount/supersede abort (from `run`'s
+ * `AbortController`) and is combined with the deadline's controller via
+ * `AbortSignal.any` — either firing aborts the fetch, but only the
+ * deadline firing is a *timeout* (an unmount is a cancellation, not an
+ * unknown outcome, matching `apiRequest`'s own `timedOut` distinction).
+ */
 async function streamDoctor(
   onCheck: (check: DiagnosticCheck) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const res = await fetch("/api/doctor", {
-    headers: { "X-Loctt-Client": "web", Accept: "application/x-ndjson" },
-    signal,
-  });
+  const deadline = createDeadline(STREAM_INACTIVITY_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch("/api/doctor", {
+      headers: { "X-Loctt-Client": "web", Accept: "application/x-ndjson" },
+      signal: AbortSignal.any([signal, deadline.controller.signal]),
+    });
+  } catch (err) {
+    if (isAbort(err) && deadline.didExpire()) {
+      throw doctorSilenceError();
+    }
+    throw err;
+  }
+  deadline.bump();
   if (!res.ok || !res.body) {
+    deadline.clear();
     throw new Error(`diagnostics request failed (${String(res.status)})`);
   }
   const reader = res.body.getReader();
@@ -128,16 +156,26 @@ async function streamDoctor(
     onCheck(parsed);
   };
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newline = buffer.indexOf("\n");
-    while (newline !== -1) {
-      handleLine(buffer.slice(0, newline));
-      buffer = buffer.slice(newline + 1);
-      newline = buffer.indexOf("\n");
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      deadline.bump();
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1) {
+        handleLine(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+      }
     }
+  } catch (err) {
+    if (isAbort(err) && deadline.didExpire()) {
+      throw doctorSilenceError();
+    }
+    throw err;
+  } finally {
+    deadline.clear();
   }
   // Flush any trailing partial line (a stream that did not end on \n).
   handleLine(buffer);
@@ -145,6 +183,20 @@ async function streamDoctor(
   if (streamError !== undefined) {
     throw new Error(streamError);
   }
+}
+
+/**
+ * K115 item 3: never "did not complete" — a run that has already
+ * printed some check results before going silent is not a failure the
+ * user should read as "diagnostics are broken", only as "the run
+ * stopped reporting; the results shown so far are real, the rest is
+ * unknown". `ErrorState` (via the panel's `phase === "failed"` branch)
+ * renders this the same as any other run failure, with Retry.
+ */
+function doctorSilenceError(): Error {
+  return new Error(
+    "Diagnostics stopped responding. Refresh to see whether the run finished.",
+  );
 }
 
 export function DiagnosticsPanel() {
@@ -190,6 +242,10 @@ export function DiagnosticsPanel() {
     run();
     return () => {
       abortRef.current?.abort();
+      // K115: cancel an in-flight repair on unmount too — it previously
+      // had no signal at all, so navigating away left it running with
+      // no way to stop it.
+      repairAbortRef.current?.abort();
     };
   }, [run]);
 
@@ -200,17 +256,33 @@ export function DiagnosticsPanel() {
   // A confirm is only needed for restore-missing (it writes default files);
   // rebuild-index is idempotent and runs immediately.
   const [confirmRestore, setConfirmRestore] = useState(false);
+  // K115 item 3: repair had no abort signal at all — an unmount mid-repair
+  // left the fetch running with nothing to cancel it. Tracked the same
+  // way `run`'s stream abort is, so unmounting cancels rather than
+  // reporting a stray "did not complete" into a dead component.
+  const repairAbortRef = useRef<AbortController | undefined>(undefined);
 
   const runRepair = useCallback((action: DiagnosticFix): void => {
     setRepairError(undefined);
     setRepairing(action);
+    repairAbortRef.current?.abort();
+    const controller = new AbortController();
+    repairAbortRef.current = controller;
+    // K115: a write with the 15s write-default deadline, via the same
+    // helper the streaming call sites use. A fixed deadline (not
+    // inactivity) is right here — this is a single POST, not a stream
+    // with progress lines to reset against.
+    const deadline = createDeadline(DEFAULT_WRITE_TIMEOUT_MS);
+    const signal = AbortSignal.any([controller.signal, deadline.controller.signal]);
     void (async () => {
       try {
         const res = await fetch("/api/doctor/repair", {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Loctt-Client": "web" },
           body: JSON.stringify({ action }),
+          signal,
         });
+        deadline.clear();
         if (!res.ok) {
           const detail = await res.json().catch(() => undefined) as { message?: string } | undefined;
           throw new Error(detail?.message ?? `repair failed (${String(res.status)})`);
@@ -219,6 +291,20 @@ export function DiagnosticsPanel() {
         // than leaving the stale list next to a toast.
         run();
       } catch (err) {
+        deadline.clear();
+        // An unmount/superseding repair is a cancellation, not a failure
+        // — leave it to whoever aborted (matches `apiRequest`'s
+        // `timedOut` distinction and `run`'s own abort check).
+        if (isAbort(err) && !deadline.didExpire() && controller.signal.aborted) return;
+        if (isAbort(err) && deadline.didExpire()) {
+          // K115: never "did not complete" — the repair may have landed
+          // on the server even though the response never arrived, so
+          // this states the outcome as unknown rather than as failed.
+          setRepairError(
+            "The server stopped responding. Refresh diagnostics to see if the repair completed.",
+          );
+          return;
+        }
         setRepairError(err instanceof Error ? err.message : "The repair did not complete.");
       } finally {
         setRepairing(undefined);
@@ -248,37 +334,25 @@ export function DiagnosticsPanel() {
       <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
         Diagnostics
       </h1>
-      <p className="mb-3 text-[0.9286rem] text-text-secondary">
-        The same checks{" "}
-        <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem]">loctt doctor</code>{" "}
-        runs, against this tracker.
-      </p>
-      {/* XS-50, fifth bullet: filesystem detection (iCloud / Dropbox /
-          OneDrive / NFS / SMB, where advisory locks are unsafe) is
-          best-effort — it can miss cases — so the absence of the boot
-          advisory must not be read as a guarantee that the filesystem is
-          safe. Stated here so a user who saw no warning knows why. */}
-      <p
-        data-testid="diagnostics-fs-caveat"
-        className="mb-3 text-[0.8571rem] text-text-secondary"
-      >
-        Note: LocTT&rsquo;s filesystem check for unsafe advisory-lock
-        locations (iCloud Drive, Dropbox, OneDrive, NFS, SMB) is best-effort
-        and can miss cases. The absence of a warning is not a guarantee that
-        the tracker&rsquo;s filesystem is safe for concurrent access from two
-        machines.
-      </p>
+      {/* No description line, and no filesystem caveat — both moved to
+          the user docs (Ken, 2026-09-23).
 
-      <Button
-        type="button"
-        variant="secondary"
-        testId="diagnostics-run"
-        className="mb-4"
-        disabled={isRunning}
-        onClick={() => { run(); }}
-      >
-        {isRunning ? "Running…" : "Run diagnostics"}
-      </Button>
+          The intro read "The same checks `loctt doctor` runs, against
+          this tracker": it described this panel by naming a DIFFERENT
+          tool, so a user who has never touched the CLI learned nothing
+          and one who has already knew. Ken on the CLI reference
+          specifically: "if you want to talk about the loctt doctor
+          command, again, user docs".
+
+          The filesystem caveat (advisory locks are unsafe on iCloud /
+          Dropbox / OneDrive / NFS / SMB, and detection is best-effort)
+          was standing text about a warning the user is NOT seeing —
+          permanently occupying the space above the Run button to
+          describe a non-event. XS-50's fifth bullet required it here;
+          that bullet is amended to point at the docs instead. The
+          hazard itself is unchanged and still surfaced at boot when
+          detection DOES fire. */}
+
 
       {/*
         SET-40: a failed run is not "all checks passed". The banner says
@@ -299,9 +373,7 @@ export function DiagnosticsPanel() {
             context="running diagnostics"
           />
           <p className="mt-2 text-[0.9286rem] text-text-secondary">
-            The run did not complete. Any checks below ran before it
-            failed and show their real result; every remaining check is
-            marked not run, never passed. Retry re-runs the whole set.
+            The run stopped early. Checks that didn&apos;t run are marked Not run.
           </p>
         </div>
       )}
@@ -318,11 +390,31 @@ export function DiagnosticsPanel() {
             aggregate "OK". The summary is in addition to the rows, not
             instead of them.
           */}
-          <p data-testid="diagnostics-summary" className="mb-2 mt-3 text-[0.9286rem] text-text-secondary">
-            {String(counts.ok)} passed · {String(counts.warn)} warning
-            {counts.warn === 1 ? "" : "s"} · {String(counts.error)} failed
-            {isRunning ? " · running…" : phase === "failed" ? " · run did not finish" : ""}
-          </p>
+          {/* Ken, 2026-09-23: "run diagnostics" reads as the thing you
+              must do first; "Refresh" says the results are already
+              here and this re-reads them, which is what it does — the
+              panel runs on mount. Moved to the row's right, level with
+              the summary, so the counts lead and the action sits where
+              a re-run belongs rather than above the data it replaces. */}
+          <div className="mb-2 mt-3 flex items-center justify-between gap-3">
+            <p data-testid="diagnostics-summary" className="text-[0.9286rem] text-text-secondary">
+              {String(counts.ok)} passed · {String(counts.warn)} warning
+              {counts.warn === 1 ? "" : "s"} · {String(counts.error)} failed
+              {isRunning ? " · running…" : phase === "failed" ? " · run did not finish" : ""}
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              testId="diagnostics-run"
+              className="shrink-0"
+              loading={isRunning}
+              aria-label="Refresh"
+              onClick={() => { run(); }}
+            >
+              Refresh
+            </Button>
+          </div>
 
           {/* K-diagnostics-repair: contextual repair actions — each shows
               only when a finding it can fix is present, so a rendered button
@@ -336,9 +428,11 @@ export function DiagnosticsPanel() {
                   size="sm"
                   testId="diagnostics-fix-rebuild-index"
                   disabled={repairing !== undefined || isRunning}
+                  loading={repairing === "rebuild-index"}
+                  aria-label="Rebuild key index"
                   onClick={() => { runRepair("rebuild-index"); }}
                 >
-                  {repairing === "rebuild-index" ? "Rebuilding…" : "Rebuild key index"}
+                  Rebuild key index
                 </Button>
               )}
               {canRestoreMissing && (
@@ -348,9 +442,11 @@ export function DiagnosticsPanel() {
                   size="sm"
                   testId="diagnostics-fix-restore-missing"
                   disabled={repairing !== undefined || isRunning}
+                  loading={repairing === "restore-missing"}
+                  aria-label="Restore missing files"
                   onClick={() => { setRepairError(undefined); setConfirmRestore(true); }}
                 >
-                  {repairing === "restore-missing" ? "Restoring…" : "Restore missing files"}
+                  Restore missing files
                 </Button>
               )}
             </div>
@@ -358,8 +454,7 @@ export function DiagnosticsPanel() {
 
           {repairError !== undefined && (
             <Callout tone="danger" role="alert" testId="diagnostics-repair-error" className="mb-3">
-              {repairError} No files were changed except as noted. Reload and
-              try again, or run the equivalent <code className="font-mono">loctt</code> command in a terminal.
+              {repairError} Reload and try again, or run the matching <code className="font-mono">loctt</code> command in a terminal.
             </Callout>
           )}
           <ul className="m-0 list-none p-0" data-testid="diagnostics-checks">
@@ -417,11 +512,37 @@ export function DiagnosticsPanel() {
                 >
                   Running
                 </span>
+                {/*
+                  A307: the `•••` here was a typed Unicode glyph doing a
+                  spinner's job — the pattern A208 bans (affordances are
+                  drawn, not typed; the lint rule misses `•` because it is
+                  legitimately a prose bullet). Replaced with the real
+                  brand spinner, in the NAME column so the row still
+                  lines up with the completed rows' three columns
+                  (`w-12` status | `w-48` name | flex-1 detail).
+
+                  `LogoSpinner` bare, NOT `LoadingState`: `LoadingState`
+                  carries its own `role="status"` wrapper, and this row
+                  already has one on the detail column — nesting them
+                  would put two live regions in one row for one state.
+                  Sized to the row's own text (`0.9286rem` line), not the
+                  panel-level default, so it reads as an inline status
+                  mark rather than a block loader.
+                */}
                 <span className="w-48 shrink-0">
-                  <span className="inline-block animate-pulse" aria-hidden="true">•••</span>
+                  <LogoSpinner size="1.125rem" />
                 </span>
+                {/*
+                  Ken's standing ruling ("find all loading state, replace
+                  with spinner") — but per `LoadingState`'s docstring the
+                  message must SURVIVE as the accessible name, or the
+                  live region announces nothing, which was the original
+                  silent-panel bug. So it is `sr-only`, not deleted: the
+                  eye gets the spinner, the screen reader still gets
+                  "Running checks…".
+                */}
                 <span className="min-w-0 flex-1" role="status">
-                  Running checks…
+                  <span className="sr-only">Running checks…</span>
                 </span>
               </li>
             )}
@@ -435,14 +556,18 @@ export function DiagnosticsPanel() {
           testId="diagnostics-restore-confirm"
           confirmTestId="diagnostics-restore-confirm-button"
           variant="primary"
-          confirmLabel={repairing === "restore-missing" ? "Restoring…" : "Restore"}
+          confirmLabel="Restore"
+          // `confirmLoading` covers the restore-missing repair itself
+          // (it disables on its own); `confirmDisabled` is kept for the
+          // orthogonal case of ANY other repair being in flight, which
+          // `loading` would not cover.
+          confirmLoading={repairing === "restore-missing"}
           confirmDisabled={repairing !== undefined}
           body={
             <>
-              This recreates the missing core file{missingFiles.includes(",") ? "s" : ""}
-              {missingFiles.length > 0 ? <> (<span className="font-medium">{missingFiles}</span>)</> : null}{" "}
-              with default values. Existing files and all your tasks are left
-              untouched.
+              Recreates{" "}
+              {missingFiles.length > 0 ? <span className="font-medium">{missingFiles}</span> : null}{" "}
+              with default values. Your tasks and other files aren&apos;t touched.
             </>
           }
           {...(repairError !== undefined ? { error: repairError } : {})}

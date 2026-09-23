@@ -93,7 +93,7 @@ export function CreateProjectForm({
             to manually rename it themselves." The example carries the
             meaning; the cost belongs in the confirm flow that a prefix
             change already has (PRU-44/PRU-45), not here. */}
-        <Field label="Prefix" hint="Starts every task key, like WEB-1">
+        <Field label="Prefix">
           <TextField
             data-testid="project-create-prefix"
             value={prefix}
@@ -108,7 +108,7 @@ export function CreateProjectForm({
       </div>
 
       <div className="grid gap-1">
-        <Field label="Slug" hint="Used in links and cannot be changed later">
+        <Field label="Slug">
           <TextField
             data-testid="project-create-slug"
             value={effectiveSlug}

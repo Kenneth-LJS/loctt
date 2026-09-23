@@ -1,11 +1,13 @@
 import type { CustomFieldDef, CustomFieldValueDef, WorkflowConfig } from "@loctt/contracts";
-import { useState } from "react";
+import { useIsMutating } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
   ConcurrentWorkflowEditError,
   useSaveWorkflowCollection,
 } from "../api/hooks/useWorkflowMutations.ts";
+import { WORKFLOW_SAVE_KEY } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { type CustomFieldDialogResult,CustomFieldEditDialog } from "./CustomFieldEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
@@ -36,16 +38,35 @@ import { WorkflowPanelFrame } from "./WorkflowPanelFrame.tsx";
  */
 
 export function CustomFieldsPanel() {
+  // A329: the create button lives in `WorkflowPanelFrame`'s header actions
+  // slot now, so its open state is lifted here — the header button and the
+  // body it opens over must agree on it.
+  const [dialogOpen, setDialogOpen] = useState(false);
+  // The save mutation lives in the body below the header, so the header
+  // button reads "a workflow save is in flight" by its mutation key.
+  const saving = useIsMutating({ mutationKey: WORKFLOW_SAVE_KEY }) > 0;
   return (
     <WorkflowPanelFrame
       title="Custom fields"
-      description="Extra fields on every task. A field's type is fixed once it exists, because task files already store values under it."
+      actions={(
+        <Button
+          variant="primary"
+          size="sm"
+          data-testid="custom-fields-create"
+          disabled={saving}
+          onClick={() => { setDialogOpen(true); }}
+        >
+          New custom field
+        </Button>
+      )}
     >
       {({ workflow, usage }) => (
         <FieldsEditor
           workflow={workflow}
           valueCounts={usage?.custom_field_values ?? {}}
           fieldCounts={usage?.custom_fields ?? {}}
+          dialogOpen={dialogOpen}
+          setDialogOpen={setDialogOpen}
         />
       )}
     </WorkflowPanelFrame>
@@ -56,6 +77,8 @@ function FieldsEditor({
   workflow,
   valueCounts,
   fieldCounts,
+  dialogOpen,
+  setDialogOpen,
 }: {
   readonly workflow: WorkflowConfig;
   readonly valueCounts: Readonly<Record<string, Readonly<Record<string, number>>>>;
@@ -65,17 +88,30 @@ function FieldsEditor({
    * boolean fields, which have no enum values.
    */
   readonly fieldCounts: Readonly<Record<string, number>>;
+  /** A329: the create dialog's open state, lifted to the panel so the
+   * header's "New custom field" button (in `WorkflowPanelFrame`'s actions
+   * slot) can drive it. */
+  readonly dialogOpen: boolean;
+  readonly setDialogOpen: (open: boolean) => void;
 }) {
   const save = useSaveWorkflowCollection<"custom_fields">();
   const [deleting, setDeleting] = useState<
     { readonly field: CustomFieldDef; readonly value: CustomFieldValueDef } | null
   >(null);
   const [deletingField, setDeletingField] = useState<CustomFieldDef | null>(null);
-  const [dialog, setDialog] = useState<
-    | { readonly mode: "create" }
-    | { readonly mode: "edit"; readonly field: CustomFieldDef }
-    | null
-  >(null);
+  const [editing, setEditing] = useState<CustomFieldDef | null>(null);
+  const dialog: { readonly mode: "create" } | { readonly mode: "edit"; readonly field: CustomFieldDef } | null =
+    editing !== null ? { mode: "edit", field: editing } : dialogOpen ? { mode: "create" } : null;
+  const closeDialog = (): void => { setEditing(null); setDialogOpen(false); };
+  // The header's "New custom field" button lives outside this component
+  // (in `WorkflowPanelFrame`'s actions slot) and cannot call `save.reset()`
+  // itself, so clear a stale save error the moment the create dialog opens
+  // — mirrors the old inline button's `onClick={() => { save.reset(); ... }}`.
+  const wasOpen = useRef(dialogOpen);
+  useEffect(() => {
+    if (dialogOpen && !wasOpen.current) save.reset();
+    wasOpen.current = dialogOpen;
+  }, [dialogOpen, save]);
 
   const fields = workflow.custom_fields;
 
@@ -100,10 +136,8 @@ function FieldsEditor({
             && entryChangedOnDisk(opts.staleBaseline, fresh.custom_fields)
           ) {
             throw new ConcurrentWorkflowEditError(
-              `These settings changed outside the app while this dialog was `
-              + `open — the field "${opts.staleBaseline.key}" is not what it was. `
-              + `Reload the panel, then re-apply your change. `
-              + `Your edit was not saved.`,
+              `"${opts.staleBaseline.key}" changed on disk while this was open, `
+              + `so your edit wasn't saved. Reload and try again.`,
             );
           }
           return [
@@ -137,13 +171,13 @@ function FieldsEditor({
   const applyDialog = (result: CustomFieldDialogResult): void => {
     if (dialog === null) return;
     if (dialog.mode === "create") {
-      commitFields([...fields, result.field], { onDone: () => { setDialog(null); } });
+      commitFields([...fields, result.field], { onDone: closeDialog });
       return;
     }
     const target = dialog.field;
     commitFields(
       fields.map(f => (f.key === target.key ? result.field : f)),
-      { staleBaseline: target, onDone: () => { setDialog(null); } },
+      { staleBaseline: target, onDone: closeDialog },
     );
   };
 
@@ -158,22 +192,10 @@ function FieldsEditor({
         </div>
       )}
 
-      <div className="mb-3 flex justify-end">
-        <Button
-          variant="secondary"
-          size="sm"
-          data-testid="custom-fields-create"
-          disabled={save.isPending}
-          onClick={() => { save.reset(); setDialog({ mode: "create" }); }}
-        >
-          + Add custom field
-        </Button>
-      </div>
-
       {fields.length === 0 ? (
         <p data-testid="custom-fields-empty" className="text-[0.9286rem] text-text-secondary">
           This tracker declares no custom fields. Use{" "}
-          <strong className="font-medium">+ Add custom field</strong> to create one.
+          <strong className="font-medium">New custom field</strong> to create one.
         </p>
       ) : (
         <div data-testid="custom-fields-list" className="space-y-3">
@@ -183,7 +205,7 @@ function FieldsEditor({
               field={field}
               counts={valueCounts[field.key] ?? {}}
               disabled={save.isPending}
-              onEdit={() => { save.reset(); setDialog({ mode: "edit", field }); }}
+              onEdit={() => { save.reset(); setEditing(field); }}
               onDelete={() => { save.reset(); setDeletingField(field); }}
               onDeleteValue={value => { save.reset(); setDeleting({ field, value }); }}
             />
@@ -200,7 +222,7 @@ function FieldsEditor({
           pending={save.isPending}
           error={dialogError}
           onSubmit={applyDialog}
-          onClose={() => { setDialog(null); save.reset(); }}
+          onClose={() => { closeDialog(); save.reset(); }}
         />
       )}
 

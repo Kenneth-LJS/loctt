@@ -472,7 +472,7 @@ describe("MilestonesPanel", () => {
   // surface, covered by the milestones-view ticket. The mis-tag made
   // MSL-25 look verified here when its far-end was untested.
   /** @verifies MSL-11 */
-  it("archives a milestone by PUTting { archived: true } and marks the archived one", async () => {
+  it("archives a milestone by PUTting { archived: true }, reading active milestones only", async () => {
     fetchMock.mockImplementation((url: unknown): Promise<Response> =>
       Promise.resolve(
         String(url).includes("/api/milestones/")
@@ -482,11 +482,10 @@ describe("MilestonesPanel", () => {
     render(<MilestonesPanel />, { wrapper: wrapper() });
     await screen.findByTestId("milestones-list");
 
-    // MSL-25: an already-archived milestone is shown here and marked,
-    // not hidden — this is the management surface.
-    const archivedRow = screen.getByTestId("milestone-row-M2");
-    expect(archivedRow.getAttribute("data-milestone-archived")).toBe("true");
-    expect(archivedRow.querySelector("[data-testid='milestone-archived-marker']")).not.toBeNull();
+    // K121 #1: the panel asks for active milestones only — archived ones
+    // are listed in Settings → Archived, not here.
+    expect(requestedUrls().filter(u => u.startsWith("/api/milestones?")).every(u => u.includes("archived=active")))
+      .toBe(true);
 
     // Archiving M1 sends the archived flag on the milestone PUT — the row
     // toggle only ever sent name/date before, so the flag had no caller.
@@ -503,40 +502,6 @@ describe("MilestonesPanel", () => {
       const raw = (put?.[1] as RequestInit | undefined)?.body;
       const body = typeof raw === "string" ? (JSON.parse(raw) as unknown) : undefined;
       expect(body).toEqual({ archived: true });
-    });
-  });
-
-  // Retag (B2): same as above — the panel unarchive toggle is MSL-11's
-  // panel-CRUD surface, not MSL-25's task/URL-resolution claim.
-  /** @verifies MSL-11 */
-  it("unarchives an archived milestone by PUTting { archived: false }", async () => {
-    fetchMock.mockImplementation((url: unknown): Promise<Response> =>
-      Promise.resolve(
-        String(url).includes("/api/milestones/")
-          ? jsonResponse({ id: "M2", name: "old" })
-          : jsonResponse(twoMilestones),
-      ));
-    render(<MilestonesPanel />, { wrapper: wrapper() });
-    await screen.findByTestId("milestones-list");
-
-    const archivedRow = screen.getByTestId("milestone-row-M2");
-    // Open the kebab to reveal the action, assert its label reads
-    // "Unarchive" (an archived milestone), then click it.
-    fireEvent.click(archivedRow.querySelector<HTMLButtonElement>("[aria-label^='Actions for']") as HTMLButtonElement);
-    const toggle = document.querySelector("[data-testid='milestone-archive-toggle']") as HTMLButtonElement;
-    expect(toggle.textContent).toMatch(/unarchive/i);
-    fireEvent.click(toggle);
-
-    await waitFor(() => {
-      const put = fetchMock.mock.calls.find((c) => {
-        const init = c[1] as RequestInit | undefined;
-        return String(c[0]).includes("/api/milestones/M2")
-          && String(init?.method).toUpperCase() === "PUT";
-      });
-      expect(put).toBeDefined();
-      const raw = (put?.[1] as RequestInit | undefined)?.body;
-      const body = typeof raw === "string" ? (JSON.parse(raw) as unknown) : undefined;
-      expect(body).toEqual({ archived: false });
     });
   });
 });
@@ -786,6 +751,42 @@ describe("DiagnosticsPanel", () => {
     expect(screen.getByTestId("diagnostics-checks").querySelectorAll("li").length).toBe(2);
   });
 
+  /**
+   * @verifies A307 (loading states use the brand spinner)
+   *
+   * The pending check row drew its progress with a typed `•••` glyph
+   * (the pattern A208 bans — affordances are drawn, not typed; the lint
+   * rule misses `•` because it is a legitimate prose bullet) alongside
+   * VISIBLE "Running checks…" text, against Ken's standing ruling that
+   * loading text is replaced by the spinner.
+   *
+   * Both halves matter and are asserted together on purpose: per
+   * `LoadingState`'s docstring, deleting the text instead of hiding it
+   * `sr-only` reintroduces the original silent-panel bug — a spinner
+   * with no accessible name announces nothing.
+   */
+  it("draws the pending row's progress with the spinner, keeping the message announced", async () => {
+    const stream = controllableNdjson();
+    fetchMock.mockResolvedValue(stream.response);
+    render(<DiagnosticsPanel />, { wrapper: wrapper() });
+
+    const running = await screen.findByTestId("diagnostics-check-running");
+
+    // Drawn, not typed.
+    expect(running.querySelector("[data-testid='logo-spinner']")).toBeTruthy();
+    expect(running.textContent).not.toContain("•");
+
+    // The message survives as the live region's accessible text — still
+    // in the DOM, still inside the role=status, just not shown.
+    const status = running.querySelector("[role='status']");
+    expect(status).toBeTruthy();
+    expect(status?.textContent).toContain("Running checks…");
+    const srOnly = running.querySelector(".sr-only");
+    expect(srOnly?.textContent).toContain("Running checks…");
+
+    stream.close();
+  });
+
   /** @verifies XS-41 */
   it("makes a CLI-only remedy copyable and offers no rebuild button", async () => {
     fetchMock.mockResolvedValue(ndjsonResponse([
@@ -815,7 +816,11 @@ describe("DiagnosticsPanel", () => {
     expect(failed.getAttribute("data-diagnostics-state")).toBe("run-failed");
     // No check ever landed, so there are no rows claiming to pass.
     expect(screen.queryByTestId("diagnostics-checks")).toBeNull();
-    expect(failed.textContent).toMatch(/did not complete/i);
+    // Wording trimmed under K116 (row 32): "The run did not complete...
+    // every remaining check is marked not run, never passed." became
+    // "The run stopped early. Checks that didn't run are marked Not
+    // run." — same SET-40 distinction (real results vs never-ran).
+    expect(failed.textContent).toMatch(/stopped early/i);
   });
 
   /**
@@ -835,7 +840,8 @@ describe("DiagnosticsPanel", () => {
 
     const failed = await screen.findByTestId("diagnostics-run-failed");
     expect(failed.getAttribute("data-diagnostics-state")).toBe("run-failed");
-    expect(failed.textContent).toMatch(/did not complete/i);
+    // Wording trimmed under K116 (row 32); see the test above.
+    expect(failed.textContent).toMatch(/stopped early/i);
 
     // SET-40 bullet 2 / A182: the check that had already streamed in
     // BEFORE the failure line stays visible with its real state — it is

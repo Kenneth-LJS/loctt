@@ -1,5 +1,4 @@
-import type { ArchivedScope, ProjectDef } from "@loctt/contracts";
-import { Link } from "@tanstack/react-router";
+import type { ProjectDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { useProjectsScoped } from "../api/hooks/sidebarData.ts";
@@ -8,9 +7,7 @@ import { useDeleteProject } from "../api/hooks/useProjectMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
 import { CreateProjectDialog } from "./CreateProjectDialog.tsx";
-import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { DeleteProjectDialog } from "./DeleteProjectDialog.tsx";
 import { ProjectEditDialog } from "./ProjectEditDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
@@ -25,7 +22,7 @@ import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
  * through the shared `ProjectEditDialog` (name / prefix / make-default /
  * archive), which the sidebar's project rows ALSO open — so an edit made
  * from Settings and one made from a point of use go through the *same*
- * component and cannot drift (K100). The row's kebab keeps only Edit…
+ * component and cannot drift (K100). The row's kebab keeps only Edit
  * (opens the dialog) and Delete (panel-owned: it needs the remap picker
  * and the "at least one project" guard). The slug is read-only text
  * (links depend on it).
@@ -71,10 +68,8 @@ function ProjectRow({
   // project" guard, which are panel-owned.
   const [editing, setEditing] = useState(false);
 
-  const archived = project.archived === true;
-
   return (
-    <tr id={`row-${project.id}`} data-testid={`project-row-${project.id}`} data-archived={archived ? "true" : "false"}>
+    <tr id={`row-${project.id}`} data-testid={`project-row-${project.id}`}>
       <td className="py-2 pr-3 align-top">
         <div className="flex items-center gap-2">
           <span data-testid={`project-name-${project.id}`} className="text-[0.9286rem] text-text-primary">
@@ -86,11 +81,6 @@ function ProjectRow({
               className="rounded bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] font-medium text-text-secondary"
             >
               Default
-            </span>
-          )}
-          {archived && (
-            <span data-testid={`project-archived-marker-${project.id}`} className="text-[0.7857rem] text-text-tertiary">
-              (archived)
             </span>
           )}
         </div>
@@ -122,7 +112,7 @@ function ProjectRow({
           label={`Actions for project ${project.name}`}
           actions={[
             {
-              label: "Edit…",
+              label: "Edit",
               testId: `project-edit-${project.id}`,
               onSelect: () => { setEditing(true); },
             },
@@ -157,16 +147,10 @@ function ProjectRow({
 }
 
 export function ProjectsPanel() {
-  // K107: this panel had NO archived control before — archived projects
-  // rendered inline with an `(archived)` marker. It now defaults to the
-  // `active` scope and reveals archived through the tri-state control. A
-  // deep-link hash widens the fetch to `all` so a `#row-<id>` anchor to an
-  // archived project still resolves (K100). `task_counts`/`default` stay
-  // server-computed over the full config regardless of scope.
-  const [scope, setScope] = useState<ArchivedScope>("active");
-  const [hashPresent] = useState(hashDeepLinkPresent);
-  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
-  const projects = useProjectsScoped(effectiveScope);
+  // K121 #1: active projects only. Archived ones are listed, restored and
+  // deleted in Settings → Archived, nowhere else. `task_counts`/`default`
+  // stay server-computed over the full config.
+  const projects = useProjectsScoped();
   // K16: the completed-rename notice rides on /api/info, the same
   // channel the schema banner uses for a server-side fact the client
   // could not otherwise know.
@@ -208,49 +192,15 @@ export function ProjectsPanel() {
       <SettingsPanelHeader
         title="Projects"
         actions={(
-          <>
-            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
-                an icon reveal rather than a permanently visible segmented
-                control — see ArchivedScopeReveal. Used to sit in its own
-                always-visible row above the table. */}
-            <ArchivedScopeReveal
-              testId="projects-archived-scope"
-              panelLabel="projects"
-              value={scope}
-              onChange={setScope}
-            />
-            <Button
-              variant="primary"
-              testId="project-create-open"
-              onClick={() => { setCreating(true); }}
-            >
-              New project
-            </Button>
-          </>
+          <Button
+            variant="primary"
+            testId="project-create-open"
+            onClick={() => { setCreating(true); }}
+          >
+            New project
+          </Button>
         )}
       />
-      <p className="mb-1 text-[0.9286rem] text-text-secondary">
-        Each project has its own key prefix and counter. Set the workspace
-        default — where new tasks land for a user with no personal default —
-        from a project row&rsquo;s actions.
-      </p>
-      {/* CONFIG-5 / P4: the row-level "Make default" here sets the
-          *workspace* default; each user can also set a *personal* default
-          that wins for them. Cross-link so the two "default project"
-          concepts are not mistaken for one. */}
-      <p className="mb-4 text-[0.7857rem] text-text-tertiary">
-        Your personal default is in{" "}
-        <Link
-          to="/settings/$section"
-          params={{ section: "preferences" }}
-          data-testid="projects-personal-default-link"
-          className="text-accent underline hover:text-text-primary"
-        >
-          Settings → My preferences
-        </Link>
-        .
-      </p>
-
       {/* PRU-46 / K16: an interrupted rename is *already finished* by
           the time this renders — the server completes one ahead of
           every handler, so a mid-rename state cannot reach the client.
@@ -297,9 +247,8 @@ export function ProjectsPanel() {
             <code>
               {projects.data.default_drift.default}
             </code>{" "}
-            is set as the default project but is not in the list below. New
-            tasks will ask you to pick a project until you set a default that
-            exists.
+            is set as the default project but no longer exists. New
+            tasks will ask you to pick a project until you set a new default.
           </p>
         </div>
       )}
@@ -325,21 +274,17 @@ export function ProjectsPanel() {
             // teaches and points at the same create control below.
             <tr>
               <td colSpan={5} className="py-8 text-center text-[0.9286rem] text-text-tertiary">
-                {scope === "archived" ? (
-                  <div data-testid="projects-empty">No archived projects.</div>
-                ) : (
-                  <div className="flex flex-col items-center gap-3" data-testid="projects-empty">
-                    <span>No projects yet. Every task belongs to a project, so create one to get started.</span>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      testId="projects-empty-create"
-                      onClick={() => { setCreating(true); }}
-                    >
-                      New project
-                    </Button>
-                  </div>
-                )}
+                <div className="flex flex-col items-center gap-3" data-testid="projects-empty">
+                  <span>No projects yet. Every task belongs to a project, so create one to get started.</span>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    testId="projects-empty-create"
+                    onClick={() => { setCreating(true); }}
+                  >
+                    New project
+                  </Button>
+                </div>
               </td>
             </tr>
           ) : (
@@ -366,7 +311,7 @@ export function ProjectsPanel() {
         <DeleteProjectDialog
           project={deleting}
           taskCount={counts[deleting.id] ?? 0}
-          others={items.filter(p => p.id !== deleting.id && p.archived !== true)}
+          others={items.filter(p => p.id !== deleting.id)}
           mutation={deleteProject}
           onClose={() => { setDeleting(undefined); deleteProject.reset(); }}
         />

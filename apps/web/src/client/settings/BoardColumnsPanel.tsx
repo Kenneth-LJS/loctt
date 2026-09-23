@@ -70,7 +70,7 @@ function validate(cols: readonly DraftColumn[]): Problems {
     for (const s of col.statuses) {
       const prev = seenStatus.get(s);
       if (prev !== undefined && prev !== i) {
-        problems.set(i, `“${s}” is already in another column — a status can only be in one.`);
+        problems.set(i, `“${s}” is already in another column.`);
       }
       seenStatus.set(s, i);
     }
@@ -82,7 +82,6 @@ export function BoardColumnsPanel() {
   return (
     <WorkflowPanelFrame
       title="Board columns"
-      description="How the board groups tasks into columns. With no columns defined, the board shows one column per status in order. Define columns to collapse several statuses into one, rename them, or set a work-in-progress cap."
     >
       {({ workflow }) => <BoardColumnsEditor workflow={workflow} />}
     </WorkflowPanelFrame>
@@ -114,9 +113,12 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
   if (draft === null) {
     return (
       <div className="grid max-w-2xl gap-3 text-[0.9286rem]" data-testid="board-columns-panel">
+        {/* Kept — BoardColumnsPanel.test.tsx "shows the implicit board and a
+            promote button when no columns are configured" requires this
+            testid (`findByTestId("board-implicit-note")`), though it does
+            not pin the exact wording; shortened rather than removed. */}
         <p className="text-text-secondary" data-testid="board-implicit-note">
-          This board has no custom columns, so it shows one column per status,
-          in the order statuses are defined:
+          One column per status, in order:
         </p>
         <ol className="flex flex-wrap gap-2" data-testid="board-implicit-columns">
           {statuses.map(s => (
@@ -201,7 +203,7 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
           return (
             <li
               key={col.key}
-              // K100 deep-link anchor. The board's "Set WIP limit…" menu
+              // K100 deep-link anchor. The board's "Set WIP limit" menu
               // item deep-links to `/settings/board-columns#column-<key>`
               // (BoardView emits `hash={`column-${column.id}`}`, where the
               // column id is its key), so this row's anchor is
@@ -283,7 +285,6 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
                   }}
                   className="w-20"
                 />
-                <span className="text-text-tertiary">optional — a passive counter, not enforced</span>
               </label>
 
               {problem !== undefined && (
@@ -298,7 +299,8 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
 
       <div>
         <Button variant="secondary" size="sm" testId="board-add-column" onClick={addColumn}>
-          + Add column
+          <Icon name="plus" size={14} />
+          Add column
         </Button>
       </div>
 

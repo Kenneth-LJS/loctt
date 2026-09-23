@@ -496,27 +496,17 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
     expect(screen.getByTestId("user-delete-u-alice")).toBeTruthy();
   });
 
-  // U25 / K107: the U25 "Show archived" checkbox is replaced by the shared
-  // tri-state scope control, and the split is now server-side. Default
-  // `active` hides the archived user; choosing "all" refetches and reveals
-  // it. (This test asserted the old boolean toggle + client-side split.)
-  //
-  // Ken's ruling, 2026-09-22 (decisions.md § 9): the control is now demoted
-  // behind an icon reveal (`ArchivedScopeReveal`) — "the reveal is
-  // secondary, not a visible segmented control" — so it must be opened via
-  // its trigger before a segment is clickable.
-  it("hides archived users until the scope control reveals them (U25)", async () => {
+  // K121 #1: the panel lists active users only, with no reveal. Archived
+  // users are listed and restored in Settings → Archived. (Replaces the
+  // U25/K107 test that revealed them through the scope control here.)
+  // @verifies SET-52
+  it("lists active users only and offers no way to reveal archived ones", async () => {
     stubWithArchived();
     render(<UsersPanel />, { wrapper: wrapper() });
-    // Active users show; the archived one does not, by default.
     await screen.findByTestId("user-row-u-alice");
     expect(screen.queryByTestId("user-row-u-carol")).toBeNull();
-    // The control is not visible until its icon trigger is opened.
-    expect(screen.queryByTestId("users-archived-scope-all")).toBeNull();
-    fireEvent.click(screen.getByTestId("users-archived-scope-reveal"));
-    // Choosing "all" reveals it.
-    fireEvent.click(await screen.findByTestId("users-archived-scope-all"));
-    expect(await screen.findByTestId("user-row-u-carol")).toBeTruthy();
+    expect(screen.queryByTestId("users-archived-scope-reveal")).toBeNull();
+    expect(screen.queryByTestId("users-archived-scope")).toBeNull();
   });
 
   it("does not render an inline self-user note that reflows the row (U24)", async () => {
@@ -547,7 +537,11 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
     // screen reader as the item's description.
     expect(archiveItem).toHaveProperty("disabled", true);
     expect(archiveItem.textContent).toMatch(/archive/i);
-    expect(archiveItem).toHaveAccessibleDescription(/cannot archive/i);
+    // Wording trimmed under K116 (row 127): "You cannot archive the user
+    // you are acting as. Switch to another user first." became "You
+    // can't archive the user you're acting as. Switch users first." —
+    // same PRU-26 why-plus-fix, contracted.
+    expect(archiveItem).toHaveAccessibleDescription(/can't archive/i);
   });
 });
 

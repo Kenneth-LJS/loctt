@@ -131,11 +131,7 @@ export function KeyboardPanel() {
   const mod = modifierLabel();
   return (
     <div data-testid="keyboard-panel">
-      <h1 className="mb-1 text-lg font-semibold text-text-primary">Keyboard</h1>
-      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
-        The shortcuts this build actually has. Shortcuts are not
-        rebindable.
-      </p>
+      <h1 className="mb-2 text-lg font-semibold text-text-primary">Keyboard</h1>
 
       {SHORTCUTS.map(group => (
         <section key={group.group} className="mb-6">
