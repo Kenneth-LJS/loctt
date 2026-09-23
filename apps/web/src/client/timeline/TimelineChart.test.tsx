@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { computeRange } from "./geometry.ts";
 import { buildLayout } from "./layout.ts";
@@ -189,6 +189,7 @@ describe("TimelineChart arrow hover-highlight (TML-32)", () => {
 });
 
 describe("TimelineChart owns the viewport (redesign)", () => {
+  // @verifies TML-53
   it("the scroll container carries a min-height floor so it cannot collapse to a strip", () => {
     // Red-prove: the unscheduled drawer no longer renders below an
     // unbounded lane, and the chart keeps a min-height floor. Remove
@@ -203,6 +204,7 @@ describe("TimelineChart owns the viewport (redesign)", () => {
     expect(scroll?.className).toContain("flex-1");
   });
 
+  // @verifies TML-54
   it("renders the no-dated-tasks empty state inside the chart frame when noBars", () => {
     // The frame (header) still draws; the notice is centred inside it.
     const { container } = renderChart(oneBandModel([]), { noBars: true });
@@ -212,6 +214,7 @@ describe("TimelineChart owns the viewport (redesign)", () => {
     expect(notice?.textContent).toContain("nothing to chart");
   });
 
+  // @verifies TML-55
   it("draws a sticky task-name gutter cell for each laid-out row", () => {
     const tasks = Array.from({ length: 3 }, (_v, i) => task(i));
     const { container } = renderChart(oneBandModel(tasks));
@@ -221,6 +224,17 @@ describe("TimelineChart owns the viewport (redesign)", () => {
         container.querySelector(`[data-testid="timeline-gutter-row-${t.key}"]`),
       ).not.toBeNull();
     }
+  });
+
+  // @verifies TML-55
+  it("clicking a gutter row opens that task, same as the bar", () => {
+    const tasks = Array.from({ length: 2 }, (_v, i) => task(i));
+    const onOpenTask = vi.fn();
+    const { container } = renderChart(oneBandModel(tasks), { onOpenTask });
+    const row = container.querySelector(`[data-testid="timeline-gutter-row-${tasks[1]?.key}"]`);
+    expect(row).not.toBeNull();
+    fireEvent.click(row as Element);
+    expect(onOpenTask).toHaveBeenCalledWith(tasks[1]?.key);
   });
 });
 

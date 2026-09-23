@@ -11,6 +11,7 @@ import { Dash,PriorityCell, StatusBadge, TypeBadge } from "../list/cells.tsx";
 import { FilterBar } from "../list/FilterBar.tsx";
 import { progressState } from "../milestones/model.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
 import { BurndownChart } from "./BurndownChart.tsx";
@@ -148,8 +149,12 @@ export function SprintDetail({ sprintId }: { readonly sprintId: string }) {
   return (
     <div data-testid="sprint-detail" data-sprint-id={sprint.id} className="flex h-full flex-col gap-3 overflow-auto p-4">
       <div>
-        <Link to="/sprints" className="text-[0.8571rem] text-text-tertiary no-underline hover:underline">
-          ← All sprints
+        <Link
+          to="/sprints"
+          className="inline-flex items-center gap-1 text-[0.8571rem] text-text-tertiary no-underline hover:underline"
+        >
+          <Icon name="arrowLeft" size={12} />
+          All sprints
         </Link>
       </div>
 

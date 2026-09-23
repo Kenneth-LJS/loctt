@@ -8,13 +8,7 @@ import type { ListSearch } from "../router/listSearch.ts";
 import { Button } from "../ui/Button.tsx";
 import { Modal } from "../ui/Modal.tsx";
 import { TextField } from "../ui/TextField.tsx";
-import { archivedScopeFromSearch, buildFiltersFromSearch } from "./buildFilters.ts";
-
-/** How the archived scope reads in the summary list. */
-const SCOPE_LABEL: Readonly<Record<string, string>> = {
-  archived: "Archived tasks only",
-  all: "Active and archived tasks",
-};
+import { buildFiltersFromSearch } from "./buildFilters.ts";
 
 /**
  * "Save as view" dialog. Names the current filter set and saves it as a
@@ -40,7 +34,6 @@ export function SaveViewDialog({
   // The filters as authored — this is exactly what gets stored. Nothing
   // is merged into a query string on the way out.
   const filters = buildFiltersFromSearch(search);
-  const archivedScope = archivedScopeFromSearch(search);
 
   const sort =
     search.sort !== undefined
@@ -54,13 +47,10 @@ export function SaveViewDialog({
         name: name.trim(),
         filters,
         ...(sort ? { sort } : {}),
-        ...(archivedScope !== undefined ? { archivedScope } : {}),
       },
       { onSuccess: onClose },
     );
   };
-
-  const scopeLabel = archivedScope !== undefined ? SCOPE_LABEL[archivedScope] : undefined;
 
   return (
     <Modal title="Save as view" onClose={onClose}>
@@ -80,7 +70,7 @@ export function SaveViewDialog({
 
         <div className="flex flex-col gap-1 text-[0.9286rem] text-text-secondary">
           <span>Filters</span>
-          {filters.length === 0 && scopeLabel === undefined ? (
+          {filters.length === 0 ? (
             <p
               className="text-[0.8571rem] text-text-tertiary"
               data-testid="save-view-no-filters"
@@ -107,9 +97,6 @@ export function SaveViewDialog({
                   )}
                 </li>
               ))}
-              {scopeLabel !== undefined ? (
-                <li className="text-[0.8571rem] text-text-tertiary">{scopeLabel}</li>
-              ) : null}
             </ul>
           )}
         </div>

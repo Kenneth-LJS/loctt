@@ -10,6 +10,7 @@ import {
   useUploadAttachment,
 } from "../api/hooks/useAttachments.ts";
 import { Button } from "../ui/Button.tsx";
+import { FilePicker } from "../ui/FilePicker.tsx";
 import { displayMime, familyForMime, glyphFor } from "./icon.ts";
 
 /**
@@ -80,7 +81,6 @@ export function AttachmentsPanel({
   const [dragOver, setDragOver] = useState(false);
   /** Per-attachment removal failure, keyed by name (P4: at the tile). */
   const [removeError, setRemoveError] = useState<Record<string, string>>({});
-  const inputRef = useRef<HTMLInputElement>(null);
   /**
    * Monotonic row ids. Two files in one drop can share a name (from
    * different directories), so the name is not a key.
@@ -240,30 +240,28 @@ export function AttachmentsPanel({
               as inline underlined text matching the sentence, the same
               inline-action shape `GroupError`'s Retry link already uses
               (`underline hover:text-text-primary`) rather than a new
-              primitive. */}
-          <button
-            type="button"
-            data-testid="attachment-upload"
-            onClick={() => { inputRef.current?.click(); }}
-            className="underline hover:text-text-primary"
-          >
-            Upload
-          </button>
+              primitive.
+
+              The hidden-input + click-proxy is now `ui/FilePicker.tsx`
+              (Ken's file-upload-button ticket) — this panel's own inline
+              text trigger is the render-function form, since the
+              default plain-child form renders a `Button`, which this
+              spot never wanted. `FilePicker` still owns the input, the
+              ref, and the "same file can be re-picked" value clear. */}
+          <FilePicker multiple onFiles={onFiles} testId="attachment-input">
+            {({ open }) => (
+              <button
+                type="button"
+                data-testid="attachment-upload"
+                onClick={open}
+                className="underline hover:text-text-primary"
+              >
+                Upload
+              </button>
+            )}
+          </FilePicker>
           . Up to {formatBytes(MAX_ATTACHMENT_BYTES)} per file.
         </p>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          data-testid="attachment-input"
-          className="hidden"
-          onChange={e => {
-            onFiles(e.target.files);
-            // Clearing lets the same file be chosen twice in a row —
-            // which is how a user retries after a refusal.
-            e.target.value = "";
-          }}
-        />
       </div>
 
       {attachments.length > 0 && (

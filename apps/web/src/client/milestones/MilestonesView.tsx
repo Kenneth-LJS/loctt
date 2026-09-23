@@ -111,17 +111,9 @@ export function MilestonesView() {
   const info = useInfo();
   const navigate = useNavigate();
 
-  // MSL-25 / K107 / Ken's ruling, 2026-09-22 ("archiving is a one-way
-  // door, not a filter", decisions.md § 9): this used to be a tri-state
-  // scope the user could flip to reveal archived milestones in place.
-  // /milestones is a progress surface people browse WHILE WORKING — not
-  // the Settings admin/recovery panel the ruling reserves an
-  // archived-scope control for — so it is judged with Task list/Board/
-  // Timeline ("Never"), not with Settings → Milestones (which keeps its
-  // own control, demoted). Archived milestones are simply never shown
-  // here; Settings → Milestones is where an administrator recovers one.
-  // Orphan diagnosis below still runs over the WHOLE list, archived
-  // included — a task pointing at an archived milestone is resolvable
+  // MSL-25 / K121 #1: archived milestones are never shown here. They are
+  // listed and restored in Settings → Archived only. Orphan diagnosis
+  // below still runs over the WHOLE list, archived included — a task pointing at an archived milestone is resolvable
   // and therefore not an orphan.
 
   // K105: "+ New milestone" opens the shared create dialog in place (not
@@ -150,7 +142,7 @@ export function MilestonesView() {
   // sibling Sprints view surfaces the same via /api/tasks.
   const unreadable = milestones.data?.unreadable ?? [];
 
-  // This view no longer offers a control to change scope — archived
+  // No control changes scope here — archived
   // milestones are simply excluded, unconditionally.
   const visible = useMemo(
     () => sortMilestones(all.filter(m => m.archived !== true)),
@@ -403,16 +395,6 @@ function MilestoneRow({
         </Link>
 
         <div className="flex items-center gap-2">
-          {milestone.archived === true && (
-            <Chip
-              variant="neutral"
-              shape="pill"
-              testId="milestone-archived-badge"
-            >
-              <span className="text-[0.7143rem] uppercase text-text-tertiary">Archived</span>
-            </Chip>
-          )}
-
           {/* MSL-17: the overdue indication does not rely on colour
               alone — it is a word. MSL-18: a 100% milestone with a
               past date reads completed, and `isOverdue` returns false

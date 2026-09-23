@@ -143,7 +143,7 @@ afterEach(() => {
 });
 
 describe("ListView row click (UI-12)", () => {
-  // @verifies UI-12 (whole row clickable)
+  // @verifies LST-5 (whole row clickable)
   it("navigates to the task when clicking anywhere in the row, not just the key", async () => {
     const router = await mountListWithTaskRoute();
     const row = screen.getByText("First task").closest("tr") as HTMLElement;
@@ -156,7 +156,7 @@ describe("ListView row click (UI-12)", () => {
     expect(router.state.location.pathname).toBe("/tasks/WEB-1");
   });
 
-  // @verifies UI-12 (modifier-click must not navigate in place)
+  // @verifies LST-5 (modifier-click must not navigate in place)
   it("does not navigate on a ctrl-click on the row", async () => {
     const router = await mountListWithTaskRoute();
     const row = screen.getByText("First task").closest("tr") as HTMLElement;
@@ -167,7 +167,7 @@ describe("ListView row click (UI-12)", () => {
     expect(router.state.location.pathname).toBe("/list");
   });
 
-  // @verifies UI-12 (the kebab / checkbox must not navigate)
+  // @verifies LST-5 (the kebab / checkbox must not navigate)
   it("does not navigate when clicking the row's select checkbox", async () => {
     const router = await mountListWithTaskRoute();
     const checkbox = screen.getByLabelText("Select WEB-1");
@@ -178,7 +178,7 @@ describe("ListView row click (UI-12)", () => {
     expect(router.state.location.pathname).toBe("/list");
   });
 
-  // @verifies UI-12 (the origin recorded for the back affordance carries
+  // @verifies LST-5 (the origin recorded for the back affordance carries
   // the full URL this view was showing, search params included)
   //
   // This test's router (unlike the real app's, wired in router/index.tsx)

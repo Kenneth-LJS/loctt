@@ -188,3 +188,27 @@ describe("MilestoneDetail — header edit affordance (K105 / UI-17)", () => {
     expect(screen.getByTestId("milestone-detail-back")).toBeTruthy();
   });
 });
+
+/**
+ * A208 / K111. The back-link's arrow is DRAWN (an `<Icon>` SVG), never
+ * typed as a Unicode `←`. Two things must hold together: the glyph is
+ * really an svg in the DOM, and it is decorative — `aria-hidden`, so the
+ * link's accessible name stays the label alone. A typed "←" would satisfy
+ * neither; an `<Icon>` that lost its `aria-hidden` would satisfy only the
+ * first, and a screen reader would announce a stray arrow.
+ */
+describe("MilestoneDetail — back-link arrow is a drawn Icon (A208 / K111)", () => {
+  it("draws the back arrow as an aria-hidden svg, leaving the accessible name as the label alone", async () => {
+    MILESTONES = [{ id: "ms_1", name: "Beta launch" }];
+    await renderDetail("ms_1");
+
+    const back = await screen.findByTestId("milestone-detail-back");
+    const svg = back.querySelector("svg");
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    // No typed glyph survived, and the arrow contributes nothing to the
+    // name a screen reader reads out.
+    expect(back.textContent).toBe("All milestones");
+    expect(back.textContent).not.toContain("←");
+  });
+});

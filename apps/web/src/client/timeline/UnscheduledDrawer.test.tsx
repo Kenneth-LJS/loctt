@@ -17,6 +17,7 @@ function row(n: number, problem: DateProblem): TimelineRow {
 }
 
 describe("UnscheduledDrawer (timeline redesign)", () => {
+  // @verifies TML-51
   it("renders nothing when there are no unscheduled rows", () => {
     const { container } = render(
       <UnscheduledDrawer rows={[]} onOpenTask={() => {}} isNarrow={false} />,
@@ -24,6 +25,7 @@ describe("UnscheduledDrawer (timeline redesign)", () => {
     expect(container.querySelector('[data-testid="timeline-unscheduled"]')).toBeNull();
   });
 
+  // @verifies TML-51
   it("is collapsed by default: header + count show, rows do not", () => {
     const rows = [
       row(1, { kind: "undated" }),
@@ -43,6 +45,7 @@ describe("UnscheduledDrawer (timeline redesign)", () => {
       ?.getAttribute("aria-expanded")).toBe("false");
   });
 
+  // @verifies TML-52
   it("expands to reveal the rows and their reason chips when the header is clicked", () => {
     const rows = [row(1, { kind: "open_due", due: "2026-03-06" })];
     const { container } = render(
@@ -54,6 +57,7 @@ describe("UnscheduledDrawer (timeline redesign)", () => {
     expect(reason?.textContent).toContain("No start date");
   });
 
+  // @verifies TML-51
   it("shows a breakdown by problem kind, with the broken bucket in danger colour", () => {
     const rows = [
       row(1, { kind: "undated" }),
@@ -73,6 +77,7 @@ describe("UnscheduledDrawer (timeline redesign)", () => {
     expect(danger?.textContent).toBe("1 corrupt");
   });
 
+  // @verifies TML-54
   it("auto-expands once when initiallyExpanded (TML-41: no dated tasks)", () => {
     const rows = [row(1, { kind: "undated" })];
     const { container } = render(
@@ -85,6 +90,7 @@ describe("UnscheduledDrawer (timeline redesign)", () => {
     expect(container.querySelector('[data-testid="timeline-unscheduled-row-U-1"]')).toBeNull();
   });
 
+  // @verifies TML-52
   it("clicking a row opens the task", () => {
     const onOpenTask = vi.fn();
     const rows = [row(1, { kind: "undated" })];
@@ -95,6 +101,20 @@ describe("UnscheduledDrawer (timeline redesign)", () => {
     expect(onOpenTask).toHaveBeenCalledWith("U-1");
   });
 
+  // @verifies TML-53
+  it("on a phone the expanded drawer opens as its own Sheet, not the desktop scroll body", () => {
+    const rows = [row(1, { kind: "undated" })];
+    const { container } = render(
+      <UnscheduledDrawer rows={rows} onOpenTask={() => {}} isNarrow initiallyExpanded />,
+    );
+    // The Sheet renders instead of the capped desktop body.
+    expect(container.querySelector('[data-testid="timeline-unscheduled-sheet"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="timeline-unscheduled-body"]')).toBeNull();
+    // The row is still reachable inside it.
+    expect(container.querySelector('[data-testid="timeline-unscheduled-row-U-1"]')).not.toBeNull();
+  });
+
+  // @verifies TML-53
   it("the desktop expanded body caps its own height so it cannot squeeze the chart", () => {
     // Red-prove: with 200 unscheduled rows the body scrolls within a
     // max-height rather than growing unbounded. If the max-h cap were

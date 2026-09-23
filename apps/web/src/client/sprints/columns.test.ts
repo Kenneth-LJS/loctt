@@ -68,17 +68,13 @@ describe("deriveSprintColumns", () => {
   });
 
   // @verifies SPR-1
-  it("omits archived sprints unless explicitly asked for", () => {
+  it("never makes a column for an archived sprint (K121 #1)", () => {
     const sprints = [
       sprint({ id: "live", name: "Live" }),
       sprint({ id: "old", name: "Old", archived: true }),
     ];
     const hidden = deriveSprintColumns(sprints, []).filter(c => c.kind === "sprint");
     expect(hidden.map(c => c.id)).toEqual(["live"]);
-
-    const shown = deriveSprintColumns(sprints, [], { showArchived: true })
-      .filter(c => c.kind === "sprint");
-    expect(shown.map(c => c.id)).toEqual(["live", "old"]);
   });
 
   // @verifies SPR-24

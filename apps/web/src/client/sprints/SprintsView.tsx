@@ -22,7 +22,6 @@ import type { Progress, Readout } from "../milestones/model.ts";
 import { progressState } from "../milestones/model.ts";
 import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
 import { Button } from "../ui/Button.tsx";
-import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -126,15 +125,11 @@ export function SprintsView() {
   // another agent owns. See the REPORT note in the handoff.
   const brokenSprints: readonly BrokenEntry[] = brokenOf(sprints.data);
 
-  // SPR-1 / SPR-40: archived sprints are hidden by default and revealed
-  // by an explicit affordance — the overview's half of archive/unarchive
-  // parity (A166). A local view toggle only: it never writes, and
-  // `deriveSprintColumns` already took the option nothing was passing.
-  const [showArchived, setShowArchived] = useState(false);
+  // SPR-1 / K121 #1: archived sprints never appear here — there is no
+  // reveal. They are listed and restored in Settings → Archived only.
   // K105: "+ New sprint" opens the shared dialog in place (was a prose link
   // to the Settings page).
   const [creating, setCreating] = useState(false);
-  const archivedCount = sprintDefs.filter(s => s.archived === true).length;
 
   // SPR-39: `progress` off the `?progress=true` list, keyed by id, so the
   // header can look up its own done/total. A missing entry (an older
@@ -148,8 +143,8 @@ export function SprintsView() {
   }, [sprintsProgress.data]);
 
   const columns = useMemo(
-    () => deriveSprintColumns(sprintDefs, items, { showArchived }),
-    [sprintDefs, items, showArchived],
+    () => deriveSprintColumns(sprintDefs, items),
+    [sprintDefs, items],
   );
   const buckets = useMemo(() => bucketBySprint(columns, items), [columns, items]);
 
@@ -316,8 +311,8 @@ export function SprintsView() {
 
   return (
     <div className="flex h-full flex-col gap-3 p-4" data-testid="sprints">
-      {/* SPR-40: the overview's lifecycle affordances (A166). Create and
-          archive-reveal act in place; delete-with-remap and reorder are
+      {/* SPR-40: the overview's lifecycle affordances (A166). Create acts
+          in place; delete-with-remap and reorder are
           roster-level actions that still live in the Settings panel,
           reached through the persistent Settings gear (UI-17 / K105 —
           Ken: "if im on a task, i dont want to see a link to manage all
@@ -328,19 +323,6 @@ export function SprintsView() {
         testId="sprints-header"
         actions={
           <>
-            {archivedCount > 0 && (
-              // SPR-1: archived sprints appear only behind this affordance.
-              // A checkbox so the state is announced; nothing here writes to
-              // sprints.yaml (unarchiving is a Settings action).
-              <label className="flex items-center gap-1.5 text-[0.8571rem] text-text-secondary">
-                <Checkbox
-                  data-testid="sprints-show-archived"
-                  checked={showArchived}
-                  onChange={e => { setShowArchived(e.target.checked); }}
-                />
-                Show archived ({archivedCount})
-              </label>
-            )}
             {/* K105: create in place via the shared dialog — not a prose
                 link to Settings. */}
             <Button
@@ -638,7 +620,7 @@ function configInvalidOf(error: unknown): ApiError | null {
 /**
  * The controls that own their own click inside the at-a-glance card
  * (SPR-39). A click that `closest`-matches one of these is handled by
- * that control, not by the card's navigate — so the "Open sprint" link
+ * that control, not by the card's navigate — so the "Open" link
  * and the collapse toggle never double-fire the card. Kept as a string
  * so it degrades gracefully as controls are added.
  */
@@ -846,14 +828,26 @@ function Column({
                   anchor, so middle-click / open-in-new-tab work, and it
                   stays visible whether the column is expanded or not. The
                   surrounding card is also clickable (SPR-39); the card
-                  handler ignores clicks that originate here. */}
+                  handler ignores clicks that originate here.
+
+                  Label is bare "Open" (Ken, 2026-09-23). It was
+                  "Open sprint →": the noun repeated the column header
+                  directly above it, and the accent colour plus hover
+                  underline already say "link" without an arrow — which
+                  was also the app's only forward arrow, so nothing else
+                  depended on the convention. */}
               <Link
                 to="/sprints/$key"
                 params={{ key: column.id }}
                 data-testid={`sprint-open-${column.id}`}
+                // The visible label is bare "Open", so on a board of
+                // several columns every one of these would announce as
+                // an undifferentiated "Open". The name carries the
+                // sprint, matching the card's own aria-label above.
+                aria-label={`Open ${column.label}`}
                 className="ml-auto text-[0.7857rem] text-accent no-underline hover:underline"
               >
-                Open sprint →
+                Open
               </Link>
             </div>
           </div>
@@ -953,7 +947,7 @@ function Column({
  * bar + `done / total` from the same core `Progress` the detail page
  * renders — reusing `progressState`, so the overview and the detail can
  * never show two different numbers for the same sprint. The literal
- * burndown chart stays on the detail page (`Open sprint →`).
+ * burndown chart stays on the detail page (the column's `Open` link).
  *
  * `unavailable` (progress query in flight or failed) shows nothing
  * rather than a fabricated 0/0; `none` (no counted tasks) shows an

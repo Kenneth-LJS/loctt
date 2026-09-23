@@ -10,8 +10,8 @@ import { SaveViewDialog } from "./SaveViewDialog.tsx";
 /**
  * "Save as view" from the list toolbar (M1.3). K102: it sends the ORDERED
  * `filters` list built from the active filters — each facet as its own
- * `{kind:"simple"}` filter — plus the archived SCOPE as a view property,
- * and it shows a HUMAN-READABLE summary rather than the DSL (Ken: "average
+ * `{kind:"simple"}` filter — and never an archived scope (K121 #1: no
+ * saved view over archived items), and it shows a HUMAN-READABLE summary rather than the DSL (Ken: "average
  * people dont need to see the fucking DSL QUERY"). Asserted at the
  * request-body layer.
  */
@@ -58,10 +58,17 @@ function postBody(): Record<string, unknown> | undefined {
   return typeof body === "string" ? (JSON.parse(body) as Record<string, unknown>) : undefined;
 }
 
+/**
+ * The list's search passes unknown params through, so a held
+ * `?archived=all` bookmark can still be in it. K121 #1: it must not turn
+ * into a saved view over archived items.
+ */
+const STRAY_ARCHIVED = { status: ["backlog"], archived: "all" } as Parameters<typeof SaveViewDialog>[0]["search"];
+
 describe("SaveViewDialog", () => {
   it("POSTs the ORDERED filters list built from the active filters", async () => {
     render(
-      <SaveViewDialog search={{ status: ["backlog"], archived: "all" }} onClose={() => {}} />,
+      <SaveViewDialog search={STRAY_ARCHIVED} onClose={() => {}} />,
       { wrapper: wrapper() },
     );
 
@@ -81,22 +88,22 @@ describe("SaveViewDialog", () => {
     expect(body?.filters).toEqual([
       { kind: "simple", field: "status", op: "in", values: ["backlog"] },
     ] satisfies Filter[]);
-    // Archived is a view property, never a filter row.
-    expect(body?.archivedScope).toBe("all");
+    // K121 #1: no archived scope, whatever the URL carried.
+    expect(body).not.toHaveProperty("archivedScope");
     expect(body?.conditions).toBeUndefined();
     expect(body?.query).toBeUndefined();
   });
 
   it("shows a human-readable filter summary, not the DSL", () => {
     render(
-      <SaveViewDialog search={{ status: ["backlog"], archived: "all" }} onClose={() => {}} />,
+      <SaveViewDialog search={STRAY_ARCHIVED} onClose={() => {}} />,
       { wrapper: wrapper() },
     );
-    // One row per filter, read as plain `field op values` — and the
-    // archived scope spelled out in words rather than as a query term.
+    // One row per filter, read as plain `field op values`, and nothing
+    // about archived tasks (K121 #1).
     const summary = screen.getByTestId("save-view-filter-summary");
     expect(summary.textContent).toContain("status in backlog");
-    expect(summary.textContent).toContain("Active and archived tasks");
+    expect(summary.textContent).not.toMatch(/archived/i);
     // Ken's rule: no DSL. The merged query form must not appear.
     expect(summary.textContent).not.toContain("archived !=");
     expect(summary.textContent).not.toContain("AND");

@@ -268,14 +268,26 @@ export function ListView() {
   // date only while `/api/info` is still in flight.
   const today = info.data?.today ?? new Date(now).toISOString().slice(0, 10);
 
+  const pages = tasks.data?.pages ?? [];
+  // VUE-22 (A313): a saved view whose query no longer parses is a
+  // distinct broken state, not a fallback to the unfiltered list — the
+  // decision that put `broken_view` on the response explicitly rejected
+  // "a widened list would read as a legitimate result". The server
+  // still returns every task (unfiltered) alongside the diagnostic, so
+  // without this the table rendered all of them beneath the banner —
+  // exactly the read the decision ruled out, and the live defect this
+  // fixes. Checked before `items`/`total` are derived so every
+  // consumer (rows, mobile cards, pagination footer, the settled-count
+  // announcement) sees the suppressed shape rather than each needing
+  // its own `brokenView` guard.
+  const brokenViewActive = pages[pages.length - 1]?.broken_view !== undefined;
   // Flatten the accumulated pages. Rows 51–100 append to 1–50 rather
   // than replacing them (LST-13); a page that lost a race to a filter
   // change resolved into a different query key and is not here.
   const items = useMemo(
-    () => (tasks.data?.pages ?? []).flatMap(p => p.items),
-    [tasks.data],
+    () => (brokenViewActive ? [] : (tasks.data?.pages ?? []).flatMap(p => p.items)),
+    [tasks.data, brokenViewActive],
   );
-  const pages = tasks.data?.pages ?? [];
   /**
    * Task files that would not parse (ERR-9).
    *
@@ -297,7 +309,7 @@ export function ListView() {
   // K102 removed repair-in-place: the only client write path is a typed
   // `EditViewRequest`, which cannot express arbitrary YAML. So the banner
   // shows the bytes still on disk and points at the panel that offers the
-  // guarded Replace… flow — it no longer offers to "fix this in the
+  // guarded Replace flow — it no longer offers to "fix this in the
   // editor", which seeded the advanced box from a `query` field the
   // server has never sent.
   const brokenView = pages[pages.length - 1]?.broken_view;
@@ -332,7 +344,10 @@ export function ListView() {
   // does, and then page 1's total is simply out of date. Not covered by
   // a spec: reproducing it needs a write landing between two paged
   // reads of the same feed, which the fixture cannot currently stage.
-  const total = pages[pages.length - 1]?.total ?? 0;
+  // A313: suppressed alongside `items` — the pagination footer ("Showing
+  // 1–14 of 14") would otherwise report the unfiltered count under a
+  // broken view, reading as a legitimate result the same way the rows did.
+  const total = brokenViewActive ? 0 : (pages[pages.length - 1]?.total ?? 0);
 
   /**
    * Announce the result count when it settles (A11Y-25).
@@ -358,10 +373,16 @@ export function ListView() {
     const previous = announcedTotal.current;
     announcedTotal.current = total;
     if (previous === null || previous === total) return;
+    // A313: a broken view forces `total` to 0 (see above), but that is
+    // not "no tasks matched the filters" — the filter never ran. The
+    // `role="alert"` banner already announces the real reason; adding
+    // "No tasks match these filters" on top of it would misattribute a
+    // parse failure to an ordinary empty result.
+    if (brokenViewActive) return;
     // A11Y-25's third bullet: zero is announced explicitly, so it is
     // distinguishable from an unresponsive UI.
     announce(total === 0 ? "No tasks match these filters" : `${String(total)} tasks`);
-  }, [total, tasks.isFetching, tasks.isError, tasks.isSuccess, announce]);
+  }, [total, tasks.isFetching, tasks.isError, tasks.isSuccess, announce, brokenViewActive]);
 
   // A11Y-17: focus survives an async re-render of the table. When a
   // refetch replaces the row nodes (a filter change, a background poll,
@@ -503,8 +524,8 @@ export function ListView() {
    * The tasks the last archive touched, so it can be undone (BLK-10).
    *
    * In memory only (V11): it dies on reload and on the next bulk
-   * action. Archive is reversible by other routes — "Show archived",
-   * then unarchive — so this is a convenience over the action just
+   * action. Archive is reversible by other routes — Settings → Archived
+   * (K121 #1) — so this is a convenience over the action just
    * taken, not a recovery mechanism, and there is no expiry to
    * configure.
    */
@@ -865,7 +886,7 @@ export function ListView() {
             </pre>
           )}
           {/* K102 removed repair-in-place, so this points at the one
-              surface that can actually act: Saved views, where Replace…
+              surface that can actually act: Saved views, where Replace
               sits behind an explicit confirmation. The button this
               replaced seeded the advanced editor from `broken_view.query`
               — a field the server never sent — so it opened the editor
@@ -1040,6 +1061,17 @@ export function ListView() {
                 columns={columns.length + 1}
                 rows={Math.min(params.limit ?? DEFAULT_LIST_LIMIT, 25)}
               />
+            ) : brokenViewActive ? (
+              // A313: the `broken_view` alert above IS the content for
+              // this state. Falling through to the ordinary empty-state
+              // branch below would render "No tasks match these
+              // filters" under it — false (the filter never ran) and
+              // exactly the "zero rows read as a legitimate result"
+              // outcome the VUE-22 decision rejected. No row, no text;
+              // the banner already carries the message and the "Clear
+              // filters" action would be wrong here too (there is no
+              // filter to clear — the view itself is broken).
+              null
             ) : items.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + 1} className="px-3 py-8 text-center text-text-tertiary">
@@ -1115,7 +1147,6 @@ export function ListView() {
                     "cursor-pointer [&>td]:border-b [&>th]:border-b [&>td]:border-border-default [&>th]:border-border-default",
                     "[&>td]:px-3 [&>td]:py-2.5 [&>th]:px-3 [&>th]:py-2.5",
                     "hover:[&>*]:bg-bg-row-hover last:[&>td]:border-b-0 last:[&>th]:border-b-0",
-                    task.archived ? "opacity-50" : "",
                     // The 2px selected-marker border is ALWAYS present on the
                     // first cell — transparent when unselected — so toggling
                     // selection only changes its COLOUR, never adds width.
@@ -1201,6 +1232,11 @@ export function ListView() {
           // capped like the table so a large page size does not paint
           // a wall of placeholders.
           <SkeletonCards rows={Math.min(params.limit ?? DEFAULT_LIST_LIMIT, 25)} />
+        ) : brokenViewActive ? (
+          // A313: parity with the desktop table above — the broken-view
+          // banner rendered ahead of this list is the content; no card,
+          // no "No tasks match" fallback text.
+          null
         ) : items.length === 0 ? (
           <li className="rounded-md border border-border-subtle bg-bg-surface px-3 py-8 text-center text-text-tertiary">
             {hasFilters ? (
@@ -1244,7 +1280,6 @@ export function ListView() {
               className={[
                 "cursor-pointer rounded-md border bg-bg-surface p-3",
                 selection.isSelected(task.id) ? "border-accent bg-accent/5" : "border-border-subtle",
-                task.archived ? "opacity-50" : "",
               ].join(" ")}
             >
               <div className="flex items-start gap-2">
@@ -1482,14 +1517,6 @@ function Cell({
           >
             {task.key}
           </Link>
-          {/* BLK-10 asks for a badge, and the dimmed row it replaces was
-              a lone visual signal — unreadable to a screen reader and to
-              anyone the contrast drop does not reach. */}
-          {task.archived === true && (
-            <span className="rounded border border-border-subtle px-1 py-px text-[0.7143rem] font-medium uppercase tracking-wide text-text-tertiary">
-              Archived
-            </span>
-          )}
         </span>
       );
     case "project":

@@ -468,7 +468,8 @@ export function TaskDetail({
       {/* UI-12: back to wherever this task was opened FROM — absent
           entirely on a cold load (Ken: "if cold load then no back
           button"), never a disabled control or a fallback destination.
-          Same visual treatment as MilestoneDetail's "← All milestones",
+          Same visual treatment as MilestoneDetail's "All milestones"
+          back-link (the same decorative `arrowLeft` Icon beside the label),
           but the destination and label are the actual origin route
           (including its filters/sort/page) rather than a hardcoded one.
           This is independent of the "All tasks" breadcrumb inside the
@@ -484,9 +485,10 @@ export function TaskDetail({
           to={origin.pathname}
           search={router.options.parseSearch(origin.search) as Record<string, unknown>}
           data-testid="task-detail-back"
-          className="self-start px-6 pt-4 text-[0.8571rem] text-text-tertiary no-underline hover:underline"
+          className="inline-flex items-center gap-1 self-start px-6 pt-4 text-[0.8571rem] text-text-tertiary no-underline hover:underline"
         >
-          ← {origin.label}
+          <Icon name="arrowLeft" size={12} />
+          {origin.label}
         </Link>
       )}
       <header className="border-b border-border-subtle px-6 py-4">
@@ -650,7 +652,7 @@ export function TaskDetail({
                     }}
                   >
                     <Icon name="chevronRight" size={14} />
-                    Move to project…
+                    Move to project
                   </MenuItem>
                   <MenuItem
                     onSelect={() => {
@@ -673,7 +675,7 @@ export function TaskDetail({
                     }}
                   >
                     <Icon name="trash" size={14} />
-                    Delete…
+                    Delete
                   </MenuItem>
                 </>
               )}

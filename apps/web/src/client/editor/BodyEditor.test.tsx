@@ -196,7 +196,7 @@ describe("BodyEditor — K33 two-state orchestration", () => {
     // guard read "focus left the editor" — tearing the editor down the
     // moment the user opened the picker, so the transform never applied.
     const panel = document.createElement("div");
-    panel.setAttribute("data-dropdown-panel", "");
+    panel.setAttribute("data-portal-panel", "");
     const row = document.createElement("button");
     panel.appendChild(row);
     document.body.appendChild(panel);

@@ -164,6 +164,8 @@ describe("BoardCard relationship markers (BRD-50 / UX-5)", () => {
     expect(marker.textContent).toContain("Blocked");
     // The count is discoverable via the title.
     expect(marker.getAttribute("title")).toBe("Blocked by 2 tasks");
+    // B3 (A327): not the danger/Critical red — blocked is a normal state.
+    expect(marker.querySelector(".text-danger-fg")).toBeNull();
   });
 
   // @verifies BRD-50

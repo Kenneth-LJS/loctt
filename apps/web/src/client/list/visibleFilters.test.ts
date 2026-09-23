@@ -154,3 +154,31 @@ describe("per-user (de)serialisation", () => {
     expect(userVisibleFiltersOf(next)).toEqual(["status", "labels"]);
   });
 });
+
+describe("resolveVisibleFilters — custom fields before the workflow loads (LST-57)", () => {
+  // The catalog built with no workflow has no custom entries at all:
+  // exactly the state while /api/workflow is loading or has failed.
+  const catalogWithoutWorkflow = buildFilterCatalog(BUILTINS, undefined);
+
+  // @verifies LST-57
+  it("keeps a stored custom-field filter while its definition is unknown", () => {
+    expect(
+      resolveVisibleFilters({
+        viewSet: ["status", "field.team"],
+        catalog: catalogWithoutWorkflow,
+        customFieldsKnown: false,
+      }),
+    ).toEqual(["status", "field.team"]);
+  });
+
+  // @verifies LST-57
+  it("drops a custom field that genuinely no longer exists once the workflow has loaded", () => {
+    expect(
+      resolveVisibleFilters({
+        viewSet: ["status", "field.gone"],
+        catalog: buildFilterCatalog(BUILTINS, WORKFLOW),
+        customFieldsKnown: true,
+      }),
+    ).toEqual(["status"]);
+  });
+});

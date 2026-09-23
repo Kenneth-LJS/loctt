@@ -305,7 +305,7 @@ function BodyEditSurface({
     // call sites to every component that used containment to mean
     // "still mine".
     const related = e.relatedTarget as Element | null;
-    if (related?.closest("[data-dropdown-panel]") != null) return;
+    if (related?.closest("[data-portal-panel]") != null) return;
     // The conflict dialog is part of the edit flow; a blur while it is
     // open must not tear the editor down — flush is suppressed by the
     // hook while a conflict is open, so just keep the editor.
