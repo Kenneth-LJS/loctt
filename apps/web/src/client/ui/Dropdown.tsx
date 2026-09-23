@@ -20,7 +20,7 @@ import { panelStyle, usePortalPlacement } from "./usePortalPlacement.ts";
  * field, the searchable value picker, and the filter-bar facet.
  *
  * It replaces `ui/Combobox` (the inline searchable listbox) and
- * `list/FilterDropdown` (the `Menu`-based multi-select facet), which were
+ * `list/FilterFacet` (the `Menu`-based multi-select facet), which were
  * two components solving the same problem with different substrates.
  *
  * ## Why one primitive needs THREE semantic modes
@@ -39,7 +39,7 @@ import { panelStyle, usePortalPlacement } from "./usePortalPlacement.ts";
  * query-builder value list and the task-meta pickers are all asserted in
  * `tests/ui/` via `getByRole("option")` + `aria-selected`.
  *
- * `menu` is the former `FilterDropdown`: roughly thirty e2e assertions
+ * `menu` is the former `FilterFacet`-as-`Menu`: roughly thirty e2e assertions
  * use `getByRole("menuitemcheckbox")`, and A11Y-10 asserts specifically
  * that the FIRST row holds real DOM focus on open and ArrowDown moves it
  * — a promise `role="menu"` makes and `aria-activedescendant` does not.

@@ -108,7 +108,7 @@ describe("MilestonesPanel — broken-entry degradation (DEG-30)", () => {
 });
 
 /**
- * @verifies N-4 / UI-10
+ * @verifies SET-55
  *
  * MilestonesPanel already carried `settings-panel-title`, but its create
  * action sat in a `secondary`-variant row below the description, at a

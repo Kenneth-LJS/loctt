@@ -414,3 +414,14 @@ orbit instead of rotating on the spot.
 > Added (2026-09-23) to cover behaviour four tests already asserted
 > under an invented `CONFIG-5` tag (`Header.test.tsx`,
 > `ShortcutHelpDialog.test.tsx`) — see `docs/dev/backlog.md` B9.
+
+### SHL-49 · M1 · minor · P6 P8
+**The sidebar's Views section (built-in filters and saved views) marks the selected row active, and a saved-view row's trailing kebab lines up with a built-in row's trailing badge.** Sidebar rendered at `/list` with a saved view or a built-in filter selected.
+
+- A saved view selected via `search.view` is marked with `aria-current="page"` and the row's own `data-active` marker, matching the treatment `ItemShell` already gives Projects and the view switcher.
+- A built-in filter is marked active when the URL's `q` matches that filter's resolved query exactly; only one row in the Views section is active at a time.
+- A saved-view row's trailing kebab (`RowActions`, a sibling of `ItemShell` outside its own padding) carries the same right inset (`pr-2.5`) as `ItemShell` gives a badge-ending row, so both row kinds end at the same right edge instead of the kebab sitting further out.
+
+> Added (2026-09-23) to cover behaviour two tests already asserted under
+> an invented `UI-16` tag (`Sidebar.test.tsx`, describe blocks tagged
+> `UI-16b`/`UI-16c`) — see `docs/dev/backlog.md` B9.

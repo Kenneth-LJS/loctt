@@ -309,7 +309,7 @@ describe("DropdownButton — aria-labelledby (A211/A242)", () => {
 /**
  * ── Menu mode (K106 stage 2) ─────────────────────────────────────────
  *
- * These are `list/FilterDropdown`'s behavioural contracts, ported onto
+ * These are `list/FilterFacet`'s behavioural contracts, ported onto
  * the merged primitive when that component was folded in. They are not
  * new requirements: checkbox toggling, roving focus (A11Y-10),
  * type-ahead and outside-click dismissal are what the filter facets

@@ -53,7 +53,7 @@ describe("SchemaBanner", () => {
     expect(text).toMatch(/not reinitialize|Do not\s+reinitialize/i);
   });
 
-  // @verifies XS-36
+  // @verifies XS-36, SET-15
   it("warns and points at the in-app Migrate now button for an outdated schema", () => {
     render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
     const alert = screen.getByRole("alert");
@@ -87,6 +87,29 @@ describe("SchemaBanner", () => {
     const cls = screen.getByTestId("schema-migrate-now").className;
     expect(cls).toContain("border-current");
     expect(cls).not.toMatch(/border-border-default|bg-bg-surface/);
+  });
+
+  /**
+   * @verifies SET-15
+   *
+   * The first click must state what will happen before the second one
+   * runs it: both versions, and that a backup snapshot is taken first.
+   * The other confirm-step tests in this file assert styling, not this
+   * copy, so a regression that dropped the sentence (leaving only the
+   * buttons) would pass every other test here.
+   */
+  it("the confirm step states the from/to versions and the backup snapshot before running", () => {
+    render(<SchemaBanner status={{ kind: "outdated", on_disk: 2, current: 3 }} />);
+    fireEvent.click(screen.getByTestId("schema-migrate-now"));
+    const confirmText = screen.getByTestId("schema-migrate-confirm").textContent ?? "";
+    expect(confirmText).toContain("v2");
+    expect(confirmText).toContain("v3");
+    expect(confirmText).toMatch(/backup/i);
+    // Nothing has run yet — no outcome text, and the confirm/cancel
+    // controls are still the ones offered.
+    expect(screen.queryByTestId("schema-migrate-success")).toBeNull();
+    expect(screen.queryByTestId("schema-migrate-failed")).toBeNull();
+    expect(screen.getByTestId("schema-migrate-confirm-button")).not.toBeNull();
   });
 
   it("renders Run migration and Cancel on the current-tone Button variant", () => {
@@ -319,7 +342,7 @@ describe("XS-36: Migrate now drives a real POST /api/migrate to a concrete outco
     })).toHaveLength(1);
   });
 
-  // @verifies XS-36
+  // @verifies XS-36, SET-15
   it("on success, clears into a message naming the versions and the backup path", async () => {
     vi.stubGlobal(
       "fetch",
@@ -341,7 +364,7 @@ describe("XS-36: Migrate now drives a real POST /api/migrate to a concrete outco
     expect(screen.queryByTestId("schema-migrate-confirm-button")).toBeNull();
   });
 
-  // @verifies XS-36
+  // @verifies XS-36, SET-37
   it("on failure, names what did not complete and points at the backup/recovery command, without re-offering a bare retry", async () => {
     vi.stubGlobal(
       "fetch",

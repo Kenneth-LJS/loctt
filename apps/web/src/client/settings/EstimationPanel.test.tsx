@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
+import { expectComboValueSelectable, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { EstimationPanel } from "./EstimationPanel.tsx";
 
 /**
@@ -91,7 +91,7 @@ describe("EstimationPanel — scale", () => {
     await screen.findByTestId("estimation-panel");
 
     // Seeded from the stored scale.
-    expect(comboValue("estimation-scale")).toBe("linear");
+    expectComboValueSelectable("estimation-scale", "linear");
     pickCombo("estimation-scale", "free");
     fireEvent.click(screen.getByTestId("estimation-save"));
 

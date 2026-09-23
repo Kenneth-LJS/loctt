@@ -546,7 +546,7 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
 });
 
 /**
- * @verifies N-4 / UI-10
+ * @verifies SET-55
  *
  * UsersPanel was the other of the two panels missing `settings-panel-title`
  * (no testid, no colour token, no margin) and had its create action below

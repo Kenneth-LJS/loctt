@@ -2,13 +2,15 @@ import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { getSchemaMigrationInProgressPath } from "../paths/index.js";
 import {
   migrateToCurrent,
   planMigration,
   requireSupportedSchema,
 } from "./migrate.js";
+import type { Migration } from "./migrations.js";
 import {
   CURRENT_SCHEMA_VERSION,
   SchemaTooNewError,
@@ -113,5 +115,94 @@ describe("requireSupportedSchema", () => {
     const exists = await readFile(join(dir, ".schema-version"), "utf-8");
     expect(exists.trim()).toBe(String(CURRENT_SCHEMA_VERSION));
     await expect(requireSupportedSchema(dir)).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * @verifies SET-37
+ *
+ * "`POST /api/migrate` fails partway. The migration errors on the
+ * second of three steps" — but no real multi-step migration is
+ * registered in `MIGRATIONS` yet (`migrations.ts`: "No migrations
+ * registered yet"), so that scenario cannot occur through the real
+ * registry. `findMigrationPath` is the one seam `migrateToCurrent`
+ * calls through without holding onto the registry itself, so a
+ * three-step path with a throwing middle step is injected here via
+ * `vi.mock` on the migrations module — the rest of `migrate.ts` (the
+ * sentinel write/clear per step, the backup, the result shape) is the
+ * real production code under test, not reimplemented.
+ */
+describe("migrateToCurrent: a step fails partway (SET-37)", () => {
+  afterEach(() => {
+    vi.doUnmock("./migrations.js");
+    vi.doUnmock("./version.js");
+    vi.resetModules();
+  });
+
+  it("leaves the sentinel recording the failed step and the intermediate version, and does not report partial success", async () => {
+    // No real multi-step migration exists yet to start below (today's
+    // only registered CURRENT_SCHEMA_VERSION is 1, with nothing below
+    // it to migrate from), so this test raises the ceiling too: a
+    // three-step path from v1 to a fake v4, with step two throwing.
+    const startVersion = 1;
+    const fakeCurrent = startVersion + 3;
+    await writeSchemaVersion(dir, startVersion);
+    const steps: Migration[] = [
+      {
+        from: startVersion,
+        to: startVersion + 1,
+        description: "step one",
+        apply: async () => {},
+      },
+      {
+        from: startVersion + 1,
+        to: startVersion + 2,
+        description: "step two (fails)",
+        apply: () => {
+          throw new Error("step two blew up");
+        },
+      },
+      {
+        from: startVersion + 2,
+        to: startVersion + 3,
+        description: "step three",
+        apply: async () => {},
+      },
+    ];
+
+    vi.doMock("./version.js", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("./version.js")>();
+      return { ...actual, CURRENT_SCHEMA_VERSION: fakeCurrent };
+    });
+    vi.doMock("./migrations.js", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("./migrations.js")>();
+      return { ...actual, findMigrationPath: () => steps };
+    });
+    vi.resetModules();
+    const { migrateToCurrent: migrateWithFakePath } =
+      await import("./migrate.js");
+    const { requireSupportedSchema: requireWithFakeCurrent } =
+      await import("./migrate.js");
+
+    await expect(migrateWithFakePath(dir)).rejects.toThrow(/step two blew up/);
+
+    // The intermediate version: step one's writeSchemaVersion landed
+    // (startVersion + 1), step two's never did.
+    const versionOnDisk = (await readFile(join(dir, ".schema-version"), "utf-8")).trim();
+    expect(versionOnDisk).toBe(String(startVersion + 1));
+
+    // The sentinel records exactly the step that was in flight when it
+    // threw — step two's from/to — plus the backup path, by absolute
+    // path (backupLocttDir always returns an absolute sibling path).
+    const sentinelPath = getSchemaMigrationInProgressPath(dir);
+    const sentinel = await readFile(sentinelPath, "utf-8");
+    expect(sentinel).toContain(`from: ${startVersion + 1}`);
+    expect(sentinel).toContain(`to: ${startVersion + 2}`);
+    expect(sentinel).toMatch(/backup: \/.*\.backup-v/);
+
+    // A second attempt (the "does not clear the schema banner" /
+    // "does not report a partial success as success" bullets, read
+    // from the boot-guard side) refuses rather than resuming.
+    await expect(requireWithFakeCurrent(dir)).rejects.toThrow(/interrupted mid-run/);
   });
 });

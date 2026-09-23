@@ -1,7 +1,7 @@
 import type { ComparisonOp, WorkflowConfig } from "@loctt/contracts";
 
 import type { FacetOptions } from "../list/facetOptions.ts";
-import type { FilterOption } from "../list/FilterDropdown.tsx";
+import type { FilterOption } from "../list/FilterFacet.tsx";
 
 /**
  * The field catalog for the saved-view dialog's SIMPLE filter rows (K102).

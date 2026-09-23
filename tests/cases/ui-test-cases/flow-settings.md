@@ -459,3 +459,15 @@ search, and no saved views over archived items.
 - Every delete asks for confirmation naming what will be deleted and how many; "Delete all" is a typed confirmation (P5). Deleting is permanent and the confirmation says so.
 - Deleting an item still referenced elsewhere follows the same remap-or-clear rules as deleting it from its own panel (e.g. deleting an archived milestone that tasks still reference).
 - A failure is reported per item as in SET-53; nothing is shown as deleted that was not.
+
+### SET-55 · M4 · minor · P6
+**Every settings entity panel renders its title and create action through the shared `SettingsPanelHeader`, at one canonical position, style and height.** Labels, Milestones, Projects, Saved views, Sprints, Users panels.
+
+- Each panel's title is an `<h1>` carrying `settings-panel-title` and the shared title colour token, not a panel-local heading.
+- Each panel's create action sits in the header row next to the title (not below the description, not below the list, not in its own row), using the shared component's primary-variant, default-size button — not a bespoke secondary variant or an off-size (`sm`) override.
+
+> Added (2026-09-23) to cover behaviour six panel test files already
+> asserted under an invented `N-4` tag (`LabelsPanel.test.tsx`,
+> `MilestonesPanel.test.tsx`, `ProjectsPanel.test.tsx`,
+> `SavedViewsPanel.test.tsx`, `SprintsPanel.test.tsx`,
+> `UsersPanel.test.tsx`) — see `docs/dev/backlog.md` B9.

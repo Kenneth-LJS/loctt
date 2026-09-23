@@ -1,8 +1,8 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1051,
-    "ui": 951,
+    "total": 1053,
+    "ui": 953,
     "surface": 100,
     "resolved": 4
   },
@@ -11747,6 +11747,22 @@
       "resolved": false
     },
     {
+      "id": "SET-55",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-settings.md",
+      "line": 463,
+      "title": "Every settings entity panel renders its title and create action through the shared `SettingsPanelHeader`, at one canonical position, style and height.",
+      "milestone": "M4",
+      "severity": "minor",
+      "principles": [
+        "P6"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
       "id": "SHL-1",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-app-shell.md",
@@ -12534,6 +12550,23 @@
       "milestone": "M4",
       "severity": "minor",
       "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "SHL-49",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-app-shell.md",
+      "line": 418,
+      "title": "The sidebar's Views section (built-in filters and saved views) marks the selected row active, and a saved-view row's trailing kebab lines up with a built-in row's trailing badge.",
+      "milestone": "M1",
+      "severity": "minor",
+      "principles": [
+        "P6",
         "P8"
       ],
       "surfaces": [

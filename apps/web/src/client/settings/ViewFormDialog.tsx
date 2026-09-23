@@ -13,7 +13,7 @@ import { useEditView } from "../api/hooks/useEditView.ts";
 import { useValidateQuery } from "../api/hooks/useValidateQuery.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { buildFacetOptions } from "../list/facetOptions.ts";
-import { FilterDropdown } from "../list/FilterDropdown.tsx";
+import { FilterFacet } from "../list/FilterFacet.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
@@ -570,7 +570,7 @@ function isComplete(f: Filter): boolean {
 /**
  * One `{kind:"simple"}` filter as three controls: field, operator, value.
  *
- * The value control is the SAME `FilterDropdown` the top filter bar
+ * The value control is the SAME `FilterFacet` the top filter bar
  * renders, fed the same options — Ken's *"the dumb filters will go back
  * to rendering with the dumb filters in the UI"*. A field with no closed
  * value set (title, free text) falls back to a text input, since there
@@ -652,7 +652,7 @@ function SimpleRow({
 
       {needsValue && (
         def?.options !== undefined ? (
-          <FilterDropdown
+          <FilterFacet
             label={valueLabel}
             options={def.options}
             selected={filter.values}

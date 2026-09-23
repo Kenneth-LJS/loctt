@@ -247,7 +247,7 @@ Use these rather than hand-rolled markup.
   **The rule:** a set the *user can grow* (labels, users, projects,
   milestones, sprints, custom-enum values, timezones) → `Combobox`. A
   small *fixed* set (status/priority/type, operators, sprint state, unit,
-  true/false) → plain `Select` or `Radio`. `FilterDropdown` (the list
+  true/false) → plain `Select` or `Radio`. `FilterFacet` (the list
   facets) keeps its `Menu`/`menuitemcheckbox` model (A11Y-10) but shares
   the Combobox threshold and match rule.
 - **`Select`, `TextField`, `Checkbox`, `Radio`, `Toggle`, `Chip`,
