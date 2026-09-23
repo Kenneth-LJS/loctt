@@ -210,4 +210,23 @@ describe("ServerUnreachableBanner", () => {
 
     expect(refetch).toHaveBeenCalled();
   });
+
+  /**
+   * @verifies A311
+   *
+   * "Try now" moved onto `ui/Button`'s `variant="current"`, which
+   * inherits this banner's `text-danger-fg` via `currentColor` instead
+   * of carrying a fixed tone. A regression to `secondary` (neutral
+   * border/surface) would sit wrong on the danger banner without
+   * failing any of the text-content assertions above.
+   */
+  it("renders Try now on the current-tone Button variant, not a fixed tone", async () => {
+    const { qc, Wrapper } = harness();
+    await seed(qc, "a", new TypeError("Failed to fetch"));
+
+    render(<ServerUnreachableBanner />, { wrapper: Wrapper });
+    const cls = (await screen.findByRole("button", { name: "Try now" })).className;
+    expect(cls).toContain("border-current");
+    expect(cls).not.toMatch(/border-border-default|bg-bg-surface/);
+  });
 });

@@ -204,12 +204,12 @@ describe("Header avatar menu", () => {
   });
 
   /**
-   * @verifies CONFIG-5
+   * @verifies SHL-48
    *
    * P4/config-discoverability: the menu's one generic "Settings" link
    * taught nothing about *where* a user's own settings live. The menu now
    * offers differentiated deep links — My profile (to the current user's
-   * row), My preferences, Customize sidebar… — each pointing at the exact
+   * row), My preferences, Customize sidebar — each pointing at the exact
    * section that owns the concept, alongside the kept catch-all Settings.
    */
   it("deep-links the user-menu items to the sections that own them", async () => {
@@ -233,7 +233,7 @@ describe("Header avatar menu", () => {
   });
 
   /**
-   * @verifies CONFIG-5
+   * @verifies SHL-48
    *
    * "My profile" anchors at the *current* user's row, so an unknown
    * identity (SHL-40) has no row to point at — the item is omitted rather

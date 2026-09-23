@@ -80,29 +80,6 @@ describe("listSearchSchema", () => {
     const parsed = listSearchSchema.parse({ labels: " , " });
     expect(parsed.labels).toBeUndefined();
   });
-
-  // K107: `archived` is the tri-state scope literal, not a boolean. These
-  // replace the old boolean-coercion tests (which asserted `"false"`/`"0"`
-  // → false and `"true"`/`"1"` → true), a schema that no longer exists.
-  it("parses the three scope literals", () => {
-    expect(listSearchSchema.parse({ archived: "active" }).archived).toBe("active");
-    expect(listSearchSchema.parse({ archived: "archived" }).archived).toBe("archived");
-    expect(listSearchSchema.parse({ archived: "all" }).archived).toBe("all");
-  });
-
-  it("leaves archived undefined when absent, so consumers apply the active default", () => {
-    expect(listSearchSchema.parse({}).archived).toBeUndefined();
-  });
-
-  // validateSearch runs on every navigation, so a garbage scope (or a
-  // stale `?archived=true`/`false` bookmark from the old boolean schema)
-  // must fall back rather than throw and break the whole route.
-  it("falls back to undefined for an unrecognised archived value without throwing", () => {
-    expect(listSearchSchema.parse({ archived: "yes" }).archived).toBeUndefined();
-    expect(listSearchSchema.parse({ archived: "" }).archived).toBeUndefined();
-    expect(listSearchSchema.parse({ archived: "true" }).archived).toBeUndefined();
-    expect(listSearchSchema.parse({ archived: "false" }).archived).toBeUndefined();
-  });
 });
 
 describe("csv de-duplication", () => {
@@ -165,25 +142,9 @@ describe("serializeListSearch", () => {
       dir: "desc" as const,
       page: 3,
       limit: 25,
-      // K107: `archived` is the tri-state scope, not a boolean.
-      archived: "all" as const,
     };
     const serialized = serializeListSearch(original);
     const reparsed = listSearchSchema.parse(serialized);
     expect(reparsed).toEqual(original);
-  });
-
-  // K107: replaces the old boolean round-trip. The serializer emits the
-  // scope literal and the schema parses it back; an unknown value falls
-  // through to undefined (the `active` default the consumer applies).
-  it("round-trips the tri-state archived scope", () => {
-    for (const archived of ["active", "archived", "all"] as const) {
-      const serialized = serializeListSearch({ archived });
-      expect(serialized).toEqual({ archived });
-      expect(listSearchSchema.parse(serialized).archived).toBe(archived);
-    }
-    // A stale `?archived=true` bookmark no longer parses to a scope; it
-    // falls through to undefined so the list opens at the default scope.
-    expect(listSearchSchema.parse({ archived: "true" }).archived).toBeUndefined();
   });
 });

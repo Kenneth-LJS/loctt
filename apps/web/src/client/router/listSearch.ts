@@ -1,4 +1,3 @@
-import { ArchivedScopeSchema } from "@loctt/contracts";
 import { z } from "zod";
 
 /**
@@ -15,8 +14,8 @@ import { z } from "zod";
 
 /**
  * URL-safe boolean. `z.coerce.boolean()` is `Boolean(value)`, and every
- * non-empty string is truthy — so `?archived=false` would parse as
- * `true` and silently invert the toggle. Parse the string forms the
+ * non-empty string is truthy — so `?edit=false` would parse as
+ * `true` and silently invert the flag. Parse the string forms the
  * serializer can emit ("true"/"false") plus the common hand-written
  * "1"/"0", and treat anything else (absent, empty, garbage) as
  * undefined so consumers fall back to their own default rather than
@@ -112,20 +111,6 @@ export const listSearchSchema = z.object({
   // Pagination. Clamped rather than rejected — see `urlInt`.
   page: urlInt(1, Number.MAX_SAFE_INTEGER),
   limit: urlInt(1, 200),
-
-  // K107: the tri-state archived scope, replacing the old `archived`
-  // boolean toggle. `active` (default) hides archived; `archived` shows
-  // only archived; `all` shows both — the same three values the server's
-  // `?archived=` param and core's `archivedScope` understand. Anything
-  // absent or unrecognised falls through to `undefined` so the consumer
-  // applies the `active` default (the URL stays clean — no `?archived=`
-  // when the scope is the default), and bookmarking / back-forward keep
-  // working because the URL carries the literal scope. Passthrough means
-  // an old bookmarked `?archived=true` no longer parses to this field;
-  // it rides through untouched and the list opens at the default scope,
-  // which is the deliberate K107 behaviour change (show-all was never
-  // the default; hide-archived is).
-  archived: ArchivedScopeSchema.optional().catch(undefined),
 
   // VUE-22: open the advanced DSL editor on load, pre-populated from
   // `q`. Set by the "fix this view" affordance on a broken saved view,

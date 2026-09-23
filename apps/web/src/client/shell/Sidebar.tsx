@@ -37,6 +37,7 @@ import { useResolvedColor } from "../ui/entityColor.ts";
 import { Icon, type IconName } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { IconGlyph } from "../ui/IconEmojiPicker.tsx";
+import { dataStateOf } from "../ui/InlineFailureNotice.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -461,9 +462,9 @@ function SidebarGroups({
   const render = (id: SidebarGroupId): ReactNode => {
     switch (id) {
       case "views":
-        return <ViewSwitcher collapsed={collapsed} />;
+        return <ViewSwitcher collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "projects":
-        return <ProjectsGroup collapsed={collapsed} />;
+        return <ProjectsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "saved-filters":
         return (
           <SavedFiltersGroup
@@ -473,13 +474,13 @@ function SidebarGroups({
           />
         );
       case "milestones":
-        return <MilestonesGroup collapsed={collapsed} />;
+        return <MilestonesGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "sprints":
-        return <SprintsGroup collapsed={collapsed} />;
+        return <SprintsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "labels":
-        return <LabelsGroup collapsed={collapsed} />;
+        return <LabelsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "recents":
-        return <RecentsGroup collapsed={collapsed} />;
+        return <RecentsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
     }
   };
 
@@ -755,14 +756,240 @@ function EntityColorDot({ color }: { color?: EntityColor | undefined }) {
  * its own colour and is never tinted (Ken, 2026-09-22). So the emoji
  * rule needs no branch here; passing the colour unconditionally is
  * correct, and the resolver yields `undefined` for a view with none.
+ *
+ * A view with NO icon falls back to the same dot a label row draws
+ * (Ken, 2026-09-23: *"fallback icon = the circle (same as how we do for
+ * labels)"*), and that dot is **grey, never the view's colour** (Ken,
+ * same day: *"fallback icon = circle, and grey"*). Passing the tint
+ * here would have made the fallback read as a deliberate, configured
+ * mark; grey says "nothing was picked". `ColorDot` with no colour
+ * already yields `var(--text-tertiary)`, so the absent-icon case is
+ * spelled by omitting the prop rather than by computing a grey.
+ *
+ * The icon is genuinely optional — the form seeds it `undefined`,
+ * offers a Clear button, and neither the web form nor MCP `create_view`
+ * requires one — so this branch is reached, and it must fill the row's
+ * mark slot or the sidebar's label edge goes ragged (UI-26b). It was a
+ * `star`, which collided with the default-project marker: one glyph,
+ * two unrelated meanings in one sidebar (UI-26d).
  */
 function ViewIcon({ icon, color }: {
   readonly icon: string | undefined;
   readonly color?: EntityColor | undefined;
 }) {
   const tint = useResolvedColor(color);
-  if (icon === undefined) return <Icon name="star" size={12} />;
+  if (icon === undefined) return <ColorDot />;
   return <IconGlyph icon={icon} size={12} {...(tint !== undefined ? { color: tint } : {})} />;
+}
+
+/* ---------- active-row derivation (K118) ---------- */
+
+/**
+ * The sidebar's single selected row, as an opaque identity every group
+ * compares itself against.
+ *
+ * K118 (Ken's ruling, 2026-09-23): "the sidebar has exactly one
+ * selection". Before this, each group computed its own `active` flag
+ * from whatever slice of the route it cared about — Projects read
+ * `search.project`, the Views group read `search.q`/`search.view`,
+ * and four groups (Milestones, Sprints, Labels, Recently viewed)
+ * computed no active state at all. That let a project row and a
+ * saved-view row light up together (clicking a view never cleared the
+ * project scope, and vice versa), and a saved-view click carried over
+ * a built-in's `q`, and it made "no active state" easy to ship by
+ * omission because nothing forced every group through one rule.
+ *
+ * This function is the one rule. It runs once per render, from the
+ * pathname and search alone, and returns a single tagged identity (or
+ * `null` on a route the sidebar has no selection for, e.g. /settings).
+ * Every row in every group asks "is my identity this one?" — never
+ * "is some param present" — so two rows lit at once is no longer
+ * something a group can do by itself.
+ *
+ * **The chosen rule** (Ken, offered "one selection, always" vs.
+ * "project is a scope, marked differently", chose the former):
+ * clicking ANY sidebar row is a full replace of the sidebar-driven URL
+ * state, not an addition to it. So:
+ *  - On /list, /board, /timeline: exactly one of
+ *    {a saved view, a built-in filter, a sprint, a label, a project}
+ *    is selected, in that priority order — never two, because the
+ *    resolvers below use `else if`. `view`/`q`/`sprint`/`labels`/
+ *    `project` are mutually exclusive in practice (every sidebar link
+ *    clears the others before setting its own), so the priority order
+ *    only matters for a URL edited by hand or bookmarked
+ *    mid-transition.
+ *  - "All projects" and the view switcher (List/Board/Timeline) both
+ *    describe the SAME state — "this view, with nothing else scoped" —
+ *    but they are two separate rows in two separate groups, so K118's
+ *    "exactly one row lit" needs a tie-breaker between them. Ken's own
+ *    framing of the question ("on /list with no other sidebar state,
+ *    is 'List' lit, or 'All projects'?") points at the view switcher:
+ *    it is called out as "a separate nav axis" from the scoping groups
+ *    (Projects, Views, Milestones, …), which reads as the axis that
+ *    should win when nothing else claims the row. So `deriveActiveRow`
+ *    resolves the nothing-scoped state to `{kind: "view"}`, the view
+ *    switcher lights from it directly, and `ProjectsGroup` explicitly
+ *    does NOT also light "All projects" from that same identity — see
+ *    `allActive` below, which is false whenever `active` is a `view`
+ *    row, precisely so the two rows are never both marked even though
+ *    they both describe a state that is technically true of each. The
+ *    instant a project or filter is picked, `active` changes kind and
+ *    neither row reads as selected (though the URL is of course still
+ *    /list, /board or /timeline).
+ *  - /milestones and /milestones/$id, /sprints (the overview links),
+ *    and /tasks/$key each select their own single row.
+ *
+ * Kept OUT of this function: whether List/Board/Timeline carries the
+ * filter scope across a switch (`carryFilters`) and whether a
+ * project/view click stays on the current view (`viewTo` in
+ * `ProjectsGroup`) — both are just what a click's `search`/`to` should
+ * produce, not what is lit afterward, and the K118 fix does not touch
+ * either (Ken, 2026-09-20, preserved as-is).
+ */
+type ActiveRow =
+  | { readonly kind: "view"; readonly to: "/list" | "/board" | "/timeline" }
+  | { readonly kind: "project"; readonly id: string }
+  | { readonly kind: "builtin"; readonly id: string }
+  | { readonly kind: "saved-view"; readonly id: string }
+  | { readonly kind: "milestones" }
+  | { readonly kind: "milestone"; readonly id: string }
+  | { readonly kind: "sprints" }
+  | { readonly kind: "sprint"; readonly id: string }
+  | { readonly kind: "label"; readonly id: string }
+  | { readonly kind: "recent"; readonly key: string };
+
+/** Structural equality over the small, flat `ActiveRow` shape. */
+function sameRow(a: ActiveRow | null, b: ActiveRow | null): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.kind !== b.kind) return false;
+  switch (a.kind) {
+    case "view":
+      return b.kind === "view" && a.to === b.to;
+    case "project":
+      return b.kind === "project" && a.id === b.id;
+    case "builtin":
+      return b.kind === "builtin" && a.id === b.id;
+    case "saved-view":
+      return b.kind === "saved-view" && a.id === b.id;
+    case "milestones":
+      return b.kind === "milestones";
+    case "milestone":
+      return b.kind === "milestone" && a.id === b.id;
+    case "sprints":
+      return b.kind === "sprints";
+    case "sprint":
+      return b.kind === "sprint" && a.id === b.id;
+    case "label":
+      return b.kind === "label" && a.id === b.id;
+    case "recent":
+      return b.kind === "recent" && a.key === b.key;
+  }
+}
+
+/**
+ * Derives the single active row from the current route.
+ *
+ * `resolvedBuiltins` is the set of built-ins whose `resolve()` did not
+ * return `null` (an inert built-in has nothing to match against), each
+ * paired with the exact `q` it resolves to for THIS `ctx` — the same
+ * comparison `SavedFiltersGroup` used to do locally.
+ */
+/**
+ * A csv-codec search param (`project`/`labels`/`sprint`) normally
+ * arrives as a `string[]` (see `router/listSearch.ts`'s `csv` codec),
+ * but a raw/un-normalized search object — as a bare
+ * `URLSearchParams`-derived value, or in a test harness that skips the
+ * schema — can hand back a plain `string` for a single value. Treating
+ * a bare string as an array of its characters was an actual bug this
+ * function had at one point (`"p_api"[0]` is `"p"`, not `"p_api"`), so
+ * every array-shaped field is read through this pair of helpers rather
+ * than indexed directly.
+ */
+function firstValue(v: string | readonly string[] | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  return typeof v === "string" ? v : v[0];
+}
+
+/** Like {@link firstValue}, but only when there is exactly one value — used for the single-select sprint/label rows. */
+function soleValue(v: string | readonly string[] | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v === "string") return v;
+  return v.length === 1 ? v[0] : undefined;
+}
+
+function deriveActiveRow(
+  pathname: string,
+  search: Record<string, unknown>,
+  resolvedBuiltins: readonly { readonly id: string; readonly q: string | undefined }[],
+): ActiveRow | null {
+  if (pathname === "/milestones") return { kind: "milestones" };
+  const milestoneMatch = /^\/milestones\/(.+)$/.exec(pathname);
+  if (milestoneMatch?.[1] !== undefined) {
+    return { kind: "milestone", id: decodeURIComponent(milestoneMatch[1]) };
+  }
+  if (pathname === "/sprints") return { kind: "sprints" };
+  const taskMatch = /^\/tasks\/(.+)$/.exec(pathname);
+  if (taskMatch?.[1] !== undefined) {
+    return { kind: "recent", key: decodeURIComponent(taskMatch[1]) };
+  }
+
+  if (!isView(pathname)) return null;
+
+  const s = search as {
+    view?: string;
+    q?: string;
+    sprint?: string | string[];
+    labels?: string | string[];
+    project?: string | string[];
+  };
+
+  if (typeof s.view === "string" && s.view !== "") {
+    return { kind: "saved-view", id: s.view };
+  }
+  if (typeof s.q === "string" && s.q !== "") {
+    const builtin = resolvedBuiltins.find(f => f.q === s.q);
+    if (builtin) return { kind: "builtin", id: builtin.id };
+  }
+  const sprintId = soleValue(s.sprint);
+  if (sprintId !== undefined) {
+    return { kind: "sprint", id: sprintId };
+  }
+  const labelId = soleValue(s.labels);
+  if (labelId !== undefined) {
+    return { kind: "label", id: labelId };
+  }
+  const projectId = firstValue(s.project);
+  if (projectId !== undefined) {
+    return { kind: "project", id: projectId };
+  }
+  // Nothing scoped: the view itself (or, equivalently, "All projects" —
+  // see the type doc above) is the selection.
+  return { kind: "view", to: pathname as "/list" | "/board" | "/timeline" };
+}
+
+/**
+ * The one hook every group calls to find out whether IT is the
+ * selection, instead of each computing its own flag from a slice of
+ * the route it happens to read.
+ *
+ * Reads the route itself (pathname + search) and resolves the
+ * built-ins against the live workflow config + current user, exactly
+ * as `SavedFiltersGroup` already did locally — moved here so
+ * `deriveActiveRow` (route-only, easily unit-tested) stays separate
+ * from the query data needed only to resolve a `q` back to a builtin
+ * id. Cheap to call from every group: `useWorkflow`/`useRouterState`
+ * are cached/selector reads, not new requests.
+ */
+function useActiveRow(currentUserId: string | null, today: string): ActiveRow | null {
+  const pathname = useRouterState({ select: s => s.location.pathname });
+  const search = useRouterState({ select: s => s.location.search }) as Record<string, unknown>;
+  const workflow = useWorkflow();
+  const ctx = { currentUserId, today, priorities: workflow.data?.priorities };
+  const resolvedBuiltins = BUILTIN_FILTERS.flatMap(f => {
+    const resolved = f.resolve(ctx);
+    return resolved === null ? [] : [{ id: f.id, q: resolved.q }];
+  });
+  return deriveActiveRow(pathname, search, resolvedBuiltins);
 }
 
 /* ---------- groups ---------- */
@@ -773,8 +1000,22 @@ const VIEWS: { to: "/list" | "/board" | "/timeline"; label: string; icon: IconNa
   { to: "/timeline", label: "Timeline", icon: "timeline" },
 ];
 
-function ViewSwitcher({ collapsed }: { collapsed: boolean }) {
-  const pathname = useRouterState({ select: s => s.location.pathname });
+function ViewSwitcher({
+  collapsed,
+  currentUserId,
+  today,
+}: {
+  collapsed: boolean;
+  currentUserId: string | null;
+  today: string;
+}) {
+  // K118: List/Board/Timeline is lit only when it IS the selection —
+  // i.e. `deriveActiveRow` returned `{kind: "view", to: <this one>}`,
+  // meaning nothing else (a project, a saved view, a builtin, a
+  // sprint, a label) is scoped. Previously this compared `pathname`
+  // alone, so a project click made from /board left Board lit even
+  // though a project row was ALSO lit — two rows at once.
+  const active = useActiveRow(currentUserId, today);
   return (
     <div className="flex flex-col gap-0.5">
       {VIEWS.map(v => (
@@ -791,7 +1032,11 @@ function ViewSwitcher({ collapsed }: { collapsed: boolean }) {
           // every param, which is what stripped the scope before.
           search={carryFilters}
         >
-          <ItemShell active={pathname === v.to} collapsed={collapsed} title={v.label}>
+          <ItemShell
+            active={sameRow(active, { kind: "view", to: v.to })}
+            collapsed={collapsed}
+            title={v.label}
+          >
             <Icon name={v.icon} size={14} className="shrink-0" />
             {!collapsed ? <span>{v.label}</span> : null}
           </ItemShell>
@@ -956,11 +1201,21 @@ const PROJECT_SEARCH_THRESHOLD = 8;
  */
 const PROJECT_COLLAPSE_LIMIT = 8;
 
-function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
+function ProjectsGroup({
+  collapsed,
+  currentUserId,
+  today,
+}: {
+  collapsed: boolean;
+  currentUserId: string | null;
+  today: string;
+}) {
   const projects = useProjects();
-  const activeProjects = useRouterState({
-    select: s => (s.location.search as { project?: string[] }).project ?? [],
-  });
+  // K118: the one derivation every group compares against, replacing
+  // this group's own `activeProjects`/`allActive` computation (which
+  // read only `search.project` and so stayed lit through a view or
+  // filter click that never cleared it).
+  const activeRow = useActiveRow(currentUserId, today);
   // Cross-view scope fix (Ken 2026-09-20): a project click made from the
   // board or timeline should stay on that view, not jump to /list.
   // `clearFilters`/`clearSort` already leave the timeline's display state
@@ -1022,13 +1277,17 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
     : filtered;
   const hiddenCount = filtered.length - visible.length;
 
-  // "All projects" is active exactly when nothing is scoped AND the
-  // current route is a task-listing view the project scope applies to
-  // (list/board/timeline). On /settings, /init, or a detail page there is
-  // no active scope to reflect — "no project in the URL" is true there
-  // too, but it must not light up "All projects" (U11).
-  const onView = isView(pathname);
-  const allActive = onView && activeProjects.length === 0;
+  // "All projects" describes the same state as the view switcher's own
+  // "nothing scoped" row (see the `ActiveRow` type doc's tie-breaker
+  // discussion) — but K118 wants exactly ONE row lit, and the view
+  // switcher is the one that wins that tie. So "All projects" is never
+  // itself marked active: it is always a plain, clickable row, never
+  // highlighted, regardless of scope. This is a deliberate departure
+  // from the pre-K118 behaviour (`allActive = onView && project
+  // scope empty`), which always highlighted it — that was exactly the
+  // "two rows lit" defect on a bare /list (List AND All projects both
+  // marked) this fix removes.
+  const allActive = false;
 
   return (
     <>
@@ -1091,7 +1350,7 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
       ) : null}
 
       {visible.map(p => {
-        const active = onView && activeProjects.includes(p.id);
+        const active = sameRow(activeRow, { kind: "project", id: p.id });
         const row = (
           <Link
             to={viewTo}
@@ -1116,22 +1375,25 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
                   nothing (a per-item-shaped mark with a constant value).
                   Not replaced with a type glyph either: ProjectDef has
                   no colour field, and inventing one is new scope no
-                  decision covers. Empty `w-4` slot keeps the label at
-                  the shared x (UI-25); the `star` default-project marker
-                  below stays — it varies, so it earns its place. */}
-              <span className="w-4 shrink-0" />
+                  decision covers.
+
+                  UI-26d: the `star` default-project marker is gone too
+                  (Ken, 2026-09-23: "no star for default project, take it
+                  out"). The same star was ALSO the saved-view fallback
+                  icon, so one glyph carried two unrelated meanings in
+                  one sidebar — and a star conventionally reads
+                  "favourite", which is neither of them. Which project is
+                  default is stated plainly where it is set: Settings →
+                  My preferences, and the project's own edit dialog.
+
+                  NO empty slot: Ken, 2026-09-23, "missing gap is ugly".
+                  Reserving 16px that draws nothing is a visible hole —
+                  worse than the ragged edge UI-25 fixed, because the eye
+                  reads a gap as a missing thing. Rows with no mark close
+                  up instead. */}
               {!collapsed ? (
                 <>
                   <span className="truncate">{p.name}</span>
-                  {p.id === defaultProjectId ? (
-                    // UI-16a: a `dot` marker sat beside the `ColorDot`
-                    // every row already carries (:1090), reading as a
-                    // second, meaningless dot. `star` is the original
-                    // intent (the marker before today's unicode-glyph
-                    // swap) and is not shape-identical to the ColorDot
-                    // beside it.
-                    <span className="text-text-tertiary" title="Default project"><Icon name="star" size={12} /></span>
-                  ) : null}
                 </>
               ) : null}
             </ItemShell>
@@ -1264,25 +1526,25 @@ function ProjectRowActions({
 }) {
   const archive = useArchiveProject();
   const setDefault = useSetDefaultProject();
-  const archived = project.archived === true;
   return (
     <RowActions
       size="sm"
       label={`Actions for project "${project.name}"`}
       actions={[
-        { label: "Edit…", testId: "sidebar-project-edit", onSelect: onEdit },
+        { label: "Edit", testId: "sidebar-project-edit", onSelect: onEdit },
         {
           label: isDefault ? "Default (current)" : "Make default",
           testId: "sidebar-project-set-default",
-          disabled: isDefault || archived || setDefault.isPending,
-          title: archived ? "An archived project cannot be the default." : undefined,
+          disabled: isDefault || setDefault.isPending,
           onSelect: () => { setDefault.reset(); setDefault.mutate({ id: project.id }); },
         },
         {
-          label: archived ? "Unarchive" : "Archive",
+          // K121 #1: the sidebar lists active projects only; restoring
+          // happens in Settings → Archived.
+          label: "Archive",
           testId: "sidebar-project-archive",
           disabled: archive.isPending,
-          onSelect: () => { archive.reset(); archive.mutate({ id: project.id, archived: !archived }); },
+          onSelect: () => { archive.reset(); archive.mutate({ id: project.id, archived: true }); },
         },
       ]}
     />
@@ -1303,23 +1565,16 @@ function SavedFiltersGroup({
   const priorities = workflow.data?.priorities;
   const ctx = { currentUserId, today, priorities };
   const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
-  // UI-16b: this group's rows never marked themselves active, even
-  // though `ItemShell` fully supports it (see Projects, `:1085`, and
-  // the view switcher, `:772`). Every built-in filter resolves to
-  // exactly `{ q: <dsl> }` (verified in `builtinFilters.ts` — no
-  // built-in sets any other facet), so a built-in is active when the
-  // route is `/list` and the URL's `q` matches its resolved `q`
-  // exactly — not merely contains it, so applying a built-in on top of
-  // other manual filters does not mark multiple rows active at once. A
-  // saved view is active when `search.view` names it.
-  const pathname = useRouterState({ select: s => s.location.pathname });
-  const currentQuery = useRouterState({
-    select: s => (s.location.search as { q?: string }).q,
-  });
-  const activeViewId = useRouterState({
-    select: s => (s.location.search as { view?: string }).view,
-  });
-  const onList = pathname === "/list";
+  // K118: the one derivation every group compares against. Previously
+  // this group computed its own active state from `search.q`/
+  // `search.view` directly (UI-16b) — which is exactly the "each group
+  // decides for itself" shape K118 forbids: a saved-view LINK
+  // (`:1543`/`:1610` below) never cleared `q`, so a built-in stayed lit
+  // underneath the saved view you had just clicked. `deriveActiveRow`
+  // gives `view` priority over `q`, so that carry-over no longer
+  // produces two lit rows even though the URL still carries the stale
+  // `q` until the next full filter-clearing navigation.
+  const activeRow = useActiveRow(currentUserId, today);
   // SET-13: pinned views lead the group, in the user's stored pin
   // order; everything else follows in config order. A pin whose view
   // is gone contributes nothing here — it has no row to render — and
@@ -1345,7 +1600,7 @@ function SavedFiltersGroup({
   // The saved-filter dialog state, mirroring `SavedViewsPanel`'s
   // discriminated union: `null` closed, or one of create / edit / delete.
   // A single state (rather than a bare `creating` boolean) lets the same
-  // group host Edit… and Delete… launched from a row's kebab as well as
+  // group host Edit and Delete launched from a row's kebab as well as
   // the "+ New filter…" create.
   //
   // Edit accepts a `SavedQuery` or an entry picked from a
@@ -1414,8 +1669,13 @@ function SavedFiltersGroup({
   /**
    * Deleting a user's own saved view, hard.
    *
-   * Two things happen before the DELETE, both to avoid telling the user
-   * about a change they just made:
+   * A328 (B6): before this fix, `dismiss(view.id)`, the pin-removal write
+   * and `setDialog(null)` all ran EAGERLY, before the DELETE request had
+   * even settled — a FAILED delete still closed the dialog and told
+   * `useVanishedViews` the view was gone, so the app believed an
+   * unconfirmed delete and showed the user nothing. All three now run
+   * only from the mutation's `onSuccess`, once the delete has actually
+   * landed:
    *  - `dismiss(view.id)` so `useVanishedViews` does not, on the refetch,
    *    announce "«name» was removed from queries.yaml" for this deliberate
    *    deletion (SHL-32 is for a view that vanished *without* the user's
@@ -1423,22 +1683,31 @@ function SavedFiltersGroup({
    *  - if the view is pinned, drop the pin in the same settings write, the
    *    same pattern `SidebarPinsPanel` uses — leaving it to the pins sweep
    *    would surface a "removed because it no longer exists" notice for a
-   *    deletion already confirmed.
+   *    deletion already confirmed;
+   *  - closing the dialog, so a FAILED delete leaves it open with the
+   *    inline notice (`DeleteViewDialog`'s `dataState`/`onRetry`) rather
+   *    than vanishing as if nothing happened.
    */
   const confirmDelete = (view: EditTarget, broken = false): void => {
-    dismiss(view.id);
-    if (pins.includes(view.id) && settings.data !== undefined) {
-      saveSettings.mutate({
-        ...settings.data.settings,
-        sidebar_pins: pins.filter(p => p !== view.id),
-      } as UserSettings);
-    }
     // The DeleteViewDialog the user just confirmed IS the explicit
     // opt-in a broken entry's delete requires (K102-broken-repair); the
     // flag carries that consent to the server. Never sent for a healthy
     // view, whose request is unchanged.
-    del.mutate({ id: view.id, ...(broken ? { replaceBroken: true } : {}) });
-    setDialog(null);
+    del.mutate(
+      { id: view.id, ...(broken ? { replaceBroken: true } : {}) },
+      {
+        onSuccess: () => {
+          dismiss(view.id);
+          if (pins.includes(view.id) && settings.data !== undefined) {
+            saveSettings.mutate({
+              ...settings.data.settings,
+              sidebar_pins: pins.filter(p => p !== view.id),
+            } as UserSettings);
+          }
+          setDialog(null);
+        },
+      },
+    );
   };
 
   /** Pin the view to the top, or unpin it, via a merged settings write. */
@@ -1488,7 +1757,7 @@ function SavedFiltersGroup({
             </div>
           );
         }
-        const active = onList && currentQuery === search.q;
+        const active = sameRow(activeRow, { kind: "builtin", id: f.id });
         return (
           <Link
             key={f.id}
@@ -1517,11 +1786,23 @@ function SavedFiltersGroup({
       })}
 
       {userViews.map(v => {
-        const active = onList && activeViewId === v.id;
+        const active = sameRow(activeRow, { kind: "saved-view", id: v.id });
         const row = (
           <Link
             to="/list"
-            search={prev => ({ ...clearSort(prev), view: v.id })}
+            // K118: a saved-view click is a full replace, like every
+            // other sidebar row — `clearFilters` here (added by this
+            // fix) drops a lingering `q`/`project`/`sprint`/`labels`
+            // from whatever was active before. Without it, clicking a
+            // saved view over an active built-in left the built-in's
+            // `q` in the URL, and `deriveActiveRow`'s own view-over-q
+            // priority only hides the resulting double-selection for
+            // reads coming through this file — a fresh page load or a
+            // bookmark of that stale URL would have re-resolved to the
+            // builtin instead of the view. Clearing at the source is
+            // the actual fix; the derivation's priority order is a
+            // second line of defence, not a substitute for it.
+            search={prev => ({ ...clearSort(clearFilters(prev)), view: v.id })}
             title={v.name}
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
@@ -1567,13 +1848,13 @@ function SavedFiltersGroup({
               size="sm"
               label={`Actions for saved filter "${v.name}"`}
               actions={[
-                { label: "Edit…", testId: "view-edit", onSelect: () => { setDialog({ mode: "edit", view: v }); } },
+                { label: "Edit", testId: "view-edit", onSelect: () => { setDialog({ mode: "edit", view: v }); } },
                 {
                   label: pins.includes(v.id) ? "Unpin" : "Pin to top",
                   testId: "view-pin",
                   onSelect: () => { togglePin(v); },
                 },
-                { label: "Delete…", testId: "view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: v }); } },
+                { label: "Delete", testId: "view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: v }); } },
               ]}
             />
           </div>
@@ -1585,15 +1866,21 @@ function SavedFiltersGroup({
         // position and opens the editor pre-populated, "rather than an
         // empty list". Marked broken so it is not mistaken for a healthy
         // view, and titled with the parser's message for a quick read.
+        // K118: a broken view is stored under the same `view` param a
+        // healthy one uses, so `deriveActiveRow`'s `saved-view` case
+        // matches it too — it gets the same active mark, and the same
+        // `clearFilters` on its link (see the healthy-view comment
+        // above for why).
+        const active = sameRow(activeRow, { kind: "saved-view", id: v.id });
         const row = (
           <Link
             to="/list"
-            search={prev => ({ ...clearSort(prev), view: v.id })}
+            search={prev => ({ ...clearSort(clearFilters(prev)), view: v.id })}
             title={`${v.name} — broken: ${v.error}`}
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
             data-broken-view={v.id}
           >
-            <ItemShell collapsed={collapsed} title={v.name}>
+            <ItemShell active={active} collapsed={collapsed} title={v.name}>
               <span
                 aria-hidden="true"
                 className="w-4 shrink-0 text-center text-danger-fg"
@@ -1628,7 +1915,7 @@ function SavedFiltersGroup({
               size="sm"
               label={`Actions for saved filter "${v.name}"`}
               actions={[
-                // VUE-22's fix path: Edit… opens the dialog on the broken
+                // VUE-22's fix path: Edit opens the dialog on the broken
                 // entry's id + name with NO filters (K102 — its stored
                 // filters did not load, so there is nothing faithful to
                 // seed), AND with the broken context so the dialog can
@@ -1637,7 +1924,7 @@ function SavedFiltersGroup({
                 // Passing `broken` is what stops Edit → Save from
                 // silently overwriting `rawText` with an empty list.
                 {
-                  label: "Edit…",
+                  label: "Edit",
                   testId: "broken-view-edit",
                   onSelect: () => {
                     setDialog({
@@ -1653,7 +1940,7 @@ function SavedFiltersGroup({
                 },
                 // No Pin: a broken view is being fixed, not promoted. Delete
                 // removes it from queries.yaml like any other.
-                { label: "Delete…", testId: "broken-view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: { id: v.id, name: v.name, filters: [] }, broken: true }); } },
+                { label: "Delete", testId: "broken-view-delete", danger: true, onSelect: () => { setDialog({ mode: "delete", view: { id: v.id, name: v.name, filters: [] }, broken: true }); } },
               ]}
             />
           </div>
@@ -1694,7 +1981,7 @@ function SavedFiltersGroup({
           className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left text-[0.9286rem] font-medium text-accent hover:bg-bg-muted"
         >
           <span className="w-4 shrink-0 text-center">+</span>
-          New view…
+          New view
         </button>
       ) : null}
 
@@ -1722,8 +2009,12 @@ function SavedFiltersGroup({
           name={dialog.view.name}
           pinned={pins.includes(dialog.view.id)}
           returnFocusTo={newFilterRef}
-          onCancel={() => { setDialog(null); }}
+          {...(del.isError ? { dataState: dataStateOf(del.error) } : {})}
+          onCancel={() => { del.reset(); setDialog(null); }}
           onConfirm={() => { confirmDelete(dialog.view, dialog.broken === true); }}
+          {...(del.isError
+            ? { onRetry: () => { confirmDelete(dialog.view, dialog.broken === true); } }
+            : {})}
         />
       ) : null}
     </SectionShell>
@@ -1751,8 +2042,18 @@ function orderByPins<T extends { id: string }>(
   return [...pinned, ...views.filter(v => !pinnedIds.has(v.id))];
 }
 
-function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
+function MilestonesGroup({
+  collapsed,
+  currentUserId,
+  today,
+}: {
+  collapsed: boolean;
+  currentUserId: string | null;
+  today: string;
+}) {
   const milestones = useMilestones();
+  // K118: this group previously computed no active state at all.
+  const activeRow = useActiveRow(currentUserId, today);
   const items = (milestones.data?.items ?? []).filter(m => m.archived !== true);
   const failed = hasFailed(milestones);
   // K100: the same MilestoneEditDialog the Settings panel and the
@@ -1770,15 +2071,19 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
           different surface and otherwise reachable only by URL. */}
       {!collapsed && (
         <Link to="/milestones" data-testid="sidebar-milestones-link" className="no-underline">
-          <ItemShell collapsed={collapsed} title="All milestones">
+          <ItemShell
+            active={sameRow(activeRow, { kind: "milestones" })}
+            collapsed={collapsed}
+            title="All milestones"
+          >
             {/* UI-20: the `flag` type glyph was decoration — milestones
                 are a small, name-discriminated section that never
                 scrolls apart from its heading in practice (per-section
                 collapse is the escape hatch for a long one), so a
                 per-row mark said nothing a screen reader or scan of the
-                heading didn't. The slot stays (empty) so the label lines
-                up with every other row at the shared UI-25 mark-slot x. */}
-            <span className="flex w-4 shrink-0 justify-center" />
+                heading didn't. No empty slot is reserved — see the
+                project row above: a blank 16px column reads as a hole
+                (Ken, 2026-09-23). */}
             <span className="truncate">All milestones</span>
           </ItemShell>
         </Link>
@@ -1802,11 +2107,14 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
             title={m.name}
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
-            <ItemShell collapsed={collapsed} title={m.name}>
+            <ItemShell
+              active={sameRow(activeRow, { kind: "milestone", id: m.id })}
+              collapsed={collapsed}
+              title={m.name}
+            >
               {/* UI-20: dropped the `flag` type glyph — see the "All
-                  milestones" row above for the rationale. Empty slot
-                  kept for the shared label x (UI-25). */}
-              <span className="flex w-4 shrink-0 justify-center" />
+                  milestones" row above for the rationale. No empty slot
+                  — a reserved blank column is a visible gap. */}
               {!collapsed ? <span className="truncate">{m.name}</span> : null}
             </ItemShell>
           </Link>
@@ -1886,26 +2194,35 @@ function MilestoneRowActions({
   readonly onEdit: () => void;
 }) {
   const archive = useArchiveMilestone();
-  const archived = milestone.archived === true;
   return (
     <RowActions
       size="sm"
       label={`Actions for milestone "${milestone.name}"`}
       actions={[
-        { label: "Edit…", testId: "sidebar-milestone-edit", onSelect: onEdit },
+        { label: "Edit", testId: "sidebar-milestone-edit", onSelect: onEdit },
         {
-          label: archived ? "Unarchive" : "Archive",
+          label: "Archive",
           testId: "sidebar-milestone-archive",
           disabled: archive.isPending,
-          onSelect: () => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); },
+          onSelect: () => { archive.reset(); archive.mutate({ id: milestone.id, archived: true }); },
         },
       ]}
     />
   );
 }
 
-function SprintsGroup({ collapsed }: { collapsed: boolean }) {
+function SprintsGroup({
+  collapsed,
+  currentUserId,
+  today,
+}: {
+  collapsed: boolean;
+  currentUserId: string | null;
+  today: string;
+}) {
   const sprints = useSprints();
+  // K118: this group previously computed no active state at all.
+  const activeRow = useActiveRow(currentUserId, today);
   // Match the mockup: hide completed sprints from the sidebar.
   const items = (sprints.data?.items ?? []).filter(
     s => s.archived !== true && s.state !== "completed",
@@ -1925,16 +2242,19 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
           (K100), which the overview links to. */}
       {!collapsed && (
         <Link to="/sprints" data-testid="sidebar-sprints-link" className="no-underline">
-          <ItemShell collapsed={collapsed} title="All sprints">
+          <ItemShell
+            active={sameRow(activeRow, { kind: "sprints" })}
+            collapsed={collapsed}
+            title="All sprints"
+          >
             {/* UI-20: the `calendar` glyph (itself a fix for the earlier
                 shared-`flag` bug) is gone too — a type glyph is
                 decoration when the section can't scroll apart from its
                 heading, which sprints (1-3 live at a time) never do.
                 Item rows below already carry the real per-item mark
                 (state colour); the anchor row gets the same empty slot
-                so the label lines up with the rest of the sidebar
-                (UI-25). */}
-            <span className="flex w-4 shrink-0 justify-center" />
+                and no empty slot is reserved in its place — a blank
+                16px column reads as a hole (Ken, 2026-09-23). */}
             <span className="truncate">All sprints</span>
           </ItemShell>
         </Link>
@@ -1949,25 +2269,49 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
         const row = (
           <Link
             to="/list"
-            search={prev => ({ ...clearSort(prev), sprint: [s.id] })}
+            // K118: a sprint click is a full replace like every other
+            // sidebar row. `clearFilters` (added by this fix) drops a
+            // lingering `q`/`view`/`project`/`labels` from whatever was
+            // active before — this link used to only ADD `sprint`,
+            // which is the same carry-over bug the saved-view link had.
+            search={prev => ({ ...clearSort(clearFilters(prev)), sprint: [s.id] })}
             title={`${s.name} (${s.state})`}
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
-            <ItemShell collapsed={collapsed} title={`${s.name} (${s.state})`}>
-              {/* UI-25: wrapped in the same `w-4` slot the icon rows use
-                  (this dot is unchanged by UI-20 — it is the one mark
-                  here that varies with a real fact, the sprint's state). */}
-              <span className="flex w-4 shrink-0 justify-center">
-                <ColorDot color={s.state === "active" ? "var(--feedback-success-fg)" : "var(--text-tertiary)"} />
-              </span>
+            <ItemShell
+              active={sameRow(activeRow, { kind: "sprint", id: s.id })}
+              collapsed={collapsed}
+              title={`${s.name} (${s.state})`}
+            >
+              {/* Ken, 2026-09-23: drop the dot — it was DERIVED from
+                  `state`, not user-assigned, and there are three states
+                  (active/completed/future) but the dot only distinguished
+                  two, so completed and future rendered identical grey.
+                  The chip beside it already names all three correctly.
+                  Dropping it also fixes "All sprints" sitting flush while
+                  its items were indented by the dot slot — so, unlike the
+                  other UI-25 rows, no empty `w-4` slot is kept here either
+                  (four other empty slots were removed earlier today for
+                  exactly this reason — Ken: "missing gap is ugly"). */}
               {!collapsed ? (
                 <>
                   <span className="truncate">{s.name}</span>
                   {/* The sprint's lifecycle state as a plain meta pill —
                       migrated to the B1 Chip so it shares the app's one
-                      pill shape/height (K-6). */}
+                      pill shape/height (K-6). Coloured per state (Ken's
+                      follow-up, 2026-09-23): `active` uses the success
+                      feedback token the old dot used; `completed` and
+                      `future` get the neutral/accent Chip variants so
+                      they are distinguishable from each other, which the
+                      dot could not do. Colour reinforces the text, which
+                      already names the state — not the only signal. */}
                   <span className="ml-auto">
-                    <Chip variant="neutral">{s.state}</Chip>
+                    <Chip
+                      variant={s.state === "future" ? "accent" : "neutral"}
+                      className={s.state === "active" ? "text-success-fg" : undefined}
+                    >
+                      {s.state}
+                    </Chip>
                   </span>
                 </>
               ) : null}
@@ -2061,7 +2405,7 @@ function SprintRowActions({
       label={`Actions for sprint "${sprint.name}"`}
       actions={[
         // K105: edit in place via the shared dialog (was navigate-only).
-        { label: "Edit…", testId: "sidebar-sprint-edit", onSelect: onEdit },
+        { label: "Edit", testId: "sidebar-sprint-edit", onSelect: onEdit },
         {
           label: "Open sprint",
           testId: "sidebar-sprint-open",
@@ -2072,8 +2416,18 @@ function SprintRowActions({
   );
 }
 
-function LabelsGroup({ collapsed }: { collapsed: boolean }) {
+function LabelsGroup({
+  collapsed,
+  currentUserId,
+  today,
+}: {
+  collapsed: boolean;
+  currentUserId: string | null;
+  today: string;
+}) {
   const labels = useLabels();
+  // K118: this group previously computed no active state at all.
+  const activeRow = useActiveRow(currentUserId, today);
   const items = (labels.data?.items ?? []).filter(l => l.archived !== true);
   const failed = hasFailed(labels);
   // K100: the same LabelEditDialog the Settings panel renders. Only the
@@ -2095,11 +2449,20 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
         const row = (
           <Link
             to="/list"
-            search={prev => ({ ...clearSort(prev), labels: [l.id] })}
+            // K118: a label click is a full replace like every other
+            // sidebar row. `clearFilters` (added by this fix) drops a
+            // lingering `q`/`view`/`project`/`sprint` from whatever was
+            // active before — this link used to only ADD `labels`,
+            // which is the same carry-over bug the saved-view link had.
+            search={prev => ({ ...clearSort(clearFilters(prev)), labels: [l.id] })}
             title={l.name}
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
-            <ItemShell collapsed={collapsed} title={l.name}>
+            <ItemShell
+              active={sameRow(activeRow, { kind: "label", id: l.id })}
+              collapsed={collapsed}
+              title={l.name}
+            >
               {/* UI-25: wrapped in the same `w-4` slot the icon rows use.
                   Content unchanged — `EntityColorDot` is the model mark
                   (per-item shape, per-item value, backed by a stored
@@ -2186,26 +2549,35 @@ function LabelRowActions({
   readonly onEdit: () => void;
 }) {
   const archive = useArchiveLabel();
-  const archived = label.archived === true;
   return (
     <RowActions
       size="sm"
       label={`Actions for label "${label.name}"`}
       actions={[
-        { label: "Edit…", testId: "sidebar-label-edit", onSelect: onEdit },
+        { label: "Edit", testId: "sidebar-label-edit", onSelect: onEdit },
         {
-          label: archived ? "Unarchive" : "Archive",
+          label: "Archive",
           testId: "sidebar-label-archive",
           disabled: archive.isPending,
-          onSelect: () => { archive.mutate({ id: label.id, archived: !archived }); },
+          onSelect: () => { archive.mutate({ id: label.id, archived: true }); },
         },
       ]}
     />
   );
 }
 
-function RecentsGroup({ collapsed }: { collapsed: boolean }) {
+function RecentsGroup({
+  collapsed,
+  currentUserId,
+  today,
+}: {
+  collapsed: boolean;
+  currentUserId: string | null;
+  today: string;
+}) {
   const recents = useRecents();
+  // K118: this group previously computed no active state at all.
+  const activeRow = useActiveRow(currentUserId, today);
   const items = recents.data?.items ?? [];
   const failed = hasFailed(recents);
   if (collapsed) return null;
@@ -2230,7 +2602,11 @@ function RecentsGroup({ collapsed }: { collapsed: boolean }) {
             title={t.title}
             className="no-underline"
           >
-            <ItemShell collapsed={collapsed} title={t.title}>
+            <ItemShell
+              active={sameRow(activeRow, { kind: "recent", key: t.key })}
+              collapsed={collapsed}
+              title={t.title}
+            >
               <span className="shrink-0 text-[0.7143rem] text-text-tertiary">{t.key}</span>
               <span className="truncate">{t.title}</span>
             </ItemShell>
@@ -2294,7 +2670,7 @@ function Footer({ collapsed, overlay }: { collapsed: boolean; overlay: boolean }
               <span className="flex w-4 shrink-0 justify-center">
                 <Icon name="settings" size={16} />
               </span>
-              <span>Customize sidebar…</span>
+              <span>Customize sidebar</span>
             </button>
           )}
         </>
@@ -2375,14 +2751,13 @@ function clearFilters(prev: Record<string, unknown>): Record<string, unknown> {
  * so List↔Board↔Timeline show the same set of tasks (the cross-view
  * scope fix, Ken 2026-09-20). Sourced from {@link FILTER_KEYS} so the
  * allow-list cannot drift from the built-in filters, plus the filter
- * params that live outside it: `archived` (a toggle, not a built-in),
- * `labels_match` (the label AND/OR mode), `vf` (the visible-filter set),
+ * params that live outside it: `labels_match` (the label AND/OR mode), `vf` (the visible-filter set),
  * and any `field.<key>` custom-enum filter. View-private display params
  * (page/sort/dir/edit and the timeline's zoom/grouping/arrows) are
  * dropped, so each view falls back to its own default for what it owns.
  */
 const CARRY_FILTER_KEYS = [
-  ...FILTER_KEYS, "archived", "labels_match", "vf",
+  ...FILTER_KEYS, "labels_match", "vf",
 ] as const;
 
 /**
