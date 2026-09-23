@@ -1147,8 +1147,15 @@ stale on that point.
 
 ## UI-14 — Icons could carry a colour; emoji cannot (and the code already knows)
 
-**Status:** open — Ken's rule confirmed already implemented; the feature
-it implies is not built
+**Status:** fixed — FIXED. Saved views now carry a `color` field
+(`packages/contracts/src/query.ts:278`, `EntityColorSchema.optional()`),
+plumbed through core (`config/queries.ts`), CLI (`apps/cli/src/commands/views.ts`
+`--color`) and MCP (`apps/mcp/src/tools/views.ts` `color`/`color: null`) —
+full CLI/MCP parity. `shell/Sidebar.tsx`'s `ViewIcon` (`:775-781`) resolves
+the stored colour via `useResolvedColor` and passes it as `IconGlyph`'s
+`color` prop (`:779-781`), which — per the rule this entry already found
+in the code — tints only a Lucide glyph and never an emoji. `IconGlyph`
+now has a real consumer.
 **Found:** Ken, 2026-09-22: *"perhaps icons can also have colours as part
 of it, but emojis, just use the emoji itself (because we can't add
 colour)"*
@@ -1275,7 +1282,7 @@ that entry has been updated to point at it.
 
 ## UI-16 — Sidebar: stray dot, unhighlighted views, misaligned trailing slots
 
-**Status:** 16a/16b/16c **fixed** 2026-09-22 (uncommitted); 16d (counts for saved views) remains an undecided design question in one component
+**Status:** 16a/16b/16c fixed 2026-09-22 (uncommitted); 16d (counts for saved views) remains open — needs Ken's call. Verified: `Sidebar.tsx` still scopes `useBuiltinCounts(BUILTIN_FILTERS, ctx)` (`:1324`) to built-ins only; no saved-view count mechanism exists, and no `decisions.md` entry rules on it either way.
 **Found:** Ken, 2026-09-22 (three screenshots)
 
 ### 16a — A second, meaningless dot on the default project
@@ -1401,13 +1408,19 @@ diagnosed.
 
 ## UI-19 — Sidebar entity marks are inconsistent (icons question)
 
-**Status:** **decided and partly built** 2026-09-22 (uncommitted).
-Ken ruled: *"im ok with no icons"* for milestones/sprints/labels, and
-*"views keep icons: sure."* The counter-proposal's first half is BUILT —
-the saved-view `icon` field now renders via `IconGlyph` instead of a
-hardcoded star. Still open from the counter-proposal: deleting the marks
-that encode nothing (see UI-6's fake project dot) and the per-type glyph
-question (UI-20).
+**Status:** fixed — FIXED 2026-09-23. Ken ruled: *"im ok with no icons"*
+for milestones/sprints/labels, and *"views keep icons: sure."* The full
+counter-proposal is now built: (a) the saved-view `icon` field renders via
+`IconGlyph` (`Sidebar.tsx:1558`, `ViewIcon`) instead of a hardcoded star;
+(b) the marks that encoded nothing are deleted outright, not
+replaced — the fake project `ColorDot` and the UI-16a stray dot are both
+gone (`Sidebar.tsx:1130-1140` comment records this explicitly; `grep` for
+`Icon name="dot"` returns nothing); (c) the per-type glyph question is
+settled by UI-20's resolution (no type glyph at all, milestones and
+sprints draw none — see UI-20). The one item still open is the "flagged
+for Ken" question of whether **projects** should get a real user-assigned
+colour — that is new scope (`ProjectDef` has no colour field), not a
+carry-over of this ticket's counter-proposal, and remains undecided.
 **Found:** Ken, 2026-09-22: *"do we want icons for
 milestone/sprints/labels? ... icons as in, the same with views."*
 
@@ -1470,7 +1483,17 @@ slot is already drawn and currently lying.
 
 ## UI-20 — Is the milestone/sprint flag doing anything?
 
-**Status:** open, needs Ken's call
+**Status:** fixed — FIXED 2026-09-23 (designer ruling, live-scroll
+verified). The `flag` glyph is gone from both the milestone and sprint
+anchor rows — `grep -n '"flag"' shell/Sidebar.tsx` returns nothing, and
+`Sidebar.test.tsx`'s "UI-20: 'All milestones' and 'All sprints' draw no
+type glyph" test asserts `querySelector("svg")` is null on both rows.
+Option (1) from below ("empty slot") was superseded during the fix by
+UI-26b's finding that an empty reserved slot itself reads as a hole, so
+rows with no mark now close up entirely rather than keeping a blank
+`w-4`. Settled: a type glyph was decided to be decoration, not
+wayfinding, since sections are small enough that items are never
+practically orphaned from their heading.
 **Found:** Ken, 2026-09-22: *"if milestones dont need a logo then does
 it make sense to keep the flag icon, or is it just for alignment?"*
 
@@ -1615,7 +1638,7 @@ primitive and not adopting it.
 
 ## UI-23 — Rich-text toolbar: five defects
 
-**Status:** 23a and 23b **fixed** (A295, 2026-09-22); 23c/23d/23e open
+**Status:** 23a/23b **fixed** (A295); 23e **built** (A298); 23c/23d **fixed** 2026-09-23 (A309, case TSK-72; uncommitted). 23d still wraps below ~460px of bar — see known-gaps.md
 **Found:** Ken, 2026-09-22, on the comment composer. *"ui looks bad."*
 
 ### 23a — Underline is missing entirely — **FIXED (A295)**
@@ -1675,13 +1698,28 @@ marks — a bowl plus a tail per mark, which is how a quotation glyph
 actually reads at 16px. Fixed in the same `Icon.tsx` pass that added
 the `underline` and `highlight` glyphs.
 
-### 23c — Undo/redo not vertically centred
+### 23c — Undo/redo not vertically centred — **FIXED (A309)**
+
+Measured: every button box in the row is centred on the same line; the
+fault was the drawing. Undo/redo's paths sat at y 5.5–14 in the 16-unit
+box (ink centre 9.75, every other glyph ≈ 8) — 1.75 units LOW, which
+reads as out of line. Paths moved up 1.75; TSK-72's e2e asserts every
+toolbar glyph's ink centre is within 1 unit of the box centre.
 
 Visible in the screenshot: the two trailing buttons sit slightly high
 relative to the rest of the row. Cause not yet diagnosed — measure the
 row's `align-items` and each button's box before changing anything.
 
-### 23d — Toolbar wraps to two lines
+### 23d — Toolbar wraps to two lines — **FIXED (A309)**
+
+Cause: the only collapse keyed off the VIEWPORT (`sm:`), while the bar
+is ~400px narrower than the window. The flat row needs ~860px; the
+composer is 680px at a 1280 window. Now three groups (Text style **T**,
+Lists and blocks, More ⋯) fold into menus by a container query on the
+bar itself, rarest-first, so the row is one line from ~460px of bar up.
+Fixing it surfaced a fourth portal-ownership bug: `Menu`'s panel had no
+marker, so picking Bold from a folded menu exited edit mode — see
+known-gaps.md.
 
 At the composer's width the buttons overflow onto a second row, which
 is what makes the whole control look unfinished.
@@ -1744,8 +1782,14 @@ collapse.
 
 ## UI-24 — A broken view's rows are unfiltered (NOT the regression I first logged)
 
-**Status:** open — minor; **my first diagnosis below was WRONG and is
-retracted inline**
+**Status:** partly fixed, one defect open (re-verified live 2026-09-23).
+MCP's "unknown view" regression is **fixed** (`apps/mcp/src/tools/task-crud.ts:241-257`
+consults `queriesConfig.broken`). `?view=<unknown>` is **not silent** — the
+response carries `missing_view` and `list/ListView.tsx:291` renders a banner;
+that is the deliberate XS-28 fallback. **Still open:** a broken view renders
+its error banner ABOVE all 14 unfiltered rows — the "widened list that reads
+as a legitimate result" the broken-view decision (decisions.md, the
+`broken_view` entry, point (c)) exists to prevent.
 **Found:** 2026-09-23, verifying A296's classification fix
 
 ### What changed, and why it is worse
@@ -1856,7 +1900,17 @@ requires calling out in the commit message.
 
 ## UI-25 — Sidebar labels start at eight different x positions
 
-**Status:** open — previously unrecorded
+**Status:** fixed — FIXED 2026-09-23, scope narrowed by Ken's ruling
+("missing gap is ugly"). Every row that draws a mark now wraps it in the
+same `w-4` slot the icon rows use (`Sidebar.tsx:1079`, `:1502`, `:1520`,
+etc.), so marked rows share one label x — verified by
+`Sidebar.test.tsx`'s "UI-25: a row that draws a mark wraps it in the same
+w-4 slot" test. This is narrower than the original ask: an earlier
+reading kept an EMPTY `w-4` slot on unmarked rows too (for a fully
+uniform edge), but that reserved a blank column that read as a missing
+thing (UI-26b), so unmarked rows now close up instead — a deliberate,
+Ken-ruled reversal of part of this entry's original scope, not a
+regression.
 **Found:** 2026-09-23, by the UI-20 designer review; re-measured and
 found worse than reported.
 
@@ -1894,3 +1948,172 @@ section) rather than the mark slot. **Confirm which rows those are
 before treating all eight as one defect** — part of this may be
 intentional hierarchy, and only the 32-vs-39 split is the mark-slot
 inconsistency.
+
+---
+
+## UI-26 — Four findings from the post-merge walkthrough
+
+Ken, 2026-09-23, walking the merged build. Grouped because they are
+small and were reported in one pass.
+
+### 26a — A saved view rendered its icon id as text — FIXED (seed data)
+
+The sidebar showed `alert-Regression triangle` for the view "Regression
+watch". Not a rendering bug: `IconGlyph` correctly degraded an icon id
+the catalogue does not know, rendering it verbatim, and the view's NAME
+was interleaved with it by the row layout.
+
+Cause was my seed data: it used `alert-triangle`, a Lucide name this
+catalogue does not carry — it has `triangle-alert`. The degradation path
+worked exactly as designed.
+
+**Worth keeping in mind:** a wrong icon id is invisible until someone
+looks. `doctor` has no check for an icon that resolves to nothing.
+
+### 26b — Empty mark slots read as holes — FIXED
+
+Ken: *"missing gap is ugly. and 'all sprints' dont show anything"*.
+
+UI-20 removed the type glyphs but kept an empty `w-4` slot so labels
+would stay aligned per UI-25. In practice that reserved a blank 16px
+column on milestone rows, "All sprints" and project rows — a visible gap
+next to sprint rows that DO draw a dot.
+
+The designer's "keep the empty slot" call was right about alignment and
+wrong about appearance: **a reserved blank column reads as a missing
+thing.** Four empty slots removed; rows with no mark now close up.
+
+The labels no longer share one x, which is a deliberate reversal of part
+of UI-25 — alignment was never the goal in itself, an even edge was, and
+a hole is not even.
+
+### 26c — "Run diagnostics" was the wrong label in the wrong place — FIXED
+
+Ken: *"'run diagnostics' i think refresh would be better, and put it on
+top right instead of top left, same level as the counts"*.
+
+The panel runs on mount, so the results are already there when you
+arrive — "Run diagnostics" reads as something you must do first. Now
+**"Refresh"**, on the summary row's right, so the counts lead and the
+action sits beside the data it replaces rather than above it.
+
+### 26d — The star on "Tasks" means DEFAULT, not favourite — FIXED (K113/K114)
+
+Ken: *"what's with the star on 'Tasks'? is this wrong?"*
+
+It was the default-project marker (`Sidebar.tsx`, `title="Default
+project"`). The ambiguity this entry raised was resolved by Ken's own
+ruling rather than by picking a clearer mark: K113 (`decisions.md`)
+removes the default-project marker entirely — no star, no replacement
+glyph, and no empty reserved slot (*"no star for default project, take it
+out"*); which project is default is stated in Settings → My preferences
+and the project's edit dialog instead. K114 separately gives the
+saved-view icon fallback its own distinct mark (a grey circle), so the
+two meanings no longer share one glyph even where a view has no icon of
+its own. Verified: `grep -n '"star"' shell/Sidebar.tsx` returns nothing.
+
+## UI-27 — The `▸` on "Show details" is the browser's, and `icons.ts` is why it keeps coming back — FIXED
+
+**Status: FIXED 2026-09-23.** `ui/icons.ts` now exports only `star` and
+`warning` (verified by reading the file) — `close`, `caretDown`,
+`caretRight`, `caretUp` and `more` are gone, with a docstring stating
+"Do not add to this map. A new affordance gets a path in `ui/Icon.tsx`."
+A `no-restricted-syntax` glyph-ban rule now lives in `eslint.config.js`
+(banning the Unicode affordance glyphs in JSX/text, scoped off in the
+icons.ts file itself, prose-heavy files, and tests that assert a glyph's
+absence), closing the "third recurrence" this entry raised. See UI-27a
+below for the native-`<details>` marker fix itself.
+
+Ken: *"what did i say about using unicode instead of icons? this should
+be part of a code review step too"* — on a screenshot of the error page
+showing `▸ Show details`.
+
+**The glyph is not in our code.** `RegionErrorBoundary.tsx:156` renders a
+native `<details>`, and nothing suppresses the browser's default marker.
+A repo-wide grep for `▸` across `apps/web/src/client` returned only prose
+and comments — no render site. I spent a first pass hunting for a typed
+character that was never there.
+
+The deeper finding is the reservoir. `ui/icons.ts` still **exports**
+`close: "✕"`, `caretDown: "▾"`, `caretRight: "▸"`, `caretUp: "▴"`,
+`more: "⋯"` and `check: "✓"` as sanctioned API — while its own docstring
+says those affordances "are drawn by the SVG `<Icon>` component ... not
+typed as glyphs". The A208 cleanup replaced the call sites and left the
+source standing. Two tests in `ui/controls.test.tsx` then **pinned** the
+forbidden glyphs (`expect(ICON.close).toBe("✕")`), so the ban was green
+and the violation was load-bearing.
+
+Third recurrence. Being right in a docstring does not remove a `const`.
+
+Fixes: delete the affordance entries, and add a lint rule to `npm run
+lint` that fails on affordance glyphs in JSX text — scoped to skip
+comments, since the codebase legitimately discusses these characters in
+prose.
+
+### 27a — Native `<details>` needs one component, not three styles — FIXED
+
+**Status: FIXED 2026-09-23.** `ui/Disclosure.tsx` (+ `Disclosure.test.tsx`)
+now exists and is the shared primitive at all three sites —
+`error/RegionErrorBoundary.tsx` (`<Disclosure summary="Show details" …>`),
+`settings/ReconcilePanel.tsx` and `settings/GitSyncPanel.tsx` all import
+and render it, per K110 (`decisions.md`).
+
+Ken: *"we can use summary HTML elements BUT we should use it through a
+common summary component that uses the native elements. this allows us to
+restyle with a consistent aesthetic across the board"*
+
+Three sites, three summary styles, all showing the native marker:
+
+| Site | Summary style |
+|---|---|
+| `RegionErrorBoundary.tsx:157` | `text-[0.8571rem] text-text-tertiary` |
+| `ReconcilePanel.tsx:220` | inherited, `text-text-tertiary` on the parent |
+| `GitSyncPanel.tsx:980` | `text-[0.8571rem] text-accent` |
+
+The native element stays — it is keyboard-operable for free, which both
+existing comments correctly call out. A `<Disclosure>` primitive wraps
+it, kills the marker (`list-style: none` **and**
+`::-webkit-details-marker`, or Safari still draws it), and draws a
+chevron with `<Icon>`.
+
+## UI-28 — "Try this page again" and "Reload" read as the same button — FIXED
+
+**Status: FIXED 2026-09-23 (K109).** Shape is no longer pending: K109
+(`decisions.md`) rules one recovery pairing per boundary level, not two
+same-weight buttons at either. Route-level (the whole main pane) pairs
+**Reload** with **Back to the task list**; region-scoped (a sidebar
+group, a single panel) pairs **Try {region} again** with **Reload**.
+Verified in `error/RegionErrorBoundary.tsx`: `offerRetry` defaults `true`
+and is withdrawn at route level (`router/index.tsx:70` passes
+`offerListLink={pathname !== "/list"}`, and the component's own docstring
+states "with the retry withdrawn at route level, Reload is the primary
+action"), so "do not keep both" is enforced by construction rather than
+left to each call site. A303 separately updated ERR-36's copy to name the
+route/region split explicitly.
+
+Ken: *"why is there 'Try this page again' vs 'reload'? just both reload,
+no? then have a 'Back' button"*, then: *"i think i want a reload + back,
+or just reload. do not keep both."*
+
+They are not the same action: `onRetry` clears the boundary's error state
+so React remounts that subtree only, keeping the rest of the page and any
+unsaved state outside the broken region; `Reload` discards the document.
+ERR-36 asks for both.
+
+But the complaint is about the **UI**, and it is correct: two same-weight
+buttons, adjacent, in near-identical words, with nothing on screen saying
+which is cheaper. The distinction is real and invisible.
+
+The open question is whether region-retry earns a button at all: the
+boundary does **not** refetch, so a retry remounts the same subtree with
+the same props and the same data — the state that threw is gone, the
+*input* that threw is not. Referred to the PM voice, with the two
+copy-shape options and the Back-button question below.
+
+**Back is not free either.** `offerListLink` is deliberately off by
+default (SHL-42): a sidebar group that broke has not taken the page away,
+and a boundary wrapped *around* the list must not offer to navigate to
+the list. An unconditional `history.back()` is dead on a deep link —
+a useless button exactly when the user is most stuck.
+
+Owner ruling so far: *do not keep both.* Shape pending.

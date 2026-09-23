@@ -287,3 +287,9 @@ so results don't silently vary per machine.
 
 Per-user timezones on user profiles are separate and do not affect
 queries.
+
+**Changing `timezone` rewrites nothing already stored.** Task
+`due_date` and `start_date` are date-only fields and are unaffected by
+a timezone change; only datetimes such as `created_at` and
+`updated_at` change how they are *displayed*. Reverting to the
+previous zone restores the previous display exactly.
