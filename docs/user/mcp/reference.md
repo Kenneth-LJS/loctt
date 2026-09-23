@@ -161,6 +161,23 @@ tools.
 `expected_token` is the `body_token` from a `get_task` read; pass it to
 refuse a stale write.
 
+**Do not normalize the body's syntax.** A body is markdown plus a small
+set of LocTT extensions, documented in
+`docs/dev/reference/markdown-extensions.md`. Two are easy to mistake for
+mistakes and "fix":
+
+- **`<ins>text</ins>` is underline**, not an edit-tracking annotation.
+  The tag is borrowed deliberately: it is the only one that both
+  survives GitHub's HTML sanitiser and underlines by default. Rewriting
+  it to `<u>` **destroys the formatting silently** — GitHub strips `u`.
+  Markdown inside it is ordinary markdown, so leave `**bold**` as
+  asterisks rather than converting the run to HTML.
+- **`==text==` is highlight**, not an equality operator.
+
+The same applies to `^sup^`, `~sub~` (single tilde), `$math$`,
+`@user:<id>` and `![[attachments/…]]`. Rewriting any of them loses user
+content.
+
 ### Relationships
 
 | Tool | Purpose | Key params |
@@ -200,8 +217,8 @@ starting point is a task, not a link.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `create_view` | Create a saved view (filters validated on write). | `name`, `filters`, `sort`, `archivedScope`, `icon` |
-| `edit_view` | Change a view (`sort: null` clears the sort, `icon: null` clears the icon). Also repairs a broken view. | `view`, `name`, `filters`, `sort`, `archivedScope`, `icon`, `replaceBroken` |
+| `create_view` | Create a saved view (filters validated on write). | `name`, `filters`, `sort`, `archivedScope`, `icon`, `color` |
+| `edit_view` | Change a view (`sort: null` clears the sort, `icon: null` clears the icon, `color: null` clears the colour). Also repairs a broken view. | `view`, `name`, `filters`, `sort`, `archivedScope`, `icon`, `color`, `replaceBroken` |
 | `archive_view` / `unarchive_view` | Hide or restore a view (still runnable by id when archived). Refused for a broken view. | `view` |
 | `delete_view` | Permanently remove a view. Requires `confirm`. | `view`, `confirm`, `replaceBroken` |
 
@@ -255,11 +272,29 @@ view, never a filter term, and is unrelated to the `archived` param on
 `list_views`, which scopes the *listing of views*.
 
 `list_views` returns `{id, name, filters, summary, sort?, archivedScope?,
-icon?, archived?}`. `summary` is a human-readable one-line rendering of the
+icon?, color?, archived?}`. `summary` is a human-readable one-line rendering of the
 filters, **for display only** — never parse it, never store it, and never
 send it back as input. Edit a view by passing a new `filters` array. A view
 whose stored filters no longer parse comes back as `{id, name, summary,
 broken: true, error, position?}`.
+
+#### A view's icon and colour
+
+`icon` is either a named icon (`"circle-check"`) or a **single** emoji.
+Two emoji, or an emoji combined with other characters, are **rejected** —
+`"🎈"` and `"👨‍👩‍👧"` are each one character and fine, `"🎈🎈"` and
+`"🎈A"` are not. Do not concatenate emoji to make a compound icon.
+
+`color` is the standard three-shape colour: `"#rrggbb"`,
+`{"light": "#rrggbb", "dark": "#rrggbb"}`, or `{"palette": "<id>"}`
+(call `list_palette_colors` for the valid ids — do not guess them). Pass
+`color: null` on `edit_view` to clear it.
+
+The colour tints a **named** icon only. An emoji carries its own colour
+and is never tinted, so a colour set alongside an emoji icon is stored
+but not applied — it applies again if the icon changes to a named one. A
+colour that is not one of the three shapes is dropped on load (the view
+still works) and reported by `loctt doctor`.
 
 #### Repairing a broken view (`replaceBroken`)
 
@@ -367,7 +402,10 @@ entry of `fields.values[]` when seeding an enum field.
 are a fixed built-in set defined by LocTT, not by the tracker, and they
 appear in no other tool's output — guessing one produces an entity that
 renders as a neutral color. An unknown id is stored rather than
-rejected, so a guess fails quietly rather than loudly.
+rejected, so a guess fails quietly rather than loudly. The set currently
+holds **18 entries**, every pair perceptually distinct in both modes, so
+distinct palette ids give entities that stay tellable apart in either
+theme — but call the tool rather than relying on that count.
 
 **A palette reference is live.** The stored value is the id, never a
 resolved hex, so an entity set to `{"palette": "teal"}` follows the

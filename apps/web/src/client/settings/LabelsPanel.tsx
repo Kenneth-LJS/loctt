@@ -7,16 +7,17 @@ import {
   useCountedLabels,
   useDeleteLabel,
 } from "../api/hooks/useDataMutations.ts";
-import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { useResolvedColor } from "../ui/entityColor.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
 import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { LabelEditDialog } from "./LabelEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
+import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
 
 /**
  * Settings → Data → Labels (MSL-8..MSL-12, MSL-31, MSL-32, MSL-34,
@@ -258,9 +259,7 @@ export function LabelsPanel() {
     const envelope = labels.error instanceof ApiError ? labels.error.envelope : undefined;
     return (
       <div data-testid="labels-panel">
-        <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
-          Labels
-        </h1>
+        <SettingsPanelHeader title="Labels" />
         <div data-testid="labels-load-error" data-labels-state="load-failed">
           <ErrorState
             error={labels.error}
@@ -291,27 +290,32 @@ export function LabelsPanel() {
 
   return (
     <div data-testid="labels-panel">
-      <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
-        Labels
-      </h1>
+      <SettingsPanelHeader
+        title="Labels"
+        actions={(
+          <>
+            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
+                an icon reveal, not a permanently visible segmented
+                control — see ArchivedScopeReveal. */}
+            <ArchivedScopeReveal
+              testId="labels-archived-scope"
+              panelLabel="labels"
+              value={scope}
+              onChange={setScope}
+            />
+            <Button
+              variant="primary"
+              testId="label-create-open"
+              onClick={() => { setCreating(true); }}
+            >
+              New label
+            </Button>
+          </>
+        )}
+      />
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Task counts exclude archived tasks.
       </p>
-
-      <div className="mb-4 flex items-center gap-3">
-        <Button
-          variant="secondary"
-          testId="label-create-open"
-          onClick={() => { setCreating(true); }}
-        >
-          New label
-        </Button>
-        <ArchivedScopeControl
-          testId="labels-archived-scope"
-          value={scope}
-          onChange={setScope}
-        />
-      </div>
 
       {creating && (
         <LabelEditDialog

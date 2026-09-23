@@ -107,15 +107,8 @@ async function renderDetail(id: string) {
     path: "/milestones",
     component: () => <div data-testid="list-stub">list</div>,
   });
-  // K105: the kebab's "Manage milestones" navigates here; a stub route
-  // keeps that navigation from erroring in the test router.
-  const settingsRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/settings/$section",
-    component: () => <div data-testid="settings-stub">settings</div>,
-  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([detailRoute, listRoute, settingsRoute]),
+    routeTree: rootRoute.addChildren([detailRoute, listRoute]),
     history: createMemoryHistory({ initialEntries: [`/milestones/${id}`] }),
   });
 
@@ -132,27 +125,26 @@ afterEach(() => {
   PUTS.length = 0;
 });
 
-describe("MilestoneDetail — header kebab affordance (K105)", () => {
-  it("edit lives in a '⋯' kebab (not a text button) and opens the shared dialog prefilled; Save issues the update", async () => {
+describe("MilestoneDetail — header edit affordance (K105 / UI-17)", () => {
+  it("edit is a single icon button (not a kebab) and opens the shared dialog prefilled; Save issues the update", async () => {
     MILESTONES = [
       { id: "ms_1", name: "Beta launch", target_date: "2026-07-01", progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 } },
     ];
     await renderDetail("ms_1");
 
-    // K105: the point-of-use edit affordance is an icon kebab, whose
-    // trigger carries the milestone-named aria-label — never a text
-    // "Edit" button. Nothing is open yet, so the Edit MenuItem is not in
-    // the DOM until the kebab is opened.
-    const kebab = await screen.findByTestId("milestone-detail-actions");
-    expect(kebab.getAttribute("aria-label")).toBe("Milestone actions for Beta launch");
-    expect(kebab.getAttribute("aria-haspopup")).toBe("menu");
-    expect(screen.queryByTestId("milestone-detail-edit")).toBeNull();
+    // UI-17: with "Manage milestones" removed, Edit is the only header
+    // action left. K105's own rule for a single action is a plain
+    // IconButton, not a "⋯" kebab of one item — so this is no longer a
+    // menu trigger (no aria-haspopup) and clicking it opens the dialog
+    // directly, with no intermediate menu to open first.
+    const editButton = await screen.findByTestId("milestone-detail-edit");
+    expect(editButton.getAttribute("aria-label")).toBe("Edit milestone Beta launch");
+    expect(editButton.getAttribute("aria-haspopup")).toBeNull();
     expect(screen.queryByTestId("milestone-edit-dialog")).toBeNull();
 
-    // Open the kebab, click "Edit milestone" → the SHARED dialog opens
-    // prefilled from the milestone.
-    fireEvent.click(kebab);
-    fireEvent.click(await screen.findByTestId("milestone-detail-edit"));
+    // Click "Edit milestone" → the SHARED dialog opens prefilled from the
+    // milestone.
+    fireEvent.click(editButton);
     const dialog = await screen.findByTestId("milestone-edit-dialog");
     expect(dialog).toBeTruthy();
     const nameInput = screen.getByTestId<HTMLInputElement>("milestone-name-input");
@@ -173,29 +165,26 @@ describe("MilestoneDetail — header kebab affordance (K105)", () => {
     await waitFor(() => { expect(screen.queryByTestId("milestone-edit-dialog")).toBeNull(); });
   });
 
-  it("retires the standalone 'Manage all milestones…' prose link; reaching Settings is a kebab MenuItem", async () => {
+  it("has no 'Manage milestones' affordance anywhere on the page (UI-17 / K105)", async () => {
     MILESTONES = [
       { id: "ms_1", name: "Beta launch", target_date: "2026-07-01", progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 } },
     ];
     await renderDetail("ms_1");
 
-    // K105: the always-visible "Manage all milestones…" text link is
-    // gone. The manage affordance exists only inside the kebab, and only
-    // once it is opened.
-    await screen.findByTestId("milestone-detail-actions");
-    const manageBefore = screen.queryByTestId("milestone-detail-manage");
-    expect(manageBefore).toBeNull();
-    expect(screen.queryByText(/manage all milestones/i)).toBeNull();
+    // UI-17: Ken hit this a second time after K105 was recorded as
+    // BUILT — "if im on a task, i dont want to see a link to manage all
+    // tasks. same for milestones/sprints/labels/etc." The standalone
+    // prose link was already gone; the kebab's "Manage milestones"
+    // MenuItem was not. Both must be absent now, with no kebab left to
+    // open at all — reaching Settings → Milestones is the persistent
+    // Settings gear's job, not this page's.
+    await screen.findByTestId("milestone-detail-edit");
+    expect(screen.queryByTestId("milestone-detail-actions")).toBeNull();
+    expect(screen.queryByTestId("milestone-detail-manage")).toBeNull();
+    expect(screen.queryByText(/manage.*milestones/i)).toBeNull();
 
     // The breadcrumb back to the list is navigation, not a settings link,
     // so it stays.
     expect(screen.getByTestId("milestone-detail-back")).toBeTruthy();
-
-    // Open the kebab → "Manage milestones" is a MenuItem that navigates
-    // to Settings → Milestones.
-    fireEvent.click(screen.getByTestId("milestone-detail-actions"));
-    const manage = await screen.findByTestId("milestone-detail-manage");
-    fireEvent.click(manage);
-    expect(await screen.findByTestId("settings-stub")).toBeTruthy();
   });
 });

@@ -32,6 +32,34 @@ describe("findLossyConstructs", () => {
       // These round-trip, so forcing source mode would be a false alarm.
       expect(requiresSourceMode("<strong>bold</strong> and <sup>up</sup>")).toBe(false);
     });
+
+    // @verifies K107
+    it("does not banish a body to source mode for an underline or highlight", () => {
+      // K107: `<ins>` is underline's on-disk spelling and `<mark>` is
+      // what highlight renders to; both have a TipTap mark, so both
+      // round-trip. Without their allowlist entries ONE underlined word
+      // costs the user the rich editor for the whole task — a far larger
+      // regression than the mark is a feature. Remove "ins"/"mark" from
+      // ALLOWED_HTML_TAGS and this goes red.
+      expect(requiresSourceMode("An <ins>underlined</ins> word.")).toBe(false);
+      expect(requiresSourceMode("A <mark>highlighted</mark> word.")).toBe(false);
+      expect(findLossyConstructs("<ins>u</ins> and <mark>h</mark>")).toEqual([]);
+    });
+
+    // @verifies K107
+    it("does not report ==highlight== at all — it is markdown, not a tag", () => {
+      // The `==` spelling is a markdown extension, so it never reaches
+      // the HTML scanner. This pins that it needs no allowlist entry.
+      expect(requiresSourceMode("Some ==highlighted== text.")).toBe(false);
+    });
+
+    // @verifies K107
+    it("still allows <del>, which the strike mark really does parse", () => {
+      // `del` was allowlisted before K107; verified against the live
+      // schema that StarterKit's `strike` mark parses `s`, `del` AND
+      // `strike`, so the entry is earned rather than assumed.
+      expect(requiresSourceMode("<del>gone</del> and <s>also</s>")).toBe(false);
+    });
   });
 
   describe("footnotes", () => {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { TimelineGroupingSchema, TimelineZoomSchema } from "./workflow.js";
+import { EntityColorSchema } from "./color.js";
+import { IconStringSchema, TimelineGroupingSchema, TimelineZoomSchema } from "./workflow.js";
 
 /** Sort direction for query results. */
 export const SortDirectionSchema = z.enum(["asc", "desc"]);
@@ -245,8 +246,36 @@ export const SavedQuerySchema = z.object({
    * filter term. Absent means the default (`active`).
    */
   archivedScope: ArchivedScopeSchema.optional(),
-  /** Optional icon (K104 supplies the picker; the field lands here). */
-  icon: z.string().min(1).optional(),
+  /**
+   * Optional icon (K104 supplies the picker; the field lands here).
+   *
+   * `IconStringSchema`, not a bare string: that is where the one-grapheme
+   * rule lives (Ken, 2026-09-23 — an icon may not be two emoji or an
+   * emoji glued to a letter), and a saved view's icon is authored through
+   * the same picker and the same free-typed escape hatch as a status's.
+   * Two schemas for one field is how the two drift apart.
+   */
+  icon: IconStringSchema.optional(),
+  /**
+   * Optional colour (K103's three shapes: bare hex, `{light,dark}`, or
+   * `{palette: id}`).
+   *
+   * Ken, 2026-09-23: *"if icon and color, then yea. if only colour, then
+   * only have the color picker"* — colour follows icon wherever both
+   * exist. A saved view has an icon, so it gets a colour, and the web
+   * dialog pairs them through `IconColorFields`, which carries the UI-14
+   * rule: the colour applies ONLY to a Lucide glyph, because an emoji
+   * carries its own colour and cannot be tinted.
+   *
+   * Field-local on corruption (the corruption guide's default): a colour
+   * that does not match any of the three shapes is DROPPED on load so the
+   * view still loads, runs and renders — exactly the MSL-22 precedent for
+   * a label's colour. The view keeps its id, name and filters, which is
+   * everything a reference needs; losing the whole view over a decorative
+   * field would be destruction by another route. `doctor` reports the
+   * dropped value so it is never silently lived with.
+   */
+  color: EntityColorSchema.optional(),
   archived: z.boolean().optional(),
 }).strict();
 export type SavedQuery = z.infer<typeof SavedQuerySchema>;

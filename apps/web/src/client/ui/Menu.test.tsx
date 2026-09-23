@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
+import * as matchers from "@testing-library/jest-dom/matchers";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Menu, MenuItem } from "./Menu.tsx";
+
+// Computes the real accessible name/description rather than reading an
+// attribute — which is what the disabled-reason assertions below need,
+// since UI-23e changed WHICH attribute produces the description.
+expect.extend(matchers);
 
 /**
  * Menu keyboard navigation (A11Y-9 / docs/dev/design/design-review.md §A2).
@@ -137,12 +143,26 @@ describe("MenuItem disabled", () => {
     expect(document.activeElement).not.toBe(del);
   });
 
-  it("carries its reason on the BUTTON, where it is the accessible description", () => {
+  it("carries its reason as the BUTTON's accessible description", () => {
     renderWithDisabled();
     const del = screen.getByRole("menuitem", { name: /Delete/ });
-    // On the button itself. A `title` on an inner span is a pointer
-    // tooltip on that span and is never the button's description.
-    expect(del.getAttribute("title")).toMatch(/at least one project/i);
+    // The COMPUTED description, not an attribute. UI-23e migrated this
+    // from `title` (which browsers expose as the description only as a
+    // fallback) to an explicit `aria-describedby` → `sr-only` node. This
+    // assertion is deliberately mechanism-agnostic: it passed before the
+    // migration and after, because what must survive is the description
+    // reaching assistive tech, not the attribute that produced it.
+    expect(del).toHaveAccessibleDescription(/at least one project/i);
+  });
+
+  it("keeps the reason OUT of the name, so the item is still called 'Delete'", () => {
+    renderWithDisabled();
+    const del = screen.getByRole("menuitem", { name: /Delete/ });
+    // The regression this guards: wiring the reason as `aria-label`, or
+    // putting the sr-only node INSIDE the button, would make the item
+    // announce the reason instead of / appended to its name. Name and
+    // description are different jobs and both must survive.
+    expect(del).toHaveAccessibleName("Delete");
   });
 
   it("is skipped by arrow-key roving so the keyboard cursor never lands on it", () => {
@@ -181,7 +201,10 @@ describe("MenuItem disabled", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     const edit = screen.getByRole("menuitem", { name: "Edit…" });
     expect(edit).toHaveProperty("disabled", false);
-    expect(edit.getAttribute("title")).toBeNull();
+    // Described by nothing: no reason was given, so no description node
+    // and no dangling `aria-describedby` reference.
+    expect(edit.getAttribute("aria-describedby")).toBeNull();
+    expect(edit).not.toHaveAccessibleDescription();
     edit.focus();
     expect(document.activeElement).toBe(edit);
     fireEvent.click(edit);
@@ -513,6 +536,149 @@ describe("Menu flip-above placement", () => {
  * (Modal `z-50`, CreateTaskModal `z-[55]`). Asserting the literal token
  * pins the chosen stacking level — dropping it to `z-50` goes red.
  */
+/**
+ * Focus restore on close (known-gaps: "`ui/Menu` never restores focus on
+ * close"). Escape and outside-click return focus to the trigger;
+ * selecting an item does not (it may be navigating away, see Menu.tsx's
+ * docstring); a trigger that has unmounted by close time (A11Y-15) is
+ * skipped rather than throwing or focusing a detached node.
+ */
+describe("Menu focus restore", () => {
+  it("Escape returns focus to the trigger", () => {
+    render(
+      <Menu
+        aria-label="Actions"
+        trigger={({ toggle, ...rest }) => (
+          <button type="button" onClick={toggle} {...rest}>Open</button>
+        )}
+      >
+        {() => <MenuItem>Alpha</MenuItem>}
+      </Menu>,
+    );
+    const trigger = screen.getByRole("button", { name: "Open" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    // The panel's own open-focus effect runs on a rAF the test does not
+    // flush; move focus into the panel directly (as a keyboard user
+    // tabbing/arrowing into it would end up) so the close path has
+    // somewhere other than the trigger to restore FROM.
+    screen.getByRole("menuitem").focus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("an outside click returns focus to the trigger", () => {
+    render(
+      <div>
+        <button type="button" data-testid="outside">Elsewhere</button>
+        <Menu
+          aria-label="Actions"
+          trigger={({ toggle, ...rest }) => (
+            <button type="button" onClick={toggle} {...rest}>Open</button>
+          )}
+        >
+          {() => <MenuItem>Alpha</MenuItem>}
+        </Menu>
+      </div>,
+    );
+    const trigger = screen.getByRole("button", { name: "Open" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    screen.getByRole("menuitem").focus();
+
+    fireEvent.mouseDown(screen.getByTestId("outside"));
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("selecting an item does not fight the destination for focus", () => {
+    // The item's own onSelect moves focus (standing in for a Link
+    // navigating away, or a dialog opening). Restoring to the trigger
+    // here would immediately steal focus back from that destination.
+    render(
+      <div>
+        <input type="text" aria-label="destination" />
+        <Menu
+          aria-label="Actions"
+          trigger={({ toggle, ...rest }) => (
+            <button type="button" onClick={toggle} {...rest}>Open</button>
+          )}
+        >
+          {({ close }) => (
+            <MenuItem
+              onSelect={() => {
+                screen.getByLabelText("destination").focus();
+                close();
+              }}
+            >
+              Go
+            </MenuItem>
+          )}
+        </Menu>
+      </div>,
+    );
+    const trigger = screen.getByRole("button", { name: "Open" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Go" }));
+
+    expect(document.activeElement).toBe(screen.getByLabelText("destination"));
+  });
+
+  it("does not throw and does not focus a detached node when the trigger's own DOM node has been replaced", () => {
+    // A11Y-15's shape for Menu: the captured trigger node can go stale
+    // without the Menu instance itself unmounting — e.g. a list re-render
+    // swaps in a new button for the same logical row (a key change, a
+    // conditional icon/label edit) while the menu is still open. The old
+    // node is then detached even though `Menu` and its `trigger` render
+    // prop are still mounted and still listening for Escape.
+    //
+    // A variant that unmounts the whole `<Menu>` cannot exercise this:
+    // Menu's own close-effect cleanup removes its Escape listener at the
+    // same time, so `restoreFocus` would never run either way and the
+    // test would pass with or without the `isConnected` guard — a false
+    // green. Swapping only the trigger's key keeps `Menu` mounted and
+    // listening, so the guard is the only thing standing between this and
+    // a stale-node `.focus()` call.
+    function Harness({ triggerKey }: { readonly triggerKey: string }) {
+      return (
+        <Menu
+          aria-label="Actions"
+          trigger={({ toggle, ...rest }) => (
+            <button key={triggerKey} type="button" onClick={toggle} {...rest}>Open</button>
+          )}
+        >
+          {() => <MenuItem>Alpha</MenuItem>}
+        </Menu>
+      );
+    }
+    const { rerender } = render(<Harness triggerKey="a" />);
+    const trigger = screen.getByRole("button", { name: "Open" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    screen.getByRole("menuitem").focus();
+
+    // The real regression signal: `.focus()` must never even be attempted
+    // on the now-detached old trigger node. jsdom quietly no-ops a
+    // `.focus()` call on a disconnected element (activeElement can't
+    // become it either way), so asserting `document.activeElement` alone
+    // would pass even with the `isConnected` guard deleted — this spy is
+    // what actually goes red for that regression.
+    const focusSpy = vi.spyOn(trigger, "focus");
+
+    // React remounts a fresh <button> for the trigger; the menu itself
+    // (and its listeners) stays mounted and open throughout.
+    rerender(<Harness triggerKey="b" />);
+    expect(trigger.isConnected).toBe(false);
+    expect(screen.queryByRole("menu")).not.toBeNull();
+
+    expect(() => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    }).not.toThrow();
+    expect(focusSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("Menu z-index", () => {
   it("gives the panel z-[65] so it sits above the modal layers", () => {
     render(

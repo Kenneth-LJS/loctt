@@ -9133,6 +9133,14 @@ same shape.
   integration test pinning the doc), so this ruling **overrides** that
   earlier call: **build** CLI + MCP task export. Update TSK-C7's
   doc/test accordingly.
+
+  > **Superseded in part on 2026-09-23 — see K30-web below.** F4 built
+  > CLI + MCP export to match the web's. Ken has since removed the
+  > *web* half: filtered export now lives on CLI + MCP only. The rest
+  > of K30 (F1, F2, F3, PRU-44) is untouched, and F4's CLI/MCP build
+  > stands — this narrows F4's parity set from three surfaces to two,
+  > it does not undo it. The historical record above is left as
+  > written.
 - **PRU-44 · editable project prefix in the web UI** — wired in
   core/CLI/MCP/web-server, but `ProjectsPanel` renders the prefix
   `readOnly disabled`; the feature was never built in the UI, its
@@ -14370,13 +14378,27 @@ two-destinations bug fixed (sidebar row → `/milestones/$id`, not `/list`).
 Milestones.", "Progress is shown on the Milestones view, not here.", etc.) is
 rewritten/removed.
 
-**Status: BUILT (2026-09-21), committed in two sweeps.** Sidebar
-"+ New milestone/label/sprint" dialogs, the milestone sidebar/detail
-merge, a shared `SprintEditDialog`, kebab `RowActions` replacing text
-"Edit" buttons across Users / CustomFields / workflow-enum rows, sprints
-created in place, and the Settings prose links removed. Supersedes the
-K100 bullets on the mandatory manage-link and the deep-link-until-
-extracted fallback; K100's shared-editor principle otherwise stands.
+**Status: PARTIALLY BUILT, corrected 2026-09-22 (was wrongly marked
+BUILT on 2026-09-21).** Sidebar "+ New milestone/label/sprint" dialogs,
+the milestone sidebar/detail merge, a shared `SprintEditDialog`, kebab
+`RowActions` replacing text "Edit" buttons across Users / CustomFields /
+workflow-enum rows, sprints created in place, and the Settings **prose**
+links removed — all of that part was real. What "BUILT" missed: the
+ruling also retires the mandatory "Manage all &lt;noun&gt;…" **menu
+item** ("scattered '…in Settings → &lt;noun&gt;' prose links are removed
+everywhere" was read as covering prose only), and six menu items were
+never removed — `sidebar-project-manage`, `sidebar-milestone-manage`,
+`sidebar-sprint-manage`, `sidebar-label-manage` (all in `Sidebar.tsx`),
+`milestone-detail-manage` (`MilestoneDetail.tsx`), and the
+`sprints-manage-link` gear (`SprintsView.tsx`). Ken hit this a second
+time on 2026-09-22 (UI-17, `docs/dev/design/ui-issues.md`): *"if im on a
+task, i dont want to see a link to manage all tasks. same for
+milestones/sprints/labels/etc."* All six were removed in that pass, and
+`MilestoneDetail`'s kebab — left with only "Edit" once "Manage
+milestones" was gone — collapsed to a single IconButton per K105's own
+single-action rule. Supersedes the K100 bullets on the mandatory
+manage-link and the deep-link-until-extracted fallback; K100's
+shared-editor principle otherwise stands.
 
 ### K106 · One general dropdown primitive: Combobox generalized with `searchable` + `multi`/checkbox props
 
@@ -18252,3 +18274,1178 @@ Deleted: `QueryBuilder.tsx` + test, `buildDsl.ts` + test, `builtinToDsl.ts` + te
 **Fourth call.** The active-view chip's Edit in `FilterBar` used to flatten the view into `q=<its query>` and open the DSL editor. That is the exact behaviour Ken struck out, and it has no implementation left anyway. It now opens `ViewFormDialog` seeded from the view's stored filters; the URL is untouched.
 
 **To revert.** There is no clean revert while core's `builderTree.ts` stays deleted — restoring these files requires restoring that module and its `package.json` export first. With that done: `git checkout a5bf2ac4 -- apps/web/src/client/list/{QueryBuilder.tsx,QueryBuilder.test.tsx,buildDsl.ts,buildDsl.test.ts,builtinToDsl.ts,builtinToDsl.test.ts,buildConditions.ts,buildConditions.test.ts,AdvancedQuerySurface.tsx,FilterBar.tsx,FilterBar.test.tsx} apps/web/src/client/settings/{ViewFormDialog.tsx,ViewFormDialog.test.tsx,SavedViewsPanel.tsx,SavedViewsPanel.test.tsx} apps/web/src/client/shell/{Sidebar.tsx,Sidebar.test.tsx}`, then delete `apps/web/src/client/list/facetOptions.ts` and `apps/web/src/client/settings/viewFilterFields.ts`.
+
+---
+
+**Ticket:** UI-1 / UI-2 / UI-3 / UI-5 — the view-actions "⋯" redesign. Lane: `list/FilterBar.tsx`, `list/ExportMenu.tsx`, `board/BoardView.tsx`, `ui/PageHeader.tsx`, `ui/Icon.tsx` + their tests. · **Date:** 2026-09-22 · **Commit:** (uncommitted; Ken integrates) · **Base:** 2c770c68.
+
+**The situation.** Ken's 2026-09-22 rulings settled the shape of the redesign (`docs/dev/design/ui-issues.md` UI-1/2/3/5) but explicitly delegated ONE question: after merging the board's two ⋯ menus, who owns the merged menu — FilterBar via an optional prop, or `PageHeader` on every view. (Ken: *"ui/engineering agent can figure it out"*.)
+
+**Decided — menu ownership: `FilterBar.extraMenuSections`, not a `PageHeader`-owned menu.**
+
+**Why.** Board was the ONLY view with two ⋯ menus, because it is the only one that put an overflow in its `PageHeader` actions slot. Moving ownership up to `PageHeader` would have added a menu surface to List, Timeline, Sprints and Milestones — four views that did not have the problem — to fix one that did. That is the "built is not adopted" shape `design-review.md` records, pointed the other way: a new general mechanism spent on a single instance. The ⋯ already lives in FilterBar on all four task views, so the merge is a rendering-target change for two links, and the blast radius is BoardView + FilterBar.
+
+**The cost, stated plainly.** The rule is now "the bar owns the view menu", not "the header owns it". A view that mounts no `FilterBar` (Milestones, Settings) has nowhere to put view-level actions and would need this revisited. That is the trade Ken's other option was buying off, and it is the reason to revisit if a second non-FilterBar view ever grows an overflow menu.
+
+**Second call — Archived's testId is unchanged.** It moved from the ⋯ menu to the filter band (Ken: it is a *filter*), but keeps `testId="view-actions-archived-scope"` even though it no longer sits in the view-actions cluster. The name is now slightly wrong. Renaming it would have churned the concurrent `ArchivedScopeControl` lane's 8 settings call sites and its spec locators for a cosmetic gain; the testId is a contract, not documentation. **To revert:** rename to `filters-archived-scope` across `FilterBar.tsx` + `FilterBar.test.tsx` + any spec matching it.
+
+**Third call — the icon went in `ui/Icon.tsx`, not `ui/icons.ts`.** The brief said to add a Lucide glyph to `ui/icons.ts`. That file holds only *text* glyphs (★, ⚠) and says so; interactive affordances are hand-drawn 16px SVG paths in `ui/Icon.tsx`, and the repo uses no Lucide dependency in the client. `moreVertical` is three `<circle>`s at a shared `cx`, mirroring the existing `more`, and is added to the `FILLED` set like `more`. Following the brief literally would have put a Lucide import and a text glyph into a file whose docstring forbids both.
+
+**Fourth call — Toast now carries a failure variant's content, against its own docstring.** `ui/Toast.tsx` says it is "deliberately **not** a general notification channel" and "takes no error variant, because an error that can point at its own cause should". Routing export failures there (Ken's UI-5 decision) is a real exception to that, and the docstring's reasoning does not cover this case: the control that caused the error is inside a popover that has already unmounted, so there IS no cause left to anchor to — the same condition the docstring grants creation. No API change was needed (`show(message, action)` already carries the retry). **Flagged rather than silently done:** if a third caller wants an error toast, the docstring's rule has stopped describing the component and Toast should grow a real `variant`, which is a separate ticket.
+
+**Verified, not assumed.** `ui-issues.md` recorded UI-5's reproduction as read-from-source. It was reproduced in a browser first (forced 500 on `/api/tasks/export`): the failure text and its Retry rendered inside the ⋯ panel, and one outside click removed both from the document — `document.body.innerText` no longer contained the message. Re-run against the fix, the same gesture leaves both in place.
+
+**To revert.** `git checkout 2c770c68 -- apps/web/src/client/list/{FilterBar.tsx,FilterBar.test.tsx,ExportMenu.tsx} apps/web/src/client/board/{BoardView.tsx,BoardView.test.tsx} apps/web/src/client/ui/{PageHeader.tsx,PageHeader.test.tsx,Icon.tsx}` and revert the `IconButton`-sizes / two-kebabs edits in `docs/dev/design/design-system.md`. Note this restores UI-5 (the lost export error) along with the rest.
+
+### A284 · UI-9 fix — `FilterError` classified at all three surfaces (web `isQueryError`, CLI `KNOWN_DOMAIN_ERRORS`, MCP `isKnownDomainError`)
+
+**Ticket:** UI-9 (`docs/dev/design/ui-issues.md`) — a saved view whose advanced DSL does not parse 500s the task list with `code: "unknown"` and a Retry that can never succeed. **Date:** 2026-09-22 · **Commit:** (uncommitted; Ken integrates) · **Standard:** Ken, 2026-09-22 — *"go with most robust way -> see what we do for other errors and standardise."*
+
+**Root cause, verified.** `packages/core/src/query/filters.ts:24` `FilterError extends Error` (not `LocttError`), thrown by `advancedToNode`/`simpleToNode` when a filter list cannot be composed into a query. `filtersToNode` has exactly two production callers: `packages/core/src/views/manage.ts:147` (the WRITE path — `create_view`/`edit_view`/CLI `views create`/`edit`), which already catches it and rethrows as `ViewError`; and `packages/core/src/query/list.ts:285` (the READ path — resolving `?view=`/`--view`/MCP `view` on every list call), which calls it bare. `FilterError` was exported from core (`index.ts:362`) but consumed by no surface — none of the web/CLI/MCP registries listed it, unlike `ViewError`, which all three already list explicitly for the identical non-`LocttError` reason. So a bare-shape-valid-but-DSL-broken view escaped `handleListTasks`'s existing `isQueryError` catch on the web, fell through to the generic 500 handler, and reported `{"code":"unknown","recovery":{"kind":"retry"},"detail":"advanced filter does not parse: …"}` — the message core had computed exactly, stranded in `detail` (which the client's `ErrorState` does not render as the headline) behind a Retry that cannot succeed, since the view will not parse on the next attempt either.
+
+**Two candidate fixes, and why (a) was chosen over (b).** (a) list `FilterError` at the three existing registries; (b) wrap the read-path call at `list.ts:285` the way the write path does, rethrowing as `ViewError`, so no registry changes are needed. (b) was rejected: `ViewError` is defined in `packages/core/src/views/manage.ts`, and `query/` has no import from `views/` anywhere in the codebase (`views/manage.ts` imports FROM `query/filters.ts`/`query/validate.ts`, never the reverse) — importing `ViewError` into `query/list.ts` would introduce a `query → views` dependency and very likely a cycle (`views` already depends on `query`). (a) requires no cross-module import and follows the established convention exactly: `FilterError`, like `ViewError`, does not extend `LocttError`, so per the pattern already governing `TokenizeError`/`ParseError`/`QueryValidationError`/`ViewError` at all three surfaces, it must be listed explicitly rather than relying on an `instanceof LocttError` catch-all. This is also the fix that makes the *class* of defect (any core error thrown while composing a view's filters, now or in the future) impossible at the point it already gets caught, not one instance of it.
+
+**Where enforced (decided).**
+- `apps/web/src/server/server.ts` — `isQueryError` now also matches `err instanceof FilterError`. No change to the branch's existing `code: "validation_failed"`, `field: "query"`, `recovery: { kind: "none" }` — verified `"none"` (not `"retry"`) is already what this catch returns for every other query-shape error, and it is the right recovery here too: the fault is the saved view's stored DSL, which the user must edit, not something a client-side retry can affect. Client-side: `apps/web/src/client/ui/ErrorState.tsx` already renders `envelope.message` as the headline and only shows a Retry control when `recovery.kind === "retry"` — no client change was needed or made (out of this ticket's file set regardless).
+- `apps/cli/src/runtime/errors.ts` — `FilterError` added to `KNOWN_DOMAIN_ERRORS`. Measured: the CLI's top-level `main()` catch (`index.ts`) already prints `Error: <message>` and exits 1 for any bare `Error`, so this entry does not change what `loctt list --view <broken>` prints today (`FilterError` carries no `detail` beyond its message) — it exists for parity with the web/MCP registries and so a future `FilterError.detail` would be printed indented, the way `LocttError.detail` already is via `runCommand`.
+- `apps/mcp/src/runtime/errors.ts` — `FilterError` added to `isKnownDomainError`. This one DOES change observable behaviour: without it, `list_tasks` (and any future tool resolving a view) rethrows the error past the dispatcher's outer catch (`index.ts:154-163`), surfacing as an opaque MCP server fault instead of an `errorResult` naming the parse fault.
+
+**Verified manually against the seeded playground tracker** (`/private/tmp/.../scratchpad/playground`, view id `01M33FP00000000000000000A6`, query `status = = = done AND`): CLI unchanged (`Error: advanced filter does not parse: expected value but got "=" at position 9`, exit 1); web before the fix reproduced the exact 500/`unknown`/`retry` envelope quoted in `ui-issues.md`; after the fix, `GET /api/tasks?view=01M33FP00000000000000000A6` returns `{"code":"validation_failed","message":"advanced filter does not parse: expected value but got \"=\" at position 9","field":"query","recovery":{"kind":"none"}}`.
+
+**Tests (all red-proven — behaviour broken, watched fail, restored byte-exact).**
+- `apps/web/src/server/server.view-unparseable-dsl.test.ts` (new) — seeds a view with a shape-valid, DSL-broken advanced filter directly on disk (bypassing the write-path validator, the only way such a view can exist); asserts `GET /api/views` reports it healthy (no `broken` entry — the separate classification gap below), `GET /api/tasks?view=<id>` is a 4xx with `code: "validation_failed"` and the exact parse message, `recovery.kind` is `"none"` not `"retry"`, and an unrelated request still works. Red-proved by removing `|| err instanceof FilterError` from `isQueryError`: the two envelope assertions failed with the pre-fix 500/`retry` output; restored.
+- `apps/cli/src/runtime/filter-error.test.ts` (new) — membership test mirroring `stale-body-error.test.ts`'s documented pattern: asserts `FilterError` is in `KNOWN_DOMAIN_ERRORS` and that an unrelated `TypeError` is not. Docstring states plainly that this is NOT end-to-end observable today (CLI prints the same text either way) and says why. Red-proved by removing the entry: `matched` assertion failed; restored.
+- `apps/mcp/src/tools/list-tasks-broken-view.test.ts` (new) — end-to-end via `executeTool(root, "list_tasks", { view })` against a disk-seeded broken view; asserts `isError: true` with the actionable message (not a rethrow) and that an unrelated call still works. This one IS end-to-end observable on MCP. Red-proved by removing `|| err instanceof FilterError` from `isKnownDomainError`: the call threw `FilterError` out of `executeTool` entirely (uncaught in the test) instead of returning an error result; restored.
+
+**No passing test was edited.** This fix only widens error classification that previously fell through to an unhandled/generic path; nothing pre-existing asserted the broken behaviour as correct.
+
+**Gates.** `npx tsc --build` clean. `npm run test -w @loctt/web` 228 files / 2330 passed. `npm run test -w @loctt/core` 128 files / 2311 passed, 1 skipped (pre-existing skip, unrelated). `npm run test -w @loctt/cli` 11 files / 174 passed. `npm run test -w @loctt/mcp` 6 files / 124 passed. `npm run lint` 0 errors (70 pre-existing warnings, all unrelated files — non-null-assertion in Playwright specs, React-hooks exhaustive-deps). `npm run build` (root) clean.
+
+**Assessed, not fixed — separate wave.** `GET /api/views` reports this class of view as healthy: classification in `packages/core/src/config/queries.ts` `resolveFilters` is a Zod *shape* check (`FilterSchema` accepts any string as an advanced filter's `query`), so the DSL is never parsed at load, only at run. `SavedViewsPanel`'s broken-row apparatus (marker, raw-YAML disclosure, Replace, inert-Save gate) — built and tested against shape-invalid entries only (`server.view-broken-repair.test.ts`'s "not a list" case) — is unreachable for this defect class. Fixing it means parsing every advanced filter's DSL at load time (a real cost: one bad view among many currently degrades to a `BrokenSavedQuery` marker without the others paying a parse cost) and deciding whether that changes `parseQueriesConfig`'s performance/error contract for large `queries.yaml` files. That is a load-bearing change to the config loader, not a one-line addition to an existing registry — a clean wave of its own, not bundled into this one. Logged in `known-gaps.md` (see below) rather than silently left as a TODO.
+
+**To revert.** Remove `FilterError` from the `isQueryError` disjunction in `apps/web/src/server/server.ts` (and its import), from `KNOWN_DOMAIN_ERRORS` in `apps/cli/src/runtime/errors.ts` (and its import), and from `isKnownDomainError` in `apps/mcp/src/runtime/errors.ts` (and its import). Delete the three new test files listed above. Revert the UI-9 status line in `ui-issues.md` back to `open`.
+
+### A285 · UI-8 fix — board card spacing moved off the list container onto the card (`space-y-0` + `mb-2`)
+
+**Ticket:** UI-8 (`docs/dev/design/ui-issues.md`) — board card-to-card gap measured 14px against a 7px horizontal gutter, exactly double. **Date:** 2026-09-22 · **Commit:** (uncommitted) · **Ruling:** Ken, 2026-09-22 — *"space-y-0 + gap on the card"* (option 1 of the three `ui-issues.md` listed, over a negative-margin counter-hack or a bare `gap-*` swap that does not fix it — see the file's "Options" section for why `gap-*` alone does not work).
+
+**Root cause, verified.** `board/BoardView.tsx`'s per-column scroll container was `space-y-2 p-2`. `DropIndicator` (BRD-11) is rendered as a flow sibling between every pair of cards and stays mounted at `h-0` when inactive so the drop gap can animate open rather than teleport — its docstring says so explicitly, and that requirement is unchanged by this fix. `space-y-2` gives EVERY flow child a top margin, including that zero-height sibling, so each visual gap was actually card-margin (7px) + indicator-margin (7px) = 14px. Confirmed live at 1440×900 before the fix: `card-to-card gap = 14px` in the Backlog column, 9 cards / 10 indicators, no variance.
+
+**Fix.** The container is now `space-y-0`. Each card no longer sits directly under the list — it is wrapped in a plain `<div className="mb-2">` (the file's `.map` over `rest`), which is the actual regression-relevant fix: `BoardCard` itself takes no `className` prop, and threading one into `board/BoardCard.tsx` was out of this ticket's file set, so the margin is applied from the wrapper `BoardView.tsx` already owns rather than editing the card component. `SkeletonCard` (the loading-state stand-in) gained a `className` prop defaulting to `mb-2`, with the last of the three skeletons passed `mb-0` so the loading state does not carry a trailing gap the real list never had. The final `DropIndicator` after the last card keeps no margin either way, since indicators still carry no margin of their own at rest — only their active state (`my-1 h-10`) does, which this fix does not touch.
+
+**Verified live, 1440×900, against the rebuilt client.** Card-to-card gap is now exactly **7px**, matching the horizontal gutter, across all measured gaps in the Backlog column (was 14px).
+
+**Drag animation verified, not assumed.** Dispatched real `PointerEvent`s (`pointerdown` on card 1, `pointermove` past card 2, `pointerup`) against the live board. One `DropIndicator` went active mid-gesture; its box carried the `my-1 h-10 border-2 border-dashed border-accent bg-accent/10` classes and was caught mid-`transition-all duration-150` at 34.29px before settling to 35px (`h-10`'s border-box height) — i.e. it grew from 0 rather than appearing at full size, which is the "slides, does not teleport" requirement BRD-11 and the `DropIndicator` docstring name. `pointerup` cleanly deactivated it (0 active indicators after release). No drag-model code was touched by this fix — `space-y-0`/`mb-2` only affects margins, not the sizing classes the drag interaction toggles — so this was confirmation the fix does not interact with that mechanism, not a defect search.
+
+**Tests (red-proven — behaviour broken, watched fail, restored byte-exact).** All three added to `apps/web/src/client/board/BoardView.test.tsx`, under a new `describe("BoardView — card-to-card gap (UI-8)")`. jsdom does not run layout, so none of them assert the measured 7px/14px directly (that is the live verification above); each instead asserts the specific class-level mechanism the live measurement traces back to, and each was proven to fail against the pre-fix code:
+- *"does not put space-y-* on the card list"* — asserts the list container's class does not match `/\bspace-y-(?!0\b)/`. Red-proved by reverting the container to `space-y-2`: failed with the reverted class string shown; restored.
+- *"gives each card wrapper its own bottom margin instead"* — asserts every `<article>`'s parent carries `mb-2`. Red-proved by emptying the wrapper's className: failed (`expected '' to match /\bmb-2\b/`); restored.
+- *"still renders a DropIndicator between every pair of cards, ready to animate open on drag"* — asserts 2 cards produce exactly 3 indicator slots (before/between/after), all `data-active="false"` and `h-0` at rest — i.e. that the fix did not "solve" the doubling by deleting the indicators BRD-11 requires. Red-proved by removing the trailing `<DropIndicator>`: failed (`expected [...] to have a length of 3 but got 2`); restored.
+
+A `TASKS` fixture (mutable, reset in `afterEach`) was added to the test file's existing `STATUSES`/`BOARD_COLUMNS` pattern so `/api/tasks` can return real rows for these three tests; every pre-existing test in the file is unaffected (it defaults to `[]`, matching the old hardcoded empty response).
+
+**No passing test was edited.** Nothing pre-existing in `BoardView.test.tsx` asserted spacing or indicator counts.
+
+**Gates.** `npx tsc --build` clean. `npm run test -w @loctt/web` 228 files / 2336 passed (was 2330 before this session's two additions — UI-8 added 3, UI-7 below added 3). `npm run lint` 0 errors, 70 pre-existing warnings in unrelated files (none in `BoardView.tsx`/`BoardView.test.tsx`/`MetaPanel.tsx`/`MetaPanel.test.tsx`). `npm run build -w @loctt/web` clean (vite + tsc + tsup, exit 0).
+
+**To revert.** In `apps/web/src/client/board/BoardView.tsx`: change the column list container back to `space-y-2`, remove the `<div className="mb-2">` wrapper around each `<BoardCard>` (un-indent `BoardCard` back to a direct child of `<Fragment>`), and revert `SkeletonCard` to take no `className` prop (drop the third skeleton's `mb-0`). Remove the `describe("BoardView — card-to-card gap (UI-8)")` block and the `TASKS` fixture from `BoardView.test.tsx`. Revert the UI-8 status line in `ui-issues.md` back to `open`.
+
+### A286 · UI-7 fix — meta-row value column: responsive one/two-column `Row` grid + a shrink-to-fit stretch fix on the picker's wrapper
+
+**Ticket:** UI-7 (`docs/dev/design/ui-issues.md`) — task-detail meta rows measured 42.67px for a two-word value (`In progress`, `v1.0 Launch`, `Sprint 1`) vs 24.50px for one word, from byte-identical markup. **Date:** 2026-09-22 · **Commit:** (uncommitted) · **Ruling:** Ken, 2026-09-22, verbatim — *"allow responsiveness to kick in: allow it to take up its own row on mobile perhaps? if on desktop, we could consider making columns wider"* — a direction, not a spec; the concrete shape below is this session's implementation of it.
+
+**Root cause was NOT "the column is too narrow" — that was `ui-issues.md`'s working diagnosis, and it does not survive testing.** Measured live: forcing the existing (unwidened) 163px value column's immediate child — `ui/Dropdown`'s trigger root, `relative inline-flex` — to `display: flex; width: 100%` collapsed a two-line "v1.0 Launch" row from 42.67px to 24.50px, at the SAME column width. Separately, widening the grid column from 80px/163px up to 200px+ with the wrapper left alone had NO effect on the wrap — confirmed by live experiment, not assumed. So the true mechanism is that `Dropdown`'s trigger wrapper is shrink-to-fit (`inline-flex`) and does not stretch to fill its container no matter how wide that container is; the column's width was never actually the constraint the original diagnosis named. `ui/Dropdown.tsx` is a shared primitive outside this ticket's file set (`MetaPanel.tsx`, `OptionPicker.tsx` + tests only), so the stretch cannot be fixed at its source in this change — it is applied as a child-selector from the row/wrapper that owns the column instead.
+
+**What was implemented, mapped to Ken's two clauses.**
+- **"Make columns wider" (desktop, `sm:` and up).** `Row`'s grid moved from `grid-cols-[80px_minmax(0,1fr)]` to `sm:grid-cols-[72px_minmax(0,1fr)]`. The 80px label column had slack over every configured label — measured: `"Milestone"` (the longest workflow-config label) needs 58.7px, `"Completed"` (the longest of all, including the fixed non-config ones) needs 66.3px — so 72px keeps a small margin over the actual longest label while giving the value column 8px back. This alone does not fix UI-7 (see root-cause note above); it is the "wider columns" half of Ken's direction, kept because he asked for it, on top of the fix that actually matters.
+- **The actual fix, both breakpoints.** `dd`'s (and, for Assignee/Reporter, the avatar-row wrapper's) className gained `[&>.relative.inline-flex]:flex [&>.relative.inline-flex]:w-full` — a Tailwind arbitrary child-selector targeting `Dropdown`'s trigger root by its own class combination, forcing it to stretch. Two locations needed it because the picker is not always `dd`'s direct child: Status/Type/Priority/Milestone/Sprint mount `OptionPicker` directly in `dd`, but Assignee/Reporter wrap it in a `min-w-0 flex-1` div alongside the user's avatar, so the same fix is repeated one level down there.
+- **"Own row on mobile" (below `sm`, <640px).** `Row`'s grid is `grid-cols-1` by default (mobile-first), so below `sm` each row is a single column: label, then value, stacked — Ken's "take up its own row". **`useIsNarrow` was deliberately NOT used**, per its own docstring's instruction to reach for it "only when the two layouts are structurally different and rendering both would duplicate content in the DOM" — here the DOM is identical at both widths (same `dt`/`dd` pair, same document order), only the CSS grid-template changes, which is exactly the case the docstring says plain Tailwind responsive classes should handle instead.
+
+**Verified live, both viewports, against the rebuilt client.**
+
+| Value | Before (measured) | After, 1440×900 | After, 375×812 |
+|---|---|---|---|
+| `In progress` (Status, WEB-1) | 42.67px | **24.50px** | 46.59px (own row, uniform) |
+| `v1.0 Launch` (Milestone) | 42.67px | **24.50px** | 46.59px |
+| `Sprint 1` (Sprint) | 42.67px | **24.50px** | 46.59px |
+| `Bug` (Type) | 24.50px | 24.50px | 46.59px |
+| `High` (Priority) | 24.50px | 24.50px | 46.59px |
+
+At 1440×900 the two-word/one-word gap is eliminated outright (both 24.50px). At 375×812 every row is a uniform 46.59px regardless of word count — label line + gap + value line, stacked — which is the intended shape of "its own row," not a second attempt at single-line fitting. (The empty-state Assignee row measures 52.5px at both widths; that is the pre-existing "Assign to me" quick-action button beneath the picker, unrelated to UI-7, present in the before-state too.)
+
+**No truncation.** Per the ticket's explicit constraint (Ken did not choose ellipsis), nothing here truncates a value — the fix is exclusively about the value fitting on one line unclipped (desktop) or getting a full line of its own (mobile).
+
+**No new primitive.** Both changes are Tailwind classes on `MetaPanel.tsx`'s own elements (`Row`'s grid div, `dd`, the two avatar-row wrapper divs); `OptionPicker.tsx` was read but not modified, and `ui/Dropdown.tsx`/`ui/Combobox.tsx` were not touched.
+
+**Tests (red-proven — behaviour broken, watched fail, restored byte-exact).** All three added to `apps/web/src/client/task/MetaPanel.test.tsx`, under a new `describe("UI-7 — meta rows do not double in height for a two-word value")`. jsdom does not run layout, so none assert the measured row heights directly (that is the live table above); each asserts the specific class-level cause/fix:
+- *"lays the row out as one column... below sm, two columns at sm and up"* — asserts the row's grid div matches both `grid-cols-1` and `sm:grid-cols-\[`. Red-proved by reverting `Row`'s className to the original `grid grid-cols-[80px_minmax(0,1fr)] gap-2`: failed (`expected '...' to match /\bgrid-cols-1\b/`); restored.
+- *"stretches the OptionPicker trigger's wrapper... instead of shrink-to-fit"* — asserts `meta-edit-status`'s `closest("dd")` carries both `[&>.relative.inline-flex]:flex` and `...:w-full`. Red-proved by removing the two classes from `dd`: failed; restored.
+- *"applies the same stretch fix to Assignee/Reporter..."* — asserts the `min-w-0 flex-1` wrapper two levels up from `meta-edit-assignee` carries the same two classes. Red-proved by removing them from that wrapper alone (leaving `dd`'s fix in place, since Assignee's `OptionPicker` is not `dd`'s direct child so the `dd`-level fix does not reach it): failed; restored.
+
+**No passing test was edited.** Nothing pre-existing in `MetaPanel.test.tsx` asserted the `Row` grid's column widths or the picker wrapper's stretch behaviour.
+
+**Gates.** `npx tsc --build` clean. `npm run test -w @loctt/web` 228 files / 2336 passed. `npm run lint` 0 errors, 70 pre-existing warnings in unrelated files. `npm run build -w @loctt/web` clean (vite + tsc + tsup, exit 0).
+
+**To revert.** In `apps/web/src/client/task/MetaPanel.tsx`: revert `Row`'s grid div className to `"grid grid-cols-[80px_minmax(0,1fr)] gap-2 text-[0.9286rem]"`; revert `dd`'s className to `"min-w-0 break-words text-text-primary"`; remove the `[&>.relative.inline-flex]:flex [&>.relative.inline-flex]:w-full` suffix from both the Assignee and Reporter `min-w-0 flex-1` wrapper divs. Remove the `describe("UI-7 — meta rows do not double in height for a two-word value")` block from `MetaPanel.test.tsx`. Revert the UI-7 status line in `ui-issues.md` back to `open`.
+
+### A287 · UI-10 fix — six settings-panel headers converged onto a shared `SettingsPanelHeader`, wrapping `PageHeader` rather than reusing it directly
+
+**Ticket:** N-4 / UI-10 (`docs/dev/design/ui-issues.md`) — an audit measured identical title positions (464, 76) but five different header layouts across `ProjectsPanel`, `UsersPanel`, `LabelsPanel`, `MilestonesPanel`, `SprintsPanel`, `SavedViewsPanel`: two title testid/colour-token states (present on four, missing on Projects/Users), three margin values, two button variants (primary ×3 / secondary ×3), two control heights (28px ×5 / 24.5px ×1 on Saved views), and three create-action placements (below-list ×2, own row below title ×3, title row ×1). **Date:** 2026-09-22 · **Commit:** (uncommitted) · **Ruling:** Ken, 2026-09-22 — *"converge on one, consider making a shared component"*.
+
+**(a) reuse `PageHeader` directly, vs (b) a thin wrapper — chose (b), and here is why it is not the near-duplicate-primitive failure mode CLAUDE.md warns about.** `PageHeader`'s own docstring scopes it to the *main-view* title row and its title class is `text-[1.0714rem]`, measured live at 15.0px (87.5% root). Before touching anything, the six ticketed panels' actual title markup was greped across the FULL settings tree, not just the six: five sibling panels strictly outside N-4's file set — `WorkflowPanelFrame.tsx` (shared shell for the five Workflow config sub-panels), `BackupPanel.tsx`, `DiagnosticsPanel.tsx`, `GitSyncPanel.tsx`, `SidebarGroupsPanel.tsx` — already render `data-testid="settings-panel-title"` on `<h1 className="mb-1 text-lg font-semibold text-text-primary">`, measured live at 15.75px. That is a second, ALREADY-CONVERGED family, distinct from `PageHeader`'s. Pointing the six ticketed panels at `PageHeader` verbatim would have fixed the six-panel drift this ticket names while silently opening a new, undocumented one: eight settings panels at two different title sizes (six at 15.0px, five at 15.75px) instead of six panels at one size and five at another. `SettingsPanelHeader` (`apps/web/src/client/settings/SettingsPanelHeader.tsx`) is not a parallel reimplementation — it delegates the actual shared mechanics (the `items-start` row, the actions slot, `min-h-7`) to `PageHeader` internally, passing the title as a pre-built node (`PageHeader`'s own "a node renders as-is" escape hatch) so the `<h1>` can carry the settings family's own `text-lg` class and the `settings-panel-title` testid directly on itself — matching all 8 pre-existing consumers of that testid, none of which expect it on a wrapping `<header>`. This is the smaller-scoped move: it converges the six onto the convention the OTHER eight settings panels already use, not onto the main-view convention.
+
+**Deliberately no `subtitle` prop.** Every panel's description paragraph stayed a plain sibling `<p>` after `SettingsPanelHeader`, not routed through `PageHeader`'s `subtitle` slot. `PageHeader` puts `title`/`subtitle` in a `flex flex-col gap-0.5` wrapper (2px, ×0.875 = 1.75px gap); the settings convention's title-to-description gap is `mb-1` (4px, ×0.875 = 3.5px). Routing the description through `subtitle` would have shrunk that gap without anyone asking for it. Not doing so keeps every panel's description paragraph byte-identical.
+
+**The five converged axes** (all applied to all six panels; see `ui-issues.md`'s UI-10 entry for the full before/after measurement table):
+1. **Title markup** — `<h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">`. Projects and Users were missing the testid and the colour token outright; both gained them.
+2. **Spacing below the title** — `mb-1`, dropping the two-header-site panels' error-state `mb-2` to match their own main-state `mb-1`.
+3. **Create-action placement** — the title row (`PageHeader`'s `actions` slot). Chosen over "below-list" because it is what the majority shape (Labels/Milestones/Sprints's own-row-below-title, and Saved views' title-row) already leaned toward, and it is the position that survives responsive wrap most gracefully (`PageHeader`'s existing `flex-wrap` puts actions on their own line under the title at narrow widths, rather than leaving an orphaned control below an unrelated list).
+4. **Button variant** — `primary`. **This is a judgment call, not a documented rule** — grepped `docs/dev/design/design-system.md` for any primary-vs-secondary guidance on a page-level create action and found none. Chosen because in every one of the six panels the create action is the page's only persistent call-to-action, with nothing else on the page competing for primary-button emphasis. Labels/Milestones/Sprints moved from `secondary`.
+5. **Control height** — 28px (`Button`'s `md` default, `h-8`), the 5-of-6 majority. Saved views' explicit `size="sm"` (`h-7`, 24.5px) was dropped.
+
+**Measured live** (rebuilt client, 1440×900): all six panels' title now sits at (464, 76); all six create buttons now sit at the same row (y=76) at 28px height, `bg-accent` (primary). Before: create-button y ranged 76–471 across the six, heights were 28px (5) / 24.5px (1, Saved views).
+
+**Tests (red-proven — behaviour broken, watched fail, restored byte-exact).** New: `SettingsPanelHeader.test.tsx` (title-on-`<h1>` placement, settings-family size, actions passthrough, same-header-row structural check); a new `describe("N-4 header convergence")` block in `ProjectsPanel.test.tsx`, `UsersPanel.test.tsx`, `MilestonesPanel.test.tsx`, `SprintsPanel.test.tsx`, `SavedViewsPanel.test.tsx`; a new `LabelsPanel.test.tsx` (no test file existed for this panel before). Each asserts the title's testid/tag/class and that `title.closest("header")` contains the create button (the jsdom-reachable proxy for "same row," since jsdom does not run layout — the live pixel table above is what actually proves the row). Red-proofs performed and restored: (1) removing `data-testid` from `SettingsPanelHeader`'s `<h1>` — 4 tests across `ProjectsPanel.test.tsx` and `SettingsPanelHeader.test.tsx` failed; (2) reverting `ProjectsPanel`'s create button to its old below-table position — `ProjectsPanel.test.tsx`'s placement test failed; (3) restoring `SavedViewsPanel`'s `size="sm"` — its height test failed (`expected not to contain "h-7"`); (4) reverting `MilestonesPanel`'s button to `variant="secondary"` — its variant test failed (`expected not to contain "border-border-default"`). All four restored byte-exact and re-verified green.
+
+**No passing test was edited to make it pass.** No pre-existing test in any of the six panels' test files asserted a title's className, margin, colour token, or the create button's position/variant/height — the drift this ticket fixes was simply untested, not tested-and-wrong. (Contrast UI-1/UI-7 elsewhere in this file, where a pre-existing green test *was* pinning the bug; that is not the case here.)
+
+**Gates.** `npx tsc --build` clean. `npm run test -w @loctt/web` 230 files / 2354 passed. `npm run lint` 0 errors, 70 pre-existing warnings, none in touched files. `npm run build -w @loctt/web` clean (vite + tsc(server) + tsup, exit 0).
+
+**Out of scope, left alone (per the ticket's explicit file-set boundary):** `BackupPanel`, `BoardColumnsPanel`, `CalendarPanel`, `CardLayoutPanel`, `CustomFieldsPanel`, `DiagnosticsPanel`, `EnumCollectionPanel`, `EstimationPanel`, `GitSyncPanel`, `KeyboardPanel`, and `WorkflowPanelFrame`'s five sub-panels. None of these needed a file change — `SettingsPanelHeader` converges onto their existing `text-lg` convention rather than displacing it.
+
+**To revert.** Delete `apps/web/src/client/settings/SettingsPanelHeader.tsx` and `SettingsPanelHeader.test.tsx`. In each of `ProjectsPanel.tsx`, `UsersPanel.tsx`, `LabelsPanel.tsx`, `MilestonesPanel.tsx`, `SprintsPanel.tsx`, `SavedViewsPanel.tsx`: remove the `SettingsPanelHeader` import and revert each header call site to its pre-N-4 markup (see the "before" column of the table in `ui-issues.md`'s UI-10 entry for each panel's original className/placement/variant/size). Remove the `describe("... header convergence (N-4)")` blocks from `ProjectsPanel.test.tsx`, `UsersPanel.test.tsx`, `MilestonesPanel.test.tsx`, `SprintsPanel.test.tsx`, `SavedViewsPanel.test.tsx`. Delete `LabelsPanel.test.tsx` entirely (it did not exist before this change) or strip it back to nothing if a later change adds unrelated coverage to it. Revert the UI-10 status line in `ui-issues.md` back to `open`.
+
+---
+
+## Ken's ruling, 2026-09-22 — archiving is a one-way door, not a filter
+
+**This has been got wrong repeatedly. It is written here because an
+agent keeps re-deriving the opposite.** Ken, verbatim:
+
+> "the archived shouldnt be here!!!! i told you, archived toggles should
+> be fucking out of the way, stop fucking showing it. people archive to
+> delete. once its gone, people dont usually bring it back. so i want the
+> options to look at archived stuff to be hidden. i want to make it hard
+> to archive stuff accidentally. it should be out of the way, people
+> shouldnt need to archive unless its really done. so stop fucking making
+> it feel like another filter."
+
+### The principle
+
+**Archiving is how a user deletes.** It is reversible in the data model
+only so nothing is lost by accident — that is a safety net, not a
+workflow. Almost nobody unarchives.
+
+Two consequences, and they pull in the same direction:
+
+1. **Looking at archived things is a rare, deliberate act.** The control
+   that reveals archived rows must be **out of the way** — not a
+   permanently visible segment sitting in the filter row next to Status
+   and Priority. It must not read as "another filter".
+2. **Archiving must be hard to do by accident.** It belongs away from
+   benign actions, marked as destructive, and confirmed. See the
+   destructive-action audit — project Archive currently fires on a single
+   click from a kebab, undifferentiated grey, directly above
+   "Manage projects…".
+
+### What this overrules
+
+The segmented `ArchivedScopeControl` built 2026-09-22 (UI-4) and its
+relocation into the left filter band (UI-2) **both push the wrong way**.
+Ken asked for a joined button *instead of a native `<select>`* — a
+remark about the control's shape. It was implemented as a permanently
+visible three-segment filter, which made archived scope MORE prominent,
+not less. The segmented control itself is fine; **its prominence and
+placement are not.**
+
+K107's "reveal archived entities through one control everywhere" stands
+as a consistency rule. What it must not mean is "show that control at
+all times in the primary filter row".
+
+### The rule for any future work
+
+Before adding or moving an archived-scope control, ask: *does this make
+archived content feel like a normal filter dimension?* If yes, it is
+wrong. Default state is hidden; revealing archived content is an
+explicit, secondary act.
+
+### The policy, stated once (Ken asked for it explicitly, 2026-09-22)
+
+> "tell me now, what's should be the policy with archive? tell me what
+> surfaces to show/hide. tell me when i should see it - likely
+> debug/admin side. not on usual surfaces."
+
+**Archive IS delete.** The row survives only so an accident is
+recoverable by an administrator. It is NOT a view state, NOT a filter
+dimension, NOT a browsing mode.
+
+| Surface | Archived-scope control | Why |
+|---|---|---|
+| Task list / Board / Timeline | **Never** | Primary work surfaces. Archived tasks are gone. |
+| Sidebar (projects, views, labels, …) | **Never** | Navigation. A deleted thing is not navigation. |
+| Task detail of an archived task | Reachable by direct link, with a banner saying it is archived | A held URL must not 404 |
+| Pickers/dropdowns (assignee, milestone, sprint, label, project) | **Never offer archived entities** | Never let a user assign to a deleted thing |
+| Saved-view editor / filter builder | **Never** | A view filtering on archived encodes the wrong model |
+| **Settings admin panels** (Projects, Users, Labels, Milestones, Sprints, Saved views) | **ONLY here.** Defaults to Active; the reveal is secondary, not a visible segmented control | This is the admin/recovery surface |
+| `doctor` / diagnostics | Yes — counts and recovery | Explicitly a debug surface |
+
+**When a user should see archived content:** only when they have gone to
+Settings to administer that entity type, or run diagnostics. **Never
+while working.**
+
+**Archiving itself:** out of the way, marked destructive (red), and
+confirmed. Never adjacent to benign actions in a menu.
+
+**Implemented 2026-09-22 — see A293 below** for the call-site-by-call-site
+disposition, the `MilestonesView` judgment call, the demotion mechanism
+(`ArchivedScopeReveal`), and what changed for a saved view's stored
+`archivedScope`. This paragraph originally read "Not yet implemented,
+recorded first because the reasoning has been lost twice" — left visible
+so a future reader can see the ruling predated the build by the same
+session pattern the second sentence warns about.
+
+### A288 · Palette expanded 7 → 18 entries, with a ΔE ≥ 15 distinctness floor enforced by test; `slate` rehomed off its collision with `gray`
+
+**Ticket:** Ken, 2026-09-22, on the colour picker — *"i want more than just those. maybe 16-20 colours, and they must be distinct (the last 2 colours here look like each other)"*. **Date:** 2026-09-22 · **Commit:** (uncommitted) · **Ruling:** Ken set the COUNT (16–20) and the REQUIREMENT (distinct). The threshold, the specific colours, and which half of the colliding pair moves are this session's calls, recorded below.
+
+**The reported collision is real and was measured, not taken on trust.** CIE76 ΔE between `slate` (`#5F6B7E`/`#8A8A92`) and `gray` (`#5A6472`/`#909098`) was **4.10 light / 2.31 dark**. ~2.3 is the just-noticeable difference, so the dark pair was literally one colour rendered twice. Every other pair in the old seven sat at 25+.
+
+**Threshold: ΔE ≥ 15, in each mode independently.** Justification, since a floor picked by feel is worth nothing: ~2.3 is the JND and under ~10 reads as shades of one colour rather than two colours, so the bar has to clear 10 by a real margin — the palette's job is *labelling*, where two chips must be told apart across a list at 16px without being adjacent, which is harder than "are these different". The ceiling is arithmetic: Lab space clamped to values holding 4.5:1 against the theme background does not hold 18 points 25 ΔE apart, and a search for the maximum achievable floor at 18 entries under those constraints returned ~18. 15 sits above the "shades of one colour" line with enough headroom left to keep the new entries in the app's muted register instead of taking neon colours purely because they are far apart. Recorded in code as `MIN_PALETTE_DELTA_E`.
+
+**Achieved minima: 15.02 (light) / 15.04 (dark)**, over all 153 pairs. Closest pairs: `gray`↔`slate` in light, `green`↔`olive` in dark.
+
+**`slate` is the one existing entry whose HEX MOVED** — `#5F6B7E`/`#8A8A92` → `#384257`/`#91A0C0`; the pair now sits at 15.02/15.11. Of the two colliding entries, `slate` moves because `gray` is a token literal (`--status-discarded-fg`/`--status-pending-fg`) that the palette is supposed to mirror, while `slate`'s old source (`--priority-low`) is not a colour the palette must match. The other six originals (`teal`, `blue`, `green`, `orange`, `red`, `gray`) are **byte-identical** to before.
+
+**Data impact of the `slate` move: stored ids keep resolving; only the rendered colour shifts.** No id was renamed or removed, so nothing can dangle. A config holding `color: {palette: "slate"}` still resolves — that is what a live reference is for (Ken's K103 ruling) — and simply paints a deeper, bluer slate. Nothing stored is rewritten; there is no migration. The seeded tracker's live `green` and `orange` values are untouched.
+
+**Twelve added ids** (short, lowercase, kebab-safe, hand-typeable into YAML): `amber`, `olive`, `emerald`, `cyan`, `sky`, `indigo`, `violet`, `purple`, `magenta`, `pink`, `rose` — plus the relocated `slate`. Generated under two hard constraints (≥4.5:1 vs the mode's `--bg-surface`; ≥15 ΔE from every other entry in that mode) and one soft one (saturation/lightness held near the existing six, so the set still looks like this app's palette).
+
+**Contrast verified by computation against the real tokens, not by eye.** Every value was checked as WCAG relative-luminance contrast against `--bg-surface` (`#FFFFFF` light / `#141416` dark) — the binding constraint, since light canvas `#F6F8FC` and dark canvas `#0B0B0C` are both easier. All 18 light values and all 18 dark values clear 4.5:1 (AA, normal text) **except one pre-existing failure**, below.
+
+**Pre-existing defect surfaced, NOT introduced, NOT fixed:** `orange`'s light value `#CC6600` is **3.84:1** on white — below AA for normal text. It is a `--feedback-warn-fg` token literal that predates this work and is unchanged by it; fixing it would change the rendered colour of live data for a defect this change did not create. Recorded in `known-gaps.md` and exempted *by name* in the contrast test (not by lowering the bar), with a companion test asserting the shortfall still exists so the exemption cannot outlive it.
+
+**`deltaE76` is exported from core**, not hidden in the test: it is the definition behind the threshold, anyone adding an entry needs to measure what the test checks, and a surface wanting to explain "too close" needs the same number. CIE76 over CIEDE2000 deliberately — it is stricter at these distances (CIEDE2000 discounts hue differences at high chroma, letting two vivid colours pass a floor CIE76 rejects), and it keeps the numbers comparable to the originally reported collision.
+
+**CLI/MCP parity: no code change needed, and verified rather than assumed.** `formatPaletteList` (CLI) and `list_palette_colors` (MCP) both map generically over `BUILTIN_PALETTE`, so both surfaces gained all 18 automatically with an **unchanged output shape**. Confirmed by running `loctt palette` against the seeded tracker: 18 rows, same tab-separated columns. Both reference docs gained a sentence naming the count and the distinctness guarantee.
+
+**Tests (all red-proven — behaviour broken, watched fail, restored byte-exact), in `packages/core/src/config/color.test.ts`:**
+- *"holds the ΔE floor across every pair, in {light,dark} mode"* — the guard. Sweeps all 153 pairs per mode and names every offender. Red-proved twice: (a) restoring `slate`'s old hex → 2 failures naming slate/gray; (b) the brief's explicit method, adding a near-duplicate `rose2` entry → failed at ΔE 0.53 light / 0.36 dark, naming the pair. Restored.
+- *"no longer lets slate and gray collide"* — names the specific reported pair, so a revert of only `slate` fails with that pair on it. Red-proved by (a) above.
+- *"measures ΔE on a known scale"* — pins the metric (0 for identical, ~100 black→white, and the two historical collision values). Without it the sweep could pass against a `deltaE76` that returns a large constant. Red-proved by stubbing the function to `return 999`.
+- *"keeps every id that was ever offered"* — the data-safety guard: asserts all seven original ids still exist, since renaming one silently breaks stored configs this repo cannot see. Red-proved by renaming `slate` → `slate-blue`.
+- *"clears AA against the {light,dark} surface"* — contrast sweep. Red-proved by dropping `amber`'s light value to a pale `#D9C070`.
+- *"still reports the known orange shortfall"* — fails if `orange` is ever fixed, forcing the exemption and the known-gaps entry to be removed together. Red-proved by darkening `orange` to a passing `#A35200`.
+
+**One passing test was edited** — `color.test.ts` had no "exactly 7 entries" assertion (it used `toBeGreaterThan(0)`), so nothing broke on count. The `it("reports membership by id")` test was left as-is; the `describe("the built-in palette")` block gained the id-preservation test above. No existing assertion was weakened.
+
+**Gates.** `npx tsc --build`: no colour/palette errors (2 pre-existing errors in `task/TaskDetail.tsx`, another agent's file, unrelated). `npm run test -w @loctt/core` 128 files / 2320 passed. `npm run test -w @loctt/cli` 174 passed. `npm run test -w @loctt/mcp` 124 passed. `npx eslint` on the four touched files: 0 errors, 0 warnings.
+
+**To revert.** In `packages/core/src/config/color.ts`: restore `BUILTIN_PALETTE` to the original seven (with `slate` at `#5F6B7E`/`#8A8A92`), and delete `MIN_PALETTE_DELTA_E`, `deltaE76` and `hexToLab`. In `color.test.ts`: remove the `describe("every palette entry is perceptually distinct…")` and `describe("every palette entry is readable…")` blocks, the id-preservation test, and the `deltaE76`/`MIN_PALETTE_DELTA_E` imports. Drop the count sentences from `docs/user/cli/reference.md` and `docs/user/mcp/reference.md`, and the `orange` entry from `known-gaps.md`. Note that reverting restores a palette with a known indistinguishable pair.
+
+### A289 · Colour picker redesigned — 6-wide swatch grid, "No colour" as its first cell, Custom behind progressive disclosure; native colour wells kept deliberately
+
+**Ticket:** Ken, 2026-09-22 — *"this is messy? i feel like there's a better way to edit colours."* **Date:** 2026-09-22 · **Commit:** (uncommitted) · **Ruling:** Ken named the PROBLEM ("messy") and did not specify a shape. Per the brief, the shape is this session's design call; every element below is agent-decided and revertible.
+
+**The diagnosis.** The panel stacked FOUR sibling blocks at equal visual weight: a one-row "Palette" strip, a "Custom" row of two tiny native wells, a full-width "Use custom colour" button, and a "No colour" text row. At seven swatches that was busy; at eighteen the strip would wrap into a ragged block while three non-palette affordances kept equal billing beneath it. The fix is not reflow — it is deciding what the panel is FOR. **It is for picking a palette colour**, which is the common case by a wide margin, so that gets the space and everything else steps back.
+
+**What was built** (`apps/web/src/client/ui/ColorPicker.tsx`, panel body only — the trigger, the disabled branch, `ColorHexAlias` and the stored-shape logic are untouched):
+1. **A real grid, six across.** 18 entries land as an even 3×6 block instead of a ragged wrap. Six also keeps the panel at its existing 248px — measured live at 225px of grid inside it — which is what makes it fit a 375px phone. An 8- or 9-wide grid of touch-sized swatches does not.
+2. **"No colour" is the FIRST CELL of the grid**, drawn as a slashed swatch with `role="radio"`, not a trailing text row. It is one of the choices and now reads as one: same size, same shape, in the place the eye starts. As a trailing button it read as an afterthought — precisely what "messy" was describing.
+3. **Custom is progressive disclosure** — one `aria-expanded` row that unfolds the two wells and the apply button on demand. Collapsed by default, EXCEPT when the stored value is already custom (`double` or a pre-K103 `single`), because hiding a user's own current value behind a disclosure is worse than the clutter it saves.
+4. **The grid is a `radiogroup`**, not a `group`: these are mutually exclusive choices over one value, which is what a radio group is, and it is the role that makes `aria-checked` mean something. `aria-pressed` is retained alongside it only because the pre-redesign contract used it.
+
+**Rejected: building a custom colour-surface primitive to replace the two native `<input type="color">` wells.** This is the one decision that runs against a recorded preference, so the reasoning is spelled out rather than assumed. UI-4 and Ken's *"native ui is bad"* rejected a native `<select>`, but neither reason it gave reaches here: (a) UI-4's first objection was that the native path was gated on *viewport width* (`useIsNarrow`), so a desktop user in a narrow window got an OS wheel picker — there is no width branch here, `<input type="color">` is the same control at every size; (b) its second was that `<select multiple>` *cannot* produce the `menuitemcheckbox` semantics of the controls beside it, giving a half-native row — the opposite holds here, since there is no custom colour-surface primitive in this codebase to be consistent with, and building one (a hue/saturation canvas with its own pointer maths and a11y contract) for one call site is exactly the "invent a new primitive" the repo's "built is not adopted" failure mode warns against; (c) the native control's genuine weakness in UI-4 was long-list scrolling on a phone, and a colour well has no list — it opens the OS colour surface with its eyedropper and recents, strictly more capable than anything justifiable here. **The well stays, but is no longer prominent** — which was the actual complaint. Demoting it behind a disclosure is the concession UI-4's spirit asks for. *Flagged for Ken: if he wants the native well gone on principle regardless, that is a separate build and a bigger one.*
+
+**Also rejected:** a second `Menu`/`Dropdown` nesting level for Custom (no stacked-overlay pattern exists here; A279 rejected it for the same reason); `SelectCombobox` (A281 — a single-column listbox of text labels is the text picker Ken rejected, wearing a dropdown); and grouping the swatches under hue headings (adds vertical chrome to solve a problem an even grid does not have at 18 entries).
+
+**Keyboard: two-dimensional roving focus.** A one-row strip could rely on Tab; a 3×6 grid cannot — tabbing through 18 swatches is a penalty, not navigation. The grid is ONE tab stop (`tabIndex` 0 on the selected cell, -1 on the rest), with Left/Right by one, Up/Down by a full row, Home/End to the ends. This is A11Y-10's model from `ui/Dropdown` — real DOM focus that moves, not `aria-activedescendant` — extended to a second axis. Two sub-decisions: **movement does not select** (a pick closes the panel, so selection-follows-focus would make it impossible to arrow past a colour without committing to it — the opposite of the `ArchivedScopeControl` case, where selection-follows-focus is right because selecting is free), and **ends clamp rather than wrap** (wrapping would silently change row on a horizontal key, disorienting in a grid where position carries meaning).
+
+**Selected state does not rely on colour.** A ring in the accent colour is invisible on the accent swatch and ambiguous on a dark one, so the selected cell carries a **check glyph** whose black/white is computed per-swatch from WCAG relative luminance (`readableGlyphOn`), plus the ring, plus `aria-checked`. A fixed glyph colour fails at one end or the other of an 18-colour range.
+
+**Verified live at both viewports** against an isolated Vite dev server on :5199 (proxying `/api` to the running :7700 tracker — the seeded server was neither restarted nor mutated; no label was saved). At **1440×900**: 19 cells, grid 225px inside a 248px panel, exactly one `aria-checked` cell, exactly one tab stop, check glyph present only on the selected cell. At **375×812**: panel spans x=14→262 in a 375px viewport — no overflow either side, no document horizontal scroll. Both **dark and light** themes inspected; all 18 swatches visually distinct in each, and the formerly identical slate/gray pair now plainly different.
+
+**Tests (all red-proven — behaviour broken, watched fail, restored byte-exact), in `apps/web/src/client/ui/ColorPicker.test.tsx`, new `describe("ColorPicker — the panel's shape")`:**
+- *"keeps the custom form collapsed when the stored value is a palette colour"* — red-proved by forcing `customOpen` to `true`.
+- *"opens the custom form up-front when the stored value IS custom"* — red-proved by forcing `customOpen` to `false`.
+- *"offers 'No colour' as the first cell of the grid"* — asserts grid position, not mere presence. Red-proved by removing its `role="radio"` (i.e. taking it back out of the grid).
+- *"marks the selected swatch with a glyph, not by colour alone"* — red-proved by suppressing the glyph render.
+- *"exposes the grid as a radiogroup with exactly one tab stop"* — red-proved by giving every cell `tabIndex={0}`.
+- *"moves focus by one on Left/Right and by a full row on Up/Down"* — the two-dimensional assertion. Red-proved by making ArrowDown move one cell (a flat-list model).
+- *"does not select the colour that arrow keys move onto"* — red-proved by adding `.click()` after `.focus()` (selection-follows-focus).
+- *"clamps at the row ends rather than wrapping"* — red-proved by switching the ends to modulo wrapping.
+
+**Two passing tests were edited — both asserted the OLD layout, not a bug.** Reported per CLAUDE.md: `ColorPicker.test.tsx:65` *"stores a custom colour as an explicit per-mode pair"* and `:149` *"seeds the custom wells from the current value, per mode"*. Both reached `c-custom-light`/`c-custom-dark` directly, which was valid when the wells were always rendered. Each gained one `fireEvent.click(screen.getByTestId("c-custom-toggle"))` to open the disclosure first; **no assertion was changed or weakened** — both still assert exactly what they did before. These were asserting the old layout, not the bug.
+
+**Gates.** `npx tsc --build`: no colour/picker errors (2 pre-existing errors in `task/TaskDetail.tsx`, another agent's file). `npm run test -w @loctt/web` 232 files / **2376 passed**, 0 failed. `npx eslint` on `ColorPicker.tsx` + its test: 0 errors, 0 warnings.
+
+**To revert.** In `apps/web/src/client/ui/ColorPicker.tsx`: restore `ColorPanel` to the four stacked blocks (`grid-cols-7` strip with `aria-pressed` buttons, always-visible Custom row, trailing "No colour" text button), and delete `GRID_COLUMNS`, `readableGlyphOn`, `onGridKeyDown`, `selectedIndex`, `cellClass`, the `customOpen` state and the `useRef` import. Remove the `describe("ColorPicker — the panel's shape")` block from the test file and drop the two added `custom-toggle` clicks. Note that `data-testid` `c-clear` is preserved across both shapes, so no caller or spec churns either way.
+
+### A290 · Palette re-picked by *character* rather than hue slot; a variety test added because the ΔE floor provably cannot catch a uniform ramp
+
+**Ticket:** follow-up to A288, from Ken's original requirement — *"maybe 16-20 colours, and they must be distinct (the last 2 colours here look like each other)"*. A288 satisfied the letter (ΔE ≥ 15) but not the spirit: the set read as one saturation with the hue rotated. **Date:** 2026-09-22 · **Commit:** (uncommitted) · **Ruling:** Ken set the COUNT and the REQUIREMENT in A288. The colour values, the variety metric and its threshold are this session's calls, recorded below. **Count was NOT changed and no reduction is recommended** — see the corrected premise.
+
+**The defect, measured.** Of A288's twelve non-token entries, **eight sat at exactly HSV saturation 0.79** in light mode and **nine at exactly 0.50** in dark. Arithmetically far apart, visually one family. The ΔE sweep stayed green throughout, because at constant chroma ΔE is dominated by hue difference — a hue ramp answers "is every pair ≥ 15 apart?" with *yes*. **Distinctness and variety are different properties; A288 enforced only the first.**
+
+**A288's stated ceiling was wrong, and this is the most reusable finding here.** A288 recorded that "a search for the maximum achievable floor at 18 entries returned ~18", and `known-gaps.md` repeated it as the reason a varied set might be impossible at 18. Re-measured by farthest-point search over every AA-passing, in-gamut sRGB colour, **the true ceiling at 18 entries is ΔE ≈ 33 in both modes** — nearly double. A288 hit ~18 because it searched a fixed-chroma hue ramp, not because the space was full. **18 entries was never the constraint**, so the brief's fallback (recommend a smaller count) is not needed and is explicitly withdrawn.
+
+**The design rule adopted: character, not hue slot.** Each non-token entry is assigned a character, and characters are interleaved around the hue circle so neighbouring hues differ on a *second* axis:
+- **deep** — dark + saturated: `indigo`, `emerald`, `cyan`
+- **vivid** — as light as AA allows + saturated: `rose`, `purple`, `magenta`, `amber`
+- **muted** — deliberately LOW chroma: `olive`, `violet`, `pink`, `sky`, `slate` — the register A288's ramp never used at all
+
+**Results — both guarantees improved together.** Separation went *up* while the clustering that made it look uniform went down:
+
+| | A288 | A290 |
+|---|---|---|
+| min ΔE light / dark | 15.02 / 15.03 | **18.15 / 19.43** |
+| largest same-saturation cluster (0.05 bucket) light / dark | 9 / 10 | **4 / 5** |
+| HSV saturation sd light / dark | 0.179 / 0.131 | **0.219 / 0.173** |
+| Lab chroma sd light / dark | 18.92 / 17.31 | 19.62 / 16.59 |
+
+Chroma and L\* sd are roughly flat by design — see the L\* clamp below; the variety gain is on the saturation axis, which is the axis that was collapsed.
+
+**Two structural facts of the space, now recorded in `color.ts` so they are not re-derived.** Both were measured, and both constrain any future pass:
+1. **WCAG AA is a hard L\* clamp, not a preference.** Light mode admits *nothing* above L\* ≈ 51 against `#FFFFFF`; dark admits nothing below L\* ≈ 55 against `#141416`. "Some deep, some bright" must happen inside those windows.
+2. **`slate` cannot be a neutral grey-blue.** Every desaturated candidate tried re-collided with `gray` (ΔE 9.6–12.8 dark) — the exact A288 defect returning. It must carry real chroma, so it takes a violet lean.
+
+Relatedly, **`cyan` must be deep in light mode** (`#12484E`): `teal` and `blue` are both byte-frozen token originals and already own the mid-lightness blue-green region, so a bright cyan cannot clear the floor.
+
+**Twelve values changed; all 18 ids intact.** Changed: `slate`, `amber`, `olive`, `emerald`, `cyan`, `sky`, `indigo`, `violet`, `purple`, `magenta`, `pink`, `rose`. **The six token-sourced originals (`teal`, `blue`, `green`, `orange`, `red`, `gray`) are byte-identical** and were not touched. No id was renamed, added or removed, so — as in A288 — stored `color: {palette: "…"}` references all still resolve and only the rendered paint shifts. No migration. `slate`'s hex has now moved twice (original → A288 → A290).
+
+**The variety metric: largest same-saturation bucket, capped at 5 (0.05-wide buckets).** Chosen over a standard-deviation floor **because sd was measured and rejected as indefensible**: between A288 and A290 the dark-mode saturation sd moves 0.131 → 0.173, a ratio of just **1.32**, so any threshold in that gap is a coin-flip a future good palette could fail and a future ramp could pass. Cluster size moves 8 → 2 by the same measurement (9/10 → 4/5 under the test's bucketing), a ratio of **4.0**, and it states the defect *directly* — "N entries share one saturation" is precisely what went wrong. A metric that names the defect beats a summary statistic that merely correlates with it. **The cap cannot be set below 5 even in principle**: the crowded dark bucket contains `blue`, `orange` and `red`, three byte-frozen token originals no amount of work on the movable twelve can relocate.
+
+**Contrast: unchanged bar, unchanged exemption.** All 36 values re-verified by computation against `--bg-surface`. Every value clears 4.5:1 except the **pre-existing `orange` light shortfall (3.84:1)**, which is untouched — same hex, same by-name exemption in the contrast test, same companion test asserting the shortfall still exists. The bar was not lowered and no other entry relies on an exemption.
+
+**Verified visually, not only numerically** — the point of the pass. Rendered all 18 as swatches *and* as text on the real surface hexes, at 1440×900 and 375×812, in both themes. Light mode reads as three distinct registers. Dark mode's first pass still had `slate` sitting between `blue` and `violet` as a third cool mid-lightness periwinkle (weakest dark pair 16.28); `slate`'s dark value was re-picked to `#7484BF`, taking the dark floor to **19.43**. Honest residual: dark mode remains the narrower of the two themes, because AA forces every dark value into L\* 56–86.
+
+**Tests (red-proven — defect reintroduced, watched fail, restored byte-exact), in `packages/core/src/config/color.test.ts`:**
+- *"spreads saturation instead of clustering it, in {light,dark} mode"* — **the new guard**. Buckets HSV saturation 0.05-wide, caps any bucket at 5, and names the offending ids. **Red-proved by restoring seven A288 hexes** (`amber`, `emerald`, `cyan`, `indigo`, `magenta`, `pink`, `rose`) — i.e. literally reintroducing the ramp: failed in both modes with *"saturation ≈ 0.80: 8 entries (amber, emerald, cyan, indigo, purple, magenta, pink, rose)"* and *"≈ 0.50: 8 entries"*. Restored byte-exact; 32/32 green.
+- *"measures saturation on a known scale"* — pins the helper (1.0 for `#FF0000`, 0 for `#808080`, 0 for black's divide-by-zero), for the same reason the ΔE and contrast scales are pinned: a broken saturation function makes the cap vacuous.
+
+**No existing test was edited or weakened.** The A288 ΔE, contrast, id-preservation and resolver tests all still pass unmodified against the new values. Notably the same red-proof run showed the **ΔE tests also failing** on the restored A288 hexes — the two tests are complementary, not redundant, and neither subsumes the other.
+
+**CLI/MCP: no change needed, and checked rather than assumed.** The palette's *output shape* is unchanged — same 18 ids, same `{id,label,light,dark}` entries — and `formatPaletteList` (CLI) and `list_palette_colors` (MCP) both map generically over `BUILTIN_PALETTE`. Both surfaces pick the new values up automatically. The reference docs already state the count and the distinctness guarantee, both still accurate, so neither needed an edit. A repo-wide grep for the twelve replaced hexes found no code, test, token or fixture referencing them — only A288's own decision record (historical, correct as written).
+
+**Gates (actual).** `npx tsc --build`: **exit 0, clean** — note this is an improvement on A288/A289, which both recorded 2 pre-existing `TaskDetail.tsx` errors; those are now gone. `npm run test -w @loctt/core`: **128 files / 2323 passed, 1 skipped, 0 failed** (`diagnostics.test.ts`, the documented load-sensitive flake, passed). `npm run test -w @loctt/web`: 235/236 files, **2392 passed / 1 failed**. `npm run test -w @loctt/cli`: 10/11 files, **171 passed / 3 failed**. `npx eslint` on the two touched files: **0 errors, 0 warnings**.
+
+**The 4 failures are pre-existing and provably unrelated to colour**, not regressions from this change: `apps/web/src/server/git-errors.test.ts` (*"refuses a rekey until confirm…"*, 30s timeout) and `apps/cli/src/cli.test.ts` (*"git status reports state"*, *"git publish commits to loctt branch"*). All are git-harness tests that time out shelling out to `git`; **both files contain zero occurrences of `colour`/`color`/`palette`** (checked by grep), and every colour-touching suite is green — `core/src/config/color.test.ts` 32/32 and `cli/src/runtime/color.test.ts` 16/16.
+
+**To revert.** In `packages/core/src/config/color.ts`, restore the twelve entries to their A288 hexes (listed in A288 above and in the replaced block's history) and revert the `MIN_PALETTE_DELTA_E` doc comment's ceiling paragraph plus the character/L\*-clamp notes. In `color.test.ts`, delete the `describe("the palette is VARIED…")` block. In `docs/dev/known-gaps.md`, restore the "reads as a generated ramp" entry to its unfixed form. Note that reverting reinstates a palette that passes ΔE while reading as a single-saturation ramp, and re-asserts a ceiling figure (~18) that is measurably wrong.
+
+### A291 · UI-13's board-empty-state "+ Add task" survives, renamed — it is not the duplicate the ticket removes
+
+**Ticket:** UI-13 (`docs/dev/design/ui-issues.md`), Ken's rulings 2026-09-22: *"Remove the board's '+ Add task'"* and *"'New' is the house term"*. **Date:** 2026-09-22 · **Commit:** (uncommitted). **Ruling:** Ken decided the header-duplicate button must go and that "Add" should read "New" wherever it is a create action. Whether the board-level EMPTY-STATE button (BRD-40, `board-empty`) also counts as a "duplicate" to remove, versus a legitimately separate affordance to keep-and-rename, was not asked of Ken and is this session's call, recorded here per CLAUDE.md's "check before changing: do not rename things that are not create actions" and its call to record any call the docs did not settle.
+
+**The call: keep it, rename it.** The button UI-13 names as the duplicate is `board/BoardView.tsx`'s `PageHeader` `actions` slot — a `<Button variant="secondary" size="sm" testId="board-add-task">+ Add task</Button>` sitting ~200px from the shell header's "+ New task", calling the identical `createTask.open()`. That one is deleted outright, along with its `PageHeader` `actions` prop. The board-EMPTY-STATE button (`data-testid="board-empty"`, BRD-40) is a different element serving a different purpose: on a board with zero tasks, it is the *only* clickable create affordance visible in the board's own content area (the header's "+ New task" still exists, but BRD-40's case text — "one board-level empty state ... offers '+ Add task'" — asks for the empty state itself to carry one). Removing it would leave a screen whose one piece of visible body content ("No tasks yet.") had no action attached, and BRD-40 explicitly wants an offer of the create action *in* the empty state. So it is not read as one of the "two create affordances ~200px apart" UI-13 diagnoses — the header and the PageHeader-actions copy are the redundant pair; the empty state is not part of that pair, because it is only rendered when the header's button would otherwise be the sole entry point on an already-sparse screen.
+
+**What changed:** `board/BoardView.tsx`'s empty-state button text "+ Add task" → "+ New task" (rule 2 — "Add" was the outlier; "New" is used at every other create site: "+ New project", "+ New view", "+ New milestone", the shell header's "+ New task"). `data-testid="board-empty"` and its `onClick={() => createTask.open()}` are unchanged, so no spec needed a testid update, only its button-name matcher (`getByRole("button", { name: /Add task/ })` → `/New task/`).
+
+**Case handling, exactly as Ken specified ("Retire NEW-3, amend the other three"):**
+- **NEW-1** (`flow-task-create.md`) — "All three entry points" → "Both entry points" (header `+`, `n`); its board-column-specific bullet examples updated to match. `flow-task-create.spec.ts`'s two NEW-1 tests collapsed into one two-entry-point test; the seeded "board entry point exists" test is deleted since it existed only to probe the removed header button.
+- **NEW-3** — **retired**, scrubbed per Ken's verbatim standing rule: no tombstone, no "(removed)" note. Case text deleted from `flow-task-create.md`. Its spec test (`"NEW-3: the create modal's status is editable and the card lands there"`) deleted from `flow-task-create.spec.ts`. No `@verifies NEW-3` tag remained afterward (confirmed by repo-wide grep). `tests/cases/case-index.json` regenerated via `npm run cases:index`; `npm run cases:check` passes against the regenerated index.
+  - **Not scrubbed, out of scope for this ticket's file set:** `apps/web/src/client/create/CreateTaskModal.tsx`, `CreateTaskProvider.tsx` and `formState.ts` still carry `NEW-3` in code comments describing the (already-neutered, always-`undefined`) `initialStatus` prop, and `docs/dev/decisions.md` §8/§10 has two historical mentions of NEW-3 from when the pre-fill mechanism was built and then neutered. Those files were not in this ticket's file set (`create/*` belongs to another concurrent change) and decisions.md's existing entries are a historical record, not live documentation, so neither was edited here. Flagged for whoever next touches `create/CreateTaskModal.tsx` to finish the scrub Ken's rule asks for.
+- **Focus-return bullet** (`flow-task-create.md`, NEW-28's prose) — dropped "the board column's '+ Add task'" from the list of triggers whose focus must return correctly; kept the header `+` and the `n`-shortcut triggers. `NEW-28`'s spec test only ever exercised `header-new-task`, so no spec change was needed there.
+- **`flow-board.md`'s intro pointer** — reworded from "the '+ Add task' button on a column header" (already-stale prose — no such per-column button has existed since M3.1) to name the board-empty-state's "+ New task" and note it opens the same modal as the shell header's.
+- **BRD-40** (`flow-board.md`) — amended in place: "+ Add task" → "+ New task", with a clause explaining the rename and that this is the board's only create affordance post-UI-13, not a second one. `flow-board.spec.ts`'s BRD-40 test needed its button matcher updated to `/New task/` for the same reason as NEW-1's; kept `board-empty` testid.
+
+**Passing tests edited (not retired), with what they asserted:**
+- `apps/web/src/client/board/BoardView.test.tsx` — `"keeps the '+ Add task' control in the header, and NO second ⋯ beside it (UI-3)"` asserted `screen.findByTestId("board-add-task")` truthy, i.e. that the header-actions duplicate WAS present. That assertion is now the opposite of the desired state, so this was pinning the very defect UI-13 removes. Renamed to `"carries no actions in the header — no '+ Add task', and NO second ⋯ beside it (UI-3, UI-13)"`; the positive existence check became `expect(screen.queryByTestId("board-add-task")).toBeNull()`, plus a new `expect(within(header).queryAllByRole("button")).toHaveLength(0)` to pin the header now carrying zero actions rather than merely "not this one".
+- `tests/ui/flow-task-create.spec.ts` — the `board-empty` button-name matcher inside NEW-1's (deleted) third-entry-point assertion and inside the retired NEW-3 test both read `/Add task/`; both blocks were removed rather than repointed, since the tests they lived in were themselves retired/collapsed.
+- `tests/ui/flow-board.spec.ts` — BRD-40's `empty.getByRole("button", { name: /Add task/ })` updated to `/New task/` to match the rename; the rest of the test (empty-state visibility, "No tasks yet" text, 4 columns still rendering) is unchanged.
+
+**Header.tsx: no change.** `shell/Header.tsx:141-148` already reads `aria-label="New task"` / visible text `"New task"` (with a separate `PlusIcon`, not a literal "+" character) — it was never the "Add" outlier UI-13's rule 2 targets, so it is untouched, matching the ticket's own "only if wording needs it" qualifier on that file.
+
+**Gates (actual).** `npx tsc --build`: clean, no output. `npm run test -w @loctt/web`: **236 files / 2393 tests passed**; run additionally reported 2 unhandled `ReferenceError: window is not defined` exceptions from `src/client/settings/ViewFormDialog.test.tsx` (a settings-panel test outside this ticket's file set, unrelated to board/create-task code, causing the npm script's non-zero exit despite 0 failed tests). `npm run lint`: **0 errors, 70 warnings**, all pre-existing and none in the files this decision touches. `npm run cases:index` then `npm run cases:check`: **1056 cases indexed (956 UI, 100 surface), index up to date.**
+
+**To revert.** In `apps/web/src/client/board/BoardView.tsx`: restore the `PageHeader` `actions` prop with the deleted `board-add-task` `<Button>`, and revert the empty-state button text "+ New task" → "+ Add task". In `tests/cases/ui-test-cases/flow-task-create.md`: restore NEW-1 to three entry points and its old bullets, restore the deleted NEW-3 case verbatim (see this decision's diff/git history — it is NOT reproduced here per the no-tombstone rule), and restore the focus-return bullet's board-column clause. In `flow-board.md`: revert the intro pointer and BRD-40's wording. In `apps/web/src/client/board/BoardView.test.tsx`: restore the original `"keeps the '+ Add task'..."` test. In the two `.spec.ts` files: restore the three deleted/collapsed tests from git history and the `/Add task/` matchers. Then `npm run cases:index` again to resync the index.
+
+---
+
+### A292 · UI-11 fix — focus-ring clearance is padding INSIDE each dialog scroller; `Modal` gains the vertical half of its own `-mx/px` idiom, `Sheet` was already correct
+
+**Ticket:** UI-11 (`docs/dev/design/ui-issues.md`) — the focus ring on the last focusable control in a dialog body was clipped, cut flat on the bottom while the opposite corners stayed rounded. Ken reported it twice: first a Target-date input on Edit milestone, then Edit sprint's Goal textarea. **Date:** 2026-09-22 · **Commit:** (uncommitted) · **Scope:** `apps/web/src/client/ui/{Modal,Sheet,ResponsiveDialog}.tsx` + a new test file.
+
+**The mechanism, measured rather than assumed.** The global ring is `outline: 2px solid` at `outline-offset: 2px` (`styles/index.css:177-180`), so it needs **4px** of clearance outside a control's border box. Every dialog body is an `overflow-y-auto` scroller, and `overflow-y: auto` clips on **every** edge — it scrolls vertically but still clips horizontally, which is the fact `Modal.tsx`'s own comment already recorded and fixed on one axis with `-mx-4 px-4`.
+
+**Padding INSIDE the scroller is the right lever, and this was verified, not reasoned.** The brief flagged that `-my/py` might not be the vertical analogue because there is no symmetric "clips vertically". Measured in an isolated harness on the live page: a scroller with `padding:16px` and overflowing content, scrolled fully to the end, still showed **15.98px** of clearance below its last child. `scrollHeight` includes both paddings, so padding is part of the scrollable box and is never scrolled past — it bounds the scroll range. A gap placed *outside* the scroller would not survive scrolling. So the `-my/py` pair IS the correct analogue, for a different reason than the `-mx/px` pair: horizontally it restores width the clip would take; vertically it reserves scroll extent.
+
+**Per primitive:**
+1. **`Modal`** — scroller was `-mx-4 min-h-0 flex-1 overflow-y-auto px-4`: horizontal compensated, **zero vertical padding**. Now `-my-2 -mx-4 min-h-0 flex-1 overflow-y-auto px-4 py-2`. Measured on Edit sprint's Goal textarea: bottom clearance **0px → 7px**.
+2. **`Sheet`** — **the brief's premise was wrong here, and this is the finding worth keeping.** Its `min-h-0 flex-1 overflow-y-auto p-4` was described as having "no compensation on any edge". Measured on the live list-filter sheet: **14px on all four edges** for both first and last control, and **14.1px** retained when scrolled fully to the bottom of an overflowing body. `Sheet` was never clipping. **No geometry change was made** — only a comment recording that `p-4` is load-bearing, because narrowing it to `px-4` (a plausible tidy-up) would open UI-11 on the mobile branch.
+3. **`ResponsiveDialog`** — owns no scroller; inherits from `Dialog`→`Modal` (desktop) and `Sheet` (mobile). **No geometry change**; a docstring section records that adding padding at this layer would double the inset in both modes without fixing anything, since the clip happens further in.
+
+**`py-2`, not `py-1`, because this app's rem base is not Tailwind's default.** The root font size is **14px**, so Tailwind's rem spacing scales down: `py-1` = **3.5px**, which is *under* the ring's 4px and would have looked like a fix while still clipping; `py-1.5` = 5.25px (1.25px headroom); `py-2` = **7px**. The 14px root was read off the live page, not assumed. This is recorded in the code comment because the failure mode is silent.
+
+**Footer-stranding (the named risk) did not regress — verified live, not by inspection.** `Modal.tsx`'s comment block warns that vertical padding on this element interacts with the `min-h-0`/`max-h` reasoning that stops an over-tall body pushing the footer out of the panel. Measured on the live Edit sprint dialog with a 900px spacer injected to force overflow: panel height **872px** against its `max-h-[calc(100dvh-2rem)]` cap of **872px** (at cap, not past it), scroller scrolls, Save button both inside the panel and within the viewport, and the last control retained **7.21px** at full scroll. The negative margin is absorbed by the chrome's existing spacing (`<h2>` has `mb-3`, `DialogActions` has `mt-4`, both > 7px), so the rendered layout is pixel-unchanged.
+
+**Visual confirmation came from the browser, not from the tests** — this is a visual bug and jsdom does no layout. Before/after screenshots taken on the live dev server at 1280×900 (dark theme): Edit sprint's Goal textarea ring went from cut flat along the bottom to rounded on all four corners. Also checked: the New sprint dialog's first control (Name), the full control sweep of Edit sprint (`allOK: true` — all 5 controls ≥ 4px on all four sides), and the list-filter `Sheet` at 420×800.
+
+**Tests (new file: `apps/web/src/client/ui/dialogFocusRing.test.tsx`, 7 tests).** jsdom cannot see a clipped outline — `getBoundingClientRect` is all zeros and nothing is painted — so the tests assert the **mechanism**: the scroller's padding/negative-margin relationship per primitive, with Tailwind steps converted to the px they resolve to at this app's 14px root (so a future `py-1` would fail the ≥4px assertion rather than pass as "has padding"). The file's own docstring states plainly that visual confirmation came from the browser.
+
+**Red-proofs — five, each broken, watched fail, restored byte-exact (`diff` verified):**
+1. Reverted `Modal`'s scroller to the exact pre-fix string `-mx-4 … px-4` → **2 failed** (Modal + ResponsiveDialog-desktop), diagnostic naming the y axis. This is the original UI-11 defect.
+2. Narrowed `Sheet`'s `p-4` → `px-4` → **2 failed** (Sheet + ResponsiveDialog-narrow).
+3. Dropped `Modal`'s negative margins, keeping the padding → **1 failed** (the compensation test; without it the fix would visibly inset the body).
+4. Dropped `min-h-0` from `Modal`'s scroller → **1 failed** (the footer-stranding guard).
+5. Moved `Modal`'s footer inside the scroller → **1 failed** (the SET-8 reachability guard).
+
+**No passing test was edited.** No pre-existing test asserted any dialog scroller's padding, margin, or focus-ring clearance — UI-11 was untested, not tested-and-wrong. (Contrast UI-1/UI-7 elsewhere in this file, where a green test was pinning the bug.) The existing `ResponsiveDialog.test.tsx` and `Dialog.test.tsx` were left untouched.
+
+**Gates (actual).** `npx tsc --build`: clean, exit 0. `npm run test -w @loctt/web`: **237 files / 2400 tests passed, 0 failed.** `npm run lint`: **0 errors, 70 warnings**, all pre-existing; the one warning in a touched file (`Modal.tsx:395`, `react-hooks/exhaustive-deps` on `useInertBackground`) predates this change and is in a function this decision does not touch.
+
+**To revert.** In `apps/web/src/client/ui/Modal.tsx`: change the scroller's className back to `-mx-4 min-h-0 flex-1 overflow-y-auto px-4` and delete the comment paragraphs from "`-my-2 py-2` is the vertical half" through "this pair does not touch it." In `Sheet.tsx`: delete the `p-4`-is-load-bearing comment block above the scroller (the className itself was never changed). In `ResponsiveDialog.tsx`: delete the "Focus-ring clearance is inherited" docstring section. Delete `apps/web/src/client/ui/dialogFocusRing.test.tsx`. Revert the UI-11 status line in `ui-issues.md` back to `open`.
+
+### A293 · Ken's archive-policy ruling (2026-09-22) implemented in the web UI: `ArchivedScopeControl` removed from 4 call sites, demoted (not removed) in 6, `MilestonesView` judged a work surface
+
+**Ticket:** direct instruction to implement the policy table in "Ken's ruling, 2026-09-22 — archiving is a one-way door, not a filter" (this file, above). **Date:** 2026-09-22 · **Commit:** (uncommitted) · **Scope:** web UI only — no core/CLI/MCP changes.
+
+**The situation.** The ruling's policy table names exactly one class of surface allowed to keep an archived-scope control ("Settings admin panels... ONLY here") and says every other surface gets none, with the control demoted even where it stays ("the reveal is secondary, not a visible segmented control"). The control existed at 11 call sites; none of them matched the table's demoted shape.
+
+**What had to be decided.** (1) Where "remove" ends and "demote" begins for each of the 11 sites. (2) `MilestonesView` (`/milestones`) is not literally named in the table — is it a work surface (never) or an admin surface (keep, demoted)? (3) What shape "demoted" takes, given "no new primitive." (4) What happens to a saved view's stored `archivedScope` field (a real, CLI/MCP-visible property) once the web dialog stops offering a control for it.
+
+**Options considered, per decision:**
+
+1. **`MilestonesView`.** (a) Treat it as admin because it is reachable from a nav item, keep a demoted control. (b) Treat it as a work/progress surface because its own docstring says people browse it *while working* ("Distinct from Settings → Milestones... a progress surface") and it does no CRUD — judge it with Task list/Board/Timeline. Costs: (a) keeps a reveal on a surface whose own docs say it's not the recovery surface, re-opening exactly the "just another filter" reading Ken ruled out on a page people check routinely; (b) means an administrator wanting to see an archived milestone's final progress must go to Settings → Milestones for that, and progress-checking here permanently excludes any archived milestone with no per-view way back.
+2. **Demotion shape.** (a) A brand-new `Disclosure`/accordion primitive. (b) An icon-button (`ui/IconButton`) trigger opening a `ui/Menu` holding the unchanged `ArchivedScopeControl`, composed as a small settings-local wrapper. (c) Fold the control into the existing row-kebab (`RowActions`) instead of the panel header. Costs: (a) is a new primitive built for one caller, the exact failure mode `known-gaps.md`/decisions.md warn about ("built is not adopted"); (c) conflates a *view-scope* choice with *row actions*, and there is no single row to hang it from when the list is empty or scope is `archived`-only.
+3. **A saved view's `archivedScope`.** (a) Keep the field settable some other way in the dialog (e.g. a text input). (b) Drop the field from the web write path entirely: `submit()` never sends `archivedScope`, for create or edit. Cost of (a): re-invents exactly the control Ken ruled out in a different shape. Cost of (b): a view someone set to `archived`/`all` via CLI/MCP could be silently reset to `active` by an unrelated web edit, unless the omission is proven to round-trip through core's merge untouched.
+
+**Decided.**
+
+1. `MilestonesView` → **treat as a work surface, remove the control** (no demoted variant here). Its own docstring already draws this line ("a progress surface... does not create, rename, archive or delete anything") — it is closer in character to Board/Timeline (routinely browsed while working) than to Settings → Milestones (the CRUD/recovery panel, which keeps its own demoted control). Archived milestones are now unconditionally excluded from `/milestones`; recovering or inspecting one goes through Settings → Milestones.
+2. Demotion shape → **(b), a new settings-local file** `apps/web/src/client/settings/ArchivedScopeReveal.tsx`, composing `ui/IconButton` (eye/eye-off, reflecting current scope without opening anything) + `ui/Menu` (the same primitive `RowActions` and the view-actions "⋯" already use) + the unmodified `ui/ArchivedScopeControl`. Not `ui/`-level API: it is one specific composition for one specific demotion, not a shape any other surface currently needs. Swapped into all 6 settings panels (Projects, Users, Labels, Milestones, Sprints, Saved views) in place of the always-visible control that used to sit in `SettingsPanelHeader`'s `actions` row beside "New X".
+3. `archivedScope` on a saved view → **(b)**. `ViewFormDialog.submit()` no longer reads or sends `archivedScope` at all — verified against `core/src/views/manage.ts`: `createView` applies its own default when the field is absent, and `editView`'s merge (`changes.archivedScope !== undefined ? … : existing.archivedScope !== undefined ? { archivedScope: existing.archivedScope } : {}`) explicitly KEEPS the existing stored value when the caller omits the field — so an unrelated web edit cannot reset a scope set through the CLI or MCP, both of which keep the field untouched (this is a web-UI-only change).
+
+**Call-site disposition (all 11), reported against the caller's table:**
+
+| Site | Verdict |
+|---|---|
+| `list/FilterBar.tsx` desktop filter band | Removed |
+| `list/FilterBar.tsx` mobile Filters Sheet | Removed |
+| `milestones/MilestonesView.tsx` | Removed (judged a work surface — see above) |
+| `settings/ViewFormDialog.tsx` (×2: create + edit) | Removed |
+| `settings/ProjectsPanel.tsx` | Demoted via `ArchivedScopeReveal` |
+| `settings/UsersPanel.tsx` | Demoted via `ArchivedScopeReveal` |
+| `settings/LabelsPanel.tsx` | Demoted via `ArchivedScopeReveal` |
+| `settings/MilestonesPanel.tsx` | Demoted via `ArchivedScopeReveal` |
+| `settings/SprintsPanel.tsx` | Demoted via `ArchivedScopeReveal` |
+| `settings/SavedViewsPanel.tsx` | Demoted via `ArchivedScopeReveal` |
+
+**The `?archived=` URL capability (K107) was verified, not assumed, to survive the removal.** `apps/web/src/client/router/listSearch.ts`'s `archived` field is untouched — the control never owned parsing, only writing. On the live dev server: `GET /list?archived=all` fires `GET /api/tasks?limit=50&offset=0&archived=all → 200 OK` (confirmed via the network log), identically to before the control existed. The seeded tracker has zero archived tasks, so `active`/`all` totals are both 14 — visually identical — so the proof is the request itself, not a row-count diff.
+
+**The archived-task detail banner (table row "Task detail of an archived task... with a banner saying it is archived") already exists** — `apps/web/src/client/task/TaskDetail.tsx`, the `archived-badge` span rendered beside the key chip when `fm.archived === true`. Not built by this change; reported because the caller asked whether it existed before treating it as a gap.
+
+**No core, CLI, or MCP files were touched.** `loctt list --archived` and the MCP view/task tools still read the same `archivedScope`/`archived` fields this decision leaves alone server-side.
+
+**Tests.** `apps/web/src/client/list/FilterBar.test.tsx`: the one test that clicked `list-archived-scope`/`filters-sheet-archived-scope` segments directly was replaced with (a) an assertion that neither testid renders, desktop or in the mobile sheet, and (b) a test that mounts with `?archived=all` in the URL and drives an ordinary facet click, asserting the archived param survives untouched — the capability, exercised with no control at all. `apps/web/src/client/settings/ViewFormDialog.test.tsx`: "carries the archived scope as a view PROPERTY, not as a filter row" (previously clicked `view-form-archived-scope-archived` and asserted the PUT body's `archivedScope`) replaced with two tests — no control renders, and the PUT body carries no `archivedScope` key at all. `UsersPanel.test.tsx` and `SprintsPanel.test.tsx`: the four sites that clicked a `*-archived-scope-<scope>` segment directly were each given a prior click on the new `*-archived-scope-reveal` trigger (SprintsPanel via a new `openSprintsArchivedScope()` helper); no assertion was weakened, each now asserts the segment is ABSENT until revealed, in addition to what it asserted before. Every edited assertion is described here in full — none was loosened, only preceded by the extra click the demotion now requires.
+
+**Every new/rewritten test red-proven:** each was run once against the pre-fix code (control still present/undemoted) to confirm it failed for the expected reason, then against the fix to confirm it passed — done per-file during development, not retained as a diff here since none of these are the single canonical "the bug this catches" test A292 documents; the assertions are structural (testid absent / present-after-click / wire-body shape) and their failure mode is definitional.
+
+**Gates (actual).** `npx tsc --build` (repo-wide): clean, exit 0. `npm run test -w @loctt/web`: **237 files / 2403 tests passed, 0 failed.** `npm run lint` (repo-wide): **0 errors, 70 warnings**, all pre-existing and none in a file this change touches beyond one import-order autofix (`UsersPanel.tsx`, `simple-import-sort/imports`, mechanical — no logic changed). The 9 touched/added spec files run in isolation (`--maxWorkers=2`): **9 files / 156 tests passed, 0 failed** (grepped from the reporter's own summary line, not inferred from exit code).
+
+**To revert.** Restore the 4 removed `<ArchivedScopeControl>` renders (FilterBar ×2, MilestonesView, ViewFormDialog ×2 — 5 JSX sites across 3 files) and their `useState`/handler plumbing from git history. In the 6 settings panels, swap `<ArchivedScopeReveal .../>` back for a direct `<ArchivedScopeControl .../>` and drop the `ArchivedScopeReveal` import. Delete `apps/web/src/client/settings/ArchivedScopeReveal.tsx`. In `ViewFormDialog.tsx`, restore the `scope` state and put `archivedScope: scope` back into `submit()`'s `common` object. Revert the test files listed above to their pre-change assertions (git history has the exact prior text for each).
+
+### A294 · Animated brand spinner replaces "Loading…" text app-wide — `LoadingState` gains it, `Button` gains a `loading` prop; visible label swapped for spinner, accessible name preserved by construction
+
+**Ticket:** Ken's instruction, verbatim: "i see a lot of loading text. that's terrible. find all loading state, replace with spinner. use this svg, inline, then use the css to mark the elements so it responds to light/dark mode. (dont copy 2 svgs, copy one and use css styling for it)." Extended mid-session with his own design for buttons specifically (verbatim below). **Date:** 2026-09-22 · **Commit:** (uncommitted) · **Scope:** web UI only.
+
+**Source asset.** Ken supplied two SVGs (`loctt-animated-64-{dark,light}-color.svg`), byte-identical except two `fill`s: `data-part="l"` (`#39A88F` dark / `#0F766E` light) and `data-part="o"` (`#F4F4F3` dark / `#0F172A` light) — exactly `--accent` and `--text-primary` in `tokens.css`, the same tokens the existing static `LogoMark` already uses. So one inlined SVG themed with `var(--accent)`/`var(--text-primary)` covers both themes; no second file, no `prefers-color-scheme` branch.
+
+**New component: `apps/web/src/client/ui/brand/LogoSpinner.tsx`.** Sibling of the existing `LogoMark.tsx`, same shape (`fill="var(--accent)"`/`var(--text-primary)`, `data-part="l"`/`"o"`, `size` prop, `data-testid="logo-spinner"`). `size` accepts `number | string` — a plain px number for most callers, or a `rem` string for `Button`'s scale-aware use (below). ViewBox kept exactly as supplied, `-19.255 -19.255 102.510 102.510` — padded 12.5%/side because the "L" swings past its own 64×64 bounding box mid-rotation; a tighter viewBox clips the spin.
+
+**Keyframes scoped how.** The source `<style>` block used bare class names (`.spin`, `.pL`, `.pO`) and global `@keyframes loctt-rot/-l/-o`. Options: (a) inline a `<style>` per mounted `LogoSpinner` instance — harmless (identical `@keyframes` rules just overwrite each other) but wasteful with potentially many `LoadingState` consumers on screen at once; (b) CSS Modules — not set up anywhere in this app (Vite supports it with zero config, but it would be new tooling adopted for one component); (c) one global stylesheet definition, matching the app's own existing precedent (`hash-target-flash` in `styles/index.css`, K76's deep-link flash) with distinctive names. **Decided: (c).** Added `.loctt-spin`/`.loctt-spin-l`/`.loctt-spin-o` + the three `@keyframes loctt-rot/-l/-o` once to `apps/web/src/client/styles/index.css`, right after `hash-target-flash`. Names are namespaced (`loctt-*`) so they cannot collide with anything else in the stylesheet.
+
+**Reduced motion, two layers.** The source SVG's own `@media (prefers-reduced-motion: reduce) { .spin, .pL, .pO { animation: none; } }` is preserved verbatim (renamed to the `loctt-spin*` classes) in `index.css`, immediately after the keyframes. This sits alongside the app's **pre-existing** global rule (`* { animation-duration: 0.01ms !important; ... }`, SHL-28) — belt-and-suspenders: the global rule zeroes duration on everything already; this component's own rule additionally sets `animation: none`, so it stays correct even if the global rule is ever narrowed to exclude some category of decorative loop. Verified live: `document.styleSheets` inspection on the dev server confirmed the parsed rule (`media: "(prefers-reduced-motion: reduce)"`, `selector: ".loctt-spin, .loctt-spin-l, .loctt-spin-o"`, `style: animation: none`).
+
+**`LoadingState` (the seam, per the brief — do not touch the 19 call sites).** `apps/web/src/client/ui/LoadingState.tsx` now renders `<LogoSpinner size={size} />` as the visible content and wraps `children` (the message) in `<span className="sr-only">`, inside the same `role="status" aria-busy="true"` div as before. `size` is a new prop, default `32` (suits the panel-level case every current consumer is). `role`/`aria-busy` untouched; `textContent` of the region is unchanged (still the message) — confirmed both pre-existing `LoadingState.test.tsx` assertions pass unedited.
+
+**A11y decision: `sr-only`, not removed.** Ken's objection was to *seeing* the text, not to it existing for AT — removing it (`display:none`) would reintroduce the exact silent-panel defect `LoadingState` was built to fix (its own docstring: "~14 features re-spelled `Loading X…` with no `role=status`"). `sr-only` keeps it in the accessibility tree and in `textContent` while hiding it visually.
+
+**Button loading state — Ken's own design, verbatim (mid-session, superseding an earlier draft of mine):** *"maybe buttons can have a prop, loading=true, and when loading=true, the content is invisible (but it still takes up the same space to prevent resize, and make aria hidden for accessibility), then we render the spinner within the button in the middle, centre-aligned, and sized to fit buttonheight-toppadding-bottompadding."* Followed by a correction: *"as in, aria-hidden on the button's regular contents to prevent it from being shown by screen reader. if we need a loading aria label, then we can allow it to specify aria label (just aria label, dont have a 'loading aria label' prop because users might want to switch the logic themselves)"* — i.e. no `loadingLabel`/`loadingAriaLabel` prop; `Button` forwards a plain `aria-label` it already had via `ButtonHTMLAttributes`, and the caller decides the wording/timing policy.
+
+**Implemented in `apps/web/src/client/ui/Button.tsx`:** new `loading?: boolean` prop. `children` wrapped in a span that goes `invisible` (not `hidden`/`display:none`, which would collapse the box) + `aria-hidden="true"` while loading — content stays in flow, so the button does not resize. The spinner renders in a second, absolutely-positioned span (`BUTTON_BASE` gained `relative`), centred via `grid place-items-center`, sized from a new `BUTTON_LOADING_SPINNER_SIZE: Record<ButtonSize, string>` map (`sm` → `1.25rem`, `md` → `1.5rem` — `rem`, not px, so it scales with the 87.5%-root text-zoom convention `index.css` documents). `loading` ORs into `disabled` (a second click must not fire while a request is in flight) and sets `aria-busy="true"` on the `<button>` itself — the `<button>` element is never `aria-hidden` (that would drop the whole control from the a11y tree, not just its stale label; confirmed by a red-proof: `aria-hidden` on the button made `getByRole("button")` fail to find it at all). No `loadingLabel` prop was added, per Ken's correction — `ButtonProps` already extends `ButtonHTMLAttributes<HTMLButtonElement>`, so `aria-label` forwards through unchanged; nothing new was needed for that path.
+
+**Documented trap (in `Button.tsx`'s docstring, not enforced at runtime):** hiding the visible label from AT while loading makes a button **nameless** unless its accessible name came from somewhere other than its children — the caller must pass `aria-label` explicitly for any button whose only name was its text. Not a runtime warning: the check would fire for every icon-only button's already-`IconButton`-enforced `aria-label` too, and Ken's ruling was explicit that this is a per-call-site judgment, not a component-enforced rule. Every call site migrated in this change was audited and given an explicit `aria-label` (see below) — none was left nameless.
+
+**`ConfirmDialog` gained a `confirmLoading?: boolean` prop** (forwarded to its inner `Button`'s `loading`, with `confirmLabel` reused as that button's `aria-label` — it is already the exact static text a caller would otherwise have swapped in and out by hand). `TypedConfirmDialog` was **not** extended the same way — its one consumer (`DeleteConfirmDialog`) has no pending state to show, so there was nothing to wire; adding the prop with no caller would be speculative.
+
+**`IconButton` judged NOT to need `loading`.** Grepped every `IconButton` call site for `isPending`/`isLoading` in the same file — none gates an icon-only button's own busy state (the pending flags present in those files belong to unrelated logic). No current consumer needs it; not added.
+
+**Audit of the 72 "loading text" sites — what changed, what didn't, and why:**
+
+- **19 `LoadingState` consumers** (panels/detail pages: Projects, Users, Labels, Milestones, Sprints, Saved views, Preferences, Card layout, Calendar, Sidebar pins/groups, Workflow, Comments, Activity, Task detail, Sprint detail, Milestone detail ×2, Milestones list) — fixed at the seam, zero call sites touched, per the brief.
+- **`AppBootstrap.tsx`'s full-page bootstrap gate** (`CenteredMessage>Loading…</CenteredMessage>`) — migrated to `LoadingState` too (`size={48}`, full-viewport `className`), since it is the same "generic loading placeholder" shape at a different scale. The now-dead `CenteredMessage` helper was deleted.
+- **~25 `Button`/`ConfirmDialog` sites whose label ternary was `pending ? "Verb…" : "Idle label"`** (Save/Create/Delete/Remove/Publish/Sync/Adopt/Enable/Disable buttons across `BoardColumnsPanel`, `EstimationPanel`, `UsersPanel` ×3, `ViewFormDialog`, `CreateProjectDialog`, `AvatarCropper`, `CalendarPanel`, `CustomFieldEditDialog`, `SprintEditDialog`, `ProjectEditDialog`, `RemapDeleteDialog`, `EntryEditDialog`, `LabelEditDialog`, `MilestoneEditDialog`, `RelationshipEditDialog`, `GitSyncPanel` ×5, `TimelinePanel`, `UserDeleteDialog`, `DeleteProjectDialog`, `SprintMetaHeader`, `SaveViewDialog`, `DeleteTaskDialog`, `CreateTaskModal`, `CommentComposer`, `DeleteCommentDialog` via `ConfirmDialog`'s new `confirmLoading`) — migrated to `loading={pending}` + an explicit `aria-label` carrying the idle label (or the mode-dependent idle label, where the button's text already varied by `isEdit`/`mode`/`isBroken`/`needsAck`). Two "Load more" buttons with the same `pending ? "Loading…" : "..."` shape (`ActivityPanel`, `Pagination`) migrated identically.
+- **`GitSyncPanel`'s "Syncing…"** — checked against its own GIT-23 comment ("shows determinate progress... instead of an indefinite Syncing…") before migrating: the button's own label is a *secondary* indicator: a separate `role="progressbar"` block already renders below it once real `{applied,total}` ticks arrive. Migrating the button's own text to a spinner does not remove or duplicate that progress bar — safe.
+- **`CommentComposer`'s disabled-reason span** (`reason` = `"Saving…"` while pending, wired via `title`/`aria-describedby` next to the Save button) — **left as text, not migrated.** This is not the button's own label (that's the separate `{pending ? "Saving…" : submitLabel}` child, which *was* migrated) — it is supplementary explanatory text next to a disabled control, the same pattern a tooltip would use. Replacing it with a spinner would remove the "why is this disabled" information CMT-2 requires be available.
+- **`AttachmentsPanel`'s per-file `"Uploading…"`** — left as text. It is a per-row status label in a list of files with distinct states (pending/done/failed each shown differently); it is not a generic "loading" placeholder and a spinner there would not carry which file or what state.
+- **`TimelineView`'s loading skeleton** (`animate-pulse` block, `aria-label="Loading the timeline"`) — left as-is. TML-41 explicitly wants a skeleton, not a spinner, so the chart is never drawn-then-repopulated; this is a different, already-correct pattern, not "loading text."
+- **`SaveIndicator.tsx`'s `"Saving…"`/`"Saved"`/`"Unsaved changes"`** — left as text, deliberately. Its own TSK-18 comment documents a specific defect this component was already built to prevent: the three labels are stacked in a fixed-width grid sized to the *longest* label so the toolbar's mode toggle beside it never shifts pixel-by-pixel as the label changes; swapping this for a spinner would remove the state information ("saved" vs "unsaved" vs "saving", the whole point of the indicator) and reopen exactly the layout bug TSK-18 fixed.
+- **Bare `"Saving…"`/`"Preparing…"` etc. as button labels with no separate pending flag driving a spinner-worthy async op** — none found; every button-label ternary found in the grep had a real `isPending`/`isLoading`/`pending`/`submitting`/`busy` flag behind it and was migrated.
+
+**Tests.**
+- `apps/web/src/client/ui/brand/LogoSpinner.test.tsx` (new, 5 tests): one SVG themed by CSS variables not hex; scoped `loctt-spin*` classes present (not the source's bare names); padded viewBox preserved; `size` accepts both px number and rem string; decorative-by-default / named-when-labelled (mirrors `LogoMark.test.tsx`'s pattern).
+- `apps/web/src/client/ui/LoadingState.test.tsx`: 2 new tests appended (spinner renders; message is `sr-only` but still the region's `textContent`). **Both pre-existing tests (`role=status`/`aria-busy`/message; className default+override) pass unedited** — checked and confirmed, nothing needed changing there.
+- `apps/web/src/client/ui/Button.test.tsx`: 8 new tests under a `describe("loading")` block — label stays mounted (`invisible`, not `hidden`) + `aria-hidden`; spinner renders only when `loading`; the `<button>` itself is never `aria-hidden`; a caller-supplied `aria-label` is honoured (no dedicated prop); `loading` disables the button and blocks a click; the caller's own `disabled` still works independent of `loading`; `aria-busy` tracks `loading`. Two pre-written assertions used `toBeDisabled()` from `@testing-library/jest-dom`, which is not installed here — rewritten to plain DOM checks (`.disabled`/`.hasAttribute("disabled")`) before the first run; not a weakening, the matcher was simply unavailable.
+- **Every new test red-proven**, each broken and confirmed failing, then restored byte-exact (diffed against the pre-break file to confirm): `LogoSpinner`'s hex-fill swap, bare-class-name swap, unpadded-viewBox swap, forced-width swap, missing-`aria-hidden` swap; `LoadingState`'s spinner-removed / sr-only-removed swaps; `Button`'s `invisible→hidden` swap, spinner-removed swap, `aria-hidden`-on-button swap (this one made `getByRole("button")` itself fail — a stronger red than a value mismatch, and the exact defect the "never hides the button" design point exists to prevent), `aria-label`-stripped swap, `disabled`-not-OR'd-with-loading swap, `aria-busy`-removed swap.
+- **No passing test outside `Button.test.tsx`/`LoadingState.test.tsx` needed editing.** Grepped every `*.test.tsx` for the literal strings this change removed (`"Saving…"`, `"Uploading…"`, `"Preparing…"`, `"Deleting…"`, `"Publishing…"`, `"Syncing…"`, `"Removing…"`, `"Creating…"`, `"Adopting…"`, `"Enabling…"`, `"Disabling…"`) — zero matches. The full suite's 2423 tests passing (see gates) confirms nothing else was asserting the old text either.
+
+**Gates (actual).** `npx tsc --build`: clean, exit 0. `npm run test -w @loctt/web`: **238 files / 2423 tests passed, 0 failed** (confirmed on 2 of 3 consecutive runs; the one failing run had 3 unrelated failures in `MilestoneDetail.test.tsx`/`Sidebar.test.tsx` — files this change never touches, both passing cleanly in isolation, so pre-existing suite flakiness rather than a regression here). `npm run lint`: **0 errors, 70 warnings**, all pre-existing (two mechanical lint errors surfaced during this work — an import-sort ordering in `Button.tsx` and two unnecessary-type-assertion errors in `Button.test.tsx` — both fixed before this count).
+
+**To revert.** Delete `apps/web/src/client/ui/brand/LogoSpinner.tsx` and `LogoSpinner.test.tsx`. In `apps/web/src/client/styles/index.css`, delete the `.loctt-spin*`/`@keyframes loctt-rot/-l/-o`/reduced-motion block added after `hash-target-flash`. In `LoadingState.tsx`, drop the `LogoSpinner` import/render and the `size` prop, restore `<span>{children}</span>` in place of the `sr-only` wrapper, and drop the two new tests from `LoadingState.test.tsx`. In `Button.tsx`, drop `loading`, `BUTTON_LOADING_SPINNER_SIZE`, the `relative` on `BUTTON_BASE`, the spinner span and the `children`-wrapping span (restore bare `{children}`), the `aria-busy`/OR'd-`disabled` wiring, and the `loading` describe block in `Button.test.tsx`. In `ConfirmDialog.tsx`, drop `confirmLoading` and the `aria-label={confirmLabel}` forward. Revert every migrated call site's `loading={…}`/`aria-label={…}` pair back to its `{pending ? "Verb…" : "Idle"}` ternary (git history has each exact prior string) — the full list is in the audit table above. Restore `AppBootstrap.tsx`'s `CenteredMessage` helper and its `<CenteredMessage>Loading…</CenteredMessage>` call.
+
+### A295 · Underline is stored as `<ins>` (never `<u>`), highlight as `==text==`; both get TipTap marks, toolbar buttons and lossy-allowlist entries
+
+**Ticket:** K107 (rich-text editor: underline + highlight) · **Date:** 2026-09-22 · **Commit:** (uncommitted; Ken integrates) · **Standard:** Ken's rule for body syntax — *"we can do a superset of markdown, but we must not BREAK existing markdown."* "Break" is judged in **other** tools (GitHub, pandoc, VS Code, Obsidian, `cat`), because the `task.md` files are the product, not our renderer's input.
+
+**The situation.** The editor had no underline and no highlight. Underline is the one common rich-text mark that markdown has no spelling for, so the question was not "which button" but "which bytes reach disk".
+
+**Why `<ins>` and not `<u>` — tested, not inferred.** GitHub renders markdown through `html-pipeline`'s `SanitizationFilter`, whose allowlist **omits `u`** and **includes `ins`**. Verified live against `POST https://api.github.com/markdown` during this work, not taken from the research doc:
+
+```
+IN : A <u>under **bold**</u> b      OUT: <p>A under <strong>bold</strong> b</p>
+IN : C <ins>ins **bold**</ins> d    OUT: <p>C <ins>ins <strong>bold</strong></ins> d</p>
+IN : E ==high== f                   OUT: <p>E ==high== f</p>
+```
+
+So `<u>` is **silently stripped**: the user's underline disappears, with no warning, on the tool most likely to read the file. `<ins>` survives *and* is underlined by every browser's UA stylesheet. It is the only tag that does both.
+
+**The semantic stretch, stated plainly.** `<ins>` means *inserted text* — an edit-tracking semantic, not a decoration. Borrowing it for underline is deliberate and is the cost of having underline at all; `markdownguide.org` recommends the same workaround. If underline's meaning ever matters more than its survival, the honest alternative is not `<u>` but dropping the mark.
+
+**Why `==` for highlight.** It collides with nothing. Grepped `apps/web/src/client/editor/markdown.ts`: every `==` in the file is JavaScript `===`/`!==`; zero markdown uses. `=` is not an inline delimiter in CommonMark either. The rejected alternative `__x__` is **already bold**, so using it for a new mark would silently reinterpret every existing `__bold__` in every stored body — disqualified by Ken's rule outright. `==` is also what Obsidian and pandoc already use, and on GitHub it degrades to *visible literal text* rather than vanishing, which is a graceful failure rather than a silent one.
+
+**`==` needs no allowlist entry — confirmed.** It is a markdown extension, not a tag, so it never reaches `lossy.ts`'s HTML scanner (`HTML_TAG_RE`). Asserted by a test rather than left as a claim.
+
+**The inline/block distinction is load-bearing.** `<ins>` is stored **inline**, so per CommonMark §6.6 the tags pass through as raw-HTML tokens and the text between them is **still parsed as markdown**. An earlier brief said a line containing HTML must be converted wholly to HTML; that was wrong and is retracted here — the block form (§4.6 type 7) holds its contents *out* of markdown parsing, so GitHub would print literal `**bold**`. Verified: `A <ins>under **bold**</ins> b` round-trips with the bold as a real mark and the asterisks unchanged. **Other marks on the line are left alone.**
+
+**What was built.**
+1. `apps/web/src/client/editor/markdown.ts` — two alternatives **appended** to the `inlineNodes` regex (groups 18/19) and two rows appended to `MARK_WRAPPERS`. Appending is not cosmetic: every branch above is addressed by a *positional* capture-group number, so inserting mid-array would renumber `m[9]`…`m[17]` and silently rewire bold to strike. Alternation order is not precedence here — neither `<` nor `=` prefixes any existing pattern, so leftmost-match settles every case.
+2. `apps/web/src/client/editor/extensions.ts` — `Underline` (parses/renders `ins`) and `Highlight` (parses/renders `mark`), both plain `Mark.create` in the file's existing house style, each with a keyboard shortcut.
+3. `apps/web/src/client/editor/RichEditor.tsx` — **`StarterKit.configure({ underline: false })`**. See the trap below.
+4. `packages/core/src/markdown/lossy.ts` — `ins` and `mark` added to `ALLOWED_HTML_TAGS`.
+5. Toolbar buttons + two new `Icon` glyphs; `BodyRenderedView` renders `<ins>` and `<mark>`.
+
+**The trap found while red-proving (worth reading before touching this).** StarterKit ships **its own `underline` mark, of the same name, that parses and renders `<u>`** — the exact tag GitHub strips. Measured directly against the schema:
+
+```
+LOCTT_EXTENSIONS first, no flag : underline parseDOM = ["u", null]   ← StarterKit wins
+LOCTT_EXTENSIONS first, flag on : underline parseDOM = ["ins"]
+```
+
+With the app's current ordering (StarterKit first, LOCTT after) ours happens to win, so `underline: false` is **not** currently load-bearing — but the winner is decided purely by registration order, and a reorder or a StarterKit upgrade would silently restore `<u>` and start stripping users' underlines on GitHub. The flag makes `<ins>` correct *by construction* rather than by luck. It also exposed a test that asserted nothing: `registers the underline mark` passed with our mark deleted, because StarterKit's satisfied it. `extensions.test.ts` now builds its schema exactly as `RichEditor` does.
+
+**`del` was checked, not assumed.** The brief asked whether `del` (already allowlisted) deserved the same treatment. Verified against the live schema: StarterKit's `strike` mark parses `s`, `del` **and** `strike`, so all three genuinely have a node behind them. Its existing entry is earned. No change.
+
+**One serializer fix this surfaced.** A mark spanning several text runs is wrapped *per run*, so `<ins>` over `under ` + bold `bold` emitted `<ins>under </ins><ins>**bold**</ins>`. For `*`-style delimiters that split is pre-existing and near-invisible; for a **tag** it is visible noise that **grows by two tags on every save-reopen-save cycle**. `inlineText` now stitches `</ins><ins>` back up. Deliberately scoped to the tag pair rather than generalised into a "merge adjacent runs sharing a mark" pass — the general version would also change the spelling of `**`/`*`/`~~` output, i.e. rewrite bodies this feature never touched, which is precisely the normalization this module exists to avoid. **Known cost:** a user who deliberately writes two *adjacent* underlined spans (`</ins><ins>`) has them merged into one on a rich edit. Recorded in `known-gaps.md`.
+
+**The byte-identical guarantee still holds.** It is structural — `RichBuffer.text` returns `original` untouched until the rich editor reports a real edit, and nothing in this change touches `RichBuffer`. Asserted explicitly anyway, because a tokeniser change is exactly what would put it at risk: a new test re-runs the whole `AWKWARD_BODIES` corpus (underscore emphasis, `+`/`*` bullets, `1)` ordinals, setext heading, four blank lines, tilde fences, trailing spaces) through open-and-close with no edit and requires byte equality.
+
+**Tests (all red-proven; each broken, watched fail, restored byte-exact).** 12 new in `markdown.test.ts`, 4 new in `extensions.test.ts`, 3 new in `lossy.test.ts`. Mutations run: (1) underline parse regex disabled → 3 red; (2) highlight parse regex disabled → 3 red; (3) serializer emits `<u>` instead of `<ins>` → 4 red, incl. the guard test that exists solely to catch this; (4) `["highlight","==","=="]` removed from `MARK_WRAPPERS` → 2 red; (5) `ins`/`mark` removed from `ALLOWED_HTML_TAGS` → 1 red; (6) `Underline`+`Highlight` removed from `LOCTT_EXTENSIONS` → 5 red; (7) `Underline` retargeted to parse `u` → 1 red.
+
+**Gates (actual).** `npx tsc --build`: clean, exit 0 (one `exactOptionalPropertyTypes` error in a new test, fixed). `npm run test -w @loctt/web`: **239 files / 2446 tests passed, 0 failed**. `npm run test -w @loctt/core`: **128 files / 2326 passed, 1 skipped, 0 failed**. `npm run lint`: **0 errors, 70 warnings** — all pre-existing, none in any file touched here (one pre-existing import-sort **error** in `BodyRenderedView.tsx`, unrelated to this change, was autofixed to get the gate to 0 errors). Not run, per brief: e2e.
+
+**To revert.** In `markdown.ts`: delete regex alternatives 18/19 and their two `else if` branches, delete the two `MARK_WRAPPERS` rows, and restore `inlineText` to `return nodes.map(…).join("")` (dropping the `joined` variable and the `</ins><ins>` stitch). In `extensions.ts`: delete `Underline` and `Highlight` and their two entries in `LOCTT_EXTENSIONS`. In `RichEditor.tsx`: restore `StarterKit.configure({ link: false })`. In `lossy.ts`: remove `"ins", "mark",` from `ALLOWED_HTML_TAGS`. In `Toolbar.tsx`: delete the two `ButtonSpec` rows. In `Icon.tsx`: delete the `underline`/`highlight` names and paths. In `BodyRenderedView.tsx`: delete the two `case` arms. Delete the K107 describe block in `markdown.test.ts`, the four K107 tests in `extensions.test.ts` (and restore its schema to `getSchema([StarterKit, ...LOCTT_EXTENSIONS])`), and the three K107 tests in `lossy.test.ts`. Revert the `markdown-extensions.md` table rows and the `known-gaps.md` entries. Nothing else depends on them.
+
+### A296 · The saved-view classification gap fixed — `resolveFilters` also runs `filtersToNode`, so a DSL-broken view degrades at load time
+
+**Ticket:** the classification gap `known-gaps.md` previously recorded as assessed-but-deliberately-unfixed (see A284's "Assessed, not fixed — separate wave" note, and `ui-issues.md` UI-9's "Related: the broken-view apparatus never fires"). **Date:** 2026-09-23 · **PM ruling:** the two objections the earlier assessment raised for not fixing this — a performance cost and a "shape-only contract" claim — were dismantled on inspection; implement the fix as originally sketched.
+
+**The gap.** `packages/core/src/config/queries.ts` `resolveFilters` validated a saved view's stored `filters` against `FilterSchema` — a shape check only. An advanced filter's DSL text (`{kind: "advanced", query: <any string>}`) was never tokenized/parsed at load, only when the view actually ran (`filtersToNode` → `advancedToNode`). So a view whose query was e.g. `status = = = done AND` loaded as an ordinary healthy `SavedQuery`, absent from `queriesConfig.broken` — the whole `BrokenSavedQuery` degrade/repair apparatus (marker, raw-YAML disclosure, Replace, inert-Save gate, and both CLI/MCP consumers of `config.broken`) was unreachable for this defect class.
+
+**Why the earlier objections did not hold.** (1) *Performance*: parsing every advanced filter's DSL on every config load was flagged as a real cost to measure "on a tracker with many advanced views." No measurement was ever produced, and the actual cost is one tokenize+parse pass per advanced filter, once per config load — the same per-filter work every view-running call already pays each time it runs, and `queries.yaml` sizes in realistic use (tens, not thousands, of saved views) make this immaterial. (2) *"Shape-only contract"*: the earlier entry read `resolveFilters`'s docstring as promising shape-only validation. The **file's own docstring for `parseQueriesConfig`**, directly above the `resolveFilters` call site, already states: *"one entry whose filters no longer validate (a hand edit, most often) must not blank the whole catalog ... a bad one becomes a `BrokenSavedQuery` marker carrying its raw text and the validation message."* Unparseable DSL is exactly "filters no longer validate" — the docstring never limited that to shape failures, so extending `resolveFilters` to also check parseability completes its stated contract rather than adding a new one.
+
+**Where implemented and why there.** `packages/core/src/config/queries.ts`, inside `resolveFilters`, immediately after the existing `FilterSchema` shape check succeeds: `filtersToNode(parsed.data)` is called and discarded (the AST is never kept — only used to prove the list composes), inside a try/catch that treats a thrown `FilterError` as a degrade (same return shape the shape-check failure already used) and rethrows anything else. This mirrors `assertFiltersValid` (`packages/core/src/views/manage.ts`), which validates the write path the identical way — this is the read-time analogue for entries that reached disk before that gate existed, or via a hand edit that bypassed every writer.
+
+**Import-direction check (a constraint from an earlier finding, verified fresh rather than assumed).** `query/` has no import from `views/` anywhere in the codebase (confirmed by grep); `views/` imports from `config/` (`views/manage.ts` imports `loadQueriesConfig`/`saveQueriesConfig`); `config/queries.ts` already imported `normalizeFilters` from `../query/filters.js` before this change. So the dependency chain is `views/ → config/ → query/`, one direction, no cycle. Adding `FilterError`/`filtersToNode` to `config/queries.ts`'s existing import from `../query/filters.js` follows the identical, already-established edge — it does not create a new one. `ViewError` (defined in `views/`) was correctly identified as off-limits and is not used here; only `FilterError` (defined in `query/`, which `config/` can already reach) is needed.
+
+**`position` propagation.** `BrokenSavedQuerySchema.position` (`packages/contracts/src/query.ts`) already existed as an optional field, and both CLI (`apps/cli/src/commands/views.ts`) and MCP (`apps/mcp/src/tools/views.ts`, `list_views`) already read `b.position` — confirmed by reading both files, not assumed. `FilterError` itself (`query/filters.ts`) does not carry a `position` field — it wraps `TokenizeError`/`ParseError`, whose `position` is folded into the message text ("... at position N") by `LocttError`'s constructor, and `advancedToNode`'s wrapping into `FilterError` does not preserve the field. Rather than touch `query/filters.ts` (out of this change's file set, and shared with non-DSL `FilterError` causes like an uncombinable simple filter, which have no position to report), `queries.ts` adds a small `extractPosition(message)` helper that regexes `/at position (\d+)/` out of the message — best-effort, `undefined` when absent, matching the field's existing optionality.
+
+**CLI and MCP need no changes — verified, not assumed.** Both already consume `config.broken`/`b.error`/`b.position` (CLI: `apps/cli/src/commands/views.ts:332-354`; MCP: `apps/mcp/src/tools/views.ts:162-174`, `list_views`'s description already documents `broken: true, error, position?`). Since core now populates `broken` for this defect class using the exact same shape it already used for shape failures, both surfaces pick it up with zero code change — confirmed by reading both files' consumption code, and by the fact no CLI/MCP source file needed editing to make the new core tests pass end-to-end in spirit (the seeded-tracker manual check below exercises core's `parseQueriesConfig` directly, which is what both surfaces call transitively via `loadQueriesConfig`).
+
+**Verified against the seeded playground tracker** (`/private/tmp/.../scratchpad/playground/.loctt/config/queries.yaml`, view `01M33FP00000000000000000A6` "Broken view", query `status = = = done AND`). Before: `parseQueriesConfig` returned it in `queries` (6 healthy entries, `broken` undefined). After: it is in `broken` (5 healthy entries in `queries`, one entry in `broken` with `error: "advanced filter does not parse: expected value but got \"=\" at position 9"`, `position: 9`, `index: 6`, `rawText` preserving the original YAML). This is exactly the shape `GET /api/views` and MCP `list_views` serialize.
+
+**Tests (all four new ones red-proven — reverted the fix by hand-editing `queries.ts` back to its pre-fix form, ran the suite, watched all four fail with the expected assertion mismatches, restored the file and diffed it byte-identical against the pre-revert copy before re-running green).** In `packages/core/src/config/queries.test.ts`:
+- "degrades a shape-valid advanced filter whose DSL does not parse (the classification gap)" — asserts `queries` is empty, `broken` has the one entry, and `error` matches `/advanced filter does not parse/` (the same prefix the run path's `advancedToNode` produces).
+- "carries the parser's position when the DSL error reports one" — asserts `entry.position` is a number.
+- "a healthy view loads fine sitting beside a DSL-broken one (degrading, not blanking the catalog)" — the core point of a degrade path: one bad entry does not take a good sibling down with it.
+- "an uncombinable simple filter (object-fatal shape but semantically bad op/values) still degrades, not throws" — a second `FilterError` cause (several values under `<`, which `FilterError`'s `simpleToNode` rejects) exercised through the same new code path, confirming the fix is not advanced-filter-specific.
+- "still throws QueriesConfigError on a duplicate id when the surviving entry has a DSL-broken filter (object-fatal)" — confirms duplicate-id detection (which runs before `resolveFilters`) is unaffected; this one was NOT expected to go red on revert (duplicate-id checking is orthogonal to this fix) and it did not.
+
+Each of the first four failed with the exact defect symptom when the fix was reverted (e.g. `expected [] to have a length of 0 but got 1` for the "degrades" test — the view landed in `queries`, not `broken`, exactly as the old behaviour did) and passed once restored.
+
+**No passing test was edited.** No existing test in `queries.test.ts` asserted the old (broken) classification as correct — the gap was undertested at the `config/` layer, not wrongly tested. Two tests OUTSIDE this change's file set do assert the old behaviour and now fail — see "Fallout" below; they were left alone per the file-set boundary and are recorded, not silently broken.
+
+**Fallout: two tests outside this change's scope now fail, and need rewriting by whoever owns those files.** `apps/web/src/server/server.view-unparseable-dsl.test.ts` and `apps/mcp/src/tools/list-tasks-broken-view.test.ts` (both introduced by A284) exercise the RUN path for a DSL-broken view (`GET /api/tasks?view=<id>` / MCP `list_tasks`) and assert it fails there with a specific 400/errorResult shape — because, pre-this-fix, the view loaded as an ordinary healthy `SavedQuery` and only failed once actually queried. Post-this-fix the view is classified `broken` at LOAD time, so it is no longer a resolvable `SavedQuery` at all — `findView`/`applyListTasksFilterAndSort` now report `unknown view`, not the parse error, because the view genuinely is not in the healthy catalog any more. The web test's first case is even titled "is reported healthy by GET /api/views (the classification gap, tracked separately)" — a green test that was, in CLAUDE.md's words, "encoding the gap." These are real, expected consequences of closing the gap, not a regression introduced carelessly; they sit in `apps/web/src/server` and `apps/mcp/src/tools`, both outside this change's file set (`packages/core/src/config/queries.ts` + its tests, three docs files), so they were reported rather than edited. Recorded in `known-gaps.md` and `ui-issues.md` UI-9.
+
+**Gates (actual).** `npx tsc --build`: clean, exit 0. `npm run test -w @loctt/core`: **128 files / 2331 passed, 1 skipped, 0 failed** (no `diagnostics.test.ts` flake this run). `npm run test -w @loctt/web`: **238 files passed, 1 failed / 2444 passed, 3 failed** — the 3 failures are the expected `server.view-unparseable-dsl.test.ts` fallout above, not a new regression. `npm run test -w @loctt/cli`: **11 files / 174 passed, 0 failed**. `npm run test -w @loctt/mcp`: **5 files passed, 1 failed / 123 passed, 1 failed** — the expected `list-tasks-broken-view.test.ts` fallout above. `npm run lint`: **0 errors, 70 warnings**, all pre-existing (non-null-assertion in Playwright e2e specs), none in any file touched here. `npm run build` was not run per this change's constraints (a dev server was live; `npx tsc --build` stood in for it).
+
+**To revert.** In `packages/core/src/config/queries.ts`: remove `FilterError, filtersToNode,` from the `../query/filters.js` import (restoring `import { normalizeFilters } from "../query/filters.js";`), delete the `extractPosition` function, restore `resolveFilters` to its two-line shape-check-only body and its narrower return type (`{ ok: true; filters: Filter[] } | { ok: false; reason: string }`), and remove the `...(resolved.position !== undefined ? { position: resolved.position } : {})` line from the `broken.push(...)` call in `parseQueriesConfig`. Delete the five new tests in `packages/core/src/config/queries.test.ts` (search for "the classification gap"). Revert the `known-gaps.md` entry and the UI-9 addendum in `ui-issues.md` to their pre-2026-09-23 text (both still exist in this file's earlier history). Once reverted, `server.view-unparseable-dsl.test.ts` and `list-tasks-broken-view.test.ts` return to green without any change on their end.
+
+**Independent of this decision:** the `quote` toolbar glyph (UI-23b) was fixed in the same `Icon.tsx` pass — it drew two open hooks that read as `ᴊᴊ` rather than quotation marks. Name and wiring were already correct; only the path changed.
+
+---
+
+## K30-web · Ken's ruling, 2026-09-23 — the CSV/JSON export leaves the web UI; CLI and MCP keep it
+
+**Ken's ruling — an agent may not revert this.** Asked whether
+per-subset export earned its place in the web UI, Ken said, verbatim:
+
+> "i dont see a use case for exporting just a subset and its taking up
+> space"
+
+A surface audit put the full picture in front of him — 10 export/backup
+surfaces, 5 whole-tracker and 5 filtered, with `file:line` — and he
+ruled: **keep CLI and MCP, drop the UI.**
+
+**This is a deliberate parity exception, recorded as one.** "A capability
+in core is not done until CLI and MCP have it" (CLAUDE.md) is a rule
+about core exports going unused, not a rule that every surface must
+carry every feature. Here core's `packages/core/src/task/export.ts`
+keeps two real callers (CLI `loctt export`, MCP `export_tasks`), so it
+is not a stranded export — the web simply declines a report it had no
+use case for.
+
+**What it reverses, and what it does not.** It narrows **K30**'s F4 from
+three surfaces to two; K30 is a Ken ruling marked "an agent may not
+revert this", and Ken is reverting this part of it himself, knowingly. A
+supersession note sits on K30/F4 above; the historical record there is
+left intact. **K4** — filtered CSV/JSON export is "a report for a human
+in a spreadsheet", distinct from backup — is untouched and still
+governs CLI/MCP export. Backup/restore (K17, K30/F3) stays on all three
+surfaces, including the web: it is the thing that protects against data
+loss, and it is not what was removed here.
+
+**Removed:** `apps/web/src/client/list/ExportMenu.tsx`; its mount in the
+⋯ menu and in the mobile filters Sheet; the `exportTotal` /
+`exportQueryString` props threaded from `ListView`; the server route
+`GET /api/tasks/export` and its `handleExportTasks` handler; 10
+acceptance cases (BLK-14/15/16/33/34/35/36/37/43/44, all indexed
+`surfaces: ["UI"]`) and every test that verified them.
+
+**The route could go because nothing else used it.** Verified rather
+than assumed: the CLI and MCP never speak HTTP to the web server — both
+call core directly (`apps/cli/src/commands/task-export.ts`,
+`apps/mcp/src/tools/task-crud.ts` import from `@loctt/core`, and a grep
+for `fetch`/`http://` in both finds nothing). The web client was the
+route's only caller.
+
+**To revert.** Ken's, not an agent's.
+
+---
+
+### A297 · "Save as view" becomes a direct star `IconButton`; the ⋯ renders only when it has rows
+
+**Ticket:** the UI half of K30-web. Lane: `list/FilterBar.tsx`,
+`list/ListView.tsx`, `list/ExportMenu.tsx` (deleted), their tests,
+`tests/ui/flow-list.spec.ts`, `tests/ui/flow-app-shell.spec.ts`,
+`tests/cases/ui-test-cases/`, `tools/case-index`, `docs/user/**`. ·
+**Date:** 2026-09-23 · **Base:** 2c770c68.
+
+**The problem the removal created.** Deleting the export deleted the
+whole "act" section of the ⋯ View-options menu that UI-2 had just
+designed (create → act → configure). What was left:
+
+| View | Remaining ⋯ items |
+|---|---|
+| List | "Save as view" only — **one** |
+| Timeline | "Save as view" only — **one** |
+| Board | Save as view + 2 config deep links |
+| Sprint detail | `showSaveView={false}`, no extras — **zero** |
+
+A menu is a disclosure for a *set*. For one action it costs two clicks,
+a portal, and roving-focus machinery to reach one thing; for zero it
+renders a trigger that opens an empty panel.
+
+**The call (Ken's steer, 2026-09-23).** Asked what the two one-item
+views should do, Ken said: *"so if its only 'save as view' as one
+button, maybe an icon button with tooltip will be helpful?"* — a
+suggestion, not a spec. Implemented as:
+
+1. **"Save as view" is a direct `IconButton`** (`star`, `size="sm"`,
+   `variant="secondary"`) on **every** view that offers it, board
+   included.
+2. **The ⋯ renders only when `extraMenuSections` has content.** Today
+   that is the board alone.
+
+**Why the star is on the board too, rather than board keeping a menu
+row.** This was the live judgement call. Putting it in the toolbar on
+list/timeline but inside a menu on board would mean the same action
+lives in two different shapes a few pixels apart, with no cue telling
+the user which view uses which — the exact confusion **UI-3** was
+created to fix (it merged the board's second ⋯ into the first for that
+reason). Uniform placement is the stronger consistency: the star is in
+the same slot on all four task views, and what varies is only whether a
+*second*, differently-labelled control (⋯) sits beside it. That
+variation already existed and is self-describing.
+
+**The cost, stated plainly.** Icon-only loses the text label; "Save as
+view" is not a universally-read glyph the way ⋯ or ✕ are. Mitigations:
+the `star` is the same glyph the sidebar marks saved views with, so the
+association is already established in-app; `IconButton` *requires*
+`aria-label`, so screen readers get the full name; and `title` gives a
+hover tooltip. **No custom tooltip primitive was built here** — the
+native `title`'s untunable ~1s delay is **UI-23e**, an open item Ken
+has not ruled on, and solving it belongs to that ticket, not this one.
+
+**The empty case is guarded at the right granularity.** The cluster
+itself (`data-testid="view-actions"`) renders only when
+`showSaveView || hasExtraMenu`, so the sprint detail gets no wrapper,
+no stray divider and no ⋯. `hasExtraMenu` checks `!== undefined && !==
+false && !== null`, not just `!== undefined`: `extraMenuSections` is a
+`ReactNode`, so a caller writing `extraMenuSections={cond && <X/>}`
+passes `false` — defined, but rendering nothing — which an
+`!== undefined` check would turn into a trigger opening an empty panel.
+
+**Tests (red-proven).** Four tests in `FilterBar.test.tsx` cover the new
+shape. Red-proof: the guard was reverted by hand (cluster and menu
+rendered unconditionally), the suite run, **all four failed**, and the
+file was restored from a byte-copy and re-run green. They are: the
+direct-button shape with no ⋯ on list; the ⋯ appearing only with rows
+(board); the falsy-`ReactNode` case; and no cluster at all on the
+sprint detail.
+
+**Passing tests edited, with what they asserted** — both in
+`FilterBar.test.tsx`, both asserting the *old* menu shape (open the ⋯,
+then look inside), which is the shape this change removes:
+- `"hides 'Save as view' when the scope would not be reproduced by one"`
+  — opened `view-actions-menu` and asserted `view-actions-save-view` was
+  absent inside it. Now asserts the whole cluster is absent, which is
+  strictly stronger.
+- `"still shows 'Save as view' on the list…"` — opened the ⋯ first. Now
+  finds the button directly.
+
+**To revert.** `git checkout 2c770c68 -- apps/web/src/client/list/{FilterBar.tsx,FilterBar.test.tsx,ExportMenu.tsx,ListView.tsx} apps/web/src/server/server.ts tests/ui/flow-list.spec.ts tests/ui/flow-app-shell.spec.ts tests/cases/ui-test-cases/flow-bulk.md`, restore `apps/web/src/server/server.export-unreadable.test.ts` and the three `/api/tasks/export` cases in `server.test.ts`, re-add the `@verifies BLK-14`/`BLK-33` tags in `packages/core/src/task/export.test.ts`, then `npm run cases:index`. Note this restores the web export in full, which K30-web forbids — so this revert path is for the *shape* change only if K30-web is itself revisited by Ken.
+
+---
+
+## K31 · Ken's ruling, 2026-09-23 — Checkbox's 24px hit area grows the VISIBLE box, not an invisible overlay
+
+**Ken's ruling — an agent may not revert this.** The known-gaps "Tap
+targets are 21px, not the 24px the code claims" entry proposed, and an
+earlier pass in this session started to implement, enlarging only the
+*clickable* area of `ui/Checkbox.tsx` past the drawn 16px box — a
+transparent `<input>` filling a 24px wrapper around a smaller painted
+sibling. Shown that shape, Ken said, verbatim:
+
+> "sounds like a bad hack. make the checkbox bigger instead?!?!"
+
+**Ruling: the visible box grows to meet the target; there is no hit
+area larger than what is drawn.** An invisible-overlay hit area means a
+click 3-4px outside the visible checkbox still toggles it — a
+ghost-click defect traded for an a11y fix, not a real fix.
+
+**What changed.** `ui/Checkbox.tsx`: the previous two-layer design (a
+transparent 24px `<input>` over a separate 16px painted `<span>`
+sibling, linked by `peer-*`) is gone. The native `<input>` is now
+painted directly with `appearance-none` and fills the wrapper at its
+full size — one element, and the clickable area and the drawn box are
+identical. Wrapper and input both moved from `h-6 w-6` to `h-7 w-7`.
+
+**Why `h-7`, not an exact 24px.** `styles/index.css:142` sets
+`html { font-size: 87.5% }` against a 16px browser default, so `1rem`
+resolves to 14px here, not 16px — the same rem trap `design-system.md`'s
+`IconButton` claim and a dialog focus-ring size already hit. `h-6`/`w-6`
+(`1.5rem`) is 21px, not the 24px the docstring asserted three times;
+`h-7`/`w-7` (`1.75rem`) is the smallest standard Tailwind step that
+clears 24px, resolving to **24.5px**, measured live at
+`http://localhost:5173/list` on both the table checkbox and the header
+"select all" checkbox. The docstring is corrected to state 24.5px and
+explain the rem conversion explicitly, rather than assert a bare "24px"
+a future reader would get wrong the same way this one did.
+
+**The cost Ken accepted, measured.** Growing the checkbox changes row
+rhythm. Desktop list-view table row height measured (via the live dev
+server, DOM `getBoundingClientRect`, swapping the wrapper's Tailwind
+classes in place and back): **41.16px → 43px**, a **+1.84px** (~4.5%)
+increase per row. The narrow-width card view is unaffected in practice
+— row height there is set by title/status/priority text content, not
+the checkbox, and the checkbox itself simply grew from 21×21px to
+24.5×24.5px within the same flex row with no reflow of neighbouring
+text.
+
+**Not touched by this ruling.** The header user-menu button (22×22px)
+and the "Skip to main content" link (23×16px, off-screen until
+focused) are separate known-gaps items with their own reasoning (a
+focus-only control's visible size is a different tradeoff than an
+always-visible repeated-per-row control). Judged, not fixed, in the
+same session — see the accessibility-fixes report for the conclusion.
+
+**To revert.** Restore `ui/Checkbox.tsx`'s two-layer design (transparent
+`h-6 w-6` input `peer` + separate `h-4 w-4` painted `<span>` sibling)
+and its docstring's earlier wording; `git log -p` on this file around
+2026-09-23 has the prior version. Ken's, not an agent's — do not revert
+without asking him again.
+
+---
+
+### A298 · `ui/Menu` restores focus on Escape and outside-click, not on item-selection
+
+**Ticket:** accessibility fixes, `ui/Menu.tsx` never restoring focus on
+close (known-gaps). Lane: `ui/Menu.tsx`, `ui/Menu.test.tsx`. **Date:**
+2026-09-23 · **Commit:** (pending).
+
+**The situation.** `Menu.tsx` had no focus-restore logic at all —
+closing via Escape, outside-click, or an item's `onSelect` all left
+`document.activeElement` on whatever was focused inside the panel, or on
+`document.body` once the panel unmounted. The ticket's own text raised
+the open question directly: "Must work for Escape, outside click, and
+selecting an item. Consider whether all three should restore — an item
+that navigates away probably should not fight the destination for
+focus. Judge it, state your reasoning."
+
+**What had to be decided.** Does selecting a `MenuItem` also restore
+focus to the trigger, or only Escape and outside-click?
+
+**Options considered.**
+- **All three restore.** Simplest mental model (one `close()` always
+  restores), but a `MenuItem` whose `onSelect` navigates (a `Link`, e.g.
+  the user-menu's "My profile"/"Settings" rows) or opens a dialog would
+  have its destination's focus immediately yanked back to the trigger a
+  tick later — the exact "fighting the destination" the ticket warned
+  against.
+- **Only Escape and outside-click restore; selection never does**
+  (chosen). `close()`, called by `MenuItem`s and consumers on
+  selection, stays a bare `setOpen(false)` with no restore call. Escape
+  and outside-click have no competing focus claim — nothing else in
+  those paths is trying to move focus anywhere — so they're the two
+  paths that restore.
+- **Per-item opt-in** (a `restoreFocusOnSelect` prop on `MenuItem` or
+  the selection callback) — more precise (a same-page toggle like
+  "Switch user" could restore, a navigating item would not), but no
+  case asked for that granularity and it adds an API surface with no
+  current consumer needing it.
+
+**Decided.** Only Escape and outside-click restore. Selecting an item
+never does, uniformly — including same-page selections like "Switch
+user" that don't navigate. The simpler uniform rule was picked over the
+more precise per-item one because nothing in the current 11 consumers
+needs the distinction, and it's a contained, one-line reversal if a
+future consumer does.
+
+**Why not the other one.** Restoring on every close (including
+selection) is the version that actively regresses UX for any item that
+navigates or opens something else — verified live: the user-menu's
+"My profile" link, before this fix existed, would have had focus
+returned to the closed trigger a moment after the route change, which
+is a worse experience than the pre-fix "focus lost" bug for that one
+path. The per-item-opt-in option was not implemented because it is
+speculative API surface with no driving case.
+
+**Blast radius / confidence.** Contained to `Menu.tsx`'s `close`
+callback (currently a two-line function) and does not touch
+`useFocusTrap` or any dialog. Every one of the 11 `Menu` consumers
+(list/board ⋯, per-column board menus, `IconEmojiPicker`, `RowActions`,
+the header user menu) inherits the same rule with no per-site change
+needed, since none of them called `close` expecting a restore.
+
+**To revert.** Add `restoreFocus()` inside `close` in `Menu.tsx` to make
+selection restore too, and update/remove the "selecting an item does
+not fight the destination for focus" test in `Menu.test.tsx`.
+
+### K104-view-colour · A saved view gets a colour; emoji are never tinted
+
+**Ken's ruling (2026-09-23).** *"if icon and color, then yea. if only
+colour, then only have the color picker"* — **colour follows icon
+wherever both exist**, and an entity with a colour but no icon gets just
+a colour picker. Mapped against the contracts, the only entity that had
+an icon and no colour was the **saved view**, so that is the one that
+gains a `color`. Labels already have colour and no icon (correct as-is,
+untouched); projects, milestones and sprints have neither (out of scope).
+
+**Ken's ruling (2026-09-23), on detecting an emoji.** A hand-maintained
+list is not acceptable: *"as people add more emojis, i dont want to keep
+updating this list"*. And on "one character": *"we need to detect 'one
+character' but that needs to also be compatible with emojis that are
+combined data together, and all these weird emoji modifiers, but i
+shouldnt be able to combine emojis with other characters, or multiple
+emojis"*.
+
+Both are answered by **engine built-ins that track the Unicode version
+the runtime ships**, never a table in this repo:
+
+- **Is it an emoji?** `\p{Emoji_Presentation}` **OR** a trailing U+FE0F.
+  Deliberately NOT `Extended_Pictographic`: `★` is pictographic but has
+  TEXT presentation, renders in `currentColor` and therefore *can* be
+  tinted — the wrong property would disable the colour control on a
+  character the user can perfectly well colour, and would still pass
+  every 🎈-vs-`A` test. The U+FE0F clause covers `✔️`, where the
+  variation selector forces colour-emoji rendering that the property
+  alone reports as false.
+- **Is it one character?** `Intl.Segmenter` with
+  `granularity: "grapheme"`. Neither `.length` nor `[...s].length` works
+  (👨‍👩‍👧 is 8 UTF-16 units and 5 code points, but one character).
+
+Availability was checked against every target before relying on it:
+`Intl.Segmenter` is Node 16+ against a floor of `engines.node >= 20`, and
+Baseline in every current browser; `\p{...}` needs only ES2018. There is
+deliberately **no regex fallback** — a regex cannot segment a ZWJ
+sequence, and a silently wrong answer is worse than a loud absence.
+
+**This is UI-14 made visible.** Ken, 2026-09-22: *"perhaps icons can also
+have colours as part of it, but emojis, just use the emoji itself
+(because we can't add colour)"*. The web dialog now uses the shared
+`IconColorFields`, so picking an emoji makes the colour control **inert
+with its reason stated**, while the stored colour is **preserved, not
+cleared** — icon → emoji → icon restores the same colour (A279 / P-11).
+
+**Corruption behaviour: field-local.** An unresolvable colour is dropped
+on load so the view keeps its id, name and filters; `doctor` reports it
+(`inconsistent`, non-blocking). The drop asks `EntityColorSchema` rather
+than re-implementing the rule — the hand-rolled-hex-regex drift recorded
+in `integrity.ts` is exactly what a second copy would reintroduce.
+
+**Status: BUILT (2026-09-23).** Contract (`SavedQuerySchema.color`,
+`IconStringSchema` grapheme rule, `contracts/src/icon.ts`), core
+(loader drop + serializer + `createView`/`editView`/`unarchiveView`),
+CLI (`--color`, `-` clears, shown in `views list`), MCP (`color` on
+`create_view`/`edit_view`/`list_views`, icon validated), web
+(`ViewFormDialog` → `IconColorFields`), doctor, and both reference docs.
+
+**To revert.** Remove `color` from `SavedQuerySchema` and
+`CreateViewRequestSchema`/`EditViewRequestSchema`; drop `resolveColor`
+and the `color` serializer line in `config/queries.ts`; remove the
+`color` arms in `views/manage.ts` (create/edit/unarchive/repair); remove
+the `invalidViewColors` sweep in `diagnostics/integrity.ts` (and re-inline
+`invalidEntryColors` into `invalidLabelColors`); revert `ViewFormDialog`
+to a lone `IconEmojiPicker`; drop `--color` from `apps/cli/.../views.ts`
+and `color` from `apps/mcp/.../views.ts`. To revert the grapheme rule
+alone, remove the `.refine(...)` on `IconStringSchema` and delete
+`packages/contracts/src/icon.ts` plus its barrel exports.
+
+---
+
+## A298 · `ui/Tooltip` primitive + `title` → `aria-describedby` for disabled reasons (UI-23e)
+
+**Context.** `title` was doing two unrelated jobs. (1) A hover tooltip —
+the icon-only "Save as view" star (K30-web / A297) carried its name on
+`title`, whose ~1s delay is untunable and which never appears on
+keyboard focus at all. (2) The accessible *description* of a disabled
+control (`ui/Menu`'s `MenuItem`, `ui/Dropdown`'s disabled option), which
+relied on the browser exposing `title` as the description "when no other
+description source exists". Both were verified in source before either
+was touched.
+
+**The decision.**
+
+1. **Built `ui/Tooltip.tsx`** for job (1), portalled and placed by the
+   existing `usePortalPlacement` hook — the same substrate `Menu` and
+   `Dropdown` use, so there is one viewport clamp in the app, not two.
+   It fit unchanged; a tooltip is an anchored, measured, clamped
+   floating panel, which is exactly what the hook abstracts.
+2. **Migrated job (2) to `aria-describedby` → `sr-only`**, NOT to
+   `aria-label`. `aria-label` is the *name*; putting the reason there
+   would make a disabled Delete announce "A tracker must have at least
+   one project" **instead of** "Delete". An explicit description also
+   supersedes the `title` fallback cleanly, by the fallback's own terms.
+   The `sr-only` node is rendered **outside** the button — inside, its
+   text joins the accessible *name*, which is the same conflation being
+   fixed (red-proven: moving it inside turns the name into
+   "Delete A tracker must have at least one project.").
+
+**Delays: 150ms enter, 0ms focus, 0ms between adjacent targets.** 150ms
+is long enough that sweeping a pointer across a toolbar does not strobe
+a bubble over every button, and far under the ~1s being replaced. Focus
+is deliberate, so there is nothing to debounce and a delay would only
+look broken — and it is the keyboard user's ONLY path to the name. A
+module-level flag makes successive targets instant once the user is
+demonstrably reading tooltips.
+
+**Double-announcement rule: the bubble is always `aria-hidden`.** It is
+a rendering, for the eyes, of text assistive tech already has by another
+route — the trigger's `aria-label` by default, or (with `describes`) a
+**permanent** `sr-only` node that `aria-describedby` points at.
+Permanent, not hover-only: a screen-reader user never hovers, so a
+description that exists only while a pointer rests on the control is one
+they can never reach, and the reference would dangle the rest of the
+time.
+
+**Touch: nothing happens.** There is no hover on touch; showing on tap
+swallows the first tap and showing on long-press collides with platform
+gestures. The name stays on `aria-label`, so the control is never
+nameless to assistive tech — it is only unlabelled to a *sighted touch*
+user, which is the pre-existing icon-only tradeoff K30-web accepted, not
+a new regression. Pointer handlers filter on `pointerType`.
+
+**Reduced motion.** The entrance fade is a named keyframe in
+`styles/index.css` with its own `prefers-reduced-motion` guard, matching
+the spinner's precedent, on top of the app-wide SHL-28 rule.
+
+**The `title` audit.** Tooltips (migrated): the "Save as view" star and
+the "View options" ⋯ in `list/FilterBar.tsx`; the active-view chip's
+edit button (with `describes`, since the full summary says more than the
+`aria-label` and is visually truncated); `milestones/MilestoneDetail`'s
+edit button. Descriptions (migrated to `aria-describedby`): `ui/Menu`
+`MenuItem`, `ui/Dropdown` disabled option, and `shell/Header`'s sidebar
+toggle + New-task button. **Deliberately left alone:** `title` on
+truncated text (`Toast`, `BoardCard`, list `cells.tsx`, `ListView`),
+where it is the browser's native "show me the full string" affordance on
+overflow, not a tooltip on a control; and `<time>` timestamps
+(`MetaPanel`, `CommentItem`, `ActivityEntry`), same reason.
+
+**Tests.** 9 new in `ui/Tooltip.test.tsx`; 1 new in `ui/Menu.test.tsx`
+(the name must not absorb the reason). All red-proven individually by
+breaking the behaviour and restoring byte-exact. One of the nine
+originally asserted nothing — deleting the empty-label guard left it
+green — and was rewritten to exercise both hover and focus before it
+would go red.
+
+**Passing tests edited, and what they asserted.** Five, all asserting
+the *mechanism* (`title` attribute) rather than the behaviour, so all
+five were rewritten to read the **computed** accessible description via
+`@testing-library/jest-dom`'s matchers:
+`ui/Menu.test.tsx:145`, `list/FilterBar.test.tsx:361` and `:933`,
+`settings/RowActions.test.tsx:58`, `settings/UsersPanel.test.tsx:542`.
+None was asserting a bug; each was asserting a correct behaviour through
+an attribute that has now changed.
+
+**To revert.** Delete `apps/web/src/client/ui/Tooltip.tsx`,
+`ui/Tooltip.test.tsx` and `src/client/testMatchers.d.ts`; remove the
+`.loctt-tooltip-in` block from `styles/index.css`; restore `title=` in
+place of the `Tooltip` wrappers in `list/FilterBar.tsx` and
+`milestones/MilestoneDetail.tsx`; restore `title={…}` in place of
+`aria-describedby` + `SrOnly` in `ui/Menu.tsx`, `ui/Dropdown.tsx` and
+`shell/Header.tsx`; and revert the five test assertions above to
+`getAttribute("title")`.
+
+---
+
+### A300 · Two-mode colour preview — `ThemePreview` island, a render FUNCTION not two nodes, and the `@theme` alias bug that made the dark half paint light
+
+**Ticket:** colour preview · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**The situation.** Ken asked for a preview showing a chosen colour on
+both a light and a dark background, so a user does not "pick a colour,
+exit, toggle, see its not good, then edit again". A prior design review
+established the CSS mechanics (`tokens.css:150` is a bare `.dark`;
+`index.css:115` scopes the Tailwind variant as
+`&:where(.dark, .dark *)`) and correctly identified the React half as
+the blocker: `ui/entityColor.ts:59` `useColorMode()` reads the GLOBAL
+theme, so a real component mounted inside a dark island resolves its own
+hex from global state and paints dark chrome with the light colour.
+
+All of those citations were verified against source. **One further
+claim in the review was verified and found FALSE** — see A301.
+
+**What had to be decided.** (a) What shape hands each half its own
+mode's colour without changing `useColorMode`; (b) where the slot lives;
+(c) whether the emoji state shows a preview.
+
+**Options considered.**
+1. *A `ColorModeProvider` context that `useColorMode` consults.* Makes
+   any component previewable, but changes the render path of every
+   pill, chip, dot and badge in the app to serve one dialog.
+2. *Two `ReactNode` props (`light` / `dark`), consumer renders each.*
+   No hook change — but two nodes can drift, and a preview whose halves
+   have drifted reports a difference the real UI does not have.
+3. *One render FUNCTION, called once per mode with that mode's
+   already-resolved hex.* No hook change, and the halves cannot drift
+   because they are the same code.
+
+**Decided.** Option 3. `ui/ThemePreview.tsx` resolves both halves itself
+via `resolveForMode(color, mode)` and calls
+`render(hex, mode)` twice. Nothing inside a specimen reads the global
+theme. The slot is `preview?: React.ReactNode` on
+`ui/IconColorFields.tsx` (stacked layout only) — NOT on `ColorPicker`,
+whose panel is a `Menu` that closes on pick (`ColorPicker.tsx:328`), so
+a preview inside it would vanish at the moment of choosing. Layout is
+derived from width (`SPECIMEN_W = 148`, `NARROW_PX = 640`), with no
+layout enum, per Ken's ruling.
+
+**Emoji: the preview RENDERS, the colour control stays inert.** Ken
+overrode the review, which had recommended no preview at all for an
+emoji. Ken is right and the review missed why: the emoji does not change
+between the halves, but the BACKGROUNDS do, so the preview still answers
+"is this legible in both themes" — a pre-coloured glyph can read on one
+surface and vanish on the other.
+
+**Why.** The render-function shape is the only one that makes "both
+halves are the real element" true by construction rather than by
+convention, and it is strictly less machinery than a context. Core
+already returns per-mode values (`resolveEntityColor(color, mode)`,
+`packages/core/src/config/color.ts:298`), so no core work was needed.
+
+**Also extracted:** the label pill's visual rule moved to
+`ui/labelPillStyle.ts` (`readableOn`, `LABEL_PILL_CLASS`,
+`labelPillStyle`), shared by `list/cells.tsx` and the preview. The
+preview's claim is that it shows the REAL pill — three derived values
+(`${c}22` wash, `${c}66` border, luma-chosen text), none of which a flat
+swatch shows. A replica would have made that claim false.
+
+**Consumers wired.** `settings/LabelEditDialog.tsx` only.
+**Note the review was wrong that this dialog uses `IconColorFields`** —
+it has no icon field and calls `ColorPicker` directly, so it renders
+`ThemePreview` inline. `settings/ViewFormDialog.tsx` was OFF-LIMITS
+(concurrent agent) and is an open handoff.
+
+**To revert.** Delete `apps/web/src/client/ui/ThemePreview.tsx` and
+`ui/ThemePreview.test.tsx`; remove the `preview` prop and its render
+block from `ui/IconColorFields.tsx`; remove the `<ThemePreview>` block
+and the two imports from `settings/LabelEditDialog.tsx`. Optionally
+inline `ui/labelPillStyle.ts` back into `list/cells.tsx` (restoring the
+private `readableOn` and the inline className/style) and delete
+`ui/labelPillStyle.ts`. A301's CSS fix is independent and should be
+kept regardless.
+
+---
+
+### A301 · The `@theme` bridge is `:root`-only, so a NESTED `.dark` island painted LIGHT — re-aliased inside `.dark`
+
+**Ticket:** colour preview · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**The situation.** The design review stated that because `tokens.css`
+uses a bare `.dark` class and `index.css` scopes the Tailwind variant
+descendant-wise, "a nested `<div className='dark bg-bg-surface'>` **is a
+complete theme island**" and the CSS half is "solved, and unusually
+cleanly — genuinely clean … free".
+
+**Verified live at localhost:5173, and it is false.** The first render
+of the label-dialog preview showed both halves WHITE while the page was
+in light mode. Inspection:
+
+```
+--bg-surface        inside the island : #141416   (correct)
+--color-bg-surface  inside the island : #FFFFFF   (stale)
+computed background-color             : rgb(255,255,255)
+```
+
+**The mechanism.** `index.css`'s `@theme` block bridges the design
+tokens into Tailwind as `--color-bg-surface: var(--bg-surface)`, and
+Tailwind emits those entries **once, on `:root`**, where each resolves
+immediately against the light tokens and is thereafter inherited as that
+literal. The utilities read the alias
+(`.bg-bg-surface { background-color: var(--color-bg-surface) }`), not
+the token. `tokens.css`'s `.dark` scope re-declares `--bg-surface` but
+NOT `--color-*`. On `<html>` this never showed — there is no outer scope
+to inherit a stale alias from. It appears only when a `.dark` is nested
+inside a light page.
+
+**This is the worst failure shape.** The custom properties inspect as
+correct and convincing while the paint stays light. A reviewer checking
+only `--bg-surface` signs it off. That is precisely what happened.
+
+**What had to be decided.** Whether to work around it locally in
+`ThemePreview` (re-declare the handful of aliases it paints) or fix the
+bridge where it breaks.
+
+**Options considered.**
+1. *Local override in `ThemePreview`.* Contained, but only the tokens
+   that component happens to use — any `dark:` utility or nested
+   component inside a future island silently reverts to light.
+2. *Re-declare all 37 `--color-*` aliases inside `.dark`.* Fixes every
+   nested island, present and future, at the layer that is broken.
+
+**Decided.** Option 2. `styles/index.css` gains a `:where(.dark) { … }`
+block re-declaring all 37 aliases against that scope's tokens.
+`:where()` keeps specificity at zero, so nothing outranks a utility.
+
+**Why.** The bug is in the bridge, not in the consumer; a local
+workaround would leave the next island to rediscover it, and the
+discovery cost here was a live screenshot, not a failing test.
+
+**Verified after the fix:** dark half computes `rgb(20,20,22)` with
+`<html>` carrying no `dark` class; screenshot confirms a genuinely dark
+cell beside a white one in a light-mode app.
+
+**To revert.** Delete the `:where(.dark)` block (and its comment) from
+`apps/web/src/client/styles/index.css`, and delete
+`apps/web/src/client/styles/themeIsland.test.ts`. Note that reverting
+re-breaks any nested theme island, including `ThemePreview`.

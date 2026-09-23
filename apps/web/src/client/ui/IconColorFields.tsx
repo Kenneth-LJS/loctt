@@ -50,6 +50,7 @@ export function IconColorFields({
   colorAliasTestId,
   noun,
   layout = "stacked",
+  preview,
 }: {
   readonly icon: string | undefined;
   readonly onIconChange: (next: string | undefined) => void;
@@ -66,6 +67,23 @@ export function IconColorFields({
   readonly noun: string;
   /** `inline` packs both into a row, for the custom-field value rows. */
   readonly layout?: "stacked" | "inline";
+  /**
+   * The optional two-mode preview, rendered BELOW both fields.
+   *
+   * Pass a `<ThemePreview color={color} render={…} />`. It lives here
+   * rather than inside `ColorPicker` because the picker's panel is a
+   * `Menu` that **closes on pick** (`ColorPicker.tsx:328` —
+   * `onPick={next => { onChange(next); close(); }}`). A preview inside
+   * that panel is visible only while you are mid-decision and vanishes
+   * the instant you commit — backwards, since a preview's job is to
+   * show what you *chose*. Under the fields, in the dialog body, it is
+   * persistent.
+   *
+   * Rendered in the `stacked` layout only: `inline` is the custom-field
+   * value row, where the two controls are already packed into a table
+   * cell with no room beneath them.
+   */
+  readonly preview?: React.ReactNode;
 }) {
   // The couple rule, asked of the CATALOG rather than of the string's
   // shape. `undefined` (no icon) leaves the colour live: a colourless
@@ -115,6 +133,19 @@ export function IconColorFields({
           />
         </div>
       </div>
+
+      {/* The preview renders EVEN WHEN `colorInert` — i.e. even for an
+          emoji (Ken, 2026-09-23: *"if emoji case, just show emoji with
+          bg"*). The reasoning the review missed: the emoji itself does
+          not change between the halves, but the BACKGROUNDS do, so the
+          preview still answers the only question it is there to answer
+          — "is this legible in both themes". A pre-coloured glyph can
+          be perfectly readable on one surface and vanish on the other.
+          The colour control beside it stays inert regardless; the
+          preview is a readout, not a second way to set anything. */}
+      {!inline && preview !== undefined && (
+        <div className="block">{preview}</div>
+      )}
     </>
   );
 }

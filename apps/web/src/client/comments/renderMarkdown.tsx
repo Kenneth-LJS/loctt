@@ -228,6 +228,18 @@ function renderText(node: JSONContent): React.ReactNode {
       case "subscript":
         out = <sub>{out}</sub>;
         break;
+      // A295: the comment composer is the SAME `RichEditor` + `Toolbar`
+      // as the task body, so a commenter can author these two marks. A
+      // reader with no case for them renders them as unstyled text —
+      // the author sees formatting while writing and loses it on post.
+      // `<ins>` is the tag chosen over `<u>` because GitHub strips `<u>`;
+      // `<mark>` is what `==text==` renders as.
+      case "underline":
+        out = <ins>{out}</ins>;
+        break;
+      case "highlight":
+        out = <mark>{out}</mark>;
+        break;
       case "link": {
         const href = String(mark.attrs?.["href"] ?? "");
         out = isSafeHref(href)

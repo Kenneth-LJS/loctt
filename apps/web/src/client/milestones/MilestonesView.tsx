@@ -1,4 +1,3 @@
-import type { ArchivedScope } from "@loctt/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type MouseEvent, useMemo, useState } from "react";
 
@@ -14,7 +13,6 @@ import { formatWorkspaceDate, NO_TARGET_DATE } from "../dates/workspaceDate.ts";
 // milestone created from this view cannot drift from one created anywhere
 // else. Reading a settings/ component is allowed; this file does not edit it.
 import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
-import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
@@ -113,12 +111,18 @@ export function MilestonesView() {
   const info = useInfo();
   const navigate = useNavigate();
 
-  // MSL-25 / K107: archived milestones are excluded from the default view
-  // and revealed by the shared tri-state control — a local view scope, not
-  // a write. This view computes progress + orphan diagnosis over the WHOLE
-  // list (archived included), so the scope is applied client-side to what
-  // is *displayed* rather than by refetching. Default `active`.
-  const [scope, setScope] = useState<ArchivedScope>("active");
+  // MSL-25 / K107 / Ken's ruling, 2026-09-22 ("archiving is a one-way
+  // door, not a filter", decisions.md § 9): this used to be a tri-state
+  // scope the user could flip to reveal archived milestones in place.
+  // /milestones is a progress surface people browse WHILE WORKING — not
+  // the Settings admin/recovery panel the ruling reserves an
+  // archived-scope control for — so it is judged with Task list/Board/
+  // Timeline ("Never"), not with Settings → Milestones (which keeps its
+  // own control, demoted). Archived milestones are simply never shown
+  // here; Settings → Milestones is where an administrator recovers one.
+  // Orphan diagnosis below still runs over the WHOLE list, archived
+  // included — a task pointing at an archived milestone is resolvable
+  // and therefore not an orphan.
 
   // K105: "+ New milestone" opens the shared create dialog in place (not
   // a form on the Settings page). `false` is the closed state; on success
@@ -146,18 +150,11 @@ export function MilestonesView() {
   // sibling Sprints view surfaces the same via /api/tasks.
   const unreadable = milestones.data?.unreadable ?? [];
 
-  const archivedCount = all.filter(m => m.archived === true).length;
-
-  // K107 client-side scope: `active` hides archived, `archived` keeps only
-  // archived, `all` keeps both — the same three the shared control emits
-  // and the server applies elsewhere.
+  // This view no longer offers a control to change scope — archived
+  // milestones are simply excluded, unconditionally.
   const visible = useMemo(
-    () => sortMilestones(all.filter(m => {
-      if (scope === "all") return true;
-      if (scope === "archived") return m.archived === true;
-      return m.archived !== true;
-    })),
-    [all, scope],
+    () => sortMilestones(all.filter(m => m.archived !== true)),
+    [all],
   );
 
   // The tracker's date, not the browser's: two users in different
@@ -204,19 +201,6 @@ export function MilestonesView() {
         }
         actions={
           <>
-            {/* MSL-25 / K107: the shared tri-state control reveals archived
-                milestones *in the view* without unarchiving them — nothing
-                here writes to `milestones.yaml`. Shown whenever there are
-                archived milestones to reveal; the count rides on the
-                "Archived" option. */}
-            {archivedCount > 0 && (
-              <ArchivedScopeControl
-                testId="milestones-archived-scope"
-                value={scope}
-                onChange={setScope}
-                counts={{ archived: archivedCount }}
-              />
-            )}
             {/* K105: create is a "+ New milestone" affordance opening the
                 shared create dialog in place, mirroring the sidebar's
                 "+ New project"/"+ New view". Not a deep link to a Settings

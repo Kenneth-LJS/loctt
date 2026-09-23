@@ -1,16 +1,17 @@
 
 import type {
   BrokenSavedQuery,
+  EntityColor,
   Filter,
   QueriesConfig,
   SavedQuery,
 } from "@loctt/contracts";
-import { FilterSchema, SavedQuerySchema } from "@loctt/contracts";
+import { EntityColorSchema, FilterSchema, SavedQuerySchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 import { getQueriesConfigPath } from "../paths/index.js";
-import { normalizeFilters } from "../query/filters.js";
+import { FilterError, filtersToNode, normalizeFilters } from "../query/filters.js";
 import { renderRawText } from "../task/frontmatter.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { readFileState, UnreadableFileError } from "../utils/read-state.js";
@@ -49,12 +50,42 @@ const LoaderSavedQuerySchema = z.object({
   display: SavedQuerySchema.shape.display,
   archivedScope: SavedQuerySchema.shape.archivedScope,
   icon: SavedQuerySchema.shape.icon,
+  // Accepted-but-not-validated here, then judged per-field by
+  // `dropInvalidColor` below. Applying the strict colour schema at this
+  // level would make one hand-edited bad colour object-fatal for the
+  // WHOLE entry (the tolerant schema is `.strict()`, so a rejected
+  // `color` fails the entry, not just the field) — and a decorative
+  // field must never cost a view its filters. See the field's own
+  // docstring in contracts/query.ts.
+  color: z.unknown().optional(),
   archived: SavedQuerySchema.shape.archived,
 }).strict();
 
 const RawQueriesConfigSchema = z.object({
   queries: z.array(LoaderSavedQuerySchema),
 }).strict();
+
+/**
+ * Extracts the offending character offset from a `FilterError`'s message,
+ * when there is one.
+ *
+ * `FilterError` (query/filters.ts) does not carry a `position` field of
+ * its own — it wraps `TokenizeError`/`ParseError`, whose `position` is
+ * folded into the message text as "... at position N" by `LocttError`,
+ * and the wrapping in `advancedToNode` does not preserve the field
+ * itself. Parsing it back out of the message is the only route available
+ * without changing `query/filters.ts` (out of scope here — `query/` has
+ * no `views/`-style error-shape convention to extend, and `FilterError`'s
+ * shape is shared with non-DSL failures like an uncombinable simple
+ * filter, which have no position to report). Best-effort: absent when the
+ * message has no such suffix.
+ */
+function extractPosition(message: string): number | undefined {
+  const match = /at position (\d+)/.exec(message);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  return Number.isInteger(value) && value >= 0 ? value : undefined;
+}
 
 /**
  * Validate one entry's stored `filters`.
@@ -65,14 +96,72 @@ const RawQueriesConfigSchema = z.object({
  * `filters` key reads as the empty list (a view with no filters matches
  * everything within its archived scope) rather than an error — that is a
  * meaningful, authorable state, not corruption.
+ *
+ * Shape-valid is not enough: an advanced filter's DSL text is only ever
+ * tokenized/parsed by `filtersToNode`, so a shape-valid entry holding
+ * malformed DSL (e.g. `status = = = done AND`) used to load as an
+ * ordinary healthy view and only fail once actually run — the
+ * `BrokenSavedQuery` degrade path this file documents for "filters no
+ * longer validate" was unreachable for that whole defect class. Running
+ * `filtersToNode` here, after shape validation, closes that gap: a
+ * `FilterError` (thrown for an unparseable advanced filter or an
+ * uncombinable simple one — see filters.ts) degrades the entry exactly
+ * like a shape failure. This is still a per-ENTRY, non-object-fatal
+ * check — it never throws out of this function.
  */
 function resolveFilters(
   rawFilters: unknown,
-): { ok: true; filters: Filter[] } | { ok: false; reason: string } {
+): { ok: true; filters: Filter[] } | { ok: false; reason: string; position?: number } {
   if (rawFilters === undefined) return { ok: true, filters: [] };
   const parsed = z.array(FilterSchema).safeParse(rawFilters);
-  if (parsed.success) return { ok: true, filters: parsed.data };
-  return { ok: false, reason: formatZodIssues("filters", parsed.error) };
+  if (!parsed.success) return { ok: false, reason: formatZodIssues("filters", parsed.error) };
+  try {
+    // The AST is discarded — only used to prove the filter list actually
+    // parses/composes. Mirrors `assertFiltersValid` (views/manage.ts),
+    // which validates the same way on write; this is the read-time
+    // analogue for entries that reached disk before that gate existed, or
+    // via a hand edit.
+    filtersToNode(parsed.data);
+  } catch (err) {
+    if (err instanceof FilterError) {
+      const position = extractPosition(err.message);
+      return position !== undefined
+        ? { ok: false, reason: err.message, position }
+        : { ok: false, reason: err.message };
+    }
+    throw err;
+  }
+  return { ok: true, filters: parsed.data };
+}
+
+/**
+ * Keep a view's `color` only when it is one of K103's three shapes;
+ * otherwise DROP the field and leave the rest of the view intact.
+ *
+ * This is the MSL-22 salvage, applied to saved views: a colour is
+ * cosmetic, and a view whose colour does not parse still has its id, its
+ * name and its filters — everything a reference needs and everything
+ * that makes it runnable. Per the corruption guide's ground rule ("when
+ * in doubt, degrade"), the bad value costs its own FIELD, never the
+ * entry and never the file. Degrading the whole entry to a
+ * `BrokenSavedQuery` would take the view's filters out of service over a
+ * decorative typo, and that is destruction by another route.
+ *
+ * **The schema is the judge, never a regex.** `integrity.ts` documents
+ * what re-implementing this rule costs: `invalidLabelColors` was once a
+ * hand-rolled hex test and silently dropped every valid palette and
+ * per-mode colour the moment K103 widened the shape. Asking
+ * `EntityColorSchema` is the only form that cannot drift when the
+ * contract widens again.
+ *
+ * The dropped value is NOT silently forgotten: `checkDataIntegrity`
+ * re-reads the raw file and reports it, so doctor names the view and the
+ * unusable value (corruption-guide rule 4, "report, don't hide").
+ */
+function resolveColor(rawColor: unknown): EntityColor | undefined {
+  if (rawColor === undefined) return undefined;
+  const parsed = EntityColorSchema.safeParse(rawColor);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function parseQueriesConfig(yamlContent: string): QueriesConfig {
@@ -119,6 +208,7 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
         // in `rawText`.
         summary: "(unreadable filters)",
         error: resolved.reason,
+        ...(resolved.position !== undefined ? { position: resolved.position } : {}),
         index: i,
         // The entry's FULL raw YAML, so a write re-emits every field
         // rather than only {id,name} — Phase Z C2. Mirrors how the six
@@ -128,6 +218,7 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
       return;
     }
 
+    const color = resolveColor(item.color);
     queries.push({
       id: item.id,
       name: item.name,
@@ -136,6 +227,8 @@ export function parseQueriesConfig(yamlContent: string): QueriesConfig {
       ...(item.display !== undefined ? { display: item.display } : {}),
       ...(item.archivedScope !== undefined ? { archivedScope: item.archivedScope } : {}),
       ...(item.icon !== undefined ? { icon: item.icon } : {}),
+      // Field-local: an unresolvable colour is dropped, not fatal.
+      ...(color !== undefined ? { color } : {}),
       ...(item.archived === true ? { archived: true } : {}),
     });
   });
@@ -169,6 +262,7 @@ function serializeSavedQuery(q: QueriesConfig["queries"][number]): Record<string
     ...(q.display !== undefined ? { display: serializeDisplay(q.display) } : {}),
     ...(q.archivedScope !== undefined ? { archivedScope: q.archivedScope } : {}),
     ...(q.icon !== undefined ? { icon: q.icon } : {}),
+    ...(q.color !== undefined ? { color: q.color } : {}),
     ...(q.archived === true ? { archived: true } : {}),
   };
 }

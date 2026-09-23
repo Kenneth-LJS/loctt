@@ -699,8 +699,7 @@ test.describe("XS — the UI and the CLI mean the same things", () => {
     await expect(page.getByText("Archived elsewhere")).toBeHidden();
 
     // And visible, badged, once archived rows are asked for.
-    await page.getByTestId("view-actions-menu").click();
-    await page.getByTestId("view-actions-archived-scope").selectOption("all");
+    await page.getByTestId("list-archived-scope-all").click();
     await expect(page.getByText("Archived elsewhere")).toBeVisible();
     await expect(
       page.getByRole("row", { name: /Archived elsewhere/ }),
@@ -741,52 +740,6 @@ test.describe("XS — the UI and the CLI mean the same things", () => {
     const listed = await tracker.run(["list"]);
     const cliRows = listed.split("\n").filter(l => /^T-\d+\s/.test(l)).length;
     expect(cliRows).toBe(6);
-  });
-});
-
-test.describe("BLK — export with an unreadable task", () => {
-  // @verifies BLK-44
-  test("BLK-44: the export succeeds and names what it could not read", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed([
-      { title: "Readable one" },
-      { title: "Readable two" },
-      { title: "Will be corrupted" },
-    ]);
-
-    const tasksDir = path.join(tracker.root, ".loctt", "tasks");
-    const ids = await readdir(tasksDir);
-    const victim = String(ids[ids.length - 1]);
-    await writeFile(
-      path.join(tasksDir, victim, "task.md"),
-      "---\nid: [not\n  valid: yaml\n---\nbody\n",
-      "utf8",
-    );
-
-    await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByText("Readable one")).toBeVisible();
-
-    const download = page.waitForEvent("download");
-    // Export moved into the list toolbar's "View options" overflow menu
-    // (`053cf571`); its trigger only exists while that menu is open.
-    await page.getByTestId("view-actions-menu").click();
-    await page.getByRole("button", { name: /Export/ }).click();
-    await page.getByRole("menuitem", { name: /CSV/ }).click();
-
-    // The file arrives — BLK-44's preferred branch is that the export
-    // succeeds rather than failing outright.
-    const file = await download;
-    expect(file.suggestedFilename()).toContain(".csv");
-
-    // And the surface says what is missing from it. A truncated file
-    // with no mention is the one outcome the case rules out.
-    const notice = page.locator("[data-export-skipped]");
-    await expect(notice).toBeVisible();
-    await expect(notice).toContainText("1 task could not be read");
-    await expect(notice).toContainText("task.md");
-    await expect(notice).toContainText(victim);
   });
 });
 

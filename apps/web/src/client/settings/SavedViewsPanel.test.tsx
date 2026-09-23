@@ -390,3 +390,44 @@ describe("SavedViewsPanel — broken views (VUE-22)", () => {
     await waitFor(() => { expect(writeCalls("PUT").length).toBe(1); });
   });
 });
+
+/**
+ * @verifies N-4 / UI-10
+ *
+ * SavedViewsPanel already put its create action in the title row, but at
+ * `size="sm"` (24.5px) — the one panel of the six at a different control
+ * height than the other five (28px). Converged via the shared
+ * `SettingsPanelHeader`, which does not pass a `size` override, so the
+ * create button falls back to `Button`'s `md` default (h-8, 28px).
+ */
+describe("SavedViewsPanel header convergence (N-4)", () => {
+  it("renders the canonical title markup via SettingsPanelHeader", async () => {
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    expect(title.tagName).toBe("H1");
+    expect(title.textContent).toBe("Saved views");
+    expect(title.className).toContain("text-text-primary");
+  });
+
+  it("puts the create action in the header row next to the title", async () => {
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    const createBtn = await screen.findByTestId("saved-views-new");
+    const header = title.closest("header");
+    expect(header).not.toBeNull();
+    expect(header?.contains(createBtn)).toBe(true);
+  });
+
+  it("no longer requests the sm control size — the create button uses the shared md default", async () => {
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+
+    const createBtn = await screen.findByTestId("saved-views-new");
+    // `Button`'s sm size is `h-7`; md (the default, unset here) is `h-8`.
+    // Before N-4 this button carried `size="sm"` and rendered `h-7`,
+    // 24.5px — the one outlier among the six panels' create actions.
+    expect(createBtn.className).toContain("h-8");
+    expect(createBtn.className).not.toContain("h-7");
+  });
+});

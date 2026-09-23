@@ -3,7 +3,7 @@
  * the create-task modal.
  *
  * These are browser specs because what they assert is browser
- * behaviour: three entry points opening one component, a focus trap, a
+ * behaviour: two entry points opening one component, a focus trap, a
  * shortcut that must not fire inside a text field, a double-click that
  * must not create two tasks, a toast that outlives the modal.
  *
@@ -148,36 +148,13 @@ async function setEstimation(
 
 test.describe("NEW — create task modal", () => {
   // @verifies NEW-1
-  // @verifies NEW-1
   //
-  // The seeded case. NEW-1's other test navigates to `/board` without
-  // seeding, so the board is empty and BRD-40's empty-state "+ Add
-  // task" is present — the only one that existed. On any board with
-  // tasks there was no board entry point at all, and the test could
-  // not see it because it never created a task.
-  //
-  // The button is board-level, not per-column: M3.1 built per-column
-  // controls and removed them, because a column still rendered for a
-  // status `workflow.yaml` no longer declares would carry a create
-  // control, which is what broke BRD-42.
-  test("NEW-1: the board entry point exists once the board has tasks", async ({
-    page,
-    tracker,
-  }) => {
-    await tracker.seed([{ title: "Existing one" }, { title: "Existing two" }]);
-    await page.goto(`${tracker.baseURL}/board`);
-
-    // The empty state is gone — the positive control, without which
-    // this test would pass on the very state it exists to rule out.
-    await expect(page.getByText("No tasks yet.")).toHaveCount(0);
-
-    const add = page.getByTestId("board-add-task");
-    await expect(add).toBeVisible();
-    await add.click();
-    await expect(page.getByTestId("create-task-modal")).toBeVisible();
-  });
-
-  test("NEW-1: all three entry points open the same modal", async ({ page, tracker }) => {
+  // UI-13 removed the board's own "+ Add task" — it called the
+  // identical `createTask.open()` the header's "+ New task" already
+  // calls, ~200px away, so it was a duplicate entry point rather than a
+  // third one. Two entry points remain: the header `+` and the `n`
+  // shortcut.
+  test("NEW-1: both entry points open the same modal", async ({ page, tracker }) => {
     await page.goto(`${tracker.baseURL}/board`);
 
     // 1. The header "+".
@@ -193,12 +170,6 @@ test.describe("NEW — create task modal", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("create-task-modal")).toBeHidden();
 
-    // 3. The board's "+ Add task" (the tracker is empty, so the
-    //    board-level empty state is showing — BRD-40).
-    await page.getByTestId("board-empty").getByRole("button", { name: /Add task/ }).click();
-    await expect(page.getByTestId("create-task-modal")).toBeVisible();
-    const fromBoard = await page.getByTestId("create-task-modal").innerHTML();
-
     // The same component: same heading, same field set. Comparing the
     // rendered markup is what catches "present in one and absent in
     // another", which inspecting one entry point cannot.
@@ -209,9 +180,8 @@ test.describe("NEW — create task modal", () => {
     // testid, label, control and its order — still has to match.
     const stable = (html: string): string => html.replace(/_r_[0-9a-z]+_/g, "_rid_");
     expect(stable(fromShortcut)).toBe(stable(fromHeader));
-    expect(stable(fromBoard)).toBe(stable(fromHeader));
 
-    // And the route did not change underneath any of them.
+    // And the route did not change underneath either of them.
     expect(new URL(page.url()).pathname).toBe("/board");
   });
 
@@ -948,55 +918,6 @@ test.describe("NEW — create task modal", () => {
     await page.goto(`${tracker.baseURL}/list`);
     await openModal(page);
     await expect(page.getByText("Custom fields")).toHaveCount(0);
-  });
-
-  // @verifies NEW-3
-  // NOTE: this test covers NEW-3's bullets 2 and 3 only — the pre-fill
-  // is editable, and the new card lands in the right column. Bullet 1,
-  // the pre-fill itself, is **unenactable**: it needs a per-column
-  // "+ Add task", and only the board-level one exists.
-  //
-  // M3.1 added per-column controls and removed them: a column still
-  // rendering for a status deleted from workflow.yaml since page load
-  // then carried a create control, which is what broke BRD-42. The
-  // call is sound and recorded — its consequence for NEW-3 was not.
-  //
-  // So `initialStatus` is plumbed through provider and modal and no
-  // caller supplies it: both call sites are `createTask.open()` with
-  // no argument. Measured — neutering the pre-fill left all 44 tests
-  // in this file green. Renamed so the title stops claiming a control
-  // the app does not have.
-  test("NEW-3: the create modal's status is editable and the card lands there", async ({
-    page,
-    tracker,
-  }) => {
-    // The board-level "+ Add task" is the affordance BRD-40 requires,
-    // and it is the only one on this view — see BoardView for why a
-    // per-column control is deliberately absent (BRD-42 renders a
-    // column for a status workflow.yaml no longer defines).
-    //
-    // So the status pre-fill is asserted through the modal's own
-    // status field, which is what NEW-3's second and third bullets
-    // actually turn on: the pre-fill is editable, and the created task
-    // carries the chosen status.
-    await page.goto(`${tracker.baseURL}/board`);
-    await page.getByTestId("board-empty").getByRole("button", { name: /Add task/ }).click();
-    await expect(page.getByTestId("create-task-modal")).toBeVisible();
-
-    // Editable: choosing a different status wins.
-    await page.getByTestId("create-status").getByRole("button").first().click();
-    await page.getByRole("option").filter({ hasText: "In progress" }).click();
-    await page.getByTestId("create-title").fill("Lands in progress");
-    await page.getByTestId("create-submit").click();
-    await expect(page.getByTestId("create-task-modal")).toBeHidden();
-
-    const text = await fileByTitle(tracker.root, "Lands in progress");
-    expect(fmValue(text, "status")).toBe("in_progress");
-
-    // And the card appears in that column without a reload.
-    await expect(
-      page.getByTestId("board-column-in_progress").getByText("Lands in progress"),
-    ).toBeVisible();
   });
 
   // @verifies NEW-6

@@ -95,8 +95,14 @@ The filter bar sits above List, Board, and Timeline.
 - **Active filters** appear as chips below the bar, each removable, with
   "Clear all". A free-text query and an active saved view each show their
   own chip — click it to open the advanced editor.
-- **View actions** — Refresh, Export, and "Save as view", plus a "Show
-  archived" toggle.
+- **View actions** — "Save as view", as a star button at the right of the
+  toolbar. The board adds a "⋯" beside it for its column and card-layout
+  settings.
+
+  There is no CSV/JSON export in the web UI: an export is a report for a
+  spreadsheet, and it lives on the CLI (`loctt export`) and the
+  `export_tasks` MCP tool. Settings → Backup & restore is the web
+  surface for taking a copy you can restore from.
 - **Advanced query** — reached from the Add-filter menu, a visual builder
   with a raw query-language toggle for anything the facets don't cover.
 
@@ -216,8 +222,8 @@ one. A restore runs in one of three modes:
 A **dry run** predicts the counts and writes nothing, in any mode, and the
 restore reports per-outcome counts plus any key reallocations, renamed
 entities, or skipped lines. A backup taken in split parts must be restored
-with the `loctt restore` CLI, which takes every part at once. (A CSV or
-JSON export is a report, not a backup — it cannot restore.)
+with the `loctt restore` CLI, which takes every part at once. (The CLI's
+CSV or JSON export is a report, not a backup — it cannot restore.)
 
 ## Keyboard shortcuts
 

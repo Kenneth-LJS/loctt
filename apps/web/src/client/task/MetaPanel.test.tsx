@@ -519,3 +519,51 @@ describe("#15 — tap targets and control-height normalization", () => {
     expect(statusTrigger.className).toContain("min-h-7");
   });
 });
+
+describe("UI-7 — meta rows do not double in height for a two-word value", () => {
+  // jsdom does not run layout, so these cannot assert the measured
+  // 42.67px -> 24.5px row-height fix directly — that was verified live,
+  // at 1440x900 and 375x812 against the built client (see
+  // docs/dev/design/ui-issues.md UI-7). What jsdom CAN assert is the
+  // class-level cause and Ken's two decisions: the value column widens
+  // on desktop and the row stacks on mobile, both via plain Tailwind
+  // responsive classes (no `useIsNarrow`, since the DOM does not
+  // differ), and the `Dropdown` trigger's shrink-to-fit wrapper is
+  // forced to stretch to that column's full width.
+
+  it("lays the row out as one column (mobile: label above value) below `sm`, two columns at `sm` and up", () => {
+    renderPanel({ frontmatter: { status: "todo" } });
+    const row = screen.getByRole("button", { name: /Status/ }).closest(".grid");
+    expect(row).not.toBeNull();
+    expect(row?.className).toMatch(/\bgrid-cols-1\b/);
+    expect(row?.className).toMatch(/\bsm:grid-cols-\[/);
+  });
+
+  it("stretches the OptionPicker trigger's wrapper to fill the value column instead of shrink-to-fit", () => {
+    // `ui/Dropdown`'s trigger root is `relative inline-flex`, which sizes
+    // to its content and does not stretch even when its container is
+    // wide enough — confirmed live: widening the grid column alone (163px
+    // already had headroom) did not fix the wrap, forcing this wrapper to
+    // `flex w-full` did. `ui/Dropdown.tsx` is a shared primitive out of
+    // this change's scope, so the stretch is a child-selector applied
+    // from the row/wrapper that owns the column.
+    renderPanel({ frontmatter: { status: "todo" } });
+    const trigger = screen.getByTestId("meta-edit-status");
+    const dd = trigger.closest("dd");
+    expect(dd).not.toBeNull();
+    expect(dd?.className ?? "").toMatch(/\[&>\.relative\.inline-flex\]:flex/);
+    expect(dd?.className ?? "").toMatch(/\[&>\.relative\.inline-flex\]:w-full/);
+  });
+
+  it("applies the same stretch fix to Assignee/Reporter, where the picker is not dd's direct child", () => {
+    // Assignee/Reporter nest the picker inside an avatar row, so the
+    // `dd`-level selector above does not reach it — the fix has to be
+    // repeated one level down, on the `min-w-0 flex-1` div that IS the
+    // picker's immediate parent there.
+    renderPanel({ frontmatter: {} });
+    const trigger = screen.getByTestId("meta-edit-assignee");
+    const wrap = trigger.parentElement?.parentElement; // relative.inline-flex -> min-w-0 flex-1
+    expect(wrap?.className ?? "").toMatch(/\[&>\.relative\.inline-flex\]:flex/);
+    expect(wrap?.className ?? "").toMatch(/\[&>\.relative\.inline-flex\]:w-full/);
+  });
+});

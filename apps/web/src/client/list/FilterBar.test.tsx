@@ -7,12 +7,21 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
+import * as matchers from "@testing-library/jest-dom/matchers";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listSearchSchema } from "../router/listSearch.ts";
 import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
+import { ToastProvider } from "../ui/Toast.tsx";
 import { buildChips, type FacetKey, type FacetOptions, FilterBar } from "./FilterBar.tsx";
+
+// Computes the real accessible description rather than reading an
+// attribute: UI-23e moved the active-view chip's full summary off
+// `title` and onto a `Tooltip`, so what must hold is that the summary
+// still reaches the user, not which attribute carries it.
+expect.extend(matchers);
 
 /**
  * FilterBar tests. Selecting a dropdown option writes the filter to URL
@@ -200,20 +209,38 @@ describe("FilterBar", () => {
     await vi.waitFor(() => expect(search(router).status).toBeUndefined());
   });
 
-  // U23 / K107: the archived control lives in the desktop "⋯" View-options
-  // menu. It is now the tri-state scope select (was a boolean "Show
-  // archived" checkable item, and before that an inline checkbox). Choosing
-  // "all" writes `?archived=all`; the default "active" is dropped.
-  it("choosing an archived scope from the View-options menu sets the URL scope", async () => {
-    const router = await mountFilterBar();
-    fireEvent.click(screen.getByTestId("view-actions-menu"));
-    const select = await screen.findByTestId("view-actions-archived-scope");
-    fireEvent.change(select, { target: { value: "all" } });
-    await vi.waitFor(() => expect(search(router).archived).toBe("all"));
+  // Ken's ruling, 2026-09-22 ("archiving is a one-way door, not a filter",
+  // decisions.md § 9): the task list is a primary work surface, so it must
+  // carry NO archived-scope control — the policy table names "Task list /
+  // Board / Timeline" as "Never". This used to be
+  // `list-archived-scope`/`filters-sheet-archived-scope`, a segmented
+  // control sitting as a peer of Status/Priority/Assignee; both are gone.
+  //
+  // This does not touch the CAPABILITY: `?archived=` (K107) still reaches
+  // the server exactly as before — see the next test, which drives it
+  // straight through the URL with no control at all.
+  it("renders no archived-scope control, on desktop or in the mobile filter sheet", async () => {
+    await mountFilterBar();
+    expect(screen.queryByTestId("list-archived-scope")).toBeNull();
+    expect(screen.queryByTestId("filters-sheet-archived-scope")).toBeNull();
+  });
 
-    // Back to the default hides archived AND drops the param from the URL.
-    fireEvent.change(select, { target: { value: "active" } });
-    await vi.waitFor(() => expect(search(router).archived).toBeUndefined());
+  // K107's "reveal archived entities through `?archived=`" is a capability
+  // the ruling keeps — only the visible control on this surface is gone.
+  // A bookmarked or hand-typed `?archived=all` link must still show
+  // archived rows; assert it via the URL's own effect (the search state),
+  // since there is no control left to click.
+  it("`?archived=all` in the URL is preserved by the bar (no control writes or clears it)", async () => {
+    const router = await mountFilterBar("?archived=all");
+    await screen.findByRole("button", { name: "Filter Status" });
+    expect(search(router).archived).toBe("all");
+
+    // Selecting an ordinary facet must not disturb the archived scope that
+    // arrived via the URL — the bar only ever touches params it owns.
+    fireEvent.click(screen.getByRole("button", { name: "Filter Status" }));
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "In progress" }));
+    await vi.waitFor(() => expect(search(router).status).toEqual(["in_progress"]));
+    expect(search(router).archived).toBe("all");
   });
 
   it("'Clear all' removes every active filter", async () => {
@@ -255,19 +282,21 @@ describe("FilterBar", () => {
     expect(screen.queryByRole("button", { name: /Remove Sprint/ })).toBeNull();
   });
 
-  // U23: "Save as view" moved into the desktop "⋯" View-options menu, so
-  // its presence/absence is asserted from inside that menu (was an inline
-  // toolbar button before).
+  // U23 moved "Save as view" into the desktop "⋯" menu; K30-web took it
+  // back out as a direct star IconButton once the export left the menu
+  // with nothing else in it. So it is asserted as a toolbar button again
+  // — and on the sprint detail there is no cluster at all to look in.
   it("hides 'Save as view' when the scope would not be reproduced by one", async () => {
     await mountScopedFilterBar();
-    fireEvent.click(screen.getByTestId("view-actions-menu"));
-    expect(await screen.findByTestId("view-actions-menu")).toBeTruthy();
     expect(screen.queryByTestId("view-actions-save-view")).toBeNull();
+    // Not merely hidden inside a menu: with nothing else to offer, the
+    // whole cluster — including any ⋯ — is absent.
+    expect(screen.queryByTestId("view-actions")).toBeNull();
+    expect(screen.queryByTestId("view-actions-menu")).toBeNull();
   });
 
   it("still shows 'Save as view' on the list, where the URL is the whole state", async () => {
     await mountFilterBar();
-    fireEvent.click(screen.getByTestId("view-actions-menu"));
     expect(await screen.findByTestId("view-actions-save-view")).toBeTruthy();
   });
 
@@ -336,7 +365,11 @@ describe("FilterBar", () => {
     // more). The full summary is on the edit button's title, so a
     // truncated preview can be read on hover.
     const edit = screen.getByTestId("active-view-chip-edit");
-    expect(edit.getAttribute("title")).toContain("status not in done");
+    // UI-23e: the full summary moved from `title` to a `Tooltip` with
+    // `describes`, so it is the button's accessible DESCRIPTION. Read
+    // the computed description rather than an attribute — what matters
+    // is that the untruncated summary still reaches the user.
+    expect(edit).toHaveAccessibleDescription(expect.stringContaining("status not in done"));
     // "Clear all" lights up for an active view too.
     expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy();
   });
@@ -519,6 +552,22 @@ describe("FilterBar — mobile filter sheet", () => {
       expect(within(sheet).getByRole("button", { name: "Filter Priority" })).toBeTruthy();
       // Sheet footer offers Clear all + Done.
       expect(within(sheet).getByTestId("filters-sheet-clear")).toBeTruthy();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
+  });
+
+  // Ken's ruling, 2026-09-22: the mobile Filters sheet is the same
+  // primary-work surface as the desktop filter band, so opening it must
+  // not reveal an archived-scope control either.
+  it("the mobile filter sheet has no archived-scope control", async () => {
+    const original = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    try {
+      await mountNarrow();
+      fireEvent.click(screen.getByTestId("filters-open"));
+      const sheet = await screen.findByTestId("filters-sheet");
+      expect(within(sheet).queryByTestId("filters-sheet-archived-scope")).toBeNull();
     } finally {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
     }
@@ -875,40 +924,130 @@ describe("FilterBar — toolbar redesign (A210 / K97)", () => {
   });
 
   // U23: the inline Export + Save-as-view pills collapsed into the desktop
-  // "⋯" View-options menu (this test asserted them as inline cluster
-  // buttons before).
-  it("collapses view actions (Export + Save as view) into the ⋯ menu, NO manual refresh (Q4)", async () => {
-    stubFetch();
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-    const rootRoute = createRootRoute();
-    const listRoute = createRoute({
-      getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema,
-      component: () => (
-        <FilterBar
-          exportTotal={3}
-          exportQueryString=""
-        />
-      ),
-    });
-    const router = createRouter({
-      routeTree: rootRoute.addChildren([listRoute]),
-      history: createMemoryHistory({ initialEntries: ["/list"] }),
-    });
-    render(
-      <QueryClientProvider client={qc}>
-        <RouterProvider router={router as never} />
-      </QueryClientProvider>,
-    );
+  // "⋯" View-options menu.
+  //
+  // K30-web (Ken, 2026-09-23) removed the web export. That deleted the
+  // menu's only other section, so "Save as view" came back OUT of the
+  // menu as a direct star IconButton, and the ⋯ now renders only where
+  // something still fills it (the board's Configure links).
+  it("renders Save as view as a direct button and NO ⋯ when there is nothing else in it", async () => {
+    mountViewActions();
     const cluster = await screen.findByTestId("view-actions");
     // Q4: no manual refresh button — freshness is staleTime + focus refetch.
     expect(within(cluster).queryByRole("button", { name: "Refresh" })).toBeNull();
-    // The cluster now holds a single "⋯" overflow trigger, not inline pills.
-    expect(within(cluster).getByTestId("view-actions-menu")).toBeTruthy();
-    expect(within(cluster).queryByRole("button", { name: "Export" })).toBeNull();
-    // Opening it reveals Export (its own CSV/JSON submenu) and Save as view.
+    // One click, not two: the action is the button, not a menu row.
+    const save = within(cluster).getByTestId("view-actions-save-view");
+    expect(save.tagName).toBe("BUTTON");
+    expect(save.getAttribute("aria-label")).toBe("Save as view");
+    // UI-23e: the hover text is now a `Tooltip`, not `title`. The icon
+    // still names itself on hover, but promptly and on focus too. No
+    // `title` should remain — leaving one would mean BOTH a custom
+    // bubble and the ~1s native one appearing on the same control.
+    expect(save.getAttribute("title")).toBeNull();
+    // And the tooltip must not double up as a description: the name is
+    // already on `aria-label`, so describing the button with the same
+    // string would announce it twice.
+    expect(save.getAttribute("aria-describedby")).toBeNull();
+    // No ⋯ at all: with the export gone this view has nothing to put in
+    // one, and a trigger that opens an empty panel is worse than none.
+    expect(within(cluster).queryByTestId("view-actions-menu")).toBeNull();
+    // And the export is gone from the web entirely (CLI/MCP keep it).
+    expect(screen.queryByTestId("export-csv")).toBeNull();
+    expect(screen.queryByTestId("export-json")).toBeNull();
+  });
+});
+
+/**
+ * Mounts the bar (optionally with the board's extra menu section).
+ *
+ * Not `async`: unlike the old helper it awaits no settle signal, because
+ * the cluster is now conditional — waiting on `view-actions` here would
+ * hang for the sprint-detail case, whose whole point is that it never
+ * appears. Each test picks its own settle signal instead.
+ */
+function mountViewActions({
+  showSaveView = true,
+  extraMenuSections,
+}: {
+  showSaveView?: boolean;
+  extraMenuSections?: ReactNode;
+} = {}) {
+  stubFetch();
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const rootRoute = createRootRoute();
+  const listRoute = createRoute({
+    getParentRoute: () => rootRoute, path: "/list", validateSearch: listSearchSchema,
+    component: () => (
+      <FilterBar
+        showSaveView={showSaveView}
+        extraMenuSections={extraMenuSections}
+      />
+    ),
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([listRoute]),
+    history: createMemoryHistory({ initialEntries: ["/list"] }),
+  });
+  render(
+    <QueryClientProvider client={qc}>
+      <ToastProvider>
+        <RouterProvider router={router as never} />
+      </ToastProvider>
+    </QueryClientProvider>,
+  );
+  return router;
+}
+
+/**
+ * The toolbar's right-hand action cluster after K30-web.
+ *
+ * What each test here would catch if it regressed:
+ *  - "Save as view" sliding back behind a popover, so the one action
+ *    the view offers costs two clicks again;
+ *  - the ⋯ rendering with nothing in it — an empty panel, which is
+ *    what the sprint detail (`showSaveView={false}`, no extra
+ *    sections) would get if the guard were dropped;
+ *  - the board's merged Configure section (UI-3) not arriving.
+ */
+describe("FilterBar — view-actions cluster (UI-2 / UI-3 / K30-web)", () => {
+  it("renders the ⋯ only when it has rows, and puts the extra section in it (UI-3)", async () => {
+    mountViewActions({
+      extraMenuSections: <a role="menuitem" href="/settings/card-layout" data-testid="x-link">Card layout…</a>,
+    });
+    const cluster = await screen.findByTestId("view-actions");
+    // The star is still a direct button beside the menu — the action
+    // does not move between views.
+    expect(within(cluster).getByTestId("view-actions-save-view")).toBeTruthy();
+
     fireEvent.click(within(cluster).getByTestId("view-actions-menu"));
-    expect(await screen.findByRole("button", { name: "Export" })).toBeTruthy();
-    expect(screen.getByTestId("view-actions-save-view")).toBeTruthy();
+    const panel = await screen.findByRole("menu", { name: "View options" });
+    expect(within(panel).getByTestId("x-link")).toBeTruthy();
+    expect(within(panel).getByTestId("view-actions-extra-section").textContent)
+      .toContain("Configure");
+    // "Save as view" is NOT also duplicated into the panel.
+    expect(within(panel).queryByTestId("view-actions-save-view")).toBeNull();
+  });
+
+  it("renders NO ⋯ trigger when extraMenuSections is a falsy ReactNode", async () => {
+    // `extraMenuSections={cond && <X/>}` passes `false` — defined, but
+    // rendering nothing. An `!== undefined` check alone would open an
+    // empty panel here.
+    mountViewActions({ extraMenuSections: false });
+    const cluster = await screen.findByTestId("view-actions");
+    expect(within(cluster).queryByTestId("view-actions-menu")).toBeNull();
+  });
+
+  it("renders NO cluster at all on the sprint detail (showSaveView=false, no extra rows)", async () => {
+    // The sprint detail has its own header actions. With nothing to
+    // show, the bar must render neither a stray ⋯ nor an empty
+    // bordered slot where the cluster used to be.
+    mountViewActions({ showSaveView: false });
+    // Settle on a control the bar always renders, so "nothing found"
+    // below means the cluster is absent rather than the bar unmounted.
+    await screen.findByRole("button", { name: /Filter Status/ });
+    expect(screen.queryByTestId("view-actions")).toBeNull();
+    expect(screen.queryByTestId("view-actions-menu")).toBeNull();
+    expect(screen.queryByTestId("view-actions-save-view")).toBeNull();
   });
 });
 

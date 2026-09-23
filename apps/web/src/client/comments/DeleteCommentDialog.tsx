@@ -40,10 +40,11 @@ export function DeleteCommentDialog({
     <ConfirmDialog
       title="Delete this comment?"
       testId="delete-comment-dialog"
-      confirmLabel={pending ? "Deleting…" : "Delete"}
+      confirmLabel="Delete"
       confirmTestId="delete-comment-confirm"
       cancelTestId="delete-comment-cancel"
       confirmDisabled={pending}
+      confirmLoading={pending}
       onConfirm={onConfirm}
       onCancel={onCancel}
       body={

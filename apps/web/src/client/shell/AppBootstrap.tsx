@@ -6,6 +6,7 @@ import { ApiError } from "../api/client.ts";
 import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { InitWizard } from "../init/InitWizard.tsx";
+import { LoadingState } from "../ui/LoadingState.tsx";
 import { AppShell } from "./AppShell.tsx";
 import { InterruptedMigration } from "./InterruptedMigration.tsx";
 
@@ -86,7 +87,17 @@ export function AppBootstrap() {
   // shell has nothing to render from. Only the *definition* of
   // "still pending" changed.
   if (stillWaiting(info) || stillWaiting(currentUser)) {
-    return <CenteredMessage>Loading…</CenteredMessage>;
+    return (
+      <LoadingState
+        // Full-viewport bootstrap gate, not a settings panel — same
+        // component (role=status/aria-busy contract), a bigger spinner
+        // and a screen-filling wrapper instead of the panel padding.
+        className="grid h-screen place-items-center bg-bg-canvas"
+        size={48}
+      >
+        Loading…
+      </LoadingState>
+    );
   }
 
   // A schema mismatch is not a fatal error — it is the state the
@@ -315,12 +326,4 @@ function PLACEHOLDER_INFO(schemaStatus: SchemaStatusResponse): TrackerInfoRespon
     // fallback rather than the viewer's browser zone.
     timezone: "UTC",
   };
-}
-
-function CenteredMessage({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="grid h-screen place-items-center bg-bg-canvas text-[0.9286rem] text-text-secondary">
-      {children}
-    </div>
-  );
 }

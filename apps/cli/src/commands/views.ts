@@ -15,6 +15,7 @@ import {
 } from "@loctt/core";
 
 import { getArg, getArgAll, parseArchivedScope, positional, rejectUnknownFlags } from "../runtime/args.js";
+import { COLOR_ARG_SYNTAX, formatEntityColor, parseEntityColorArg, warnUnknownPalette } from "../runtime/color.js";
 import { confirmHardDelete } from "../runtime/confirm.js";
 import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
 
@@ -25,7 +26,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * mistype, not a silent no-op).
  */
 const ACCEPTED_FLAGS: readonly string[] = [
-  "--all", "--archived", "--query", "--filter", "--name", "--sort", "--yes", "--icon",
+  "--all", "--archived", "--query", "--filter", "--name", "--sort", "--yes", "--icon", "--color",
   // K102-broken-repair: the explicit opt-in to replace or delete a view
   // whose stored filters did not load, discarding the original text
   // queries.yaml preserves for it. Accepted by `edit` and `delete`; it
@@ -197,9 +198,9 @@ export async function run(args: string[], root: string): Promise<void> {
     case "create": {
       await runCommand(async () => {
         // A flag here is a mistyped name, not a name (see `positional`).
-        const name = positional(args, 2, `loctt views create <name> [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...] [--archived <scope>] [--icon <icon>]`);
+        const name = positional(args, 2, `loctt views create <name> [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...] [--archived <scope>] [--icon <icon>] [--color <${COLOR_ARG_SYNTAX}>]`);
         if (!name) {
-          throw new UsageError("missing name", `loctt views create <name> [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...] [--archived <scope>] [--icon <icon>]`);
+          throw new UsageError("missing name", `loctt views create <name> [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...] [--archived <scope>] [--icon <icon>] [--color <${COLOR_ARG_SYNTAX}>]`);
         }
         // K102: a view is an ordered filter list. `--filter` authors a
         // simple filter, `--query` an advanced one, and they interleave in
@@ -208,6 +209,12 @@ export async function run(args: string[], root: string): Promise<void> {
         const filters = collectFilters(args);
         const sort = parseSort(getArg(args, "--sort"));
         const icon = getArg(args, "--icon");
+        // K103's three shapes, through the shared parser every `--color`
+        // call site uses — a hex, `palette:<id>`, or `light/dark` pair.
+        const colorArg = getArg(args, "--color");
+        const color = colorArg !== undefined
+          ? warnUnknownPalette(parseEntityColorArg(colorArg))
+          : undefined;
         // `--archived` on create names the view's own SCOPE, not a filter
         // (K107). Absent leaves it at the default (`active`).
         const scope = args.includes("--archived") || args.some(a => a.startsWith("--archived="))
@@ -219,6 +226,7 @@ export async function run(args: string[], root: string): Promise<void> {
           ...(sort ? { sort } : {}),
           ...(scope !== undefined ? { archivedScope: scope } : {}),
           ...(icon !== undefined ? { icon } : {}),
+          ...(color !== undefined ? { color } : {}),
         });
         console.log(`Created view "${created.name}" (id ${created.id})`);
       });
@@ -228,11 +236,17 @@ export async function run(args: string[], root: string): Promise<void> {
       await runCommand(async () => {
         const ref = args[2];
         if (!ref || ref.startsWith("--")) {
-          throw new UsageError("missing view ref", `loctt views edit <name|id> [--name <new>] [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...|-] [--archived <scope>] [--icon <icon>]`);
+          throw new UsageError("missing view ref", `loctt views edit <name|id> [--name <new>] [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...|-] [--archived <scope>] [--icon <icon>] [--color <${COLOR_ARG_SYNTAX}|->]`);
         }
         const name = getArg(args, "--name");
         const sort = parseSort(getArg(args, "--sort"));
         const icon = getArg(args, "--icon");
+        // `-` clears the colour, absent leaves it unchanged, a value sets
+        // it — the same three-way `label edit --color` uses.
+        const colorArg = getArg(args, "--color");
+        const color = colorArg !== undefined
+          ? (colorArg === "-" ? null : warnUnknownPalette(parseEntityColorArg(colorArg)))
+          : undefined;
         const scope = args.includes("--archived") || args.some(a => a.startsWith("--archived="))
           ? parseArchivedScope(args)
           : undefined;
@@ -256,9 +270,9 @@ export async function run(args: string[], root: string): Promise<void> {
           ).kind === "broken";
         if (
           name === undefined && !hasFilterFlags && sort === undefined
-          && scope === undefined && icon === undefined && !refIsBroken
+          && scope === undefined && icon === undefined && color === undefined && !refIsBroken
         ) {
-          throw new UsageError("nothing to change", `loctt views edit <name|id> [--name <new>] [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...|-] [--archived <scope>] [--icon <icon>] [--force]`);
+          throw new UsageError("nothing to change", `loctt views edit <name|id> [--name <new>] [--filter "field op value"]... [--query "<dsl>"]... [--sort field:asc,...|-] [--archived <scope>] [--icon <icon>] [--color <${COLOR_ARG_SYNTAX}|->] [--force]`);
         }
         const updated = await editView(locttDir, ref, {
           ...(name !== undefined ? { name } : {}),
@@ -268,6 +282,7 @@ export async function run(args: string[], root: string): Promise<void> {
           ...(sort !== undefined ? { sort } : {}),
           ...(scope !== undefined ? { archivedScope: scope } : {}),
           ...(icon !== undefined ? { icon } : {}),
+          ...(color !== undefined ? { color } : {}),
           ...(force ? { replaceBroken: true } : {}),
         });
         console.log(`Updated view "${updated.name}" (id ${updated.id})`);
@@ -343,7 +358,10 @@ async function list(locttDir: string, scope: ArchivedScope): Promise<void> {
       ? `  [sort: ${v.sort.map(s => `${s.field} ${s.direction}`).join(", ")}]`
       : "";
     const arch = v.archived === true ? "  (archived)" : "";
-    console.log(`${v.name}  ${filtersToSummary(v.filters)}${sortPart}${arch}`);
+    // Parity with `label list`: a stored colour is shown, through the
+    // same formatter, so a view authored in the UI reads the same here.
+    const color = v.color !== undefined ? `  ${formatEntityColor(v.color)}` : "";
+    console.log(`${v.name}  ${filtersToSummary(v.filters)}${sortPart}${color}${arch}`);
   }
   // VUE-22 / north-star principle 5 & parity: a view whose query no
   // longer parses is listed here too, marked broken with the parser's

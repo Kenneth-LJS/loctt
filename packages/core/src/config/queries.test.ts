@@ -286,6 +286,94 @@ ${filtersBlock(statusFilter("backlog"))}
       expect(badRaw?.display).toEqual({ mode: "board", group_by: "priority" });
     });
 
+    // The classification gap: a shape-valid advanced filter whose DSL text
+    // does not parse used to load as an ordinary healthy view (the DSL was
+    // never tokenized/parsed at load time, only when the view actually
+    // ran). `resolveFilters` now also runs `filtersToNode`, so a parse
+    // failure degrades the entry exactly like a shape failure does.
+    it("degrades a shape-valid advanced filter whose DSL does not parse (the classification gap)", () => {
+      const yaml = `
+queries:
+  - id: 01HQ0000000000000000BADDSL
+    name: bad-dsl
+${filtersBlock([{ kind: "advanced", query: "status = = = done AND" }])}
+`;
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries).toHaveLength(0);
+      expect(config.broken).toHaveLength(1);
+      expect(config.broken?.[0]).toMatchObject({
+        id: "01HQ0000000000000000BADDSL",
+        name: "bad-dsl",
+        summary: "(unreadable filters)",
+      });
+      // The message must be the same one a run-time attempt produces
+      // (filtersToNode → FilterError), so a user never sees two different
+      // messages for one fault.
+      expect(config.broken?.[0]?.error).toMatch(/advanced filter does not parse/);
+      expect(config.broken?.[0]?.rawText).toContain("status = = = done AND");
+    });
+
+    it("carries the parser's position when the DSL error reports one", () => {
+      const yaml = `
+queries:
+  - id: 01HQ0000000000000000POSDSL
+    name: bad-dsl-pos
+${filtersBlock([{ kind: "advanced", query: "status ===" }])}
+`;
+      const config = parseQueriesConfig(yaml);
+      expect(config.broken).toHaveLength(1);
+      const entry = config.broken?.[0];
+      expect(entry?.error).toMatch(/at position \d+/);
+      expect(entry?.position).toBeTypeOf("number");
+    });
+
+    it("a healthy view loads fine sitting beside a DSL-broken one (degrading, not blanking the catalog)", () => {
+      const yaml = `
+queries:
+  - id: 01HQ00000000000000000000OK
+    name: ok
+${filtersBlock(statusFilter("backlog"))}
+  - id: 01HQ0000000000000000BADDSL
+    name: bad-dsl
+${filtersBlock([{ kind: "advanced", query: "status = = = done AND" }])}
+`;
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries).toHaveLength(1);
+      expect(config.queries[0]).toMatchObject({ id: "01HQ00000000000000000000OK", name: "ok" });
+      expect(config.broken).toHaveLength(1);
+      expect(config.broken?.[0]).toMatchObject({ id: "01HQ0000000000000000BADDSL", name: "bad-dsl" });
+    });
+
+    it("still throws QueriesConfigError on a duplicate id when the surviving entry has a DSL-broken filter (object-fatal)", () => {
+      const yaml = `
+queries:
+  - id: 01HQ000000000000000000DUPE
+    name: a
+${filtersBlock(statusFilter("backlog"))}
+  - id: 01HQ000000000000000000DUPE
+    name: b
+${filtersBlock([{ kind: "advanced", query: "status = = = done AND" }])}
+`;
+      expect(() => parseQueriesConfig(yaml)).toThrow(QueriesConfigError);
+      expect(() => parseQueriesConfig(yaml)).toThrow(/duplicate query id/);
+    });
+
+    it("an uncombinable simple filter (object-fatal shape but semantically bad op/values) still degrades, not throws", () => {
+      // Multiple values under an op with no sensible multi-value reading
+      // (e.g. "<") is shape-valid (FilterSchema accepts it) but rejected by
+      // filtersToNode — same per-entry degrade path as a bad DSL string.
+      const yaml = `
+queries:
+  - id: 01HQ0000000000000000UNCOMB
+    name: uncombinable
+${filtersBlock([{ kind: "simple", field: "priority", op: "<", values: ["a", "b"] }])}
+`;
+      const config = parseQueriesConfig(yaml);
+      expect(config.queries).toHaveLength(0);
+      expect(config.broken).toHaveLength(1);
+      expect(config.broken?.[0]?.error).toMatch(/cannot combine/);
+    });
+
     it("still throws QueriesConfigError on a duplicate id even when a query is broken (object-fatal)", () => {
       const yaml = `
 queries:
@@ -406,5 +494,82 @@ ${filtersBlock([{ kind: "simple", field: "archived", op: "!=", values: ["true"] 
 `;
       expect(() => parseQueriesConfig(yaml)).toThrow();
     });
+  });
+});
+
+/**
+ * K103 colour on a saved view (Ken, 2026-09-23: "if icon and color, then
+ * yea" — colour follows icon wherever both exist).
+ *
+ * What these catch: the three shapes must SURVIVE a round-trip, and a
+ * colour the contract rejects must cost its own field and nothing else.
+ * The second is the corruption-guide requirement — a decorative value
+ * must never take a view's filters out of service — and it is the one
+ * that silently regresses, because a loader that drops too much still
+ * "works".
+ */
+describe("saved view colour — the three shapes round-trip", () => {
+  function viewWithColor(colorBlock: string): string {
+    return `
+queries:
+  - id: 01HQ000000000000000000000C
+    name: coloured
+${filtersBlock(statusFilter("open"))}
+${colorBlock}
+`;
+  }
+
+  it("keeps a bare hex (shape 1) through parse and serialize", () => {
+    const config = parseQueriesConfig(viewWithColor(`    color: "#1e6fcb"`));
+    expect(config.queries[0]?.color).toBe("#1e6fcb");
+    // And it survives being written back out — a field the serializer
+    // forgets is a field every unrelated write deletes.
+    const round = parseQueriesConfig(serializeQueriesConfig(config));
+    expect(round.queries[0]?.color).toBe("#1e6fcb");
+  });
+
+  it("keeps a per-mode pair (shape 2) through parse and serialize", () => {
+    const config = parseQueriesConfig(viewWithColor(
+      `    color:\n      light: "#0F766E"\n      dark: "#39A88F"`,
+    ));
+    expect(config.queries[0]?.color).toEqual({ light: "#0F766E", dark: "#39A88F" });
+    const round = parseQueriesConfig(serializeQueriesConfig(config));
+    expect(round.queries[0]?.color).toEqual({ light: "#0F766E", dark: "#39A88F" });
+  });
+
+  it("keeps a palette reference (shape 3) through parse and serialize", () => {
+    const config = parseQueriesConfig(viewWithColor(`    color:\n      palette: teal`));
+    expect(config.queries[0]?.color).toEqual({ palette: "teal" });
+    const round = parseQueriesConfig(serializeQueriesConfig(config));
+    // A palette ref is stored as the ID and resolved live — the stored
+    // value must still be the id, never a snapshotted hex.
+    expect(round.queries[0]?.color).toEqual({ palette: "teal" });
+  });
+
+  it("drops a malformed colour WITHOUT breaking the view", () => {
+    const config = parseQueriesConfig(viewWithColor(`    color: "not-a-colour"`));
+    // The field is gone...
+    expect(config.queries[0]?.color).toBeUndefined();
+    // ...and that is ALL that is gone. The view is still a healthy,
+    // runnable view: it kept its id, name and filters, and it did NOT
+    // degrade into a `broken` entry. This is the field-local rule; a
+    // loader that made this object-fatal would take the filters out of
+    // service over a decorative typo.
+    expect(config.broken).toBeUndefined();
+    expect(config.queries).toHaveLength(1);
+    expect(config.queries[0]?.name).toBe("coloured");
+    expect(config.queries[0]?.filters).toEqual(statusFilter("open"));
+  });
+
+  it("drops a malformed NESTED colour too — the schema is the judge", () => {
+    // The shape a line-oriented hex regex cannot see. `integrity.ts`
+    // records this exact defect class: a hand-rolled copy of the colour
+    // rule silently disagreed with the contract once K103 widened it.
+    const config = parseQueriesConfig(viewWithColor(
+      `    color:\n      light: "#0F766E"\n      dark: "nonsense"`,
+    ));
+    expect(config.queries[0]?.color).toBeUndefined();
+    expect(config.queries[0]?.filters).toEqual(statusFilter("open"));
+    expect(config.broken).toBeUndefined();
   });
 });

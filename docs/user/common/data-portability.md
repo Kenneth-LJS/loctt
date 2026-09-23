@@ -69,11 +69,14 @@ there.
 
 ### Backup is the lossless copy; export is a report
 
-`loctt export` produces CSV or JSON for a spreadsheet or another tool. It
-is a **report**, not a backup — it cannot restore a tracker and does not
-carry history, comments, or attachments. When you want a copy you can
-*restore from*, use `loctt backup`; when you want to hand data to something
-that isn't LocTT, use `loctt export`.
+`loctt export` (and the `export_tasks` MCP tool) produces CSV or JSON for
+a spreadsheet or another tool. It is a **report**, not a backup — it cannot
+restore a tracker and does not carry history, comments, or attachments.
+When you want a copy you can *restore from*, use `loctt backup`; when you
+want to hand data to something that isn't LocTT, use `loctt export`.
+
+The web UI does not offer this export. Backup and restore are on all three
+surfaces; the filtered spreadsheet report is a CLI/MCP feature.
 
 ## Keys keep resolving
 

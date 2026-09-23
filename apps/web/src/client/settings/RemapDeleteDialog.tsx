@@ -181,12 +181,14 @@ export function RemapDeleteDialog({
           variant="danger"
           testId="remap-confirm"
           disabled={blocked}
+          loading={pending}
+          aria-label={`Delete ${noun}`}
           onClick={() => {
             if (blocked) return;
             onConfirm(choice ?? { kind: "clear" });
           }}
         >
-          {pending ? "Deleting…" : `Delete ${noun}`}
+          Delete {noun}
         </Button>
       </div>
     </Modal>

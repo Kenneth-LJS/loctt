@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import * as matchers from "@testing-library/jest-dom/matchers";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { UsersPanel } from "./UsersPanel.tsx";
+
+expect.extend(matchers);
 
 /**
  * Part C3 relies on the decode → crop → prepared-file flow. Decoding uses
@@ -497,14 +500,22 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
   // tri-state scope control, and the split is now server-side. Default
   // `active` hides the archived user; choosing "all" refetches and reveals
   // it. (This test asserted the old boolean toggle + client-side split.)
+  //
+  // Ken's ruling, 2026-09-22 (decisions.md § 9): the control is now demoted
+  // behind an icon reveal (`ArchivedScopeReveal`) — "the reveal is
+  // secondary, not a visible segmented control" — so it must be opened via
+  // its trigger before a segment is clickable.
   it("hides archived users until the scope control reveals them (U25)", async () => {
     stubWithArchived();
     render(<UsersPanel />, { wrapper: wrapper() });
     // Active users show; the archived one does not, by default.
     await screen.findByTestId("user-row-u-alice");
     expect(screen.queryByTestId("user-row-u-carol")).toBeNull();
+    // The control is not visible until its icon trigger is opened.
+    expect(screen.queryByTestId("users-archived-scope-all")).toBeNull();
+    fireEvent.click(screen.getByTestId("users-archived-scope-reveal"));
     // Choosing "all" reveals it.
-    fireEvent.change(screen.getByTestId("users-archived-scope"), { target: { value: "all" } });
+    fireEvent.click(await screen.findByTestId("users-archived-scope-all"));
     expect(await screen.findByTestId("user-row-u-carol")).toBeTruthy();
   });
 
@@ -529,8 +540,44 @@ describe("UsersPanel — archived separation + self-user note (U24/U25)", () => 
     // that child and is never the button's accessible description, which
     // is exactly what A11Y-31's second bullet asks for. The reason now
     // lives on the button itself.
+    //
+    // UI-23e then changed HOW: `title` → `aria-describedby` at an
+    // `sr-only` node. So this reads the computed description rather than
+    // an attribute — what must hold is that the reason still reaches a
+    // screen reader as the item's description.
     expect(archiveItem).toHaveProperty("disabled", true);
     expect(archiveItem.textContent).toMatch(/archive/i);
-    expect(archiveItem.getAttribute("title")).toMatch(/cannot archive/i);
+    expect(archiveItem).toHaveAccessibleDescription(/cannot archive/i);
+  });
+});
+
+/**
+ * @verifies N-4 / UI-10
+ *
+ * UsersPanel was the other of the two panels missing `settings-panel-title`
+ * (no testid, no colour token, no margin) and had its create action below
+ * the list. Both are fixed by routing the header through the shared
+ * `SettingsPanelHeader`.
+ */
+describe("UsersPanel header convergence (N-4)", () => {
+  it("renders the canonical title markup via SettingsPanelHeader", async () => {
+    stubHappyPath();
+    render(<UsersPanel />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    expect(title.tagName).toBe("H1");
+    expect(title.textContent).toBe("Users");
+    expect(title.className).toContain("text-text-primary");
+  });
+
+  it("puts the create action in the header row next to the title, not below the list", async () => {
+    stubHappyPath();
+    render(<UsersPanel />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    const createBtn = screen.getByTestId("user-create-open");
+    const header = title.closest("header");
+    expect(header).not.toBeNull();
+    expect(header?.contains(createBtn)).toBe(true);
   });
 });

@@ -53,6 +53,7 @@ import { Fragment, useEffect, useState } from "react";
 
 import { isSafeHref } from "../comments/renderMarkdown.tsx";
 import { Button } from "../ui/Button.tsx";
+import { cn } from "../ui/cn.ts";
 import { fromMarkdown } from "./markdown.ts";
 import type { MentionCandidate } from "./MentionMenu.tsx";
 
@@ -117,7 +118,22 @@ export function BodyRenderedView({
       <div
         data-testid="body-rendered"
         aria-label="Description"
-        className="prose-body -mx-3 min-h-[8rem] rounded border border-transparent px-3 py-2 text-[0.9286rem] text-text-primary"
+        // UI-21 (Ken, 2026-09-22: "why is this description section so
+        // big"). `min-h-[8rem]` is 112px at the 87.5% root, and it was
+        // reserved unconditionally — so a task with NO description
+        // showed a one-line placeholder followed by ~100px of nothing,
+        // pushing Related and Attachments off the first screen. That is
+        // the common case for a newly created task.
+        //
+        // The height still earns its place when there IS a body: it
+        // keeps the resting frame the edit surface mirrors, so entering
+        // edit mode does not jolt the page. With no body there is
+        // nothing to mirror and nothing to keep hittable — the
+        // placeholder below is its own click target.
+        className={cn(
+          "prose-body -mx-3 rounded border border-transparent px-3 py-2 text-[0.9286rem] text-text-primary",
+          isEmpty ? "" : "min-h-[8rem]",
+        )}
       >
         {isEmpty
           ? (
@@ -335,6 +351,22 @@ function renderText(node: JSONContent): React.ReactNode {
         break;
       case "subscript":
         out = <sub>{out}</sub>;
+        break;
+      // K107. `<ins>` carries the browser's default underline; `<mark>`
+      // its default highlight. Both are the same elements the on-disk
+      // markdown means, so the read view matches what GitHub shows.
+      case "underline":
+        // No class: `<ins>` is underlined by every browser's UA
+        // stylesheet, which is the whole reason this tag was chosen over
+        // `<u>`. Styling it here would only risk diverging from what
+        // GitHub renders for the same bytes.
+        out = <ins>{out}</ins>;
+        break;
+      case "highlight":
+        // `<mark>`'s UA default is a fixed yellow that does not follow
+        // the theme (and is unreadable on the dark canvas), so this one
+        // DOES need tokens — the warn pair is theme-aware in both modes.
+        out = <mark className="rounded-[2px] bg-warn-bg px-0.5 text-text-primary">{out}</mark>;
         break;
       case "link": {
         const href = String(mark.attrs?.["href"] ?? "");

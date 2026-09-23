@@ -467,14 +467,17 @@ function ActivityFeed({
           variant="secondary"
           size="sm"
           testId="activity-load-more"
-          disabled={activity.isFetchingNextPage}
+          loading={activity.isFetchingNextPage}
+          aria-label={
+            activity.isFetchNextPageError
+              ? "Retry loading more"
+              : `Load more (${String(total - entries.length)} remaining)`
+          }
           onClick={() => { void activity.fetchNextPage(); }}
         >
-          {activity.isFetchingNextPage
-            ? "Loading…"
-            : activity.isFetchNextPageError
-              ? "Retry loading more"
-              : `Load more (${String(total - entries.length)} remaining)`}
+          {activity.isFetchNextPageError
+            ? "Retry loading more"
+            : `Load more (${String(total - entries.length)} remaining)`}
         </Button>
       )}
     </div>

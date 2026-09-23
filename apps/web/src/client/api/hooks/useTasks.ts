@@ -198,10 +198,11 @@ export function tasksParamsFromSearch(search: Partial<ListSearch>): TasksQueryPa
 }
 
 /**
- * Exported so the export menu builds its URL from the *same* function
- * the list request uses (BLK-37). Two builders drift, and a filter
- * dropped from one of them yields a same-sized file with different
- * rows — which is exactly what that case warns about.
+ * Builds the `/api/tasks` query string.
+ *
+ * Was also exported so the web export menu could build its download URL
+ * from the *same* function as the list request; that menu is gone
+ * (K30-web), and the remaining callers are the two feeds below.
  *
  * `offset` overrides the page-derived one. The infinite feed asks for
  * an absolute offset per page; the single-page hook derives it from

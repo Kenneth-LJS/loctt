@@ -132,12 +132,17 @@ afterEach(() => {
 });
 
 describe("SprintsView — titled header (Ken 2026-09-20)", () => {
-  it("renders a 'Sprints' h1 title with the manage link in the header", async () => {
+  it("renders a 'Sprints' h1 title", async () => {
     await renderView();
     const heading = await screen.findByRole("heading", { name: "Sprints", level: 1 });
     expect(heading.tagName).toBe("H1");
-    // The manage link moved into the PageHeader actions slot; still there.
-    expect(screen.getByTestId("sprints-manage-link")).toBeTruthy();
+    // UI-17 / K105: the "Manage sprints in Settings" gear that used to
+    // sit in the PageHeader actions slot is gone — Ken: "if im on a
+    // task, i dont want to see a link to manage all tasks. same for
+    // milestones/sprints/labels/etc." Settings → Sprints is reached
+    // through the persistent Settings gear instead, not a link scattered
+    // on this page.
+    expect(screen.queryByTestId("sprints-manage-link")).toBeNull();
   });
 });
 
@@ -269,7 +274,7 @@ describe("SprintsView — SPR-39 at-a-glance data on the overview card", () => {
   });
 });
 
-describe("SprintsView — SPR-40 overview affordances (show archived + manage link)", () => {
+describe("SprintsView — SPR-40 overview affordances (show archived + create in place)", () => {
   // @verifies SPR-40
   it("hides archived sprints by default and reveals them behind a show-archived toggle", async () => {
     SPRINTS = [
@@ -295,20 +300,22 @@ describe("SprintsView — SPR-40 overview affordances (show archived + manage li
   });
 
   // @verifies SPR-40
-  it("creates in place via '+ New sprint' and reaches roster actions via the settings entry (K105)", async () => {
+  it("creates in place via '+ New sprint'; no in-page link to Settings roster actions (K105 / UI-17)", async () => {
     // K105 changed the SPR-40 lifecycle affordances: CREATE is now an
-    // in-place "+ New sprint" dialog (not the manage link), while
-    // delete/archive/reorder stay in the Settings panel reached by a
-    // proper gear entry (not a prose link). This replaces the old
-    // assertion that create lived behind the manage-in-settings link.
+    // in-place "+ New sprint" dialog (not a manage link). UI-17 removed
+    // the gear that used to reach delete/archive/reorder in Settings from
+    // this page — that overview-scoped surface reads exactly as the
+    // "manage all X from an item-scoped page" pattern Ken ruled out, and
+    // the persistent Settings gear already reaches Settings → Sprints in
+    // one click, so nothing is stranded by dropping it here.
     await renderView();
     // Create in place:
     expect(await screen.findByTestId("sprints-new")).toBeTruthy();
     expect(screen.queryByTestId("sprint-create-dialog")).toBeNull();
     fireEvent.click(screen.getByTestId("sprints-new"));
     expect(await screen.findByTestId("sprint-create-dialog")).toBeTruthy();
-    // Roster actions still reachable via the settings entry:
-    expect(screen.getByTestId("sprints-manage-link")).toBeTruthy();
+    // No manage-in-settings affordance on this page anymore:
+    expect(screen.queryByTestId("sprints-manage-link")).toBeNull();
   });
 
   // @verifies SPR-40

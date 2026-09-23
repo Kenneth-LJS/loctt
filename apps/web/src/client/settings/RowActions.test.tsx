@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
+import * as matchers from "@testing-library/jest-dom/matchers";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RowActions } from "./RowActions.tsx";
+
+expect.extend(matchers);
 
 afterEach(cleanup);
 
@@ -52,10 +55,17 @@ describe("RowActions disabled actions", () => {
     expect(document.activeElement).not.toBe(del);
   });
 
-  it("puts the reason on the button, not on an inner span", () => {
+  it("makes the reason the button's accessible description, not an inner span's tooltip", () => {
     withDisabledDelete();
     const del = screen.getByTestId("project-delete-x");
-    expect(del.getAttribute("title")).toMatch(/at least one project/i);
+    // The COMPUTED description. UI-23e moved the mechanism from `title`
+    // (exposed as the description only by browser fallback) to an
+    // explicit `aria-describedby` → `sr-only` node; this assertion holds
+    // across that change because it asserts what a screen reader says,
+    // not which attribute says it.
+    expect(del).toHaveAccessibleDescription(/at least one project/i);
+    // And the reason must not leak into the NAME.
+    expect(del).toHaveAccessibleName(/delete/i);
     // The reason is the BUTTON's — nothing inside it carries a competing
     // `title`, which is where it used to live and where assistive tech
     // never read it as the control's description.

@@ -202,10 +202,11 @@ export function AvatarCropper({
           <Button
             variant="primary"
             testId={`avatar-crop-confirm-${testIdSuffix}`}
-            disabled={busy}
+            loading={busy}
+            aria-label="Use this crop"
             onClick={confirm}
           >
-            {busy ? "Preparing…" : "Use this crop"}
+            Use this crop
           </Button>
         </div>
       </div>

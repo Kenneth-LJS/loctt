@@ -885,7 +885,11 @@ test.describe("BRD — board view", () => {
     const empty = page.getByTestId("board-empty");
     await expect(empty).toBeVisible();
     await expect(empty).toContainText("No tasks yet");
-    await expect(empty.getByRole("button", { name: /Add task/ })).toBeVisible();
+    // UI-13 relabelled this "+ Add task" → "+ New task" ("New" is the
+    // house term — the sidebar already says "+ New project" / "+ New
+    // view"). The empty state keeps its button: on a board with no
+    // tasks it is the only thing to click.
+    await expect(empty.getByRole("button", { name: /New task/ })).toBeVisible();
 
     // Columns still render, so the workflow shape stays visible.
     await expect(page.locator(BOARD_COLUMN)).toHaveCount(4);

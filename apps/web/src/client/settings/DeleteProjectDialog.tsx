@@ -162,6 +162,8 @@ export function DeleteProjectDialog({
             variant="danger"
             testId="project-delete-confirm"
             disabled={blocked}
+            loading={mutation.isPending}
+            aria-label="Delete project"
             onClick={() => {
               mutation.mutate({
                 id: project.id,
@@ -171,7 +173,7 @@ export function DeleteProjectDialog({
               });
             }}
           >
-            {mutation.isPending ? "Deleting…" : "Delete project"}
+            Delete project
           </Button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import type { EntityColor } from "@loctt/contracts";
 // Subpath, not the barrel — see the note in ./entityColor.ts (A37).
 import { BUILTIN_PALETTE, getPaletteEntry } from "@loctt/core/config/color.js";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { cn } from "./cn.ts";
 import { colorShape, resolveForMode, useColorMode } from "./entityColor.ts";
@@ -56,6 +56,88 @@ import { TextField } from "./TextField.tsx";
  *    `{light, dark}`. Two native `<input type="color">` wells, which is
  *    the OS colour picker — a real picker, not a hex field.
  * 3. **No colour**, which clears the field.
+ *
+ * ## The 2026-09-22 redesign — Ken: *"this is messy"*
+ *
+ * The panel used to stack FOUR sibling blocks at equal weight: a
+ * one-row "Palette" strip, a "Custom" row of two tiny native wells, a
+ * full-width "Use custom colour" button, and a "No colour" row. With
+ * seven swatches that was merely busy; the palette expansion to
+ * eighteen would have made the strip wrap into an unlabelled ragged
+ * block while three non-palette affordances kept equal billing beneath
+ * it. The fix is not reflow — it is deciding what the panel is FOR.
+ *
+ * **It is for picking a palette colour.** That is the common case by a
+ * wide margin, so it gets the space, and everything else steps back:
+ *
+ *  - **A real grid, six across.** Eighteen entries land as an even
+ *    3 × 6 block, so the shape is legible rather than a ragged wrap,
+ *    and column position is stable enough to navigate by. Six also
+ *    keeps the panel at 248px — narrow enough to fit a 375px phone
+ *    viewport with the dialog's own padding, which a 8- or 9-wide grid
+ *    of touch-sized swatches does not.
+ *  - **"No colour" is the FIRST CELL of that grid**, drawn as a slashed
+ *    swatch, not a text row hanging off the bottom. It is one of the
+ *    choices, and reads as one: the same size and shape as its
+ *    alternatives, in the place the eye starts. As a trailing text
+ *    button it read as an afterthought — which is precisely what Ken's
+ *    "messy" was describing.
+ *  - **Custom is progressive disclosure.** It collapses to a single
+ *    `aria-expanded` row and only unfolds its two wells and Apply
+ *    button when asked. A custom colour is the rare case; giving it a
+ *    third of the panel's height permanently was the biggest single
+ *    contributor to the clutter. Collapsed by default EXCEPT when the
+ *    stored value is already custom — then it opens showing the pair
+ *    the user is editing, because hiding a user's own current value
+ *    behind a disclosure is worse than the clutter it saves.
+ *
+ * ### Why the native colour wells STAY, against UI-4
+ *
+ * UI-4 and Ken's *"native ui is bad"* rejected the native `<select>`
+ * for Archived scope. That ruling does not reach here, and the reasons
+ * it gave are the reasons why:
+ *
+ *  1. UI-4's first objection was that the native path was gated on
+ *     *viewport width* (`useIsNarrow`), so a desktop user in a narrow
+ *     window got an OS wheel picker. There is no width branch here —
+ *     `<input type="color">` is the same control at every size.
+ *  2. UI-4's second was that a native `<select multiple>` *cannot*
+ *     produce the `menuitemcheckbox` semantics the controls beside it
+ *     already had, giving a half-native row. The opposite holds here:
+ *     there is no custom colour-surface primitive in this codebase to
+ *     be consistent with, and building one — a hue/saturation canvas
+ *     with its own pointer maths and a11y contract — is exactly the
+ *     "invent a new primitive" this repo's documented failure mode
+ *     ("built is not adopted") says not to do for one call site.
+ *  3. The native control's genuine weakness in UI-4 was long-list
+ *     scrolling on a phone. A colour well has no list: it opens the
+ *     OS's own colour surface, including its eyedropper and recents,
+ *     which is strictly more capable than anything justifiable here.
+ *
+ * So the well stays, but it is no longer PROMINENT — which was the
+ * real complaint. Demoting it behind a disclosure is the concession
+ * UI-4's spirit actually asks for.
+ *
+ * ### Keyboard: two-dimensional, because the grid is
+ *
+ * A single-row strip could rely on Tab. A 3 × 6 grid cannot — Tab
+ * through eighteen swatches to reach the last one is not navigation.
+ * The grid is therefore ONE tab stop with roving focus
+ * (`tabIndex` 0 on the selected cell, -1 on the rest), and
+ * Arrow Left/Right move by one, Arrow Up/Down by a full row, Home/End
+ * to the ends. This is A11Y-10's model from `ui/Dropdown` — real DOM
+ * focus that moves, not `aria-activedescendant` — extended to a second
+ * axis. Movement does NOT select: colour is a committing action here
+ * (it closes the panel), so selection-follows-focus would make it
+ * impossible to arrow PAST a colour without picking it.
+ *
+ * ### Selected state is not colour alone
+ *
+ * A ring in the accent colour is invisible on the accent swatch and
+ * ambiguous on a dark one. The selected cell therefore carries a
+ * **check glyph** over the swatch, in an automatically chosen black or
+ * white per that swatch's own luminance, plus the ring. The glyph is
+ * the non-colour channel; `aria-checked` is the programmatic one.
  *
  * ## The swatch preview is mode-aware
  *
@@ -256,8 +338,35 @@ export function ColorPicker({
   );
 }
 
+/** How many swatches per row. See the panel doc for why six. */
+const GRID_COLUMNS = 6;
+
 /**
- * The panel body: the palette grid, the custom sub-form, and clear.
+ * Picks black or white for a glyph drawn ON `hex`, by WCAG relative
+ * luminance.
+ *
+ * The selected-cell check must stay visible on every entry in an
+ * eighteen-colour palette spanning near-black indigo to pale amber. A
+ * fixed colour fails at one end or the other, so it is computed. The
+ * 0.5 threshold is the usual midpoint for this decision and is
+ * comfortable here because no palette value sits near it — every entry
+ * holds 4.5:1 against its own theme background, which pushes it away
+ * from mid-luminance.
+ */
+function readableGlyphOn(hex: string): string {
+  const raw = hex.startsWith("#") ? hex.slice(1) : hex;
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return "#000000";
+  const channel = (at: number): number => {
+    const v = parseInt(raw.slice(at, at + 2), 16) / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  return luminance > 0.5 ? "#000000" : "#FFFFFF";
+}
+
+/**
+ * The panel body: the swatch grid (with "No colour" as its first cell)
+ * and the collapsed custom sub-form.
  *
  * Split out so the custom draft state mounts fresh each time the panel
  * opens — reopening starts from whatever is stored, rather than from a
@@ -275,107 +384,233 @@ function ColorPanel({
   readonly onPick: (next: EntityColor | undefined) => void;
 }) {
   const [pair, setPair] = useState(() => seedPair(value));
+  const shape = value === undefined ? undefined : colorShape(value);
   const currentPalette =
-    value !== undefined && colorShape(value) === "palette"
+    value !== undefined && shape === "palette"
       ? (value as { palette: string }).palette
       : undefined;
+  // Open when the stored value IS a custom one: a user editing their own
+  // custom colour must not have to discover a disclosure to see it. A
+  // `single` (pre-K103 bare hex) counts — editing it promotes it to a
+  // pair, so it is the custom form's business.
+  const [customOpen, setCustomOpen] = useState(
+    () => shape === "double" || shape === "single",
+  );
+  const gridRef = useRef<HTMLDivElement>(null);
   const id = (suffix: string): string | undefined =>
     testId !== undefined ? `${testId}-${suffix}` : undefined;
+
+  /**
+   * Two-dimensional roving focus over the grid's cells (A11Y-10's model,
+   * second axis added). Movement is focus-only — see the panel doc: a
+   * pick closes the panel, so selection-follows-focus would trap a
+   * keyboard user on the first swatch they arrowed onto.
+   */
+  const onGridKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    const cells = gridRef.current
+      ? Array.from(gridRef.current.querySelectorAll<HTMLElement>('[role="radio"]'))
+      : [];
+    if (cells.length === 0) return;
+    const at = cells.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+
+    // Clamped, not wrapped. Wrapping columns would move the cursor to a
+    // different row on Left/Right, which is disorienting in a grid
+    // where position carries meaning.
+    const next = (() => {
+      switch (e.key) {
+        case "ArrowRight": return Math.min(at + 1, cells.length - 1);
+        case "ArrowLeft": return Math.max(at - 1, 0);
+        case "ArrowDown": return Math.min(at + GRID_COLUMNS, cells.length - 1);
+        case "ArrowUp": return Math.max(at - GRID_COLUMNS, 0);
+        case "Home": return 0;
+        case "End": return cells.length - 1;
+        default: return -1;
+      }
+    })();
+    if (next < 0) return;
+    e.preventDefault();
+    cells[next]?.focus();
+  };
+
+  // The single tab stop: the selected cell, or the first if none is.
+  // Index 0 is the "No colour" cell, which is genuinely selected when
+  // nothing is stored — so "no value" still lands somewhere meaningful.
+  const selectedIndex = currentPalette === undefined
+    ? 0
+    : Math.max(0, BUILTIN_PALETTE.findIndex(entry => entry.id === currentPalette) + 1);
+
+  const cellClass = (selected: boolean): string => cn(
+    "relative flex h-7 w-7 items-center justify-center rounded-full border",
+    "transition-transform hover:scale-110",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+    "focus-visible:ring-offset-1 focus-visible:ring-offset-bg-surface-raised",
+    selected ? "border-accent ring-2 ring-accent ring-offset-1 ring-offset-bg-surface-raised"
+      : "border-border-subtle",
+  );
 
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <span className="mb-1.5 block text-meta text-text-secondary">Palette</span>
+        <span id={id("palette-label")} className="mb-1.5 block text-meta text-text-secondary">
+          Palette
+        </span>
+        {/* `radiogroup`, not `group`: these are mutually exclusive
+            choices over one value, which is what a radio group IS —
+            and it is the role that makes `aria-checked` on the cells
+            mean something to a screen reader. */}
         <div
-          role="group"
-          aria-label="Palette colours"
+          ref={gridRef}
+          role="radiogroup"
+          aria-label="Colour"
           data-testid={id("palette")}
-          className="grid grid-cols-7 gap-1.5"
+          onKeyDown={onGridKeyDown}
+          className="grid grid-cols-6 gap-1.5"
         >
-          {BUILTIN_PALETTE.map(entry => {
+          {/* "No colour" is a CELL, first, not a trailing text row —
+              one of the choices, shown as one. The slash is the
+              conventional "none" mark and is the non-colour channel
+              that distinguishes it from a grey swatch. */}
+          <button
+            type="button"
+            role="radio"
+            data-testid={id("clear")}
+            aria-checked={value === undefined}
+            aria-label="No colour"
+            title="No colour"
+            tabIndex={selectedIndex === 0 ? 0 : -1}
+            onClick={() => { onPick(undefined); }}
+            className={cn(cellClass(value === undefined), "bg-bg-muted")}
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              className="h-full w-full text-text-tertiary"
+            >
+              <line
+                x1="5" y1="19" x2="19" y2="5"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+              />
+            </svg>
+          </button>
+
+          {BUILTIN_PALETTE.map((entry, index) => {
             const selected = entry.id === currentPalette;
+            const hex = mode === "dark" ? entry.dark : entry.light;
             return (
               <button
                 key={entry.id}
                 type="button"
+                role="radio"
                 data-testid={id(`palette-${entry.id}`)}
+                aria-checked={selected}
+                // `aria-pressed` is kept alongside `aria-checked` only
+                // because the pre-redesign contract used it and callers
+                // and specs read it; `aria-checked` is the one the
+                // radiogroup role actually promises.
                 aria-pressed={selected}
                 // The name is the colour's label, not its hex: a swatch
                 // with no text is unusable without one, and the hex is
                 // not what the user chose.
                 aria-label={entry.label}
                 title={entry.label}
+                tabIndex={selectedIndex === index + 1 ? 0 : -1}
                 onClick={() => { onPick({ palette: entry.id }); }}
-                className={cn(
-                  "h-6 w-6 rounded-full border transition-transform hover:scale-110",
-                  selected
-                    ? "border-accent ring-2 ring-accent ring-offset-1 ring-offset-bg-surface-raised"
-                    : "border-border-subtle",
-                )}
+                className={cellClass(selected)}
                 // Shows the half matching the CURRENT theme, so the grid
                 // previews what the entity will actually look like.
-                style={{ backgroundColor: mode === "dark" ? entry.dark : entry.light }}
-              />
+                style={{ backgroundColor: hex }}
+              >
+                {selected && (
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4"
+                    style={{ color: readableGlyphOn(hex) }}
+                  >
+                    <path
+                      d="M5 13l4 4L19 7"
+                      fill="none" stroke="currentColor"
+                      strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </button>
             );
           })}
         </div>
       </div>
 
-      <div>
-        <span className="mb-1.5 block text-meta text-text-secondary">Custom</span>
-        {/* Per K103 a custom colour is specified PER MODE. Both wells are
-            always shown, including while the current theme is the other
-            one — the user is setting a stored value, not painting the
-            screen they happen to be looking at. */}
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-meta text-text-secondary">
-            Light
-            <input
-              type="color"
-              data-testid={id("custom-light")}
-              aria-label="Custom colour, light mode"
-              value={pair.light}
-              onChange={e => { setPair(p => ({ ...p, light: e.target.value })); }}
-              className="h-6 w-8 cursor-pointer rounded border border-border-subtle bg-transparent p-0"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 text-meta text-text-secondary">
-            Dark
-            <input
-              type="color"
-              data-testid={id("custom-dark")}
-              aria-label="Custom colour, dark mode"
-              value={pair.dark}
-              onChange={e => { setPair(p => ({ ...p, dark: e.target.value })); }}
-              className="h-6 w-8 cursor-pointer rounded border border-border-subtle bg-transparent p-0"
-            />
-          </label>
-        </div>
-        {/* Applying is explicit rather than on every `onChange`: a native
-            colour well fires continuously while the user drags, and
-            committing each intermediate value would close the panel on
-            the first twitch. */}
+      {/* Progressive disclosure. Collapsed, Custom costs one row; the
+          palette above keeps the panel. See the panel doc for why the
+          native wells survive UI-4. */}
+      <div className="border-t border-border-subtle pt-2">
         <button
           type="button"
-          data-testid={id("custom-apply")}
-          onClick={() => { onPick({ light: pair.light, dark: pair.dark }); }}
+          data-testid={id("custom-toggle")}
+          aria-expanded={customOpen}
+          aria-controls={id("custom-panel")}
+          onClick={() => { setCustomOpen(o => !o); }}
           className={cn(
-            "mt-2 w-full rounded-md border border-border-default px-2 py-1",
-            "text-label text-text-primary transition-colors hover:bg-bg-muted",
+            "flex w-full items-center justify-between rounded-md px-2 py-1",
+            "text-label text-text-secondary transition-colors",
+            "hover:bg-bg-muted hover:text-text-primary",
           )}
         >
-          Use custom colour
+          <span>Custom colour</span>
+          <span aria-hidden="true" className="text-text-tertiary">
+            {customOpen ? "−" : "+"}
+          </span>
         </button>
-      </div>
 
-      <button
-        type="button"
-        data-testid={id("clear")}
-        onClick={() => { onPick(undefined); }}
-        className="rounded-md px-2 py-1 text-left text-label text-text-secondary transition-colors hover:bg-bg-muted"
-      >
-        No colour
-      </button>
+        {customOpen && (
+          <div id={id("custom-panel")} data-testid={id("custom-panel")} className="mt-2">
+            {/* Per K103 a custom colour is specified PER MODE. Both wells
+                are shown together, including while the current theme is
+                the other one — the user is setting a stored value, not
+                painting the screen they happen to be looking at. */}
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-meta text-text-secondary">
+                Light
+                <input
+                  type="color"
+                  data-testid={id("custom-light")}
+                  aria-label="Custom colour, light mode"
+                  value={pair.light}
+                  onChange={e => { setPair(p => ({ ...p, light: e.target.value })); }}
+                  className="h-6 w-8 cursor-pointer rounded border border-border-subtle bg-transparent p-0"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-meta text-text-secondary">
+                Dark
+                <input
+                  type="color"
+                  data-testid={id("custom-dark")}
+                  aria-label="Custom colour, dark mode"
+                  value={pair.dark}
+                  onChange={e => { setPair(p => ({ ...p, dark: e.target.value })); }}
+                  className="h-6 w-8 cursor-pointer rounded border border-border-subtle bg-transparent p-0"
+                />
+              </label>
+            </div>
+            {/* Applying is explicit rather than on every `onChange`: a
+                native colour well fires continuously while the user
+                drags, and committing each intermediate value would close
+                the panel on the first twitch. */}
+            <button
+              type="button"
+              data-testid={id("custom-apply")}
+              onClick={() => { onPick({ light: pair.light, dark: pair.dark }); }}
+              className={cn(
+                "mt-2 w-full rounded-md border border-border-default px-2 py-1",
+                "text-label text-text-primary transition-colors hover:bg-bg-muted",
+              )}
+            >
+              Use custom colour
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

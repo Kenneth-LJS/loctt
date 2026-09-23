@@ -325,10 +325,12 @@ function BoardColumnsEditor({ workflow }: { readonly workflow: WorkflowConfig })
           type="button"
           variant="primary"
           testId="board-columns-save"
-          disabled={problems.any || save.isPending}
+          disabled={problems.any}
+          loading={save.isPending}
+          aria-label="Save"
           onClick={onSave}
         >
-          {save.isPending ? "Saving…" : "Save"}
+          Save
         </Button>
         <Button
           type="button"

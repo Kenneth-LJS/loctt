@@ -1,5 +1,6 @@
 import { type ButtonHTMLAttributes, forwardRef } from "react";
 
+import { LogoSpinner } from "./brand/LogoSpinner.tsx";
 import { cn } from "./cn.ts";
 
 /**
@@ -46,12 +47,71 @@ export interface ButtonProps
   readonly className?: string;
   /** `data-testid` on the rendered `<button>` (declared, not spread). */
   readonly testId?: string;
+  /**
+   * Shows the brand spinner in place of `children` without resizing the
+   * button. `children` stays mounted, wrapped in a span that goes
+   * `visibility: hidden` (not `display: none`, which would collapse it)
+   * and `aria-hidden="true"` — it keeps occupying its box, so the button
+   * does not change width when loading starts or stops, and a screen
+   * reader does not read a label that is not currently actionable. The
+   * spinner itself is centred over it, absolutely positioned within the
+   * button (`relative` on the base). `aria-busy="true"` is set on the
+   * `<button>` — the `<button>` itself is never `aria-hidden`, since that
+   * would drop the whole control from the accessibility tree, not just
+   * its stale label.
+   *
+   * `loading` also disables the button — a `Saving…`-style state exists
+   * to keep a duplicate click from firing while a request is in-flight,
+   * and a caller could otherwise pass `loading` without `disabled` and
+   * get a spinner that still submits twice. Orthogonal `disabled` (e.g.
+   * "form invalid") still applies on top: the button is disabled if
+   * *either* is true.
+   *
+   * **Trap: this can make the button nameless.** `ButtonProps` extends
+   * `ButtonHTMLAttributes`, so `aria-label` already forwards through
+   * (nothing new needed for that) — but for a button whose *only*
+   * accessible name is its visible label text, hiding that text from AT
+   * while loading removes the name entirely unless the caller supplies
+   * an `aria-label`. There is deliberately no `loadingLabel`-style prop
+   * to paper over this: Ken's call is that the policy of *whether* and
+   * *when* the name changes belongs to the caller, not baked into
+   * `Button` as "changes exactly when `loading` flips" — a caller may
+   * want the name to stay fixed, change on a different condition, or be
+   * covered by a surrounding live region instead. So: **when migrating a
+   * button to `loading`, check whether its accessible name was purely
+   * its children text, and if so pass `aria-label` explicitly.** This is
+   * not asserted at runtime (a dev-time check here would fire for every
+   * icon-only button's already-required `aria-label` too, which is
+   * already enforced by `IconButton`, not `Button`) — it is a review
+   * discipline, written here so the next person does not discover it by
+   * shipping a nameless button.
+   */
+  readonly loading?: boolean;
 }
 
 /** One height per size — the thing that makes buttons align in a row. */
 export const BUTTON_SIZE: Record<ButtonSize, string> = {
   sm: "h-7 px-2.5 text-label gap-1",
   md: "h-8 px-3 text-body gap-1.5",
+};
+
+/**
+ * `loading` spinner size per button size, in `rem` so it scales with the
+ * 87.5%-root text-zoom convention the rest of the type scale uses
+ * (`index.css`), not a fixed pixel size.
+ *
+ * `BUTTON_SIZE` only sets height and *horizontal* padding (`px-*`) — there
+ * is no vertical padding to subtract, so the content box is the full
+ * button height (`h-7` = 1.75rem, `h-8` = 2rem). A spinner filling that
+ * edge-to-edge reads as too large/cramped against the button's rounded
+ * corners, so each is inset to roughly 72–75% of the height rather than
+ * the full box: `sm` 1.25rem (~71% of 1.75rem), `md` 1.5rem (75% of
+ * 2rem). Picked once here so both sizes stay proportional if the ratio
+ * is ever retuned.
+ */
+export const BUTTON_LOADING_SPINNER_SIZE: Record<ButtonSize, string> = {
+  sm: "1.25rem",
+  md: "1.5rem",
 };
 
 /**
@@ -103,7 +163,7 @@ export const BUTTON_VARIANT: Record<ButtonVariant, string> = {
  * `:focus-visible` ring is relied on — no `focus:` classes here.
  */
 export const BUTTON_BASE =
-  "inline-flex items-center justify-center rounded-md font-medium transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50";
+  "relative inline-flex items-center justify-center rounded-md font-medium transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50";
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(
@@ -115,6 +175,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       testId,
       type,
       children,
+      loading = false,
+      disabled,
       ...rest
     },
     ref,
@@ -125,6 +187,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         // Default to "button" so a button in a <form> never submits by
         // accident; an explicit type from the caller wins.
         type={type ?? "button"}
+        // Either the caller's own `disabled` or `loading` blocks the
+        // button — a duplicate submit while a request is in flight is
+        // exactly what `loading` exists to prevent.
+        disabled={disabled === true || loading}
+        aria-busy={loading || undefined}
         {...(testId !== undefined ? { "data-testid": testId } : {})}
         className={cn(
           BUTTON_BASE,
@@ -135,7 +202,30 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         )}
         {...rest}
       >
-        {children}
+        {/*
+          Wrapping `children` in one span (rather than toggling
+          `visibility` per top-level child) is what keeps this correct
+          however many children a caller passes — a single ternary
+          string today, potentially an icon + label tomorrow. `gap-1`/
+          `gap-1.5` from BUTTON_SIZE is a flex gap between this span and
+          its siblings (the spinner/status spans below); a caller
+          needing spacing *within* its own children composes that itself,
+          same as it would with any other single flex child.
+        */}
+        <span
+          aria-hidden={loading || undefined}
+          className={cn("inline-flex items-center", loading && "invisible")}
+        >
+          {children}
+        </span>
+        {loading && (
+          <span
+            className="pointer-events-none absolute inset-0 grid place-items-center"
+            aria-hidden="true"
+          >
+            <LogoSpinner size={BUTTON_LOADING_SPINNER_SIZE[size]} />
+          </span>
+        )}
       </button>
     );
   },

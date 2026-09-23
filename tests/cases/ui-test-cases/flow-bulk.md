@@ -1,8 +1,7 @@
-# Flow: bulk operations and export
+# Flow: bulk operations
 
-Selection in the list view, the sticky bulk bar, every bulk mutation it
-offers, and CSV/JSON export of the current filter state. Lands in
-**M1.4**. Filtering, sorting, pagination, and URL state are
+Selection in the list view, the sticky bulk bar, and every bulk mutation
+it offers. Lands in **M1.4**. Filtering, sorting, pagination, and URL state are
 [flow-list.md](flow-list.md); single-task archive/delete/move are
 [flow-tasks.md](flow-tasks.md); the generic error quality bar is
 [flow-error-handling.md](flow-error-handling.md). The cross-surface
@@ -166,38 +165,6 @@ Select 12 tasks and choose Delete.
   nothing.
 - `Esc` while focus is inside the bulk bar performs the same clear.
 - After clearing, the header checkbox returns to unchecked.
-
-### BLK-14 · M1 · blocker · P2 P9
-**Export CSV applies the current filter state.** Filter to
-`priority = high`, 37 matches, then Export → CSV.
-- The request goes to `/api/tasks/export` carrying the same filter
-  parameters as the `/api/tasks` request behind the current view.
-- The downloaded file contains exactly 37 data rows plus one header row.
-- The 37 exported rows are **the same 37 tasks**, compared by key against the on-screen set — not merely the same count.
-- The response carries `Content-Type: text/csv` and a
-  `Content-Disposition: attachment` filename.
-- The header row lists the export columns in a stable order.
-- The export reflects the *filter*, not the *selection* — with 3 rows
-  checked, the CSV still has 37 rows unless a distinct "Export selected"
-  action was chosen.
-
-### BLK-15 · M1 · major · P10
-**Export JSON produces native-typed values.** Same filter, Export →
-JSON.
-- The response is a JSON array of objects, one per matching task.
-- `labels` is a JSON array, not a comma-joined string; numeric custom
-  fields are numbers, not quoted strings.
-- Stored `key`s appear for status/priority/type — the JSON is data, not
-  a rendering, so it must match what the CLI's export emits for the same
-  query.
-- `Content-Type: application/json` and an attachment filename are set.
-
-### BLK-16 · M1 · minor · P8
-**The export menu states what will be exported before committing.**
-- The menu shows the row count that will be exported ("Export 37
-  tasks").
-- Both CSV and JSON are offered from the same menu.
-- The count matches the filter total, not the page size.
 
 ### BLK-17 · M1 · minor · P9
 **Bulk actions the current workspace can't satisfy are hidden, not
@@ -363,54 +330,6 @@ bulk Set status on 5 tasks, open one task's Activity tab.
   ordinary single edit (see
   [flow-comments-activity.md](flow-comments-activity.md)).
 
-### B.3 Export
-
-### BLK-33 · M1 · blocker · P9 P10
-**CSV escapes commas, quotes, and newlines per RFC 4180.** Export a task
-whose title is `Fix "quoted", comma` and whose body/description field
-contains a newline.
-- The title cell is emitted as `"Fix ""quoted"", comma"`.
-- A field containing CRLF or LF is wrapped in quotes and the newline is
-  preserved inside the quotes — the row is not split into two rows.
-- Opening the file in a spreadsheet yields one row per task with the
-  column count intact.
-- A `labels` array of `["a,b", "c"]` does not silently collapse into an
-  ambiguous `a,b,c` cell that reimports as three labels.
-
-### BLK-34 · M1 · major · P9
-**Exporting 5,000 rows completes and does not lock the UI.**
-- The export runs without a browser out-of-memory failure.
-- The UI shows progress or at least a pending state on the export menu
-  while the response streams.
-- The downloaded CSV has 5,001 lines (header plus 5,000) allowing for
-  quoted embedded newlines.
-- The user can keep browsing the list while the download completes, or
-  the UI clearly blocks and says why.
-
-### BLK-35 · M1 · minor · P9
-**Export with zero matches produces a valid empty file, not an error.**
-- Filter to something matching 0 tasks and export.
-- CSV contains the header row and no data rows.
-- JSON contains `[]`.
-- The UI does not offer a misleading "0 tasks exported" success next to
-  a file the user didn't get — either it downloads the empty file and
-  says so, or it disables export and explains that nothing matches.
-
-### BLK-36 · M1 · minor · P3
-**Custom fields are excluded by default and named explicitly when
-included.**
-- The default CSV columns match core's `DEFAULT_EXPORT_COLUMNS` — no
-  sparse per-project custom-field columns appear unasked.
-- If a column picker exists, custom fields appear as `fields.<key>` and
-  the header uses a name the user can map back to `workflow.yaml`.
-
-### BLK-37 · M1 · minor · P2
-**An export URL is reproducible.**
-- The `/api/tasks/export` request's query string encodes the filter such
-  that pasting it produces the identical file.
-- Compare the two exports' **content**, byte for byte, not just their row counts — a filter dropped server-side yields a same-sized file with different rows.
-- No filter state that affects the export lives only in React state.
-
 ## C. Error cases
 
 ### BLK-38 · M1 · blocker · P4 P9
@@ -464,26 +383,6 @@ migration), then bulk Set status.
 - It advises waiting or finishing the other operation.
 - It does not surface `proper-lockfile` internals or a stack trace.
 - Retrying after the lock clears succeeds.
-
-### BLK-43 · M1 · major · P4 P6
-**Export failure is not a silent no-download.** Force
-`/api/tasks/export` to 500.
-- An error appears in the UI naming the export as the failed action and
-  its reason.
-- The absence of a downloaded file is not the only signal.
-- A retry action is offered, and retrying with a working server
-  produces the file.
-
-### BLK-44 · M1 · major · P4 P6
-**A malformed task in the filtered set doesn't kill the whole export.**
-Hand-corrupt one `task.md`'s frontmatter, then export the filter that
-includes it.
-- Either the export succeeds and names the skipped task, or it fails
-  and names the offending file path.
-- What must not happen: a truncated file that silently omits the bad row
-  with no mention.
-- The same task renders in the list with a broken-task indicator rather
-  than blanking the list (see [flow-list.md](flow-list.md)).
 
 ### BLK-45 · M1 · major · P4 P5
 **A failed delete leaves no half-deleted task.** Force a delete to fail

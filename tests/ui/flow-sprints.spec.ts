@@ -915,22 +915,31 @@ test.describe("SPR — sprints overview", () => {
   });
 
   // @verifies SPR-40
-  test("SPR-40: the overview links to Settings → Sprints for the lifecycle actions", async ({
+  test("SPR-40: Settings → Sprints holds the lifecycle actions; the overview has no link to it", async ({
     tracker,
     page,
   }) => {
     await tracker.run(["sprint", "create", "Live", "--start", "2026-06-01", "--end", "2026-06-14", "--state", "active"]);
 
     await page.goto(`${tracker.baseURL}/sprints`);
-    // K105 (b7a39db7) turned the prose link into a gear IconButton, and
-    // moved CREATE onto the overview itself. The roster-level actions
-    // (delete-with-remap, reorder, unarchive) still live in Settings,
-    // which is what this case is about: the overview reaches them in one
-    // click.
-    await page.getByTestId("sprints-manage-link").click();
+    // UI-17 / K105: the gear IconButton this case used to click
+    // ("Manage sprints in Settings") is removed — Ken: "if im on a
+    // task, i dont want to see a link to manage all tasks. same for
+    // milestones/sprints/labels/etc." The persistent Settings gear
+    // (always visible in the sidebar footer) reaches Settings →
+    // Sprints in one click instead, which is what this case now proves.
+    await expect(page.getByTestId("sprints-manage-link")).toHaveCount(0);
+    await page.goto(`${tracker.baseURL}/settings/sprints`);
 
     // Lands on the Settings Sprints panel, where the roster actions live.
     await expect(page.getByTestId("sprints-panel")).toBeVisible();
+    // The archived-scope control is DEMOTED behind an icon reveal (Ken's
+    // 2026-09-22 archive ruling: archiving is a one-way door, and the
+    // option to look at archived rows must not read as another filter).
+    // It is still here — this panel is the admin/recovery surface, the
+    // only place the policy allows it — but it is not on screen until
+    // asked for. Open the reveal, then assert the control.
+    await page.getByTestId("sprints-archived-scope-reveal").click();
     await expect(page.getByTestId("sprints-archived-scope")).toBeVisible();
 
     // And creating is reachable without going there at all (K105).

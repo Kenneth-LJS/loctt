@@ -242,6 +242,37 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
     // is reported wherever that surfaces. Nothing to add here.
   }
 
+  // A saved view's colour, same contract as a label's (K103 three
+  // shapes) and the same field-local drop on load (config/queries.ts
+  // `resolveColor`). Reported `inconsistent`, matching the label sweep
+  // beside it: the bytes were read fine and the view still runs, so it
+  // must never block a publish — it is a fixable config problem, which
+  // is exactly what that severity means here.
+  //
+  // This is the `doctor` call the corruption guide requires for a new
+  // field. Without it the drop is invisible: the view loads "fine"
+  // (minus its colour) and nobody ever learns the value was unusable.
+  try {
+    const raw = await readFileState(getQueriesConfigPath(locttDir));
+    if (raw.state === "loaded") {
+      for (const { name, color } of invalidViewColors(raw.content)) {
+        findings.push({
+          severity: "inconsistent",
+          path: getQueriesConfigPath(locttDir),
+          message:
+            `saved view "${name}" has colour ${color}, which is not a valid `
+            + `colour. Use a hex value (#1e6fcb), a palette reference `
+            + `({ palette: teal }), or a per-mode pair `
+            + `({ light: "#1e6fcb", dark: "#8ab4f8" }). The view still `
+            + `loads and runs, with no colour; fix the value to restore it.`,
+        });
+      }
+    }
+  } catch {
+    // An unreadable queries.yaml is the loader's business and is
+    // reported by doctor's own per-file parse check.
+  }
+
   // Config per-entry degradation (A138 / K28). A corrupt entry in a
   // list-shaped config loads as a `BrokenEntry` and the rest of the file
   // still loads — the same keep-and-report contract as a task field or a
@@ -434,6 +465,39 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
  * contract is the only form that cannot drift when the schema widens.
  */
 function invalidLabelColors(yamlContent: string): { name: string; color: string }[] {
+  return invalidEntryColors(yamlContent, "labels");
+}
+
+/**
+ * Saved views whose stored `color` the schema REJECTS — the values
+ * `resolveColor` (config/queries.ts) drops on load so the view keeps
+ * working.
+ *
+ * The same sweep as the labels one, over `queries.yaml`, for the same
+ * reason: the drop is invisible unless something reports it. Shares one
+ * implementation rather than getting a second copy — a rule copied is a
+ * rule that drifts, which is precisely the defect the labels docstring
+ * above records.
+ */
+function invalidViewColors(yamlContent: string): { name: string; color: string }[] {
+  return invalidEntryColors(yamlContent, "queries");
+}
+
+/**
+ * The shared walker behind both sweeps: every entry of the named
+ * top-level list whose `color` the contract rejects.
+ *
+ * Reads raw rather than through a loader, because every loader drops
+ * these on the way past — by the time a parsed config exists the bad
+ * value is gone and there is nothing left to report.
+ *
+ * Entries are named by `name`, which both `labels.yaml` and
+ * `queries.yaml` carry; an entry without one reads as "(unnamed)".
+ */
+function invalidEntryColors(
+  yamlContent: string,
+  listKey: "labels" | "queries",
+): { name: string; color: string }[] {
   const out: { name: string; color: string }[] = [];
   let parsed: unknown;
   try {
@@ -442,9 +506,9 @@ function invalidLabelColors(yamlContent: string): { name: string; color: string 
     // A whole-file YAML failure is reported elsewhere; nothing to add.
     return out;
   }
-  const labels = (parsed as { labels?: unknown } | null)?.labels;
-  if (!Array.isArray(labels)) return out;
-  for (const entry of labels) {
+  const entries = (parsed as Record<string, unknown> | null)?.[listKey];
+  if (!Array.isArray(entries)) return out;
+  for (const entry of entries) {
     if (typeof entry !== "object" || entry === null) continue;
     const row = entry as { name?: unknown; color?: unknown };
     if (row.color === undefined) continue;

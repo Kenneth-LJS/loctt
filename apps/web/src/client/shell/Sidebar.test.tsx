@@ -70,7 +70,7 @@ let SETTINGS: Record<string, unknown> = {};
 /** Saved views returned by /api/views, per-test (SHL-32). */
 // `conditions` optional: a valid view carries it (edit seeds the builder
 // from it); fixtures that only exercise listing/pin/delete may omit it.
-let VIEWS: { id: string; name: string; filters: unknown[]; archived?: boolean }[] = [
+let VIEWS: { id: string; name: string; filters: unknown[]; archived?: boolean; icon?: string; color?: unknown }[] = [
   {
     id: "v_mine",
     name: "My open bugs",
@@ -430,6 +430,69 @@ describe("Sidebar", () => {
 });
 
 /**
+ * @verifies UI-16b
+ *
+ * `ItemShell` fully supports an active state (`data-active`,
+ * `aria-current="page"`, the `bg-accent-muted text-accent` treatment) —
+ * Projects and the view switcher already pass it. The Views section
+ * (built-in filters + saved views) never did, so selecting a saved view
+ * left it visually unmarked. Every built-in resolves to exactly
+ * `{ q: <dsl> }` (`sidebar/builtinFilters.ts`), so a built-in is active
+ * when the URL's `q` matches its resolved `q` exactly; a saved view is
+ * active when `search.view` names it.
+ */
+describe("Sidebar Views section active state (UI-16b)", () => {
+  it("marks a selected saved view with aria-current=\"page\" and data-active", async () => {
+    await renderSidebarAt("/list", { view: "v_mine" });
+    const row = (await screen.findByText("My open bugs")).closest("a") as HTMLElement;
+    // The load-bearing marker is `ItemShell`'s own inner `<span>` — the
+    // `active` prop this fix threads through. (The enclosing `<a>` ALSO
+    // carries `aria-current="page"`, but that one is TanStack Router's
+    // own exact-match behaviour, not this fix, so it is not what is
+    // asserted here.)
+    const mark = row.querySelector("[data-active]");
+    expect(mark).not.toBeNull();
+    expect(mark?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("does not mark the saved view active when it is not selected", async () => {
+    await renderSidebarAt("/list", {});
+    const row = (await screen.findByText("My open bugs")).closest("a") as HTMLElement;
+    expect(row.querySelector("[data-active]")).toBeNull();
+  });
+
+  it("marks a selected built-in filter active by its resolved query, and only that one row", async () => {
+    // "Overdue" resolves to `q: due_date < 2026-06-08 and status.category
+    // not in (completed, discarded)` given `today="2026-06-08"` (fixed by
+    // `renderSidebarAt`). Selecting exactly that `q` marks Overdue active
+    // and leaves every other row — including the saved view — inactive.
+    await renderSidebarAt("/list", {
+      q: "due_date < 2026-06-08 and status.category not in (completed, discarded)",
+    });
+    const overdue = (await screen.findByText("Overdue")).closest("a") as HTMLElement;
+    expect(overdue.getAttribute("aria-current")).toBe("page");
+
+    const savedView = (screen.getByText("My open bugs")).closest("a") as HTMLElement;
+    expect(savedView.getAttribute("aria-current")).toBeNull();
+
+    // Only one row within the Views section (built-ins + saved views) is
+    // active at a time. Scoped to that section's body — the List/Board/
+    // Timeline switcher above it is independently active on `/list` and
+    // is not what this assertion is about.
+    // Scoped to `ItemShell`'s own `data-active` marker (`[data-active]`),
+    // not `[aria-current="page"]`: TanStack Router's `<Link>` ALSO sets
+    // `aria-current="page"` on its own `<a>` for an exact-match `to`, so a
+    // plain `aria-current` query double-counts one active row (the `<a>`
+    // and the `ItemShell` `<span>` inside it). `data-active` is the
+    // component's own state and appears exactly once per active row.
+    const viewsSection = document.getElementById("sidebar-section-saved-filters");
+    expect(viewsSection).not.toBeNull();
+    const activeRows = viewsSection?.querySelectorAll("[data-active]");
+    expect(activeRows?.length).toBe(1);
+  });
+});
+
+/**
  * @verifies SHL-5
  *
  * The star marks where a new task actually lands. `/api/projects`
@@ -464,6 +527,52 @@ describe("Sidebar default project (SHL-5)", () => {
 
     await screen.findByText("Web");
     expect(screen.queryByTitle("Default project")).toBeNull();
+  });
+
+  it("UI-16a: renders exactly one dot-shaped mark on the default project row, not two", async () => {
+    // UI-16a: the default marker used to be `<Icon name="dot">`, drawn
+    // right beside the `ColorDot` every project row used to carry — two
+    // visually identical filled circles on one row. The fix swapped the
+    // marker back to `star` (not shape-identical to a dot).
+    //
+    // UI-20 (2026-09-23) then removed the row's `ColorDot` entirely — it
+    // was a hardcoded constant colour encoding nothing (every project
+    // drew the identical dot) — so the row now has ZERO dot-shaped
+    // marks, not one. This test used to assert exactly one (the
+    // ColorDot); it was asserting the very mark UI-20 deletes, so it is
+    // rewritten to the new contract: no dot at all, and the star stays
+    // the row's only mark. This counts *filled circle* shapes
+    // specifically — `ColorDot` is a `<span>` with a `rounded-full`
+    // background, so this must count both the CSS-rounded ColorDot AND
+    // any filled `<circle>` SVG a regression might reintroduce.
+    EFFECTIVE_DEFAULT = "p_web";
+    await renderSidebarAt("/list");
+
+    const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
+    const cssRoundedDots = web.querySelectorAll("span.rounded-full").length;
+    const svgCircleDots = web.querySelectorAll("svg circle").length;
+    expect(cssRoundedDots + svgCircleDots).toBe(0);
+    // And the default marker itself is present and is a star, not a dot.
+    const marker = within(web).getByTitle("Default project");
+    expect(marker.querySelector("svg")).not.toBeNull();
+    expect(marker.querySelector("circle")).toBeNull();
+  });
+
+  it("UI-20: no project row draws a constant-colour dot", async () => {
+    // The hardcoded `<ColorDot color="var(--status-active-fg)" />` drew
+    // an identical blue dot for every project — a per-item-shaped mark
+    // with a constant value, which UI-19's rule forbids. ProjectDef has
+    // no colour field, so there is nothing per-item to draw instead; the
+    // slot is empty. Checked across every seeded project, not just the
+    // default one, since the defect was "every project", not one row.
+    EFFECTIVE_DEFAULT = null;
+    await renderSidebarAt("/list");
+
+    const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
+    const api = (await screen.findByText("API")).closest("a") as HTMLElement;
+    for (const row of [web, api]) {
+      expect(row.querySelectorAll("span.rounded-full").length).toBe(0);
+    }
   });
 });
 
@@ -1582,22 +1691,86 @@ describe("Sidebar cross-view filter scope (2026-09-20)", () => {
  * unified icon set, not hardcoded hex or an ad-hoc star.
  */
 describe("Sidebar tokens and icon glyphs (S-11, S-8)", () => {
-  it("project + all-projects dots use CSS-variable colours, not hardcoded hex", async () => {
-    // Covers S-11 (review item; no case ID)
+  it("the all-projects dot uses a CSS-variable colour, not hardcoded hex", async () => {
+    // Covers S-11 (review item; no case ID).
+    //
+    // UI-20 (2026-09-23) deleted the per-project item dot this test used
+    // to check (`ColorDot color="var(--status-active-fg)"` on every
+    // project row) — it was a hardcoded constant colour encoding
+    // nothing, not a token-vs-hex question, so there is no longer a dot
+    // on a project ITEM row to assert about. The "All projects" anchor
+    // row still carries a dot (a neutral "nothing scoped" marker, not a
+    // per-project mark), so the token-not-hex assertion moves there; the
+    // second half of this test now checks the item row has no dot at all.
     await renderSidebarAt("/list");
-    const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
-    const dot = web.querySelector("span[style]") as HTMLElement;
+    const allProjects = (await screen.findByText("All projects")).closest("a") as HTMLElement;
+    const dot = allProjects.querySelector("span[style]") as HTMLElement;
     // A token reference, never a raw #RRGGBB.
     expect(dot.getAttribute("style") ?? "").toMatch(/var\(--/);
     expect(dot.getAttribute("style") ?? "").not.toMatch(/#[0-9a-fA-F]{6}/);
+
+    const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
+    expect(web.querySelector("span[style]")).toBeNull();
   });
 
-  it("the default-project star uses the unified icon glyph", async () => {
-    // Covers S-8 (review item; no case ID) — the canonical star (ICON.star = ⭑), not the old ★.
+  it("the default-project star is an SVG icon, not a text glyph", async () => {
+    // Was: `expect(marker.textContent).toBe("⭑")` — asserting the marker
+    // IS a Unicode character. That pinned the defect. Ken, 2026-09-22:
+    // "what did i say about fucking using unicode characters for icons?!
+    // ... only acceptable thing are user-assigned icons for saved views."
+    // A208 (2026-09-19) had already ruled glyph affordances out and built
+    // `ui/Icon.tsx`; seven call sites were missed by that migration and
+    // this test held one of them in place.
     await renderSidebarAt("/list");
     const marker = await screen.findByTitle("Default project");
-    expect(marker.textContent).toBe("⭑"); // ⭑ BLACK SMALL STAR
-    expect(marker.textContent).not.toBe("★"); // not ★
+    expect(marker.querySelector("svg")).not.toBeNull();
+    // No text glyph of any kind — neither the old ★ nor ICON.star's ⭑.
+    expect(marker.textContent).toBe("");
+  });
+});
+
+/**
+ * UI-19: the saved-view `icon` field (K104) was fully plumbed —
+ * contracts, core, CLI, MCP — but rendered nowhere: the sidebar row
+ * hardcoded a star for every view regardless of what `icon` held. The
+ * fix renders the view's own icon via `IconGlyph` (the shared read-side
+ * renderer, A279) when set, falling back to the star otherwise.
+ */
+describe("Sidebar saved-view icon (UI-19)", () => {
+  it("renders the view's own icon when set, not the star", async () => {
+    VIEWS = [
+      {
+        id: "v_mine",
+        name: "My open bugs",
+        filters: [{ kind: "simple", field: "status", op: "in", values: ["backlog"] }],
+        // `globe` is a real LUCIDE_CATALOG entry.
+        icon: "globe",
+      },
+    ];
+    await renderSidebarAt("/list");
+
+    const row = (await screen.findByText("My open bugs")).closest("a") as HTMLElement;
+    // `Icon.tsx`'s hand-drawn `star` glyph is this exact path (Icon.tsx:101).
+    // It must NOT be present once a real icon is set.
+    const starPath = 'path[d^="M8 2.5l1.7 3.5"]';
+    expect(row.querySelector(starPath)).toBeNull();
+    // The Lucide `globe` glyph (via `IconGlyph`) renders as some other SVG.
+    expect(row.querySelector("svg")).not.toBeNull();
+  });
+
+  it("falls back to the star when the view has no icon", async () => {
+    VIEWS = [
+      {
+        id: "v_mine",
+        name: "My open bugs",
+        filters: [{ kind: "simple", field: "status", op: "in", values: ["backlog"] }],
+      },
+    ];
+    await renderSidebarAt("/list");
+
+    const row = (await screen.findByText("My open bugs")).closest("a") as HTMLElement;
+    const starPath = 'path[d^="M8 2.5l1.7 3.5"]';
+    expect(row.querySelector(starPath)).not.toBeNull();
   });
 });
 
@@ -1800,6 +1973,34 @@ describe("Sidebar narrow rail suppression (#9)", () => {
 });
 
 /**
+ * @verifies UI-16c
+ *
+ * A built-in filter row ends in a count `Badge`, inset by `ItemShell`'s
+ * own `px-2.5`. A saved-view row ends in a kebab (`RowActions`) that is a
+ * SIBLING of `ItemShell`, outside that padding — so it sat flush against
+ * the sidebar edge, 8.75px further right, and the Views column's right
+ * edge zig-zagged row to row. The fix matches the kebab wrapper's own
+ * right padding to `ItemShell`'s, so both row kinds end at the same x.
+ */
+describe("Sidebar Views section trailing-slot alignment (UI-16c)", () => {
+  it("insets the saved-view kebab wrapper by the same padding ItemShell gives a badge row's right edge", async () => {
+    // jsdom does not lay out CSS, so this cannot assert actual pixel
+    // positions (getBoundingClientRect is always zero) — it asserts the
+    // class-level contract instead: `ItemShell`'s own right inset is
+    // `px-2.5` (`Sidebar.tsx`'s `ItemShell`, the `collapsed ? … :
+    // "gap-2.5 px-2.5"` branch), and a kebab wrapper — a SIBLING of
+    // `ItemShell`, outside that padding — needs a matching `pr-2.5` of
+    // its own or its trailing edge sits 8.75px further out than a
+    // badge's. Live-measured in the browser (dev server, 1440x900): both
+    // edges land at x=178.25 with the fix, x=178.25 vs x=187 without it.
+    await renderSidebarAt("/list");
+    await screen.findByText("My open bugs");
+    const viewRow = document.querySelector("[data-view-row]");
+    expect(viewRow?.className).toMatch(/\bpr-2\.5\b/);
+  });
+});
+
+/**
  * @verifies K100
  *
  * Point-of-use editing (K100): the Labels / Milestones / Projects sidebar
@@ -1862,6 +2063,24 @@ describe("Sidebar point-of-use editing (K100)", () => {
     expect(name.value).toBe("Web");
   });
 
+  it("has no 'Manage projects…' / 'Manage milestones…' item on the project or milestone kebab (UI-17 / K105)", async () => {
+    // UI-17: Ken hit this a second time after K105 was recorded BUILT —
+    // "if im on a task, i dont want to see a link to manage all tasks.
+    // same for milestones/sprints/labels/etc." The persistent Settings
+    // gear (Footer, below) reaches Settings → Projects/Milestones already,
+    // so nothing is stranded by dropping the items. (Labels and Sprints
+    // are covered by their own kebab describe blocks.)
+    await renderSidebarAt("/list");
+    await screen.findByText("Web");
+    await screen.findByText("v1.0");
+
+    openRowKebab('Actions for project "Web"');
+    expect(document.querySelector("[data-testid='sidebar-project-manage']")).toBeNull();
+
+    openRowKebab('Actions for milestone "v1.0"');
+    expect(document.querySelector("[data-testid='sidebar-milestone-manage']")).toBeNull();
+  });
+
   it("keeps the row's kebab a sibling of the Link, not a descendant of it", async () => {
     await renderSidebarAt("/list");
     await screen.findByText("frontend");
@@ -1873,12 +2092,17 @@ describe("Sidebar point-of-use editing (K100)", () => {
     expect(kebab?.closest("a")).toBeNull();
   });
 
-  it("offers a Manage deep link and Archive on the label kebab", async () => {
+  it("offers Archive on the label kebab, with no 'Manage labels…' item (UI-17 / K105)", async () => {
     await renderSidebarAt("/list");
     await screen.findByText("frontend");
     openRowKebab('Actions for label "frontend"');
     expect(document.querySelector("[data-testid='sidebar-label-archive']")).not.toBeNull();
-    expect(document.querySelector("[data-testid='sidebar-label-manage']")).not.toBeNull();
+    // UI-17: Ken hit this a second time after K105 was recorded BUILT —
+    // "if im on a task, i dont want to see a link to manage all tasks.
+    // same for milestones/sprints/labels/etc." The persistent Settings
+    // gear (Footer) reaches Settings → Labels already, so nothing is
+    // stranded by dropping the item.
+    expect(document.querySelector("[data-testid='sidebar-label-manage']")).toBeNull();
   });
 
   it("adds an 'All sprints' row linking to /sprints", async () => {
@@ -1886,6 +2110,59 @@ describe("Sidebar point-of-use editing (K100)", () => {
     const link = await screen.findByTestId("sidebar-sprints-link");
     expect(link.getAttribute("href")).toBe("/sprints");
     expect(link.textContent).toMatch(/All sprints/);
+  });
+
+  it("UI-20: 'All milestones' and 'All sprints' draw no type glyph", async () => {
+    // UI-20 (2026-09-23 designer ruling, live-scroll verified): sections
+    // never orphan their items from their heading in practice (they're
+    // small, and per-section collapse is the escape hatch for a long
+    // one), so a type glyph is decoration, not wayfinding. This test used
+    // to assert the two rows drew DIFFERENT glyphs (flag vs calendar) —
+    // that was itself only a partial fix; the full fix drops the glyph
+    // from both anchor rows rather than picking a distinguishing one.
+    await renderSidebarAt("/list");
+    const milestonesLink = await screen.findByTestId("sidebar-milestones-link");
+    const sprintsLink = await screen.findByTestId("sidebar-sprints-link");
+    expect(milestonesLink.querySelector("svg")).toBeNull();
+    expect(sprintsLink.querySelector("svg")).toBeNull();
+  });
+
+  it("UI-25: every top-level row's mark slot is the same width, so labels share one x", async () => {
+    // UI-25 measured eight distinct label-left positions live, split
+    // between a `w-4` icon slot (glyph rows) and a bare 8px `ColorDot`
+    // with no slot at all (dot rows) — a 7px ragged edge. The fix wraps
+    // every dot in the same `w-4` slot the icon rows use (or leaves an
+    // empty `w-4` slot where UI-20 removed the mark), rather than
+    // special-casing dot rows. This checks the DOM-structural cause
+    // directly: jsdom has no layout engine, so it cannot assert the
+    // live pixel position UI-25 measured, but every representative row's
+    // FIRST child element is the mark slot, and it must carry `w-4` —
+    // that class is what produced one shared x live (re-measured against
+    // the dev server: 38.5px for every one of these rows before and
+    // after, see the ticket's before/after table).
+    await renderSidebarAt("/list");
+    const rowsByLabel: [label: string, testId?: string][] = [
+      ["All projects"],
+      ["Web"], // project item (dot slot, now empty — UI-20)
+      ["Assigned to me"], // built-in filter (icon slot)
+      ["My open bugs"], // saved view (icon slot)
+      ["All milestones"],
+      ["v1.0"], // milestone item
+      ["All sprints"],
+      ["Sprint 12"], // sprint item (dot slot — unchanged content)
+      ["frontend"], // label item (dot slot — unchanged content)
+    ];
+    for (const [label] of rowsByLabel) {
+      const el = await screen.findByText(label);
+      const row = el.closest("a") as HTMLElement;
+      // <a> > ItemShell's <span data-active|title|class> > mark slot
+      // (first child). Go through the ItemShell wrapper explicitly
+      // rather than guessing depth.
+      const itemShell = row.firstElementChild as HTMLElement | null;
+      const slot = itemShell?.firstElementChild ?? null;
+      expect(slot, `${label}: no first-child slot found`).toBeTruthy();
+      expect(slot?.className, `${label}: slot missing w-4`).toMatch(/\bw-4\b/);
+    }
   });
 
   it("opens the New-project dialog in place (U10 — no longer deep-links to Settings)", async () => {
@@ -1909,13 +2186,14 @@ describe("Sidebar point-of-use editing (K100)", () => {
  * CONFIG-5 / P4 + K100: the sprint sidebar rows gained a kebab. Sprint
  * *editing* lives on the `/sprints/:key` detail page (no dialog), so the
  * kebab only navigates: "Open sprint" → the detail page (where Edit
- * lives), "Manage sprints…" → Settings → Sprints. The row's own click
- * still filters the list by that sprint.
+ * lives). UI-17 / K105 removed "Manage sprints…" — Ken: "if im on a
+ * task, i dont want to see a link to manage all tasks. same for
+ * milestones/sprints/labels/etc." The row's own click still filters the
+ * list by that sprint.
  *
- * These need the `/sprints/$key` and `/settings/$section` routes
- * registered so `navigate` resolves; the shared `renderSidebarAt` only
- * knows `/list`. The router is returned so the test can read where a
- * kebab action landed.
+ * These need the `/sprints/$key` route registered so `navigate` resolves;
+ * the shared `renderSidebarAt` only knows `/list`. The router is returned
+ * so the test can read where a kebab action landed.
  */
 describe("Sidebar sprint row kebab (CONFIG-5, K100)", () => {
   async function renderShellAt(pathname: string, search: Record<string, unknown> = {}) {
@@ -1945,13 +2223,8 @@ describe("Sidebar sprint row kebab (CONFIG-5, K100)", () => {
       validateSearch: (s: Record<string, unknown>) => s,
       component: () => <div>sprint detail</div>,
     });
-    const settingsRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/settings/$section",
-      component: () => <div>settings pane</div>,
-    });
     const router = createRouter({
-      routeTree: rootRoute.addChildren([listRoute, sprintDetailRoute, settingsRoute]),
+      routeTree: rootRoute.addChildren([listRoute, sprintDetailRoute]),
       history: createMemoryHistory({
         initialEntries: [
           `${pathname}?${new URLSearchParams(
@@ -1992,16 +2265,17 @@ describe("Sidebar sprint row kebab (CONFIG-5, K100)", () => {
     });
   });
 
-  it("offers 'Manage sprints…' deep-linking to Settings → Sprints", async () => {
-    const router = await renderShellAt("/list");
+  it("has no 'Manage sprints…' item on the kebab (UI-17 / K105)", async () => {
+    await renderShellAt("/list");
     await screen.findByText("Sprint 12");
     openKebab('Actions for sprint "Sprint 12"');
+    // UI-17: Ken hit this a second time after K105 was recorded BUILT —
+    // "if im on a task, i dont want to see a link to manage all tasks.
+    // same for milestones/sprints/labels/etc." The persistent Settings
+    // gear (Footer) reaches Settings → Sprints already, so nothing is
+    // stranded by dropping the item.
     const manage = document.querySelector<HTMLButtonElement>("[data-testid='sidebar-sprint-manage']");
-    expect(manage).not.toBeNull();
-    fireEvent.click(manage as HTMLButtonElement);
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe("/settings/sprints");
-    });
+    expect(manage).toBeNull();
   });
 
   it("keeps the row's filter-link: clicking the sprint name filters the list by it", async () => {
@@ -2177,5 +2451,24 @@ describe("Sidebar inline customize (A244, K100)", () => {
     expect(screen.queryByTestId("sidebar-customize")).toBeNull();
     // The Settings link is still present as the fallback route to config.
     expect(screen.getByText("Settings").closest("a")).not.toBeNull();
+  });
+});
+
+describe("K104-view-colour — a saved view's icon carries its colour", () => {
+  it("tints a Lucide icon with the view's resolved colour", async () => {
+    // The handoff from the colour work: the field existed end-to-end
+    // (contracts, core, CLI, MCP, the edit dialog) but the sidebar
+    // passed no `color`, so a view's colour was invisible exactly where
+    // a user would look for it.
+    VIEWS = [{ id: "v_tint", name: "Tinted", filters: [], icon: "circle-check", color: "#B02F17" }];
+    await renderSidebarAt("/list");
+    // Both the row link and its inner shell carry the title.
+    const row = (await screen.findAllByTitle("Tinted"))[0] as HTMLElement;
+    const svg = row.querySelector("svg");
+    expect(svg).not.toBeNull();
+    // `IconGlyph` forwards `color` to the Lucide component, which sets
+    // it as the stroke colour.
+    const painted = `${svg?.getAttribute("color") ?? ""}${svg?.getAttribute("stroke") ?? ""}${svg?.style.color ?? ""}`;
+    expect(painted.toLowerCase()).toContain("b02f17");
   });
 });

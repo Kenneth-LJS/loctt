@@ -31,7 +31,7 @@ import { UsageError } from "../runtime/errors.js";
  * produced here is byte-identical to one downloaded from the UI for
  * the same rows.
  *
- * Unreadable tasks are *named* rather than silently dropped (BLK-44):
+ * Unreadable tasks are *named* rather than silently dropped:
  * a truncated export that omits a bad row with no mention is the one
  * outcome the export must not produce. The names go to stderr so the
  * export itself stays pipeable on stdout.
@@ -119,8 +119,8 @@ export async function exportTasks(args: string[], root: string): Promise<void> {
     if (format === "json") process.stdout.write("\n");
   }
 
-  // BLK-44: an export that dropped an unparseable task without a word
-  // is a spreadsheet short by a row that reconciles against nothing.
+  // An export that dropped an unparseable task without a word is a
+  // spreadsheet short by a row that reconciles against nothing.
   // The paths go to stderr so the export body on stdout is unpolluted.
   if (unreadable.length > 0) {
     process.stderr.write(

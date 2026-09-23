@@ -226,3 +226,20 @@ describe("BodyRenderedView — K33 read state", () => {
     expect(screen.queryByTestId("body-image")).toBeNull();
   });
 });
+
+describe("UI-21 — an empty description does not reserve 112px", () => {
+  it("drops min-h when empty, keeps it when there is a body", () => {
+    // Ken, 2026-09-22: "why is this description section so big". The
+    // read surface reserved `min-h-[8rem]` (112px at the 87.5% root)
+    // unconditionally, so a task with no description showed a one-line
+    // placeholder above ~100px of nothing.
+    const { unmount } = renderView("");
+    expect(screen.getByTestId("body-rendered").className).not.toContain("min-h-[8rem]");
+    unmount();
+
+    // With a body the height still earns its place: it is the resting
+    // frame the edit surface mirrors, so entering edit mode does not jolt.
+    renderView("Some description.");
+    expect(screen.getByTestId("body-rendered").className).toContain("min-h-[8rem]");
+  });
+});

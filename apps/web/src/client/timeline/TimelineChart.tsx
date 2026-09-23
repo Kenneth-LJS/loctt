@@ -2,7 +2,6 @@ import type { CalendarConfig, TimelineZoom } from "@loctt/contracts";
 import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "../ui/Icon.tsx";
-import { ICON } from "../ui/icons.ts";
 import type { DependencyEdge } from "./arrows.ts";
 import { arrowPath } from "./arrows.ts";
 import type { DateRange, PixelWindow } from "./geometry.ts";
@@ -533,7 +532,7 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
                           height: ROW_H - 6,
                         }}
                       >
-                        <span aria-hidden="true">{ICON.warning}</span>
+                        <Icon name="alert" size={12} />
                         {/* K26: fall back to the key when title is the corrupt field. */}
                         <span className="block truncate">{row.task.title ?? row.task.key}</span>
                       </button>

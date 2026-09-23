@@ -1374,20 +1374,27 @@ test.describe("A11Y — state exposure", () => {
     await expect(collapse).toHaveAttribute("aria-expanded", "true");
 
     // The archived-scope control (K107 replaced the "Show archived"
-    // checkbox with a tri-state select). Second bullet: it "announces
-    // its current state, so a user cannot be unknowingly filtered" — the
-    // case's point is that a user must be able to tell whether archived
-    // rows are being hidden from them.
+    // checkbox with a tri-state control; 2026-09-22 made that control a
+    // segmented radiogroup instead of a native `<select>`). Second
+    // bullet: it "announces its current state, so a user cannot be
+    // unknowingly filtered" — the case's point is that a user must be
+    // able to tell whether archived rows are being hidden from them.
     //
     // Third bullet: "a toggle rendered as a checkbox announces
-    // checked" — for the select, the equivalent is that its accessible
-    // value reflects the current scope. `getByRole("combobox")` resolves
-    // the browser's own semantics for a `<select>`.
-    await page.getByTestId("view-actions-menu").click();
-    const archived = page.getByRole("combobox", { name: "Archived scope" });
-    await expect(archived).toHaveValue("active");
-    await archived.selectOption("all");
-    await expect(archived).toHaveValue("all");
+    // checked" — for a radiogroup the literal equivalent applies:
+    // `aria-checked` on the selected radio is what a screen reader
+    // reads. The group itself must carry an accessible name, which the
+    // `<select>` got implicitly and this control supplies through
+    // `aria-labelledby` on its visible label.
+    const archived = page.getByRole("radiogroup", { name: "Archived" });
+    await expect(archived).toBeVisible();
+    await expect(archived.getByRole("radio", { name: "Active" }))
+      .toHaveAttribute("aria-checked", "true");
+    await archived.getByRole("radio", { name: "All" }).click();
+    await expect(archived.getByRole("radio", { name: "All" }))
+      .toHaveAttribute("aria-checked", "true");
+    await expect(archived.getByRole("radio", { name: "Active" }))
+      .toHaveAttribute("aria-checked", "false");
 
     // And the state is real, not decorative: changing it changed the
     // query. Without this the test would pass against a control that

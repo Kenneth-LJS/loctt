@@ -115,10 +115,8 @@ import {
   editView,
   enableGit,
   exportBackup,
-  exportTasksToCSV,
-  exportTasksToJSON,
   filterByName,
-  filterForExport,
+  FilterError,
   filterProjects,
   filtersToScannableText,  findLossyConstructs,
   findProjectBySlug,
@@ -1868,6 +1866,7 @@ export function createWebApp(options: WebAppOptions) {
         ...(r.sort !== undefined ? { sort: r.sort } : {}),
         ...(r.archivedScope !== undefined ? { archivedScope: r.archivedScope } : {}),
         ...(r.icon !== undefined ? { icon: r.icon } : {}),
+        ...(r.color !== undefined ? { color: r.color } : {}),
       });
       json(res, created, 201);
     } catch (err) {
@@ -1898,6 +1897,7 @@ export function createWebApp(options: WebAppOptions) {
         ...(r.sort !== undefined ? { sort: r.sort } : {}),
         ...(r.archivedScope !== undefined ? { archivedScope: r.archivedScope } : {}),
         ...(r.icon !== undefined ? { icon: r.icon } : {}),
+        ...(r.color !== undefined ? { color: r.color } : {}),
         // K102-broken-repair: the client's explicit "yes, replace the
         // preserved original text" (the dialog's confirmation tick).
         // Meaningless for a healthy view, which is why it is passed
@@ -4019,12 +4019,27 @@ export function createWebApp(options: WebAppOptions) {
    * Listed rather than caught broadly: an unexpected throw from the
    * evaluator is a server fault and must keep surfacing as one, or a
    * real bug hides behind a 400 that blames the user.
+   *
+   * `FilterError` (UI-9): thrown by `filtersToNode` when a saved view's
+   * filter list cannot be composed into a query — an advanced filter
+   * whose DSL does not parse, or a simple filter whose values cannot
+   * combine under its operator. The WRITE path (`views/manage.ts`)
+   * already catches this and rethrows as `ViewError`; the READ path
+   * (`query/list.ts`, resolving `?view=` on every list call) calls
+   * `filtersToNode` bare, so without this line the same fault escaped
+   * this catch, fell through to the generic 500 handler, and reported
+   * "the server failed" with a `retry` recovery that could never
+   * succeed — the error is a saved view's config, unfixable by
+   * retrying. Does NOT extend `LocttError` (like `ViewError`), so it
+   * must be listed explicitly rather than relying on an `instanceof
+   * LocttError` catch-all elsewhere.
    */
   const isQueryError = (err: unknown): boolean =>
     err instanceof TokenizeError
     || err instanceof ParseError
     || err instanceof QueryValidationError
-    || err instanceof ViewError;
+    || err instanceof ViewError
+    || err instanceof FilterError;
 
   const handleListTasks: RouteHandler = async ({ res, url, locttDir }) => {
     const page = parsePagination(url, res);
@@ -4323,114 +4338,6 @@ export function createWebApp(options: WebAppOptions) {
     });
   };
 
-  const handleExportTasks: RouteHandler = async ({ res, url, locttDir }) => {
-    const format = (url.searchParams.get("format") ?? "csv").toLowerCase();
-    if (format !== "csv" && format !== "json") {
-      error(res, "Export format must be CSV or JSON.", 400, {
-        code: "validation_failed",
-        field: "format",
-        recovery: { kind: "reload" },
-      });
-      return;
-    }
-    // K107: export mirrors the list's visible rows, so it honours the same
-    // tri-state `?archived` scope (default `active`). `filterForExport`
-    // (core) is a two-state include/exclude; `all` and `archived` both
-    // need archived rows present, and `archived` then narrows to only
-    // those below — core has no "only archived" export path to change.
-    const archivedScope = parseArchivedScope(url);
-    const includeArchived = archivedScope !== "active";
-    const includeBody = url.searchParams.get("body") === "true";
-    const columnsParam = url.searchParams.get("columns");
-    const columns = columnsParam ? columnsParam.split(",").map(c => c.trim()).filter(Boolean) : undefined;
-
-    // Detailed, so a task that will not parse can be *named* rather
-    // than silently dropped. BLK-44: "what must not happen is a
-    // truncated file that silently omits the bad row with no
-    // mention." The export used the plain call, so a corrupt task
-    // vanished from the CSV and nothing anywhere said so — a
-    // spreadsheet short by one row that reconciles against nothing.
-    const { tasks, unreadable } = await loadAllTasksDetailed(locttDir);
-    const { workflowConfig, queriesConfig, today, now, weekStartsOn } = await loadOptionalConfigs(locttDir);
-    const baseQuery = url.searchParams.get("query") ?? undefined;
-    const view = url.searchParams.get("view") ?? undefined;
-    const projectFilter = url.searchParams.get("project") ?? undefined;
-    // Export mirrors the list view's filter resolution so a CSV/JSON
-    // reflects exactly the rows the user is looking at. (archived is
-    // applied below via filterForExport, so it's excluded here.)
-    await resolveProjectSlugParam(url, locttDir);
-    const effectiveQuery = view !== undefined
-      ? baseQuery
-      : buildStructuredQuery(url, baseQuery);
-    const params: ListOptions = {
-      ...(effectiveQuery !== undefined ? { query: effectiveQuery } : {}),
-      ...(view !== undefined ? { view } : {}),
-      ...(projectFilter !== undefined ? { project: projectFilter } : {}),
-      ...(today !== undefined ? { today } : {}),
-      ...(now !== undefined ? { now } : {}),
-      ...(weekStartsOn !== undefined ? { weekStartsOn } : {}),
-      limit: Number.MAX_SAFE_INTEGER,
-    };
-    // CMT-10: gate the comment-mention scan on the query, as the list does.
-    const exportViewQuery = view !== undefined && queriesConfig !== undefined
-      ? filtersToScannableText(resolveView(queriesConfig, view)?.filters ?? [])
-      : [];
-    const exportCtx = await resolveCommentMentionsContext(
-      locttDir, tasks, buildListContext(tasks), [effectiveQuery, ...exportViewQuery],
-    );
-    const result = listTasks({
-      tasks,
-      options: params,
-      ...(queriesConfig !== undefined ? { queriesConfig } : {}),
-      ...(workflowConfig !== undefined ? { workflowConfig } : {}),
-      ctx: exportCtx,
-    });
-    const withArchived = filterForExport(result, includeArchived);
-    // `archived` scope narrows to only archived rows; `active`/`all` keep
-    // what `filterForExport` returned.
-    const filtered = archivedScope === "archived"
-      ? withArchived.filter(t => t.frontmatter.archived === true)
-      : withArchived;
-    const opts = {
-      ...(columns ? { columns } : {}),
-      ...(includeBody ? { includeBody: true } : {}),
-    };
-    // The body is a file, so it cannot carry an error envelope. The
-    // skipped ids ride on a header instead: the download still
-    // succeeds — which is the branch BLK-44 prefers — and the client
-    // reports what is missing from it.
-    // Paths rather than ids: a path is what the user acts on, and it
-    // is what ERR-9's banner already shows for the same files. A bare
-    // ULID would also put an internal identifier in front of the user
-    // for no gain (P-4) — the id is only a handle here because the
-    // file will not parse well enough to have a key.
-    //
-    // Header-safe: a header value cannot hold a newline, and these are
-    // filesystem paths under the tracker, so they are joined with a
-    // separator that cannot appear in one.
-    const skipped = unreadable.length > 0
-      ? { "X-Loctt-Unreadable": unreadable.map(u => u.path).join("|") }
-      : {};
-
-    if (format === "json") {
-      const body = exportTasksToJSON(filtered, opts);
-      res.writeHead(200, {
-        "Content-Type": "application/json",
-        "Content-Disposition": 'attachment; filename="loctt-tasks.json"',
-        ...skipped,
-      });
-      res.end(body);
-    } else {
-      const body = exportTasksToCSV(filtered, opts);
-      res.writeHead(200, {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": 'attachment; filename="loctt-tasks.csv"',
-        ...skipped,
-      });
-      res.end(body);
-    }
-  };
-
   /**
    * `GET /api/backup/export` — the whole-tracker JSONL backup (K4, K17,
    * F3 / K30). Web parity for `loctt backup` and MCP `backup`.
@@ -4442,9 +4349,9 @@ export function createWebApp(options: WebAppOptions) {
    *
    * Core `exportBackup` writes to a file (streaming a task at a time so
    * peak memory is one task, not one tracker), so this writes to an OS
-   * temp file and streams that back with an attachment disposition —
-   * the same download shape `handleExportTasks` uses. History is
-   * included by default (K17 ruling 1); `?no_history=true` opts out.
+   * temp file and streams that back with an attachment disposition.
+   * History is included by default (K17 ruling 1); `?no_history=true`
+   * opts out.
    *
    * A split backup is a CLI/large-tracker concern and is not offered
    * here: this endpoint always returns a single file. If a tracker were
@@ -5814,7 +5721,6 @@ export function createWebApp(options: WebAppOptions) {
     { method: "DELETE", pattern: TASK_COMMENT_ID_RE, handler: handleDeleteComment },
     { method: "GET", pattern: "/api/search", handler: handleSearch },
     { method: "GET", pattern: "/api/tasks", handler: handleListTasks },
-    { method: "GET", pattern: "/api/tasks/export", handler: handleExportTasks },
     { method: "GET", pattern: "/api/backup/export", handler: handleExportBackup },
     { method: "POST", pattern: "/api/backup/restore", handler: handleRestoreBackup },
     { method: "POST", pattern: "/api/tasks", handler: handleCreateTask },

@@ -312,7 +312,9 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
           type="button"
           variant="primary"
           testId="estimation-save"
-          disabled={blocked || save.isPending}
+          disabled={blocked}
+          loading={save.isPending}
+          aria-label="Save"
           onClick={() => {
             if (blocked) return;
             // SET-28: estimation is a single block, so the fresh
@@ -320,7 +322,7 @@ function EstimationEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
             save.mutate({ collection: "estimation", apply: () => draft });
           }}
         >
-          {save.isPending ? "Saving…" : "Save"}
+          Save
         </Button>
       </div>
     </div>

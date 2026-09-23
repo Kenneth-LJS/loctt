@@ -83,12 +83,17 @@ export function CreateProjectForm({
       </div>
 
       <div className="grid gap-1">
-        {/* PRU-5: not "permanent" (no longer true) and not silent —
-            the cost is stated, now as a proper subtitle (U9). */}
-        <Field
-          label="Prefix"
-          hint="Changeable later only by renaming every task in the project"
-        >
+        {/* PRU-5 wanted the cost stated rather than the field left
+            silent. The old wording — "Changeable later only by renaming
+            every task in the project" — overstated it twice: it read as
+            MANUAL work (the app rewrites the keys itself,
+            `core/projects/prefix.ts:111`) and it omitted that old keys
+            keep resolving through `key_history`. Ken, 2026-09-22:
+            "prefix's description makes it sound like the user will need
+            to manually rename it themselves." The example carries the
+            meaning; the cost belongs in the confirm flow that a prefix
+            change already has (PRU-44/PRU-45), not here. */}
+        <Field label="Prefix" hint="Starts every task key, like WEB-1">
           <TextField
             data-testid="project-create-prefix"
             value={prefix}
@@ -103,7 +108,7 @@ export function CreateProjectForm({
       </div>
 
       <div className="grid gap-1">
-        <Field label="Slug" hint="Used in links; fixed once created">
+        <Field label="Slug" hint="Used in links and cannot be changed later">
           <TextField
             data-testid="project-create-slug"
             value={effectiveSlug}
@@ -134,10 +139,12 @@ export function CreateProjectForm({
         <Button
           variant="primary"
           testId="project-create-submit"
-          disabled={blocked || create.isPending}
+          disabled={blocked}
+          loading={create.isPending}
+          aria-label="Create project"
           onClick={submit}
         >
-          {create.isPending ? "Creating…" : "Create project"}
+          Create project
         </Button>
       </div>
     </div>
