@@ -240,4 +240,39 @@ describe("toFieldFailure", () => {
     expect(f.message).not.toContain("01M15ZCHKHK534CBPCQS5FQ30S");
     expect(f.dataState).toBe("not_saved");
   });
+
+  /**
+   * XS-48: a write refused because a schema migration holds the lock.
+   * The server side of this envelope (409, `schema_mismatch`,
+   * `data_state: "not_saved"`, a message naming the migration and
+   * telling the user to wait, `recovery.kind: "retry"`) is proven end
+   * to end in `apps/web/src/server/server.migration-lock.test.ts`
+   * (`@verifies TSK-56`). What that test cannot show is what the panel
+   * does with the envelope once it has it — this is the missing half.
+   */
+  // @verifies XS-48
+  it("names the migration as the cause, confirms nothing was saved, and offers retry — never force/bypass", () => {
+    const f = toFieldFailure(
+      rejected({
+        code: "schema_mismatch",
+        message: "A schema migration is in progress on this tracker. Wait for it to finish and try again.",
+        field: "status",
+        data_state: "not_saved",
+        recovery: { kind: "retry" },
+      }, 409),
+      { field: "status", value: "in_progress" },
+      INDEX,
+      "T-12",
+    );
+    expect(f.field).toBe("status");
+    expect(f.message).toMatch(/migration is in progress/i);
+    expect(f.message).toMatch(/wait/i);
+    expect(f.dataState).toBe("not_saved");
+    // Retry is offered as A control...
+    expect(f.recovery?.kind).toBe("retry");
+    // ...and the write is kept so Retry can re-send exactly it — this is
+    // the ONLY recovery ever offered for this cause (never force/bypass,
+    // which isn't a `recovery.kind` this module or the server produce).
+    expect(f.retry).toEqual({ field: "status", value: "in_progress" });
+  });
 });

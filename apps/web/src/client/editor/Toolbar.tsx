@@ -15,9 +15,9 @@
  *    ("Bold (⌘B)"), so the affordance is a drawn glyph rather than a word
  *    (A208), and the shortcut is discoverable on hover.
  *  - Undo / redo buttons were added.
- *  - The controls are grouped with separators, and the secondary ones
- *    collapse into a "More" overflow menu below 640px (`sm`) so the bar
- *    does not wrap to three or four rows on a phone.
+ *  - The controls are grouped with separators. Each group folds into a
+ *    single menu button when the BAR is too narrow to hold it flat
+ *    (UI-23d) — see `GROUPS`.
  *  - The Rich/Markdown mode toggle moved to the RIGHT end of the bar as a
  *    compact `</>` toggle (it used to sit first, in `BodyEditor`).
  *  - The bar is no longer focus-gated for the description body: it is
@@ -60,7 +60,7 @@ interface ButtonSpec {
 }
 
 /**
- * The mark and list buttons, in visual order.
+ * The formatting buttons, in three groups, in visual order.
  *
  * `superscript`/`subscript` are toggled through the generic `toggleMark`
  * command rather than a dedicated `toggleSuperscript`: the marks in
@@ -69,61 +69,95 @@ interface ButtonSpec {
  * lane does not own. `toggleMark("superscript")` reaches the same mark
  * and round-trips through `markdown.ts` identically.
  *
- * `primary` buttons stay on the bar at every width; the rest collapse
- * into the "More" overflow menu below `sm`.
+ * Heading is NOT here — it lives in the level picker (TSK-59). Link is
+ * not in a group either: it prompts for a URL and stays flat at every
+ * width.
  *
- * Heading is NOT here — it lives in the level picker (TSK-59).
+ * ## Collapse (UI-23d)
+ *
+ * Ken: *"if it can fit in one line, we leave as is. if it goes into 2
+ * lines, then ... bold/italic/underline/strikethrough are put together
+ * into a 'T' button, and some others can combine too"*. So each group
+ * has a flat form and a menu form, and which one shows is decided by the
+ * TOOLBAR's width, through a container query — not the viewport's. The
+ * old `sm:` breakpoint keyed off the window, so the comment composer at
+ * 855px inside a 1280px window wrapped to two rows while the breakpoint
+ * still reported "wide".
+ *
+ * Groups fold rarest-first — `more`, then `blocks`, then `text` — so
+ * Bold and Italic are the last to go behind a menu. Each threshold is
+ * the narrowest bar width at which the row still fits on one line with
+ * that group flat (measured, A309); the classes are written out in full
+ * because Tailwind only generates the literal class strings it can find.
+ * Below the last threshold the row may still wrap (`flex-wrap` stays as
+ * the safety net) — known-gaps.md records the phone width where it does.
  */
 interface Group {
   readonly key: string;
+  /** The collapsed trigger's accessible name. */
+  readonly label: string;
+  /** The collapsed trigger's glyph. */
+  readonly icon: IconName;
   readonly buttons: readonly ButtonSpec[];
+  /** Container-query classes: the flat form, hidden below the threshold. */
+  readonly flatClass: string;
+  /** Container-query classes: the menu form, shown below the threshold. */
+  readonly menuClass: string;
+  /** Whether a separator leads the flat form (not the first group). */
+  readonly separated: boolean;
 }
 
-const GROUPS: readonly Group[] = [
-  {
-    key: "marks",
-    buttons: [
-      { id: "bold", label: "Bold", icon: "bold", shortcut: `${MOD}B`, active: "bold", run: e => e.chain().focus().toggleBold().run() },
-      { id: "italic", label: "Italic", icon: "italic", shortcut: `${MOD}I`, active: "italic", run: e => e.chain().focus().toggleItalic().run() },
-      { id: "strike", label: "Strikethrough", icon: "strikethrough", shortcut: `${MOD}⇧S`, active: "strike", run: e => e.chain().focus().toggleStrike().run() },
-      // K107. Toggled via the generic `toggleMark` for the same reason
-      // super/subscript are: the marks in `extensions.ts` are plain
-      // `Mark.create` definitions with no command of their own. Their
-      // keyboard shortcuts DO exist (declared on the marks themselves),
-      // so both are named here for the tooltip.
-      { id: "underline", label: "Underline", icon: "underline", shortcut: `${MOD}U`, active: "underline", run: e => e.chain().focus().toggleMark("underline").run() },
-      { id: "highlight", label: "Highlight", icon: "highlight", shortcut: `${MOD}⇧H`, active: "highlight", run: e => e.chain().focus().toggleMark("highlight").run() },
-    ],
-  },
-  {
-    key: "code",
-    buttons: [
-      { id: "code", label: "Code", icon: "code", shortcut: `${MOD}E`, active: "code", run: e => e.chain().focus().toggleCode().run() },
-      { id: "codeBlock", label: "Code block", icon: "codeBlock", active: "codeBlock", run: e => e.chain().focus().toggleCodeBlock().run() },
-    ],
-  },
-  {
-    key: "lists",
-    buttons: [
-      { id: "bulletList", label: "Bulleted list", icon: "list", active: "bulletList", run: e => e.chain().focus().toggleBulletList().run() },
-      { id: "orderedList", label: "Numbered list", icon: "listNumbered", active: "orderedList", run: e => e.chain().focus().toggleOrderedList().run() },
-      { id: "blockquote", label: "Quote", icon: "quote", active: "blockquote", run: e => e.chain().focus().toggleBlockquote().run() },
-    ],
-  },
-  {
-    key: "script",
-    buttons: [
-      { id: "superscript", label: "Superscript", icon: "superscript", active: "superscript", run: e => e.chain().focus().toggleMark("superscript").run() },
-      { id: "subscript", label: "Subscript", icon: "subscript", active: "subscript", run: e => e.chain().focus().toggleMark("subscript").run() },
-    ],
-  },
-];
+const TEXT_GROUP: Group = {
+  key: "text",
+  label: "Text style",
+  icon: "textStyle",
+  flatClass: "flex @max-[620px]:hidden",
+  menuClass: "hidden @max-[620px]:flex",
+  separated: false,
+  buttons: [
+    { id: "bold", label: "Bold", icon: "bold", shortcut: `${MOD}B`, active: "bold", run: e => e.chain().focus().toggleBold().run() },
+    { id: "italic", label: "Italic", icon: "italic", shortcut: `${MOD}I`, active: "italic", run: e => e.chain().focus().toggleItalic().run() },
+    // K107. Toggled via the generic `toggleMark` for the same reason
+    // super/subscript are: the marks in `extensions.ts` are plain
+    // `Mark.create` definitions with no command of their own. Their
+    // keyboard shortcuts DO exist (declared on the marks themselves),
+    // so both are named here for the tooltip.
+    { id: "underline", label: "Underline", icon: "underline", shortcut: `${MOD}U`, active: "underline", run: e => e.chain().focus().toggleMark("underline").run() },
+    { id: "strike", label: "Strikethrough", icon: "strikethrough", shortcut: `${MOD}⇧S`, active: "strike", run: e => e.chain().focus().toggleStrike().run() },
+    { id: "highlight", label: "Highlight", icon: "highlight", shortcut: `${MOD}⇧H`, active: "highlight", run: e => e.chain().focus().toggleMark("highlight").run() },
+  ],
+};
 
-/**
- * The IDs that stay on the bar at every width. Everything else moves into
- * the "More" menu below `sm` (640px) so a phone shows one clean row.
- */
-const PRIMARY_IDS = new Set(["bold", "italic", "strike", "bulletList", "orderedList", "link"]);
+const BLOCKS_GROUP: Group = {
+  key: "blocks",
+  label: "Lists and blocks",
+  icon: "list",
+  flatClass: "flex @max-[745px]:hidden",
+  menuClass: "hidden @max-[745px]:flex",
+  separated: true,
+  buttons: [
+    { id: "bulletList", label: "Bulleted list", icon: "list", active: "bulletList", run: e => e.chain().focus().toggleBulletList().run() },
+    { id: "orderedList", label: "Numbered list", icon: "listNumbered", active: "orderedList", run: e => e.chain().focus().toggleOrderedList().run() },
+    { id: "blockquote", label: "Quote", icon: "quote", active: "blockquote", run: e => e.chain().focus().toggleBlockquote().run() },
+    { id: "codeBlock", label: "Code block", icon: "codeBlock", active: "codeBlock", run: e => e.chain().focus().toggleCodeBlock().run() },
+  ],
+};
+
+const MORE_GROUP: Group = {
+  key: "more",
+  label: "More formatting",
+  icon: "more",
+  flatClass: "flex @max-[860px]:hidden",
+  menuClass: "hidden @max-[860px]:flex",
+  separated: true,
+  buttons: [
+    { id: "code", label: "Code", icon: "code", shortcut: `${MOD}E`, active: "code", run: e => e.chain().focus().toggleCode().run() },
+    { id: "superscript", label: "Superscript", icon: "superscript", active: "superscript", run: e => e.chain().focus().toggleMark("superscript").run() },
+    { id: "subscript", label: "Subscript", icon: "subscript", active: "subscript", run: e => e.chain().focus().toggleMark("subscript").run() },
+  ],
+};
+
+const GROUPS: readonly Group[] = [TEXT_GROUP, BLOCKS_GROUP, MORE_GROUP];
 
 /** All button specs, flattened, for the active-state selector. */
 const ALL_BUTTONS: readonly ButtonSpec[] = GROUPS.flatMap(g => g.buttons);
@@ -243,11 +277,17 @@ export function Toolbar({
     </ToolbarButton>
   );
 
-  // The primary buttons (minus `link`, which has its own component) stay
-  // on the bar at every width, in canonical order. The secondary ones are
-  // visible from `sm` up and collapse into the "More" menu below it.
-  const primaryButtons = ALL_BUTTONS.filter(b => PRIMARY_IDS.has(b.id));
-  const secondaryButtons = ALL_BUTTONS.filter(b => !PRIMARY_IDS.has(b.id));
+  const renderGroup = (g: Group, ed: Editor): React.JSX.Element => (
+    <span key={g.key} className="contents">
+      <span className={`${g.flatClass} items-center gap-1`}>
+        {g.separated && <Separator />}
+        {g.buttons.map(renderButton)}
+      </span>
+      <span className={`${g.menuClass} items-center`}>
+        <GroupMenu group={g} editor={ed} active={active} />
+      </span>
+    </span>
+  );
 
   return (
     <div
@@ -255,7 +295,9 @@ export function Toolbar({
       aria-label="Formatting"
       // Height reserved (min-h) so the row does not shift the text down
       // when it renders, and so it lines up with the mode toggle.
-      className="flex min-h-[2.25rem] flex-wrap items-center gap-1 border-b border-border-subtle px-2 py-1"
+      // `@container` makes the bar itself the query container the groups
+      // fold against (UI-23d).
+      className="@container flex min-h-[2.25rem] flex-wrap items-center gap-1 border-b border-border-subtle px-2 py-1"
     >
       {/* Formatting controls apply to the rich surface only. In raw
           (source) mode `editor` is null and the bar carries just the
@@ -279,20 +321,22 @@ export function Toolbar({
 
           <Separator />
 
-          {/* Primary buttons — always on the bar, at every width. */}
-          {primaryButtons.map(renderButton)}
-
+          {renderGroup(TEXT_GROUP, editor)}
+          {renderGroup(BLOCKS_GROUP, editor)}
           <LinkButton editor={editor} active={active["link"] === true} />
+          {renderGroup(MORE_GROUP, editor)}
 
-          {/* Secondary buttons — visible from `sm` up; below it they are
-              display:none here (still in the DOM/tab-order-free) and reached
-              through the "More" menu, so a phone shows one row not 3–4. */}
-          <span className="hidden items-center gap-1 sm:flex">
+          {/* B5 (K121): below the width where even the fully folded row
+              fits (measured 462px of bar), the bar is deliberately TWO
+              rows instead of wrapping wherever it overflows: formatting
+              on the first, history and the attach/mode cluster on the
+              second. This zero-height full-width item is the line break;
+              the separator it replaces would otherwise dangle at a row
+              edge. */}
+          <span aria-hidden="true" data-testid="fmt-row-break" className="hidden h-0 basis-full @max-[460px]:block" />
+          <span className="contents @max-[460px]:hidden">
             <Separator />
-            {secondaryButtons.map(renderButton)}
           </span>
-
-          <Separator />
           <ToolbarButton
             size="sm"
             testId="fmt-undo"
@@ -313,40 +357,6 @@ export function Toolbar({
           >
             <Icon name="redo" size={16} />
           </ToolbarButton>
-
-          {/* Overflow — only below `sm`, holding the secondary controls. */}
-          <span className="sm:hidden">
-            <Menu
-              aria-label="More formatting"
-              trigger={({ toggle, ...aria }) => (
-                <ToolbarButton
-                  size="sm"
-                  testId="fmt-more"
-                  aria-label="More formatting"
-                  title="More formatting"
-                  onClick={toggle}
-                  {...aria}
-                >
-                  <Icon name="more" size={16} />
-                </ToolbarButton>
-              )}
-            >
-              {({ close }) => (
-                <>
-                  {secondaryButtons.map(b => (
-                    <MenuItem
-                      key={b.id}
-                      testId={`fmt-menu-${b.id}`}
-                      onSelect={() => { editor.chain().focus().run(); b.run(editor); close(); }}
-                    >
-                      <Icon name={b.icon} size={14} />
-                      {b.label}
-                    </MenuItem>
-                  ))}
-                </>
-              )}
-            </Menu>
-          </span>
         </>
       )}
 
@@ -384,6 +394,63 @@ export function Toolbar({
 /** A thin vertical divider between button groups. */
 function Separator(): React.JSX.Element {
   return <span aria-hidden="true" className="mx-0.5 h-5 shrink-0 border-l border-border-subtle" />;
+}
+
+/**
+ * A group's collapsed form (UI-23d): one button opening a menu of the
+ * group's actions.
+ *
+ * The trigger takes the active look when ANY member applies at the
+ * caret — otherwise folding Bold into a menu would hide the only visible
+ * sign that the selection is bold. It carries no `aria-pressed` (it is a
+ * menu button, not a toggle); the per-mark state is on each row instead,
+ * as `menuitemcheckbox` + `aria-checked`, matching the flat button's
+ * `aria-pressed`.
+ */
+function GroupMenu({
+  group,
+  editor,
+  active,
+}: {
+  readonly group: Group;
+  readonly editor: Editor;
+  readonly active: Record<string, boolean>;
+}): React.JSX.Element {
+  const anyActive = group.buttons.some(b => active[b.id] === true);
+  return (
+    <Menu
+      aria-label={group.label}
+      trigger={({ toggle, ...aria }) => (
+        <ToolbarButton
+          size="sm"
+          testId={`fmt-group-${group.key}`}
+          aria-label={group.label}
+          title={group.label}
+          active={anyActive}
+          onClick={toggle}
+          {...aria}
+        >
+          <Icon name={group.icon} size={16} />
+        </ToolbarButton>
+      )}
+    >
+      {({ close }) => (
+        <>
+          {group.buttons.map(b => (
+            <MenuItem
+              key={b.id}
+              testId={`fmt-menu-${b.id}`}
+              checked={active[b.id] === true}
+              onSelect={() => { b.run(editor); close(); }}
+            >
+              <Icon name={b.icon} size={14} />
+              {b.label}
+            </MenuItem>
+          ))}
+        </>
+      )}
+    </Menu>
+  );
 }
 
 /**

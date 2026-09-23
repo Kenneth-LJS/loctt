@@ -169,12 +169,9 @@ export function defaultExpanded(column: SprintColumn): boolean {
 export function deriveSprintColumns(
   sprints: readonly SprintDef[],
   tasks: readonly SprintTask[],
-  options: { readonly showArchived?: boolean } = {},
 ): readonly SprintColumn[] {
-  // SPR-1: archived sprints are omitted unless explicitly asked for.
-  const visible = options.showArchived === true
-    ? [...sprints]
-    : sprints.filter(s => s.archived !== true);
+  // SPR-1 / K121 #1: archived sprints are never columns.
+  const visible = sprints.filter(s => s.archived !== true);
 
   visible.sort((a, b) => (a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0));
 
@@ -191,7 +188,7 @@ export function deriveSprintColumns(
   // from every sprint surface. Derived from the tasks, so the column
   // exists only when something actually dangles.
   //
-  // Archived sprints count as "known" even when hidden: a task in an
+  // Archived sprints count as "known" though never shown: a task in an
   // archived sprint is filed, not dangling, and showing it as a
   // missing reference would name a sprint that is right there in the
   // file.
@@ -243,7 +240,7 @@ export function bucketBySprint<T extends SprintTask>(
       continue;
     }
     // A dangling reference has its own column (SPR-27). A task in an
-    // *archived* sprint while "show archived" is off has neither —
+    // *archived* sprint has neither —
     // and must not be swept into "unknown", which would name a sprint
     // that is present in the file and merely hidden. It is out of
     // scope for this rendering, which is what hiding archived means.

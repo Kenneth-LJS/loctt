@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import type { PriorityDef, StatusDef, TaskTypeDef, UserProfile } from "@loctt/contracts";
+import type { LabelDef, PriorityDef, StatusDef, TaskTypeDef, UserProfile } from "@loctt/contracts";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { WireHealth } from "../health/fieldHealth.ts";
-import { AssigneeCell, PriorityCell, StatusBadge, TypeBadge } from "./cells.tsx";
+import { labelPillStyle } from "../ui/labelPillStyle.ts";
+import { AssigneeCell, LabelsCell, PriorityCell, StatusBadge, TypeBadge } from "./cells.tsx";
 
 /**
  * AssigneeCell degradation (PRU-25). The same cell renders both the
@@ -221,5 +222,83 @@ describe("K103 — colour resolution in list cells", () => {
     expect(dotBackground(container)).toBe("");
     expect((container.querySelector("span > span") as HTMLElement).className)
       .toContain("bg-priority-high");
+  });
+});
+
+/**
+ * B15: `LabelsCell` had no colour assertion, unlike its priority/type
+ * siblings above — `labelPillStyle` (shared with the settings preview,
+ * `ui/labelPillStyle.ts`) is exactly as prone to the K103 silent-failure
+ * class (an unresolved `EntityColor` stringifying to `[object Object]`,
+ * which CSS discards) as `PriorityCell`/`TypeBadge` were, and nothing
+ * here pinned it.
+ */
+describe("K103 — colour resolution in LabelsCell", () => {
+  const label = (id: string, name: string, color?: LabelDef["color"]): LabelDef =>
+    ({ id, name, ...(color === undefined ? {} : { color }) }) as LabelDef;
+
+  /**
+   * The rendered pill for a given label name — the outer `Pill` element
+   * `labelPillStyle` is applied to, identified by its `title` (set to
+   * the label's `name`), not the innermost truncating `<span>` that
+   * wraps the visible text (which would otherwise satisfy a bare
+   * `closest("span")` against itself).
+   */
+  function pillFor(container: HTMLElement, name: string): HTMLElement {
+    return within(container).getByText(name).closest(`[title="${name}"]`) as HTMLElement;
+  }
+
+  it("paints a PALETTE label colour via labelPillStyle, rather than dropping it", () => {
+    const { container } = render(
+      <LabelsCell labels={[label("l1", "Urgent", { palette: "red" })]} />,
+    );
+    const pill = pillFor(container, "Urgent");
+    // A hex actually reached CSS, derived through the same
+    // `labelPillStyle` the preview uses — not a hand-rolled regex that
+    // would reject this shape to undefined, and not `[object Object]`.
+    expect(pill.style.background).not.toBe("");
+    expect(pill.style.background).not.toContain("object Object");
+    // Not merely "some colour" — must specifically NOT be the neutral
+    // fallback that a dropped/unresolved reference would paint instead
+    // (the exact shape of the K103 regression: a resolvable colour
+    // silently falling through to the "no colour" branch).
+    expect(pill.style.background).not.toBe(labelPillStyle(undefined).background);
+  });
+
+  it("paints a PER-MODE label colour with the half for the active theme", () => {
+    const resolvedHex = "#102030";
+    const { container } = render(
+      <LabelsCell labels={[label("l1", "Urgent", { light: resolvedHex, dark: "#a0b0c0" })]} />,
+    );
+    const pill = pillFor(container, "Urgent");
+    // jsdom has no `matchMedia`, so `useTheme` resolves to light — the
+    // light half must paint, matching `labelPillStyle`'s own derivation
+    // exactly (background wash, border, and computed text colour), not
+    // just "some colour appeared". Both sides go through a real DOM
+    // element's `style` so jsdom's own 8-digit-hex→rgba() normalization
+    // (`#10203022` reads back as `rgba(16, 32, 48, 0.133)`) applies
+    // identically on both — comparing the raw hex string against the
+    // rendered pill's normalized form would fail for a reason that has
+    // nothing to do with the component.
+    const expected = labelPillStyle(resolvedHex);
+    const probe = document.createElement("span");
+    probe.style.background = expected.background as string;
+    probe.style.borderColor = expected.borderColor as string;
+    probe.style.color = expected.color as string;
+    expect(pill.style.background).toBe(probe.style.background);
+    expect(pill.style.borderColor).toBe(probe.style.borderColor);
+    expect(pill.style.color).toBe(probe.style.color);
+  });
+
+  it("falls back to the neutral pill when a palette id is unknown", () => {
+    const { container } = render(
+      <LabelsCell labels={[label("l1", "Urgent", { palette: "nosuch" })]} />,
+    );
+    const pill = pillFor(container, "Urgent");
+    // Field-local degrade (MSL-22): an unresolved reference paints the
+    // documented neutral fallback, not an unstyled or blank pill.
+    const expected = labelPillStyle(undefined);
+    expect(pill.style.background).toBe(expected.background);
+    expect(pill.style.color).toBe(expected.color);
   });
 });

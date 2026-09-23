@@ -44,7 +44,7 @@ describe("shouldNavigateRow", () => {
     expect(shouldNavigateRow(baseEvent())).toBe(true);
   });
 
-  // @verifies UI-12 (modifier-click / middle-click must not navigate in
+  // @verifies LST-5 (modifier-click / middle-click must not navigate in
   // place — the row's own handler cannot open a background tab, so it
   // must get out of the way and let the key cell's real <Link> handle it)
   it.each([
@@ -64,7 +64,7 @@ describe("shouldNavigateRow", () => {
     expect(shouldNavigateRow(baseEvent({ button: 2 }))).toBe(false);
   });
 
-  // @verifies UI-12 (an interactive child — kebab, checkbox, a link —
+  // @verifies LST-5 (an interactive child — kebab, checkbox, a link —
   // must not also trigger the row's own navigation)
   it("does not navigate when the click target is inside a link", () => {
     const row = document.createElement("tr");
@@ -94,7 +94,7 @@ describe("shouldNavigateRow", () => {
     expect(shouldNavigateRow(baseEvent({ target: input, currentTarget: row }))).toBe(false);
   });
 
-  // @verifies UI-12 (dragging to select text inside a cell must not
+  // @verifies LST-5 (dragging to select text inside a cell must not
   // navigate on mouseup/click)
   it("does not navigate when the click leaves a non-empty text selection", () => {
     const row = document.createElement("tr");

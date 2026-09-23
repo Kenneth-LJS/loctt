@@ -19,7 +19,7 @@ import { recordTaskOrigin, resetTaskOriginForTest } from "../router/taskOrigin.t
  *
  * Ken's ruling, verbatim: "fall back to the route i came from. if cold
  * load then no back button" — so this covers exactly those two shapes:
- * an origin recorded before navigating in renders a working "← Back to
+ * an origin recorded before navigating in renders a working "Back to
  * …" link that returns to that exact URL (search params included), and
  * NO origin (the cold-load case — nothing called `recordTaskOrigin`
  * before this page mounted) renders no back control at all, not a
@@ -110,19 +110,21 @@ function renderDetail(initialEntry = "/tasks/T-1") {
 }
 
 describe("TaskDetail back affordance (UI-12)", () => {
-  // @verifies UI-12 (cold load renders NO back control at all)
+  // @verifies LST-5 (cold load renders NO back control at all)
   it("renders no back link on a cold load (nothing recorded an origin)", async () => {
     renderDetail();
     await screen.findByTestId("meta-panel");
     expect(screen.queryByTestId("task-detail-back")).toBeNull();
   });
 
-  // @verifies UI-12 (back returns to the origin, search params included)
+  // @verifies LST-5 (back returns to the origin, search params included)
   it("renders a back link to the recorded origin, with its search params, when one was set", async () => {
     recordTaskOrigin("/list?status=in_progress&page=2");
     const router = renderDetail();
     const back = await screen.findByTestId("task-detail-back");
-    expect(back.textContent).toBe("← Back to list");
+    // K111: the arrow is a decorative <Icon>, not a typed glyph, so the
+    // link's text is the label alone — no stray "←" in the accessible name.
+    expect(back.textContent).toBe("Back to list");
 
     fireEvent.click(back);
 
@@ -141,10 +143,10 @@ describe("TaskDetail back affordance (UI-12)", () => {
     recordTaskOrigin("/board");
     renderDetail();
     const back = await screen.findByTestId("task-detail-back");
-    expect(back.textContent).toBe("← Back to board");
+    expect(back.textContent).toBe("Back to board");
   });
 
-  // @verifies UI-12 (an in-app navigation, not a fresh module load —
+  // @verifies LST-5 (an in-app navigation, not a fresh module load —
   // this is the same test module instance carrying the origin across a
   // navigation, the way the real app's single page session would)
   it("does not invent an origin for a task that was not opened from a recorded route", async () => {
@@ -154,5 +156,24 @@ describe("TaskDetail back affordance (UI-12)", () => {
     renderDetail();
     await screen.findByTestId("meta-panel");
     expect(screen.queryByTestId("task-detail-back")).toBeNull();
+  });
+});
+
+/**
+ * A208 / K111. The back arrow is drawn, not typed — see the matching
+ * blocks in MilestoneDetail.test.tsx and SprintDetail.test.tsx, which the
+ * comment at the link's source says this site must stay identical to.
+ */
+describe("TaskDetail back arrow is a drawn Icon (A208 / K111)", () => {
+  it("draws the back arrow as an aria-hidden svg, leaving the accessible name as the origin label alone", async () => {
+    recordTaskOrigin("/list");
+    renderDetail();
+
+    const back = await screen.findByTestId("task-detail-back");
+    const svg = back.querySelector("svg");
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    expect(back.textContent).toBe("Back to list");
+    expect(back.textContent).not.toContain("←");
   });
 });

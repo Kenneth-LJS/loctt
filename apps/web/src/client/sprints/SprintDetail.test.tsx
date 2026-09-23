@@ -190,3 +190,23 @@ describe("SprintDetail — sprint progress (F1 / K30)", () => {
     expect(screen.queryByTestId("sprint-progress-count")).toBeNull();
   });
 });
+
+/**
+ * A208 / K111. Same guarantee as MilestoneDetail's back-link: the arrow
+ * is a drawn, decorative `<Icon>`, not a typed `←`. This link carries no
+ * testid, so it is found by its role and accessible name — which is
+ * itself part of the assertion: if the arrow were typed, or the Icon lost
+ * `aria-hidden`, the name would be "← All sprints" and this lookup fails.
+ */
+describe("SprintDetail — back-link arrow is a drawn Icon (A208 / K111)", () => {
+  it("draws the back arrow as an aria-hidden svg, leaving the accessible name as the label alone", async () => {
+    await renderDetail();
+
+    const back = await screen.findByRole("link", { name: "All sprints" });
+    const svg = back.querySelector("svg");
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    expect(back.textContent).toBe("All sprints");
+    expect(back.textContent).not.toContain("←");
+  });
+});

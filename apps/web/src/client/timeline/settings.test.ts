@@ -121,6 +121,7 @@ describe("resolveGrouping", () => {
   });
 
   // @verifies TML-8
+  // @verifies TML-59
   it("rejects an unresolvable field ref and DEFERS to the next layer, naming the dangle", () => {
     // A URL pins a now-deleted custom field; a saved view names a real
     // builtin. The dangling URL value must not win, must not drop
@@ -140,6 +141,7 @@ describe("resolveGrouping", () => {
   });
 
   // @verifies TML-8
+  // @verifies TML-59
   it("falls to none — naming the first dangle — when every layer is unresolvable", () => {
     const r = resolveGrouping(
       {

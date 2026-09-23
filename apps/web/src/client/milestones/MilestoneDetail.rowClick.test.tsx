@@ -117,7 +117,7 @@ afterEach(() => {
 });
 
 describe("MilestoneDetail task table row click (UI-12)", () => {
-  // @verifies UI-12 (whole row clickable, MilestoneDetail's own table)
+  // @verifies LST-5 (whole row clickable, MilestoneDetail's own table)
   it("navigates to the task when clicking anywhere in the row, not just the key", async () => {
     MILESTONES = [{ id: "ms_1", name: "Beta launch" }];
     const router = await renderDetail("ms_1");
@@ -130,7 +130,7 @@ describe("MilestoneDetail task table row click (UI-12)", () => {
     expect(router.state.location.pathname).toBe("/tasks/WEB-1");
   });
 
-  // @verifies UI-12 (modifier-click must not navigate in place)
+  // @verifies LST-5 (modifier-click must not navigate in place)
   it("does not navigate on a ctrl-click on the row", async () => {
     MILESTONES = [{ id: "ms_1", name: "Beta launch" }];
     const router = await renderDetail("ms_1");
@@ -142,7 +142,7 @@ describe("MilestoneDetail task table row click (UI-12)", () => {
     expect(router.state.location.pathname).toBe("/milestones/ms_1");
   });
 
-  // @verifies UI-12 (origin recorded so the task's back link returns here)
+  // @verifies LST-5 (origin recorded so the task's back link returns here)
   it("records the milestone detail URL as the task's origin", async () => {
     MILESTONES = [{ id: "ms_1", name: "Beta launch" }];
     await renderDetail("ms_1");

@@ -29,6 +29,7 @@ const singleEnum = {
 };
 
 describe("buildGroupingCatalog", () => {
+  // @verifies TML-58
   it("returns the eight builtins, in fixed order, when there are no custom fields", () => {
     const catalog = buildGroupingCatalog(wf([]));
     expect(catalog).toEqual(BUILTIN_TIMELINE_GROUPINGS);
@@ -48,6 +49,7 @@ describe("buildGroupingCatalog", () => {
     expect(buildGroupingCatalog(undefined)).toEqual(BUILTIN_TIMELINE_GROUPINGS);
   });
 
+  // @verifies TML-58
   it("includes a single-value enum custom field as field.<key>, in config order", () => {
     const second = { ...singleEnum, key: "team", label: "Team" };
     const catalog = buildGroupingCatalog(wf([singleEnum, second]));

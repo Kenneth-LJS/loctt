@@ -276,9 +276,10 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
             <Button
               type="submit"
               variant="primary"
-              disabled={submitting}
+              loading={submitting}
+              aria-label="Set up tracker"
             >
-              {submitting ? "Setting up…" : "Set up tracker"}
+              Set up tracker
             </Button>
             {/*
               ONB-28: a slow init says what it is doing rather than

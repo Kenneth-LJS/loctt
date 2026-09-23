@@ -186,9 +186,10 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
       <Link
         to="/milestones"
         data-testid="milestone-detail-back"
-        className="self-start text-[0.8571rem] text-text-tertiary no-underline hover:underline"
+        className="inline-flex items-center gap-1 self-start text-[0.8571rem] text-text-tertiary no-underline hover:underline"
       >
-        ← All milestones
+        <Icon name="arrowLeft" size={12} />
+        All milestones
       </Link>
 
       <header className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-surface p-3">

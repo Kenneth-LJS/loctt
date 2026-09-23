@@ -178,7 +178,10 @@ export function BoardCard({
                 }
               >
                 <Chip variant="neutral">
-                  <span className="inline-flex items-center gap-1 text-danger-fg">
+                  {/* B3 (K121, PM call A327): neutral, like the Subtask badge
+                      beside it. Red is the danger/error colour and the exact
+                      hue of Critical priority; blocked is a normal state. */}
+                  <span className="inline-flex items-center gap-1">
                     <Icon name="ban" size={14} />
                     Blocked
                   </span>

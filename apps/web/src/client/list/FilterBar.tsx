@@ -50,7 +50,7 @@ import {
  *    of every remaining filter. Below `sm` this band collapses into a
  *    single "Filters" button + bottom Sheet.
  *  - **Right band — view actions.** A clean, aligned cluster pinned to
- *    the top-right: "Save as view" as a star `IconButton`, plus a ⋯ on
+ *    the top-right: "Save as view" as a bookmark `IconButton`, plus a ⋯ on
  *    the one view that has extra rows for it (the board). These used to
  *    float in ListView's flex gutter, vertically centred in dead space
  *    and jumping as the chip row appeared; owning them here keeps them
@@ -61,7 +61,7 @@ import {
  *
  * Advanced querying is folded into the filter system: there is no leading
  * "Advanced" pill. The builder is reached from the END of the Add-filter
- * menu ("Advanced query…") — one level in, not first — and opens the
+ * menu ("Advanced query") — one level in, not first — and opens the
  * visual {@link AdvancedQuerySurface} (builder-first; raw DSL is a
  * secondary toggle inside it).
  *
@@ -176,15 +176,6 @@ export function FilterBar({
   const [advanced, setAdvanced] = useState(openEditorRequested);
   const [draft, setDraft] = useState(query);
 
-  // K107 / Ken's ruling 2026-09-22 ("archiving is a one-way door, not a
-  // filter"): the task list is a primary work surface, so it carries NO
-  // archived-scope control — see the policy table in decisions.md § 9.
-  // The capability is NOT removed: `?archived=` (K107) still reaches the
-  // server exactly as before, it is simply no longer advertised by a
-  // control here. `search.archived` flows straight into the tasks query
-  // (see ListView), so a held/bookmarked `?archived=all` link keeps
-  // working — this comment is the only trace of the control that used to
-  // read/write it from this file.
   const projects = useProjects();
   const users = useUsers();
   const labels = useLabels();
@@ -386,12 +377,13 @@ export function FilterBar({
         userSet,
         catalog,
         hidden: hiddenFacets,
+        customFieldsKnown: workflow.isSuccess,
       }),
     // viewSet/userSet are keyed by their serialized forms (viewSetKey/
     // userSetKey); depending on the arrays directly would defeat the memo
     // (a new identity every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [viewSetKey, userSetKey, catalog, hiddenFacets],
+    [viewSetKey, userSetKey, catalog, hiddenFacets, workflow.isSuccess],
   );
 
   const addable = addableFilters(catalog, visibleFilters, hiddenFacets);
@@ -605,6 +597,22 @@ export function FilterBar({
     }
     const cfKey = id.slice("field.".length);
     const cf = customFields.find(c => c.key === cfKey);
+    if (cf === undefined && !workflow.isSuccess) {
+      // B2: the workflow has not loaded (or failed), so this field's
+      // label and values are unknown. Keep the filter on screen, with
+      // its selection, rather than letting it vanish.
+      return (
+        <FilterFacet
+          key={cfKey}
+          label={cfKey}
+          options={[]}
+          unavailable={workflow.isError}
+          selected={customFilters[cfKey] ?? []}
+          onChange={next => setFilter(`field.${cfKey}`, next)}
+          onRemove={() => { removeFilter(`field.${cfKey}`); }}
+        />
+      );
+    }
     if (cf === undefined || cf.type !== "enum" || !cf.values || cf.values.length === 0) return null;
     return (
       <FilterFacet
@@ -624,7 +632,7 @@ export function FilterBar({
 
   // The desktop "+ Add filter" affordance: a Menu listing every addable
   // filter (grouped built-in / custom, searchable when long), with the
-  // "Advanced query…" escape hatch and "Save as default" at the end.
+  // "Advanced query" escape hatch and "Save as default" at the end.
   const addFilterMenu = (
     <Menu
       align="start"
@@ -713,7 +721,7 @@ export function FilterBar({
             two clicks, a portal and roving-focus machinery to reach one
             thing. So:
 
-            - **"Save as view" is a direct `IconButton`** (star — the
+            - **"Save as view" is a direct `IconButton`** (bookmark-plus, was a star — the
               same glyph the sidebar marks saved views with) on EVERY
               view that offers it. Ken's steer, 2026-09-23.
             - **The ⋯ renders only when it has rows**, i.e. only when
@@ -755,7 +763,7 @@ export function FilterBar({
                   testId="view-actions-save-view"
                   onClick={() => { setSaveOpen(true); }}
                 >
-                  <Icon name="star" size={16} />
+                  <Icon name="bookmarkPlus" size={16} />
                 </IconButton>
               </Tooltip>
             )}
@@ -831,11 +839,11 @@ export function FilterBar({
               </Button>
             )}
             <Button variant="ghost" size="md" testId="advanced-open-mobile" onClick={openAdvanced}>
-              Advanced query…
+              Advanced query
             </Button>
             {showSaveView && (
               <Button size="md" onClick={() => { setFilterSheetOpen(false); setSaveOpen(true); }}>
-                <Icon name="star" size={14} />
+                <Icon name="bookmarkPlus" size={14} />
                 Save as view
               </Button>
             )}
@@ -1083,11 +1091,11 @@ function AddFilterPanel({
       <div className="border-t border-border-subtle py-1">
         <MenuItem testId="advanced-open" onSelect={onOpenAdvanced}>
           <Icon name="settings" size={14} className="text-text-tertiary" />
-          Advanced query…
+          Advanced query
         </MenuItem>
         {onSaveDefault !== undefined && (
           <MenuItem testId="save-default-filters" onSelect={onSaveDefault}>
-            <Icon name="star" size={14} className="text-text-tertiary" />
+            <Icon name="bookmarkPlus" size={14} className="text-text-tertiary" />
             Save these as my default
           </MenuItem>
         )}

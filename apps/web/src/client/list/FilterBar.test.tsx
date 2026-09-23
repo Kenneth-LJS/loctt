@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listSearchSchema } from "../router/listSearch.ts";
-import { comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
+import { expectComboValueSelectable, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { ToastProvider } from "../ui/Toast.tsx";
 import { buildChips, type FacetKey, type FacetOptions, FilterBar } from "./FilterBar.tsx";
 
@@ -71,6 +71,9 @@ function routeFetch(path: string): unknown {
   return {};
 }
 
+/** LST-57: make `/api/workflow` fail for one test. Reset in afterEach. */
+let workflowFails = false;
+
 function stubFetch() {
   vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -96,6 +99,11 @@ function stubFetch() {
         : /=\s*""/.test(q)
           ? { valid: false, kind: "unknown_value", message: "unknown status value '' at position 0", position: 0 }
           : { valid: true };
+    } else if (workflowFails && path.startsWith("/api/workflow")) {
+      return Promise.resolve(new Response(
+        JSON.stringify({ error: { code: "internal", message: "workflow.yaml could not be read" } }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      ));
     } else {
       body = routeFetch(path);
     }
@@ -127,6 +135,7 @@ async function mountFilterBar(initialSearch = "") {
 }
 
 afterEach(() => {
+  workflowFails = false;
   cleanup();
   vi.restoreAllMocks();
 });
@@ -215,32 +224,11 @@ describe("FilterBar", () => {
   // Board / Timeline" as "Never". This used to be
   // `list-archived-scope`/`filters-sheet-archived-scope`, a segmented
   // control sitting as a peer of Status/Priority/Assignee; both are gone.
-  //
-  // This does not touch the CAPABILITY: `?archived=` (K107) still reaches
-  // the server exactly as before — see the next test, which drives it
-  // straight through the URL with no control at all.
+  // K121 #1 then removed the `?archived=` capability from the web too.
   it("renders no archived-scope control, on desktop or in the mobile filter sheet", async () => {
     await mountFilterBar();
     expect(screen.queryByTestId("list-archived-scope")).toBeNull();
     expect(screen.queryByTestId("filters-sheet-archived-scope")).toBeNull();
-  });
-
-  // K107's "reveal archived entities through `?archived=`" is a capability
-  // the ruling keeps — only the visible control on this surface is gone.
-  // A bookmarked or hand-typed `?archived=all` link must still show
-  // archived rows; assert it via the URL's own effect (the search state),
-  // since there is no control left to click.
-  it("`?archived=all` in the URL is preserved by the bar (no control writes or clears it)", async () => {
-    const router = await mountFilterBar("?archived=all");
-    await screen.findByRole("button", { name: "Filter Status" });
-    expect(search(router).archived).toBe("all");
-
-    // Selecting an ordinary facet must not disturb the archived scope that
-    // arrived via the URL — the bar only ever touches params it owns.
-    fireEvent.click(screen.getByRole("button", { name: "Filter Status" }));
-    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "In progress" }));
-    await vi.waitFor(() => expect(search(router).status).toEqual(["in_progress"]));
-    expect(search(router).archived).toBe("all");
   });
 
   it("'Clear all' removes every active filter", async () => {
@@ -400,7 +388,9 @@ describe("FilterBar", () => {
     // behaviour Ken struck out ("QUERY IS ADVANCED SHIT"). A view built
     // from dropdowns must reopen as dropdowns.
     await screen.findByTestId("view-edit-dialog");
-    expect(comboValue("view-filter-field-0")).toBe("status");
+    // B14: the reopened dialog must offer "status" as a real, pickable
+    // option, not just show it as a leftover trigger label.
+    expectComboValueSelectable("view-filter-field-0", "status");
     expect(screen.queryByTestId("advanced-query-surface")).toBeNull();
     // And the URL is untouched: the view is still the active one.
     expect(search(router).view).toBe("v_recent");
@@ -1012,7 +1002,7 @@ function mountViewActions({
 describe("FilterBar — view-actions cluster (UI-2 / UI-3 / K30-web)", () => {
   it("renders the ⋯ only when it has rows, and puts the extra section in it (UI-3)", async () => {
     mountViewActions({
-      extraMenuSections: <a role="menuitem" href="/settings/card-layout" data-testid="x-link">Card layout…</a>,
+      extraMenuSections: <a role="menuitem" href="/settings/card-layout" data-testid="x-link">Card layout</a>,
     });
     const cluster = await screen.findByTestId("view-actions");
     // The star is still a direct button beside the menu — the action
@@ -1106,5 +1096,18 @@ describe("buildChips — LST-33 dangling detection", () => {
     expect(buildChips(search, emptyOpts, cf, allLoaded, false)[0]?.dangling).toBe(false);
     // Workflow loaded, value missing → dangling.
     expect(buildChips(search, emptyOpts, cf, allLoaded, true)[0]?.dangling).toBe(true);
+  });
+});
+
+describe("FilterBar — custom-field filter when the workflow cannot load (LST-57)", () => {
+  // @verifies LST-57
+  it("keeps the custom-field filter on screen, marked unavailable, instead of dropping it", async () => {
+    workflowFails = true;
+    await mountFilterBar("?vf=status,field.team&field.team=core");
+    // Before B2 the custom id was filtered out of the visible set because
+    // the (empty) catalog did not contain it — the filter simply vanished.
+    const team = await screen.findByRole("button", { name: "Filter team" });
+    fireEvent.click(team);
+    expect(await screen.findByText(/team options could not be loaded/i)).toBeTruthy();
   });
 });
