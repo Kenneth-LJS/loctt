@@ -36,7 +36,7 @@ import { Chip } from "../ui/Chip.tsx";
 import { useResolvedColor } from "../ui/entityColor.ts";
 import { Icon, type IconName } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { ICON } from "../ui/icons.ts";
+import { IconGlyph } from "../ui/IconEmojiPicker.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
@@ -744,6 +744,27 @@ function EntityColorDot({ color }: { color?: EntityColor | undefined }) {
   return <ColorDot color={useResolvedColor(color)} />;
 }
 
+/**
+ * A saved view's icon, tinted by that view's own colour (K104-view-colour).
+ *
+ * A component rather than an inline call because the row is rendered
+ * inside a `.map()` callback, where a hook cannot be called. Mirrors
+ * `EntityColorDot` above, which exists for the same reason.
+ *
+ * `IconGlyph` applies `color` ONLY to a Lucide glyph — an emoji carries
+ * its own colour and is never tinted (Ken, 2026-09-22). So the emoji
+ * rule needs no branch here; passing the colour unconditionally is
+ * correct, and the resolver yields `undefined` for a view with none.
+ */
+function ViewIcon({ icon, color }: {
+  readonly icon: string | undefined;
+  readonly color?: EntityColor | undefined;
+}) {
+  const tint = useResolvedColor(color);
+  if (icon === undefined) return <Icon name="star" size={12} />;
+  return <IconGlyph icon={icon} size={12} {...(tint !== undefined ? { color: tint } : {})} />;
+}
+
 /* ---------- groups ---------- */
 
 const VIEWS: { to: "/list" | "/board" | "/timeline"; label: string; icon: IconName }[] = [
@@ -1035,7 +1056,13 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
           className="no-underline"
         >
           <ItemShell active={allActive} collapsed={collapsed} title="All projects">
-            <ColorDot color="var(--text-tertiary)" />
+            {/* UI-25: the dot lives inside the same `w-4` slot the icon
+                rows use (milestones/sprints/saved-views/built-ins), so
+                "All projects" lines up with every other anchor row
+                instead of sitting 7px further left. */}
+            <span className="flex w-4 shrink-0 justify-center">
+              <ColorDot color="var(--text-tertiary)" />
+            </span>
             {!collapsed ? <span className="truncate">All projects</span> : null}
           </ItemShell>
         </Link>
@@ -1084,16 +1111,26 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
             <ItemShell active={active} collapsed={collapsed} title={p.name}>
-              {/* ProjectDef has no per-project color yet; the mockup
-                  uses one shared blue dot for every project. Uses the
-                  status-active token (the app's blue) so it tracks the
-                  theme instead of a hardcoded hex (S-11). */}
-              <ColorDot color="var(--status-active-fg)" />
+              {/* UI-20/UI-6: the hardcoded blue `ColorDot` is gone —
+                  every project drew the identical dot, so it encoded
+                  nothing (a per-item-shaped mark with a constant value).
+                  Not replaced with a type glyph either: ProjectDef has
+                  no colour field, and inventing one is new scope no
+                  decision covers. Empty `w-4` slot keeps the label at
+                  the shared x (UI-25); the `star` default-project marker
+                  below stays — it varies, so it earns its place. */}
+              <span className="w-4 shrink-0" />
               {!collapsed ? (
                 <>
                   <span className="truncate">{p.name}</span>
                   {p.id === defaultProjectId ? (
-                    <span className="text-text-tertiary" title="Default project">{ICON.star}</span>
+                    // UI-16a: a `dot` marker sat beside the `ColorDot`
+                    // every row already carries (:1090), reading as a
+                    // second, meaningless dot. `star` is the original
+                    // intent (the marker before today's unicode-glyph
+                    // swap) and is not shape-identical to the ColorDot
+                    // beside it.
+                    <span className="text-text-tertiary" title="Default project"><Icon name="star" size={12} /></span>
                   ) : null}
                 </>
               ) : null}
@@ -1106,12 +1143,22 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
         // K100: the kebab is a SIBLING of the <Link> (a <button> inside an
         // <a> is invalid HTML), matching the saved-filter row pattern. Edit
         // opens the shared ProjectEditDialog; Make default / Archive are
-        // handled inside that same dialog, so the kebab need only open it —
-        // plus a "Manage projects…" deep link so Settings stays discoverable.
+        // handled inside that same dialog, so the kebab need only open it.
+        // UI-17/K105: no "Manage projects…" deep link — an item-scoped
+        // kebab offers actions on THAT item; administering every project
+        // is a different scope and lives behind the persistent Settings
+        // gear.
         return (
           <div
             key={p.id}
-            className="flex items-center rounded-md hover:bg-bg-muted"
+            // UI-16c: a badge-ending row (built-in filters) insets its
+            // trailing content by `ItemShell`'s own `px-2.5`, but the
+            // kebab here is a SIBLING of `ItemShell`, outside that
+            // padding — so it sat flush against the sidebar edge, 8.75px
+            // further right than a badge's edge, and the column's right
+            // side zig-zagged row to row. `pr-2.5` matches that inset so
+            // every row kind ends at the same x.
+            className="flex items-center rounded-md pr-2.5 hover:bg-bg-muted"
             data-project-row={p.id}
           >
             {row}
@@ -1200,8 +1247,11 @@ function ProjectsGroup({ collapsed }: { collapsed: boolean }) {
 /**
  * A project row's kebab (K100). A sibling of the row `<Link>` — a
  * `<button>` inside an `<a>` is invalid HTML — carrying Edit (opens the
- * shared `ProjectEditDialog`, where Make default / Archive also live) and
- * a "Manage projects…" deep link so Settings stays discoverable.
+ * shared `ProjectEditDialog`, where Make default / Archive also live).
+ * UI-17 / K105: no "Manage projects…" deep link — an item-scoped kebab
+ * offers actions on THAT item, not administration of every project of
+ * its type. The persistent Settings gear (`Footer`, below) already
+ * reaches Projects directly.
  */
 function ProjectRowActions({
   project,
@@ -1212,7 +1262,6 @@ function ProjectRowActions({
   readonly isDefault: boolean;
   readonly onEdit: () => void;
 }) {
-  const navigate = useNavigate();
   const archive = useArchiveProject();
   const setDefault = useSetDefaultProject();
   const archived = project.archived === true;
@@ -1235,11 +1284,6 @@ function ProjectRowActions({
           disabled: archive.isPending,
           onSelect: () => { archive.reset(); archive.mutate({ id: project.id, archived: !archived }); },
         },
-        {
-          label: "Manage projects…",
-          testId: "sidebar-project-manage",
-          onSelect: () => { void navigate({ to: "/settings/$section", params: { section: "projects" } }); },
-        },
       ]}
     />
   );
@@ -1259,6 +1303,23 @@ function SavedFiltersGroup({
   const priorities = workflow.data?.priorities;
   const ctx = { currentUserId, today, priorities };
   const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
+  // UI-16b: this group's rows never marked themselves active, even
+  // though `ItemShell` fully supports it (see Projects, `:1085`, and
+  // the view switcher, `:772`). Every built-in filter resolves to
+  // exactly `{ q: <dsl> }` (verified in `builtinFilters.ts` — no
+  // built-in sets any other facet), so a built-in is active when the
+  // route is `/list` and the URL's `q` matches its resolved `q`
+  // exactly — not merely contains it, so applying a built-in on top of
+  // other manual filters does not mark multiple rows active at once. A
+  // saved view is active when `search.view` names it.
+  const pathname = useRouterState({ select: s => s.location.pathname });
+  const currentQuery = useRouterState({
+    select: s => (s.location.search as { q?: string }).q,
+  });
+  const activeViewId = useRouterState({
+    select: s => (s.location.search as { view?: string }).view,
+  });
+  const onList = pathname === "/list";
   // SET-13: pinned views lead the group, in the user's stored pin
   // order; everything else follows in config order. A pin whose view
   // is gone contributes nothing here — it has no row to render — and
@@ -1427,6 +1488,7 @@ function SavedFiltersGroup({
             </div>
           );
         }
+        const active = onList && currentQuery === search.q;
         return (
           <Link
             key={f.id}
@@ -1435,7 +1497,7 @@ function SavedFiltersGroup({
             title={f.label}
             className="no-underline"
           >
-            <ItemShell collapsed={collapsed} title={f.label}>
+            <ItemShell active={active} collapsed={collapsed} title={f.label}>
               <span className="flex w-4 shrink-0 justify-center">
                 <Icon name={f.icon} size={14} />
               </span>
@@ -1455,6 +1517,7 @@ function SavedFiltersGroup({
       })}
 
       {userViews.map(v => {
+        const active = onList && activeViewId === v.id;
         const row = (
           <Link
             to="/list"
@@ -1462,8 +1525,19 @@ function SavedFiltersGroup({
             title={v.name}
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
-            <ItemShell collapsed={collapsed} title={v.name}>
-              <span className="w-4 shrink-0 text-center text-text-tertiary">{ICON.star}</span>
+            <ItemShell active={active} collapsed={collapsed} title={v.name}>
+              {/* UI-19: the view's own icon when set (K104), falling
+                  back to the star. `IconGlyph` is the shared read-side
+                  renderer (A279) and handles the Lucide-vs-emoji shape
+                  sniff, so this must not re-implement it.
+
+                  Views GAINED a colour field (K104-view-colour,
+                  2026-09-23) — the comment here previously said they had
+                  none. `ViewIcon` resolves it per mode; an emoji is
+                  never tinted, which `IconGlyph` already enforces. */}
+              <span className="w-4 shrink-0 text-center text-text-tertiary">
+                <ViewIcon icon={v.icon} color={v.color} />
+              </span>
               {!collapsed ? <span className="truncate">{v.name}</span> : null}
             </ItemShell>
           </Link>
@@ -1478,7 +1552,14 @@ function SavedFiltersGroup({
         return (
           <div
             key={v.id}
-            className="flex items-center rounded-md hover:bg-bg-muted"
+            // UI-16c: a badge-ending row (built-in filters) insets its
+            // trailing content by `ItemShell`'s own `px-2.5`, but the
+            // kebab here is a SIBLING of `ItemShell`, outside that
+            // padding — so it sat flush against the sidebar edge, 8.75px
+            // further right than a badge's edge, and the column's right
+            // side zig-zagged row to row. `pr-2.5` matches that inset so
+            // every row kind ends at the same x.
+            className="flex items-center rounded-md pr-2.5 hover:bg-bg-muted"
             data-view-row={v.id}
           >
             {row}
@@ -1532,7 +1613,14 @@ function SavedFiltersGroup({
         return (
           <div
             key={v.id}
-            className="flex items-center rounded-md hover:bg-bg-muted"
+            // UI-16c: a badge-ending row (built-in filters) insets its
+            // trailing content by `ItemShell`'s own `px-2.5`, but the
+            // kebab here is a SIBLING of `ItemShell`, outside that
+            // padding — so it sat flush against the sidebar edge, 8.75px
+            // further right than a badge's edge, and the column's right
+            // side zig-zagged row to row. `pr-2.5` matches that inset so
+            // every row kind ends at the same x.
+            className="flex items-center rounded-md pr-2.5 hover:bg-bg-muted"
             data-broken-view-row={v.id}
           >
             {row}
@@ -1683,9 +1771,14 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
       {!collapsed && (
         <Link to="/milestones" data-testid="sidebar-milestones-link" className="no-underline">
           <ItemShell collapsed={collapsed} title="All milestones">
-            <span className="flex w-4 shrink-0 justify-center text-text-tertiary">
-              <Icon name="flag" size={14} />
-            </span>
+            {/* UI-20: the `flag` type glyph was decoration — milestones
+                are a small, name-discriminated section that never
+                scrolls apart from its heading in practice (per-section
+                collapse is the escape hatch for a long one), so a
+                per-row mark said nothing a screen reader or scan of the
+                heading didn't. The slot stays (empty) so the label lines
+                up with every other row at the shared UI-25 mark-slot x. */}
+            <span className="flex w-4 shrink-0 justify-center" />
             <span className="truncate">All milestones</span>
           </ItemShell>
         </Link>
@@ -1710,9 +1803,10 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
             <ItemShell collapsed={collapsed} title={m.name}>
-              <span className="flex w-4 shrink-0 justify-center text-text-tertiary">
-                <Icon name="flag" size={14} />
-              </span>
+              {/* UI-20: dropped the `flag` type glyph — see the "All
+                  milestones" row above for the rationale. Empty slot
+                  kept for the shared label x (UI-25). */}
+              <span className="flex w-4 shrink-0 justify-center" />
               {!collapsed ? <span className="truncate">{m.name}</span> : null}
             </ItemShell>
           </Link>
@@ -1721,7 +1815,14 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
         return (
           <div
             key={m.id}
-            className="flex items-center rounded-md hover:bg-bg-muted"
+            // UI-16c: a badge-ending row (built-in filters) insets its
+            // trailing content by `ItemShell`'s own `px-2.5`, but the
+            // kebab here is a SIBLING of `ItemShell`, outside that
+            // padding — so it sat flush against the sidebar edge, 8.75px
+            // further right than a badge's edge, and the column's right
+            // side zig-zagged row to row. `pr-2.5` matches that inset so
+            // every row kind ends at the same x.
+            className="flex items-center rounded-md pr-2.5 hover:bg-bg-muted"
             data-milestone-row={m.id}
           >
             {row}
@@ -1771,9 +1872,11 @@ function MilestonesGroup({ collapsed }: { collapsed: boolean }) {
 
 /**
  * A milestone row's kebab (K100). Sibling of the row `<Link>`. Edit opens
- * the shared `MilestoneEditDialog`; Archive is a clean single mutation;
- * "Manage milestones…" deep-links to Settings (delete lives there, behind
- * the remap picker, which is panel-owned and not extracted).
+ * the shared `MilestoneEditDialog`; Archive is a clean single mutation.
+ * UI-17 / K105: no "Manage milestones…" deep link — delete (behind the
+ * remap picker, panel-owned and not extracted) lives in Settings, reached
+ * through the persistent Settings gear (`Footer`, below), not a
+ * milestone-scoped menu item.
  */
 function MilestoneRowActions({
   milestone,
@@ -1782,7 +1885,6 @@ function MilestoneRowActions({
   readonly milestone: MilestoneDef;
   readonly onEdit: () => void;
 }) {
-  const navigate = useNavigate();
   const archive = useArchiveMilestone();
   const archived = milestone.archived === true;
   return (
@@ -1796,11 +1898,6 @@ function MilestoneRowActions({
           testId: "sidebar-milestone-archive",
           disabled: archive.isPending,
           onSelect: () => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); },
-        },
-        {
-          label: "Manage milestones…",
-          testId: "sidebar-milestone-manage",
-          onSelect: () => { void navigate({ to: "/settings/$section", params: { section: "milestones" } }); },
         },
       ]}
     />
@@ -1829,9 +1926,15 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
       {!collapsed && (
         <Link to="/sprints" data-testid="sidebar-sprints-link" className="no-underline">
           <ItemShell collapsed={collapsed} title="All sprints">
-            <span className="flex w-4 shrink-0 justify-center text-text-tertiary">
-              <Icon name="flag" size={14} />
-            </span>
+            {/* UI-20: the `calendar` glyph (itself a fix for the earlier
+                shared-`flag` bug) is gone too — a type glyph is
+                decoration when the section can't scroll apart from its
+                heading, which sprints (1-3 live at a time) never do.
+                Item rows below already carry the real per-item mark
+                (state colour); the anchor row gets the same empty slot
+                so the label lines up with the rest of the sidebar
+                (UI-25). */}
+            <span className="flex w-4 shrink-0 justify-center" />
             <span className="truncate">All sprints</span>
           </ItemShell>
         </Link>
@@ -1851,7 +1954,12 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
             <ItemShell collapsed={collapsed} title={`${s.name} (${s.state})`}>
-              <ColorDot color={s.state === "active" ? "var(--feedback-success-fg)" : "var(--text-tertiary)"} />
+              {/* UI-25: wrapped in the same `w-4` slot the icon rows use
+                  (this dot is unchanged by UI-20 — it is the one mark
+                  here that varies with a real fact, the sprint's state). */}
+              <span className="flex w-4 shrink-0 justify-center">
+                <ColorDot color={s.state === "active" ? "var(--feedback-success-fg)" : "var(--text-tertiary)"} />
+              </span>
               {!collapsed ? (
                 <>
                   <span className="truncate">{s.name}</span>
@@ -1873,7 +1981,14 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
         return (
           <div
             key={s.id}
-            className="flex items-center rounded-md hover:bg-bg-muted"
+            // UI-16c: a badge-ending row (built-in filters) insets its
+            // trailing content by `ItemShell`'s own `px-2.5`, but the
+            // kebab here is a SIBLING of `ItemShell`, outside that
+            // padding — so it sat flush against the sidebar edge, 8.75px
+            // further right than a badge's edge, and the column's right
+            // side zig-zagged row to row. `pr-2.5` matches that inset so
+            // every row kind ends at the same x.
+            className="flex items-center rounded-md pr-2.5 hover:bg-bg-muted"
             data-sprint-row={s.id}
           >
             {row}
@@ -1923,9 +2038,11 @@ function SprintsGroup({ collapsed }: { collapsed: boolean }) {
  * A sprint row's kebab (K100). Sibling of the row `<Link>` — a `<button>`
  * inside an `<a>` is invalid HTML. Sprint *editing* lives on the
  * `/sprints/:key` detail page (K100: no sprint edit dialog), so this only
- * navigates: "Open sprint" to that detail page (where Edit lives) and
- * "Manage sprints…" to the Settings panel that manages the roster. The
- * row's own click still filters the list by this sprint.
+ * navigates: "Open sprint" to that detail page (where Edit lives). The
+ * row's own click still filters the list by this sprint. UI-17 / K105: no
+ * "Manage sprints…" deep link — the roster-level Settings panel is
+ * reached through the persistent Settings gear (`Footer`, below), not a
+ * sprint-scoped menu item.
  *
  * `/sprints/$key` is keyed by the sprint's ULID (route decision V3), so
  * `key` is `sprint.id`.
@@ -1949,11 +2066,6 @@ function SprintRowActions({
           label: "Open sprint",
           testId: "sidebar-sprint-open",
           onSelect: () => { void navigate({ to: "/sprints/$key", params: { key: sprint.id } }); },
-        },
-        {
-          label: "Manage sprints…",
-          testId: "sidebar-sprint-manage",
-          onSelect: () => { void navigate({ to: "/settings/$section", params: { section: "sprints" } }); },
         },
       ]}
     />
@@ -1988,7 +2100,13 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
           >
             <ItemShell collapsed={collapsed} title={l.name}>
-              <EntityColorDot color={l.color} />
+              {/* UI-25: wrapped in the same `w-4` slot the icon rows use.
+                  Content unchanged — `EntityColorDot` is the model mark
+                  (per-item shape, per-item value, backed by a stored
+                  field) the other sections are measured against. */}
+              <span className="flex w-4 shrink-0 justify-center">
+                <EntityColorDot color={l.color} />
+              </span>
               {!collapsed ? <span className="truncate">{l.name}</span> : null}
             </ItemShell>
           </Link>
@@ -1997,7 +2115,14 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
         return (
           <div
             key={l.id}
-            className="flex items-center rounded-md hover:bg-bg-muted"
+            // UI-16c: a badge-ending row (built-in filters) insets its
+            // trailing content by `ItemShell`'s own `px-2.5`, but the
+            // kebab here is a SIBLING of `ItemShell`, outside that
+            // padding — so it sat flush against the sidebar edge, 8.75px
+            // further right than a badge's edge, and the column's right
+            // side zig-zagged row to row. `pr-2.5` matches that inset so
+            // every row kind ends at the same x.
+            className="flex items-center rounded-md pr-2.5 hover:bg-bg-muted"
             data-label-row={l.id}
           >
             {row}
@@ -2047,9 +2172,11 @@ function LabelsGroup({ collapsed }: { collapsed: boolean }) {
 
 /**
  * A label row's kebab (K100). Sibling of the row `<Link>`. Edit opens the
- * shared `LabelEditDialog`; Archive is a clean single mutation; a full
- * Delete needs the remap picker (`RemapDeleteDialog`, panel-owned, not
- * extracted), so it is reached through the "Manage labels…" deep link.
+ * shared `LabelEditDialog`; Archive is a clean single mutation. UI-17 /
+ * K105: no "Manage labels…" deep link — a full Delete (behind the remap
+ * picker, `RemapDeleteDialog`, panel-owned and not extracted) lives in
+ * Settings, reached through the persistent Settings gear (`Footer`,
+ * below), not a label-scoped menu item.
  */
 function LabelRowActions({
   label,
@@ -2058,7 +2185,6 @@ function LabelRowActions({
   readonly label: LabelDef;
   readonly onEdit: () => void;
 }) {
-  const navigate = useNavigate();
   const archive = useArchiveLabel();
   const archived = label.archived === true;
   return (
@@ -2072,11 +2198,6 @@ function LabelRowActions({
           testId: "sidebar-label-archive",
           disabled: archive.isPending,
           onSelect: () => { archive.mutate({ id: label.id, archived: !archived }); },
-        },
-        {
-          label: "Manage labels…",
-          testId: "sidebar-label-manage",
-          onSelect: () => { void navigate({ to: "/settings/$section", params: { section: "labels" } }); },
         },
       ]}
     />
