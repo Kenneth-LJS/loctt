@@ -99,7 +99,11 @@ test("GIT-1: enable discloses what it does, then writes git.enabled/branch to sy
 
   // GIT-1's surviving guarantee is asserted as behaviour on the published
   // branch, not as on-screen copy: `local/`, `.current-user` and
-  // `users/<id>/settings.yaml` never reach it.
+  // `users/<id>/settings.yaml` never reach it. The `loctt` branch does
+  // not exist until the first publish (`enableGit` only writes
+  // sync.yaml), so publish once before inspecting it.
+  await page.getByTestId("git-publish").click();
+  await expect(page.getByTestId("git-publish-result")).toBeVisible();
   const published = (await gitTracker.git(["ls-tree", "-r", "--name-only", "loctt"]))
     .split("\n")
     .filter(Boolean);
@@ -443,7 +447,7 @@ test("GIT-27: with no remote, enable warns local-only and status shows no remote
   // names the command to add a remote — it does not hard-block.
   const warn = page.getByTestId("git-no-remote");
   await expect(warn).toBeVisible();
-  await expect(warn).toContainText("local-only");
+  await expect(warn).toContainText("Git tracking stays local");
   await expect(warn).toContainText("git remote add origin");
   await expect(page.getByTestId("git-enable")).toBeEnabled();
 
@@ -481,7 +485,7 @@ test("GIT-28: outside a git repo, enable is disabled with a reason and names git
 
   const notRepo = page.getByTestId("git-not-a-repo");
   await expect(notRepo).toBeVisible();
-  await expect(notRepo).toContainText("not a git repository");
+  await expect(notRepo).toContainText("isn't a git repository");
   await expect(notRepo).toContainText("git init");
   // The enable control is present but disabled — the reason is stated,
   // not just the button greyed with no explanation.
@@ -584,7 +588,7 @@ test("GIT-30: sync against an unreachable remote names it, keeps local untouched
   const warning = page.getByTestId("git-sync-fetch-warning");
   await expect(warning).toContainText("origin");
   await expect(warning).toContainText("could not be reached");
-  await expect(warning).toContainText("not modified");
+  await expect(warning).toContainText("weren't changed");
 
   // Retry is offered inline.
   await expect(page.getByTestId("git-sync-retry")).toBeVisible();
@@ -702,7 +706,7 @@ test("GIT-25: an existing loctt branch is surfaced with its head and adopted onl
   const adopt = page.getByTestId("git-adopt-branch");
   await expect(adopt).toBeVisible();
   await expect(adopt).toContainText("loctt");
-  await expect(adopt).toContainText("previous setup");
+  await expect(adopt).toContainText("already exists");
   await expect(page.getByTestId("git-adopt-head")).toContainText(branchHead!.slice(0, 12));
 
   // Nothing was written yet — the panel is still not enabled.

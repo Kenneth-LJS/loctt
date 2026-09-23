@@ -23,7 +23,11 @@ function archivedRow(page: Page, text: string) {
 async function rowMenu(page: Page, text: string, action: "restore" | "delete"): Promise<void> {
   const row = archivedRow(page, text);
   await row.getByRole("button", { name: /^Actions for / }).click();
-  await page.locator(`[data-testid^="archived-${action}-"]`).click();
+  // Scope to the opened row menu's own items — the row's per-item
+  // testid (`archived-<action>-<id>`) and the panel's bulk button
+  // (`archived-<action>-all`) share the same testid prefix, so an
+  // unscoped `^=` selector matches both (strict-mode violation).
+  await page.getByRole("menuitem", { name: new RegExp(`^${action}$`, "i") }).click();
 }
 
 async function configId(root: string, file: string, name: string): Promise<string> {

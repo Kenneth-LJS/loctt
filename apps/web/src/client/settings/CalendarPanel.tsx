@@ -160,7 +160,8 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
               className="text-[0.7857rem] text-danger-fg"
             >
               <p>
-                Unable to resolve timezone &quot;{draft.timezone}&quot;.
+                Unable to resolve timezone &quot;{draft.timezone}&quot; from
+                .loctt/config/calendar.yaml.
               </p>
               <p data-testid="calendar-timezone-fallback">
                 Dates are shown in UTC until you pick a valid timezone.

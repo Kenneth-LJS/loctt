@@ -538,7 +538,7 @@ test.describe("PRU — the projects panel", () => {
 
     // The result says the field was cleared, and the task survives with
     // no project (its key unchanged).
-    await expect(page.getByTestId("project-delete-result")).toContainText(/cleared the project field/i);
+    await expect(page.getByTestId("project-delete-result")).toContainText(/cleared the project on 1 task/i);
     const shown = await tracker.run(["show", taskKey]);
     expect(shown).toContain(taskKey);
     // The project is gone from projects.yaml.

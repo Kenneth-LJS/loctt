@@ -629,8 +629,13 @@ test("a slow init keeps the form disabled and explains what is happening", async
     await fillWizard(page, "Website", "WEB");
     await page.getByRole("button", { name: /set up tracker/i }).click();
 
-    // The busy state persists and the form stays visibly disabled.
-    await expect(page.getByRole("button", { name: /setting up/i })).toBeDisabled();
+    // The busy state persists and the form stays visibly disabled. The
+    // button's accessible name stays fixed at "Set up tracker" while
+    // loading (Button's documented `loading` contract: the name only
+    // changes if the caller passes a different `aria-label`, and
+    // InitWizard does not) — progress is communicated by SlowInitNote
+    // below, not by relabelling the button.
+    await expect(page.getByRole("button", { name: /set up tracker/i })).toBeDisabled();
     await expect(page.getByLabel("Project name")).toBeDisabled();
     await expect(page.getByLabel("Key prefix")).toBeDisabled();
 

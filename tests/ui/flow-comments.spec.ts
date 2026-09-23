@@ -352,7 +352,14 @@ test.describe("CMT — comments", () => {
     // dont need the notice").
     await expect(submit(page)).toBeDisabled();
     await expect(submit(page)).toHaveAccessibleDescription(/needs some text/);
-    await expect(page.getByText("needs some text")).toBeHidden();
+    // A319: the reason is the button's accessible description, rendered
+    // as an sr-only node — present for assistive tech but visually
+    // clipped, not merely absent from the page.
+    const reason = page.getByText("needs some text");
+    await expect(reason).toHaveClass(/sr-only/);
+    await expect(reason).toHaveCSS("width", "1px");
+    await expect(reason).toHaveCSS("height", "1px");
+    await expect(reason).toHaveCSS("overflow", "hidden");
 
     // Whitespace-only is still empty.
     await composerSurface(page).click();
