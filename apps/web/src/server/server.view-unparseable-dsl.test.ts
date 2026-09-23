@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createWebApp } from "./server.js";
 
 /**
- * @verifies UI-9
+ * @verifies QRY-C2
  *
  * A saved view's advanced filter can be SHAPE-valid (`{kind: "advanced",
  * query: <any string>}` satisfies `FilterSchema`) while its DSL does not

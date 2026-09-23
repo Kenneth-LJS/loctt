@@ -2,7 +2,29 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach,beforeEach, describe, expect, it } from "vitest";
+import { afterEach,beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * Counts real `node:fs/promises` `access` calls without changing their
+ * behaviour — used only by the streaming-order tests below. Native ESM
+ * exports are non-configurable, so `vi.spyOn` on the module namespace
+ * throws ("Cannot redefine property"); `vi.mock` with `importOriginal`
+ * is vitest's supported way to wrap a real implementation instead of
+ * replacing it, which is what a pure counter needs (the original
+ * function's behaviour, including real filesystem timing, must be
+ * unchanged — only observed).
+ */
+let accessCallCount = 0;
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    access: (...args: Parameters<typeof actual.access>) => {
+      accessCallCount++;
+      return actual.access(...args);
+    },
+  };
+});
 
 import { initLoctt } from "../init/init.js";
 import { CURRENT_SCHEMA_VERSION, writeSchemaVersion } from "../schema/index.js";
@@ -371,36 +393,76 @@ describe("runDoctorStream", () => {
   it("resolves its first check before the whole run's I/O has finished", async () => {
     await initLoctt(root);
 
-    // The streaming guarantee, made observable without module mocking:
-    // stand a slow async task alongside the drain. A streaming producer
-    // hands over `.loctt directory` on the first pull — which happens on
-    // the current tick, before a `setTimeout(0)` scheduled just before
-    // the pull can fire. A producer that computed the whole array first
-    // would have to await every check's filesystem work before the first
-    // `next()` resolved, and that work yields the event loop, so the
-    // timer would fire first. Ordering is the assertion.
-    const order: string[] = [];
-    const timer = new Promise<void>((resolve) => {
-      setTimeout(() => { order.push("timer"); resolve(); }, 0);
-    });
+    // The streaming guarantee, made deterministic with a counter/gate on
+    // the producer's own I/O instead of a wall-clock race. The previous
+    // version raced a real `setTimeout(0)` against real filesystem I/O:
+    // under load, the timer and the I/O can resolve in either order even
+    // though the producer streams correctly — that load-sensitivity is
+    // what this replaces.
+    //
+    // `access` (`node:fs/promises`) is the leaf syscall every check in
+    // `runDoctorStream` bottoms out in (via `fileExists`, config loaders,
+    // `readSchemaVersion`, …) — counting it counts real I/O calls without
+    // touching what any of them return (see the module-level `vi.mock`
+    // above). A streaming producer yields its first check (".loctt
+    // directory") after exactly the ONE `access` call that check needs; a
+    // producer that buffered the whole run first would have already
+    // issued many more `access` calls (one per remaining check) by the
+    // time that first value came back.
+    accessCallCount = 0;
 
     const it = runDoctorStream(root);
     const first = await it.next();
-    order.push("first-check");
     expect(first.value?.name).toBe(".loctt directory");
 
-    await timer;
-    // The first check came back before the macrotask timer fired: the
-    // producer did not block on the rest of the run. Red-proof: make
-    // `runDoctorStream` collect every check into an array before yielding
-    // any (the batched shape), and "timer" lands before "first-check".
-    expect(order).toEqual(["first-check", "timer"]);
+    // Exactly the call(s) for THIS check happened — not the whole run's.
+    // `resolveLocttDir`/`fileExists` issue exactly one `access` for the
+    // `.loctt` directory check; asserting the exact count (rather than
+    // "at least one") is what catches a producer that raced ahead and
+    // pre-fetched later checks' I/O before its first yield.
+    const callsAtFirstYield = accessCallCount;
+    expect(callsAtFirstYield).toBe(1);
 
-    // Drain the remainder so nothing is left suspended.
+    // Drain the remainder so nothing is left suspended, and confirm the
+    // call count kept growing as each further check ran its own I/O —
+    // i.e. the run really does more `access` calls than just the first.
     const rest: string[] = [];
     for (let n = await it.next(); !n.done; n = await it.next()) {
       rest.push(n.value.name);
     }
     expect(rest.length).toBeGreaterThanOrEqual(4);
+    expect(accessCallCount).toBeGreaterThan(callsAtFirstYield);
+  });
+
+  it("(red-proof only, see comment) a producer that buffers the whole run before yielding fails the access-count assertion above", async () => {
+    await initLoctt(root);
+
+    // The batched shape the test above's comment describes: collect
+    // every check into an array via the real generator, then yield from
+    // that array. It reuses `runDoctorStream`'s real output (so this is a
+    // faithful red-proof of the real producer's contract, not a
+    // synthetic stand-in) but changes *when* the first yield happens,
+    // which is exactly the defect the assertion above exists to catch.
+    async function* bufferedDoctorStream(): AsyncGenerator<{ name: string }> {
+      const all: { name: string }[] = [];
+      for await (const check of runDoctorStream(root)) {
+        all.push(check);
+      }
+      yield* all;
+    }
+
+    accessCallCount = 0;
+
+    const it = bufferedDoctorStream();
+    const first = await it.next();
+    expect(first.value?.name).toBe(".loctt directory");
+
+    // A buffering producer's first (and only) yield only resolves after
+    // its internal loop has drained the ENTIRE real stream — so by the
+    // time it hands back ".loctt directory", every other check's
+    // `access` calls have already happened too. This is strictly greater
+    // than the streaming producer's exactly-1, which is the failure this
+    // red-proof exists to catch.
+    expect(accessCallCount).toBeGreaterThan(1);
   });
 });

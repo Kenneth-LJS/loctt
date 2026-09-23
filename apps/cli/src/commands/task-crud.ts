@@ -36,6 +36,7 @@ import {
   saveState,
   setField,
   unsetField,
+  ViewError,
   withStateLock,
   writeTaskBody,
 } from "@loctt/core";
@@ -218,6 +219,25 @@ export async function list(args: string[], root: string): Promise<void> {
   const baseQuery = getArg(args, "--query");
 
   const view = getArg(args, "--view");
+
+  // A313 (parity with MCP's list_tasks, apps/mcp/src/tools/task-crud.ts):
+  // `parseQueriesConfig` classifies a view whose DSL does not parse as
+  // BROKEN, so it is absent from `queriesConfig.queries` and core's
+  // `resolveView`/`listTasks` report "unknown view" — wrong and
+  // misleading here, since the view exists (it is in `queries.yaml` and
+  // in `queriesConfig.broken` with its parse message). A user told
+  // "unknown view" goes hunting for the right id instead of repairing
+  // the DSL. Checked before `listTasks` sees it, the same way the web's
+  // `handleListTasks` (server.ts) excludes a broken view before handing
+  // anything to core.
+  if (view !== undefined) {
+    const broken = queriesConfig?.broken?.find(
+      b => b.id === view || b.name === view,
+    );
+    if (broken !== undefined) {
+      throw new ViewError(`saved view "${broken.name}" cannot run: ${broken.error}`);
+    }
+  }
 
   // Core supported sort and offset from the start; only the web exposed
   // them, so an agent wanting "the highest-priority open task" had to
