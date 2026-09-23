@@ -1470,6 +1470,103 @@ describe("CLI list — stale saved view warning", () => {
 });
 
 /**
+ * @verifies VUE-22 (A313 — CLI parity for the read path).
+ *
+ * A saved view whose FILTERS do not load (a hand edit rejected by
+ * `FilterSchema`, not merely a DSL string that fails later) is classified
+ * BROKEN by `parseQueriesConfig`: it is absent from `queriesConfig.queries`
+ * and lives in `queriesConfig.broken` instead, carrying the parser's
+ * message. Before this fix, `loctt list --view <broken>` fell straight
+ * into core's `resolveView`, which cannot see `broken` and reports
+ * `unknown view "<id>"` — true only in the narrowest sense, and actively
+ * misleading: the view is not unknown, it is broken, and telling the user
+ * "unknown" sends them hunting for a different id instead of fixing the
+ * DSL. This mirrors the read-path fix already made for MCP's `list_tasks`
+ * (apps/mcp/src/tools/task-crud.ts) — the same core defect, the same fix
+ * shape, the surface CLAUDE.md requires it on.
+ */
+describe("CLI list — broken saved view (A313)", () => {
+  let root: string;
+  let originalArgv: string[];
+  let logSpy: MockInstance;
+  let errSpy: MockInstance;
+  const BROKEN_ID = "01BROKENVIEWA313000000001";
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-cli-brokenview-"));
+    originalArgv = process.argv;
+    vi.spyOn(process, "cwd").mockImplementation(() => root);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.exitCode = undefined;
+    await initLoctt(root);
+    // A shape failure `FilterSchema` rejects (a bad `op`), not merely a
+    // DSL string that fails later — the distinction views.test.ts's
+    // "K102-broken-repair" suite already documents: only a rejected
+    // FILTER shape lands the entry in `broken`.
+    await writeFile(
+      join(root, ".loctt", "config", "queries.yaml"),
+      "queries:\n"
+      + "  - id: 01KEEPVIEWA313000000000A\n"
+      + "    name: keep\n"
+      + "    filters:\n"
+      + "      - kind: simple\n"
+      + "        field: status\n"
+      + "        op: \"!=\"\n"
+      + "        values: [\"done\"]\n"
+      + `  - id: ${BROKEN_ID}\n`
+      + "    name: Busted\n"
+      + "    filters:\n"
+      + "      - kind: simple\n"
+      + "        field: status\n"
+      + "        op: \"= =\"\n"
+      + "        values:\n"
+      + "          - done\n",
+      "utf-8",
+    );
+  });
+
+  afterEach(async () => {
+    process.argv = originalArgv;
+    vi.restoreAllMocks();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("names the parse fault instead of reporting the view as unknown, and exits non-zero", async () => {
+    process.argv = ["node", "loctt", "list", "--view", "Busted"];
+    await main();
+
+    const printed = errSpy.mock.calls.flat().join(" ");
+    expect(printed).toContain("Busted");
+    expect(printed).toContain("cannot run");
+    // The defect this replaces: core's bare `resolveView` miss.
+    expect(printed).not.toContain("unknown view");
+    expect(process.exitCode).not.toBe(0);
+    // Refused before listTasks runs — no "No tasks found." success line,
+    // and no unfiltered rows printed under the error either.
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it("resolves the same way by id as by name", async () => {
+    process.argv = ["node", "loctt", "list", "--view", BROKEN_ID];
+    await main();
+
+    const printed = errSpy.mock.calls.flat().join(" ");
+    expect(printed).toContain("Busted");
+    expect(printed).toContain("cannot run");
+    expect(process.exitCode).not.toBe(0);
+  });
+
+  it("a healthy view alongside the broken one is unaffected", async () => {
+    process.argv = ["node", "loctt", "list", "--view", "keep"];
+    await main();
+
+    expect(process.exitCode).toBeUndefined();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * @verifies PRU-C10, PRU-C11
  *
  * `loctt project set-prefix`. The core rewrite is covered in

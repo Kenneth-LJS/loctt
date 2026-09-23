@@ -187,6 +187,24 @@ describe("GET /api/tasks (sort + pagination)", () => {
     expect(legacyBool.items.map(t => t.title)).not.toContain("Apple");
   });
 
+  // K121 #1: a query naming `archived` would override the scope (K107's
+  // term-wins rule) and reveal archived tasks through a URL parameter.
+  // The web list refuses it instead, naming where archived tasks live.
+  // @verifies SET-52
+  it("refuses a list query that names the archived field", async () => {
+    for (const q of ["archived = true", "status = backlog and archived = true", "not archived = false"]) {
+      const res = await fetch(`${base}/api/tasks?query=${encodeURIComponent(q)}`);
+      expect(res.status, q).toBe(400);
+      const body = await res.json() as { code: string; field: string; message: string };
+      expect(body.code).toBe("validation_failed");
+      expect(body.field).toBe("query");
+      expect(body.message).toBe("Archived tasks aren't listed here. Find them in Settings, under Archived.");
+    }
+    // The word inside a string literal is not the field.
+    const res = await fetch(`${base}/api/tasks?query=${encodeURIComponent('title ~ "archived"')}`);
+    expect(res.status).toBe(200);
+  });
+
   // K25: idempotent archive/unarchive (behavior recorded in decisions.md K25/A127; no canonical case)
   it("archiving an already-archived task returns 200, not a 500 (K25)", async () => {
     const created = await fetch(`${base}/api/tasks`, {

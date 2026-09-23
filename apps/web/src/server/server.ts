@@ -247,7 +247,7 @@ import { ZodError } from "zod";
 
 import { contentDispositionAttachment } from "./content-disposition.js";
 import type { ParsedFilePart } from "./multipart.js";
-import { parseMultipartFile } from "./multipart.js";
+import { parseMultipartFile, parseMultipartFiles } from "./multipart.js";
 
 const DEFAULT_PORT = 4321;
 
@@ -1021,6 +1021,29 @@ function parseArchivedScope(url: URL): ArchivedScope {
   const parsed = ArchivedScopeSchema.safeParse(url.searchParams.get("archived"));
   return parsed.success ? parsed.data : "active";
 }
+
+/**
+ * K121 #1: whether a task-list query names the `archived` field.
+ *
+ * Core's precedence rule (K107) lets a query that mentions `archived`
+ * override the scope, so `?query=archived = true` on the list would reveal
+ * archived tasks — a URL parameter that browses them, which Ken ruled out
+ * for the web ("not allow viewing archived stuff"). The CLI and MCP keep
+ * the rule; the web list refuses the term instead. Tokenizer-based, like
+ * core's own check, so a string literal containing "archived" is not a
+ * match. A query that does not tokenize is left for the parser to report.
+ */
+export function queryNamesArchivedField(query: string): boolean {
+  try {
+    return tokenize(query).some(t => t.type === "FIELD" && t.value === "archived");
+  } catch {
+    return false;
+  }
+}
+
+/** The list's answer to a query that names `archived` (K121 #1). */
+export const ARCHIVED_QUERY_MESSAGE =
+  "Archived tasks aren't listed here. Find them in Settings, under Archived.";
 
 /**
  * Builds a paginated response envelope. Slices `items` by the
@@ -1991,8 +2014,7 @@ export function createWebApp(options: WebAppOptions) {
       // `config_invalid` with a 400. Measured: with another process
       // holding the state lock, a settings write reported "the config
       // is invalid" and blamed the user for a file that was perfectly
-      // fine (SET-39, ERR-31, and ERR-32's "no routine failure lands
-      // in the generic handler").
+      // fine (SET-39, ERR-31).
       if (err instanceof LocttError) {
         const env = err.toEnvelope();
         error(res, env.message, statusForCode(err.code), env);
@@ -4101,9 +4123,9 @@ export function createWebApp(options: WebAppOptions) {
     const view = viewMissing || brokenView !== undefined ? undefined : requestedView;
     // K107: the tri-state `?archived=active|archived|all` scope (default
     // `active`) replaces the old `?archived=true` boolean. Core applies it
-    // to the effective query; when the query itself mentions `archived`
-    // the user's term wins and `onArchivedConflict` fires (surfaced as a
-    // warning below), matching the CLI/MCP behaviour Ken specified.
+    // to the effective query. Only Settings → Archived sends a non-default
+    // scope (K121 #1); a query naming `archived` is refused above, so the
+    // K107 term-wins rule never applies on this route.
     const archivedScope = parseArchivedScope(url);
     // Fold the free-text `query` and the structured filter params
     // (project/status/priority/type/assignee/…, plus custom
@@ -4112,6 +4134,14 @@ export function createWebApp(options: WebAppOptions) {
     // are authored as-is) and apply `?project=` via core's dedicated
     // structured project option instead.
     const baseQuery = url.searchParams.get("query") ?? undefined;
+    if (baseQuery !== undefined && queryNamesArchivedField(baseQuery)) {
+      error(res, ARCHIVED_QUERY_MESSAGE, 400, {
+        code: "validation_failed",
+        field: "query",
+        recovery: { kind: "none" },
+      });
+      return;
+    }
     await resolveProjectSlugParam(url, locttDir);
     const effectiveQuery = view !== undefined
       ? baseQuery
@@ -4208,19 +4238,6 @@ export function createWebApp(options: WebAppOptions) {
             message: err.message,
             position: err.position,
             suggestions: [...err.suggestions],
-          });
-        },
-        // K107: the requested archived scope conflicts with an explicit
-        // `archived` term in the query — the term wins (scope resolves to
-        // `all`), but the override is surfaced rather than resolved
-        // silently, so the result set isn't mysterious.
-        onArchivedConflict: (scope: ArchivedScope) => {
-          queryWarnings.push({
-            field: "archived",
-            message:
-              `The query mentions "archived", so its term decides — the "${scope}" archived filter was not applied.`,
-            position: 0,
-            suggestions: [],
           });
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
@@ -4413,13 +4430,25 @@ export function createWebApp(options: WebAppOptions) {
    * `POST /api/backup/restore` — restore a JSONL backup (K17 ruling 2,
    * F3 / K30). Web parity for `loctt restore` and MCP `restore`.
    *
-   * The backup file is uploaded as `multipart/form-data` (field `file`),
+   * The backup is uploaded as `multipart/form-data` (field `file`),
    * matching how attachments and avatars upload. `mode` and `confirm`
-   * ride on the query string, because the multipart parser captures the
-   * file part and drains the rest — a regular form field would be
-   * dropped. A single uploaded file only: a split backup needs every
-   * part, and re-assembling a multi-part upload here is deferred to the
-   * CLI (`loctt restore <part...>`), noted in the web reference.
+   * ride on the query string, because the multipart parser captures only
+   * file parts — a regular form field would be dropped.
+   *
+   * SPLIT BACKUPS (Ken, 2026-09-23 — supersedes A142's single-file
+   * decision): the body may carry SEVERAL `file` parts, one per part of
+   * a split set, and every one is written to a temp path and handed to
+   * core as an array. Core does the whole job already — `restoreBackup`
+   * has always taken `readonly string[]`, and `resolveBackupSet` orders
+   * the parts, refuses an incomplete set, and refuses a part whose
+   * `backup_id` belongs to a different export (BAK-C8). So this endpoint
+   * reassembles nothing: it lands the bytes and passes the list. Its one
+   * added job is that core's refusal REACHES the user — a
+   * `BackupFormatError` naming the missing part is the whole value of
+   * the check, and a generic "restore failed" would throw it away.
+   *
+   * A single-file restore is the same code path with a one-element
+   * array, and stays the common case.
    *
    * CRITICAL — destructive-restore confirm (K30): `overwrite` replaces
    * ids the backup carries, and `bare` into a non-empty tracker is
@@ -4484,13 +4513,18 @@ export function createWebApp(options: WebAppOptions) {
       return;
     }
 
+    // Every uploaded part lands under this one temp dir, and the
+    // `finally` below removes the dir whatever happens — success, a core
+    // refusal, or a thrown parse error. A restore that fails must not
+    // leave the user's whole tracker sitting in /tmp.
     const tmpParent = await mkdtemp(pathJoin(tmpdir(), "loctt-restore-"));
     try {
-      let parsed: ParsedFilePart;
+      let parsed: readonly ParsedFilePart[];
       try {
         // A backup is the whole tracker, so it gets the backup cap, not
-        // the 50 MB per-attachment default (K31 item 2).
-        parsed = await parseMultipartFile(req, contentType, tmpParent, "file", MAX_BACKUP_BYTES);
+        // the 50 MB per-attachment default (K31 item 2). Every `file`
+        // part is kept: a split backup arrives as N of them.
+        parsed = await parseMultipartFiles(req, contentType, tmpParent, "file", MAX_BACKUP_BYTES);
       } catch (parseErr) {
         // Parsing failed before restoreBackup ran, so nothing was
         // written into the tracker (ERR-24 shape).
@@ -4499,7 +4533,13 @@ export function createWebApp(options: WebAppOptions) {
       }
 
       try {
-        const report = await restoreBackup(locttDir, [parsed.tempPath], { mode, dryRun });
+        // The array core has always accepted. `resolveBackupSet` inside
+        // orders the parts and refuses a set that is incomplete, mixed
+        // or foreign — this passes them in upload order and lets core
+        // decide.
+        const report = await restoreBackup(
+          locttDir, parsed.map(p => p.tempPath), { mode, dryRun },
+        );
         json(res, report);
       } catch (err) {
         // A refusal is the user's or the file's situation, not a server

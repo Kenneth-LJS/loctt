@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executeTool } from "../index.js";
 
 /**
- * @verifies UI-9 (MCP surface).
+ * @verifies QRY-C2 (MCP surface).
  *
  * A saved view's advanced filter can be SHAPE-valid — `{kind: "advanced",
  * query: <any string>}` satisfies `FilterSchema` — while its DSL does not
