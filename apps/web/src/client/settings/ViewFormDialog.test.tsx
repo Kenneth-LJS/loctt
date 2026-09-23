@@ -316,28 +316,46 @@ describe("ViewFormDialog — chrome", () => {
     expect(save.parentElement).toBe(cancel.parentElement);
   });
 
-  it("carries the archived scope as a view PROPERTY, not as a filter row", async () => {
+  // Ken's ruling, 2026-09-22 ("archiving is a one-way door, not a filter",
+  // decisions.md § 9): "a view filtering on archived encodes the wrong
+  // model." This dialog used to expose the view's `archivedScope` via an
+  // "Include [Active|Archived|All]" `ArchivedScopeControl` — Ken
+  // screenshotted exactly this control and ruled it out. It is gone from
+  // the dialog entirely: no control, and no row.
+  it("offers no archived-scope control, as a row or otherwise", async () => {
     render(
       <ViewFormDialog
-        existing={{ id: "v1", name: "E", filters: [], archivedScope: "all" }}
+        existing={{ id: "v1", name: "E", filters: [] }}
         onClose={() => {}}
       />,
       { wrapper: wrapper() },
     );
-    const control = await screen.findByTestId<HTMLSelectElement>("view-form-archived-scope");
-    // Seeded from the view…
-    expect(control.value).toBe("all");
-    // …and it is NOT one of the removable filter rows: no row carries it,
-    // so it cannot be deleted along with a filter (K107 + K102).
+    await screen.findByTestId("view-form-save");
+    expect(screen.queryByTestId("view-form-archived-scope")).toBeNull();
     for (const r of rows()) expect(r.textContent).not.toContain("Archived");
-    expect(screen.getByTestId("view-form-archived-scope").closest("[data-testid='view-filter-row']"))
-      .toBeNull();
+  });
 
-    fireEvent.change(control, { target: { value: "archived" } });
-    fireEvent.click(screen.getByTestId("view-form-save"));
+  // The underlying capability (a view's stored `archivedScope`, set via
+  // the CLI or MCP — both keep the field; only this web control is
+  // removed) must not be clobbered by an edit made from a dialog that no
+  // longer offers a way to choose it. Since `existing` here carries no
+  // `archivedScope` in its narrowed `ViewFormTarget` shape, the only way
+  // to prove the dialog does not send a stray default is to check the
+  // wire body directly: it must carry no `archivedScope` key at all, so
+  // `editView`'s merge (core) keeps whatever the view already has on
+  // disk.
+  it("saves without an `archivedScope` key, so an unrelated edit cannot reset a scope set elsewhere", async () => {
+    render(
+      <ViewFormDialog
+        existing={{ id: "v1", name: "E", filters: [] }}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
+    fireEvent.click(await screen.findByTestId("view-form-save"));
 
     await waitFor(() => { expect(writeCalls("PUT").length).toBe(1); });
-    expect(writeCalls("PUT")[0]?.body?.archivedScope).toBe("archived");
+    expect(writeCalls("PUT")[0]?.body).not.toHaveProperty("archivedScope");
   });
 
   it("does not drop a stored icon when the view is edited (K104 field)", async () => {
@@ -389,5 +407,97 @@ describe("ViewFormDialog — chrome", () => {
     // A `backlog` status key is not a priority key — it must not carry over.
     const picker = screen.getByRole("button", { name: "Filter Priority" });
     expect(picker.textContent).not.toContain("· 1");
+  });
+});
+
+/**
+ * K103 colour on a saved view + the UI-14 emoji rule made visible.
+ *
+ * Ken, 2026-09-22: *"perhaps icons can also have colours as part of it,
+ * but emojis, just use the emoji itself (because we can't add colour)"*.
+ * The dialog must not silently ignore that: when the chosen icon is an
+ * emoji the colour control goes INERT and SAYS WHY, and the stored colour
+ * is preserved rather than cleared.
+ *
+ * What these catch: a view gaining a colour field whose control is wired
+ * up without the coupling rule — which looks completely fine until a user
+ * picks an emoji, sets a colour, and nothing happens with no explanation.
+ */
+describe("ViewFormDialog — colour, and the emoji rule", () => {
+  /** Picks an icon through the portalled grid. */
+  function pickViewIcon(id: string, tab: "icons" | "emoji" = "icons"): void {
+    fireEvent.click(screen.getByTestId("view-form-icon"));
+    fireEvent.click(screen.getByTestId(`view-form-icon-list-tab-${tab}`));
+    fireEvent.click(screen.getByTestId(`icon-option-${id}`));
+  }
+
+  it("offers a colour control for a view, live for a NAMED icon", async () => {
+    render(
+      <ViewFormDialog existing={{ ...target([]), icon: "flag" }} onClose={() => {}} />,
+      { wrapper: wrapper() },
+    );
+    await screen.findByTestId("view-form-name");
+    // The control exists at all — this is the ticket.
+    const picker = screen.getByTestId("view-form-color-picker");
+    // ...and it is USABLE, because a Lucide glyph takes `currentColor`.
+    expect(picker.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByTestId("view-form-color-picker-disabled-reason")).toBeNull();
+  });
+
+  it("DISABLES the colour control for an emoji icon, and states the reason", async () => {
+    render(
+      <ViewFormDialog existing={{ ...target([]), icon: "flag" }} onClose={() => {}} />,
+      { wrapper: wrapper() },
+    );
+    await screen.findByTestId("view-form-name");
+
+    pickViewIcon("🚀", "emoji");
+
+    expect(screen.getByTestId("view-form-color-picker").hasAttribute("disabled")).toBe(true);
+    // The reason is SHOWN, not merely implied by a greyed control — that
+    // is the difference between Ken's rule made visible and silently
+    // ignored.
+    expect(screen.getByTestId("view-form-color-picker-disabled-reason").textContent)
+      .toContain("Emoji carries its own colour");
+    // The hex alias is inert too, or the "disabled" state would have a
+    // live back door writing the very value the rule says cannot apply.
+    expect(screen.getByTestId<HTMLInputElement>("view-form-color").disabled).toBe(true);
+  });
+
+  it("PRESERVES a stored colour through the emoji state, and sends it on save", async () => {
+    render(
+      <ViewFormDialog
+        existing={{ ...target([]), icon: "flag", color: { palette: "blue" } }}
+        onClose={() => {}}
+      />,
+      { wrapper: wrapper() },
+    );
+    await screen.findByTestId("view-form-name");
+
+    pickViewIcon("🚀", "emoji");
+    // Inert, NOT cleared: clearing would discard a deliberate choice and
+    // make icon → emoji → icon lose it (A279 / P-11).
+    expect(screen.getByTestId("view-form-color-picker").getAttribute("data-value")).toBe("blue");
+
+    fireEvent.click(screen.getByTestId("view-form-save"));
+    await waitFor(() => { expect(writeCalls("PUT").length).toBe(1); });
+    const body = writeCalls("PUT")[0]?.body;
+    // The colour is still STORED while the icon is an emoji — the rule is
+    // about whether it can be applied, not whether it may be kept.
+    expect(body?.["color"]).toEqual({ palette: "blue" });
+    expect(body?.["icon"]).toBe("🚀");
+  });
+
+  it("sends a view's colour on create", async () => {
+    render(<ViewFormDialog onClose={() => {}} />, { wrapper: wrapper() });
+    await screen.findByTestId("view-form-name");
+    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Coloured" } });
+
+    pickViewIcon("flag");
+    fireEvent.change(screen.getByTestId("view-form-color"), { target: { value: "#1e6fcb" } });
+
+    fireEvent.click(screen.getByTestId("view-form-save"));
+    await waitFor(() => { expect(writeCalls("POST").length).toBe(1); });
+    expect(writeCalls("POST")[0]?.body?.["color"]).toBe("#1e6fcb");
   });
 });

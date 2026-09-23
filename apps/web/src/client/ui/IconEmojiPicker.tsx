@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { cn } from "./cn.ts";
 import {
@@ -116,9 +116,18 @@ export function IconEmojiPicker({
   );
 }
 
-/** A short description of what is set, for the trigger's label. */
+/**
+ * A short description of what is set, for the trigger's label.
+ *
+ * Ken, 2026-09-22: "once selected, why is there double icon?" — the
+ * trigger renders `<IconGlyph>` AND this label. For a Lucide icon the
+ * label is a NAME ("Globe") and reads correctly beside the glyph; for
+ * an emoji it used to return the emoji itself, so the same character
+ * rendered twice. An emoji is its own picture: the glyph carries it,
+ * and this returns the generic noun instead.
+ */
 function describe(icon: string): string {
-  return isLucideIcon(icon) ? lucideLabel(icon) : icon;
+  return isLucideIcon(icon) ? lucideLabel(icon) : "Emoji";
 }
 
 /**
@@ -226,7 +235,105 @@ function IconPanel({
       ? value
       : undefined;
 
-  const tabButton = (id: Tab, label: string, count: number) => (
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Two-dimensional roving focus over the grid's cells — `ColorPicker`'s
+   * `onGridKeyDown` (A289), adopted per the known-gaps note that this
+   * grid is "the same shape... adopting it is mechanical". One value
+   * changes on purpose: the icon grid is filtered by a live search box,
+   * so its row width is not a constant like `ColorPicker`'s fixed 6.
+   *
+   * The column count is therefore DERIVED from the actual laid-out
+   * cells rather than hardcoded as 8 (the CSS `grid-cols-8` class):
+   * with fewer than 8 results the CSS grid still has 8 columns but only
+   * fills part of the first row, and a future width/breakpoint change
+   * to the panel would silently desync a hardcoded constant from what a
+   * sighted user sees. Reading it back from layout (grouping cells by
+   * their rendered `top`) stays correct either way.
+   *
+   * Because the result set can also SHRINK out from under the cursor
+   * (the user types another character while a cell deep in the grid is
+   * focused), every lookup re-reads the DOM fresh on each keypress
+   * rather than caching an index from a previous render — there is no
+   * stale "cells.length" to go out of range against.
+   */
+  const onGridKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    const cells = gridRef.current
+      ? Array.from(gridRef.current.querySelectorAll<HTMLElement>('[role="gridcell"]'))
+      : [];
+    if (cells.length === 0) return;
+    const at = cells.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+
+    // Derive the column count from layout: count how many leading cells
+    // share the first cell's `top`. A single-row result (fewer cells
+    // than a full row) still measures correctly — every cell shares one
+    // `top`, so "columns" comes out as the whole row, and Up/Down clamp
+    // to the same row, which is the correct behaviour for a one-row grid.
+    const firstTop = cells[0]?.getBoundingClientRect().top;
+    let columns = cells.length;
+    for (let i = 1; i < cells.length; i++) {
+      if (cells[i]?.getBoundingClientRect().top !== firstTop) { columns = i; break; }
+    }
+
+    // Clamped, not wrapped — ColorPicker's reasoning applies unchanged:
+    // wrapping columns would move the cursor to a different row on
+    // Left/Right, which is disorienting in a grid where position
+    // carries meaning.
+    const next = (() => {
+      switch (e.key) {
+        case "ArrowRight": return Math.min(at + 1, cells.length - 1);
+        case "ArrowLeft": return Math.max(at - 1, 0);
+        case "ArrowDown": return Math.min(at + columns, cells.length - 1);
+        case "ArrowUp": return Math.max(at - columns, 0);
+        case "Home": return 0;
+        case "End": return cells.length - 1;
+        default: return -1;
+      }
+    })();
+    if (next < 0) return;
+    e.preventDefault();
+    cells[next]?.focus();
+  };
+
+  // The flattened, ordered list of what the grid renders for the active
+  // tab — one shape for both tabs so the render below (and the roving
+  // tab-stop calculation) does not need to know which tab it is.
+  const visibleCells: { id: string; label: string; selected: boolean; glyph: React.ReactNode }[] =
+    tab === "icons"
+      ? icons.map(entry => ({
+          id: entry.id,
+          label: lucideLabel(entry.id),
+          selected: entry.id === value,
+          glyph: <IconGlyph icon={entry.id} size={18} />,
+        }))
+      : [
+          ...(unknownCurrent !== undefined
+            ? [{
+                id: unknownCurrent,
+                label: `${unknownCurrent} (current)`,
+                selected: true,
+                glyph: <IconGlyph icon={unknownCurrent} size={18} />,
+              }]
+            : []),
+          ...emoji.map(entry => ({
+            id: entry.char,
+            label: entry.keywords[0] ?? entry.char,
+            selected: entry.char === value,
+            glyph: <span className="text-[18px] leading-none">{entry.char}</span>,
+          })),
+        ];
+
+  // The single tab stop (roving `tabIndex`): the selected cell, or the
+  // first cell if none of the currently visible ones is selected — which
+  // also covers a search filtering the selected value out entirely.
+  const tabStopAt = Math.max(0, visibleCells.findIndex(cell => cell.selected));
+
+  // Ken, 2026-09-22: "we do not need the icon/emoji count. take that
+  // out." The count answered a question nobody asks — the grid below is
+  // the answer — and it competed with the tab's own label.
+  const tabButton = (id: Tab, label: string) => (
     <button
       key={id}
       type="button"
@@ -242,7 +349,6 @@ function IconPanel({
       )}
     >
       {label}
-      <span className="ml-1 text-meta text-text-tertiary">{count}</span>
     </button>
   );
 
@@ -255,60 +361,55 @@ function IconPanel({
         placeholder="Search…"
         value={query}
         onChange={e => { setQuery(e.target.value); }}
+        onKeyDown={e => {
+          // ArrowDown from the search box hands off to the grid, landing
+          // on its one tab stop — the usual combobox-into-listbox
+          // pattern, and the only way into the grid by keyboard other
+          // than Tab (which would otherwise land on the "Icons" tab
+          // first). Typing itself is untouched: every other key keeps
+          // its normal text-input behaviour, including Left/Right/Home/
+          // End, which must move the caret here, not the grid cursor.
+          if (e.key !== "ArrowDown") return;
+          const stop = gridRef.current?.querySelector<HTMLElement>(
+            '[role="gridcell"][tabindex="0"]',
+          );
+          if (stop === null || stop === undefined) return;
+          e.preventDefault();
+          stop.focus();
+        }}
       />
 
-      {/* One search box, two tabs — A279. The counts are live against
-          the current query, so a user searching "check" can see at a
-          glance that the other tab has matches too. */}
+      {/* One search box, two tabs — A279. The tabs used to carry live
+          match counts; Ken cut them (2026-09-22). The original argument
+          was that a count tells a searcher the other tab has matches
+          too — but the empty-state below already says when a tab has
+          none, and the count read as chrome on every other visit. */}
       <div role="tablist" aria-label="Icon source" className="flex gap-1">
-        {tabButton("icons", "Icons", icons.length)}
-        {tabButton("emoji", "Emoji", emoji.length + (unknownCurrent !== undefined ? 1 : 0))}
+        {tabButton("icons", "Icons")}
+        {tabButton("emoji", "Emoji")}
       </div>
 
       <div
-        role="group"
+        ref={gridRef}
+        role="grid"
         aria-label={tab === "icons" ? "Icons" : "Emoji"}
         data-testid={listTestId}
+        onKeyDown={onGridKeyDown}
         className="grid max-h-[200px] grid-cols-8 gap-1 overflow-y-auto"
       >
-        {tab === "icons"
-          ? icons.map(entry => (
-              <GridCell
-                key={entry.id}
-                id={entry.id}
-                label={lucideLabel(entry.id)}
-                selected={entry.id === value}
-                onPick={() => { onPick(entry.id); }}
-              >
-                <IconGlyph icon={entry.id} size={18} />
-              </GridCell>
-            ))
-          : (
-              <>
-                {unknownCurrent !== undefined && (
-                  <GridCell
-                    id={unknownCurrent}
-                    label={`${unknownCurrent} (current)`}
-                    selected
-                    onPick={() => { onPick(unknownCurrent); }}
-                  >
-                    <IconGlyph icon={unknownCurrent} size={18} />
-                  </GridCell>
-                )}
-                {emoji.map(entry => (
-                  <GridCell
-                    key={entry.char}
-                    id={entry.char}
-                    label={entry.keywords[0] ?? entry.char}
-                    selected={entry.char === value}
-                    onPick={() => { onPick(entry.char); }}
-                  >
-                    <span className="text-[18px] leading-none">{entry.char}</span>
-                  </GridCell>
-                ))}
-              </>
-            )}
-        {(tab === "icons" ? icons.length : emoji.length + (unknownCurrent !== undefined ? 1 : 0)) === 0 && (
+        {visibleCells.map((cell, index) => (
+          <GridCell
+            key={cell.id}
+            id={cell.id}
+            label={cell.label}
+            selected={cell.selected}
+            tabStop={index === tabStopAt}
+            onPick={() => { onPick(cell.id); }}
+          >
+            {cell.glyph}
+          </GridCell>
+        ))}
+        {visibleCells.length === 0 && (
           <p className="col-span-8 m-0 px-1 py-2 text-meta text-text-tertiary">
             Nothing matches “{query}”.
           </p>
@@ -371,30 +472,41 @@ function IconPanel({
  * The testid is `icon-option-<id>` — unchanged from the Combobox picker
  * it replaces, so the settings tests and the e2e suite keep driving real
  * behaviour rather than being rewritten around a new control.
+ *
+ * `role="gridcell"` + roving `tabIndex` (`tabStop`), not `role="radio"`:
+ * see the arrow-key-navigation doc comment on `onGridKeyDown` above for
+ * why a grid of up to 225 filterable icon buttons is not the same
+ * interaction as `ColorPicker`'s ~19-swatch radiogroup.
  */
 function GridCell({
   id,
   label,
   selected,
+  tabStop,
   onPick,
   children,
 }: {
   readonly id: string;
   readonly label: string;
   readonly selected: boolean;
+  readonly tabStop: boolean;
   readonly onPick: () => void;
   readonly children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
+      role="gridcell"
       data-testid={`icon-option-${id}`}
       aria-pressed={selected}
       aria-label={label}
       title={label}
+      tabIndex={tabStop ? 0 : -1}
       onClick={onPick}
       className={cn(
         "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        "focus-visible:ring-offset-1 focus-visible:ring-offset-bg-surface-raised",
         selected
           ? "bg-accent-muted text-accent ring-1 ring-accent"
           : "text-text-secondary hover:bg-bg-muted hover:text-text-primary",

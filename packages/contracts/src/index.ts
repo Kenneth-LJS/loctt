@@ -31,6 +31,11 @@ export type { BrokenEntry } from "./health.js";
 export { BrokenEntrySchema } from "./health.js";
 export type { HistoryEntry, HistoryKind } from "./history.js";
 export { HISTORY_KINDS, HistoryEntrySchema } from "./history.js";
+export {
+  graphemeCount,
+  isEmojiPresentation,
+  isSingleGrapheme,
+} from "./icon.js";
 export type { LabelDef, LabelsConfig } from "./labels.js";
 export {
   LabelDefSchema,

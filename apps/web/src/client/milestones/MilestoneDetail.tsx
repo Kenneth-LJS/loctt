@@ -1,4 +1,4 @@
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
 import { useCalendar } from "../api/hooks/useCalendar.ts";
@@ -9,6 +9,8 @@ import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { formatWorkspaceDate } from "../dates/workspaceDate.ts";
 import { PriorityCell, StatusBadge, TypeBadge } from "../list/cells.tsx";
 import { buildLookups } from "../list/lookups.ts";
+import { shouldNavigateRow } from "../list/rowNavigation.ts";
+import { recordTaskOrigin } from "../router/taskOrigin.ts";
 // K100: the detail header's Edit reuses the SAME dialog Settings and the
 // point-of-use rows use (fields + validation + `useUpdateMilestone`), so
 // an edit from the detail page cannot drift from an edit anywhere else.
@@ -18,7 +20,7 @@ import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
 import type { MilestoneWithProgress } from "./model.ts";
 import { EXCLUDE_DISCARDED_QUERY, isOverdue, progressState } from "./model.ts";
 import { ProgressReadout } from "./ProgressReadout.tsx";
@@ -58,6 +60,10 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
   const workflow = useWorkflow();
   const navigate = useNavigate();
   const search = useSearch({ from: "/milestones/$id" });
+  // UI-12: this view's own full URL, so opening one of its tasks can
+  // record it as the origin for that task's back affordance — same
+  // mechanism ListView uses.
+  const currentHref = useRouterState({ select: s => s.location.href });
 
   // K100: read-by-default, edit-behind-Edit — the header opens the shared
   // dialog rather than exposing inline fields. `false` is the closed
@@ -229,57 +235,29 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
             >
               {formatWorkspaceDate(milestone.target_date, calendar.data)}
             </span>
-            {/* K105: the detail header carries TWO actions — edit this
-                milestone (the shared dialog) and reach the global
-                Settings panel for the roster-level actions the dialog
-                does not own (reorder, remap-delete). Multiple actions →
-                a "⋯" kebab of MenuItems, never a text "Edit" button. The
-                trigger's aria-label names the milestone so it is
-                unambiguous when several header controls exist (P-4 /
-                WCAG AA). */}
-            <Menu
-              align="end"
-              aria-label={`Milestone actions for ${milestone.name}`}
-              trigger={({ toggle, ...triggerProps }) => (
-                <IconButton
-                  {...triggerProps}
-                  size="sm"
-                  testId="milestone-detail-actions"
-                  aria-label={`Milestone actions for ${milestone.name}`}
-                  onClick={toggle}
-                >
-                  <Icon name="more" />
-                </IconButton>
-              )}
-            >
-              {({ close }) => (
-                <>
-                  <MenuItem
-                    testId="milestone-detail-edit"
-                    onSelect={() => {
-                      setEditing(true);
-                      close();
-                    }}
-                  >
-                    <Icon name="edit" />
-                    Edit milestone
-                  </MenuItem>
-                  <MenuItem
-                    testId="milestone-detail-manage"
-                    onSelect={() => {
-                      void navigate({
-                        to: "/settings/$section",
-                        params: { section: "milestones" },
-                      });
-                      close();
-                    }}
-                  >
-                    <Icon name="settings" />
-                    Manage milestones
-                  </MenuItem>
-                </>
-              )}
-            </Menu>
+            {/* UI-17 / K105: the header used to carry TWO actions — edit
+                this milestone, and a "Manage milestones" deep link to the
+                global Settings panel. Ken ruled the deep link out
+                ("if im on a task, i dont want to see a link to manage
+                all tasks. same for milestones/sprints/labels/etc.") —
+                the persistent Settings gear already reaches
+                Settings → Milestones directly, so nothing is stranded.
+                With only Edit left, K105's own rule for a single action
+                is a plain IconButton, not a "⋯" kebab of one item. */}
+            {/* UI-23e: icon-only, so its name is invisible — a tooltip,
+                not `title`. No `describes`: the bubble is a shorter form
+                of the `aria-label`, so describing the button with it
+                would announce the same thing twice. */}
+            <Tooltip label="Edit milestone" align="end">
+              <IconButton
+                size="sm"
+                testId="milestone-detail-edit"
+                aria-label={`Edit milestone ${milestone.name}`}
+                onClick={() => { setEditing(true); }}
+              >
+                <Icon name="edit" />
+              </IconButton>
+            </Tooltip>
           </div>
         </div>
 
@@ -342,12 +320,38 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
                 <tr
                   key={t.id}
                   data-testid="milestone-task-row"
-                  className="border-b border-border-subtle/60"
+                  className="cursor-pointer border-b border-border-subtle/60 hover:bg-bg-row-hover"
+                  // UI-12: "Whole row clickable" — the same origin this
+                  // was first raised about (Ken, while looking at this
+                  // exact table). Guarded the same way the main list's
+                  // row is (rowNavigation.ts): a drag-selection of the
+                  // title, a modifier/middle click, or a click on the
+                  // key link itself (which already stops propagation)
+                  // all skip this handler rather than double-navigating
+                  // or fighting the browser's own new-tab gesture.
+                  onClick={e => {
+                    if (!shouldNavigateRow(e)) return;
+                    recordTaskOrigin(currentHref);
+                    void navigate({ to: "/tasks/$key", params: { key: t.key } });
+                  }}
                 >
                   <td className="py-1.5 pr-2 text-[0.8571rem]">
                     <Link
                       to="/tasks/$key"
                       params={{ key: t.key }}
+                      // The row's own click handler already navigates;
+                      // this is still a real anchor so the cell keeps
+                      // native Enter/keyboard activation and
+                      // modifier/middle-click open-in-new-tab, and so it
+                      // is the row's one real link rather than a bare
+                      // onClick masquerading as one. `stopPropagation`
+                      // keeps a plain click from also firing the row's
+                      // handler (which would otherwise run `navigate`
+                      // twice — harmless but pointless — and would skip
+                      // recording the origin only when this branch beat
+                      // the row's, an implementation detail no user
+                      // should be able to observe).
+                      onClick={e => { e.stopPropagation(); recordTaskOrigin(currentHref); }}
                       className="text-accent no-underline hover:underline"
                     >
                       {t.key}

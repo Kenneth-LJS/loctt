@@ -188,14 +188,15 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
           type="button"
           variant="primary"
           testId="timeline-save"
-          disabled={save.isPending}
+          loading={save.isPending}
+          aria-label="Save"
           onClick={() => {
             // Timeline is a single block: adopt the fresh document and
             // replace only this block (mirrors EstimationPanel / SET-28).
             save.mutate({ collection: "timeline", apply: () => draft });
           }}
         >
-          {save.isPending ? "Saving…" : "Save"}
+          Save
         </Button>
       </div>
     </div>

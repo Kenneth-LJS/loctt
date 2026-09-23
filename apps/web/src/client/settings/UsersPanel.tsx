@@ -13,7 +13,6 @@ import {
   useUploadAvatar,
 } from "../api/hooks/useUserMutations.ts";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
-import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
@@ -23,10 +22,12 @@ import { LoadingState } from "../ui/LoadingState.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
+import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
 import { AvatarCropper } from "./AvatarCropper.tsx";
 import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { AvatarRejected, type DecodedImage, decodeImageFile } from "./prepareAvatar.ts";
 import { RowActions } from "./RowActions.tsx";
+import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
 import { UserDeleteDialog } from "./UserDeleteDialog.tsx";
 import { supportedTimezones } from "./workflowEdits.ts";
 
@@ -175,14 +176,15 @@ function AvatarUpload({ user }: { readonly user: UserProfile }) {
             size="sm"
             variant="ghost"
             testId={`user-avatar-remove-${user.id}`}
-            disabled={remove.isPending}
+            loading={remove.isPending}
+            aria-label="Remove"
             onClick={() => {
               setProblem(undefined);
               if (preview !== undefined) { URL.revokeObjectURL(preview); setPreview(undefined); }
               remove.mutate({ id: user.id });
             }}
           >
-            {remove.isPending ? "Removing…" : "Remove"}
+            Remove
           </Button>
         )}
       </div>
@@ -305,9 +307,11 @@ function EditUserDialog({
             variant="primary"
             testId={`user-edit-save-${user.id}`}
             disabled={blocked}
+            loading={update.isPending}
+            aria-label="Save"
             onClick={save}
           >
-            {update.isPending ? "Saving…" : "Save"}
+            Save
           </Button>
         </DialogActions>
       }
@@ -581,6 +585,8 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
           variant="primary"
           testId="user-create-submit"
           disabled={blocked}
+          loading={create.isPending}
+          aria-label="Create user"
           onClick={() => {
             create.mutate(
               {
@@ -602,7 +608,7 @@ function CreateUserForm({ onDone }: { readonly onDone: () => void }) {
             );
           }}
         >
-          {create.isPending ? "Creating…" : "Create user"}
+          Create user
         </Button>
       </div>
     </div>
@@ -727,14 +733,29 @@ export function UsersPanel() {
 
   return (
     <div data-testid="settings-users">
-      <div className="mb-1 flex items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold">Users</h1>
-        <ArchivedScopeControl
-          testId="users-archived-scope"
-          value={scope}
-          onChange={setScope}
-        />
-      </div>
+      <SettingsPanelHeader
+        title="Users"
+        actions={(
+          <>
+            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
+                an icon reveal, not a permanently visible segmented
+                control — see ArchivedScopeReveal. */}
+            <ArchivedScopeReveal
+              testId="users-archived-scope"
+              panelLabel="users"
+              value={scope}
+              onChange={setScope}
+            />
+            <Button
+              variant="primary"
+              testId="user-create-open"
+              onClick={() => { setCreating(true); }}
+            >
+              New user
+            </Button>
+          </>
+        )}
+      />
       <p className="mb-4 text-[0.9286rem] text-text-secondary">
         Identities that can be assigned work and attributed activity.
       </p>
@@ -853,16 +874,6 @@ export function UsersPanel() {
           })}
         </ul>
       )}
-
-      <div className="mt-4">
-        <Button
-          variant="primary"
-          testId="user-create-open"
-          onClick={() => { setCreating(true); }}
-        >
-          New user
-        </Button>
-      </div>
 
       {creating && (
         <ResponsiveDialog title="New user" onClose={() => { setCreating(false); }}>

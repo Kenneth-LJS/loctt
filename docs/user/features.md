@@ -77,7 +77,9 @@ For the concepts behind the features:
 - **Global search is a query.** The web UI's header search is the query
   `text ~ "your terms"` — the same [query language](common/query-language.md)
   the filter bar and `loctt list --query` use.
-- **A CSV or JSON export is a report, not a backup.** Use the backup tools
+- **A CSV or JSON export is a report, not a backup.** It is offered by
+  `loctt export` and the `export_tasks` MCP tool — not by the web UI, where
+  a filtered spreadsheet dump had no use case. Use the backup tools
   (`loctt backup` / the `backup` MCP tool / Settings → Backup & restore) to
   capture something you can restore from.
 

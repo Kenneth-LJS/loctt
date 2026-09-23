@@ -254,3 +254,16 @@ describe("injection", () => {
     expect(isSafeHref("vbscript:msgbox(1)")).toBe(false);
   });
 });
+
+describe("A295 — the comment reader renders underline and highlight", () => {
+  // The comment composer is the SAME RichEditor + Toolbar as the task
+  // body, so a commenter can author these. Without a case arm here the
+  // author sees formatting while writing and loses it on post.
+  it("renders <ins> for underline and <mark> for highlight", () => {
+    const { container } = render(
+      renderCommentBody("a <ins>under</ins> and ==high== b", { resolveMention }),
+    );
+    expect(container.querySelector("ins")?.textContent).toBe("under");
+    expect(container.querySelector("mark")?.textContent).toBe("high");
+  });
+});

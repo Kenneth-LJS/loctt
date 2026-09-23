@@ -86,6 +86,13 @@ const GROUPS: readonly Group[] = [
       { id: "bold", label: "Bold", icon: "bold", shortcut: `${MOD}B`, active: "bold", run: e => e.chain().focus().toggleBold().run() },
       { id: "italic", label: "Italic", icon: "italic", shortcut: `${MOD}I`, active: "italic", run: e => e.chain().focus().toggleItalic().run() },
       { id: "strike", label: "Strikethrough", icon: "strikethrough", shortcut: `${MOD}⇧S`, active: "strike", run: e => e.chain().focus().toggleStrike().run() },
+      // K107. Toggled via the generic `toggleMark` for the same reason
+      // super/subscript are: the marks in `extensions.ts` are plain
+      // `Mark.create` definitions with no command of their own. Their
+      // keyboard shortcuts DO exist (declared on the marks themselves),
+      // so both are named here for the tooltip.
+      { id: "underline", label: "Underline", icon: "underline", shortcut: `${MOD}U`, active: "underline", run: e => e.chain().focus().toggleMark("underline").run() },
+      { id: "highlight", label: "Highlight", icon: "highlight", shortcut: `${MOD}⇧H`, active: "highlight", run: e => e.chain().focus().toggleMark("highlight").run() },
     ],
   },
   {

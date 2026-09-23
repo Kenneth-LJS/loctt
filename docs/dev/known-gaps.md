@@ -10,6 +10,98 @@ and delete an entry the moment it is fixed.
 
 ## Code defects
 
+### `GET /api/views` reports a DSL-broken advanced filter as a healthy view — RESOLVED 2026-09-23
+
+UI-9's root defect (a broken saved view 500-ing the task list with a
+Retry that can never succeed) is fixed — see `docs/dev/decisions.md`
+§ 8 A284 and `docs/dev/design/ui-issues.md` UI-9. **This entry's
+classification gap is now also fixed** (PM ruling, 2026-09-23) — the
+two objections below, which this entry previously used to argue for
+leaving it unfixed, did not survive scrutiny.
+
+`packages/core/src/config/queries.ts` `resolveFilters` used to validate
+a saved view's stored `filters` against `FilterSchema` — a **shape**
+check only. For an advanced filter, `FilterSchema` accepts `{kind:
+"advanced", query: <any string>}`; the DSL text itself was never
+tokenized/parsed at load time, only when the view actually ran
+(`filtersToNode` → `advancedToNode`, `packages/core/src/query/filters.ts`).
+So a view whose query was e.g. `status = = = done AND` loaded as an
+ordinary healthy `SavedQuery` and was absent from
+`queriesConfig.broken` — the `BrokenSavedQuery` marker only ever fired
+for a shape-invalid entry (e.g. `filters: "not a list"`, covered by
+`apps/web/src/server/server.view-broken-repair.test.ts`).
+
+Consequence (now closed): `SavedViewsPanel`'s entire broken-row
+apparatus — the marker, the raw-YAML disclosure, "Replace…", the
+inert-Save gate — was unreachable for this defect class. A user had no
+way to discover, from `GET /api/views` or the settings panel, that a
+saved view would fail when clicked; they found out only by clicking it
+(where they got an actionable error, per A284, but no advance warning).
+
+**The fix:** `resolveFilters` now additionally runs `filtersToNode` on
+the entry's shape-validated filters (after the existing `FilterSchema`
+check, before returning ok). A thrown `FilterError` — unparseable
+advanced DSL, or a shape-valid-but-uncombinable simple filter (e.g.
+several values under `<`) — degrades the entry to `BrokenSavedQuery`
+exactly like a shape failure, carrying `error: err.message` and
+`position` (best-effort, extracted from the message text — see
+`extractPosition` in `queries.ts`, since `FilterError` itself has no
+`position` field) when available. Object-fatal problems (duplicate id,
+missing array, missing id/name, bad sort/display) are untouched — they
+still throw before `resolveFilters` is reached or inside the tolerant
+schema.
+
+**Why the two objections in the earlier version of this entry do not
+hold, on inspection:**
+
+1. *"Every view would pay a DSL-parse cost at every config load."* True
+   but not a real cost at this scale: `queries.yaml` holds a handful to
+   low hundreds of saved views in realistic use, `filtersToNode` is a
+   single tokenize+parse pass per filter (the same work `loctt list`
+   and every view-running call already do per invocation), and this
+   only runs once per config **load**, not per task in the list. No
+   measurement showed this mattering, and none was produced before this
+   entry recommended weighing it — it was a plausible-sounding but
+   unquantified objection.
+2. *"`resolveFilters`'s contract is deliberately shape-only per its
+   docstring."* The **file's own top-of-function docstring for
+   `parseQueriesConfig`** (right above `resolveFilters`'s call site)
+   already states the opposite: *"one entry whose filters no longer
+   validate (a hand edit, most often) must not blank the whole catalog
+   ... a bad one becomes a `BrokenSavedQuery` marker carrying its raw
+   text and the validation message"* — unparseable DSL is exactly
+   "filters no longer validate." The "shape-only" framing was a
+   narrower reading of one function's docstring that the surrounding
+   contract never actually promised; `resolveFilters` was updated to
+   match the file's own already-stated contract, not extended past it.
+
+**Verification:** on the seeded playground tracker's "Broken view"
+(`01M33FP00000000000000000A6`, `.loctt/config/queries.yaml`),
+`GET /api/views` now returns it under `broken` (with
+`error: "advanced filter does not parse: expected value but got \"=\" at
+position 9"`, `position: 9`) instead of `queries`. New tests in
+`packages/core/src/config/queries.test.ts` cover: a DSL-broken view
+classified broken with the parser's message; a healthy view loading
+fine beside it; object-fatal problems still throwing; an uncombinable
+simple filter also degrading (same path, different `FilterError`
+cause). All four were red-proven (reverted the fix, watched them fail,
+restored byte-exact) before being counted as passing.
+
+**Fallout needing attention (outside this change's file scope):** two
+pre-existing tests asserted the *old* classification as the expected
+contract and now fail —
+`apps/web/src/server/server.view-unparseable-dsl.test.ts` (its first
+test is literally titled "is reported healthy by GET /api/views (the
+classification gap, tracked separately)", and its other two assert a
+run-time 400 that no longer fires because the view is now `unknown`
+to the run path, not merely "resolves to a filter that fails") and
+`apps/mcp/src/tools/list-tasks-broken-view.test.ts` (asserts a
+run-time `errorResult`, same cause). Both are in the CLAUDE.md category
+"a fix requires editing a green test because that test was asserting
+the bug" — they need rewriting to assert the new load-time
+classification instead of the old run-time failure shape, by whoever
+owns `apps/web/src/server` and `apps/mcp/src/tools`.
+
 ### `@verifies CONFIG-5` tags a case that does not exist — coverage gate red
 
 Four test files — `PreferencesPanel.test.tsx`, `ProjectsPanel.test.tsx`,
@@ -712,3 +804,396 @@ shapes — precisely the API a new dialog would reach for.
 **One reviewer claim did not hold:** that K102 carries no `Status:` line.
 It does. Checked rather than actioned — the session's rate of
 confidently-reported-but-wrong findings is why.
+
+---
+
+## Tap targets are 21px, not the 24px the code claims (WCAG 2.5.8 AA)
+
+**Resolved 2026-09-23 for `Checkbox` (K31, Ken's ruling).** The visible
+box now grows to `h-7 w-7` (24.5px, measured live) instead of hiding an
+oversized hit area behind a smaller drawn box — Ken rejected the
+overlay approach ("sounds like a bad hack. make the checkbox bigger
+instead?!?!") in favour of the honest fix. Row height cost, measured:
+desktop list-view rows went from 41.16px to 43px (+1.84px, ~4.5%); the
+narrow card view is unaffected since its row height is text-driven. See
+`decisions.md` § K31 for the full record and revert path. **The header
+user-menu button (22px) and skip link (16px) are judged separately below
+and left as-is** — not part of this resolution.
+
+**Found:** 2026-09-22, measuring the app at 375×812 — the breakpoint the
+session's two UI audits both left unreached.
+
+**Measured, live, on the built client:**
+
+| Control | Rendered | Claimed |
+|---|---|---|
+| `Checkbox` (input AND wrapper) | **21 × 21px** | 24px |
+| User menu button (header) | **22 × 22px** | — |
+| Label chip (a real `<button>`) | 63.6 × **21.2px** | — |
+| "Skip to main content" link | 23 × **16px** | — |
+
+`ui/Checkbox.tsx:31-60` cites "WCAG 2.5.8 AA — #15" and states the 24px
+target **three times** (`:33`, `:35`, `:43`, `:52-53`, `:60`).
+
+**The mechanism it describes is correct and works**: the real `<input>`
+is `absolute inset-0`, transparent, filling its wrapper, so the whole
+wrapper is clickable — measured input and wrapper are identical. The
+defect is purely the number. `h-6`/`w-6` is `1.5rem`, and
+`styles/index.css:142` sets `html { font-size: 87.5% }`, so 1.5rem
+renders **21px**, not 24px.
+
+So the component does exactly what its docstring says while missing the
+standard it cites. A reader checking the claim against the class name
+would agree with it; only a measurement disagrees.
+
+**Why this is more than one component.** The same 0.875× applies to
+every rem-sized control. `design-system.md:184-186` documented
+`IconButton` as 28/32px when it actually renders 24.5/28px — corrected
+during this session. This entry is the same root cause reaching the
+a11y claims. Any size assertion in this codebase derived from a Tailwind
+utility name rather than a measurement should be assumed wrong by 12.5%.
+
+**Not fixed here** because the fix is a judgement call, not a
+correction: bumping `Checkbox` to `h-7` (24.5px) fixes the claim but
+changes the visual rhythm of every list row and the bulk-select column,
+which is a design change. The alternatives — raising the root font size,
+or expanding hit areas without changing visual size — have wider blast
+radii still.
+
+**To reproduce:** load any list at 375×812 and measure
+`document.querySelector('input[type=checkbox]').getBoundingClientRect()`.
+
+**Related but separate:** the header's user-menu button (22px) and the
+skip link (16px) are below 24px for their own reasons, not the root-font
+one. They want their own look.
+
+**Judged 2026-09-23, left as-is.** Header user-menu button: measured
+live at 22×22px, a fixed size shared with other 22px avatar-sized
+controls in the header row; growing it alone would misalign it against
+its siblings and was outside this ticket's file set (`shell/Header.tsx`
+is in-scope, but the ticket asked for a judgment call here, not a
+mandated fix — see `decisions.md` § K31). Skip link: measured live at
+23×16px, but it is `sr-only`/off-screen until focused and has no
+neighbour to misalign with, so a keyboard-only, briefly-visible control
+sized under 24px was judged acceptable — the WCAG 2.5.8 target-size
+success criterion's own intent (avoid mis-taps on a control users aim
+for with a finger or imprecise pointer) doesn't apply to a link that is
+invisible except during keyboard focus. Neither was changed.
+
+---
+
+## `ui/Menu` never restores focus on close (every consumer affected)
+
+**Resolved 2026-09-23.** `Menu.tsx` now records the trigger
+(`document.activeElement` at open time) and restores focus to it on
+Escape and outside-click, guarded by `el.isConnected` so a trigger that
+unmounted before close (A11Y-15) is skipped rather than throwing or
+focusing a detached node. Selecting an item does NOT restore focus,
+deliberately — see `decisions.md` § A298 for the reasoning and the
+options considered. `IconEmojiPicker`, built on `Menu`, needed no
+changes; the fix is at the render-prop/portal level all 11 consumers
+share.
+
+**Found:** 2026-09-22 sweep; reproduced live before recording.
+
+**Measured**, driving the list view's ⋯ menu in a real browser:
+
+| Step | `document.activeElement` |
+|---|---|
+| Focus the trigger | `view-actions-menu` |
+| Open the menu | `BUTTON` with `role="menuitem"` — correct |
+| Press Escape | **`BODY`** |
+
+A keyboard user who opens the ⋯ menu and dismisses it is dumped to the
+top of the document and has to Tab back through the whole page.
+
+**Cause.** `apps/web/src/client/ui/Menu.tsx` has **no focus-restore
+logic at all** — its only `document.activeElement` reference is
+`Menu.tsx:124`, which drives roving focus *within* the open panel.
+Nothing records the trigger before opening or returns focus to it after.
+
+**Distinct from the already-recorded dialog gap.** `ViewFormDialog` /
+`LabelEditDialog` drop focus because they never pass `returnFocusTo`
+into `useFocusTrap` — the mechanism exists and they don't use it. `Menu`
+does not use `useFocusTrap` at all, so there is no hatch to pass. Same
+symptom, different fix.
+
+**Blast radius is every `Menu` consumer**, not one component: the list
+and board ⋯ menus, the per-column board menus, `IconEmojiPicker` (built
+on `Menu`), and any future caller. That makes it a primitive-level fix
+rather than a per-call-site one — and therefore worth doing once,
+properly, rather than patching a symptom.
+
+**To reproduce:** focus `[data-testid="view-actions-menu"]`, click it,
+press Escape, read `document.activeElement`.
+
+---
+
+## Icon picker grid has no arrow-key navigation
+
+**Found:** 2026-09-22 sweep; verified against source.
+
+The icon grid renders up to **225 cells**. The only keyboard route
+through it is Tab, one cell at a time — up to 225 presses to reach the
+last icon.
+
+**Cause.** `apps/web/src/client/ui/IconEmojiPicker.tsx` contains exactly
+one `onKeyDown` (`:330`), and it handles **Enter on the free-text emoji
+input** only. There is no Arrow/Home/End handling for the grid.
+
+**Why it is worth fixing rather than accepting.** The app already
+implements roving grid/list focus twice — `ui/Dropdown.tsx` (A11Y-10,
+`menuitemcheckbox` rows with real roving DOM focus) and the segmented
+`ArchivedScopeControl` built this session. The pattern is in the
+codebase; this component just never adopted it. That is
+`design-review.md`'s "built is not adopted" finding recurring.
+
+**Note:** a grid wants two-dimensional navigation (Left/Right within a
+row, Up/Down between rows), which is a step beyond the one-dimensional
+roving focus the existing two implement. Not a copy-paste.
+
+## Palette `orange` light value is 3.84:1 on white — below WCAG AA
+
+**Found:** 2026-09-22, during the 7 → 18 palette expansion (A288), by
+computing contrast for every entry rather than by eye. **Pre-existing:
+this expansion did not introduce it and does not fix it.**
+
+`BUILTIN_PALETTE`'s `orange` light value is `#CC6600`. Against
+`--bg-surface` in light mode (`#FFFFFF`) that is **3.84:1** — below the
+4.5:1 WCAG AA needs for normal text. Against light `--bg-canvas`
+(`#F6F8FC`) it is worse still, 3.61:1. The dark value (`#F0A868` on
+`#141416`, 9.20:1) is fine, as is every other one of the 36 values in
+the palette.
+
+**Reproduce.**
+
+```bash
+node -e '
+const c=h=>{h=h.slice(1);const f=i=>{const v=parseInt(h.slice(i,i+2),16)/255;
+return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4)};
+return 0.2126*f(0)+0.7152*f(2)+0.0722*f(4)};
+const r=(a,b)=>{const x=c(a),y=c(b);return ((Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)).toFixed(2)};
+console.log("orange on white:", r("#CC6600","#FFFFFF"));'
+# → orange on white: 3.84
+```
+
+**Why it was not fixed here.** `#CC6600` is a literal copy of the
+`--feedback-warn-fg` / `--priority-high` design token, so the palette is
+faithfully mirroring the token file — the defect is in the token, and
+changing it only in the palette would make the two disagree, which is
+the exact drift `color.ts` exists to prevent. Changing it in both would
+alter the rendered colour of live data (the seeded tracker has `orange`
+in use) for a defect this work did not create and was not scoped to.
+
+**It is fenced, not forgotten.** `color.test.ts`'s contrast sweep
+exempts `orange` **by name** rather than lowering the 4.5:1 bar, so
+every other entry is still held to AA. A companion test,
+*"still reports the known orange shortfall, so it cannot be forgotten"*,
+asserts the failure still exists — so whoever fixes the token is forced
+to remove the exemption and this entry at the same time.
+
+**Fixing it properly** means moving `--feedback-warn-fg` (and the
+palette entry with it) to something like `#B35900` (4.72:1) and
+re-checking every surface that paints warn/high-priority, plus
+re-running the ΔE sweep, since moving `orange` changes its distance to
+`amber` and `red`.
+
+## Two-dimensional roving grid focus now HAS a reference implementation
+
+**Updates the "Icon picker grid has no arrow-key navigation" entry
+above**, which notes that a grid wants two-dimensional navigation and
+that this is "a step beyond the one-dimensional roving focus the
+existing two implement. Not a copy-paste."
+
+As of 2026-09-22 (A289) it is a copy-paste. `ui/ColorPicker.tsx`'s
+`onGridKeyDown` implements exactly that pattern over a `role="radiogroup"`
+of `role="radio"` cells: single tab stop via `tabIndex` 0/-1 on the
+selected cell, Left/Right by one, Up/Down by `GRID_COLUMNS`, Home/End to
+the ends, clamped rather than wrapped, and **focus movement that does
+not select**.
+
+The icon picker's grid is the same shape (a wrapped grid of
+equally-sized cells in a portalled panel), so adopting it is mechanical
+— the only value to change is the column count, which for the icon grid
+is 8 (`grid-cols-8`) against the colour grid's 6. Note the
+does-not-select rule transfers too: the icon picker also commits and
+closes on pick.
+
+This does not fix the icon picker. It removes the stated reason the fix
+was non-trivial.
+
+---
+
+## ~~The 18-colour palette passes ΔE but reads as a generated ramp~~ — FIXED (A290)
+
+**Fixed 2026-09-22 (A290).** The twelve non-token entries were re-picked
+by *character* (deep / vivid / muted) instead of by hue slot, and a
+variety test now enforces the property the ΔE floor could not.
+
+| | A288 (was) | A290 (now) |
+|---|---|---|
+| min ΔE light / dark | 15.02 / 15.03 | **18.15 / 19.43** |
+| largest same-saturation cluster, light | 9 | **4** |
+| largest same-saturation cluster, dark | 10 | **5** |
+| HSV saturation sd, light / dark | 0.179 / 0.131 | **0.219 / 0.173** |
+
+Both guarantees improved together: separation went *up* while the
+clustering that made it look uniform went down.
+
+**The A288 premise that turned out to be false.** That pass recorded
+"~18 is roughly the arithmetic ceiling for 18 entries under the
+contrast clamp", and this file repeated it. It is wrong. Re-measured by
+farthest-point search over every AA-passing sRGB colour, the true
+ceiling at 18 entries is **ΔE ≈ 33 in both modes**. A288 hit ~18
+because it searched a fixed-chroma hue ramp, not because the space was
+full. **18 entries was never the problem**, so no reduction in count
+was needed — the recommendation to consider a smaller set is withdrawn.
+
+**Two structural facts worth not re-deriving**, both now in `color.ts`:
+
+1. **AA is a hard L\* clamp**, not a preference: light mode admits
+   nothing above L\* ≈ 51, dark nothing below L\* ≈ 55. "Some deep,
+   some bright" has to happen *inside* those windows.
+2. **`slate` cannot be a neutral grey-blue.** Every desaturated value
+   tried re-collided with `gray` (ΔE 9.6–12.8 dark) — the original
+   A288 defect returning. It must carry real chroma.
+
+**The test that now guards it** is *"spreads saturation instead of
+clustering it"* in `color.test.ts`: it buckets HSV saturation 0.05-wide
+and caps any bucket at 5 entries. Cluster size was chosen over a
+standard-deviation floor because sd separates the old palette from the
+new by only 1.32× (0.131 → 0.173) — too thin to set a threshold in —
+while cluster size separates them by 4× and names the defect directly.
+The cap cannot go below 5: the crowded dark bucket holds `blue`,
+`orange` and `red`, three byte-frozen token originals.
+
+*Original entry, for the record:*
+
+**Found:** 2026-09-22, eyeballing the rebuilt picker in dark mode after
+the palette expansion (A288).
+
+**The metric is satisfied.** Independently re-measured from source:
+18 entries, minimum pairwise ΔE **15.02 light / 15.03 dark** — up from
+slate/gray's **4.10 / 2.31**, where the dark pair was effectively one
+colour twice. That defect is genuinely fixed, and a test now enforces
+the floor.
+
+**But ΔE measures distance, not variety.** Of the 11 new entries, **9
+sit at exactly saturation 0.50** (range 0.34–0.52), while the 6
+surviving originals span 0.05–0.66. The new colours are one saturation
+with the hue rotated — arithmetically far apart, visually a single
+family. In dark mode the grid's rows 2–3 read as tints of each other.
+
+| Set | Dark saturation |
+|---|---|
+| Originals (teal, blue, green, orange, red, gray) | 0.05 – 0.66 |
+| The 11 new | **0.34 – 0.52, nine at 0.50** |
+
+**Why the test did not catch it.** The floor test asks "is every pair at
+least ΔE 15 apart?" — a pairwise-minimum question. A hue ramp at fixed
+saturation answers yes while still looking uniform, because ΔE is
+dominated by hue difference at constant chroma. Distinctness and
+variety are different properties; only the first is enforced.
+
+**Not fixed** because the remedy is a design pass, not a threshold
+change: vary chroma and luminance across the set so colours differ in
+more than hue, the way the six originals do. Re-running the ΔE sweep
+after any such pass is mandatory — the two constraints pull against
+each other, and the agent's own search found ~18 to be the arithmetic
+ceiling for a ΔE floor at 18 entries under the contrast clamp.
+
+Worth considering alongside it: whether 18 is the right count at all. A
+smaller, genuinely varied set may serve labelling better than a larger
+uniform one.
+
+## `<ins>` underline is a raw tag to `loctt show` and to MCP agents (accepted)
+
+**Status: accepted by Ken, knowingly.** Not a defect to fix — the cost
+was weighed against the alternatives before the mark shipped (A295).
+
+`loctt show` prints the body verbatim
+(`apps/cli/src/commands/task-crud.ts`) and MCP `get_task` returns raw
+body text. Neither applies markdown processing. So a body containing
+underline shows the literal tags:
+
+```
+This is an <ins>underlined</ins> word.
+```
+
+That is 11 characters of noise per use in the terminal and in an
+agent's context. It is the unavoidable cost of underline having no
+markdown spelling: the alternatives were `<u>` (which GitHub strips
+silently, so the formatting is *lost* rather than noisy) and a custom
+delimiter (noise in *every* tool, including GitHub, rather than just
+the plain-text ones). Underline is rare in issue-tracker prose, so the
+frequency is low even though the per-occurrence cost is visible.
+
+`==highlight==` has the same property but is cheaper (2 characters per
+side) and is a convention readers of Obsidian/pandoc markdown already
+recognise.
+
+**Agents must not "clean this up".** `docs/dev/reference/markdown-extensions.md`
+§ For agents says so explicitly; rewriting `<ins>` to `<u>` would
+silently destroy the user's formatting on GitHub.
+
+## Two *adjacent* underlined spans merge into one on a rich edit
+
+A mark spanning several text runs is serialized per run, so an
+underline covering `under ` plus a bold `bold` emitted
+`<ins>under </ins><ins>**bold**</ins>` — visible noise that grew by two
+tags on every save-reopen-save cycle. `inlineText`
+(`apps/web/src/client/editor/markdown.ts`) now collapses `</ins><ins>`.
+
+**The cost:** a user who *deliberately* writes two adjacent underlined
+spans with nothing between them gets them merged into a single span on
+the next rich-mode edit. Rendered output is identical (`<ins>a</ins><ins>b</ins>`
+and `<ins>ab</ins>` look the same), so this is invisible in every
+renderer; it is only observable by diffing the stored bytes.
+
+**To reproduce:** store a body containing `<ins>a</ins><ins>b</ins>`,
+edit anything in rich mode, save, and read the file — it is now
+`<ins>ab</ins>`.
+
+**Not fixed** because the general remedy (merge adjacent runs sharing a
+mark, before wrapping) would also change the spelling of `**`/`*`/`~~`
+output, rewriting bodies this feature never touched — precisely the
+normalization `markdown.ts` exists to avoid. The scoped fix trades an
+invisible, idempotent merge for a visible, unbounded growth; that is
+the better trade, but it is a trade.
+
+---
+
+## The label pill's colour styling had NO test — found by mutation, now partly closed
+
+Found while extracting the pill's visual rule into
+`apps/web/src/client/ui/labelPillStyle.ts` (A300). Per CLAUDE.md's
+"extending code someone else tested" rule, the pill's existing coverage
+was mutated to check it still covered its subject.
+
+**It did not.** Replacing the pill's entire inline style with `{}` in
+`apps/web/src/client/list/cells.tsx` left **all 352 `list/` tests
+green**. The three derived values the pill is built from — the
+`${color}22` background wash, the `${color}66` border and the
+`readableOn(color)` text colour — were asserted nowhere. A regression
+that rendered every label pill unstyled would have shipped green.
+
+`list/LabelOverflow.test.tsx` covers the `+N` overflow behaviour
+thoroughly (reveal, filter-on-click, Escape, outside-click) and passes
+colours in its fixtures, but never asserts anything about how they are
+painted. Nobody wrote a bad test; the test was written for overflow and
+the colour rule grew beside it.
+
+**Partly closed.** `ui/ThemePreview.test.tsx` now contains
+"paints a list pill with exactly labelPillStyle's derived values",
+which renders a real `LabelsCell` and compares its computed style
+against a reference element styled with `labelPillStyle` directly
+(a literal comparison would assert jsdom's `rgba()` re-serialisation
+rather than the wiring). It is red-proven: reverting
+`style={labelPillStyle(color)}` to `style={{}}` fails it.
+
+**Still open:** that test lives in the `ui/` preview suite because that
+is where the shared function is. The `list/` suite still has no colour
+assertion of its own, so a future change to `LabelsCell` that stops
+rendering pills through `LabelPill` altogether would not be caught
+there. The other cells (`StatusBadge`, priority, task-type) were not
+audited and may have the same gap.

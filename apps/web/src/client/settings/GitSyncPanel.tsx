@@ -552,10 +552,11 @@ function DisabledState({ status, onAdopted }: {
                         type="button"
                         variant="primary"
                         testId="git-adopt-confirm-button"
-                        disabled={enable.isPending}
+                        loading={enable.isPending}
+                        aria-label="Adopt existing branch"
                         onClick={() => { enable.mutate({ adopt: true }); }}
                       >
-                        {enable.isPending ? "Adopting…" : "Adopt existing branch"}
+                        Adopt existing branch
                       </Button>
                       <Button
                         type="button"
@@ -579,10 +580,11 @@ function DisabledState({ status, onAdopted }: {
                         type="button"
                         variant="primary"
                         testId="git-enable-confirm-button"
-                        disabled={enable.isPending}
+                        loading={enable.isPending}
+                        aria-label="Enable git sync"
                         onClick={() => { enable.mutate(); }}
                       >
-                        {enable.isPending ? "Enabling…" : "Enable git sync"}
+                        Enable git sync
                       </Button>
                       <Button
                         type="button"
@@ -778,18 +780,22 @@ function EnabledState({ status, checkedAt, onRefresh }: {
           variant="secondary"
           testId="git-publish"
           disabled={busy || reconcileInProgress}
+          loading={publish.isPending}
+          aria-label="Publish"
           onClick={() => { publish.mutate(); }}
         >
-          {publish.isPending ? "Publishing…" : "Publish"}
+          Publish
         </Button>
         <Button
           type="button"
           variant="secondary"
           testId="git-sync"
           disabled={busy || reconcileInProgress}
+          loading={sync.isPending}
+          aria-label="Sync"
           onClick={() => { setSyncProgress(undefined); sync.mutate(); }}
         >
-          {sync.isPending ? "Syncing…" : "Sync"}
+          Sync
         </Button>
       </section>
 
@@ -1097,10 +1103,11 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                   type="button"
                   variant="secondary"
                   testId="git-disable-confirm-button"
-                  disabled={disable.isPending}
+                  loading={disable.isPending}
+                  aria-label="Disable git sync"
                   onClick={() => { disable.mutate(); }}
                 >
-                  {disable.isPending ? "Disabling…" : "Disable git sync"}
+                  Disable git sync
                 </Button>
                 <Button
                   type="button"

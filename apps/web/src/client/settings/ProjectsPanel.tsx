@@ -5,15 +5,16 @@ import { useState } from "react";
 import { useProjectsScoped } from "../api/hooks/sidebarData.ts";
 import { useInfoFresh } from "../api/hooks/useInfo.ts";
 import { useDeleteProject } from "../api/hooks/useProjectMutations.ts";
-import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
 import { CreateProjectDialog } from "./CreateProjectDialog.tsx";
 import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { DeleteProjectDialog } from "./DeleteProjectDialog.tsx";
 import { ProjectEditDialog } from "./ProjectEditDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
+import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
 
 /**
  * Settings → Projects (PRU-5, PRU-6, PRU-7, PRU-17, PRU-19, PRU-20,
@@ -204,7 +205,30 @@ export function ProjectsPanel() {
 
   return (
     <div data-testid="settings-projects">
-      <h1 className="mb-1 text-lg font-semibold">Projects</h1>
+      <SettingsPanelHeader
+        title="Projects"
+        actions={(
+          <>
+            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
+                an icon reveal rather than a permanently visible segmented
+                control — see ArchivedScopeReveal. Used to sit in its own
+                always-visible row above the table. */}
+            <ArchivedScopeReveal
+              testId="projects-archived-scope"
+              panelLabel="projects"
+              value={scope}
+              onChange={setScope}
+            />
+            <Button
+              variant="primary"
+              testId="project-create-open"
+              onClick={() => { setCreating(true); }}
+            >
+              New project
+            </Button>
+          </>
+        )}
+      />
       <p className="mb-1 text-[0.9286rem] text-text-secondary">
         Each project has its own key prefix and counter. Set the workspace
         default — where new tasks land for a user with no personal default —
@@ -280,14 +304,6 @@ export function ProjectsPanel() {
         </div>
       )}
 
-      <div className="mb-3">
-        <ArchivedScopeControl
-          testId="projects-archived-scope"
-          value={scope}
-          onChange={setScope}
-        />
-      </div>
-
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
@@ -341,16 +357,6 @@ export function ProjectsPanel() {
           )}
         </tbody>
       </table>
-
-      <div className="mt-4">
-        <Button
-          variant="primary"
-          testId="project-create-open"
-          onClick={() => { setCreating(true); }}
-        >
-          New project
-        </Button>
-      </div>
 
       {creating && (
         <CreateProjectDialog existing={items} onClose={() => { setCreating(false); }} />

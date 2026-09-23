@@ -5,9 +5,11 @@ status chips bar, card rendering from the current user's `card_layout`,
 WIP indicators, and drag-and-drop reordering backed by `board_rank`
 lexoranks. Filtering is the shared filter bar and lives in
 [flow-list.md](flow-list.md); what happens *after* a card click is
-[flow-tasks.md](flow-tasks.md); the "+ Add task" button on a column
-header opens the modal specified in
-[flow-task-create.md](flow-task-create.md). Column *configuration*
+[flow-tasks.md](flow-tasks.md); the board-level empty state's "+ New
+task" button (BRD-40) opens the modal specified in
+[flow-task-create.md](flow-task-create.md) — the same modal the shell
+header's "+ New task" opens (UI-13: the board carries no separate
+create button of its own). Column *configuration*
 (editing `workflow.boards.columns` in Settings) is
 [flow-settings.md](flow-settings.md); this doc only covers the board
 *consuming* that config.
@@ -308,7 +310,7 @@ header opens the modal specified in
 ### BRD-40 · M3 · minor · P6 P9
 **A tracker with zero tasks shows a board-level empty state, not six identical placeholders.** Fresh tracker.
 
-- One board-level empty state explains there are no tasks yet and offers "+ Add task".
+- One board-level empty state explains there are no tasks yet and offers "+ New task" (UI-13: renamed from "+ Add task" — "New" is the house term used everywhere else a create action is offered, e.g. "+ New project", "+ New view", "+ New milestone"). This is the board's only create affordance (UI-13 removed the header-duplicate "+ Add task" that used to sit beside the page title); on an empty board there is nothing else to click, so it is not a duplicate.
 - Columns still render (so the user can see the workflow shape) but the six per-column placeholders do not read as six separate errors.
 
 ## C. Error cases

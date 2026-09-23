@@ -30,6 +30,8 @@ features use the on-disk conventions documented here so that:
 | Block KaTeX | `$$\nexpr\n$$` | LocTT extension |
 | Superscript | `^text^` | Pandoc-style |
 | Subscript | `~text~` | Pandoc-style (single tilde — distinct from `~~strikethrough~~`) |
+| Underline | `<ins>text</ins>` | **Not `<u>`** — GitHub's sanitiser strips `u` silently (see A295). `ins` is on its allowlist and browsers underline it by default. Inline raw HTML, so markdown *inside* it still parses |
+| Highlight | `==text==` | Obsidian / pandoc convention. Renders `<mark>`. Degrades to visible literal text in tools without the extension |
 | Mention | `@user:<id>` | LocTT extension; renderer resolves to display name |
 | Task reference | `T-123` | Autolinked at render time. No on-disk syntax — bare keys are detected and linked |
 | Image embed | `![alt](attachments/<name>)` | Standard markdown |
@@ -109,7 +111,8 @@ delete the content while reporting success.
 
 **Only two things trigger it: footnotes, and HTML tags outside the
 allowlist.** Every LocTT extension — inline and block KaTeX, `^sup^`,
-`~sub~`, mentions, attachment embeds — has a custom TipTap node
+`~sub~`, `<ins>` underline, `==highlight==`, mentions, attachment
+embeds — has a custom TipTap node
 (`apps/web/src/client/editor/extensions.ts`), so those stay *visually
 editable* rather than being detected and banished to source mode. A
 detector that over-reports pushes users into source mode for content
@@ -186,6 +189,14 @@ tokens in the table above. **Do not normalize them.** In particular:
 
 - `^x^` and `~x~` (single tilde) are LocTT-extension super/sub-script.
   Strip them and you lose user content.
+- `<ins>x</ins>` is **underline**, not an edit-tracking annotation. The
+  tag is borrowed because it is the only one that both survives
+  GitHub's sanitiser and underlines by default (A295). Do not "modernize"
+  it to `<u>` — GitHub strips `<u>` silently and the user's formatting
+  vanishes. Markdown inside it is ordinary markdown: leave `**bold**`
+  as asterisks rather than converting the run to HTML.
+- `==x==` is **highlight**. It is markdown, not a tag; do not rewrite it
+  to `<mark>` and do not treat the `==` as an equality operator.
 - `$expr$` and `$$\nexpr\n$$` are KaTeX. Strip them and you lose math.
 - `@user:<uuid>` is a mention reference. Replacing it with a
   display-name string will break the mention link on re-render.

@@ -477,7 +477,7 @@ test.describe("MSL — the milestones view", () => {
     await expect(page.locator(`[data-milestone-id="${alpha}"]`)).toHaveCount(0);
 
     // Revealed by the affordance.
-    await page.getByTestId("milestones-archived-scope").selectOption("all");
+    await page.getByTestId("milestones-archived-scope-all").click();
     await expect(page.locator(`[data-milestone-id="${alpha}"]`)).toHaveCount(1);
 
     // Without unarchiving it: the file still says archived.
@@ -1134,7 +1134,7 @@ test("the milestones panel archives and unarchives without hiding the row", asyn
   // "all" and reading the marker there.
   await rowAction(page, row, "milestone-archive-toggle");
   await expect(row).toHaveCount(0);
-  await page.getByTestId("milestones-archived-scope").selectOption("all");
+  await page.getByTestId("milestones-archived-scope-all").click();
   await expect(row).toHaveAttribute("data-milestone-archived", "true");
   await expect(row.getByTestId("milestone-archived-marker")).toBeVisible();
   await expectRowActionText(page, row, "milestone-archive-toggle", "Unarchive");

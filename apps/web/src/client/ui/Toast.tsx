@@ -22,9 +22,28 @@ import { Icon } from "./Icon.tsx";
  * to reach it — that is the toast's whole job, and the "Open" link is
  * the escape hatch for exactly the non-matching case.
  *
+ * The web export (UI-5, 2026-09-22) was the second case, and it was the
+ * same shape rather than a new exception: the export menu closed itself
+ * before the request resolved, so by the time the outcome was known the
+ * control that started it had unmounted. It used to render its failure
+ * and skipped-row notices *inside* that menu's panel, which meant a
+ * click anywhere else destroyed the message and the Retry button with
+ * it — verified in a browser, not inferred. That export was removed
+ * from the web in K30-web (Ken, 2026-09-23), so the caller is gone; the
+ * rule it established is kept because it generalises.
+ *
+ * So the rule, stated once rather than enumerated per caller: **a
+ * toast is for an outcome whose causing control has already gone by
+ * the time the outcome arrives.** Anything that can still point at its
+ * own cause must, per P4/ERR-14.
+ *
  * This is deliberately **not** a general notification channel. It
- * takes no error variant, because an error that can point at its own
- * cause should.
+ * carries error *content* (export failures do), but takes no error
+ * *variant* — no distinct styling or urgency — because no caller has
+ * needed one: an export failure that already names its reason and
+ * offers Retry is served by the same calm `role="status"` as a
+ * success. If a third caller wants visually distinct errors, that is
+ * the trigger to add a real `variant`, not to widen this rule.
  */
 
 export interface Toast {

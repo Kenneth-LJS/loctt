@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { ActivityPanel } from "../activity/ActivityPanel.tsx";
@@ -32,6 +32,7 @@ import { AttachmentsPanel } from "../attachments/AttachmentsPanel.tsx";
 import { BodyEditor } from "../editor/BodyEditor.tsx";
 import { buildLookups } from "../list/lookups.ts";
 import { RelationshipsPanel } from "../relationships/RelationshipsPanel.tsx";
+import { takeTaskOrigin } from "../router/taskOrigin.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
@@ -98,6 +99,21 @@ export function TaskDetail({
   const task = useTask(taskRef);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const router = useRouter();
+  // UI-12. The route this task was opened FROM, so the back affordance
+  // below can return there exactly (filters, sort, page and all)
+  // instead of a hardcoded "/list". `useState(() => …)` runs the
+  // initializer exactly once, on this component's first render — and
+  // the route keys `TaskDetail` on `taskRef` (router/index.tsx), so a
+  // fresh mount happens on every task navigated to, never a reused one
+  // that could pick up a stale origin from the task before it.
+  //
+  // `takeTaskOrigin` returns undefined on a cold load (direct link,
+  // refresh, a shared URL) by construction — see taskOrigin.ts for why
+  // that can't be answered any other way — and `undefined` here means
+  // "render no back control at all", per Ken's ruling. It is never
+  // "unknown, so guess /list".
+  const [origin] = useState(() => takeTaskOrigin());
   // A11Y-24: the shell's screen-reader channel, so a field save's
   // outcome is spoken. A successful `set` has no durable surface of its
   // own (the value simply updates in place), and its failure notice is
@@ -449,6 +465,30 @@ export function TaskDetail({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {/* UI-12: back to wherever this task was opened FROM — absent
+          entirely on a cold load (Ken: "if cold load then no back
+          button"), never a disabled control or a fallback destination.
+          Same visual treatment as MilestoneDetail's "← All milestones",
+          but the destination and label are the actual origin route
+          (including its filters/sort/page) rather than a hardcoded one.
+          This is independent of the "All tasks" breadcrumb inside the
+          header below, which always points at the unfiltered list. */}
+      {origin !== undefined && (
+        <Link
+          // `to` resolves as a path template, not a full href — the
+          // search params have to travel through `search` instead, or a
+          // literal "?status=…" would end up percent-encoded into the
+          // pathname. `router.parseSearch` is the same parser the route
+          // itself would apply to that query string, so a filtered
+          // `/list?status=in_progress&page=2` round-trips exactly.
+          to={origin.pathname}
+          search={router.options.parseSearch(origin.search) as Record<string, unknown>}
+          data-testid="task-detail-back"
+          className="self-start px-6 pt-4 text-[0.8571rem] text-text-tertiary no-underline hover:underline"
+        >
+          ← {origin.label}
+        </Link>
+      )}
       <header className="border-b border-border-subtle px-6 py-4">
         {/* All tasks › project label. The label is the project's `name`
             — not its slug `key` or its `prefix`, which name the same

@@ -459,10 +459,11 @@ export function SprintMetaHeader({ sprint, foldReadMeta = false }: Props) {
           variant="primary"
           size="sm"
           testId="sprint-meta-save"
-          disabled={update.isPending}
+          loading={update.isPending}
+          aria-label="Save"
           onClick={save}
         >
-          {update.isPending ? "Saving…" : "Save"}
+          Save
         </Button>
       </div>
     </header>

@@ -114,6 +114,72 @@
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ---------------------------------------------------------------- *
+ * NESTED THEME ISLANDS — re-alias the @theme bridge inside `.dark`
+ *
+ * `@theme` above emits its `--color-*` entries ONCE, on `:root`, where
+ * `--color-bg-surface: var(--bg-surface)` resolves immediately to the
+ * LIGHT value and is then inherited as that literal. Re-scoping the
+ * underlying tokens in a nested `.dark` therefore does NOT move the
+ * utilities: inside such an island `--bg-surface` is `#141416` while
+ * `--color-bg-surface` — the variable `bg-bg-surface` actually reads —
+ * is still `#FFFFFF`.
+ *
+ * On `<html>` this never showed, because there IS no outer scope to
+ * inherit a stale alias from: the only `:root` is the themed element
+ * itself, so `--color-*` resolves against the tokens already in force.
+ * It appears the moment a `.dark` is nested inside a light page — which
+ * is exactly what `ui/ThemePreview.tsx` does to show both themes at
+ * once, and it fails in the worst way: the custom properties look
+ * correct under inspection while the paint stays light.
+ *
+ * So: inside any nested `.dark`, re-declare the aliases so they
+ * re-resolve against THAT scope's tokens. `:where()` keeps specificity
+ * at zero, so nothing here outranks a utility.
+ *
+ * This list mirrors the `@theme` block above and must stay in step with
+ * it; `ThemePreview`'s tests assert the ones the preview depends on.
+ * ---------------------------------------------------------------- */
+:where(.dark) {
+  --color-bg-canvas: var(--bg-canvas);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-surface-raised: var(--bg-surface-raised);
+  --color-bg-muted: var(--bg-muted);
+  --color-bg-muted-hover: var(--bg-muted-hover);
+  --color-bg-row-hover: var(--bg-row-hover);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-border-control: var(--border-control);
+  --color-border-divider: var(--border-divider);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-disabled: var(--text-disabled);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-status-pending-fg: var(--status-pending-fg);
+  --color-status-pending-bg: var(--status-pending-bg);
+  --color-status-active-fg: var(--status-active-fg);
+  --color-status-active-bg: var(--status-active-bg);
+  --color-status-completed-fg: var(--status-completed-fg);
+  --color-status-completed-bg: var(--status-completed-bg);
+  --color-status-discarded-fg: var(--status-discarded-fg);
+  --color-status-discarded-bg: var(--status-discarded-bg);
+  --color-danger-fg: var(--feedback-danger-fg);
+  --color-danger-bg: var(--feedback-danger-bg);
+  --color-warn-fg: var(--feedback-warn-fg);
+  --color-warn-bg: var(--feedback-warn-bg);
+  --color-success-fg: var(--feedback-success-fg);
+  --color-success-bg: var(--feedback-success-bg);
+  --color-priority-low: var(--priority-low);
+  --color-priority-medium: var(--priority-medium);
+  --color-priority-high: var(--priority-high);
+  --color-priority-critical: var(--priority-critical);
+}
+
 /* Minimal base styles. Component look-and-feel is composed from
  * utilities; this section is just the things every page needs.
  */
@@ -227,6 +293,77 @@
 @keyframes hash-target-flash {
   0%, 30% { background-color: var(--accent-muted); }
   100% { background-color: transparent; }
+}
+
+/**
+ * Brand spinner (`ui/brand/LogoSpinner.tsx`). Global, matching
+ * `hash-target-flash` above: this app has no CSS Modules set up, and one
+ * inlined SVG rendered by many `LoadingState` consumers at once needs its
+ * `@keyframes` defined exactly once, not once per mounted instance.
+ * Names are namespaced (`loctt-*`) so they cannot collide with anything
+ * else in this stylesheet.
+ *
+ * Geometry ported as-is from Ken's source SVG
+ * (`loctt-animated-64-*-color.svg`, both themes byte-identical but for
+ * two `fill`s — see `LogoSpinner.tsx`): the "L" rotates about the mark's
+ * center while "L" and "o" swing apart and back, all on one 1.8s loop.
+ */
+.loctt-spin {
+  transform-origin: 32px 32px;
+  animation: loctt-rot 1800ms infinite;
+}
+.loctt-spin-l {
+  animation: loctt-l 1800ms infinite;
+}
+.loctt-spin-o {
+  animation: loctt-o 1800ms infinite;
+}
+@keyframes loctt-rot {
+  0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(0.42, 0, 0.35, 1); }
+  24% { transform: rotate(-22deg); animation-timing-function: cubic-bezier(0.64, 0, 0.55, 1); }
+  59.2% { transform: rotate(374deg); animation-timing-function: cubic-bezier(0.35, 0, 0.1, 1); }
+  80% { transform: rotate(360deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes loctt-l {
+  0% { transform: translate(0, 0); animation-timing-function: cubic-bezier(0.55, 0, 0.43, 1); }
+  20% { transform: translate(-5.657px, 5.657px); animation-timing-function: cubic-bezier(0.42, 0, 0.1, 1); }
+  80% { transform: translate(0, 0); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes loctt-o {
+  0% { transform: translate(0, 0); animation-timing-function: cubic-bezier(0.55, 0, 0.43, 1); }
+  20% { transform: translate(5.657px, -5.657px); animation-timing-function: cubic-bezier(0.42, 0, 0.1, 1); }
+  80% { transform: translate(0, 0); }
+  100% { transform: translate(0, 0); }
+}
+/* Source SVG's own reduced-motion block, preserved locally (belt and
+ * suspenders alongside the app-wide rule below, which zeroes durations
+ * rather than removing the animation outright). */
+@media (prefers-reduced-motion: reduce) {
+  .loctt-spin, .loctt-spin-l, .loctt-spin-o { animation: none; }
+}
+
+/**
+ * Tooltip entrance (`ui/Tooltip.tsx`, UI-23e).
+ *
+ * Global for the same reason as the rules above: this app has no CSS
+ * Modules, and many tooltip instances share one keyframe. A fade only —
+ * the bubble is already placed by measurement, so animating position
+ * would fight `usePortalPlacement`'s coordinates.
+ */
+.loctt-tooltip-in {
+  animation: loctt-tooltip-fade 100ms ease-out;
+}
+@keyframes loctt-tooltip-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* Local guard, matching the spinner's above. The app-wide rule below
+ * also zeroes this, but UI-23e's requirement is "no entrance animation
+ * when reduced motion is set", so it is stated outright here too. */
+@media (prefers-reduced-motion: reduce) {
+  .loctt-tooltip-in { animation: none; }
 }
 
 /**

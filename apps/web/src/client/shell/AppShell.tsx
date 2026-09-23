@@ -194,7 +194,23 @@ function ShellChrome({
           id={MAIN_CONTENT_ID}
           tabIndex={-1}
           data-scroll-restoration-id="main"
-          className="row-start-2 overflow-auto bg-bg-canvas outline-none"
+          // UI-18: `Sidebar` renders `null` on a narrow viewport (R2,
+          // < 900px — no in-grid rail, the drawer is an overlay outside
+          // this grid). With no sidebar element to auto-place into
+          // column 1 first, an implicit `<main>` (grid-column: auto)
+          // fell into that now-empty `auto` track itself instead of the
+          // `1fr` content column — sized to its own content rather than
+          // the remaining width, leaving a bare `1fr` gap on the right.
+          // Reproduced at a settled 800x900 load: `<main>` measured
+          // 494.89px of 800px, gridTemplateColumns resolving to
+          // "494.891px 305.109px". `col-start-2` makes the placement
+          // explicit (matching `Header`'s explicit `col-span-2`, rather
+          // than relying on auto-placement order), so `<main>` always
+          // gets the `1fr` content column whether or not the sidebar
+          // is in the DOM. Verified: 1440px unaffected (main still
+          // 1200px, sidebar still 240px); 800px now fills to 800px with
+          // no gap.
+          className="col-start-2 row-start-2 overflow-auto bg-bg-canvas outline-none"
         >
           {children ?? <Outlet />}
         </main>

@@ -140,9 +140,11 @@ export function SprintEditDialog(props: SprintDialogProps) {
             variant="primary"
             testId={isEdit ? "sprint-save" : "sprint-create-submit"}
             disabled={blocked}
+            loading={pending}
+            aria-label={isEdit ? "Save" : "Create sprint"}
             onClick={submit}
           >
-            {pending ? "Saving…" : isEdit ? "Save" : "Create sprint"}
+            {isEdit ? "Save" : "Create sprint"}
           </Button>
         </DialogActions>
       }

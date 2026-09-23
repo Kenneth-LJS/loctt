@@ -25,6 +25,7 @@ import {
   AttachmentNotFoundError,
   AttachmentSourceError,
   BurndownError,
+  FilterError,
   FsAccessError,
   LabelError,
   LocttError,
@@ -87,6 +88,19 @@ export const KNOWN_DOMAIN_ERRORS: ReadonlyArray<new (...args: never[]) => Error>
   AttachmentNotFoundError,
   AttachmentSourceError,
   BurndownError,
+  // A saved view's filter list that cannot be composed into a query — an
+  // advanced filter whose DSL does not parse, or a simple filter whose
+  // values cannot combine under its operator (UI-9). Thrown by
+  // `filtersToNode`, called bare from the read path (`--view` on `list`/
+  // `export`) unlike the write path (`views create`/`edit`), which
+  // already catches it and rethrows as `ViewError`. It does NOT extend
+  // `LocttError` (like `ViewError` below), so it must be listed
+  // explicitly. The CLI's top-level catch already prints `err.message`
+  // for any `Error`, so this entry does not change what a user sees —
+  // it exists for parity with the web/MCP registries and so a future
+  // `detail` on `FilterError` would be printed the way `LocttError.detail`
+  // already is.
+  FilterError,
   // A filesystem failure the user can act on — an unwritable .loctt/, a
   // full disk. Its message already names the cause and the remedy, so
   // it is a domain error (exit 1), not an unexpected crash.

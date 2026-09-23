@@ -99,7 +99,20 @@ export function RichEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ link: false }),
+      /**
+       * `underline: false` (K107). StarterKit ships its own underline
+       * mark that parses AND renders `<u>` — the one tag GitHub's
+       * sanitiser strips silently, so a body underlined through it
+       * loses the formatting with no warning on the tool most likely to
+       * read the file. LocTT's own `Underline` (extensions.ts) uses
+       * `<ins>` instead. Both marks are named "underline", so leaving
+       * StarterKit's enabled means the winner is decided by
+       * registration order — it happens to be ours today, and a
+       * StarterKit upgrade could flip it back to `<u>` silently.
+       * Turning it off here makes `<ins>` the only spelling by
+       * construction rather than by luck.
+       */
+      StarterKit.configure({ link: false, underline: false }),
       Placeholder.configure({ placeholder }),
       /**
        * `autolink` off, deliberately. With it on, typing a character

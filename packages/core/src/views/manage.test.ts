@@ -578,3 +578,68 @@ describe("K102-broken-repair · repairing and deleting a broken view", () => {
     });
   });
 });
+
+/**
+ * K103 colour on a saved view, through the write paths.
+ *
+ * What these catch: the corruption guide's rule 2 — "a writer preserves
+ * what it did not touch". `unarchiveView` rebuilds the view field by
+ * field rather than spreading it, so a new field omitted there is a
+ * field SILENTLY DELETED by unarchiving. That is invisible in every
+ * create/edit test, and it is exactly the class of bug K28 is about.
+ */
+describe("saved view colour — the write paths preserve it", () => {
+  it("createView stores all three colour shapes", async () => {
+    const hex = await createView(locttDir, { name: "a", filters: [], color: "#1e6fcb" });
+    expect(hex.color).toBe("#1e6fcb");
+    const pair = await createView(locttDir, {
+      name: "b", filters: [], color: { light: "#0F766E", dark: "#39A88F" },
+    });
+    expect(pair.color).toEqual({ light: "#0F766E", dark: "#39A88F" });
+    const pal = await createView(locttDir, {
+      name: "c", filters: [], color: { palette: "teal" },
+    });
+    expect(pal.color).toEqual({ palette: "teal" });
+
+    // And they survive the round-trip to disk and back.
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(cfg.queries.find(q => q.id === pal.id)?.color).toEqual({ palette: "teal" });
+  });
+
+  it("editView KEEPS a colour it was not asked to change", async () => {
+    const created = await createView(locttDir, {
+      name: "keeps", filters: [statusNotDone], color: { palette: "blue" },
+    });
+    // An edit that only renames must not drop the colour — this is what
+    // stops a web edit (whose dialog omits what it does not offer) from
+    // silently wiping a colour set through the CLI or MCP.
+    await editView(locttDir, created.id, { name: "renamed" });
+    const cfg = await loadQueriesConfig(locttDir);
+    const found = cfg.queries.find(q => q.id === created.id);
+    expect(found?.name).toBe("renamed");
+    expect(found?.color).toEqual({ palette: "blue" });
+  });
+
+  it("editView clears the colour on an explicit null", async () => {
+    const created = await createView(locttDir, {
+      name: "clears", filters: [], color: "#1e6fcb",
+    });
+    await editView(locttDir, created.id, { color: null });
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(cfg.queries.find(q => q.id === created.id)?.color).toBeUndefined();
+  });
+
+  it("unarchiveView does NOT drop the colour", async () => {
+    const created = await createView(locttDir, {
+      name: "round-trip", filters: [statusNotDone], color: { palette: "teal" },
+    });
+    await archiveView(locttDir, created.id);
+    await unarchiveView(locttDir, created.id);
+    const cfg = await loadQueriesConfig(locttDir);
+    const found = cfg.queries.find(q => q.id === created.id);
+    expect(found?.archived).toBeUndefined();
+    // The field-by-field rebuild inside `unarchiveView` must carry this
+    // forward, or archiving-then-unarchiving is a silent data loss.
+    expect(found?.color).toEqual({ palette: "teal" });
+  });
+});

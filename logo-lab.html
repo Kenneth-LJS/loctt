@@ -16,6 +16,8 @@
     --mark: #e8eaef;
     --canvas: #101116;
     --grid: #262a33;
+    --logo-accent: #39A88F;   /* dark-mode accent, matching PALETTE */
+    --logo-ink: #F4F4F3;
   }
   :root[data-theme="light"] {
     --bg: #f3f4f6;
@@ -28,6 +30,8 @@
     --mark: #1a1c22;
     --canvas: #ffffff;
     --grid: #e6e8ee;
+    --logo-accent: #0F766E;   /* light-mode accent */
+    --logo-ink: #0F172A;
   }
   * { box-sizing: border-box; }
   body {
@@ -43,21 +47,34 @@
   }
   header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: .01em; }
   header .sp { flex: 1; }
+  /* Two-column grid: every control pane sits in column 1 beside the
+     preview it drives in column 2. Rows are grid siblings, so each
+     section aligns with its own output without any JS. The page scrolls
+     as a whole -- panes are no longer independently scrolling columns,
+     which is what previously hid the lower sections below the fold. */
   .wrap {
     display: grid;
-    grid-template-columns: 340px minmax(0,1fr);
-    gap: 0; min-height: calc(100vh - 53px);
+    grid-template-columns: 340px minmax(0, 1fr);
+    align-items: start;
+    gap: 0 0;
   }
-  @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } }
-
-  /* ---- controls ---- */
-  .panel {
+  .pane {
     border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
     background: var(--panel);
-    padding: 16px 18px 40px;
-    overflow-y: auto;
+    padding: 16px 18px 20px;
   }
-  @media (max-width: 860px) { .panel { border-right: none; border-bottom: 1px solid var(--line); } }
+  .view {
+    border-bottom: 1px solid var(--line);
+    padding: 20px 22px 24px;
+    min-width: 0;
+  }
+  .outrow { grid-column: 1 / -1; padding: 20px 22px 40px; }
+  @media (max-width: 860px) {
+    .wrap { grid-template-columns: 1fr; }
+    .pane { border-right: none; }
+  }
+
   .group { margin-bottom: 22px; }
   .group > h2 {
     font-size: 10px; text-transform: uppercase; letter-spacing: .09em;
@@ -116,7 +133,6 @@
   button.on { border-color: var(--accent); color: var(--accent); }
 
   /* ---- stage ---- */
-  .stage { padding: 20px 22px 40px; overflow-y: auto; }
   .board {
     background: var(--canvas); border: 1px solid var(--line);
     border-radius: 10px; padding: 18px;
@@ -138,8 +154,77 @@
   /* the wordmark row runs widest -- give it its own line per item when
      the pane is narrow */
   #wordsizes figure { flex: 0 0 auto; }
-  .swatch { background: var(--mark); border-radius: 8px; padding: 10px; }
-  .swatch svg path { fill: var(--canvas) !important; }
+
+  /* animation rows: label | number | slider (single value, no reg/small) */
+  .a .f { grid-template-columns: 1fr 74px; margin-bottom: 12px; }
+  .a .f .sl { grid-column: 1 / -1; }
+  .a .f > label em { font-style: normal; color: var(--dim); font-weight: 400; font-size: 11px; }
+  .ahint { grid-column: 1 / -1; color: var(--dim); font-size: 11px; margin-top: 3px; }
+  .ahint b { display: block; margin-top: 2px; color: var(--accent); font-weight: 500; }
+  .asec {
+    grid-column: 1 / -1; font-size: 10px; text-transform: uppercase;
+    letter-spacing: .09em; color: var(--dim); font-weight: 600;
+    margin: 14px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--line);
+  }
+  .asec:first-child { margin-top: 2px; }
+  .asec em { font-style: normal; text-transform: none; letter-spacing: 0; opacity: .75; }
+  .chart { margin-top: 14px; }
+  .chart svg {
+    /* aspect-ratio instead of a fixed height: the viewBox keeps its
+       proportions, so the plot fills the full width without
+       letterboxing and without stretching the labels. */
+    width: 100%; height: auto; aspect-ratio: 400 / 150; display: block;
+    background: var(--canvas); border: 1px solid var(--line); border-radius: 8px;
+  }
+  .legend {
+    display: flex; gap: 16px; margin-top: 7px;
+    font-size: 11px; color: var(--dim);
+  }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend i { width: 14px; height: 2px; display: inline-block; border-radius: 1px; }
+  .legend .k-rot { background: var(--accent); }
+  .legend .k-sep { background: #e5a13a; }
+  .legend .k-now { background: var(--text); }
+
+  .scrub { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+  .scrub input[type=range] { flex: 1; accent-color: var(--accent); }
+  #playtoggle {
+    flex: 0 0 auto; width: 34px; height: 30px; padding: 0;
+    font-size: 12px; line-height: 1; display: grid; place-items: center;
+  }
+  #playtoggle.on { border-color: var(--accent); color: var(--accent); }
+  /* One ROW per colour variant, each row showing every size on the
+     background that variant is designed for. */
+  .rows { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+  .vrow { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .vrow .lbl {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--dim); padding: 7px 10px 0;
+  }
+  .vrow .strip {
+    display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;
+    padding: 10px 12px 12px;
+  }
+  .vrow .strip figure { margin: 0; text-align: center; }
+  .vrow .strip svg { display: block; }
+  .vrow .strip figcaption { font-size: 9px; margin-top: 5px; opacity: .55; }
+  /* animation previews: a plain swatch per variant, no row chrome */
+  #animrows2 { flex-direction: row; flex-wrap: wrap; gap: 12px; }
+  /* The backing is the minimum needed to SEE each variant -- a dark
+     logo is invisible on a dark page -- so it hugs the mark rather than
+     reading as a card. The light variants get a pale backing, the dark
+     ones none at all, since the page is already dark. */
+  .apvf { margin: 0; text-align: center; padding: 0; }
+  .apvf svg { display: block; height: 56px; width: auto; border-radius: 4px; }
+  .apvf.on-light svg { background: #F4F4F3; }
+  .apvf figcaption { font-size: 9px; margin-top: 5px; color: var(--dim); }
+
+  .vrow.on-light { background: #F4F4F3; }
+  .vrow.on-dark  { background: #0F172A; }
+  .vrow.on-light .lbl, .vrow.on-light figcaption { color: #0F172A; }
+  .vrow.on-dark  .lbl, .vrow.on-dark  figcaption { color: #F4F4F3; }
+
+
 
   .metrics {
     margin-top: 22px; display: grid;
@@ -177,15 +262,20 @@
   <div class="sp"></div>
   <div class="btnrow">
     <button id="theme">Light</button>
-    <button id="export">Export values</button>
+    <button id="export">Copy config</button>
     <button id="reset">Reset</button>
   </div>
 </header>
 
 <div class="wrap">
 
-  <!-- ============ CONTROLS ============ -->
-  <div class="panel">
+  <!-- Each ROW pairs a control group with the preview it drives, so the
+       sidebar section and its output sit side by side. The grid is a
+       single two-column track list; rows are siblings, which is what
+       keeps them aligned without any JS. -->
+
+  <!-- ---- row: the mark ---- -->
+  <div class="pane">
     <div class="sizehdr">
       <span></span><span class="col">regular<em>&ge;64px</em></span><span class="col">small<em>16px</em></span>
     </div>
@@ -193,44 +283,91 @@
     <div class="group" id="g-curvature"><h2>Curvature</h2>
       <label class="chk"><input type="checkbox" id="crookConcentric" checked> inner corner = radius + gap</label>
     </div>
-    <div class="group" id="g-letters"><h2>Letters &mdash; CTT</h2></div>
+    <div class="hint" id="derivedR"></div>
+    <div class="hint warn" id="cap-rSquare"></div>
   </div>
-
-  <!-- ============ STAGE ============ -->
-  <div class="stage">
+  <div class="view">
     <div class="board">
       <svg id="big" viewBox="-0.06 -0.06 1.12 1.12" xmlns="http://www.w3.org/2000/svg">
-        <path id="mark" fill="var(--mark)" fill-rule="evenodd"></path>
+        <g id="mark"></g>
       </svg>
     </div>
+    <div class="rows" id="markrows"></div>
 
-    <div class="board" style="margin-top:14px">
+    <div class="btnrow" style="margin-top:14px">
+      <button id="dl-mark">Download mark</button>
+      <span class="hint" style="margin:0 0 0 4px">all sizes &times; 4 variants</span>
+    </div>
+  </div>
+
+  <!-- ---- row: the letters ---- -->
+  <div class="pane">
+    <div class="group" id="g-letters"><h2>Letters &mdash; CTT</h2></div>
+  </div>
+  <div class="view">
+    <div class="board">
       <svg id="word" viewBox="0 0 4 1" xmlns="http://www.w3.org/2000/svg" style="width:100%">
-        <path id="wordmark" fill="var(--mark)" fill-rule="evenodd"></path>
+        <g id="wordmark"></g>
       </svg>
     </div>
+    <div class="rows" id="wordrows"></div>
 
-    <div class="sizes">
-      <figure><div class="swatch"><svg id="s64" width="64" height="64" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg></div><figcaption>64 knockout</figcaption></figure>
-      <figure><svg id="s64b" width="64" height="64" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>64</figcaption></figure>
-      <figure><svg id="s48" width="48" height="48" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>48</figcaption></figure>
-      <figure><svg id="s32" width="32" height="32" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>32</figcaption></figure>
-      <figure><svg id="s24" width="24" height="24" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>24</figcaption></figure>
-      <figure><svg id="s16" width="16" height="16" viewBox="0 0 1 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg><figcaption>16</figcaption></figure>
+    <div class="btnrow" style="margin-top:14px">
+      <button id="dl-word">Download wordmark</button>
+      <span class="hint" style="margin:0 0 0 4px">all sizes &times; 4 variants</span>
     </div>
 
-    <div class="sizes" id="wordsizes"></div>
+  </div>
 
-    <div class="hint" id="derivedR" style="margin-top:16px"></div>
-    <div class="hint warn" id="cap-rSquare"></div>
+  <!-- ---- row: the spinner ---- -->
+  <div class="pane">
+    <div class="group" id="g-anim">
+      <h2>Animation &mdash; spinner</h2>
+      <div class="a" id="animrows"></div>
+      <div class="btnrow" style="margin-top:8px">
+        <button id="copycss">Copy CSS</button>
+      </div>
+    </div>
+  </div>
+  <div class="view">
+    <div class="board" style="position:relative">
+      <svg id="anim" viewBox="-0.45 -0.45 1.9 1.9" xmlns="http://www.w3.org/2000/svg" style="width:min(300px,100%)">
+        <g id="spin">
+          <path id="aL"  fill="var(--mark)"></path>
+          <path id="aSq" fill="var(--mark)"></path>
+        </g>
+      </svg>
+    </div>
+    <div class="scrub">
+      <button id="playtoggle" title="Play / stop">&#9654;</button>
+      <input type="range" id="scrub" min="0" max="1" step="0.001" value="0">
+    </div>
 
+    <div class="chart">
+      <svg id="graph" viewBox="0 0 400 150"></svg>
+      <div class="legend">
+        <span><i class="k-rot"></i>rotation</span>
+        <span><i class="k-sep"></i>separation</span>
+        <span><i class="k-now"></i>playhead</span>
+      </div>
+      <div class="hint" id="animOut"></div>
+      <div class="rows" id="animrows2"></div>
+
+      <div class="btnrow" style="margin-top:8px">
+        <button id="copyanim">Copy animation config</button>
+        <button id="dl-anim">Download animated</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---- row: output, full width ---- -->
+  <div class="outrow">
     <div class="out">
       <h2>path d <button id="copyd">Copy</button></h2>
       <textarea id="dout" readonly spellcheck="false"></textarea>
     </div>
-
     <div class="out">
-      <h2>all svgs &mdash; LO + LOCTT, every size <button id="download">Download .svg files</button><button id="copysvg">Copy</button></h2>
+      <h2>all svgs &mdash; LO + LOCTT, every size <button id="download">Download everything</button><button id="copysvg">Copy</button></h2>
       <textarea id="svgout" readonly spellcheck="false"></textarea>
     </div>
   </div>
@@ -304,6 +441,39 @@ const S = { crookConcentric: true };
 for (const f of FIELDS) S[f.k] = { reg: f.reg, sml: f.sml };
 
 const SIZES = [16, 24, 32, 48, 64];   // thumbnails shown under the mark
+
+/* --------------------------------------------------------------------
+   COLOUR VARIANTS
+
+   The mark has two parts and they take different tokens:
+     the L      -> --accent        (teal)
+     the square -> --text-primary  (near-black / off-white)
+
+   `currentColor` keeps a variant that inherits from its container, which
+   is what the app itself uses. The token variant emits var(--accent) /
+   var(--text-primary) so it tracks a theme with no separate dark asset.
+-------------------------------------------------------------------- */
+const PALETTE = {
+  accent:      { light: "#0F766E", dark: "#39A88F" },
+  textPrimary: { light: "#0F172A", dark: "#F4F4F3" },
+};
+
+/* Four modes on two axes: THEME (light / dark) x COLOUR (coloured or
+   monochrome). Coloured gives the teal L against ink; monochrome puts
+   the whole mark in one ink colour, which is the standard one-colour
+   lockup and matches what `currentColor` yields. */
+const VARIANTS = [
+  { k: "light",       label: "light",            theme: "light", colour: false,
+    l: PALETTE.textPrimary.light, o: PALETTE.textPrimary.light },
+  { k: "dark",        label: "dark",             theme: "dark",  colour: false,
+    l: PALETTE.textPrimary.dark,  o: PALETTE.textPrimary.dark },
+  { k: "light-color", label: "light coloured",   theme: "light", colour: true,
+    l: PALETTE.accent.light,      o: PALETTE.textPrimary.light },
+  { k: "dark-color",  label: "dark coloured",    theme: "dark",  colour: true,
+    l: PALETTE.accent.dark,       o: PALETTE.textPrimary.dark },
+];
+
+
 const EXPORT_SIZE = 100;              // viewBox of the copyable output
 const EXPORT_PREC = 3;
 
@@ -738,9 +908,12 @@ function letterT(s) {
 function buildPath(sRaw) {
   const s = effectiveRadii(sRaw);
   const g = geometry(s);
-  let d = roundPoly(g.outerPts, g.outerR);
-  if (g.side > 1e-4) d += " " + roundPoly(g.small, g.rSmall);
-  return { d, g };
+  // Keep the two subpaths separately as well as combined: the animation
+  // moves them independently, while the export stays one evenodd path.
+  const dL = roundPoly(g.outerPts, g.outerR);
+  const dSq = g.side > 1e-4 ? roundPoly(g.small, g.rSmall) : "";
+  const d = dSq ? dL + " " + dSq : dL;
+  return { d, dL, dSq, g };
 }
 
 /**
@@ -824,23 +997,581 @@ function buildWordmark(s) {
     return cmd + pairs.join(" ");
   });
 
-  const lo = buildPath(s).d;                 // the L + counter, unit box
+  // Keep the pieces separable: the L takes the accent token and the
+  // square takes text-primary, so the wordmark cannot be a single path.
+  const lo = buildPath(s);
   const C  = letterC(s), T = letterT(s);
   const cD = roundPoly(C.pts, C.r);
   const tD = roundPoly(T.pts, T.r);
 
+  // Every glyph is its own path so each can be coloured, animated or
+  // targeted independently. `parts` is the canonical list; `d` is only
+  // a convenience for anything that still wants one blob.
   let x = 1 + gap;                           // LO occupies 0..1
-  const parts = [lo];
-  for (const d of [cD, tD, tD]) {
-    parts.push(place(d, x, 1 - scale, scale));   // bottom-aligned
+  const letters = [];
+  for (const [name, d] of [["c", cD], ["t1", tD], ["t2", tD]]) {
+    letters.push({ part: name, d: place(d, x, 1 - scale, scale) });  // bottom-aligned
     x += scale + gap;
   }
-  return { d: parts.join(" "), width: x - gap };
+  const width = x - gap;
+  const parts = [
+    { part: "l",  d: lo.dL },                    // the L  -> accent
+    ...(lo.dSq ? [{ part: "o", d: lo.dSq }] : []), // the square -> text-primary
+    ...letters,                                   // c, t1, t2 -> text-primary
+  ];
+  return {
+    parts,
+    d: parts.map(p => p.d).join(" "),
+    dL: lo.dL, dSq: lo.dSq,
+    dCTT: letters.map(p => p.d).join(" "),   // kept: some callers want the trio
+    width,
+  };
+}
+
+/* --------------------------------------------------------------------
+   SPINNER ANIMATION
+
+   Four beats, driven by one normalised clock t in 0..1:
+
+     1. SEPARATE + ANTICIPATE (one beat, concurrent)
+                   the L slides down-left along the 45deg diagonal and the
+                   counter up-right, WHILE the whole group winds slightly
+                   BACKWARDS. Parting and winding together read as one
+                   gesture -- the shape drawing breath -- rather than two
+                   steps in sequence.
+     2. HOLD       a brief beat apart at full wind-back, so the recoil
+                   registers before the release.
+     3. SPIN       forward through `turns` full rotations. The pieces
+                   travel back together during this beat, so the collapse
+                   and the spin resolve on the same frame.
+     4. SETTLE     rotation overshoots past 360 and springs back.
+
+   Separation is measured ALONG the diagonal (unit vector 1/sqrt2), which
+   is the same axis the mark's own cut runs on, so the pieces part along
+   the shape's grain rather than an arbitrary direction.
+-------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------
+   KEYFRAMES WITH EXPLICIT BEZIER HANDLES
+
+   Three keys -- start, peak, end -- for two independent curves. Each
+   handle is stated directly rather than derived from a rule, which is
+   what removes the old tension: previously exact landings needed
+   stationary keyframes, and stationary keyframes read as pauses. Now a
+   handle length of 0 gives a true stationary point and anything above 0
+   carries momentum through, and you choose which.
+
+   Handles are cubic-bezier control points in segment-local space:
+     x = fraction of the SEGMENT'S duration (0..1)
+     y = fraction of the SEGMENT'S value change
+
+   At the peak both handles are horizontal (y = 0). That is what pins the
+   peak to exactly the amount stated -- a non-zero y there would let the
+   curve sail past it -- so only the LENGTH is adjustable.
+
+   At the end, rotation's handle has a free y: a y above 1 overshoots,
+   which is how the spring-back is made. Note the consequence -- the
+   overshoot is no longer a number you type, it is whatever the handle
+   produces. The live readout under the chart reports what you actually
+   get.
+-------------------------------------------------------------------- */
+const ANIM = {
+  dur:        1800,
+  spread:     0.125,
+  turns:      1,
+  rest:       0.25,
+  rPeakT:     0.3,
+  rPeakV:     -22,
+  rStartHX:   0.42,
+  rStartHY:   0,
+  rPeakIn:    0.65,
+  rPeakOut:   0.64,
+  rOverT:     0.74,
+  rOverV:     14,
+  rOverIn:    0.45,
+  rOverOut:   0.35,
+  rEndHX:     0.9,
+  sPeakT:     0.25,
+  sPeakV:     1,
+  sStartHX:   0.55,
+  sStartHY:   0,
+  sPeakIn:    0.57,
+  sPeakOut:   0.42,
+  sEndHX:     0.9,
+};
+
+const ANIM_DEFAULTS = { ...ANIM };
+
+const ANIM_FIELDS = [
+  { sec:"Overall", k:"dur", label:"cycle length", unit:"ms",
+    hint:"One full play-through, start to rest.", min:300, max:4000, step:10 },
+  { sec:"Overall", k:"spread", label:"gap opened", unit:"\u00D7 width",
+    hint:"How far the pieces drift apart at full extension.", min:0, max:1.5, step:0.005 },
+  { sec:"Overall", k:"turns", label:"full spins", unit:"turns",
+    hint:"Complete forward rotations. Whole numbers only \u2014 a fraction would leave the mark facing a different way than it started.", min:0, max:4, step:1 },
+  { sec:"Overall", k:"rest", label:"rest after", unit:"\u00D7 motion",
+    hint:"Still time before it loops again.", min:0, max:3, step:0.05 },
+
+  { sec:"Rotation \u2014 start", k:"rStartHX", label:"handle x", unit:"",
+    hint:"How far along the first segment the handle reaches. Larger = holds still longer before winding.", min:0, max:1, step:0.01 },
+  { sec:"Rotation \u2014 start", k:"rStartHY", label:"handle y", unit:"",
+    hint:"Vertical pull at the start. 0 = starts from rest.", min:-1, max:1, step:0.01 },
+
+  { sec:"Rotation \u2014 peak", k:"rPeakT", label:"when", unit:"of motion",
+    hint:"When the wind-up reaches its furthest point.", min:0.03, max:0.9, step:0.01 },
+  { sec:"Rotation \u2014 peak", k:"rPeakV", label:"amount", unit:"\u00B0",
+    hint:"How far it winds backwards. Landed exactly.", min:-90, max:0, step:1 },
+  { sec:"Rotation \u2014 peak", k:"rPeakIn", label:"handle in", unit:"",
+    hint:"Length of the incoming handle. 0 = arrives at a dead stop; longer = still moving as it turns.", min:0, max:1, step:0.01 },
+  { sec:"Rotation \u2014 peak", k:"rPeakOut", label:"handle out", unit:"",
+    hint:"Length of the outgoing handle. 0 = pauses at the peak; longer = releases immediately.", min:0, max:1, step:0.01 },
+
+  { sec:"Rotation \u2014 overshoot", k:"rOverT", label:"when", unit:"of motion",
+    hint:"When it swings furthest past the finish.", min:0.05, max:0.98, step:0.01 },
+  { sec:"Rotation \u2014 overshoot", k:"rOverV", label:"amount", unit:"\u00B0 past",
+    hint:"How far beyond the finishing angle it goes before springing back. Landed exactly.", min:0, max:60, step:1 },
+  { sec:"Rotation \u2014 overshoot", k:"rOverIn", label:"handle in", unit:"",
+    hint:"0 = arrives at a dead stop; longer = still turning as it peaks.", min:0, max:1, step:0.01 },
+  { sec:"Rotation \u2014 overshoot", k:"rOverOut", label:"handle out", unit:"",
+    hint:"0 = pauses at the far point; longer = springs back at once.", min:0, max:1, step:0.01 },
+
+  { sec:"Rotation \u2014 end", k:"rEndHX", label:"handle x", unit:"",
+    hint:"How far back along the final segment the handle reaches. Longer = settles more gently.", min:0, max:1, step:0.01 },
+
+  { sec:"Separation \u2014 start", k:"sStartHX", label:"handle x", unit:"",
+    hint:"Larger = lingers closed before parting.", min:0, max:1, step:0.01 },
+  { sec:"Separation \u2014 start", k:"sStartHY", label:"handle y", unit:"",
+    hint:"0 = starts from rest.", min:-1, max:1, step:0.01 },
+
+  { sec:"Separation \u2014 peak", k:"sPeakT", label:"when", unit:"of motion",
+    hint:"When the pieces are fully apart. Set it slightly before the rotation peak to stop both flattening together.", min:0.03, max:0.9, step:0.01 },
+  { sec:"Separation \u2014 peak", k:"sPeakV", label:"amount", unit:"\u00D7 gap",
+    hint:"Fraction of the full gap reached. Landed exactly.", min:0, max:1, step:0.01 },
+  { sec:"Separation \u2014 peak", k:"sPeakIn", label:"handle in", unit:"",
+    hint:"0 = arrives at a dead stop; longer = still opening as it turns.", min:0, max:1, step:0.01 },
+  { sec:"Separation \u2014 peak", k:"sPeakOut", label:"handle out", unit:"",
+    hint:"0 = pauses at full extension; longer = starts closing at once.", min:0, max:1, step:0.01 },
+
+  { sec:"Separation \u2014 end", k:"sEndHX", label:"handle x", unit:"",
+    hint:"How far back the closing handle reaches. Longer = eases shut more gently.", min:0, max:1, step:0.01 },
+];
+
+/* --------------------------------------------------------------------
+   CUBIC BEZIER SEGMENTS
+
+   Each segment is a real cubic bezier with control points placed by the
+   handles. Because x is also a bezier (not linear), we solve x(s) = u
+   for the curve parameter s, then read y(s). That is exactly what CSS
+   cubic-bezier() does, so the preview and the exported CSS agree.
+-------------------------------------------------------------------- */
+
+const clamp01 = t => Math.max(0, Math.min(1, t));
+
+const bez1 = (s, p0, p1, p2, p3) => {
+  const m = 1 - s;
+  return m*m*m*p0 + 3*m*m*s*p1 + 3*m*s*s*p2 + s*s*s*p3;
+};
+
+/** Solve a cubic bezier's y for a given x, with x1/x2 the handle x's. */
+function bezYatX(u, x1, y1, x2, y2) {
+  if (u <= 0) return 0;
+  if (u >= 1) return 1;
+  // Newton, falling back to bisection -- x is monotonic for x1,x2 in 0..1
+  let s = u;
+  for (let i = 0; i < 8; i++) {
+    const x = bez1(s, 0, x1, x2, 1) - u;
+    if (Math.abs(x) < 1e-7) break;
+    const d = 3*(1-s)*(1-s)*x1 + 6*(1-s)*s*(x2 - x1) + 3*s*s*(1 - x2);
+    if (Math.abs(d) < 1e-9) break;
+    s -= x / d;
+    s = clamp01(s);
+  }
+  let lo = 0, hi = 1;
+  if (Math.abs(bez1(s, 0, x1, x2, 1) - u) > 1e-6) {
+    for (let i = 0; i < 40; i++) {
+      s = (lo + hi) / 2;
+      (bez1(s, 0, x1, x2, 1) < u) ? lo = s : hi = s;
+    }
+  }
+  return bez1(s, 0, y1, y2, 1);
+}
+
+/**
+ * Evaluate keyframes at time t.
+ * Keys: { t, v, outX, outY, inX, inY } -- handles in segment-local
+ * fractions, so one number means the same thing on any segment length.
+ */
+function keysAt(keys, t) {
+  if (t <= keys[0].t) return keys[0].v;
+  const last = keys[keys.length - 1];
+  if (t >= last.t) return last.v;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const a = keys[i], b = keys[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const u = (t - a.t) / Math.max(1e-9, b.t - a.t);
+      const dv = b.v - a.v;
+      if (Math.abs(dv) < 1e-12) return a.v;      // flat segment
+      // The in-handle is measured BACK from the arriving key: its x is
+      // how far back along the segment, its y how far the curve is
+      // pulled beyond the endpoint. Writing y2 = 1 - inY inverted that
+      // (inY 1.18 became -0.18, dipping before the end instead of
+      // overshooting past it, and dragging the first segment to -25.76
+      // instead of the -22 asked for). y2 = 1 + inY is the offset form.
+      const f = bezYatX(u,
+        clamp01(a.outX ?? 1/3), (a.outY ?? 0),
+        clamp01(1 - (b.inX ?? 1/3)), 1 + (b.inY ?? 0));
+      return a.v + dv * f;
+    }
+  }
+  return last.v;
+}
+
+/**
+ * The animation state at clock position t (0..1). Rotation and
+ * separation are independent three-key curves; `rest` appends still
+ * time after the motion rather than compressing it.
+ */
+function animAt(t) {
+  const A = ANIM;
+  const span = 1 / (1 + Math.max(0, A.rest || 0));
+  const tm = clamp01(t / span);
+  // Whole turns only: a fraction leaves the mark facing a different way
+  // than it started. Rounded here too, so a stale saved config cannot
+  // reintroduce it.
+  const end = Math.round(A.turns) * 360;
+
+  // Rotation: 0 -> wind-up -> overshoot -> end. The overshoot is a real
+  // key with y = 0 handles, so it lands exactly like the wind-up does,
+  // rather than being whatever an end handle happened to produce.
+  const rot = keysAt([
+    { t: 0,        v: 0,              outX: A.rStartHX, outY: A.rStartHY },
+    { t: A.rPeakT, v: A.rPeakV,       inX: A.rPeakIn, inY: 0,
+                                      outX: A.rPeakOut, outY: 0 },
+    { t: A.rOverT, v: end + A.rOverV, inX: A.rOverIn, inY: 0,
+                                      outX: A.rOverOut, outY: 0 },
+    { t: 1,        v: end,            inX: A.rEndHX, inY: 0 },
+  ], tm);
+
+  // Separation: 0 -> full -> 0.
+  const sep = keysAt([
+    { t: 0,        v: 0,          outX: A.sStartHX, outY: A.sStartHY },
+    { t: A.sPeakT, v: A.sPeakV,   inX: A.sPeakIn, inY: 0,
+                                  outX: A.sPeakOut, outY: 0 },
+    { t: 1,        v: 0,          inX: A.sEndHX, inY: 0 },
+  ], tm);
+
+  const k = A.spread * sep / Math.SQRT2;
+  return { rot, lx: -k, ly: k, sx: k, sy: -k };
+}
+
+let animRAF = null, animT0 = 0, animLoop = false;
+
+/**
+ * Size the animation viewBox to the worst case over the WHOLE timeline,
+ * not the current frame -- otherwise the box would breathe as the mark
+ * separates and the preview would appear to zoom. Recomputed when the
+ * separation or rotation settings change.
+ */
+function fitAnimView() {
+  let worst = 0;
+  for (let i = 0; i <= 120; i++) {
+    const a = animAt(i / 120), rad = a.rot * Math.PI / 180;
+    for (const [ox, oy] of [[a.lx, a.ly], [a.sx, a.sy]])
+      for (const [x, y] of [[0,0],[1,0],[1,1],[0,1]]) {
+        const px = x + ox - 0.5, py = y + oy - 0.5;
+        const rx = px*Math.cos(rad) - py*Math.sin(rad) + 0.5;
+        const ry = px*Math.sin(rad) + py*Math.cos(rad) + 0.5;
+        worst = Math.max(worst, Math.abs(rx - 0.5), Math.abs(ry - 0.5));
+      }
+  }
+  const half = worst + 0.06;
+  $("anim").setAttribute("viewBox",
+    `${(0.5-half).toFixed(3)} ${(0.5-half).toFixed(3)} ${(2*half).toFixed(3)} ${(2*half).toFixed(3)}`);
+}
+
+/* --------------------------------------------------------------------
+   TIMELINE CHART
+
+   Rotation and separation plotted against time on a shared x axis, each
+   on its OWN y scale (degrees vs 0..1 are not comparable). Dotted lines
+   mark the values the solver pins exactly -- the wind-back, the
+   overshoot, full separation, the resting angle -- so you can see the
+   curve actually touch them rather than take my word for it.
+
+   The viewBox keeps its natural aspect ratio: stretching it with
+   preserveAspectRatio="none" squashed the labels ("apart" and "spin"
+   ran together as "apapstin"). Coordinates are therefore in real
+   viewBox units, not percentages.
+-------------------------------------------------------------------- */
+
+const CHART = { x0: 40, x1: 386, y0: 16, y1: 116 };   // plot area in viewBox units
+
+function drawGraph(playhead = 0) {
+  const g = $("graph");
+  if (!g) return;
+  const A = ANIM;
+  const { x0, x1, y0, y1 } = CHART;
+  const N = 300;
+
+  // sample once, derive both scales from the data so nothing clips
+  const pts = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, a = animAt(t);
+    pts.push({ t, rot: a.rot, sep: Math.abs(a.lx) / Math.max(1e-9, A.spread / Math.SQRT2) });
+  }
+  // Include the HANDLE control points in the range, not just the curve:
+  // the end handle reaches past the finish to make the overshoot, and
+  // was being drawn outside the plot.
+  const endV = Math.round(A.turns) * 360;
+  const handleYs = [ A.rStartHY * (A.rPeakV - 0), endV + A.rOverV ];
+  const rMin = Math.min(0, ...pts.map(p => p.rot), ...handleYs);
+  const rMax = Math.max(1, ...pts.map(p => p.rot), ...handleYs);
+  const X = t => x0 + (x1 - x0) * t;
+  const Yr = v => y1 - (y1 - y0) * ((v - rMin) / Math.max(1e-6, rMax - rMin));
+  const Ys = v => y1 - (y1 - y0) * v;                    // separation is 0..1
+
+  const path = (f, key) => pts.map((p, i) =>
+    `${i ? "L" : "M"}${X(p.t).toFixed(2)} ${f(p[key]).toFixed(2)}`).join("");
+
+  const end = endV;
+  const span = 1 / (1 + Math.max(0, A.rest || 0));
+  const reachedPeak = Math.max(...pts.map(p => p.rot));
+
+  // dotted guides at the solved landmark values
+  // Drop a label when it would land on top of one already placed
+  // (374 and 360 are only a few pixels apart); the line still draws.
+  const placed = [];
+  const guide = (y, label, cls) => {
+    const clash = placed.some(py => Math.abs(py - y) < 10);
+    if (!clash) placed.push(y);
+    return `<line x1="${x0}" y1="${y.toFixed(2)}" x2="${x1}" y2="${y.toFixed(2)}"
+       class="gl ${cls}"/>` +
+      (clash ? "" : `<text x="${(x0 - 6).toFixed(2)}" y="${(y + 3.2).toFixed(2)}"
+       class="gt ${cls}">${label}</text>`);
+  };
+
+  // Alternate the label row: adjacent beat markers can sit very close
+  // (they collided as "apapstin"), so odd ones drop to a second line.
+  let vi = 0;
+  const vguide = (t, label) => {
+    const row = (vi++ % 2) ? 25 : 14;
+    return `<line x1="${X(t).toFixed(2)}" y1="${y0}" x2="${X(t).toFixed(2)}" y2="${y1}" class="gl gv"/>` +
+      `<text x="${X(t).toFixed(2)}" y="${(y1 + row).toFixed(2)}" class="gt gv">${label}</text>`;
+  };
+
+  const parts = [];
+  // horizontal: the pinned values
+  parts.push(guide(Yr(0), "0\u00B0", "r"));
+  if (A.rPeakV) parts.push(guide(Yr(A.rPeakV), `${A.rPeakV}\u00B0`, "r"));
+  if (reachedPeak > end + 0.5) parts.push(guide(Yr(reachedPeak), `${reachedPeak.toFixed(0)}\u00B0`, "r"));
+  parts.push(guide(Yr(end), `${end.toFixed(0)}\u00B0`, "r"));
+  parts.push(guide(Ys(A.sPeakV), "apart", "s"));
+
+  // vertical: the beat boundaries, at their real positions
+  // These two are separate params and often sit close together (0.26 vs
+  // 0.30 by default); label them explicitly so they do not read as one.
+  parts.push(vguide(A.sPeakT * span, "sep peak"));
+  parts.push(vguide(A.rPeakT * span, "rot peak"));
+  if (A.rOverV > 0.5) parts.push(vguide(A.rOverT * span, "overshoot"));
+  if (span < 0.999) parts.push(vguide(span, "rest"));
+
+  // the curves
+  parts.push(`<path d="${path(Ys, "sep")}" class="cv sep"/>`);
+  parts.push(`<path d="${path(Yr, "rot")}" class="cv rot"/>`);
+
+  /* ---- bezier handles ----
+     Each handle is drawn from its key out to the control point it
+     defines, in the same space as the curve, so what you drag is what
+     you see. A handle of length 0 collapses onto its key -- which is
+     exactly what a stationary peak looks like. */
+  const handles = (keys, Y, cls) => {
+    const out = [];
+    for (let i = 0; i < keys.length - 1; i++) {
+      const a = keys[i], b = keys[i + 1];
+      const ax = X(a.t * span), bx = X(b.t * span);
+      const ay = Y(a.v),        by = Y(b.v);
+      const dv = b.v - a.v;
+      // out-handle of `a`: x fraction along the segment, y fraction of dv
+      const ox = ax + (bx - ax) * clamp01(a.outX ?? 1/3);
+      const oy = Y(a.v + dv * (a.outY ?? 0));
+      // in-handle of `b`: measured BACK from b, y is an offset past it
+      const ix = bx - (bx - ax) * clamp01(b.inX ?? 1/3);
+      const iy = Y(b.v + dv * (b.inY ?? 0));
+      out.push(
+        `<line x1="${ax.toFixed(2)}" y1="${ay.toFixed(2)}" x2="${ox.toFixed(2)}" y2="${oy.toFixed(2)}" class="hl ${cls}"/>`,
+        `<line x1="${bx.toFixed(2)}" y1="${by.toFixed(2)}" x2="${ix.toFixed(2)}" y2="${iy.toFixed(2)}" class="hl ${cls}"/>`,
+        `<circle cx="${ox.toFixed(2)}" cy="${oy.toFixed(2)}" r="2.2" class="hp ${cls}"/>`,
+        `<circle cx="${ix.toFixed(2)}" cy="${iy.toFixed(2)}" r="2.2" class="hp ${cls}"/>`);
+    }
+    // the keys themselves
+    for (const k of keys)
+      out.push(`<circle cx="${X(k.t * span).toFixed(2)}" cy="${Y(k.v).toFixed(2)}" r="3" class="kp ${cls}"/>`);
+    return out.join("");
+  };
+
+  const rotKeys = [
+    { t: 0,        v: 0,              outX: A.rStartHX, outY: A.rStartHY },
+    { t: A.rPeakT, v: A.rPeakV,       inX: A.rPeakIn, inY: 0, outX: A.rPeakOut, outY: 0 },
+    { t: A.rOverT, v: end + A.rOverV, inX: A.rOverIn, inY: 0, outX: A.rOverOut, outY: 0 },
+    { t: 1,        v: end,            inX: A.rEndHX, inY: 0 },
+  ];
+  const sepKeys = [
+    { t: 0,        v: 0,            outX: A.sStartHX, outY: A.sStartHY },
+    { t: A.sPeakT, v: A.sPeakV,     inX: A.sPeakIn, inY: 0, outX: A.sPeakOut, outY: 0 },
+    { t: 1,        v: 0,            inX: A.sEndHX, inY: 0 },
+  ];
+  parts.push(handles(sepKeys, Ys, "sep"));
+  parts.push(handles(rotKeys, Yr, "rot"));
+
+  // Report what the handles actually produced. The peak values are
+  // landed exactly (handle y = 0 there), but the OVERSHOOT is whatever
+  // the end handle's y yields -- so it is measured, not assumed.
+  const out = $("animOut");
+  if (out) {
+    const over = reachedPeak - end;
+    out.innerHTML =
+      `wind-up <b>${A.rPeakV}\u00B0</b> at ${Math.round(A.rPeakT * span * A.dur)}ms` +
+      ` \u00B7 apart <b>${(A.sPeakV * 100).toFixed(0)}%</b> at ${Math.round(A.sPeakT * span * A.dur)}ms` +
+      ` \u00B7 overshoot <b>+${over.toFixed(1)}\u00B0</b> at ${Math.round(A.rOverT * span * A.dur)}ms` +
+      ` \u00B7 settles at <b>${end.toFixed(0)}\u00B0</b>`;
+  }
+
+  // Playhead is a separate node so playback can move it without
+  // rebuilding the whole chart 60 times a second.
+  const px = X(clamp01(playhead));
+  parts.push(`<line id="playhead" x1="${px.toFixed(2)}" y1="${y0}" x2="${px.toFixed(2)}" y2="${y1}" class="ph"/>`);
+
+  g.innerHTML = `<style>
+    .gl { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
+    .gl.gv { stroke-dasharray: 2 5; }
+    .gt { font-size: 9px; fill: var(--dim); text-anchor: end;
+          font-family: ui-monospace, Menlo, monospace; }
+    .gt.s { fill: #e5a13a; }
+    .gt.gv { text-anchor: middle; }
+    .cv { fill: none; stroke-width: 2; stroke-linejoin: round; }
+    .cv.rot { stroke: var(--accent); }
+    .cv.sep { stroke: #e5a13a; }
+    .ph { stroke: var(--text); stroke-width: 1.5; opacity: .9; }
+    .hl { stroke-width: 1; opacity: .5; }
+    .hl.rot { stroke: var(--accent); }
+    .hl.sep { stroke: #e5a13a; }
+    .hp { opacity: .75; }
+    .hp.rot { fill: var(--accent); }
+    .hp.sep { fill: #e5a13a; }
+    .kp { stroke: var(--canvas); stroke-width: 1.2; }
+    .kp.rot { fill: var(--accent); }
+    .kp.sep { fill: #e5a13a; }
+  </style>` + parts.join("");
+}
+
+/** Move just the playhead; cheap enough for every frame. */
+function movePlayhead(t) {
+  const ph = $("playhead");
+  if (!ph) { drawGraph(t); return; }
+  const x = (CHART.x0 + (CHART.x1 - CHART.x0) * clamp01(t)).toFixed(2);
+  ph.setAttribute("x1", x); ph.setAttribute("x2", x);
+}
+
+function applyAnim(t) {
+  const a = animAt(clamp01(t));
+  $("spin").setAttribute("transform", `rotate(${a.rot.toFixed(3)} 0.5 0.5)`);
+  $("aL").setAttribute("transform",  `translate(${a.lx.toFixed(4)} ${a.ly.toFixed(4)})`);
+  $("aSq").setAttribute("transform", `translate(${a.sx.toFixed(4)} ${a.sy.toFixed(4)})`);
+  const sc = $("scrub");
+  if (document.activeElement !== sc) sc.value = t;
+  movePlayhead(t);
+}
+
+function playAnim() {
+  cancelAnimationFrame(animRAF);
+  animT0 = performance.now();
+  const step = now => {
+    const t = (now - animT0) / ANIM.dur;
+    if (t >= 1) {
+      applyAnim(1);
+      if (animLoop) { animT0 = now; animRAF = requestAnimationFrame(step); }
+      return;
+    }
+    applyAnim(t);
+    animRAF = requestAnimationFrame(step);
+  };
+  animRAF = requestAnimationFrame(step);
 }
 
 /* ---------- render ---------- */
 
 const $ = id => document.getElementById(id);
+
+/**
+ * Paint a part list into a container, one <path> per part, coloured by
+ * the live theme tokens. Previously the previews drew a single
+ * evenodd path, so the square was a HOLE and could not take its own
+ * colour -- the on-page view could not show the two-tone the exports
+ * carry. Now every surface renders the same parts the same way.
+ */
+/**
+ * One row per colour variant, every size inside it, on that variant's
+ * own background. `partsAt(px)` gives the geometry for a size and
+ * `widthAt(px)` its rendered width, so the same function serves the
+ * square mark and the wide wordmark.
+ */
+function renderRows(host, partsAt, widthAt) {
+  if (!host) return;
+  const PAD = 0.06;                      // breathing room, as elsewhere
+  const vs = VARIANTS;
+  host.innerHTML = vs.map(v => {
+    const cls = `on-${v.theme}`;
+    const figs = SIZES.slice().reverse().map(px => {
+      const parts = partsAt(px);
+      const wUnits = widthAt(px) / px;   // width in unit-box terms
+      const vb = `${-PAD} ${-PAD} ${(wUnits + PAD*2).toFixed(4)} ${(1 + PAD*2).toFixed(4)}`;
+      const w = (px * (wUnits + PAD*2)).toFixed(1);
+      const h = (px * (1 + PAD*2)).toFixed(1);
+      return `<figure><svg width="${w}" height="${h}" viewBox="${vb}">` +
+        parts.map(p => `<path fill="${p.part === "l" ? v.l : v.o}" d="${p.d}"/>`).join("") +
+        `</svg><figcaption>${px}</figcaption></figure>`;
+    }).join("");
+    return `<div class="vrow ${cls}"><div class="lbl">${v.label}</div>` +
+           `<div class="strip">${figs}</div></div>`;
+  }).join("");
+}
+
+/**
+ * An animated preview per variant, below the chart. They are rebuilt
+ * only when the geometry changes; applyAnim() drives them every frame.
+ */
+/**
+ * Drop the REAL exported SVG into each preview, rather than rebuilding
+ * the animation by hand. What you watch here is byte-for-byte the file
+ * the download button produces -- including its own <style> block and
+ * CSS keyframes -- so the preview cannot drift from the artifact.
+ *
+ * Each copy needs unique keyframe names: several inline SVGs in one
+ * document share a stylesheet scope, so identical @keyframes names
+ * would collide and every variant would run the last one's timing.
+ */
+function buildAnimRows() {
+  const host = $("animrows2");
+  if (!host) return;
+  host.innerHTML = VARIANTS.map(v => {
+    // Scope BOTH the keyframe names and the class names. Inline SVGs
+    // share the document's stylesheet, so four copies of `.spin` meant
+    // the last <style> block won and every variant ran that one's
+    // timing -- unique @keyframes alone was not enough.
+    const svg = svgAnimated(64, v.k)
+      .replace(/loctt-(rot|l|o)\b/g, `loctt-$1-${v.k}`)
+      .replace(/\b(spin|pL|pO)\b/g, `$1-${v.k}`);
+    return `<figure class="apvf on-${v.theme}">${svg}` +
+           `<figcaption>${v.label}</figcaption></figure>`;
+  }).join("");
+}
+
+function paintParts(host, parts) {
+  if (!host) return;
+  host.innerHTML = parts.map(p =>
+    `<path data-part="${p.part}" fill="${p.part === "l" ? "var(--logo-accent)" : "var(--logo-ink)"}" d="${p.d}"/>`
+  ).join("");
+}
 
 function render() {
   save();
@@ -848,10 +1579,14 @@ function render() {
   PREC = 6;
   const pReg0 = paramsAt(REG_PX);
   const big = buildPath(pReg0);
-  $("mark").setAttribute("d", big.d);
+  paintParts($("mark"), markParts(pReg0));
+
+  // animation preview uses the same geometry, split into its two pieces
+  $("aL").setAttribute("d", big.dL);
+  $("aSq").setAttribute("d", big.dSq || "");
 
   const w = buildWordmark(pReg0);
-  $("wordmark").setAttribute("d", w.d);
+  paintParts($("wordmark"), w.parts);
   // Pad the wordmark box. At wordScale = 1 the letters fill y 0..1
   // exactly, so a tight viewBox puts their flat tops hard against the
   // panel edge and they read as chopped. The mark itself is not clipped
@@ -860,39 +1595,20 @@ function render() {
   $("word").setAttribute("viewBox",
     `${-PAD} ${-PAD} ${(w.width + PAD*2).toFixed(4)} ${(1 + PAD*2).toFixed(4)}`);
 
-  // Wordmark at each size, each from its OWN interpolated parameters --
-  // this row is where you see the full logo fall apart at 16px.
-  const host = $("wordsizes");
-  if (!host.childElementCount) {
-    host.innerHTML = SIZES.slice().reverse().map(px =>
-      `<figure>${px === 64 ? '<div class="swatch" id="wswatch">' : ''}` +
-      `<svg id="w${px}" viewBox="0 0 4 1"><path fill="var(--mark)" fill-rule="evenodd"></path></svg>` +
-      `${px === 64 ? '</div>' : ''}` +
-      `<figcaption>${px === 64 ? '64 knockout' : px}</figcaption></figure>`).join("");
-  }
-  for (const px of SIZES) {
-    const ww = buildWordmark(paramsAt(px));
-    const el = $("w" + px);
-    if (!el) continue;
-    const pad = 0.06;
-    el.setAttribute("viewBox",
-      `${-pad} ${-pad} ${(ww.width + pad*2).toFixed(4)} ${(1 + pad*2).toFixed(4)}`);
-    // keep the LETTERS at px tall, not the padded box
-    el.setAttribute("height", (px * (1 + pad*2)).toFixed(1));
-    el.setAttribute("width",  (px * (ww.width + pad*2)).toFixed(1));
-    el.querySelector("path").setAttribute("d", ww.d);
-  }
+  // --- one ROW per colour variant, every size in it ---
+  // Built from the same parts the exports use, on each variant's own
+  // background, so what is shown is exactly what downloads.
+  renderRows($("markrows"),
+    px => markParts(paramsAt(px)),
+    px => px);
+  renderRows($("wordrows"),
+    px => buildWordmark(paramsAt(px)).parts,
+    px => buildWordmark(paramsAt(px)).width * px);
 
-  // Each thumbnail gets its OWN parameters, interpolated for its size --
-  // that is the whole point of the two-value model.
-  for (const px of SIZES) {
-    const d = buildPath(paramsAt(px)).d;
-    for (const id of ["s" + px, px === 64 ? "s64b" : null]) {
-      if (!id) continue;
-      const el = $(id);
-      if (el) el.querySelector("path").setAttribute("d", d);
-    }
-  }
+  // --- animated preview per variant, below the chart ---
+  // These are self-running exported SVGs, so they are NOT driven by the
+  // scrubber; they loop on their own like the real asset does.
+  buildAnimRows();
 
   // Readouts: caps, and what the formula gives at each angle.
   const pReg = paramsAt(REG_PX);
@@ -932,34 +1648,148 @@ function render() {
  * interpolated parameters -- a 16px file is not the 64px file scaled
  * down, it is the small-value geometry.
  */
-function allSvgs() {
-  const prev = PREC;
-  PREC = EXPORT_PREC;
-  const out = [];
+/* --------------------------------------------------------------------
+   SVG BUILDERS
 
-  for (const px of SIZES) {
-    const p = paramsAt(px);
-    const d = scalePath(buildPath(p).d, px);
-    out.push(
-`<!-- LO mark @ ${px} -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${px} ${px}" width="${px}" height="${px}">
-  <path fill-rule="evenodd" fill="currentColor" d="${d}"/>
-</svg>`);
-  }
+   Three deliverables, each in four colour variants. The L always takes
+   the accent token and the square/letters take text-primary, matching
+   how LogoMark.tsx is wired.
+-------------------------------------------------------------------- */
 
-  for (const px of SIZES) {
-    const p = paramsAt(px);
-    const w = buildWordmark(p);
-    const d = scalePath(w.d, px);
-    const wd = +(w.width * px).toFixed(3);
-    out.push(
-`<!-- LOCTT wordmark @ ${px} tall -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${wd} ${px}" width="${wd}" height="${px}">
-  <path fill-rule="evenodd" fill="currentColor" d="${d}"/>
-</svg>`);
-  }
+const variantOf = k => VARIANTS.find(v => v.k === k) || VARIANTS[0];
 
+/**
+ * Which token a part takes. The L is the accent; everything else --
+ * the square and each letter -- is text-primary.
+ */
+const fillFor = (part, v) => (part === "l" ? v.l : v.o);
+
+/** Parts -> <path> markup. One place, so every surface agrees. */
+function pathsMarkup(parts, v, indent = "  ", extra = () => "") {
+  return parts.map(p =>
+    `${indent}<path data-part="${p.part}"${extra(p)} fill="${fillFor(p.part, v)}" d="${p.d}"/>`
+  ).join("\n");
+}
+
+/** The LO mark as parts, at a given size's parameters. */
+function markParts(s) {
+  const b = buildPath(s);
+  return [
+    { part: "l", d: b.dL },
+    ...(b.dSq ? [{ part: "o", d: b.dSq }] : []),
+  ];
+}
+
+/** Scale a part list in place-ish (returns a new list). */
+const scaleParts = (parts, k) => parts.map(p => ({ part: p.part, d: scalePath(p.d, k) }));
+
+/** The LO mark alone, at `px`, using that size's interpolated params. */
+function svgMark(px, vk) {
+  const v = variantOf(vk);
+  const prev = PREC; PREC = EXPORT_PREC;
+  const parts = scaleParts(markParts(paramsAt(px)), px);
   PREC = prev;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${px} ${px}" width="${px}" height="${px}">
+${pathsMarkup(parts, v)}
+</svg>`;
+}
+
+/** The full LOCTT wordmark, `px` tall, every glyph its own path. */
+function svgWordmark(px, vk) {
+  const v = variantOf(vk);
+  const prev = PREC; PREC = EXPORT_PREC;
+  const w = buildWordmark(paramsAt(px));
+  const parts = scaleParts(w.parts, px);
+  PREC = prev;
+  const wd = +(w.width * px).toFixed(3);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${wd} ${px}" width="${wd}" height="${px}">
+${pathsMarkup(parts, v)}
+</svg>`;
+}
+
+/**
+ * The wordmark with the spinner baked in: the LO's two pieces animate,
+ * the CTT sit still beside them. The keyframes are the same ones the
+ * Copy CSS button emits, inlined in a <style> so the file is standalone.
+ */
+/**
+ * The MARK alone with the spinner baked in -- just the L and its
+ * square, no lettering. The wordmark is a static lockup; animating the
+ * CTT alongside a spinning LO reads as two competing things.
+ *
+ * The keyframes are the same ones the Copy CSS button emits, inlined in
+ * a <style> so the file is standalone.
+ */
+function svgAnimated(px, vk) {
+  const v = variantOf(vk);
+  const A = ANIM;
+  const prev = PREC; PREC = EXPORT_PREC;
+  const parts = scaleParts(markParts(paramsAt(px)), px);
+  PREC = prev;
+
+  const span = 1 / (1 + Math.max(0, A.rest || 0));
+  const end = Math.round(A.turns) * 360;
+  const f3 = x => (+x).toFixed(3);
+  const ease = (outX, outY, inX, inY) =>
+    `cubic-bezier(${f3(clamp01(outX))}, ${f3(outY)}, ${f3(clamp01(1 - inX))}, ${f3(1 + inY)})`;
+
+  const rotStops = [
+    [0,         0,              ease(A.rStartHX, A.rStartHY, A.rPeakIn, 0)],
+    [A.rPeakT,  A.rPeakV,       ease(A.rPeakOut, 0, A.rOverIn, 0)],
+    [A.rOverT,  end + A.rOverV, ease(A.rOverOut, 0, A.rEndHX, 0)],
+    [1,         end,            null],
+  ];
+  const off = val => f3(A.spread * val / Math.SQRT2 * px);
+  const sepStops = [
+    [0,        0,        ease(A.sStartHX, A.sStartHY, A.sPeakIn, 0)],
+    [A.sPeakT, A.sPeakV, ease(A.sPeakOut, 0, A.sEndHX, 0)],
+    [1,        0,        null],
+  ];
+  const emit = (stops, fmt) => {
+    const rows = stops.map(([t, val, e]) =>
+      `    ${(t * span * 100).toFixed(2)}% { ${fmt(val)}` +
+      (e ? ` animation-timing-function: ${e};` : "") + ` }`);
+    if (span < 0.999) rows.push(`    100% { ${fmt(stops[stops.length - 1][1])} }`);
+    return rows.join("\n");
+  };
+
+  // The mark fills the box, so it spins about its own centre. The
+  // viewBox is padded because a rotating square sweeps a larger circle
+  // than the square itself -- half its diagonal, plus the separation.
+  const pad = px * (Math.SQRT2 - 1) / 2 + A.spread * px * 0.75;
+  const box = px + pad * 2;
+  const c = f3(box / 2);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${f3(-pad)} ${f3(-pad)} ${f3(box)} ${f3(box)}" width="${f3(box)}" height="${f3(box)}">
+  <style>
+    .spin { transform-origin: ${f3(px / 2)}px ${f3(px / 2)}px;
+            animation: loctt-rot ${A.dur}ms infinite; }
+    .pL   { animation: loctt-l ${A.dur}ms infinite; }
+    .pO   { animation: loctt-o ${A.dur}ms infinite; }
+    @keyframes loctt-rot {
+${emit(rotStops, val => `transform: rotate(${f3(val)}deg);`)}
+    }
+    @keyframes loctt-l {
+${emit(sepStops, val => `transform: translate(-${off(val)}px, ${off(val)}px);`)}
+    }
+    @keyframes loctt-o {
+${emit(sepStops, val => `transform: translate(${off(val)}px, -${off(val)}px);`)}
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .spin, .pL, .pO { animation: none; }
+    }
+  </style>
+  <g class="spin">
+${pathsMarkup(parts, v, "    ", p => p.part === "l" ? ' class="pL"' : ' class="pO"')}
+  </g>
+</svg>`;
+}
+
+/** Everything, for the "all svgs" box. */
+function allSvgs() {
+  const out = [];
+  for (const px of SIZES) out.push(`<!-- LO mark @ ${px} (tokens) -->\n` + svgMark(px, "token"));
+  for (const px of SIZES) out.push(`<!-- LOCTT wordmark @ ${px} (tokens) -->\n` + svgWordmark(px, "token"));
+  out.push(`<!-- LOCTT animated @ 64 (tokens) -->\n` + svgAnimated(64, "token"));
   return out.join("\n\n");
 }
 
@@ -1061,17 +1891,186 @@ $("theme").addEventListener("click", e => {
 $("reset").addEventListener("click", () => {
   for (const f of FIELDS) S[f.k] = { reg: f.reg, sml: f.sml };
   S.crookConcentric = true;
+  Object.assign(ANIM, ANIM_DEFAULTS);   // Reset covers the animation too
   try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
-  syncAll(); render();
+  syncAll(); syncAnim(); fitAnimView(); render(); drawGraph(0); applyAnim(0);
 });
+
+/* ---------- animation controls ---------- */
+
+function buildAnimControls() {
+  const host = $("animrows");
+  let out = "", sec = null;
+  for (const f of ANIM_FIELDS) {
+    if (f.sec !== sec) {
+      sec = f.sec;
+      out += `<div class="asec">${sec}${sec === "When" ?
+        ' <em>points in time, 0 = start, 1 = end of the cycle</em>' : ''}</div>`;
+    }
+    out += `<div class="f"><label for="an-${f.k}">${f.label}` +
+           (f.unit ? ` <em>${f.unit}</em>` : "") + `</label>` +
+           `<input type="number" id="an-${f.k}" step="${f.step}" min="${f.min}" max="${f.max}">` +
+           `<input class="sl" type="range" id="an-${f.k}-sl" min="${f.min}" max="${f.max}" step="${f.step}">` +
+           `<div class="ahint">${f.hint}` +
+           (f.time ? ` <b id="an-${f.k}-ms"></b>` : "") + `</div></div>`;
+  }
+  host.innerHTML = out;
+  for (const f of ANIM_FIELDS) {
+    const n = $(`an-${f.k}`), sl = $(`an-${f.k}-sl`);
+    const set = val => {
+      if (!isFinite(val)) return;
+      ANIM[f.k] = val;
+      // The three timing markers must stay in order. Previously the code
+      // silently clamped them (set "pieces fully apart" to 0.3 while
+      // "spin starts" was 0.1 and the animation quietly used 0.08), so
+      // the slider showed one number and the motion used another. Now
+      // dragging one PUSHES the others, and the readout is the truth.
+      syncAnim();
+      fitAnimView();
+      drawGraph(parseFloat($("scrub").value));
+      applyAnim(parseFloat($("scrub").value));
+      save();
+    };
+    sl.addEventListener("input", e => set(parseFloat(e.target.value)));
+    n.addEventListener("change", e => set(parseFloat(e.target.value)));
+  }
+  $("scrub").addEventListener("input", e => {
+    // dragging the scrubber takes over: stop playback and reset the toggle
+    if (animLoop) {
+      animLoop = false;
+      const b = $("playtoggle");
+      b.classList.remove("on"); b.innerHTML = "&#9654;"; b.title = "Play";
+    }
+    cancelAnimationFrame(animRAF);
+    applyAnim(parseFloat(e.target.value));
+  });
+  // One control: play loops until clicked again.
+  $("playtoggle").addEventListener("click", e => {
+    animLoop = !animLoop;
+    e.target.classList.toggle("on", animLoop);
+    e.target.innerHTML = animLoop ? "&#9632;" : "&#9654;";   // square / triangle
+    e.target.title = animLoop ? "Stop" : "Play";
+    if (animLoop) playAnim();
+    else cancelAnimationFrame(animRAF);
+  });
+  $("copycss").addEventListener("click", async e => {
+    const css = animCSS();
+    try { await navigator.clipboard.writeText(css); }
+    catch (err) { $("dout").value = css; $("dout").select(); document.execCommand("copy"); }
+    const b = e.target, old = b.textContent;
+    b.textContent = "Copied"; setTimeout(() => b.textContent = old, 900);
+  });
+}
+
+function syncAnim() {
+  for (const f of ANIM_FIELDS) {
+    const n = $(`an-${f.k}`), sl = $(`an-${f.k}-sl`);
+    if (document.activeElement !== n) n.value = ANIM[f.k];
+    sl.value = ANIM[f.k];
+    const ms = $(`an-${f.k}-ms`);
+    if (ms) ms.textContent = `${Math.round(ANIM[f.k] * ANIM.dur)} ms into the cycle`;
+  }
+}
+
+/**
+ * Bake the timeline into CSS keyframes. Sampled rather than expressed
+ * analytically, because the eased beats do not map onto CSS timing
+ * functions -- 60 stops is smooth and still small.
+ */
+/**
+ * Emit real CSS keyframes with PER-SEGMENT cubic-bezier easing.
+ *
+ * A single cubic-bezier() cannot express this timeline: it is a
+ * monotonic progress mapping, and our rotation reverses direction twice
+ * (0 -> -22 -> +374 -> 360). But CSS allows a timing function PER
+ * KEYFRAME, and each of our segments IS monotonic -- so one bezier per
+ * segment covers it exactly.
+ *
+ * The bezier is solved from the segment's endpoint velocities rather
+ * than picked by eye. For a segment spanning dt in time and dv in value,
+ * a normalised endpoint slope is
+ *
+ *     s = m * dt / dv          (m is value-units per unit-t)
+ *
+ * and the classic control-point placement that realises slope s at an
+ * end is (1/3, s/3) from that end. Clamped to x in [0,1] as the spec
+ * requires.
+ *
+ * This beats sampling 60 stops: the browser interpolates on the
+ * compositor between 5 keyframes, which is smoother and far smaller.
+ */
+/**
+ * Export the same three keys as CSS, using the handles directly as
+ * cubic-bezier() timing functions. No sampling: the browser evaluates
+ * the identical curve the preview does.
+ */
+function animCSS() {
+  const A = ANIM;
+  const span = 1 / (1 + Math.max(0, A.rest || 0));
+  const end = Math.round(A.turns) * 360;
+  const f3 = x => (+x).toFixed(3);
+
+  // A segment's timing function, from the out-handle of the key it
+  // leaves and the in-handle of the key it reaches.
+  const ease = (outX, outY, inX, inY) =>
+    `cubic-bezier(${f3(clamp01(outX))}, ${f3(outY)}, ` +
+    `${f3(clamp01(1 - inX))}, ${f3(1 + inY)})`;
+
+  const rotStops = [
+    [0,          0,                ease(A.rStartHX, A.rStartHY, A.rPeakIn, 0)],
+    [A.rPeakT,   A.rPeakV,         ease(A.rPeakOut, 0, A.rOverIn, 0)],
+    [A.rOverT,   end + A.rOverV,   ease(A.rOverOut, 0, A.rEndHX, 0)],
+    [1,          end,              null],
+  ];
+  const off = v => f3(A.spread * v / Math.SQRT2);
+  const sepStops = [
+    [0,          0,          ease(A.sStartHX, A.sStartHY, A.sPeakIn, 0)],
+    [A.sPeakT,   A.sPeakV,   ease(A.sPeakOut, 0, A.sEndHX, 0)],
+    [1,          0,          null],
+  ];
+
+  const emit = (stops, fmt) => {
+    const rows = stops.map(([t, v, e]) =>
+      `  ${(t * span * 100).toFixed(2)}% { ${fmt(v)}` +
+      (e ? `\n    animation-timing-function: ${e};` : "") + ` }`);
+    if (span < 0.999) {
+      const last = stops[stops.length - 1];
+      rows.push(`  100% { ${fmt(last[1])} }`);   // hold through the rest
+    }
+    return rows.join("\n");
+  };
+
+  return `/* LocTT spinner \u2014 3 keys per curve, handles as cubic-bezier.
+   Markup:
+     <svg viewBox="0 0 1 1"><g class="loctt-spin">
+       <path class="loctt-L" d="..."/><path class="loctt-sq" d="..."/>
+     </g></svg> */
+.loctt-spin { transform-box: view-box; transform-origin: 0.5px 0.5px;
+              animation: loctt-rot ${A.dur}ms infinite; }
+.loctt-L    { animation: loctt-l  ${A.dur}ms infinite; }
+.loctt-sq   { animation: loctt-sq ${A.dur}ms infinite; }
+
+@keyframes loctt-rot {
+${emit(rotStops, v => `transform: rotate(${f3(v)}deg);`)}
+}
+@keyframes loctt-l {
+${emit(sepStops, v => `transform: translate(-${off(v)}px, ${off(v)}px);`)}
+}
+@keyframes loctt-sq {
+${emit(sepStops, v => `transform: translate(${off(v)}px, -${off(v)}px);`)}
+}`;
+}
 
 /* ---------- persistence ---------- */
 
-const STORE_KEY = "loctt-logo-lab/v1";
+// Bumped when the animation model changed shape. A stale v1 config
+// merged over the new defaults could reintroduce a fractional `turns`,
+// which leaves the mark facing 90 degrees off where it started.
+const STORE_KEY = "loctt-logo-lab/v2";
 
 /** Only the field values and the one checkbox; nothing derived. */
 function serialise() {
-  const o = { crookConcentric: S.crookConcentric };
+  const o = { crookConcentric: S.crookConcentric, anim: { ...ANIM } };
   for (const f of FIELDS) o[f.k] = { reg: S[f.k].reg, sml: S[f.k].sml };
   return o;
 }
@@ -1100,6 +2099,12 @@ function load() {
     if (isFinite(sml)) S[f.k].sml = sml;
   }
   if (typeof o.crookConcentric === "boolean") S.crookConcentric = o.crookConcentric;
+  if (o.anim && typeof o.anim === "object") {
+    for (const f of ANIM_FIELDS) {
+      const v = Number(o.anim[f.k]);
+      if (isFinite(v)) ANIM[f.k] = v;
+    }
+  }
   return true;
 }
 
@@ -1112,45 +2117,68 @@ function exportSource() {
     return st.includes(".") ? st.split(".")[1].length : 0;
   };
   const rows = FIELDS.map(f => {
-    const v = S[f.k];
-    const d = dp(f.k);
-    const pad = (n) => String(+n.toFixed(d));
-    return `  { k:${JSON.stringify(f.k).padEnd(11)} g:${JSON.stringify(f.g).padEnd(13)}` +
-           ` label:${(JSON.stringify(f.label)+",").padEnd(18)}` +
+    const v = S[f.k], d = dp(f.k), pad = n => String(+n.toFixed(d));
+    return `  { k:${(JSON.stringify(f.k) + ",").padEnd(12)}` +
+           ` g:${(JSON.stringify(f.g) + ",").padEnd(14)}` +
+           ` label:${(JSON.stringify(f.label) + ",").padEnd(18)}` +
            ` min:${f.min}, max:${f.max}, step:${f.step},` +
            ` reg:${pad(v.reg)}, sml:${pad(v.sml)} },`;
   }).join("\n");
-  return `const FIELDS = [\n${rows.replace(/k:"(\w+)"/g, 'k:"$1",').replace(/g:"(\w+)"/g, 'g:"$1",')}\n];\n\n` +
-         `const S = { crookConcentric: ${S.crookConcentric} };`;
+
+  // The animation block too -- it is half the config, and leaving it out
+  // meant a "copy config" that silently dropped everything you tuned in
+  // the spinner section.
+  const animRows = Object.keys(ANIM_DEFAULTS)
+    .map(k => `  ${(k + ":").padEnd(11)} ${ANIM[k]},`)
+    .join("\n");
+
+  return `const FIELDS = [\n${rows}\n];\n\n` +
+         `const S = { crookConcentric: ${S.crookConcentric} };\n\n` +
+         `const ANIM = {\n${animRows}\n};`;
 }
 
-$("download").addEventListener("click", () => {
-  // One file per variant, zipped is overkill -- fire them individually.
-  const prev = PREC; PREC = EXPORT_PREC;
-  const files = [];
-  for (const px of SIZES) {
-    const p = paramsAt(px);
-    files.push([`loctt-mark-${px}.svg`,
-`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${px} ${px}" width="${px}" height="${px}">
-  <path fill-rule="evenodd" fill="currentColor" d="${scalePath(buildPath(p).d, px)}"/>
-</svg>`]);
-  }
-  for (const px of SIZES) {
-    const p = paramsAt(px);
-    const w = buildWordmark(p);
-    const wd = +(w.width * px).toFixed(3);
-    files.push([`loctt-wordmark-${px}.svg`,
-`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${wd} ${px}" width="${wd}" height="${px}">
-  <path fill-rule="evenodd" fill="currentColor" d="${scalePath(w.d, px)}"/>
-</svg>`]);
-  }
-  PREC = prev;
+/**
+ * Fire a list of [filename, text] as individual downloads. Staggered
+ * because browsers silently drop simultaneous ones; the first will
+ * usually prompt to allow multiple files.
+ */
+function downloadFiles(files) {
   files.forEach(([name, text], i) => setTimeout(() => {
-    const url = URL.createObjectURL(new Blob([text], {type:"image/svg+xml"}));
+    const url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
     const a = document.createElement("a");
     a.href = url; a.download = name; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, i * 120));   // stagger: browsers drop simultaneous downloads
+  }, i * 120));
+}
+
+const markFiles = () => SIZES.flatMap(px =>
+  VARIANTS.map(v => [`loctt-mark-${px}-${v.k}.svg`, svgMark(px, v.k)]));
+const wordFiles = () => SIZES.flatMap(px =>
+  VARIANTS.map(v => [`loctt-wordmark-${px}-${v.k}.svg`, svgWordmark(px, v.k)]));
+const animFiles = () => VARIANTS.map(v =>
+  [`loctt-animated-64-${v.k}.svg`, svgAnimated(64, v.k)]);
+
+const flash = (b, msg = "Downloading\u2026") => {
+  const old = b.textContent;
+  b.textContent = msg; setTimeout(() => { b.textContent = old; }, 1400);
+};
+
+$("dl-mark").addEventListener("click", e => { downloadFiles(markFiles()); flash(e.target); });
+$("dl-word").addEventListener("click", e => { downloadFiles(wordFiles()); flash(e.target); });
+$("dl-anim").addEventListener("click", e => { downloadFiles(animFiles()); flash(e.target); });
+$("download").addEventListener("click", e => {
+  downloadFiles([...markFiles(), ...wordFiles(), ...animFiles()]);
+  flash(e.target);
+});
+
+$("copyanim").addEventListener("click", async e => {
+  const text = "const ANIM = {\n" +
+    Object.keys(ANIM_DEFAULTS).map(k => `  ${(k + ":").padEnd(11)} ${ANIM[k]},`).join("\n") +
+    "\n};";
+  try { await navigator.clipboard.writeText(text); }
+  catch (err) { $("dout").value = text; $("dout").select(); document.execCommand("copy"); }
+  const b = e.target, old = b.textContent;
+  b.textContent = "Copied"; setTimeout(() => { b.textContent = old; }, 1200);
 });
 
 $("export").addEventListener("click", async () => {
@@ -1163,10 +2191,15 @@ $("export").addEventListener("click", async () => {
   setTimeout(() => { b.textContent = old; render(); }, 1400);
 });
 
+buildAnimControls();
 buildControls();
 load();
 syncAll();
+syncAnim();
 render();
+fitAnimView();
+drawGraph(0);
+applyAnim(0);
 </script>
 </body>
 </html>

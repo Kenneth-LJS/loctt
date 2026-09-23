@@ -698,7 +698,18 @@ export function Dropdown(props: DropdownProps) {
               // The archived option is present and named, so the user
               // learns the entity exists and is archived rather than
               // wondering where it went (P7).
-              title={disabled ? disabledReason : undefined}
+              //
+              // UI-23e: the reason is wired as an explicit accessible
+              // DESCRIPTION rather than left to the browser's
+              // `title`-as-description fallback. It points at the same
+              // visible note already rendered at the foot of the list,
+              // so the reason is stated once and both sighted and
+              // screen-reader users get it from one node. It stays a
+              // description, never the name — see `Menu.tsx`'s
+              // `MenuItem` note for why `aria-label` would be wrong.
+              {...(disabled && disabledReason !== undefined
+                ? { "aria-describedby": `${listId}-disabled-reason` }
+                : {})}
               onMouseMove={() => {
                 if (!menuMode && !disabled && !active) setActiveKey(opt.key);
               }}
@@ -751,8 +762,15 @@ export function Dropdown(props: DropdownProps) {
 
       {footer?.({ query: trimmedQuery, loaded, visible, close })}
 
+      {/* The id is what each disabled row's `aria-describedby` points at
+          (UI-23e). The render condition is exactly "a disabled row is
+          visible", which is exactly when a row references it — so the
+          reference never dangles. */}
       {disabledReason !== undefined && visible.some(o => o.disabled === true) && (
-        <p className="border-t border-border-subtle px-3 pb-1 pt-1.5 text-meta text-text-tertiary">
+        <p
+          id={`${listId}-disabled-reason`}
+          className="border-t border-border-subtle px-3 pb-1 pt-1.5 text-meta text-text-tertiary"
+        >
           {disabledReason}
         </p>
       )}

@@ -26,4 +26,19 @@ describe("LoadingState", () => {
     rerender(<LoadingState className="text-[0.9286rem]">Loading…</LoadingState>);
     expect(screen.getByRole("status").className).toBe("text-[0.9286rem]");
   });
+
+  it("shows the brand spinner instead of visible text (Ken's objection was to seeing the text)", () => {
+    render(<LoadingState>Loading projects…</LoadingState>);
+    expect(screen.getByTestId("logo-spinner")).toBeTruthy();
+  });
+
+  it("keeps the message announced via sr-only, not display:none — the text still exists for AT", () => {
+    render(<LoadingState>Loading projects…</LoadingState>);
+    const message = screen.getByText("Loading projects…");
+    expect(message.className).toContain("sr-only");
+    // Still inside the role=status region, so it is still the thing an
+    // AT announces — this is the same node the first test's textContent
+    // check reads.
+    expect(screen.getByRole("status").textContent).toBe("Loading projects…");
+  });
 });

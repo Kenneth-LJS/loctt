@@ -1,9 +1,9 @@
-import type { ArchivedScope, WorkflowConfig } from "@loctt/contracts";
+import type { WorkflowConfig } from "@loctt/contracts";
 // Per-file subpath, NOT the barrel: the barrel drags node:path into the
 // browser bundle (A37).
 import { filtersToSummary } from "@loctt/core/query/filters.js";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   useLabels,
@@ -18,17 +18,15 @@ import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import type { ListSearch } from "../router/listSearch.ts";
 import { ViewFormDialog } from "../settings/ViewFormDialog.tsx";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
-import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { ICON } from "../ui/icons.ts";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { Radio } from "../ui/Radio.tsx";
 import { Sheet } from "../ui/Sheet.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
 import { AdvancedQuerySurface } from "./AdvancedQuerySurface.tsx";
-import { ExportMenu } from "./ExportMenu.tsx";
 import { buildFacetOptions, type FacetOptions } from "./facetOptions.ts";
 import { FilterFacet, type FilterOption } from "./FilterFacet.tsx";
 import { SaveViewDialog } from "./SaveViewDialog.tsx";
@@ -52,11 +50,12 @@ import {
  *    of every remaining filter. Below `sm` this band collapses into a
  *    single "Filters" button + bottom Sheet.
  *  - **Right band — view actions.** A clean, aligned cluster pinned to
- *    the top-right: Refresh (demoted to icon-only — the view
- *    auto-refreshes), Export, and Save as view. These used to float in
- *    ListView's flex gutter, vertically centred in dead space and
- *    jumping as the chip row appeared; owning them here keeps them on the
- *    same baseline as the filters at one consistent control height.
+ *    the top-right: "Save as view" as a star `IconButton`, plus a ⋯ on
+ *    the one view that has extra rows for it (the board). These used to
+ *    float in ListView's flex gutter, vertically centred in dead space
+ *    and jumping as the chip row appeared; owning them here keeps them
+ *    on the same baseline as the filters at one consistent control
+ *    height. Refresh is gone (Q4) and so is Export (K30-web).
  *  - **Chip row.** The active filters as removable chips + "Clear all",
  *    below the toolbar.
  *
@@ -127,22 +126,36 @@ export interface FilterBarProps {
   /** Hidden where a saved view would not reproduce the scope. */
   readonly showSaveView?: boolean;
   /**
-   * View actions, rendered in the toolbar's top-right cluster. Passed in
-   * by ListView (they need the tasks feed's fetch state + the export
-   * query string) rather than re-derived here, so the bar owns the
-   * *layout* of the cluster without owning the data. Omitted on the
-   * sprint detail, which has its own header actions.
+   * Extra rows for the ⋯ View-options menu, rendered as their own
+   * "Configure" section.
+   *
+   * UI-3: the board used to carry a SECOND ⋯ menu in its PageHeader a
+   * few pixels from this one, at a different size, holding its two
+   * settings deep links — two identical-looking buttons whose contents
+   * the user could not predict. This prop merges them into this one.
+   *
+   * It is a prop on the bar rather than a menu owned by `PageHeader`
+   * because the bar owns the toolbar's right-hand action cluster, and
+   * the board is the only view that had anything to merge: moving
+   * ownership up to `PageHeader` would have added a menu to List,
+   * Timeline, Sprints and Milestones to solve a Board-only problem.
+   *
+   * K30-web (Ken, 2026-09-23): with the web export gone, the board is
+   * now the ONLY view that passes this — and therefore the only view
+   * that renders a ⋯ at all. The menu is rendered only when it has
+   * rows; see the cluster below.
    */
-  readonly exportTotal?: number | undefined;
-  readonly exportQueryString?: string | undefined;
+  readonly extraMenuSections?: ReactNode;
+  /** Heading for `extraMenuSections`. Defaults to "Configure". */
+  readonly extraMenuSectionLabel?: string;
 }
 
 export function FilterBar({
   from = "/list",
   hiddenFacets = [],
   showSaveView = true,
-  exportTotal,
-  exportQueryString,
+  extraMenuSections,
+  extraMenuSectionLabel = "Configure",
 }: FilterBarProps = {}) {
   const search = useSearch({ from });
   const navigate = useNavigate({ from });
@@ -163,21 +176,15 @@ export function FilterBar({
   const [advanced, setAdvanced] = useState(openEditorRequested);
   const [draft, setDraft] = useState(query);
 
-  // K107: the archived scope lives in the URL (`?archived=…`). Absent /
-  // unknown falls back to the default `active`. Writing it back drops the
-  // param entirely for the default so the URL stays clean, and resets the
-  // page since a scope change changes the result set.
-  const archivedScope: ArchivedScope = search.archived ?? "active";
-  const setArchivedScope = (scope: ArchivedScope) => {
-    void navigate({
-      search: prev => ({
-        ...prev,
-        archived: scope === "active" ? undefined : scope,
-        page: undefined,
-      }),
-    });
-  };
-
+  // K107 / Ken's ruling 2026-09-22 ("archiving is a one-way door, not a
+  // filter"): the task list is a primary work surface, so it carries NO
+  // archived-scope control — see the policy table in decisions.md § 9.
+  // The capability is NOT removed: `?archived=` (K107) still reaches the
+  // server exactly as before, it is simply no longer advertised by a
+  // control here. `search.archived` flows straight into the tasks query
+  // (see ListView), so a held/bookmarked `?archived=all` link keeps
+  // working — this comment is the only trace of the control that used to
+  // read/write it from this file.
   const projects = useProjects();
   const users = useUsers();
   const labels = useLabels();
@@ -189,6 +196,19 @@ export function FilterBar({
   const settingsMutation = useUserSettingsMutation();
 
   const [saveOpen, setSaveOpen] = useState(false);
+
+  /**
+   * Whether the ⋯ menu has anything to show.
+   *
+   * The `!== false` arm is not redundant: `extraMenuSections` is a
+   * `ReactNode`, so a caller writing `extraMenuSections={cond && <X/>}`
+   * passes `false` — a defined value that renders nothing. Without this
+   * the trigger would open an empty panel, which is the exact failure
+   * the "no empty menu" rule names.
+   */
+  const hasExtraMenu = extraMenuSections !== undefined
+    && extraMenuSections !== false
+    && extraMenuSections !== null;
   // K102: the active-view chip's Edit opens the shared view form dialog
   // seeded from the view's stored filters (it used to flatten the view
   // into `q=` and open the raw DSL editor — see `editActiveView`).
@@ -675,67 +695,99 @@ export function FilterBar({
 
         <div className="flex-1" />
 
-        {/* Right band — view actions. All three controls (Show archived,
-            Export, Save as view) are secondary (Ken's toolbar review, U23):
-            none is primary, so on desktop they collapse into a single "⋯"
-            overflow menu rather than three inline pills. On mobile they
-            already live in the filters Sheet, so this cluster is
-            desktop-only. No manual refresh (Q4): freshness is TanStack
-            Query staleTime + focus refetch. */}
-        {!isNarrow && (
+        {/* Right band — view actions (Ken's toolbar review, U23). No
+            manual refresh (Q4): freshness is TanStack Query staleTime +
+            focus refetch.
+
+            **Shape, after the web export was removed (K30-web, Ken
+            2026-09-23).** UI-2 had built this as a single ⋯ menu whose
+            order was create → act → configure:
+
+              1. Save as view  (create)
+              2. Export CSV / Export JSON  (act)
+              3. `extraMenuSections`  (configure — the board's deep links)
+
+            Dropping the export deleted the whole "act" section, which
+            left list and timeline with a popover containing ONE row.
+            A menu is a disclosure for a set; for a single action it is
+            two clicks, a portal and roving-focus machinery to reach one
+            thing. So:
+
+            - **"Save as view" is a direct `IconButton`** (star — the
+              same glyph the sidebar marks saved views with) on EVERY
+              view that offers it. Ken's steer, 2026-09-23.
+            - **The ⋯ renders only when it has rows**, i.e. only when
+              `extraMenuSections` is passed. Today that is the board
+              alone. A trigger that opens an empty panel is worse than
+              no trigger, and the sprint detail (`showSaveView={false}`,
+              no extra sections) would otherwise render exactly that.
+
+            The star sits in the same slot on all four task views, so
+            the action does not move between views — the board simply
+            has a ⋯ *beside* it for its two config deep links. That is
+            the consistency UI-3 was protecting; what varies is the
+            presence of a second, differently-labelled control, which
+            was already true.
+
+            Tooltip is the native `title` (plus the `aria-label`
+            `IconButton` requires). Its ~1s delay is UI-23e's open item,
+            not this control's — no custom tooltip primitive was built
+            here.
+
+            On mobile these live in the filters Sheet instead, so this
+            cluster is desktop-only. */}
+        {!isNarrow && (showSaveView || hasExtraMenu) && (
           <div className="flex items-center gap-2" data-testid="view-actions">
-            <Menu
-              align="end"
-              aria-label="View options"
-              trigger={({ toggle, ...aria }) => (
+            {showSaveView && (
+              // UI-23e: a real tooltip, not `title`. This is the control
+              // that motivated the primitive — icon-only, so its name is
+              // invisible, and `title`'s ~1s delay never showed on
+              // keyboard focus at all. The bubble repeats the
+              // `aria-label`, so it stays `aria-hidden` (no `describes`)
+              // and is not announced twice.
+              <Tooltip label="Save as view" testId="view-actions-save-view-tip">
                 <IconButton
                   variant="secondary"
-                  size="md"
-                  aria-label="View options"
-                  title="View options"
-                  testId="view-actions-menu"
-                  onClick={toggle}
-                  {...aria}
+                  // `sm` (24.5px), matching the board's "+ Add task" and
+                  // the ⋯ beside it.
+                  size="sm"
+                  aria-label="Save as view"
+                  testId="view-actions-save-view"
+                  onClick={() => { setSaveOpen(true); }}
                 >
-                  <Icon name="more" size={16} />
+                  <Icon name="star" size={16} />
                 </IconButton>
-              )}
-            >
-              {({ close }) => (
-                <>
-                  {/* K107: the tri-state archived scope replaces the old
-                      "Show archived" checkable item. It writes the same URL
-                      param the mobile sheet's control writes. The select is
-                      a menu descendant, so interacting with it does not
-                      trip the menu's outside-click close — the scope stays
-                      changeable with the menu open. */}
-                  <div className="flex items-center justify-between gap-2 px-3 py-1.5">
-                    <ArchivedScopeControl
-                      label="Archived"
-                      testId="view-actions-archived-scope"
-                      value={archivedScope}
-                      onChange={setArchivedScope}
-                    />
-                  </div>
-                  {/* Export keeps its own menu (CSV/JSON, failure + skipped
-                      status). Its popover is an inline descendant of this
-                      panel, so the parent's outside-click treats a click on
-                      it as inside and stays open. */}
-                  {exportTotal !== undefined && exportQueryString !== undefined && (
-                    <ExportMenu total={exportTotal} queryString={exportQueryString} />
-                  )}
-                  {showSaveView && (
-                    <MenuItem
-                      testId="view-actions-save-view"
-                      onSelect={() => { setSaveOpen(true); close(); }}
+              </Tooltip>
+            )}
+            {hasExtraMenu && (
+              <Menu
+                align="end"
+                aria-label="View options"
+                trigger={({ toggle, ...aria }) => (
+                  <Tooltip label="View options" testId="view-actions-menu-tip">
+                    <IconButton
+                      variant="secondary"
+                      size="sm"
+                      aria-label="View options"
+                      testId="view-actions-menu"
+                      onClick={toggle}
+                      {...aria}
                     >
-                      <span aria-hidden="true">{ICON.star}</span>
-                      Save as view
-                    </MenuItem>
-                  )}
-                </>
-              )}
-            </Menu>
+                      <Icon name="more" size={16} />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              >
+                {() => (
+                  <div data-testid="view-actions-extra-section">
+                    <p className="px-3 py-1 text-[0.7857rem] uppercase tracking-wide text-text-tertiary">
+                      {extraMenuSectionLabel}
+                    </p>
+                    {extraMenuSections}
+                  </div>
+                )}
+              </Menu>
+            )}
           </div>
         )}
       </div>
@@ -781,20 +833,9 @@ export function FilterBar({
             <Button variant="ghost" size="md" testId="advanced-open-mobile" onClick={openAdvanced}>
               Advanced query…
             </Button>
-            {/* K107: tri-state archived scope, replacing the mobile
-                "Show archived" checkbox. Writes the same URL param. */}
-            <div className="mt-2">
-              <ArchivedScopeControl
-                label="Archived"
-                size="md"
-                testId="filters-sheet-archived-scope"
-                value={archivedScope}
-                onChange={setArchivedScope}
-              />
-            </div>
             {showSaveView && (
               <Button size="md" onClick={() => { setFilterSheetOpen(false); setSaveOpen(true); }}>
-                <span aria-hidden="true">{ICON.star}</span>
+                <Icon name="star" size={14} />
                 Save as view
               </Button>
             )}
@@ -833,10 +874,20 @@ export function FilterBar({
               data-testid="active-view-chip"
               className="inline-flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-[0.8571rem] text-accent"
             >
+              {/* UI-23e: `describes` is ON here, unlike the icon-only
+                  buttons above. The bubble carries the full filter
+                  summary, which the `aria-label` ("Edit view <name>")
+                  does NOT contain and the visible chip truncates — so it
+                  is real added information, not a repeat of the name,
+                  and a screen reader should get it as a description. */}
+              <Tooltip
+                label={`Edit view "${activeView.name}": ${viewSummary}`}
+                describes
+                testId="active-view-chip-edit-tip"
+              >
               <button
                 type="button"
                 data-testid="active-view-chip-edit"
-                title={`Edit view "${activeView.name}": ${viewSummary}`}
                 aria-label={`Edit view ${activeView.name}`}
                 onClick={editActiveView}
                 className="inline-flex cursor-pointer items-center gap-1 hover:underline"
@@ -847,6 +898,7 @@ export function FilterBar({
                   <span className="max-w-[24ch] truncate text-accent/70">{viewSummaryPreview}</span>
                 ) : null}
               </button>
+              </Tooltip>
               <button
                 type="button"
                 aria-label="Clear active view"

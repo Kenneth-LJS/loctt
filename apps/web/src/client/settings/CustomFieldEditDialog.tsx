@@ -182,10 +182,12 @@ export function CustomFieldEditDialog({
           <Button
             variant="primary"
             disabled={!canSubmit}
+            loading={pending}
+            aria-label={mode === "create" ? "Add field" : "Save"}
             onClick={submit}
             testId="custom-field-save"
           >
-            {pending ? "Saving…" : mode === "create" ? "Add field" : "Save"}
+            {mode === "create" ? "Add field" : "Save"}
           </Button>
         </DialogActions>
       }

@@ -1,5 +1,5 @@
 import { isSortableTaskField } from "@loctt/contracts";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -20,10 +20,11 @@ import {
 } from "../api/hooks/useBulk.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
 import type { TaskListRow } from "../api/hooks/useTasks.ts";
-import { buildQueryString, DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
+import { DEFAULT_LIST_LIMIT, tasksParamsFromSearch, useTasksFeed } from "../api/hooks/useTasks.ts";
 import { useUserSettings, useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { fieldView } from "../health/fieldHealth.ts";
+import { recordTaskOrigin } from "../router/taskOrigin.ts";
 import { MAIN_CONTENT_ID } from "../shell/SkipLink.tsx";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import type { EstimationShape } from "../task/estimation.ts";
@@ -51,6 +52,7 @@ import { clearedSearch, FilterBar } from "./FilterBar.tsx";
 import { isOverdue, relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
+import { shouldNavigateRow } from "./rowNavigation.ts";
 import { useScopeTitle } from "./useScopeTitle.ts";
 import { useSelection } from "./useSelection.ts";
 
@@ -133,6 +135,10 @@ function escapeTaskKey(key: string): string {
 export function ListView() {
   const search = useSearch({ from: "/list" });
   const navigate = useNavigate({ from: "/list" });
+  // UI-12: the full URL this view is showing right now (path + search),
+  // so opening a task can record exactly where "back" should return to
+  // — filters, sort and page included, not a bare `/list`.
+  const currentHref = useRouterState({ select: s => s.location.href });
   // K-title rule: the title reflects the active scope (saved view name, or
   // a single scoped project's name), falling back to the screen name.
   const title = useScopeTitle(search, "List");
@@ -463,6 +469,11 @@ export function ListView() {
   // path (the key `<Link>`) go through here, so the two never diverge.
   const openTask = (key: string): void => {
     rememberOpenedTask(key);
+    // UI-12: recorded right before the navigation that leaves this
+    // route, so the detail page's back affordance returns to this exact
+    // URL. Not recorded on mount / render — only an actual departure
+    // counts as "came from here".
+    recordTaskOrigin(currentHref);
     void navigate({ to: "/tasks/$key", params: { key } });
   };
 
@@ -755,15 +766,13 @@ export function ListView() {
           on every task view. The text is the active scope (view/project) or
           "List". */}
       <PageHeader title={title} testId="list-page-header" />
-      {/* FilterBar owns the whole toolbar row now — the filters (left) AND
-          the view-action cluster (Export/Save, top-right). The manual refresh
-          button was removed (Q4: refresh on focus/visibility, not a button);
-          Export is passed in as props so the bar controls its layout without
-          re-deriving the tasks feed. */}
-      <FilterBar
-        exportTotal={total}
-        exportQueryString={buildQueryString(params)}
-      />
+      {/* FilterBar owns the whole toolbar row — the filters (left) AND the
+          view-action cluster (Save as view, top-right). The manual refresh
+          button was removed (Q4: refresh on focus/visibility, not a button),
+          and the CSV/JSON export was removed from the web entirely
+          (K30-web, Ken 2026-09-23 — it stays on the CLI and MCP), which is
+          why the bar needs no props from the tasks feed here. */}
+      <FilterBar />
       {queryWarnings.length > 0 && (
         <div
           role="status"
@@ -1073,7 +1082,17 @@ export function ListView() {
               items.map(task => (
                 <tr
                   key={task.id}
-                  onClick={() => { openTask(task.key); }}
+                  // UI-12: "whole row clickable". Gated by
+                  // `shouldNavigateRow` rather than firing unconditionally
+                  // — see rowNavigation.ts for why: it must not fire over
+                  // a drag-text-selection, a modifier/non-primary click
+                  // (left to the key cell's own `<Link>`, the row's one
+                  // real anchor), or a click that already landed on an
+                  // interactive child.
+                  onClick={e => {
+                    if (!shouldNavigateRow(e)) return;
+                    openTask(task.key);
+                  }}
                   aria-selected={selection.isSelected(task.id)}
                   className={[
                     // The key column is a `<th scope="row">`, not a `<td>`,
@@ -1215,7 +1234,13 @@ export function ListView() {
               key={task.id}
               data-testid={`task-card-${task.key}`}
               aria-selected={selection.isSelected(task.id)}
-              onClick={() => { openTask(task.key); }}
+              // UI-12: same guarded whole-row navigation as the desktop
+              // table (rowNavigation.ts) — a drag-selection of the title
+              // or a click on the checkbox must not also navigate.
+              onClick={e => {
+                if (!shouldNavigateRow(e)) return;
+                openTask(task.key);
+              }}
               className={[
                 "cursor-pointer rounded-md border bg-bg-surface p-3",
                 selection.isSelected(task.id) ? "border-accent bg-accent/5" : "border-border-subtle",

@@ -49,6 +49,58 @@ export const Subscript = Mark.create({
 });
 
 /**
+ * `<ins>text</ins>` — underline (K107).
+ *
+ * A custom mark rather than `@tiptap/extension-underline`, for two
+ * reasons. The stock extension parses `u` and `span[style*=underline]`
+ * and renders `<u>`; retargeting it at `<ins>` means overriding both
+ * `parseHTML` and `renderHTML` — which is the entire extension — so the
+ * dependency would buy only a keybinding, added below in four lines.
+ * And `<u>` is the one spelling that must NOT reach disk: GitHub's
+ * sanitiser allowlist omits `u` and strips it silently, so a stray
+ * stock-extension render would cost the user their underline with no
+ * warning. Owning the definition keeps `<ins>` the only spelling.
+ *
+ * `ins` semantically means *inserted text* (an edit-tracking mark), not
+ * *underlined*. That stretch is deliberate and recorded in A251: it is
+ * the only tag that is both on GitHub's allowlist and underlined by
+ * every browser's UA stylesheet.
+ */
+export const Underline = Mark.create({
+  name: "underline",
+  parseHTML() {
+    return [{ tag: "ins" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["ins", mergeAttributes(HTMLAttributes), 0];
+  },
+  addKeyboardShortcuts() {
+    return { "Mod-u": () => this.editor.commands.toggleMark(this.name) };
+  },
+});
+
+/**
+ * `==text==` — highlight (K107).
+ *
+ * A markdown extension, not a tag, so unlike `<ins>` it needs no
+ * `ALLOWED_HTML_TAGS` entry and cannot trip the lossy guardrail. Renders
+ * as `<mark>`, which is what pandoc and Obsidian produce for the same
+ * source spelling.
+ */
+export const Highlight = Mark.create({
+  name: "highlight",
+  parseHTML() {
+    return [{ tag: "mark" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["mark", mergeAttributes(HTMLAttributes), 0];
+  },
+  addKeyboardShortcuts() {
+    return { "Mod-Shift-h": () => this.editor.commands.toggleMark(this.name) };
+  },
+});
+
+/**
  * Inline KaTeX: `$expr$`.
  *
  * Atomic: the expression is edited as one unit rather than as
@@ -200,6 +252,8 @@ const TABLE_EXTENSIONS = [
 export const LOCTT_EXTENSIONS = [
   Superscript,
   Subscript,
+  Underline,
+  Highlight,
   InlineMath,
   BlockMath,
   Mention,

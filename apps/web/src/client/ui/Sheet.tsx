@@ -88,6 +88,27 @@ export function Sheet({
           </button>
         </div>
 
+        {/*
+          `p-4` is load-bearing on all FOUR sides, not just inset styling.
+
+          `overflow-y-auto` clips on every edge (it clips horizontally too,
+          which is why `Modal` carries the `-mx-4 px-4` pair), and the
+          global focus ring — `outline: 2px` at `outline-offset: 2px`,
+          styles/index.css — needs 4px outside a control's border box. A
+          focusable control at any edge of this body would have its ring
+          sliced flat without clearance here. That is UI-11, which `Modal`
+          shipped on its vertical axis.
+
+          This padding sits INSIDE the scroller, which is what makes it
+          survive scrolling: `scrollHeight` includes both paddings, so the
+          clearance is still present when the body is scrolled to either
+          end. Measured in-browser on the list-filter sheet — with the body
+          overflowing and scrolled fully to the bottom, the last control
+          kept 14.1px.
+
+          So: do not narrow this to `px-4`, and do not move it to the
+          panel outside the scroller. Either change re-opens UI-11 here.
+        */}
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {children}
         </div>

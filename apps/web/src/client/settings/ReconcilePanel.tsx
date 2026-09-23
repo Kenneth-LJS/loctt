@@ -20,7 +20,6 @@ import { Button } from "../ui/Button.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
-import { ICON } from "../ui/icons.ts";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -770,12 +769,12 @@ function SideButton({ testId, label, value, drift, corrupt, selected, onClick }:
         {corrupt !== undefined ? corrupt.rawText : value}
         {corrupt !== undefined && (
           <span data-testid="git-reconcile-corrupt-marker" className="ml-1 text-danger-fg" title={corrupt.error}>
-            {ICON.warning} corrupt
+            <Icon name="alert" size={12} /> corrupt
           </span>
         )}
         {drift !== undefined && (
           <span data-testid="git-reconcile-drift-marker" className="ml-1 text-warn-fg" title={drift}>
-            {ICON.warning} drift
+            <Icon name="alert" size={12} /> drift
           </span>
         )}
       </div>

@@ -301,6 +301,8 @@ export function CommentComposer({
           variant="primary"
           testId={`${testId}-submit`}
           disabled={disabled}
+          loading={pending}
+          aria-label={submitLabel}
           {...(reason !== undefined ? { title: reason, "aria-describedby": reasonId } : {})}
           /**
            * Trimmed. `toMarkdown` ends every document with a newline —
@@ -311,7 +313,7 @@ export function CommentComposer({
            */
           onClick={() => { onSubmit(text.trim()); }}
         >
-          {pending ? "Saving…" : submitLabel}
+          {submitLabel}
         </Button>
         {onCancel !== undefined && (
           <Button

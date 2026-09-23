@@ -53,8 +53,13 @@ export function Pagination({
         genuine exhaustion (LST-49).
       */}
       {hasMore && (
-        <Button variant="secondary" onClick={onLoadMore} disabled={isLoadingMore}>
-          {isLoadingMore ? "Loading…" : error !== undefined ? "Retry" : "Load more"}
+        <Button
+          variant="secondary"
+          onClick={onLoadMore}
+          loading={isLoadingMore}
+          aria-label={error !== undefined ? "Retry" : "Load more"}
+        >
+          {error !== undefined ? "Retry" : "Load more"}
         </Button>
       )}
     </div>

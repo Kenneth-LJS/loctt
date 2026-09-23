@@ -303,3 +303,78 @@ describe("MCP saved-view broken repair (replaceBroken)", () => {
     expect(await bytes()).toContain("not a list");
   });
 });
+
+/**
+ * @verifies K103 colour on a saved view, MCP half — "a capability in
+ * core is not done until CLI and MCP have it".
+ *
+ * Plus the icon one-grapheme rule (Ken, 2026-09-23). An agent is the
+ * caller most likely to send `"🎈🎈"`, and the MCP boundary is where
+ * that must be refused rather than written to a config the UI then
+ * cannot render sensibly.
+ */
+describe("MCP saved-view colour + icon validation", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-mcp-viewcolor-"));
+    await initLoctt(root);
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const idOf = (text: string): string => (JSON.parse(text) as { id: string }).id;
+
+  it("create_view stores each of the three colour shapes", async () => {
+    const locttDir = resolveLocttDir(root);
+    for (const [name, color] of [
+      ["hexed", "#1e6fcb"],
+      ["palled", { palette: "teal" }],
+      ["paired", { light: "#0F766E", dark: "#39A88F" }],
+    ] as const) {
+      const res = await executeTool(root, "create_view", { name, filters: [], color });
+      expect(res.isError).toBeUndefined();
+    }
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(cfg.queries.find(q => q.name === "hexed")?.color).toBe("#1e6fcb");
+    expect(cfg.queries.find(q => q.name === "palled")?.color).toEqual({ palette: "teal" });
+    expect(cfg.queries.find(q => q.name === "paired")?.color)
+      .toEqual({ light: "#0F766E", dark: "#39A88F" });
+  });
+
+  it("list_views returns a view's colour", async () => {
+    await executeTool(root, "create_view", {
+      name: "tinted", filters: [], color: { palette: "blue" },
+    });
+    const list = await executeTool(root, "list_views", {});
+    expect(list.content[0]?.text ?? "").toContain("palette");
+  });
+
+  it("edit_view clears the colour on an explicit null", async () => {
+    const locttDir = resolveLocttDir(root);
+    const created = await executeTool(root, "create_view", {
+      name: "clearme", filters: [], color: "#1e6fcb",
+    });
+    const id = idOf(created.content[0]?.text ?? "");
+    const res = await executeTool(root, "edit_view", { view: id, color: null });
+    expect(res.isError).toBeUndefined();
+    const cfg = await loadQueriesConfig(locttDir);
+    expect(cfg.queries.find(q => q.id === id)?.color).toBeUndefined();
+  });
+
+  it("REJECTS an icon that is two emoji, or an emoji glued to a letter", async () => {
+    for (const icon of ["🎈🎈", "🎈A"]) {
+      const res = await executeTool(root, "create_view", { name: "bad", filters: [], icon });
+      expect(res.isError).toBe(true);
+    }
+  });
+
+  it("ACCEPTS a single emoji icon, including a combined form", async () => {
+    for (const icon of ["🎈", "👨‍👩‍👧", "circle-check"]) {
+      const res = await executeTool(root, "create_view", { name: `ok-${icon}`, filters: [], icon });
+      expect(res.isError).toBeUndefined();
+    }
+  });
+});

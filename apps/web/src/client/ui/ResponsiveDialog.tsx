@@ -52,6 +52,20 @@ import { Sheet } from "./Sheet.tsx";
  * body div; the mobile branch wraps the children in a div carrying the
  * same attribute). A spec that locates a dialog by its testid finds it at
  * either width without a branch.
+ *
+ * ## Focus-ring clearance is inherited, not re-spelled (UI-11)
+ *
+ * Neither branch here owns the scroll region, so neither owns the
+ * clearance the global focus ring needs (`outline: 2px` at
+ * `outline-offset: 2px` — 4px outside the control's border box). Both
+ * body scrollers use `overflow-y-auto`, which clips on every edge, so
+ * that clearance has to exist as padding INSIDE the scroller: `Modal`
+ * carries `-mx-4 px-4` + `-my-1.5 py-1.5`, `Sheet` carries `p-4`.
+ *
+ * This is deliberate — adding padding at this layer would double the
+ * inset in both modes without fixing anything, because the clip happens
+ * further in. If a ring is clipped in a `ResponsiveDialog`, the fix
+ * belongs in `Modal` or `Sheet`.
  */
 export interface ResponsiveDialogProps {
   readonly title: string;

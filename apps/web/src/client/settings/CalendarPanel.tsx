@@ -368,12 +368,14 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
             variant="primary"
             testId="calendar-save"
             disabled={blocked}
+            loading={save.isPending}
+            aria-label="Save"
             onClick={() => {
               if (blocked) return;
               save.mutate(draft);
             }}
           >
-            {save.isPending ? "Saving…" : "Save"}
+            Save
           </Button>
         </div>
       </div>

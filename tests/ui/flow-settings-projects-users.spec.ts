@@ -598,7 +598,7 @@ test.describe("PRU — the projects panel", () => {
 
     // The row leaves the default (active) scope — archived, not deleted.
     await expect(page.getByTestId(`project-row-${id}`)).toHaveCount(0);
-    await page.getByTestId("projects-archived-scope").selectOption("all");
+    await page.getByTestId("projects-archived-scope-all").click();
     await expect(page.getByTestId(`project-row-${id}`))
       .toHaveAttribute("data-archived", "true");
 
@@ -918,7 +918,7 @@ test.describe("PRU — the users panel", () => {
 
     // Widening the scope shows the same row, now marked archived — which
     // separates "archived" from "vanished / failed to render".
-    await page.getByTestId("users-archived-scope").selectOption("all");
+    await page.getByTestId("users-archived-scope-all").click();
     await expect(page.getByTestId(`user-row-${otherId}`))
       .toHaveAttribute("data-archived", "true");
 
@@ -1633,7 +1633,7 @@ test.describe("PRU-42 — deleting a user who is assignee on many tasks", () => 
     // tri-state scope), and the task still names him (archive keeps
     // references intact, unlike delete).
     await expect(page.getByTestId(`user-row-${daveId}`)).toHaveCount(0);
-    await page.getByTestId("users-archived-scope").selectOption("all");
+    await page.getByTestId("users-archived-scope-all").click();
     await expect(page.getByTestId(`user-row-${daveId}`))
       .toHaveAttribute("data-archived", "true");
     expect(await fmByTitle(tracker.root, "Kept task", "assignee")).toBe(daveId);

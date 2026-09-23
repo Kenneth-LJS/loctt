@@ -36,6 +36,16 @@ export interface ConfirmDialogProps {
   readonly variant?: "danger" | "primary";
   /** Disable confirm (e.g. a typed-word not yet matched). */
   readonly confirmDisabled?: boolean;
+  /**
+   * Shows the confirm button's brand-spinner loading state (`Button`'s
+   * `loading`) while the confirmed action is in flight, in place of the
+   * button re-spelling its own label as "Deleting…"/etc. `confirmLabel`
+   * stays the accessible name throughout — `Button.loading` hides the
+   * *visible* label, not the name, and `confirmLabel` is exactly the
+   * static text a caller would otherwise have swapped in and out by
+   * hand, so it doubles as the `aria-label` for the loading state too.
+   */
+  readonly confirmLoading?: boolean;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
   /** Extra content between body and actions (e.g. a pin warning). */
@@ -69,6 +79,7 @@ export function ConfirmDialog({
   confirmLabel,
   variant = "danger",
   confirmDisabled = false,
+  confirmLoading = false,
   onConfirm,
   onCancel,
   children,
@@ -99,6 +110,8 @@ export function ConfirmDialog({
             variant={variant}
             onClick={onConfirm}
             disabled={confirmDisabled}
+            loading={confirmLoading}
+            aria-label={confirmLabel}
             {...(confirmTestId !== undefined ? { testId: confirmTestId } : {})}
           >
             {confirmLabel}

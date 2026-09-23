@@ -9,8 +9,10 @@ import { Callout } from "../ui/Callout.tsx";
 import { ColorHexAlias, ColorPicker } from "../ui/ColorPicker.tsx";
 import { DialogActions } from "../ui/Dialog.tsx";
 import { isValidEntityColor } from "../ui/entityColor.ts";
+import { LABEL_PILL_CLASS, labelPillStyle } from "../ui/labelPillStyle.ts";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import { ThemePreview } from "../ui/ThemePreview.tsx";
 
 /**
  * The shared label editor (K100), now **mode-aware** (create + edit).
@@ -116,11 +118,11 @@ export function LabelEditDialog(props: LabelDialogProps) {
             variant="primary"
             testId={isEdit ? "label-save" : "label-create-submit"}
             disabled={blocked}
+            loading={pending}
+            aria-label={isEdit ? "Save changes" : needsAck ? "Create anyway" : "Create"}
             onClick={submit}
           >
-            {pending
-              ? "Saving…"
-              : isEdit ? "Save changes" : needsAck ? "Create anyway" : "Create"}
+            {isEdit ? "Save changes" : needsAck ? "Create anyway" : "Create"}
           </Button>
         </DialogActions>
       }
@@ -155,6 +157,34 @@ export function LabelEditDialog(props: LabelDialogProps) {
             onChange={setColor}
             testId={colorTestId}
             ariaLabel={isEdit ? "Label colour hex" : "New label colour hex"}
+          />
+
+          {/* The two-mode preview, so picking a colour does not mean
+              pick → save → exit → toggle the theme → discover it does
+              not read → come back and edit again (Ken, 2026-09-23).
+
+              The specimen is the REAL pill, not a swatch: a label is
+              painted with three values derived from the colour — a 13%
+              background wash, a 40% border and a luma-chosen text
+              colour (`labelPillStyle`) — none of which a flat swatch
+              shows. A palette swatch says "blue"; it does not say that
+              at 13% alpha this blue is a smudge on a dark surface.
+
+              `render` is called once per mode with THAT mode's resolved
+              hex, so neither half reads the global theme. Note this
+              dialog has no icon field, so it holds no `IconColorFields`
+              and renders the primitive directly. */}
+          <ThemePreview
+            color={color}
+            testId={isEdit ? "label-color-preview" : "label-create-color-preview"}
+            ariaLabel="Label colour preview"
+            render={hex => (
+              <span className={LABEL_PILL_CLASS} style={labelPillStyle(hex)}>
+                <span className="max-w-[14ch] truncate">
+                  {trimmed === "" ? "Label" : trimmed}
+                </span>
+              </span>
+            )}
           />
         </div>
 

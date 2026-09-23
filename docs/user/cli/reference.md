@@ -139,6 +139,12 @@ lists. An empty result prints `No tasks found.`
 Show one task in full: its fields, relationships (with child progress),
 attachments, any health warnings, and its body.
 
+The body is printed **verbatim**, with no markdown rendering. Bodies
+written in the web editor may contain LocTT's markdown extensions, which
+therefore appear as their source spelling — `<ins>underlined</ins>`,
+`==highlighted==`, `^sup^`, `~sub~`, `$math$`. That is expected, not
+corruption; see `docs/dev/reference/markdown-extensions.md`.
+
 ```bash
 loctt show WEB-3
 ```
@@ -365,8 +371,9 @@ Moved WEB-3 to in_progress (rank=…)
 
 ### `loctt export`
 
-Export tasks as CSV or JSON. The CSV is byte-for-byte identical to the
-web UI's export.
+Export tasks as CSV or JSON — a report for a spreadsheet, not a backup
+(it cannot restore). This and the `export_tasks` MCP tool are the only
+surfaces that offer it: the web UI does not export.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
@@ -400,15 +407,33 @@ List saved views, or manage them with a subcommand.
 | Subcommand | Synopsis | Description |
 |---|---|---|
 | `list` | `loctt views list [--archived <active\|archived\|all>]` | List saved views (the default). `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). Broken views are always shown. |
-| `create` | `loctt views create <name> [--filter "…"]… [--query "<dsl>"]… [--sort …] [--archived <scope>] [--icon <icon>]` | Create a view. |
-| `edit` | `loctt views edit <name\|id> [--name <new>] [--filter "…"]… [--query "<dsl>"]… [--sort …\|-] [--archived <scope>] [--icon <icon>] [--force]` | Change a view. `--sort -` clears the sort. `--force` replaces a **broken** view (see below). |
+| `create` | `loctt views create <name> [--filter "…"]… [--query "<dsl>"]… [--sort …] [--archived <scope>] [--icon <icon>] [--color <colour>]` | Create a view. |
+| `edit` | `loctt views edit <name\|id> [--name <new>] [--filter "…"]… [--query "<dsl>"]… [--sort …\|-] [--archived <scope>] [--icon <icon>] [--color <colour>\|-] [--force]` | Change a view. `--sort -` clears the sort, `--color -` clears the colour. `--force` replaces a **broken** view (see below). |
 | `archive` / `unarchive` | `loctt views archive <name\|id>` | Hide or restore a view. Refused for a broken view. |
 | `delete` | `loctt views delete <name\|id> [--yes] [--force]` | Permanently delete a view. `--force` is required for a **broken** view. |
 
 `list` prints one line per view, `<name>  <summary>`, with a
-`[sort: …]` suffix when the view has a sort and ` (archived)` when it is
-archived. The summary is a readable rendering of the view's filters — it
-is for display only, and is not something you can paste back in as input.
+`[sort: …]` suffix when the view has a sort, the colour when it has one,
+and ` (archived)` when it is archived. The summary is a readable
+rendering of the view's filters — it is for display only, and is not
+something you can paste back in as input.
+
+#### Icon and colour
+
+`--icon` takes either a named icon (`circle-check`) or a **single**
+emoji. Two emoji, or an emoji combined with other characters, are
+rejected — `🎈` and `👨‍👩‍👧` are each one character and fine, `🎈🎈`
+and `🎈A` are not.
+
+`--color` takes the same three forms as everywhere else:
+`#rrggbb`, `palette:<id>` (see `loctt palette`), or
+`light:#rrggbb,dark:#rrggbb`. `--color -` clears it.
+
+The colour tints a **named** icon only. An emoji already carries its own
+colour and cannot be tinted, so the colour is stored but not applied
+while the icon is an emoji — switch back to a named icon and it applies
+again. A colour that is not one of the three forms is dropped on load
+(the view still works) and reported by `loctt doctor`.
 
 #### Repairing a broken view (`--force`)
 
@@ -721,6 +746,10 @@ loctt palette                  # id, label, light, dark — tab-separated
 loctt palette --format json    # the same entries as JSON
 loctt palette | cut -f1        # just the ids
 ```
+
+There are **18 entries**. Every pair is perceptually distinct in both
+light and dark mode, so two entities given different palette colors stay
+tellable apart in either theme.
 
 An id that is not in the list is **not** rejected — it is stored, and a
 warning is printed — but it renders as a neutral color until corrected.

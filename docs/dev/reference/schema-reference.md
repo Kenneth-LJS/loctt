@@ -552,7 +552,8 @@ queries:
 | `filters` | array | yes | The view's filters, in authored order — the sole source of truth for what it matches. All filters AND together. May be empty (matches everything within the view's archived scope). An absent key reads as empty. An entry whose filters do not validate degrades to a `broken` marker rather than rejecting the whole file |
 | `sort` | array | no | Ordered list of sort specifiers |
 | `archivedScope` | string | no | `active` (default, hide archived) / `archived` (only archived) / `all`. A property of the view, **not** a filter term. An explicit caller scope overrides it; otherwise it applies |
-| `icon` | string | no | Optional icon for the view |
+| `icon` | string | no | Optional icon for the view: a named icon (`circle-check`) or a **single** grapheme (an emoji, including combined forms like ZWJ sequences, skin-tone modifiers and flags). Two emoji, or an emoji combined with other characters, are rejected |
+| `color` | string \| object | no | Optional colour, the standard three shapes (K103): a bare hex `#rrggbb`, `{light, dark}`, or `{palette: <id>}`. Tints a **named** icon only — an emoji carries its own colour and is never tinted. A value matching none of the three shapes is **dropped on load** (field-local: the view still loads and runs) and reported by `doctor` |
 | `archived` | boolean | no | Hide the VIEW ITSELF from default lists. Still runnable by id. (Distinct from `archivedScope`, which is about the tasks the view matches) |
 
 ### `queries[].filters[]`

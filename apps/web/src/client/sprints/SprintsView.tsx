@@ -26,7 +26,6 @@ import { Checkbox } from "../ui/Checkbox.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
-import { IconButton } from "../ui/IconButton.tsx";
 import { PageHeader } from "../ui/PageHeader.tsx";
 import type { CollapseOverrides } from "./collapse.ts";
 import { isExpanded, readOverrides, toggle, writeOverrides } from "./collapse.ts";
@@ -317,18 +316,13 @@ export function SprintsView() {
 
   return (
     <div className="flex h-full flex-col gap-3 p-4" data-testid="sprints">
-      {/* SPR-40: the overview's lifecycle affordances (A166). Create,
-          delete and archive *act* in Settings → Sprints (the shared
-          RemapDeleteDialog, so the two surfaces cannot drift); the
-          overview links there in one click, and reveals archived
-          sprints in place with a local view toggle that never writes. */}
-      {/* The titled header (Ken 2026-09-20): a "Sprints" h1, with the
-          lifecycle affordances (A166) in the actions slot — the manage
-          link and the local archived-reveal toggle. Create, delete and
-          archive *act* in Settings → Sprints (the shared
-          RemapDeleteDialog, so the two surfaces cannot drift); the
-          overview links there in one click, and reveals archived sprints
-          in place with a local view toggle that never writes. */}
+      {/* SPR-40: the overview's lifecycle affordances (A166). Create and
+          archive-reveal act in place; delete-with-remap and reorder are
+          roster-level actions that still live in the Settings panel,
+          reached through the persistent Settings gear (UI-17 / K105 —
+          Ken: "if im on a task, i dont want to see a link to manage all
+          tasks. same for milestones/sprints/labels/etc."), not a
+          "Manage sprints in Settings" link scattered on this page. */}
       <PageHeader
         title="Sprints"
         testId="sprints-header"
@@ -348,9 +342,7 @@ export function SprintsView() {
               </label>
             )}
             {/* K105: create in place via the shared dialog — not a prose
-                link to Settings. Roster-level actions (delete-with-remap,
-                reorder, unarchive) still live in the Settings panel, reached
-                by a proper gear button, not scattered prose. */}
+                link to Settings. */}
             <Button
               variant="secondary"
               size="sm"
@@ -360,15 +352,6 @@ export function SprintsView() {
               <Icon name="plus" size={14} />
               New sprint
             </Button>
-            <IconButton
-              size="sm"
-              aria-label="Manage sprints in Settings"
-              title="Manage sprints in Settings"
-              testId="sprints-manage-link"
-              onClick={() => { void navigate({ to: "/settings/$section", params: { section: "sprints" } }); }}
-            >
-              <Icon name="settings" size={14} />
-            </IconButton>
           </>
         }
       />

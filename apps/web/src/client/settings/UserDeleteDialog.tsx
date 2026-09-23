@@ -230,9 +230,11 @@ export function UserDeleteDialog({
             variant="danger"
             testId="user-delete-confirm"
             disabled={blocked}
+            loading={mutation.isPending}
+            aria-label="Delete user"
             onClick={submit}
           >
-            {mutation.isPending ? "Deleting…" : "Delete user"}
+            Delete user
           </Button>
         </div>
       </div>

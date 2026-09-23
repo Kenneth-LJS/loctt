@@ -58,7 +58,16 @@ export function PageHeader({
     <header
       {...(testId !== undefined ? { "data-testid": testId } : {})}
       className={cn(
-        "flex flex-wrap items-center justify-between gap-3",
+        // UI-1: `items-start`, not `items-center`. The row takes the
+        // height of its taller child, so with `items-center` an actions
+        // slot taller than the title block (Board's 24.5px buttons vs the
+        // 21.45px title) pushed the title down by half the difference —
+        // ~1.5px — and the title moved as you switched views. Pinning both
+        // children to the top makes the title's position independent of
+        // whether, and how tall, `actions` is. The actions container
+        // carries a matching `min-h-7` so a short actions slot does not
+        // make the row shorter than the control height either.
+        "flex flex-wrap items-start justify-between gap-3",
         className,
       )}
     >
@@ -73,7 +82,10 @@ export function PageHeader({
       {/* A falsy `actions` (e.g. `cond && <…>`) renders nothing rather
           than an empty flex slot. */}
       {actions !== undefined && actions !== false && actions !== null && (
-        <div className="flex shrink-0 items-center gap-2">{actions}</div>
+        // `min-h-7` (24.5px at the 87.5% root) is the `sm` control
+        // height the page-level actions use, so the slot reserves the
+        // same box whether it holds a button or a bare link.
+        <div className="flex min-h-7 shrink-0 items-center gap-2">{actions}</div>
       )}
     </header>
   );

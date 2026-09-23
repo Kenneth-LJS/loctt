@@ -117,8 +117,44 @@ export function Modal({
             `-mx-4 px-4` so the scroller spans the panel's full width:
             `overflow-y-auto` also clips horizontally, which would slice
             the focus ring off a control at the body's edge.
+
+            `-my-2 py-2` is the vertical half of the SAME idiom, and
+            UI-11 is what its absence cost: the body's last focusable
+            control sat flush on the scroller's bottom edge (measured: 0px
+            clearance on Edit sprint's Goal textarea) while the global ring
+            — `outline: 2px` at `outline-offset: 2px`, styles/index.css —
+            needs 4px outside the border box. Top and right stayed rounded,
+            left and bottom came out cut flat.
+
+            Padding *inside* a scroller is the right lever rather than a
+            gap outside it, because it is part of the scrollable box:
+            `scrollHeight` includes both paddings, so the clearance is
+            still there when the user has scrolled to either end. Measured
+            in-browser — scrolled fully to the bottom of an overflowing
+            body, the last control keeps the full padding.
+
+            `py-2` rather than the `py-1` that would nominally suffice,
+            because this app sets a 14px root font size and Tailwind's
+            spacing scale is in `rem`: `py-1` is 3.5px here — UNDER the
+            ring's 4px — and `py-1.5` is 5.25px, only 1.25px of headroom.
+            `py-2` resolves to 7px, which clears the ring with room for
+            sub-pixel rounding and survives a future tweak to the root
+            size. Do not "tidy" this down a step without re-measuring in
+            px; the rem→px conversion here is not the Tailwind default.
+
+            The negative margin is what keeps this from changing the
+            layout: it pulls the scroller back out by exactly what the
+            padding pushed in, so the body still starts and ends where it
+            did. It is absorbed by the chrome's own spacing — the `<h2>`
+            above has `mb-3` and `DialogActions` below has `mt-4`, both
+            comfortably more than the 7px pulled back.
+
+            Verified against the stranded-footer bug the block above
+            describes: the panel stays at its `max-h` cap, the footer stays
+            inside it, and the scroller still scrolls. `min-h-0` continues
+            to do that work — this pair does not touch it.
           */}
-          <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4">
+          <div className="-my-2 -mx-4 min-h-0 flex-1 overflow-y-auto px-4 py-2">
             {children}
           </div>
           {/* Outside the scroller, so it cannot scroll out of reach. */}

@@ -38,7 +38,7 @@ open, config rewritten underneath a live session, and so on.
 | [flow-list.md](flow-list.md) | List view: columns, sort, filter, URL state, pagination | M1 |
 | [flow-tasks.md](flow-tasks.md) | Task detail: read, inline edits, body editor, duplicate, move, archive, delete | M2 |
 | [flow-task-create.md](flow-task-create.md) | Create modal from every entry point, project resolution | M3 |
-| [flow-bulk.md](flow-bulk.md) | Selection, bulk edits, bulk archive/delete, export | M1 |
+| [flow-bulk.md](flow-bulk.md) | Selection, bulk edits, bulk archive/delete | M1 |
 | [flow-board.md](flow-board.md) | Board columns, cards, drag-and-drop, WIP | M3 |
 | [flow-timeline.md](flow-timeline.md) | Timeline bars, zoom, grouping, drag-resize, dependency arrows | M3 |
 | [flow-relationships.md](flow-relationships.md) | Links, inverse edges, ranked reorder, parent trees, attachments | M2 |

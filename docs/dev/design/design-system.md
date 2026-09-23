@@ -182,12 +182,31 @@ Use these rather than hand-rolled markup.
   `IconButton`'s narrower variant union does not include it (its row-action
   callers are icon+label text buttons, not icon-only).
 - **`IconButton`** — icon-only button; **requires `aria-label`**. Sizes
-  `xs` (24px, tiny inline remove buttons e.g. a query-builder condition
-  ✕) / `sm` (28px) / `md` (32px, default) / `touch` (44px, the WCAG 2.5.5
-  tap-target minimum — use for standalone controls like the settings
-  RowActions kebab instead of hand-rolling `h-11 w-11`). The glyph stays
-  visually centred at its normal size in every footprint; `touch`'s extra
-  area is invisible hit-slop.
+  `xs` / `sm` / `md` (default) / `touch` (the WCAG 2.5.5 tap-target
+  minimum — use for standalone controls like the settings RowActions
+  kebab instead of hand-rolling `h-11 w-11`). The glyph stays visually
+  centred at its normal size in every footprint; `touch`'s extra area is
+  invisible hit-slop.
+
+  **These render smaller than their rem utilities read.** The root font
+  is `87.5%` (`styles/index.css:142`), so every rem utility lands at
+  0.875× its nominal px: `h-6`=21px, `h-7`=**24.5px**, `h-8`=**28px**,
+  `h-11`=38.5px. This list previously said `sm`=28px / `md`=32px /
+  `touch`=44px — those are the *nominal* values at a 100% root and are
+  **not** what ships. Measured live at 1440×900 (UI-3): a `size="sm"`
+  IconButton is 24.5×24.5px and a `size="md"` is 28×28px. Compare
+  measured px, not utility names, when matching two controls' heights.
+
+  **Page-level overflow is `sm`.** UI-3 found the filter bar's ⋯ at `md`
+  (28px) beside the board's ⋯ at `sm` (24.5px), inches apart. The
+  page-level ⋯ is `sm`, matching `+ Add task` next to it.
+
+- **Two kebabs, two scopes (UI-3).** `Icon name="more"` — the
+  *horizontal* ⋯ — means "this whole surface" (a view's options menu).
+  `Icon name="moreVertical"` means "this one item" (a board column, a
+  row). Do not use the horizontal glyph for an item-scoped menu: before
+  UI-3 both were `more`, so a column's menu was indistinguishable from
+  the view's.
 - **`ToolbarButton`** — the toolbar pill height/spacing.
 - **`Menu` / `MenuItem`** — overflow/kebab menus. The trigger receives
   `toggle`/`open` (not `onClick`).

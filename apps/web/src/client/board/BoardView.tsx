@@ -301,39 +301,28 @@ export function BoardView() {
     <div className="flex h-full flex-col gap-3 p-4" data-testid="board">
       {/* K-title rule: the page title anchors the screen ABOVE the toolbar
           (was below it — Ken's bug). The chips bar is its own row below the
-          filter bar. The board's two board-level controls — "+ Add task"
-          (NEW-1) and the options overflow (K100) — sit in the title's
-          actions slot. Title text is the active scope (view/project) or
-          "Board". */}
+          filter bar. Title text is the active scope (view/project) or
+          "Board".
+
+          UI-3: the actions slot used to hold "+ Add task" AND a second
+          "⋯" (K100's `BoardOptionsMenu`), a few pixels from the filter
+          bar's own "⋯" and at a different size — two identical-looking
+          overflow buttons whose contents nobody could predict. The
+          board options are now a "Configure" section inside the ONE ⋯
+          the bar owns (see `extraMenuSections` below).
+
+          UI-13: the board's own "+ Add task" that used to live here is
+          gone. It called the identical `createTask.open()` the header's
+          "+ New task" already calls — same modal, same fields — and
+          PRU-4 (`CreateTaskModal.tsx:110-130`) already pre-fills the
+          route-scoped project for either entry point, so the board copy
+          added nothing but a second, differently-worded button ~200px
+          from the header's. The board's only remaining create
+          affordance is the board-level empty state below (BRD-40),
+          which is not this duplicate — see its own comment. */}
       <PageHeader
         title={title}
         testId="board-header"
-        actions={
-          // NEW-1's board entry point. BRD-40's "+ Add task" lives
-          // inside the `total === 0` empty state, so on any board that
-          // actually has tasks there was no way to open the modal from
-          // here at all — NEW-1's test passed only because it never
-          // seeded. This is board-level, not per-column, deliberately:
-          // M3.1 built per-column controls and removed them because a
-          // column still rendered for a status `workflow.yaml` no
-          // longer declares would carry a create control, which is what
-          // broke BRD-42.
-          <>
-            <Button
-              variant="secondary"
-              size="sm"
-              testId="board-add-task"
-              onClick={() => { createTask.open(); }}
-            >
-              + Add task
-            </Button>
-            {/* K100: board config is discoverable from the board. Both are
-                whole-surface editors (columns = whole-document draft, card
-                layout = whole-surface pref), so both are DEEP LINKS,
-                labelled as navigation — never in-place edits from a view. */}
-            <BoardOptionsMenu />
-          </>
-        }
       />
 
       {/* The shared filter bar (cross-view scope fix, Ken 2026-09-20):
@@ -345,6 +334,14 @@ export function BoardView() {
       <FilterBar
         from="/board"
         showSaveView
+        // UI-3: the two board config deep links, merged out of the
+        // deleted second ⋯ into this bar's menu as a "Configure"
+        // section. K100 still holds: board config is discoverable from
+        // the board, and both are whole-surface editors (columns =
+        // whole-document draft, card layout = whole-surface pref), so
+        // both stay DEEP LINKS labelled as navigation — never in-place
+        // edits from a view. Only which ⋯ they live in changed.
+        extraMenuSections={<BoardConfigLinks />}
       />
 
       {/* BRD-41/BRD-43/BRD-44: a drop that did not land names the
@@ -444,10 +441,14 @@ export function BoardView() {
           className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
           No tasks yet.{" "}
-          {/* BRD-40's affordance, now pointed at the create modal
-              (M3.4) rather than at `/list`.
-              
-              It is deliberately the *only* "+ Add task" on this view.
+          {/* BRD-40's affordance, pointed at the create modal (M3.4)
+              rather than at `/list`.
+
+              It is deliberately the *only* create affordance on this
+              view (UI-13 removed the header-duplicate "+ Add task" that
+              used to sit in the PageHeader actions slot — see that
+              comment). This one is not a duplicate: on an empty board
+              there is nothing else to click, so it earns its keep.
               BRD-40 asks for "one board-level empty state ... [that]
               offers '+ Add task'" and says nothing about per-column
               controls; adding one per column would put a control on
@@ -455,13 +456,18 @@ export function BoardView() {
               is still rendered for a status `workflow.yaml` no longer
               defines. A per-column control that resolves anything from
               workflow config would throw or render nothing for exactly
-              that column — which is the one BRD-42 drags into. */}
+              that column — which is the one BRD-42 drags into.
+
+              UI-13: relabelled "+ Add task" → "+ New task" — "New" is
+              the house term ("+ New project", "+ New view", "+ New
+              milestone"); "Add" was the outlier. The testId and
+              behaviour are unchanged, only the wording. */}
           <button
             type="button"
             onClick={() => { createTask.open(); }}
             className="underline underline-offset-2 hover:text-text-primary"
           >
-            + Add task
+            + New task
           </button>
         </div>
       )}
@@ -646,7 +652,11 @@ function ColumnHeaderMenu({
           data-testid={`board-column-menu-${column.id}`}
           onClick={toggle}
         >
-          <Icon name="more" size={16} />
+          {/* UI-3: a VERTICAL kebab. The horizontal ⋯ means "this whole
+              surface" (the view-options menu); this one means "this one
+              item" — the column it sits on. They used to be the same
+              glyph, so two different scopes read as the same button. */}
+          <Icon name="moreVertical" size={16} />
         </IconButton>
       )}
     >
@@ -692,58 +702,46 @@ function ColumnHeaderMenu({
 }
 
 /**
- * The board toolbar overflow (K100).
+ * The board's two config deep links (K100), as rows for the filter
+ * bar's ⋯ "Configure" section.
  *
  * Deep links to the two whole-surface config editors that shape the
  * board — the columns and the card layout — so board config is
  * reachable from the board, not only from Settings. Both are links
  * (whole-document / whole-surface writes), labelled as navigation.
+ *
+ * UI-3: this was `BoardOptionsMenu`, a whole second ⋯ `Menu` in the
+ * PageHeader actions slot, sitting a few pixels from the filter bar's
+ * ⋯ at a different size. The rows are unchanged — same labels, same
+ * hrefs, same `role="menuitem"` + `MENU_LINK_CLASS` so the host menu's
+ * roving arrow-key focus still finds them, same testIds — only their
+ * host moved. They no longer take a `close` callback: every one of
+ * them navigates, which unmounts the menu with the view.
  */
-function BoardOptionsMenu() {
+function BoardConfigLinks() {
   return (
-    <Menu
-      aria-label="Board options"
-      align="end"
-      trigger={({ toggle, ...aria }) => (
-        <IconButton
-          {...aria}
-          size="sm"
-          variant="secondary"
-          aria-label="Board options"
-          data-testid="board-options-menu"
-          onClick={toggle}
-        >
-          <Icon name="more" size={16} />
-        </IconButton>
-      )}
-    >
-      {({ close }) => (
-        <>
-          <Link
-            to="/settings/$section"
-            params={{ section: "board-columns" }}
-            role="menuitem"
-            onClick={close}
-            data-testid="board-options-columns"
-            className={MENU_LINK_CLASS}
-          >
-            <Icon name="settings" size={14} />
-            Customize columns…
-          </Link>
-          <Link
-            to="/settings/$section"
-            params={{ section: "card-layout" }}
-            role="menuitem"
-            onClick={close}
-            data-testid="board-options-card-layout"
-            className={MENU_LINK_CLASS}
-          >
-            <Icon name="settings" size={14} />
-            Card layout…
-          </Link>
-        </>
-      )}
-    </Menu>
+    <>
+      <Link
+        to="/settings/$section"
+        params={{ section: "board-columns" }}
+        role="menuitem"
+        data-testid="board-options-columns"
+        className={MENU_LINK_CLASS}
+      >
+        <Icon name="settings" size={14} />
+        Customize columns…
+      </Link>
+      <Link
+        to="/settings/$section"
+        params={{ section: "card-layout" }}
+        role="menuitem"
+        data-testid="board-options-card-layout"
+        className={MENU_LINK_CLASS}
+      >
+        <Icon name="settings" size={14} />
+        Card layout…
+      </Link>
+    </>
   );
 }
 
@@ -1018,15 +1016,25 @@ function Column({
       )}
 
       {/* The column scrolls on its own (BRD-21), independently of its
-          neighbours and of the horizontal board scroll. */}
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+          neighbours and of the horizontal board scroll.
+
+          UI-8: spacing lives on the CARD (`mb-2`), not on this container
+          (`space-y-*`). The list's flow siblings are not only cards —
+          `DropIndicator` sits between every pair, always rendered
+          (`h-0` at rest) so the drop gap can animate rather than
+          teleport. `space-y-*` gives a margin to every flow sibling
+          including a hidden zero-height one, which doubled the
+          card-to-card gap (7px card + 7px indicator = 14px) even
+          though the indicator was invisible. `mb-2` on each card is
+          unaffected by a sibling's own (zero) height. */}
+      <div className="min-h-0 flex-1 space-y-0 overflow-y-auto p-2">
         {loading ? (
           // BRD-39: skeleton cards, so the user never sees a "0" count
           // and a "No tasks" placeholder on a column that has cards.
           <>
             <SkeletonCard />
             <SkeletonCard />
-            <SkeletonCard />
+            <SkeletonCard className="mb-0" />
           </>
         ) : tasks.length === 0 ? (
           // BRD-7 / ONB-11: an explicit placeholder, not a blank strip.
@@ -1044,36 +1052,43 @@ function Column({
                     a real element with a height transition, so moving
                     between positions animates rather than teleports. */}
                 <DropIndicator active={dropIndex === i} />
-                <BoardCard
-                  task={task}
-                  badges={badgesFor(task)}
-                  health={task.health}
-                  layout={columnLayout}
-                  lookups={lookups}
-                  milestones={milestones}
-                  sprints={sprints}
-                  today={today}
-                  // BRD-11: the source position shows a placeholder
-                  // rather than vanishing, so the board does not jump
-                  // when the card is finally removed. The floating
-                  // preview is what the user drags.
-                  placeholder={task.key === draggingKey}
-                  onOpen={onOpen}
-                  onFilterLabel={onFilterLabel}
-                  onPointerDown={e => {
-                    // The neighbours this card currently sits between,
-                    // computed from the list with the card itself
-                    // removed — the same basis the drop uses, so the
-                    // two are comparable (BRD-31).
-                    onCardPointerDown(
-                      e,
-                      task.key,
-                      column.id,
-                      neighboursAt(rest.filter(t => t.key !== task.key), i),
-                    );
-                  }}
-                  onMoveKey={dir => { onKeyboardMove(task.key, column.id, dir); }}
-                />
+                {/* UI-8: the 7px gap lives here (`mb-2`), on the card's
+                    own wrapper, not on the list container. `BoardCard`
+                    takes no `className`, so the margin is applied to a
+                    plain wrapper div rather than threading a prop into
+                    a component whose file is outside this change. */}
+                <div className="mb-2">
+                  <BoardCard
+                    task={task}
+                    badges={badgesFor(task)}
+                    health={task.health}
+                    layout={columnLayout}
+                    lookups={lookups}
+                    milestones={milestones}
+                    sprints={sprints}
+                    today={today}
+                    // BRD-11: the source position shows a placeholder
+                    // rather than vanishing, so the board does not jump
+                    // when the card is finally removed. The floating
+                    // preview is what the user drags.
+                    placeholder={task.key === draggingKey}
+                    onOpen={onOpen}
+                    onFilterLabel={onFilterLabel}
+                    onPointerDown={e => {
+                      // The neighbours this card currently sits between,
+                      // computed from the list with the card itself
+                      // removed — the same basis the drop uses, so the
+                      // two are comparable (BRD-31).
+                      onCardPointerDown(
+                        e,
+                        task.key,
+                        column.id,
+                        neighboursAt(rest.filter(t => t.key !== task.key), i),
+                      );
+                    }}
+                    onMoveKey={dir => { onKeyboardMove(task.key, column.id, dir); }}
+                  />
+                </div>
               </Fragment>
             ))}
             <DropIndicator active={dropIndex === rest.length} />
@@ -1106,12 +1121,12 @@ function DropIndicator({ active }: { readonly active: boolean }) {
   );
 }
 
-function SkeletonCard() {
+function SkeletonCard({ className = "mb-2" }: { readonly className?: string }) {
   return (
     <div
       aria-hidden="true"
       data-testid="board-skeleton"
-      className="h-16 animate-pulse rounded border border-border-subtle bg-bg-muted"
+      className={`h-16 animate-pulse rounded border border-border-subtle bg-bg-muted ${className}`}
     />
   );
 }

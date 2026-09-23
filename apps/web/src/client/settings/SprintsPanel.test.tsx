@@ -25,6 +25,16 @@ function openSprintAction(actionTestId: string): void {
 }
 
 /**
+ * Ken's ruling, 2026-09-22 (decisions.md § 9): the archived-scope control
+ * is demoted behind an icon reveal (`ArchivedScopeReveal`), not a
+ * permanently visible segmented control — so a test must open it before a
+ * segment (`sprints-archived-scope-<scope>`) is present to click.
+ */
+function openSprintsArchivedScope(): void {
+  fireEvent.click(screen.getByTestId("sprints-archived-scope-reveal"));
+}
+
+/**
  * SprintsPanel — SPR-40 create / delete from Settings.
  *
  * The panel was read-only; these turn on the *requests* it now issues to
@@ -314,10 +324,13 @@ describe("SprintsPanel — archived scope (SPR-40 / K107)", () => {
 
     // Default scope `active`: the archived sprint is not fetched.
     expect(screen.queryByTestId("sprint-row-sp_arch")).toBeNull();
+    // The control is behind the reveal, not directly clickable.
+    expect(screen.queryByTestId("sprints-archived-scope-all")).toBeNull();
 
-    // Switch the control to "all" — the panel refetches and the archived
-    // row appears (in the archived block).
-    fireEvent.change(screen.getByTestId("sprints-archived-scope"), { target: { value: "all" } });
+    // Open the reveal, then switch the control to "all" — the panel
+    // refetches and the archived row appears (in the archived block).
+    openSprintsArchivedScope();
+    fireEvent.click(await screen.findByTestId("sprints-archived-scope-all"));
     const row = await screen.findByTestId("sprint-row-sp_arch");
     expect(row.getAttribute("data-sprint-archived")).toBe("true");
   });
@@ -365,7 +378,8 @@ describe("SprintsPanel — archive (SPR-40)", () => {
     // scope's list.
     await waitFor(() => { expect(screen.queryByTestId("sprint-row-sp_active")).toBeNull(); });
     // Revealing "all" brings it back, now marked archived.
-    fireEvent.change(screen.getByTestId("sprints-archived-scope"), { target: { value: "all" } });
+    openSprintsArchivedScope();
+    fireEvent.click(await screen.findByTestId("sprints-archived-scope-all"));
     const row = await screen.findByTestId("sprint-row-sp_active");
     expect(row.getAttribute("data-sprint-archived")).toBe("true");
   });
@@ -375,7 +389,8 @@ describe("SprintsPanel — archive (SPR-40)", () => {
     renderPanel();
     await screen.findByTestId("sprints-list");
     // Reveal the archived sprint (scope=all), whose button reads "Unarchive".
-    fireEvent.change(screen.getByTestId("sprints-archived-scope"), { target: { value: "all" } });
+    openSprintsArchivedScope();
+    fireEvent.click(await screen.findByTestId("sprints-archived-scope-all"));
     await screen.findByTestId("sprint-row-sp_arch");
 
     // Open the archived row's kebab; its toggle reads "Unarchive".
@@ -418,9 +433,11 @@ describe("SprintsPanel — deep-link row anchors (K100)", () => {
     expect(archivedRow.getAttribute("id")).toBe("row-sp_arch");
     expect(archivedRow.getAttribute("data-sprint-archived")).toBe("true");
     // The user-facing control still shows the default scope; the widen is
-    // internal to make the anchor resolvable.
-    const control = screen.getByTestId<HTMLSelectElement>("sprints-archived-scope");
-    expect(control.value).toBe("active");
+    // internal to make the anchor resolvable. It is demoted behind the
+    // reveal (Ken's ruling, 2026-09-22), so it must be opened to inspect.
+    openSprintsArchivedScope();
+    const control = await screen.findByTestId("sprints-archived-scope");
+    expect(control.getAttribute("data-value")).toBe("active");
   });
 });
 
@@ -492,5 +509,34 @@ describe("SprintsPanel — broken-entry degradation (DEG-30)", () => {
     const before = fetchMock.mock.calls.length;
     fireEvent.click(repair);
     await waitFor(() => { expect(fetchMock.mock.calls.length).toBeGreaterThan(before); });
+  });
+});
+
+/**
+ * @verifies N-4 / UI-10
+ *
+ * SprintsPanel already carried `settings-panel-title`, but its create
+ * action sat in its own row below the description (not even sharing a
+ * row with the archived-scope control), at a different height/position
+ * than the title. Converged via the shared `SettingsPanelHeader`.
+ */
+describe("SprintsPanel header convergence (N-4)", () => {
+  it("renders the canonical title markup via SettingsPanelHeader", async () => {
+    renderPanel();
+
+    const title = await screen.findByTestId("settings-panel-title");
+    expect(title.tagName).toBe("H1");
+    expect(title.textContent).toBe("Sprints");
+    expect(title.className).toContain("text-text-primary");
+  });
+
+  it("puts the create action in the header row next to the title", async () => {
+    renderPanel();
+
+    const title = await screen.findByTestId("settings-panel-title");
+    const createBtn = await screen.findByTestId("sprint-create-open");
+    const header = title.closest("header");
+    expect(header).not.toBeNull();
+    expect(header?.contains(createBtn)).toBe(true);
   });
 });

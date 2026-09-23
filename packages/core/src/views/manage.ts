@@ -1,4 +1,4 @@
-import type { ArchivedScope, BrokenSavedQuery, Filter, QueriesConfig, SavedQuery, WorkflowConfig } from "@loctt/contracts";
+import type { ArchivedScope, BrokenSavedQuery, EntityColor, Filter, QueriesConfig, SavedQuery, WorkflowConfig } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import {
@@ -164,6 +164,15 @@ export interface CreateViewInput {
   readonly sort?: SavedQuery["sort"];
   readonly archivedScope?: ArchivedScope;
   readonly icon?: string;
+  /**
+   * K103's three-shape colour. Ken, 2026-09-23: colour follows icon
+   * wherever both exist, so a saved view carries one. Whether it can be
+   * APPLIED is a render-time question about the icon (an emoji is never
+   * tinted) — core stores what it is given either way, so switching an
+   * emoji back to a Lucide glyph restores the colour rather than
+   * demanding it be picked again.
+   */
+  readonly color?: EntityColor;
 }
 
 /** Creates a new saved view. Generates a stable ulid. */
@@ -182,6 +191,7 @@ export async function createView(
       ...(input.sort !== undefined ? { sort: input.sort } : {}),
       ...(input.archivedScope !== undefined ? { archivedScope: input.archivedScope } : {}),
       ...(input.icon !== undefined ? { icon: input.icon } : {}),
+      ...(input.color !== undefined ? { color: input.color } : {}),
     };
     await saveQueriesConfig(locttDir, {
       queries: [...config.queries, created],
@@ -203,6 +213,8 @@ export interface EditViewInput {
   readonly archivedScope?: ArchivedScope;
   /** `null` clears the icon; `undefined` leaves it unchanged. */
   readonly icon?: string | null;
+  /** `null` clears the colour; `undefined` leaves it unchanged. */
+  readonly color?: EntityColor | null;
   /**
    * Explicit opt-in to REPLACE a broken entry, discarding the original
    * text `queries.yaml` still holds for it (K102-broken-repair). Ignored
@@ -253,6 +265,17 @@ export async function editView(
           ? { icon: changes.icon }
           : existing.icon !== undefined
             ? { icon: existing.icon }
+            : {}),
+      // Same three-way as `icon`: null clears, a value sets, omission
+      // KEEPS. The keep arm is what stops an unrelated web edit (the
+      // dialog omits what it does not offer) from silently dropping a
+      // colour set through the CLI or MCP.
+      ...(changes.color === null
+        ? {}
+        : changes.color !== undefined
+          ? { color: changes.color }
+          : existing.color !== undefined
+            ? { color: existing.color }
             : {}),
       ...(existing.archived === true ? { archived: true } : {}),
     };
@@ -306,6 +329,7 @@ async function repairBrokenView(
     ...(changes.sort !== undefined && changes.sort !== null ? { sort: changes.sort } : {}),
     ...(changes.archivedScope !== undefined ? { archivedScope: changes.archivedScope } : {}),
     ...(changes.icon !== undefined && changes.icon !== null ? { icon: changes.icon } : {}),
+    ...(changes.color !== undefined && changes.color !== null ? { color: changes.color } : {}),
   };
   const remainingBroken = (config.broken ?? []).filter(b => b.id !== entry.id);
   await saveQueriesConfig(locttDir, {
@@ -343,6 +367,10 @@ export async function unarchiveView(locttDir: string, ref: string): Promise<void
       ...(existing.display !== undefined ? { display: existing.display } : {}),
       ...(existing.archivedScope !== undefined ? { archivedScope: existing.archivedScope } : {}),
       ...(existing.icon !== undefined ? { icon: existing.icon } : {}),
+      // Rebuilt field by field, so a new field omitted here is a field
+      // SILENTLY DELETED by unarchiving (the corruption guide's
+      // "a writer preserves what it did not touch", rule 2).
+      ...(existing.color !== undefined ? { color: existing.color } : {}),
     };
     const next = config.queries.map(q => (q.id === existing.id ? cleared : q));
     await saveQueriesConfig(locttDir, { queries: next, ...(config.broken ? { broken: config.broken } : {}) });

@@ -4,12 +4,13 @@ import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useArchiveSprint, useCountedSprints, useDeleteSprint } from "../api/hooks/useDataMutations.ts";
-import { ArchivedScopeControl } from "../ui/ArchivedScopeControl.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
+import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
 import { SprintEditDialog } from "./SprintEditDialog.tsx";
 
 /**
@@ -226,9 +227,7 @@ export function SprintsPanel() {
   if (sprints.isError) {
     return (
       <div data-testid="sprints-panel">
-        <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
-          Sprints
-        </h1>
+        <SettingsPanelHeader title="Sprints" />
         <div data-testid="sprints-load-error" data-sprints-state="load-failed">
           <ErrorState
             error={sprints.error}
@@ -257,25 +256,35 @@ export function SprintsPanel() {
 
   return (
     <div data-testid="sprints-panel">
-      <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
-        Sprints
-      </h1>
-      <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Create, edit and delete sprints here, or open one for its burndown.
-      </p>
-
       {/* SPR-40/K105: create runs through the shared SprintEditDialog — the
           same dialog the per-row Edit action opens, so the create and edit
           forms cannot drift. */}
-      <div className="mb-4">
-        <Button
-          variant="secondary"
-          testId="sprint-create-open"
-          onClick={() => { setCreating(true); }}
-        >
-          New sprint
-        </Button>
-      </div>
+      <SettingsPanelHeader
+        title="Sprints"
+        actions={(
+          <>
+            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
+                an icon reveal, not a permanently visible segmented
+                control — see ArchivedScopeReveal. */}
+            <ArchivedScopeReveal
+              testId="sprints-archived-scope"
+              panelLabel="sprints"
+              value={scope}
+              onChange={setScope}
+            />
+            <Button
+              variant="primary"
+              testId="sprint-create-open"
+              onClick={() => { setCreating(true); }}
+            >
+              New sprint
+            </Button>
+          </>
+        )}
+      />
+      <p className="mb-4 text-[0.9286rem] text-text-secondary">
+        Create, edit and delete sprints here, or open one for its burndown.
+      </p>
 
       {creating && (
         <SprintEditDialog
@@ -283,18 +292,6 @@ export function SprintsPanel() {
           onClose={() => { setCreating(false); }}
         />
       )}
-
-      {/* K107: the tri-state scope replaces the "Show archived" checkbox.
-          The server returns exactly the rows the scope asks for, so the
-          panel no longer splits a fetch-all; it renders active and
-          archived blocks off whatever the current scope returned. */}
-      <div className="mb-4">
-        <ArchivedScopeControl
-          testId="sprints-archived-scope"
-          value={scope}
-          onChange={setScope}
-        />
-      </div>
 
       {items.length === 0 && broken.length === 0
         ? (

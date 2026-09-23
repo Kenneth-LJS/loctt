@@ -454,3 +454,158 @@ describe("RichBuffer — TSK-66 table does not perturb unedited bodies", () => {
     expect(buffer.text).toBe(body);
   });
 });
+
+/**
+ * K107 — underline (`<ins>`) and highlight (`==`).
+ *
+ * The two halves that are easy to ship half-done are *parse back* and
+ * *do not disturb anything else*. A mark that serializes but does not
+ * parse mangles the text on save-reopen-save; a mark whose regex is
+ * mis-ordered silently rewires an existing one (the `~~`-before-`~`
+ * scar in `inlineNodes` is exactly that failure, already paid for).
+ */
+describe("K107 — underline and highlight marks", () => {
+  // @verifies K107
+  it("parses <ins> into an underline mark, not raw text", () => {
+    const doc = fromMarkdown("A <ins>under</ins> b\n");
+    const inline = doc.content?.[0]?.content ?? [];
+    expect(inline.some(n => n.marks?.some(m => m.type === "underline"))).toBe(true);
+    // The tag itself is gone from the text — it became a mark, and the
+    // literal `<ins>` surviving here is the bug this asserts against.
+    const text = inline.map(n => n.text ?? "").join("");
+    expect(text).toBe("A under b");
+  });
+
+  // @verifies K107
+  it("parses ==text== into a highlight mark, not raw text", () => {
+    const doc = fromMarkdown("A ==lit== b\n");
+    const inline = doc.content?.[0]?.content ?? [];
+    expect(inline.some(n => n.marks?.some(m => m.type === "highlight"))).toBe(true);
+    const text = inline.map(n => n.text ?? "").join("");
+    expect(text).toBe("A lit b");
+  });
+
+  // @verifies K107
+  it("round-trips each new mark through parse and serialize", () => {
+    // Save → reopen → save. Without the parse half these come back with
+    // the delimiters doubled or stripped.
+    for (const source of ["A <ins>under</ins> b\n", "A ==lit== b\n"]) {
+      expect(toMarkdown(fromMarkdown(source))).toBe(source);
+    }
+  });
+
+  // @verifies K107
+  it("keeps markdown INSIDE <ins> parsed as marks (CommonMark §6.6)", () => {
+    // Inline raw HTML does not hold its contents out of markdown
+    // parsing — a block-level element would, and conflating the two was
+    // the retracted "whole line must be HTML" premise. The bold inside
+    // must be a real mark, and must re-emit as asterisks.
+    const source = "A <ins>under **bold**</ins> b\n";
+    const doc = fromMarkdown(source);
+    const inline = doc.content?.[0]?.content ?? [];
+    const boldRun = inline.find(n => n.marks?.some(m => m.type === "bold"));
+    expect(boldRun).toBeDefined();
+    // ...and it carries BOTH marks: it is bold *and* underlined.
+    expect(boldRun?.marks?.some(m => m.type === "underline")).toBe(true);
+    expect(toMarkdown(doc)).toBe(source);
+  });
+
+  // @verifies K107
+  it("round-trips a line mixing the new marks with bold/em/strike, asterisks unchanged", () => {
+    // The integration case: every mark intact, and crucially the
+    // `**`/`*` spellings NOT converted to HTML. An earlier brief said a
+    // line containing HTML must be fully HTML; it was wrong, and this
+    // asserts the retraction.
+    const source = "**b** *i* ~~s~~ <ins>u</ins> ==h== end\n";
+    const doc = fromMarkdown(source);
+    const marks = (doc.content?.[0]?.content ?? []).flatMap(n => n.marks ?? []).map(m => m.type);
+    for (const expected of ["bold", "italic", "strike", "underline", "highlight"]) {
+      expect(marks).toContain(expected);
+    }
+    const out = toMarkdown(doc);
+    expect(out).toBe(source);
+    // Explicit: the asterisks stayed asterisks rather than becoming
+    // <strong>/<em>, which is the "must not break existing markdown" rule.
+    expect(out).toContain("**b**");
+    expect(out).toContain("*i*");
+    expect(out).not.toContain("<strong>");
+    expect(out).not.toContain("<em>");
+  });
+
+  // @verifies K107
+  it("stores underline as <ins>, never <u>", () => {
+    // `<u>` is NOT on GitHub's sanitiser allowlist — verified live
+    // against api.github.com/markdown, where `A <u>x</u> b` renders as
+    // `A x b` with the tag silently stripped. If the serializer ever
+    // emits `<u>` the user's underline vanishes on the tool most likely
+    // to read the file, with no warning. That is what this pins.
+    const md = toMarkdown({
+      type: "doc",
+      content: [{
+        type: "paragraph",
+        content: [{ type: "text", text: "x", marks: [{ type: "underline" }] }],
+      }],
+    });
+    expect(md.trim()).toBe("<ins>x</ins>");
+    expect(md).not.toContain("<u>");
+  });
+
+  // @verifies K107
+  it("does not read == as two separate = characters or disturb a lone =", () => {
+    // `=` is not a delimiter anywhere else in this tokeniser. A single
+    // `=` (and a setext underline, and `a = b`) must stay literal.
+    for (const src of ["a = b", "x == y is a comparison"]) {
+      const doc = fromMarkdown(src);
+      const inline = doc.content?.[0]?.content ?? [];
+      expect(inline.some(n => n.marks?.some(m => m.type === "highlight"))).toBe(false);
+      expect(inline.map(n => n.text ?? "").join("")).toBe(src);
+    }
+  });
+
+  // @verifies K107
+  it("still takes ~~strike~~ before ~sub~ with the new alternatives appended", () => {
+    // The appended branches must not perturb the existing ordering scar.
+    // If `==`/`<ins>` had been inserted mid-array the positional capture
+    // groups would renumber and this is one of the things that breaks.
+    const doc = fromMarkdown("~~struck~~ and ~sub~ and ==lit==\n");
+    const marks = (doc.content?.[0]?.content ?? []).flatMap(n => n.marks ?? []).map(m => m.type);
+    expect(marks).toContain("strike");
+    expect(marks).toContain("subscript");
+    expect(marks).toContain("highlight");
+  });
+
+  // @verifies K107
+  it("still keeps arithmetic asterisks literal with the new alternatives appended", () => {
+    // The space+digit flanking guard must survive the regex change.
+    for (const src of ["5 * 3 * 2", "a * b * c", "3*4*5"]) {
+      const doc = fromMarkdown(src);
+      const inline = doc.content?.[0]?.content ?? [];
+      expect(inline.some(n => n.marks?.some(m => m.type === "italic"))).toBe(false);
+      expect(inline.map(n => n.text ?? "").join("")).toBe(src);
+    }
+  });
+
+  // @verifies K107
+  it("leaves a body with NO new marks byte-identical after open-and-close", () => {
+    // The pre-existing guarantee, and the thing most at risk from a
+    // change to the tokeniser: merely LOOKING at a body must not rewrite
+    // it. Re-asserted here against the awkward spellings a serializer
+    // would normalize, now that two new branches sit in the regex.
+    for (const [, body] of AWKWARD_BODIES) {
+      const buffer = new RichBuffer(body);
+      fromMarkdown(buffer.text);
+      expect(buffer.text).toBe(body);
+    }
+  });
+
+  // @verifies K107
+  it("does not mistake an unrelated tag for underline", () => {
+    // `<ins>` is matched as a literal pair. A different tag must not be
+    // swallowed by it — it stays literal text and the lossy guardrail
+    // (core) is what sends the body to source mode.
+    const doc = fromMarkdown("A <span>x</span> b\n");
+    const inline = doc.content?.[0]?.content ?? [];
+    expect(inline.some(n => n.marks?.some(m => m.type === "underline"))).toBe(false);
+    expect(inline.map(n => n.text ?? "").join("")).toBe("A <span>x</span> b");
+  });
+});

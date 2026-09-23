@@ -13,12 +13,12 @@ import { cn } from "./cn.ts";
  * `indeterminate` is a first-class prop — the ListView "select all"
  * header needs it (BLK-3) and it is a DOM *property*, not an attribute,
  * so it is applied to the node via a ref effect. Callers stop hand-
- * rolling that ref. `data-indeterminate` is also set so the visual mark
- * can react to it (CSS cannot select `:indeterminate` and paint a
- * sibling reliably across the appearance-none repaint, so the mark keys
- * off the checked prop + this data attr).
+ * rolling that ref. `data-indeterminate` is also set so both the input's
+ * own fill and the mark overlay can react to it (CSS cannot select
+ * `:indeterminate` reliably across the appearance-none repaint, so both
+ * key off the checked prop + this data attr instead).
  *
- * The tick/dash is a sibling `<span>` overlaid on the box, coloured with
+ * The tick/dash is a `<span>` overlaid on the input, coloured with
  * `text-accent-contrast` so it reads on the accent fill in both themes,
  * shown only when checked or indeterminate. Using a real element rather
  * than a background-image data-URI keeps the mark theme-aware (a baked
@@ -30,17 +30,43 @@ import { cn } from "./cn.ts";
  *
  * ## Hit area (WCAG 2.5.8 AA — #15)
  *
- * The *visual* box stays 16px, but the clickable target is **24px**. The
- * enlargement is done by making the real `<input>` itself the 24px target
- * (`absolute inset-0`, transparent) inside a 24px `<span>` wrapper, with a
- * separate 16px painted box drawn as a sibling that mirrors the input's
- * state via `peer-*`. The wrapper is a `<span>`, **not** a `<label>`:
- * many callers already wrap `<Checkbox>` in their own text `<label>`
- * ("Show archived", working-day toggles), and a label here would nest
- * `<label>` elements — invalid HTML that breaks the outer label's
- * text→input association. Keeping the input native preserves Space-to-
- * toggle, `indeterminate`, `name` grouping and form semantics; every call
- * site inherits the 24px target with no change.
+ * The clickable target and the visible box are **the same element,
+ * the same size** — there is no invisible hit area extending past what
+ * is drawn. An earlier version of this component tried the opposite: a
+ * 16px painted box with a transparent 24px `<input>` overlaid on top of
+ * it, so the outer ~4px ring was clickable but unpainted. Ken's call
+ * (2026-09-23) on seeing that shape: "sounds like a bad hack. make the
+ * checkbox bigger instead?!?!" — and he is right. A hit area that
+ * exceeds what the user can see means a click 3-4px outside the visible
+ * box still toggles it, which reads as a ghost-click bug, not an
+ * accessibility fix. So the fix here is the plain one: the box itself
+ * is now drawn bigger.
+ *
+ * The wrapper and the input are both `h-7 w-7` (see the rem-to-px note
+ * below for why `h-7`, not `h-6`, is required). The previously-separate
+ * 16px "painted box" sibling is gone; the native `<input>` is painted
+ * directly with `appearance-none` at the full size, and the tick/dash
+ * overlay centres on it the same way. The wrapper stays a `<span>`, not
+ * a `<label>`: callers already wrap `<Checkbox>` in their own text
+ * `<label>` ("Show archived", working-day toggles), and a label here
+ * would nest `<label>` elements — invalid HTML that breaks the outer
+ * label's text→input association.
+ *
+ * ## The rem trap (why `h-7`, not `h-6`, and why the docstring used to
+ * be wrong)
+ *
+ * `styles/index.css:142` sets `html { font-size: 87.5% }` against a
+ * 16px browser default, so `1rem` here resolves to **14px**, not 16px.
+ * Tailwind's `h-6`/`w-6` is `1.5rem`: at this root size that is
+ * **21px**, not the 24px this docstring asserted for a long time (three
+ * separate spots, corrected here). `h-7`/`w-7` is `1.75rem`, which
+ * resolves to **24.5px** — the smallest standard Tailwind step that
+ * clears 24px at this root size. There is no exact-24px Tailwind
+ * utility here (that would be `1.7143rem`), so 24.5px is the size,
+ * not 24px on the nose. This same 0.875× miscount has now bitten this
+ * codebase three times (`design-system.md`'s `IconButton` claim, a
+ * dialog focus-ring size, and this) — treat any size assertion derived
+ * from a Tailwind class name rather than a measurement as suspect.
  */
 export interface CheckboxProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "className"> {
@@ -49,22 +75,16 @@ export interface CheckboxProps
   readonly className?: string;
 }
 
-// The real input is the 24px hit target: absolutely-positioned, filling
-// the 24px wrapper, and transparent (`appearance-none opacity-0`). It is a
-// `peer` so the painted 16px box (a sibling) can mirror its state.
+// The input IS the visible box now — one element, painted directly, filling
+// its wrapper (`h-full w-full`). No transparent overlay, no separate
+// painted sibling: the clickable area and the drawn box are identical.
 const INPUT_BASE =
-  "peer absolute inset-0 h-full w-full m-0 appearance-none opacity-0 cursor-pointer " +
-  "disabled:cursor-not-allowed";
-
-// The visible 16px box, painted from the peer input's state. It carries no
-// pointer events (the input above it takes every click across the 24px).
-const BOX_BASE =
-  "pointer-events-none absolute inset-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-4 rounded-sm " +
+  "relative m-0 h-full w-full appearance-none rounded-sm cursor-pointer " +
   "border border-border-control bg-bg-surface transition-colors " +
-  "peer-hover:bg-bg-muted-hover " +
-  "peer-checked:bg-accent peer-checked:border-accent " +
-  "peer-disabled:border-border-default peer-disabled:bg-bg-muted " +
-  "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--text-primary)]";
+  "hover:bg-bg-muted-hover " +
+  "checked:bg-accent checked:border-accent " +
+  "disabled:cursor-not-allowed disabled:border-border-default disabled:bg-bg-muted " +
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-primary)]";
 
 export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
   function Checkbox({ indeterminate = false, checked, disabled, className, onClick, ...rest }, ref) {
@@ -89,15 +109,14 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
     const showMark = indeterminate || checked === true;
 
     return (
-      // #15: a 24px hit target with a 16px painted box. The wrapper is a
-      // `<span>` (NOT a `<label>` — callers often wrap this in their own
-      // text `<label>`, and nesting labels is invalid). The real input
-      // fills the 24px square transparently and takes every click; the
-      // visible box and mark are peer-driven siblings centred inside it.
+      // #15: the visible box IS the 24.5px target — see the docstring for
+      // why 24.5px, not 24px, and why this replaced the transparent-
+      // overlay approach. The wrapper is a `<span>` (NOT a `<label>` —
+      // callers often wrap this in their own text `<label>`, and nesting
+      // labels is invalid).
       <span
-        data-indeterminate={indeterminate ? "true" : undefined}
         className={cn(
-          "group relative inline-block h-6 w-6 shrink-0 align-middle",
+          "relative inline-block h-7 w-7 shrink-0 align-middle",
           className,
         )}
       >
@@ -108,19 +127,15 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
           disabled={disabled}
           {...(indeterminate ? { "data-indeterminate": "true" } : {})}
           {...(onClick !== undefined ? { onClick } : {})}
-          className={INPUT_BASE}
-          {...rest}
-        />
-        {/* The 16px painted box, mirrored from the peer input. An
-            indeterminate input can't be selected via `peer-*`, so the
-            accent fill for that state is applied from the wrapper's
-            data attr via `group-data-*`. */}
-        <span
-          aria-hidden="true"
           className={cn(
-            BOX_BASE,
+            INPUT_BASE,
+            // `:indeterminate` cannot be targeted reliably across the
+            // appearance-none repaint (same reason the old sibling-box
+            // design gave for it), so the accent fill for that state
+            // keys off the data attribute instead of a CSS pseudo-class.
             indeterminate && "bg-accent border-accent",
           )}
+          {...rest}
         />
         {showMark ? (
           <span

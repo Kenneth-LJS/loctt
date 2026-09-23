@@ -220,10 +220,12 @@ export function ProjectEditDialog({
           <Button
             variant="primary"
             testId={`project-name-save-${project.id}`}
-            disabled={!nameOk || update.isPending}
+            disabled={!nameOk}
+            loading={update.isPending}
+            aria-label="Save"
             onClick={commitName}
           >
-            {update.isPending ? "Saving…" : "Save"}
+            Save
           </Button>
         </DialogActions>
       }

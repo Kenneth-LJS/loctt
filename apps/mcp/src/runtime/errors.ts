@@ -17,6 +17,7 @@ import {
   AttachmentNotFoundError,
   AttachmentSourceError,
   BurndownError,
+  FilterError,
   FsAccessError,
   GitSyncFirstError,
   LabelError,
@@ -83,6 +84,18 @@ export function isKnownDomainError(err: unknown): err is Error {
     // act on. Without this it was rethrown as an opaque server fault,
     // hiding the honest report the error was built to carry.
     || err instanceof PartialRemapError
+    // UI-9: `list_tasks` (and any future tool) resolving a saved view
+    // whose filter list cannot be composed into a query — an advanced
+    // filter whose DSL does not parse, or a simple filter whose values
+    // cannot combine under its operator. `filtersToNode` throws this on
+    // the READ path (`query/list.ts`, resolving `view`) bare; the WRITE
+    // path (`create_view`/`edit_view`) already catches it and rethrows
+    // as `ViewError`, listed below. Without this, an agent calling
+    // `list_tasks` with a broken view got the fault rethrown as an
+    // opaque server error instead of the parse error naming the fix.
+    // Does NOT extend `LocttError`, so it must be listed explicitly,
+    // same as `ViewError`.
+    || err instanceof FilterError
     || err instanceof ProjectError
     || err instanceof ReorderError
     || err instanceof SprintError

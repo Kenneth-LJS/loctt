@@ -92,7 +92,7 @@ function csvCell(value: unknown): string {
   if (Array.isArray(value)) {
     // A plain comma join is ambiguous the moment an element contains a
     // comma: `["a,b", "c"]` becomes `a,b,c`, which reimports as three
-    // values (BLK-33). Elements that could be confused with the
+    // values. Elements that could be confused with the
     // separator are JSON-quoted so the boundary survives a round trip;
     // ordinary values stay bare, so the common case still reads as
     // `bug,ui` in a spreadsheet.

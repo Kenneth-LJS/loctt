@@ -232,11 +232,20 @@ export function AttachmentsPanel({
         ) : null}
         <p className="text-[0.8571rem] text-text-tertiary">
           Drag files here, or{" "}
+          {/* UI-22: was styled as a bordered/padded chip AND underlined
+              text at once, reading as neither. It is correctly a
+              `<button>` (it proxies a click to a hidden file input,
+              triggering an action rather than navigating) — this is a
+              pure styling fix, dropping the box treatment so it reads
+              as inline underlined text matching the sentence, the same
+              inline-action shape `GroupError`'s Retry link already uses
+              (`underline hover:text-text-primary`) rather than a new
+              primitive. */}
           <button
             type="button"
             data-testid="attachment-upload"
             onClick={() => { inputRef.current?.click(); }}
-            className="rounded border border-border-subtle px-1.5 py-0.5 text-[0.8571rem] text-text-secondary underline hover:bg-bg-muted"
+            className="underline hover:text-text-primary"
           >
             Upload
           </button>

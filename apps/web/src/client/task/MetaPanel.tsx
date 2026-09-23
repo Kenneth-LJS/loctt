@@ -307,7 +307,11 @@ export function MetaPanel({
                 testId="meta-assignee-avatar"
               />
             )}
-            <div className="min-w-0 flex-1">
+            {/* UI-7: same stretch fix as `Row`'s `dd` — see its comment.
+                Needed again here because Assignee's avatar sits beside
+                the picker rather than in `dd` directly, so this div,
+                not `dd`, is the picker's immediate parent. */}
+            <div className="min-w-0 flex-1 [&>.relative.inline-flex]:flex [&>.relative.inline-flex]:w-full">
               <OptionPicker
                 label="Assignee"
                 value={fm.assignee}
@@ -351,7 +355,8 @@ export function MetaPanel({
                 testId="meta-reporter-avatar"
               />
             )}
-            <div className="min-w-0 flex-1">
+            {/* UI-7: same stretch fix as Assignee above. */}
+            <div className="min-w-0 flex-1 [&>.relative.inline-flex]:flex [&>.relative.inline-flex]:w-full">
               <OptionPicker
                 label="Reporter"
                 value={fm.reporter}
@@ -712,9 +717,33 @@ function Row({
   readonly onDismiss?: (() => void) | undefined;
 }) {
   return (
-    <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-2 text-[0.9286rem]">
+    // UI-7: two layouts, chosen with plain Tailwind responsive classes
+    // rather than `useIsNarrow` — the DOM is identical at both widths
+    // (label then value, in document order), so there is no structural
+    // difference for `useIsNarrow`'s docstring to require duplicating
+    // ("reach for this only when the two layouts are structurally
+    // different"). Below `sm` (640px) the row is a single column, label
+    // above value (Ken: "allow it to take up its own row on mobile").
+    // At `sm` and up it is the original two-column grid, with the label
+    // column trimmed from 80px to 72px — 80px had ~14-22px of slack
+    // over every configured label (measured: "Milestone" 58.7px,
+    // "Completed" 66.3px, the widest two), which the value column can
+    // use instead of contributing anything itself.
+    <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 text-[0.9286rem] sm:grid-cols-[72px_minmax(0,1fr)]">
       <dt className="pt-0.5 text-text-tertiary">{label}</dt>
-      <dd className="min-w-0 break-words text-text-primary">
+      <dd
+        // UI-7's actual mechanism: `OptionPicker`'s root (`ui/Dropdown`'s
+        // `relative inline-flex` trigger wrapper) is shrink-to-fit, so it
+        // does not stretch to the value column's full width no matter how
+        // wide that column is — confirmed by widening the grid column
+        // alone (no effect) versus forcing this wrapper to `flex w-full`
+        // (collapsed a two-line "v1.0 Launch" row from 42.67px to
+        // 24.50px at the SAME, unwidened column). `ui/Dropdown.tsx` is a
+        // shared primitive out of this change's scope, so the stretch is
+        // applied here, from the row that owns the column, to its
+        // immediate child rather than by editing the primitive.
+        className="min-w-0 break-words text-text-primary [&>.relative.inline-flex]:flex [&>.relative.inline-flex]:w-full"
+      >
         {corrupt !== undefined && (
           // The stored bad value + a warning, *above* the still-usable
           // editor below — so the value is visible (not a bare "—") and

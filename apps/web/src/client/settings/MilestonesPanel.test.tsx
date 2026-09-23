@@ -103,3 +103,42 @@ describe("MilestonesPanel — broken-entry degradation (DEG-30)", () => {
     await waitFor(() => { expect(fetchMock.mock.calls.length).toBeGreaterThan(before); });
   });
 });
+
+/**
+ * @verifies N-4 / UI-10
+ *
+ * MilestonesPanel already carried `settings-panel-title`, but its create
+ * action sat in a `secondary`-variant row below the description, at a
+ * different vertical position than the title. Converged via the shared
+ * `SettingsPanelHeader`.
+ */
+describe("MilestonesPanel header convergence (N-4)", () => {
+  it("renders the canonical title markup via SettingsPanelHeader", async () => {
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    expect(title.tagName).toBe("H1");
+    expect(title.textContent).toBe("Milestones");
+    expect(title.className).toContain("text-text-primary");
+  });
+
+  it("puts the create action in the header row next to the title", async () => {
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    const createBtn = await screen.findByTestId("milestone-create-open");
+    const header = title.closest("header");
+    expect(header).not.toBeNull();
+    expect(header?.contains(createBtn)).toBe(true);
+  });
+
+  it("uses the canonical primary variant for the create action, not the old secondary", async () => {
+    render(<MilestonesPanel />, { wrapper: wrapper() });
+
+    const createBtn = await screen.findByTestId("milestone-create-open");
+    // `Button`'s primary variant fills with `bg-accent`; the pre-N-4
+    // secondary variant instead bordered (`border-border-default`).
+    expect(createBtn.className).toContain("bg-accent");
+    expect(createBtn.className).not.toContain("border-border-default");
+  });
+});

@@ -127,9 +127,11 @@ export function SaveViewDialog({
           <Button
             variant="primary"
             onClick={submit}
-            disabled={name.trim().length === 0 || createView.isPending}
+            disabled={name.trim().length === 0}
+            loading={createView.isPending}
+            aria-label="Save"
           >
-            {createView.isPending ? "Saving…" : "Save"}
+            Save
           </Button>
         </div>
       </div>
