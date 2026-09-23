@@ -4701,7 +4701,6 @@ test.describe("XS — UI/CLI parity (M1.3)", () => {
       "(status = in_progress)",
       "due_date < today",
       "due_date >= 2020-01-01",
-      "archived = false",
       `parent = ${String(seeded[0])}`,
       'has_link("blocks")',
       "link_count(blocks) > 0",
@@ -4726,6 +4725,22 @@ test.describe("XS — UI/CLI parity (M1.3)", () => {
         .map(m => m[1] as string).sort();
       expect(uiKeys, `mismatch for: ${q}`).toEqual(cliKeys);
     }
+
+    // Amended (K121 #1, Ken 2026-09-23): `archived` is a documented
+    // construct the CLI still accepts, but the web list refuses it
+    // outright rather than parsing it — Settings → Archived is the
+    // one web surface for archived items. This asserts the divergence
+    // is deliberate and pointed, not a silent empty result.
+    const archivedQuery = "archived = false";
+    const uiRes = await page.request.get(
+      `${tracker.baseURL}/api/tasks?query=${encodeURIComponent(archivedQuery)}`,
+    );
+    expect(uiRes.status(), "UI must refuse a query naming archived").toBe(400);
+    const uiBody = await uiRes.json() as { error?: string };
+    expect(uiBody.error).toMatch(/settings.*archived/i);
+
+    const cliOut = await tracker.run(["list", "--query", archivedQuery]);
+    expect(cliOut).not.toMatch(/error/i);
   });
 
   // @verifies XS-15

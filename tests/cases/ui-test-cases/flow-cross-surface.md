@@ -142,6 +142,18 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - No construct produces a UI parse error that the CLI accepts, and none silently returns zero results where the CLI returns rows.
 - Custom-field predicates declared in `workflow.yaml` work identically on both surfaces.
 
+> **Amended (K121 #1, Ken 2026-09-23).** A query naming the `archived`
+> field (e.g. `archived = false`) is exempted from the UI half of this
+> case. Ken's ruling on archived visibility: *"not allow viewing
+> archived stuff. thats the point of archiving"* (K121 #1) made the web
+> list refuse any query naming `archived` with a 400 pointing at
+> Settings → Archived (A331; `queryNamesArchivedField`,
+> `ARCHIVED_QUERY_MESSAGE`). For this one construct, "accepted by the
+> UI" is replaced by "refused by the UI with the Settings → Archived
+> pointer" — the CLI is untouched and still accepts and runs it
+> (K30-web precedent: the ruling scopes to the web surface only). Every
+> other documented construct keeps the original parity requirement.
+
 ### XS-17 · M1 · blocker · P10 P1
 **A saved view created in the UI is immediately usable from the CLI and MCP.** Use "Save as view" on `/list` to save a filtered view, then run `loctt views` and the MCP `list_views` tool.
 

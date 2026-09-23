@@ -22403,3 +22403,171 @@ failures at 5), which B11 closed by pinning Playwright to 2. If any of the
 three fails again at 2 workers, it is a real defect and goes to
 known-gaps with the run's evidence. **To revert:** nothing to revert; no
 code changed.
+
+### A336 · B18 triage — e2e failures fixed: stale specs corrected, one app defect (SET-24 timezone alert) fixed with a red-proven unit test
+
+**Ticket:** Backlog B18 · **Date:** 2026-09-23 · **Commit:** (uncommitted)
+
+**Situation.** The full e2e suite at 2 workers on a clean build gave
+812 passed / 29 failed. Each failure was triaged as either a stale
+spec (asserting wording/locators the app no longer has, per an
+approved decision) or an app defect.
+
+**Per-failure disposition.**
+
+1. **TSK-3/19/20(×2)/21(×2)/22/23/44/50/51/52** (`tests/ui/flow-tasks.spec.ts`,
+   22 occurrences) — STALE TEST. `getByRole('button', { name: 'More' })`
+   substring-matches both the task header's "More" button and the
+   editor toolbar's folded "More formatting" group (A309, intentional).
+   Fixed by adding `exact: true` to every occurrence in the file.
+
+2. **GIT-10** (`flow-git-reconcile.spec.ts`) — STALE TEST. Asserted
+   `"left intact"`; current copy (post A322/K116 trim) is "The loctt
+   branch and its history are kept". Assertion updated to match; the
+   substance (branch survives, named) is unchanged.
+
+3. **GIT-1** (`flow-git-sync.spec.ts`) — STALE TEST / test bug. It ran
+   `git ls-tree -r --name-only loctt` right after Enable, before any
+   Publish. `enableGit` (packages/core/src/git/git-mode.ts) only writes
+   `sync.yaml` — it never creates the `loctt` branch; the branch is
+   created on first Publish. Fixed by clicking Publish (already visible
+   after enable) before inspecting the branch's tree.
+
+4. **GIT-27** — STALE TEST. Asserted `"local-only"`; current copy is
+   "Git tracking stays local until you add one with…". Assertion
+   updated.
+
+5. **GIT-28** — STALE TEST. Asserted `"not a git repository"`; current
+   copy is "This folder isn't a git repository." (curly apostrophe).
+   Assertion updated to `"isn't a git repository"`.
+
+6. **GIT-30** — STALE TEST. Asserted `"not modified"`; current copy is
+   "Your task files weren't changed." Assertion updated to
+   `"weren't changed"`.
+
+7. **GIT-25** — STALE TEST. Asserted `"previous setup"`; current copy
+   is "A loctt branch already exists…". Assertion updated to
+   `"already exists"`.
+
+8. **CMT-2** (`flow-comments.spec.ts`) — STALE TEST (A319). Asserted
+   `getByText("needs some text")).toBeHidden()`, but the reason is now
+   an `sr-only` span (A319) — present in the DOM/AT tree, visually
+   clipped, which Playwright's `toBeHidden` (a rendering-visibility
+   check) does not treat as hidden. Rewrote the assertion to check the
+   `sr-only` class plus its clipping CSS (`width:1px`, `height:1px`,
+   `overflow:hidden` — Tailwind's `.sr-only` uses `clip-path:inset(50%)`,
+   not the legacy `clip: rect(...)`), matching what A319 actually means:
+   available to assistive tech, not visible on screen.
+
+9. **SET-16** (`flow-settings-workflow.spec.ts`) — STALE TEST (A315).
+   Asserted the type-lock reason contains "stored under this type" and
+   "new field"; current sr-only reason (per A315's Settings copy trim)
+   is only "Type and multiple values can't be changed after creation."
+   The "create a new field and migrate" alternative text was removed as
+   part of the same trim pass. Assertion narrowed to the reason that
+   still exists; the substantive check (control disabled + reason
+   stated) is unchanged.
+
+10. **SET-36** — STALE TEST. Asserted `calendar-blocked` contains "12"
+    (count of *valid* remaining holidays); actual behavior states the
+    count of *invalid* ones ("1 holiday has an invalid date. Fix or
+    remove them to save.") — this matches the case text's own example
+    verbatim. Assertion corrected to the actual (and case-documented)
+    message.
+
+11. **SET-24** — **APP DEFECT.** The `calendar-timezone-unresolvable`
+    alert dropped its file-provenance line
+    (`.loctt/config/calendar.yaml`) somewhere in the Settings copy-trim
+    passes (A315/A322/K116), even though SET-24's case text ("names the
+    file it came from") was never amended and a prior decision
+    (A-SET24-TZ's follow-up note in decisions.md ~L12455) explicitly
+    records that the alert *should* name the file. This is a real
+    regression, not a stale assertion. **Fixed** in
+    `apps/web/src/client/settings/CalendarPanel.tsx`: the unresolvable-
+    timezone message now reads `Unable to resolve timezone "<value>"
+    from .loctt/config/calendar.yaml.` Added a new unit test file
+    `apps/web/src/client/settings/CalendarPanel.test.tsx`
+    (`@verifies SET-24`) asserting both the value and the file name
+    appear; red-proven by reverting the file-name text, confirmed
+    failing, then restored. The e2e spec needed no change — it was
+    already asserting the correct (case-required) content and caught
+    the regression correctly.
+
+12. **SET-22** — STALE TEST. Asserted `/working-day computations/i` and
+    `/cannot resolve/i`; current copy is "Select at least one working
+    day." Assertion updated; unchanged substance (refused, reason
+    named, save disabled, file untouched — those parts of the test were
+    already fine).
+
+13. **SET-41** — STALE TEST. Asserted `/too large/i` and a literal "1"
+    count; current copy is "Too many holidays to save. Remove some and
+    try again." — no count, because (per the case's own amendment note)
+    the limit is the server's request size, not a holiday count, so no
+    count can be stated truthfully. Assertion updated to match.
+
+14. **PRU-17** (`flow-settings-projects-users.spec.ts`, "clear the
+    project field" test) — STALE TEST. Asserted `/cleared the project
+    field/i`; current copy is `Deleted "Tasks". Cleared the project on
+    1 task.` Assertion updated to the actual phrasing.
+
+15. **SET-53, SET-54** (`flow-settings-archived.spec.ts`) — STALE TEST
+    (test bug, not an app defect). The shared `rowMenu` helper opened a
+    row's actions menu, then clicked
+    `page.locator('[data-testid^="archived-<action>-"]')` — a prefix
+    selector that also matches the panel's bulk `archived-<action>-all`
+    button (strict-mode violation, 2 matches). Fixed by scoping the
+    click to the open menu's own item via
+    `page.getByRole("menuitem", { name: /^restore$/i })` (or delete),
+    which cannot resolve to the bulk button.
+
+16. **XS-16** (`flow-list.spec.ts`) — case amendment + spec change,
+    per K121 #1 (Ken's ruling, not revertible by an agent). The `archived`
+    DSL field is a documented construct XS-16 requires to parse
+    identically on UI and CLI, but B1/A331 made the web list refuse any
+    query naming `archived` with a 400 (`queryNamesArchivedField`,
+    `ARCHIVED_QUERY_MESSAGE`) — Settings → Archived is the one web
+    surface for archived items. Amended
+    `tests/cases/ui-test-cases/flow-cross-surface.md` XS-16 with an
+    "Amended (K121 #1, Ken 2026-09-23)" note quoting the ruling
+    ("not allow viewing archived stuff. thats the point of archiving")
+    and exempting `archived = ...` from the UI parity requirement.
+    Rewrote the spec: `archived = false` is pulled out of the parity
+    loop into its own assertion — UI returns 400 naming Settings →
+    Archived, CLI still runs it successfully. Ran `npm run cases:index`
+    (1053 cases indexed: 953 UI, 100 surface).
+
+17. **"a slow init keeps the form disabled…"** (`flow-onboarding.spec.ts`)
+    — STALE TEST. Asserted `getByRole('button', { name: /setting
+    up/i})`, but `Button`'s documented `loading` contract (see its
+    JSDoc "Trap: this can make the button nameless") keeps the
+    accessible name fixed unless the caller passes a different
+    `aria-label` while loading — `InitWizard.tsx` passes the same
+    `aria-label="Set up tracker"` whether or not `submitting` is true,
+    and there is no "Setting up…" text anywhere (progress is
+    communicated by the separate `SlowInitNote`, which the test already
+    checks via "creating directories"). Assertion changed to the
+    button's actual, stable name.
+
+**Where this lands.** All spec fixes above are in
+`tests/ui/flow-tasks.spec.ts`, `flow-git-reconcile.spec.ts`,
+`flow-git-sync.spec.ts`, `flow-comments.spec.ts`,
+`flow-settings-workflow.spec.ts`, `flow-settings-projects-users.spec.ts`,
+`flow-settings-archived.spec.ts`, `flow-list.spec.ts`,
+`flow-onboarding.spec.ts`. The one app fix is
+`apps/web/src/client/settings/CalendarPanel.tsx` plus its new unit
+test `apps/web/src/client/settings/CalendarPanel.test.tsx`. The one
+case amendment is `tests/cases/ui-test-cases/flow-cross-surface.md`
+XS-16.
+
+**To revert.** Each spec-assertion fix can be reverted independently
+(they are pure locator/copy corrections, listed above with old vs.
+new text) but reverting them re-introduces the stale-copy failures
+against the current, approved app text — not recommended. To revert
+the SET-24 app fix: remove the added ".loctt/config/calendar.yaml"
+clause from `CalendarPanel.tsx`'s unresolvable-timezone message and
+delete `CalendarPanel.test.tsx`. To revert the XS-16 case amendment:
+remove the "Amended (K121 #1…)" block from flow-cross-surface.md,
+re-add `archived = false` to the main `constructs` array in
+flow-list.spec.ts, delete the standalone archived-query assertion, and
+re-run `npm run cases:index`. Ken's underlying K121 #1 ruling itself is
+not revertible by an agent.

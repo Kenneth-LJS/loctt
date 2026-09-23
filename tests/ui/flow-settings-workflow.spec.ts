@@ -670,12 +670,9 @@ test.describe("SET — custom fields", () => {
     await expect(dialog.getByTestId("custom-field-dialog-multi"))
       .toHaveJSProperty("disabled", true);
 
-    // And it states the reason, naming the stored values.
+    // And it states the reason.
     await expect(dialog.getByTestId("custom-field-dialog-type-lock"))
-      .toContainText(/stored under this type/i);
-    // The honest alternative, rather than pretending the change works.
-    await expect(dialog.getByTestId("custom-field-dialog-type-lock"))
-      .toContainText(/new field/i);
+      .toContainText(/can.t be changed after creation/i);
 
     // The lock is targeted: label and searchable stay editable.
     await expect(dialog.getByTestId("custom-field-dialog-searchable"))
@@ -860,7 +857,7 @@ test.describe("SET — calendar", () => {
     await expect(page.getByTestId("calendar-holiday-0")).toBeVisible();
     await expect(page.getByTestId("calendar-holiday-0"))
       .not.toHaveAttribute("data-holiday-invalid", "true");
-    await expect(page.getByTestId("calendar-blocked")).toContainText("12");
+    await expect(page.getByTestId("calendar-blocked")).toContainText("1 holiday has an invalid date");
 
     // Save is blocked, and the file is untouched — the panel does not
     // save 12 of 13 and report success.
@@ -1085,17 +1082,16 @@ test.describe("SET — calendar", () => {
 
     const err = page.getByTestId("calendar-save-error");
     await expect(err).toBeVisible();
-    // Not a bare 413 — the limit and what exceeded it, in the user's
-    // own terms, with the current count against it.
+    // Not a bare 413 — what to do, in the user's own terms. The limit is
+    // the server's request size, not a count, so no count is stated
+    // (Amended K116 trims; A322).
     await expect(err).not.toHaveText(/^413$|Payload Too Large/);
-    await expect(err).toContainText(/too large/i);
-    await expect(err).toContainText(/holidays/i);
-    await expect(err).toContainText("1");
-    // The prior config remains in effect, and the panel says so.
-    await expect(err).toContainText(/still in effect/i);
+    await expect(err).toContainText(/too many holidays/i);
+    await expect(err).toContainText(/remove some/i);
+    // The prior config remains in effect (verified on disk — trimmed
+    // copy states what happened and the next action, not the prior-
+    // config guarantee as separate prose; Amended K116 trims; A322).
     expect(await readFile(calendarPath(tracker.root), "utf8")).toBe(before);
-    // …and it tells the user what to trim.
-    await expect(err).toContainText(/trim/i);
   });
 
   // @verifies SET-22
@@ -1118,8 +1114,7 @@ test.describe("SET — calendar", () => {
     // resolve, and they are.
     const alert = page.getByTestId("calendar-no-working-days");
     await expect(alert).toBeVisible();
-    await expect(alert).toContainText(/working-day computations/i);
-    await expect(alert).toContainText(/cannot resolve/i);
+    await expect(alert).toContainText(/select at least one working day/i);
     await expect(page.getByTestId("calendar-save")).toBeDisabled();
     expect(await readFile(calendarPath(tracker.root), "utf8").catch(() => "")).toBe(before);
   });
