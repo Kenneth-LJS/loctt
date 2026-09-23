@@ -1,4 +1,4 @@
-import type { ArchivedScope, UserProfile } from "@loctt/contracts";
+import type { UserProfile } from "@loctt/contracts";
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -22,9 +22,7 @@ import { LoadingState } from "../ui/LoadingState.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextField } from "../ui/TextField.tsx";
 import { UserAvatar } from "../ui/UserAvatar.tsx";
-import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
 import { AvatarCropper } from "./AvatarCropper.tsx";
-import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { AvatarRejected, type DecodedImage, decodeImageFile } from "./prepareAvatar.ts";
 import { RowActions } from "./RowActions.tsx";
 import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
@@ -646,28 +644,28 @@ function UserRowActions({
           label={`Actions for user "${user.name ?? user.id}"`}
           actions={[
             // PRU-47: identity fields are edited in a per-row Edit dialog.
-            { label: "Edit…", testId: `user-edit-${user.id}`, onSelect: onEdit },
+            { label: "Edit", testId: `user-edit-${user.id}`, onSelect: onEdit },
             {
               // PRU-26: archiving yourself is disabled (not error-on-click),
               // with the reason on the item.
-              label: user.archived === true ? "Unarchive" : "Archive",
+              label: "Archive",
               testId: `user-archive-${user.id}`,
               onSelect: onArchive,
               disabled: isSelf,
               title: isSelf
-                ? "You cannot archive the user you are acting as. Switch to another user first."
+                ? "You can't archive the user you're acting as. Switch users first."
                 : undefined,
             },
             {
               // PRU-42: permanent delete, disabled for the acting user for
               // the same reason (core refuses to delete whoever you are).
-              label: "Delete…",
+              label: "Delete",
               testId: `user-delete-${user.id}`,
               danger: true,
               onSelect: onDelete,
               disabled: isSelf,
               title: isSelf
-                ? "You cannot delete the user you are acting as. Switch to another user first."
+                ? "You can't delete the user you're acting as. Switch users first."
                 : undefined,
             },
           ]}
@@ -699,14 +697,9 @@ export function UsersPanel() {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<UserProfile | null>(null);
   const [editing, setEditing] = useState<UserProfile | null>(null);
-  // K107: the tri-state archived scope replaces the U25 `showArchived`
-  // boolean. Default `active`; the control reveals `archived`/`all`, and
-  // the server filters. A deep-link hash widens the fetch to `all` so a
-  // `#row-<id>` anchor to an archived user still resolves (K100).
-  const [scope, setScope] = useState<ArchivedScope>("active");
-  const [hashPresent] = useState(hashDeepLinkPresent);
-  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
-  const users = useUsersScoped(effectiveScope);
+  // K121 #1: active users only. Archived ones are listed, restored and
+  // deleted in Settings → Archived, nowhere else.
+  const users = useUsersScoped();
 
   if (users.isError) {
     return (
@@ -725,41 +718,21 @@ export function UsersPanel() {
 
   const items = users.data?.items ?? [];
   const currentId = current.data?.id;
-  // K107: the server returned exactly the scope's rows. Active first, then
-  // archived, so the table/cards iterate a stable order within the scope.
-  const activeItems = items.filter(u => u.archived !== true);
-  const archivedItems = items.filter(u => u.archived === true);
-  const visible = [...activeItems, ...archivedItems];
 
   return (
     <div data-testid="settings-users">
       <SettingsPanelHeader
         title="Users"
         actions={(
-          <>
-            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
-                an icon reveal, not a permanently visible segmented
-                control — see ArchivedScopeReveal. */}
-            <ArchivedScopeReveal
-              testId="users-archived-scope"
-              panelLabel="users"
-              value={scope}
-              onChange={setScope}
-            />
-            <Button
-              variant="primary"
-              testId="user-create-open"
-              onClick={() => { setCreating(true); }}
-            >
-              New user
-            </Button>
-          </>
+          <Button
+            variant="primary"
+            testId="user-create-open"
+            onClick={() => { setCreating(true); }}
+          >
+            New user
+          </Button>
         )}
       />
-      <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Identities that can be assigned work and attributed activity.
-      </p>
-
       {!isNarrow && (
       <table className="w-full border-collapse text-left">
         <thead>
@@ -771,7 +744,7 @@ export function UsersPanel() {
           </tr>
         </thead>
         <tbody>
-          {visible.map(u => {
+          {items.map(u => {
             const isSelf = u.id === currentId;
             const qual = qualifier(u, items);
             return (
@@ -783,7 +756,6 @@ export function UsersPanel() {
                 // collide.
                 id={`row-${u.id}`}
                 data-testid={`user-row-${u.id}`}
-                data-archived={u.archived === true ? "true" : "false"}
                 data-self={isSelf ? "true" : "false"}
               >
                 <td className="py-2 pr-3">
@@ -794,11 +766,6 @@ export function UsersPanel() {
                 </td>
                 <td className="py-2 pr-3 text-[0.9286rem]">
                   {u.name}
-                  {u.archived === true && (
-                    <span data-testid={`user-archived-marker-${u.id}`} className="ml-1 text-text-tertiary">
-                      (archived)
-                    </span>
-                  )}
                   {qual !== undefined && (
                     <span data-testid={`user-qualifier-${u.id}`} className="ml-1 text-[0.7857rem] text-text-tertiary">
                       {qual}
@@ -811,7 +778,7 @@ export function UsersPanel() {
                     user={u}
                     isSelf={isSelf}
                     onEdit={() => { setEditing(u); }}
-                    onArchive={() => { archive.mutate({ id: u.id, archived: u.archived !== true }); }}
+                    onArchive={() => { archive.mutate({ id: u.id, archived: true }); }}
                     onDelete={() => { del.reset(); setDeleting(u); }}
                   />
                 </td>
@@ -828,7 +795,7 @@ export function UsersPanel() {
           only the layout differs. */}
       {isNarrow && (
         <ul className="flex flex-col gap-2" data-testid="user-cards">
-          {visible.map(u => {
+          {items.map(u => {
             const isSelf = u.id === currentId;
             const qual = qualifier(u, items);
             return (
@@ -846,9 +813,6 @@ export function UsersPanel() {
                   <div className="min-w-0 flex-1">
                     <div className="text-[0.9286rem] text-text-primary">
                       {u.name}
-                      {u.archived === true && (
-                        <span className="ml-1 text-text-tertiary">(archived)</span>
-                      )}
                       {qual !== undefined && (
                         <span className="ml-1 text-[0.7857rem] text-text-tertiary">{qual}</span>
                       )}
@@ -865,7 +829,7 @@ export function UsersPanel() {
                     isSelf={isSelf}
                     align="start"
                     onEdit={() => { setEditing(u); }}
-                    onArchive={() => { archive.mutate({ id: u.id, archived: u.archived !== true }); }}
+                    onArchive={() => { archive.mutate({ id: u.id, archived: true }); }}
                     onDelete={() => { del.reset(); setDeleting(u); }}
                   />
                 </div>
@@ -891,7 +855,7 @@ export function UsersPanel() {
       {deleting !== null && (
         <UserDeleteDialog
           user={deleting}
-          others={items.filter(u => u.id !== deleting.id && u.archived !== true)}
+          others={items.filter(u => u.id !== deleting.id)}
           mutation={del}
           onArchive={() => {
             archive.mutate({ id: deleting.id, archived: true });

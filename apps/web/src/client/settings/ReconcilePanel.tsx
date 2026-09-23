@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from "react";
 
+import { ApiError } from "../api/client.ts";
 import {
   type ApplyReconcileResponse,
   type ConfirmRekeyResponse,
@@ -18,8 +19,10 @@ import {
 } from "../api/hooks/useGit.ts";
 import { Button } from "../ui/Button.tsx";
 import { Combobox, ComboboxButton, type ComboboxOption } from "../ui/Combobox.tsx";
+import { Disclosure } from "../ui/Disclosure.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { dataStateOf, InlineFailureNotice } from "../ui/InlineFailureNotice.tsx";
 import { TextField } from "../ui/TextField.tsx";
 
 /**
@@ -65,6 +68,28 @@ function toDecisions(map: DecisionMap): ReconcileDecision[] {
   return out;
 }
 
+/**
+ * B8: the raw server message a failed rekey confirm carries — shown only
+ * inside the Disclosure, never as the notice's whole text. Falls back to
+ * the plain `Error#message` for a transport failure, which never reached
+ * an envelope.
+ */
+function rekeyConfirmRawMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.envelope?.message ?? error.message;
+  return error instanceof Error ? error.message : "The request failed.";
+}
+
+/**
+ * B8: retrying the confirm is offered per the envelope's own recovery,
+ * matching how `ErrorState`/`FieldFailureNotice` decide it — never a
+ * blanket "always show Try again" that could re-send a write whose
+ * outcome is unknown.
+ */
+function rekeyConfirmCanRetry(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true; // never reached the server
+  return error.envelope?.recovery?.kind === "retry";
+}
+
 function initialDecisions(sentinel: ReconcileSentinel | undefined): DecisionMap {
   const map: DecisionMap = new Map();
   for (const d of sentinel?.decisions ?? []) {
@@ -87,6 +112,23 @@ export function ReconcilePanel() {
 
   if (session.isLoading) return null;
 
+  // K115 (A314): the session read had no `isError` branch at all — a
+  // failed or timed-out `GET /api/git/reconcile` fell through
+  // `session.isLoading` (false once settled) straight to `reconcile ===
+  // null` and rendered nothing, forever, with no way to tell a timeout
+  // apart from "no reconciliation in progress". Every read this ticket
+  // audited needed a terminal failure state; this was the one that had
+  // none at all rather than an incomplete one.
+  if (session.isError) {
+    return (
+      <ErrorState
+        error={session.error}
+        context="Checking for an in-progress reconciliation"
+        onRetry={() => { void session.refetch(); }}
+      />
+    );
+  }
+
   // Reconciliation finished: the session is gone but we just applied it.
   if (reconcile === null) {
     // A confirmed rekey completed the sync — report which tasks were
@@ -96,7 +138,7 @@ export function ReconcilePanel() {
       const rekeys = rekeyResult.syncOutcome.rekeys ?? [];
       return (
         <div data-testid="git-rekey-applied" className="mb-3 text-[0.9286rem] text-text-secondary">
-          <p>Renumbered {rekeys.length} task(s) to resolve key collisions; the sync completed.</p>
+          <p>Renumbered {rekeys.length} task(s).</p>
           {rekeys.length > 0 && (
             <ul className="mt-1 list-disc pl-5">
               {rekeys.map(r => (
@@ -110,7 +152,7 @@ export function ReconcilePanel() {
     if (applyResult?.reconciled === true) {
       return (
         <p data-testid="git-reconcile-applied" className="mb-3 text-[0.9286rem] text-text-secondary">
-          Resolved {applyResult.results.length} task(s); the operation completed.
+          Resolved {applyResult.results.length} task(s).
         </p>
       );
     }
@@ -160,16 +202,14 @@ export function RekeyPreview({ plan, confirm, onConfirmed }: {
   const onConfirm = (): void => {
     confirm.mutate(undefined, { onSuccess: r => { onConfirmed(r); } });
   };
-  const fmt = (v: string | null): string => (v === null ? "unknown" : v);
   return (
     <section data-testid="git-rekey-preview" aria-label="Rekey preview" className="mb-3">
       <h3 className="mb-1 text-[0.9286rem] font-semibold text-text-primary">
         Confirm key renumbering
       </h3>
       <p className="mb-2 text-[0.8571rem] text-text-secondary">
-        The merge left {plan.losers.length === 1 ? "a task" : `${plan.losers.length} tasks`} sharing a
-        key with another. The earlier-created task keeps the key; the later one is renumbered.
-        Nothing is renumbered until you confirm.
+        {plan.losers.length === 1 ? "A task shares" : `${plan.losers.length} tasks share`} a key
+        with another task. Nothing is renumbered until you confirm.
       </p>
       <ul className="flex flex-col gap-2">
         {plan.losers.map(l => (
@@ -179,49 +219,23 @@ export function RekeyPreview({ plan, confirm, onConfirmed }: {
             className="rounded border border-border-default p-2 text-[0.8571rem]"
           >
             <div className="font-medium text-text-primary">
-              <span data-testid="git-rekey-collided-key">{l.key}</span> collided —
-              {" "}renumbering to <span data-testid="git-rekey-new-key">{l.newKey ?? "(unavailable)"}</span>
-            </div>
-            {/* The internal task ids (ULIDs) are not in the prose — they
-                identify nothing to a person, and the human key is already
-                in the header line above while the created dates are what
-                let a user recognise which task is which. (Ken's report.)
-                They ARE still reachable, in the collapsed disclosure
-                below, because GIT-9 turns on being able to check the
-                decision: when the timestamps tie, the ULIDs are the only
-                two values that explain the outcome, and a rule the user
-                cannot check against the inputs is not a reason. */}
-            <div className="mt-1 text-text-secondary">
-              The task created {fmt(l.keeperCreatedAt)} keeps the key.
-            </div>
-            <div className="text-text-secondary">
-              The task created {fmt(l.loserCreatedAt)} is renumbered.
-            </div>
-            <div data-testid="git-rekey-tiebreak" className="mt-1 text-text-tertiary">
-              {l.tiebreak === "created_at"
-                ? "The earlier task keeps the key."
-                : /* GIT-9: "the tie was broken automatically" said only
-                     that something decided — not what, and not that the
-                     answer is the same on every machine. Naming the rule
-                     is the point of the case: the ULIDs are sortable and
-                     already fixed on disk, so the lower one winning is
-                     what makes a second clone reconciling the same two
-                     tasks reach the same keeper. */
-                  "Both were created at the same instant, so the tie was broken on the "
-                  + "tasks’ internal IDs (ULIDs): the lower ULID keeps the key. The IDs "
-                  + "are already fixed, so every clone reconciling these two tasks picks "
-                  + "the same keeper."}
+              <span data-testid="git-rekey-collided-key">{l.key}</span> stays with task{" "}
+              {l.keeperId}. Task {l.loserId} becomes{" "}
+              <span data-testid="git-rekey-new-key">{l.newKey ?? "(unavailable)"}</span>.
             </div>
             {l.tiebreak === "ulid" && (
               /* Collapsed by default: the values matter only to someone
                  checking the decision, and an always-on pair of 26-char
                  ULIDs is the clutter Ken's report removed. Native
-                 `<details>` — keyboard-operable for free, same pattern as
-                 the sync log in GitSyncPanel. */
-              <details data-testid="git-rekey-ulids" className="mt-1 text-text-tertiary">
-                <summary className="cursor-pointer select-none">
-                  Show the IDs that decided it
-                </summary>
+                 `<details>` via the shared `Disclosure` primitive —
+                 keyboard-operable for free, and the native `▸` marker
+                 suppressed in favour of our drawn caret. Same component
+                 as the sync log in GitSyncPanel. */
+              <Disclosure
+                data-testid="git-rekey-ulids"
+                className="mt-1 text-text-tertiary"
+                summary="Show the IDs that decided it"
+              >
                 <dl className="mt-1 grid grid-cols-[auto,1fr] gap-x-2">
                   <dt>Keeps the key</dt>
                   <dd data-testid="git-rekey-keeper-id" className="font-mono break-all">
@@ -232,30 +246,53 @@ export function RekeyPreview({ plan, confirm, onConfirmed }: {
                     {l.loserId}
                   </dd>
                 </dl>
-              </details>
+              </Disclosure>
             )}
           </li>
         ))}
       </ul>
       {plan.skipped.length > 0 && (
         <p data-testid="git-rekey-skipped" role="alert" className="mt-2 text-[0.8571rem] text-warn-fg">
-          {plan.skipped.length} collision(s) cannot be renumbered automatically and will remain until
-          resolved; see Diagnostics.
+          {plan.skipped.length} collision(s) couldn&apos;t be renumbered automatically. See Diagnostics.
         </p>
       )}
+      {/* B8: a failed rekey confirm used to show the raw
+          `confirm.error.message` as the whole notice — no data-state
+          claim, no next action, just the server's own words. This
+          renders through the same primitive the other inline failures
+          use: "what happened" is fixed ("Renumbering didn't finish."),
+          the data-state line comes from the envelope, and the next
+          action is Try again when the envelope says retrying can help.
+          The raw message survives only inside a Disclosure, for anyone
+          who wants it. */}
       {confirm.isError && (
-        <p role="alert" className="mt-2 text-[0.8571rem] text-danger-fg">
-          {confirm.error.message}
-        </p>
+        <div className="mt-2">
+          <InlineFailureNotice
+            testId="git-rekey-confirm-error"
+            message="Renumbering didn't finish."
+            dataState={dataStateOf(confirm.error)}
+            {...(rekeyConfirmCanRetry(confirm.error) ? { onRetry: onConfirm } : {})}
+          />
+          <Disclosure
+            className="mt-1"
+            data-testid="git-rekey-confirm-error-detail"
+            summary="Show the server's message"
+          >
+            <p className="mt-1 text-[0.8571rem] text-text-secondary">
+              {rekeyConfirmRawMessage(confirm.error)}
+            </p>
+          </Disclosure>
+        </div>
       )}
       <div className="mt-3">
         <Button
           type="button"
           data-testid="git-rekey-confirm"
           onClick={onConfirm}
-          disabled={confirm.isPending}
+          loading={confirm.isPending}
+          aria-label="Confirm rekey"
         >
-          {confirm.isPending ? "Renumbering…" : "Confirm rekey"}
+          Confirm rekey
         </Button>
       </div>
     </section>
@@ -359,8 +396,7 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
           className="mb-3 rounded-md border border-danger-fg p-2 text-[0.9286rem] text-danger-fg"
         >
           Applied {applyResult.results.filter(r => r.ok).length} of {applyResult.results.length}{" "}
-          task(s). These failed and are still pending — the reconciliation is incomplete and
-          resumable:
+          tasks. These {applyResult.results.filter(r => !r.ok).length} failed and can be retried:
           <ul className="ml-4 list-disc">
             {applyResult.results.filter(r => !r.ok).map(r => (
               <li key={r.taskId} data-testid="git-reconcile-failed-row">
@@ -452,16 +488,17 @@ function ReconcileEditor({ plan, sentinel, apply, applyResult, setApplyResult }:
               type="button"
               variant="primary"
               testId="git-reconcile-apply"
-              disabled={undecided > 0 || apply.isPending}
+              disabled={undecided > 0}
+              loading={apply.isPending}
+              aria-label="Apply"
               onClick={onApply}
             >
-              {apply.isPending ? "Applying…" : "Apply"}
+              Apply
             </Button>
             {confirmingAbandon
               ? (
                   <span data-testid="git-reconcile-abandon-confirm" className="flex items-center gap-2 text-[0.9286rem]">
-                    Abandon this reconciliation? Local files are left exactly as they are — this is
-                    not a revert.
+                    Abandon this reconciliation? Your local files stay as they are.
                     <Button
                       type="button"
                       variant="danger"
@@ -604,8 +641,7 @@ export function ConflictRow({ conflict, decision, onChoose }: {
       {/* GIT-14: keep-remote on a drift value warns it will render with a marker + appear in Diagnostics. */}
       {chosen === "remote" && conflict.remote.drift !== undefined && (
         <p role="alert" data-testid="git-reconcile-drift-warning" className="mt-1 text-[0.8571rem] text-warn-fg">
-          This value is not in your local workflow configuration. Keeping it leaves the task with a drift
-          marker, and it will appear in Diagnostics until the referenced value is re-added.
+          &quot;{conflict.remote.display}&quot; isn&apos;t one of your {conflict.fieldLabel} options. If you keep it, Diagnostics will flag this task until you add &quot;{conflict.remote.display}&quot; in Settings.
         </p>
       )}
 

@@ -1,4 +1,4 @@
-import type { ArchivedScope, BrokenEntry, MilestoneDef } from "@loctt/contracts";
+import type { BrokenEntry, MilestoneDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -10,8 +10,6 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
-import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { MilestoneEditDialog } from "./MilestoneEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
@@ -48,32 +46,16 @@ function MilestoneRow({ milestone, count, all }: {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const archived = milestone.archived === true;
-
   return (
     <li
       // K100 deep-link anchor (`/settings/milestones#row-<id>`) — see
       // useScrollToHash. Kept alongside the test id.
       id={`row-${milestone.id}`}
       data-testid={`milestone-row-${milestone.id}`}
-      data-milestone-archived={archived ? "true" : "false"}
       className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
     >
       <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
         {milestone.name}
-        {/*
-          MSL-11 (management surface): an archived milestone is
-          still shown here and marked, not hidden, so the row
-          stays reachable to unarchive it. (MSL-25's claim — that
-          an archived milestone still resolves on tasks and by URL
-          and is revealed in the /milestones view — lives on that
-          view, not this panel.)
-        */}
-        {archived && (
-          <span data-testid="milestone-archived-marker" className="ml-2 text-text-tertiary">
-            (archived)
-          </span>
-        )}
       </span>
       {/*
         MSL-14 / MSL-16: an undated milestone says so explicitly.
@@ -97,20 +79,22 @@ function MilestoneRow({ milestone, count, all }: {
         label={`Actions for milestone ${milestone.name}`}
         actions={[
           {
-            label: "Edit…",
+            label: "Edit",
             testId: "milestone-edit",
             onSelect: () => { setEditing(true); },
           },
           {
-            label: archived ? "Unarchive" : "Archive",
+            // K121 #1: this panel lists active milestones only; restoring
+            // an archived one happens in Settings → Archived.
+            label: "Archive",
             testId: "milestone-archive-toggle",
             disabled: archive.isPending,
-            onSelect: () => { archive.reset(); archive.mutate({ id: milestone.id, archived: !archived }); },
+            onSelect: () => { archive.reset(); archive.mutate({ id: milestone.id, archived: true }); },
           },
           { label: "Delete", testId: "milestone-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
         ]}
       />
-      {/* B2 bug 3: an archive/unarchive that fails must say so —
+      {/* B2 bug 3: an archive that fails must say so —
           the toggle used to swallow the error and read as done
           while nothing changed on disk. */}
       {archive.isError && (
@@ -119,7 +103,7 @@ function MilestoneRow({ milestone, count, all }: {
           data-testid="milestone-archive-error"
           className="basis-full text-[0.8571rem] text-danger-fg"
         >
-          {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
+          {archive.error instanceof ApiError ? archive.error.message : "Couldn't archive this milestone."}
         </p>
       )}
 
@@ -144,7 +128,7 @@ function MilestoneRow({ milestone, count, all }: {
           itemKey={milestone.name}
           count={count}
           alternatives={all
-            .filter(m => m.id !== milestone.id && m.archived !== true)
+            .filter(m => m.id !== milestone.id)
             .map(m => ({ key: m.id, label: m.name }))}
           pending={del.isPending}
           error={del.isError
@@ -200,16 +184,12 @@ function BrokenMilestoneRow({ entry, onRepair, repairing }: {
       <span aria-hidden="true" className="shrink-0 pt-0.5">⚠</span>
       <div className="min-w-0 flex-1">
         <span className="text-[0.9286rem] font-medium">{name}</span>
-        <span className="text-text-tertiary"> — couldn't be read</span>
-        <span className="ml-1 text-[0.8571rem] text-danger-fg/90">
-          ({entry.error})
-        </span>
         <p className="mt-0.5 text-[0.8571rem] text-text-secondary">
-          Fix this entry in{" "}
+          Couldn&apos;t be read ({entry.error}). Fix it in{" "}
           <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem]">
             .loctt/config/milestones.yaml
           </code>{" "}
-          and reload — LocTT will not rewrite it for you.
+          and reload.
         </p>
       </div>
       <Button
@@ -228,15 +208,9 @@ function BrokenMilestoneRow({ entry, onRepair, repairing }: {
 
 export function MilestonesPanel() {
   const [creating, setCreating] = useState(false);
-  // K107: this panel had NO archived control before — archived milestones
-  // rendered inline with an `(archived)` marker. It now defaults to the
-  // `active` scope and reveals archived through the tri-state control, the
-  // server doing the filter. A deep-link hash widens the fetch to `all` so
-  // a `#row-<id>` anchor to an archived milestone still resolves (K100).
-  const [scope, setScope] = useState<ArchivedScope>("active");
-  const [hashPresent] = useState(hashDeepLinkPresent);
-  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
-  const milestones = useCountedMilestones(effectiveScope);
+  // K121 #1: active milestones only. Archived ones are listed, restored
+  // and deleted in Settings → Archived, nowhere else.
+  const milestones = useCountedMilestones();
 
   if (milestones.isError) {
     return (
@@ -249,7 +223,11 @@ export function MilestonesPanel() {
             context="reading .loctt/config/milestones.yaml"
           />
           <p className="mt-2 text-[0.9286rem] text-text-secondary">
-            This is a failure to read the file, not an empty milestone list.
+            Couldn&apos;t read{" "}
+            <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
+              .loctt/config/milestones.yaml
+            </code>
+            . Fix the file and reload.
           </p>
         </div>
       </div>
@@ -268,30 +246,15 @@ export function MilestonesPanel() {
       <SettingsPanelHeader
         title="Milestones"
         actions={(
-          <>
-            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
-                an icon reveal, not a permanently visible segmented
-                control — see ArchivedScopeReveal. */}
-            <ArchivedScopeReveal
-              testId="milestones-archived-scope"
-              panelLabel="milestones"
-              value={scope}
-              onChange={setScope}
-            />
-            <Button
-              variant="primary"
-              testId="milestone-create-open"
-              onClick={() => { setCreating(true); }}
-            >
-              New milestone
-            </Button>
-          </>
+          <Button
+            variant="primary"
+            testId="milestone-create-open"
+            onClick={() => { setCreating(true); }}
+          >
+            New milestone
+          </Button>
         )}
       />
-      <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Progress is shown on the Milestones view, not here.
-      </p>
-
       {creating && (
         <MilestoneEditDialog
           mode="create"
@@ -304,7 +267,7 @@ export function MilestonesPanel() {
             // A lone broken entry is NOT an empty list (DEG-30 / A138) —
             // the list renders below so the corrupt milestone is shown.
             <p data-testid="milestones-empty" data-milestones-state="empty" className="text-[0.9286rem] text-text-tertiary">
-              {scope === "archived" ? "No archived milestones." : "No milestones yet."}
+              No milestones yet.
             </p>
           )
         : (

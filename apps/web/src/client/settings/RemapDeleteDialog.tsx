@@ -157,14 +157,17 @@ export function RemapDeleteDialog({
               Clear the {noun} on {count === 1 ? "it" : "them"}.{" "}
               <span data-testid="remap-clear-warning" className="text-warn-fg">
                 {count === 1 ? "That task" : `Those ${String(count)} tasks`} will have
-                no {noun} — the field is emptied. This is permanent; the {noun}{" "}
-                <code>{itemKey}</code> is not kept as a dangling
-                reference.
+                no {noun}. This is permanent.
               </span>
             </span>
           </label>
         </fieldset>
       )}
+
+      {/* SET-54: every delete confirmation says it is permanent. */}
+      <p data-testid="remap-permanent" className="mt-3 text-[0.8571rem] text-text-tertiary">
+        Deleting is permanent.
+      </p>
 
       {error !== undefined && (
         <p role="alert" data-testid="remap-error" className="mt-3 text-[0.8571rem] text-danger-fg">

@@ -1,4 +1,4 @@
-import type { ArchivedScope, BrokenEntry, LabelDef } from "@loctt/contracts";
+import type { BrokenEntry, LabelDef } from "@loctt/contracts";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
@@ -12,8 +12,6 @@ import { Callout } from "../ui/Callout.tsx";
 import { useResolvedColor } from "../ui/entityColor.ts";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
-import { hashDeepLinkPresent } from "./deepLinkHash.ts";
 import { LabelEditDialog } from "./LabelEditDialog.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
@@ -54,7 +52,6 @@ function LabelRow({ label, count, allLabels }: {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const archived = label.archived === true;
   // K103: the swatch takes one hex, resolved for the active theme.
   // `data-label-color` reports the SAME resolved value it paints —
   // before this it interpolated the stored value, so a palette or
@@ -68,7 +65,6 @@ function LabelRow({ label, count, allLabels }: {
       // useScrollToHash. Kept alongside the test id.
       id={`row-${label.id}`}
       data-testid={`label-row-${label.id}`}
-      data-label-archived={archived ? "true" : "false"}
       className="flex items-center gap-3 border-b border-border-subtle py-2 last:border-0"
     >
       <span
@@ -81,15 +77,6 @@ function LabelRow({ label, count, allLabels }: {
 
       <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
         {label.name}
-        {/*
-          MSL-10: an archived label is still shown wherever it is
-          referenced, marked rather than hidden.
-        */}
-        {archived && (
-          <span data-testid="label-archived-marker" className="ml-2 text-text-tertiary">
-            (archived)
-          </span>
-        )}
       </span>
 
       {/*
@@ -107,23 +94,25 @@ function LabelRow({ label, count, allLabels }: {
       <RowActions
         label={`Actions for label ${label.name}`}
         actions={[
-          { label: "Edit…", testId: "label-edit", onSelect: () => { setEditing(true); } },
+          { label: "Edit", testId: "label-edit", onSelect: () => { setEditing(true); } },
           {
-            label: archived ? "Unarchive" : "Archive",
+            // K121 #1: active labels only here; restoring is in
+            // Settings → Archived.
+            label: "Archive",
             testId: "label-archive-toggle",
             disabled: archive.isPending,
-            onSelect: () => { archive.reset(); archive.mutate({ id: label.id, archived: !archived }); },
+            onSelect: () => { archive.reset(); archive.mutate({ id: label.id, archived: true }); },
           },
           { label: "Delete", testId: "label-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
         ]}
       />
 
-      {/* An archive/unarchive that fails must say so — the toggle used to
+      {/* An archive that fails must say so — the toggle used to
           swallow the error and read as done while nothing changed on disk
           (mirrors MilestonesPanel's bug-3 fix). */}
       {archive.isError && (
         <Callout tone="danger" role="alert" testId="label-archive-error" className="basis-full">
-          {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
+          {archive.error instanceof ApiError ? archive.error.message : "Couldn't archive this label."}
         </Callout>
       )}
 
@@ -148,7 +137,7 @@ function LabelRow({ label, count, allLabels }: {
           itemKey={label.name}
           count={count}
           alternatives={allLabels
-            .filter(l => l.id !== label.id && l.archived !== true)
+            .filter(l => l.id !== label.id)
             .map(l => ({ key: l.id, label: l.name }))}
           pending={del.isPending}
           error={del.isError
@@ -211,16 +200,12 @@ function BrokenLabelRow({ entry, onRepair, repairing }: {
       <span aria-hidden="true" className="shrink-0 pt-0.5">⚠</span>
       <div className="min-w-0 flex-1">
         <span className="text-[0.9286rem] font-medium">{name}</span>
-        <span className="text-text-tertiary"> — couldn't be read</span>
-        <span className="ml-1 text-[0.8571rem] text-danger-fg/90">
-          ({entry.error})
-        </span>
         <p className="mt-0.5 text-[0.8571rem] text-text-secondary">
-          Fix this entry in{" "}
+          Couldn&apos;t be read ({entry.error}). Fix it in{" "}
           <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem]">
             .loctt/config/labels.yaml
           </code>{" "}
-          and reload — LocTT will not rewrite it for you.
+          and reload.
         </p>
       </div>
       <Button
@@ -239,15 +224,9 @@ function BrokenLabelRow({ entry, onRepair, repairing }: {
 
 export function LabelsPanel() {
   const [creating, setCreating] = useState(false);
-  // K107: this panel had NO archived control before — archived labels
-  // rendered inline with an `(archived)` marker. It now defaults to the
-  // `active` scope and reveals archived through the tri-state control. A
-  // deep-link hash widens the fetch to `all` so a `#row-<id>` anchor to an
-  // archived label still resolves (K100).
-  const [scope, setScope] = useState<ArchivedScope>("active");
-  const [hashPresent] = useState(hashDeepLinkPresent);
-  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
-  const labels = useCountedLabels(effectiveScope);
+  // K121 #1: active labels only. Archived ones are listed, restored and
+  // deleted in Settings → Archived, nowhere else.
+  const labels = useCountedLabels();
 
   if (labels.isError) {
     /*
@@ -256,7 +235,6 @@ export function LabelsPanel() {
       text (e.g. `duplicate label id: <id>`), and the panel is visibly a
       failure state rather than a tracker with no labels.
     */
-    const envelope = labels.error instanceof ApiError ? labels.error.envelope : undefined;
     return (
       <div data-testid="labels-panel">
         <SettingsPanelHeader title="Labels" />
@@ -267,14 +245,11 @@ export function LabelsPanel() {
             context="reading .loctt/config/labels.yaml"
           />
           <p className="mt-2 text-[0.9286rem] text-text-secondary">
-            This is a failure to read the file, not an empty label list. Fix{" "}
+            Couldn&apos;t read{" "}
             <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               .loctt/config/labels.yaml
-            </code>{" "}
-            and reload.
-            {envelope?.code !== undefined && (
-              <span className="ml-1 text-text-tertiary">({envelope.code})</span>
-            )}
+            </code>
+            . Fix the file and reload.
           </p>
         </div>
       </div>
@@ -293,30 +268,15 @@ export function LabelsPanel() {
       <SettingsPanelHeader
         title="Labels"
         actions={(
-          <>
-            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
-                an icon reveal, not a permanently visible segmented
-                control — see ArchivedScopeReveal. */}
-            <ArchivedScopeReveal
-              testId="labels-archived-scope"
-              panelLabel="labels"
-              value={scope}
-              onChange={setScope}
-            />
-            <Button
-              variant="primary"
-              testId="label-create-open"
-              onClick={() => { setCreating(true); }}
-            >
-              New label
-            </Button>
-          </>
+          <Button
+            variant="primary"
+            testId="label-create-open"
+            onClick={() => { setCreating(true); }}
+          >
+            New label
+          </Button>
         )}
       />
-      <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Task counts exclude archived tasks.
-      </p>
-
       {creating && (
         <LabelEditDialog
           mode="create"
@@ -331,7 +291,7 @@ export function LabelsPanel() {
             // an empty file (MSL-31's "visually distinct"). A lone broken
             // entry is NOT empty (DEG-30 / A138) — the list renders below.
             <p data-testid="labels-empty" data-labels-state="empty" className="text-[0.9286rem] text-text-tertiary">
-              {scope === "archived" ? "No archived labels." : "No labels yet. Create one above."}
+              No labels yet. Create one above.
             </p>
           )
         : (

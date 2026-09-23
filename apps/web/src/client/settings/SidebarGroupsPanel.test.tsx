@@ -59,21 +59,9 @@ function renderPanel() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  // A cross-link `<Link to="/settings/$section">` needs a router with that
-  // route registered, so the panel renders inside a memory router.
-  const rootRoute = createRootRoute({ component: () => <SidebarGroupsPanel /> });
-  const sectionRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/settings/$section",
-    component: () => null,
-  });
-  const router = createRouter({
-    routeTree: rootRoute.addChildren([sectionRoute]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
-  });
   return render(
     <QueryClientProvider client={client}>
-      <RouterProvider router={router as never} />
+      <SidebarGroupsPanel />
     </QueryClientProvider>,
   );
 }
@@ -160,19 +148,6 @@ describe("SidebarGroupsPanel", () => {
     // sidebar_groups is dropped; the unrelated setting survives.
     expect(last).not.toHaveProperty("sidebar_groups");
     expect(last?.["theme"]).toBe("dark");
-  });
-
-  /**
-   * Task 1 (A244): the two sidebar-config sections were a confusable pair.
-   * This panel cross-links to the sibling "Pinned views" section.
-   */
-  it("cross-links to the Pinned views section", async () => {
-    // @verifies A244 — the cross-link. Red-proof: deleting the <Link>, or
-    // pointing it at the wrong section, fails the href assertion.
-    renderPanel();
-    const link = await screen.findByTestId("sidebar-groups-see-pins");
-    expect(link.textContent).toMatch(/Pinned views/);
-    expect(link.getAttribute("href")).toContain("/settings/sidebar-pins");
   });
 
   it("omits its own heading when embedded, so the enclosing sheet titles it", async () => {

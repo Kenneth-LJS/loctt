@@ -176,10 +176,6 @@ export function EntryEditDialog({
                 onChange={e => { setKeyTouched(true); setKey(e.target.value); }}
                 aria-label={`Key for the new ${noun}`}
               />
-              <span className="mt-1 block text-[0.8571rem] text-text-tertiary">
-                A key is permanent — task files store it, so it cannot be
-                renamed later.
-              </span>
               {problems.key !== undefined && (
                 <span data-testid={`${collection}-entry-key-error`} className="mt-1 block text-[0.8571rem] text-danger-fg">
                   {problems.key}
@@ -218,7 +214,7 @@ export function EntryEditDialog({
               checked={makeDefault}
               onChange={e => { setMakeDefault(e.target.checked); }}
             />
-            Make this the default status — new tasks land here.
+            Default for new tasks
           </label>
         )}
 

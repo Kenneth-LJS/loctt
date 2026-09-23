@@ -319,7 +319,7 @@ describe("ViewFormDialog — chrome", () => {
   // Ken's ruling, 2026-09-22 ("archiving is a one-way door, not a filter",
   // decisions.md § 9): "a view filtering on archived encodes the wrong
   // model." This dialog used to expose the view's `archivedScope` via an
-  // "Include [Active|Archived|All]" `ArchivedScopeControl` — Ken
+  // "Include [Active|Archived|All]" segmented control — Ken
   // screenshotted exactly this control and ruled it out. It is gone from
   // the dialog entirely: no control, and no row.
   it("offers no archived-scope control, as a row or otherwise", async () => {

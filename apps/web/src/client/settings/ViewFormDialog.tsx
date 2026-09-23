@@ -23,10 +23,10 @@ import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { IconColorFields } from "../ui/IconColorFields.tsx";
 import { IconGlyph } from "../ui/IconEmojiPicker.tsx";
-import { ThemePreview } from "../ui/ThemePreview.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import { ThemePreview } from "../ui/ThemePreview.tsx";
 import {
   buildViewFilterFields,
   findField,
@@ -81,9 +81,9 @@ import {
  * Ken's ruling, 2026-09-22 ("archiving is a one-way door, not a filter",
  * decisions.md § 9): "a view filtering on archived encodes the wrong
  * model." This dialog used to expose the view's `archivedScope` field
- * through the shared `ArchivedScopeControl` as an "Include
- * [Active|Archived|All]" row (K107 + K102) — Ken screenshotted exactly
- * this control and ruled it out.
+ * as an "Include [Active|Archived|All]" row (K107 + K102) — Ken
+ * screenshotted exactly this control and ruled it out, and K121 #1 later
+ * removed archived items from every browsing surface.
  *
  * The dialog now never reads or writes `archivedScope`: `submit()` omits
  * the field entirely from every request. Core's merge (`editView`) keeps
@@ -455,9 +455,6 @@ export function ViewFormDialog({
           <span className="text-[0.9286rem] font-medium text-text-secondary">
             Filters
           </span>
-          <p className="m-0 text-[0.8571rem] text-text-tertiary">
-            A task must match every filter below.
-          </p>
 
           {rows.length === 0 ? (
             <p data-testid="view-no-filters" className="m-0 text-[0.8571rem] text-text-tertiary">
@@ -533,9 +530,8 @@ export function ViewFormDialog({
               onChange={e => { setConfirmReplace(e.target.checked); }}
             />
             <span>
-              Replace the original text above with the filters I have built
-              here. The text on disk will be discarded and cannot be
-              recovered by LocTT.
+              Replace the text above with these filters. This can&apos;t be
+              undone.
             </span>
           </label>
         )}

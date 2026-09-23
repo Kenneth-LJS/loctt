@@ -369,7 +369,7 @@ describe("SavedViewsPanel — broken views (VUE-22)", () => {
   });
 
   // @verifies VUE-42
-  it("Replace… will not write until the user confirms the text will be discarded", async () => {
+  it("Replace will not write until the user confirms the text will be discarded", async () => {
     withBroken();
     render(<SavedViewsPanel />, { wrapper: wrapper() });
     fireEvent.click(await screen.findByTestId("view-broken-replace-v_bad"));
@@ -429,5 +429,21 @@ describe("SavedViewsPanel header convergence (N-4)", () => {
     // 24.5px — the one outlier among the six panels' create actions.
     expect(createBtn.className).toContain("h-8");
     expect(createBtn.className).not.toContain("h-7");
+  });
+
+  /**
+   * @verifies A329 (B7)
+   *
+   * The audit found a literal "+ " prefix on this button (an A208
+   * violation). A329's chosen pattern drops it — "New view", not
+   * "+ New view" — matching the other panels' "New {noun}" labels.
+   *
+   * Red-proof: restore the label to `+ New view` and this goes red.
+   */
+  it("drops the literal \"+ \" prefix — the label reads plain \"New view\" (A329)", async () => {
+    render(<SavedViewsPanel />, { wrapper: wrapper() });
+
+    const createBtn = await screen.findByTestId("saved-views-new");
+    expect(createBtn.textContent?.trim()).toBe("New view");
   });
 });

@@ -30,7 +30,7 @@ function open(actions: Parameters<typeof RowActions>[0]["actions"]) {
 describe("RowActions disabled actions", () => {
   const withDisabledDelete = (onSelect = vi.fn()) => {
     open([
-      { label: "Edit…", testId: "project-edit-x", onSelect: () => undefined },
+      { label: "Edit", testId: "project-edit-x", onSelect: () => undefined },
       {
         label: "Delete",
         testId: "project-delete-x",
@@ -83,7 +83,7 @@ describe("RowActions disabled actions", () => {
     // that stopped working. Mirrors PRU-26's "others are not" half.
     const live = vi.fn();
     open([
-      { label: "Edit…", testId: "user-edit-x", onSelect: live },
+      { label: "Edit", testId: "user-edit-x", onSelect: live },
       { label: "Archive", testId: "user-archive-x", disabled: true, title: "Switch users first.", onSelect: () => undefined },
     ]);
     const edit = screen.getByTestId("user-edit-x");

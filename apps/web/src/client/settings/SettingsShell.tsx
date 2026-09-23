@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useIsNarrow } from "../shell/useIsNarrow.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { Sheet } from "../ui/Sheet.tsx";
+import { ArchivedPanel } from "./ArchivedPanel.tsx";
 import { BackupPanel } from "./BackupPanel.tsx";
 import { BoardColumnsPanel } from "./BoardColumnsPanel.tsx";
 import { CalendarPanel } from "./CalendarPanel.tsx";
@@ -199,6 +200,7 @@ function Panel({ section }: { readonly section: SettingsSection }) {
   if (section.id === "board-columns") return <BoardColumnsPanel />;
   if (section.id === "timeline") return <TimelinePanel />;
   if (section.id === "sync") return <GitSyncPanel />;
+  if (section.id === "archived") return <ArchivedPanel />;
   if (section.id === "backup") return <BackupPanel />;
   if (section.id === "diagnostics") return <DiagnosticsPanel />;
 

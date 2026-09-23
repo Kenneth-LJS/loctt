@@ -68,9 +68,9 @@ function PrefixEdit({
     trimmed.length === 0
       ? "A prefix cannot be empty."
       : exact
-        ? `Prefix ${trimmed} is already used by "${exact.name}". Prefixes must be unique across the tracker.`
+        ? `Prefix ${trimmed} is already used by "${exact.name}".`
         : caseless
-          ? `Prefix ${trimmed} differs only in case from ${caseless.prefix}, used by "${caseless.name}". Task keys from the two would be hard to tell apart.`
+          ? `Prefix ${trimmed} only differs in case from ${caseless.prefix}, used by "${caseless.name}".`
           : undefined;
 
   const serverError = setPrefix.error instanceof ApiError
@@ -135,7 +135,8 @@ function PrefixEdit({
               <Button
                 variant="primary"
                 testId={`project-prefix-confirm-btn-${project.id}`}
-                disabled={setPrefix.isPending}
+                loading={setPrefix.isPending}
+                aria-label={`Rename ${String(taskCount)} ${taskCount === 1 ? "task" : "tasks"}`}
                 onClick={() => {
                   setPrefix.mutate(
                     { id: project.id, prefix: trimmed },
@@ -143,7 +144,7 @@ function PrefixEdit({
                   );
                 }}
               >
-                {setPrefix.isPending ? "Renaming…" : `Rename ${taskCount} ${taskCount === 1 ? "task" : "tasks"}`}
+                {`Rename ${String(taskCount)} ${taskCount === 1 ? "task" : "tasks"}`}
               </Button>
             </DialogActions>
           )}
@@ -151,9 +152,8 @@ function PrefixEdit({
           <p className="text-[0.9286rem] text-text-secondary">
             Changing the prefix to{" "}
             <code>{trimmed}</code> renames{" "}
-            {taskCount} {taskCount === 1 ? "task" : "tasks"} in this
-            project. Their numbers are preserved, and their old keys will
-            keep resolving.
+            {taskCount} {taskCount === 1 ? "task" : "tasks"}. Their old keys
+            still work.
           </p>
 
           {setPrefix.isError && serverError !== undefined && (
@@ -186,7 +186,6 @@ export function ProjectEditDialog({
   const archive = useArchiveProject();
   const setDefault = useSetDefaultProject();
 
-  const archived = project.archived === true;
   const trimmed = name.trim();
   const nameOk = trimmed.length > 0;
 
@@ -257,9 +256,6 @@ export function ProjectEditDialog({
             mis-associate the label with the wrong control). */}
         <div className="flex flex-col gap-1">
           <span className="text-body text-text-secondary">Prefix</span>
-          <span className="text-label text-text-tertiary">
-            Changing it renames every task in the project
-          </span>
           <PrefixEdit project={project} taskCount={taskCount} others={others} />
         </div>
 
@@ -270,14 +266,8 @@ export function ProjectEditDialog({
             size="sm"
             variant="secondary"
             testId={`project-set-default-${project.id}`}
-            disabled={isDefault || archived || setDefault.isPending}
-            title={
-              isDefault
-                ? "This is already the default project."
-                : archived
-                  ? "An archived project cannot be the default."
-                  : undefined
-            }
+            disabled={isDefault || setDefault.isPending}
+            title={isDefault ? "This is already the default project." : undefined}
             onClick={() => { setDefault.reset(); setDefault.mutate({ id: project.id }); }}
           >
             {isDefault ? "Default (current)" : "Make default"}
@@ -287,9 +277,11 @@ export function ProjectEditDialog({
             variant="secondary"
             testId={`project-archive-${project.id}`}
             disabled={archive.isPending}
-            onClick={() => { archive.reset(); archive.mutate({ id: project.id, archived: !archived }); }}
+            // K121 #1: only active projects reach this dialog; restoring
+            // happens in Settings → Archived.
+            onClick={() => { archive.reset(); archive.mutate({ id: project.id, archived: true }); }}
           >
-            {archived ? "Unarchive" : "Archive"}
+            Archive
           </Button>
         </div>
 
@@ -303,7 +295,7 @@ export function ProjectEditDialog({
         {archive.isError && (
           <Callout tone="danger" role="alert" testId={`project-archive-error-${project.id}`}>
             <span>
-              {archive.error instanceof ApiError ? archive.error.message : "Could not change the archived state."}
+              {archive.error instanceof ApiError ? archive.error.message : "The project wasn't archived. Try again."}
             </span>
           </Callout>
         )}

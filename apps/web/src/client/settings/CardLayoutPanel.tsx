@@ -118,12 +118,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
 
   return (
     <div data-testid="card-layout-panel">
-      <h1 className="mb-1 text-lg font-semibold text-text-primary">Card layout</h1>
-      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
-        Which fields board cards show, and in what order. Saved against your
-        user — other people&rsquo;s boards are unaffected. The task title is
-        always shown and cannot be hidden, so a card is never blank.
-      </p>
+      <h1 className="mb-2 text-lg font-semibold text-text-primary">Card layout</h1>
 
       <div className="flex flex-wrap gap-8">
         <div className="min-w-[18rem] flex-1">
@@ -187,7 +182,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
                 data-testid="card-layout-preview-empty"
                 className="text-[0.7857rem] italic text-text-tertiary"
               >
-                Title only — every field is hidden. Cards stay clickable.
+                Title only. Every field is hidden.
               </p>
             ) : (
               <div className="flex flex-wrap gap-1">
@@ -214,7 +209,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
         <div className="mt-4" data-testid="card-layout-save-error">
           <ErrorState
             error={save.error}
-            context="The layout was not saved — the list shows your last saved layout"
+            context="The layout wasn't saved. Showing your last saved layout."
             {...(save.variables !== undefined
               ? { onRetry: () => { save.mutate(save.variables); } }
               : {})}

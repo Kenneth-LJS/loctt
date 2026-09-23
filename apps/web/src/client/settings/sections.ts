@@ -84,6 +84,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   // System — admin and plumbing. Diagnostics is last of all (A64).
   { id: "users", label: "Users", group: "System", built: true },
   { id: "sync", label: "Sync", group: "System", built: true },
+  // K121 #1: the only place archived items are listed, restored or
+  // deleted. Beside Backup & restore — both are recovery (A331).
+  { id: "archived", label: "Archived", group: "System", built: true },
   { id: "backup", label: "Backup & restore", group: "System", built: true },
   { id: "diagnostics", label: "Diagnostics", group: "System", built: true },
 ];

@@ -202,7 +202,6 @@ export function SprintEditDialog(props: SprintDialogProps) {
 
         <Field
           label="Goal"
-          hint="Optional — what this sprint is for"
         >
           <TextArea
             aria-label={isEdit ? "Sprint goal" : "New sprint goal"}
