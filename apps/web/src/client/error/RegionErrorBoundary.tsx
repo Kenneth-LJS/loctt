@@ -193,8 +193,7 @@ export function RegionErrorFallback({
       </h2>
       {writeInFlight ? (
         <p className="mb-2 text-[0.9286rem] text-warn-fg">
-          A change was being saved, so it may not have been. Reload to check
-          before trying it again.
+          Your changes may not have been saved. Please check and try again.
         </p>
       ) : null}
       <div className="mb-3 flex gap-2">

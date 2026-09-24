@@ -77,7 +77,7 @@ describe("RegionErrorBoundary", () => {
     expect(text).not.toMatch(/affected/i);
     expect(text).not.toContain(".loctt/");
     // Nothing was in flight, so no claim either way is made about one.
-    expect(text).not.toMatch(/being saved/i);
+    expect(text).not.toMatch(/may not have been saved/i);
     unmount();
 
     render(
@@ -86,8 +86,10 @@ describe("RegionErrorBoundary", () => {
       </RegionErrorBoundary>,
     );
     const inflight = screen.getByRole("alert").textContent ?? "";
-    expect(inflight).toMatch(/may not have been/i);
-    expect(inflight).toMatch(/reload to check/i);
+    // K127: Ken's wording, verbatim.
+    expect(inflight).toContain(
+      "Your changes may not have been saved. Please check and try again.",
+    );
   });
 
   /**
