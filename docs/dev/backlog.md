@@ -9,18 +9,6 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-## Product
-
----
-
-## Tests and tooling
-
----
-
-## Housekeeping from this session
-
-### B19. Drop the 16:40 safety stash — needs Ken
-
-The work is committed on `ui/polish-wave-3` (Ken: "just git as u go").
-`stash@{0}` (the 16:40 `git stash` an agent ran) is fully restored and
-committed; it is kept until Ken says to drop it.
+Empty. Everything Ken took on under K121 shipped on `ui/polish-wave-3`
+(2026-09-24); each item's record is in `decisions.md` (A309–A336, K115–K122)
+and git history.
