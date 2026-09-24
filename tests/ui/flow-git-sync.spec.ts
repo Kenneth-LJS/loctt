@@ -215,8 +215,9 @@ test("GIT-3: sync writes the remote's new tasks to disk and advances last_synced
   // Without a page reload: navigate to the list through the app's own
   // client-side router (a <Link> click, not page.reload()) and the
   // pulled rows are there because the sync invalidated the tasks query.
-  // `project-all` is the sidebar's "All projects" → /list link.
-  await page.getByTestId("project-all").click();
+  // K125 removed the sidebar's "All projects" row; the sidebar's List
+  // link is the real unscoped-/list entry now.
+  await page.locator("aside").getByRole("link", { name: "List", exact: true }).click();
   await expect(page).toHaveURL(/\/list/);
   await expect(page.getByRole("row").filter({ hasText: "remote alpha" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "remote beta" })).toBeVisible();
@@ -657,8 +658,10 @@ test("GIT-23: a many-task sync summarises with counts + expand, and the list ref
 
   // Bullet 3: navigate to the list through the app's own router (no
   // reload) — all eight pulled tasks are there because the sync
-  // invalidated the list feed query.
-  await page.getByTestId("project-all").click();
+  // invalidated the list feed query. K125 removed the sidebar's "All
+  // projects" row; the sidebar's List link is the real unscoped-/list
+  // entry now.
+  await page.locator("aside").getByRole("link", { name: "List", exact: true }).click();
   await expect(page).toHaveURL(/\/list/);
   for (const t of titles) {
     await expect(page.getByRole("row").filter({ hasText: t })).toBeVisible();

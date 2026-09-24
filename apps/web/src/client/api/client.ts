@@ -327,6 +327,26 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
   } finally {
     clearTimeout(timer);
   }
+  return resolveResponse<T>(res, endpoint);
+}
+
+/**
+ * Parses a `Response` the caller already has (not one `apiRequest` fetched
+ * itself) and either returns its body or throws the same `ApiError`
+ * `apiRequest` would have thrown for it.
+ *
+ * Exists for `streamSync` (useGit.ts): a plain JSON reply on
+ * `/api/git/sync` — a no-op result or a planning-phase error — arrives on
+ * the same `Response` the streaming path already read headers from.
+ * Re-POSTing to re-derive that `ApiError` sends the request a SECOND
+ * time, and for a write that is not idempotent: the second `sync` sees
+ * whatever the first one's *failure* left behind (the reconcile sentinel
+ * a `reconcile_needed` refusal wrote) and reports THAT —
+ * "a previous sync was interrupted" — instead of the clean refusal the
+ * first response actually carried (A342). Any call site that already
+ * holds a fetched `Response` should reuse this rather than re-fetch.
+ */
+export async function resolveResponse<T>(res: Response, endpoint: string): Promise<T> {
   const body = await parseBody(res);
   if (!res.ok) {
     throw new ApiError(errorMessage(endpoint, res.status, body), {

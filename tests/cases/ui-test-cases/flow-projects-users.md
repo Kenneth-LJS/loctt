@@ -189,8 +189,12 @@ project counters during git sync is in
 ### PRU-21 · M4 · minor · P9
 **A tracker with 30 projects keeps the switcher usable.**
 
+> **Amended (K125, Ken 2026-09-24).** The sidebar's "All projects" row was
+> removed (Ken: *"take out the 'All projects' then? if its duplicate"*);
+> List shows all tasks.
+
 - The switcher becomes searchable (type-to-filter on label and key) rather than an unbounded scrolling list.
-- "All projects" remains pinned and reachable without scrolling.
+- The sidebar's List link remains reachable without scrolling.
 - The sidebar project group truncates with a count ("+22 more") rather than pushing the rest of the sidebar off-screen.
 
 ### PRU-22 · M4 · minor · P9

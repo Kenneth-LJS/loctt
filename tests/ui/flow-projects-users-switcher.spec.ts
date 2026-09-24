@@ -152,7 +152,7 @@ test.describe("PRU-4 — the create form defaults to the active project", () => 
 
 test.describe("PRU-21 — a 30-project switcher stays usable", () => {
   // @verifies PRU-21
-  test("PRU-21: the switcher is searchable, All projects is pinned, the rest truncate", async ({
+  test("PRU-21: the switcher is searchable, List stays reachable, the rest truncate", async ({
     page,
     tracker,
   }) => {
@@ -170,9 +170,10 @@ test.describe("PRU-21 — a 30-project switcher stays usable", () => {
     await page.goto(`${tracker.baseURL}/list`);
 
     // The list truncates rather than rendering all 30: a "+N more"
-    // toggle is present, and All projects is reachable at the top.
-    const all = page.getByTestId("project-all");
-    await expect(all).toBeVisible();
+    // toggle is present, and the sidebar's List link (K125 removed the
+    // "All projects" row) stays reachable at the top regardless.
+    const listLink = page.locator("aside").getByRole("link", { name: "List", exact: true });
+    await expect(listLink).toBeVisible();
     const more = page.getByTestId("project-more");
     await expect(more).toBeVisible();
     // The truncation hid rows — not every project is on screen.
