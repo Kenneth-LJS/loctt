@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -775,6 +775,22 @@ describe("CLI commands", () => {
     // The body was set to empty (not "0"), so the read prints the
     // empty-body sentinel.
     expect(logged).toContain("(empty body)");
+  });
+
+  it("stores --set text that already ends in a newline with one newline, not two", async () => {
+    // `--set` added "\n" unconditionally, so "x\n" landed as "x\n\n".
+    process.argv = ["node", "loctt", "init"];
+    await main();
+    process.argv = ["node", "loctt", "create", "seeded"];
+    await main();
+    process.exitCode = undefined;
+    process.argv = ["node", "loctt", "body", "T-1", "--set", "Original.\n"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    const locttDir = resolveLocttDir(root);
+    const task = await lookupByKey(locttDir, "T-1");
+    const file = await readFile(join(locttDir, "tasks", task.frontmatter.id, "task.md"), "utf-8");
+    expect(file.endsWith("\nOriginal.\n")).toBe(true);
   });
 
   describe("error paths on wrapped task commands", () => {

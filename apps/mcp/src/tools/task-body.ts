@@ -11,7 +11,7 @@
  * Omitted, the write is last-write-wins, as it has always been.
  */
 
-import { appendTaskBody, lookupTask, writeTaskBody } from "@loctt/core";
+import { appendTaskBody, lookupTask, withTrailingNewline, writeTaskBody } from "@loctt/core";
 import { z } from "zod";
 
 import { text } from "../runtime/errors.js";
@@ -63,7 +63,7 @@ export const TOOLS: readonly ToolDef[] = [
     handler: async ({ locttDir }, args) => {
       const task = await lookupTask(locttDir, args["ref"] as string);
       await writeTaskBody(
-        locttDir, task.frontmatter.id, (args["body"] as string) + "\n", tokenOpts(args),
+        locttDir, task.frontmatter.id, withTrailingNewline(args["body"] as string), tokenOpts(args),
       );
       return text(`Replaced ${task.frontmatter.key} body.`);
     },

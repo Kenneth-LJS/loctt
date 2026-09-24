@@ -247,6 +247,16 @@ async function updateTaskBody(
 }
 
 /**
+ * A body as a surface should store it: ending in exactly the newline
+ * the caller did not already supply. CLI `--set` and MCP
+ * `replace_task_body` both take text that may or may not end in one;
+ * adding "\n" unconditionally stored "x\n" as "x\n\n".
+ */
+export function withTrailingNewline(body: string): string {
+  return body.endsWith("\n") ? body : body + "\n";
+}
+
+/**
  * Replaces the markdown body of a task while preserving frontmatter.
  * Updates `updated_at` to the current time.
  */
