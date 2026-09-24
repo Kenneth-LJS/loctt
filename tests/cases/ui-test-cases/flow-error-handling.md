@@ -226,12 +226,14 @@ below.
 - Reasons are not collapsed into a most-common-error summary.
 
 ### ERR-27 · M2 · minor · P4 P1
-**An auto-save failure is as loud as a manual save failure.** Fail a body auto-save with the user still typing.
+**A body save failure is loud and stays.** Fail a body save with the user still typing.
 
-- The user is told the auto-save failed — silence is not acceptable just because they did not click a button.
+- The user is told the save failed.
 - The indication persists (not a 2-second toast that vanishes while the user is looking at the keyboard).
 - Typing continues to work; the editor is not locked.
 - Content is retained per ERR-12.
+
+> **Amended (K124, Ken 2026-09-24).** Ken: *"once in editing mode, i think there should be a save button to save, and cancel."* The description no longer auto-saves (TSK-15), so there is no failure "the user did not click a button" for; the first bullet now states the save failure is reported. The rest is unchanged.
 
 ### ERR-28 · M1 · minor · P4 P6
 **An error state inside a sidebar group is contained to that group.** Fail `GET /api/recents` while everything else is healthy.

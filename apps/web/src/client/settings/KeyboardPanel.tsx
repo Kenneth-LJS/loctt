@@ -89,8 +89,10 @@ const SHORTCUTS: readonly { group: string; items: readonly Shortcut[] }[] = [
   {
     group: "Editing",
     items: [
-      // apps/web/src/client/editor/BodyEditor.tsx:95
-      { keys: ["Ctrl", "S"], action: "Save the task body", scope: "The body editor" },
+      // apps/web/src/client/editor/BodyEditor.tsx (K124: Save and Cancel)
+      { keys: ["Ctrl", "Enter"], action: "Save the description", scope: "Editing a description" },
+      { keys: ["Ctrl", "S"], action: "Save the description", scope: "Editing a description" },
+      { keys: ["Esc"], action: "Cancel editing the description", scope: "Editing a description" },
       // apps/web/src/client/settings/ReorderableRows.tsx:108-109
       {
         keys: ["↑", "/", "↓"],
