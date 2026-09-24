@@ -22685,6 +22685,87 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K130 · Sprints: no process policing; product principle P11; last message rulings
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+**Sprints.** Ken: *"for sprints, i dont need date checks. users can
+specify, and the can make active or inactive or close or whatever, i
+dont care. we're not babysitting policy, we're being a better task
+tracker, not here to lock behaviour. because end of the day, its their
+files, i let them track however they want. add this to our product
+principles. then, take out the message, the warning, and the stopping.
+just let users update state however they want."* So:
+- The Sprints board's "still marked active, but its dates … do not
+  include today" hint (SPR-20) is removed.
+- Sprint state moves freely between future, active and completed on
+  every surface. The completed → other block and its `force` override
+  (CLI `--force`, MCP `force`) are removed.
+- Asked whether end-date-before-start-date should stay refused (the
+  dates cannot be drawn: burndown has no days, the timeline bar
+  inverts), Ken chose **keep refusing**, with a plain message. Date
+  format validation (YYYY-MM-DD) stays: it is storage, not policy.
+- New product principle **P11 — Their files, their process**
+  (`tests/cases/ui-test-cases/README.md`).
+
+**Archived-user banner (A-100):** Ken: *"no need then? users should
+know their settings change if they switch user."* Both lines are
+removed from the user menu.
+
+**Unreliable-filesystem banner (A-102):** *"This tracker is in a
+network folder, which may lead to data corruption if multiple machines
+edit the files at the same time. Keep it on a local disk to be safe."*
+
+**Attachment over the size limit (B-57):** *"File size limit is 50 MB."*
+
+**Also:** Ken: *"please track the implementation in our backlog,
+be sure to implement everything, including the messages and the
+behaviour changes."* The K129 delete-confirmation ruling supersedes
+BLK-11/TSK-22/TSK-23's "offer archive as the reversible alternative";
+those cases are amended.
+
+### K129 · Message-audit rulings (batches A–C), with two behaviour changes
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+Ken's answers on the "needs your call" rows of the app-message audit
+(K123), verbatim where quoted:
+
+- **Delete confirmations** (bulk delete, task delete): the archive
+  suggestion goes. *"Deleting is irreversible. Continue? im sure the
+  archive is somewhere the user can see first, so they should know."*
+- **Saved-view name clash — behaviour change:** *"if you save a view,
+  and the name already matches, then we should just error. 'Another
+  view with that name already exists.' do not allow merging, do not
+  allow keeping, just clash and say CANNOT."*
+- **Empty states:** "No tasks yet. Create your first one…" → *"No tasks
+  found."*; "No milestones yet." → *"No milestones found."*
+- **Duplicate board status:** *"`.loctt/config/workflow.yaml` has a
+  duplicate status "[status]". Please fix it and refresh the page." or
+  something like that.*
+- **Interrupted migration:** drop "Nothing here can be opened or changed
+  until this is resolved." *"its not required because the user can see
+  it themselves."*
+- **Server unreachable:** *"The terminal running loctt ui may have
+  stopped. Restart it to continue."*
+- **Body-conflict button:** "Cancel (saves nothing)" → *"just 'Cancel'"*.
+- **Description save failed:** *"Description not saved. i think just
+  leave it concise."*
+- **Empty `.loctt` folder at setup — behaviour change:** *"why is there
+  even an error then? just ignore, proceed with steps. dont even show
+  this to the user, dont show the messages, dont show warning, dont even
+  stop with this extra confirmation step because that causes friction."*
+- **Invalid config file:** the file and the field to fix, no further
+  context (*"the 'the same shape...' is nonsense"*).
+- The remaining "needs your call" rows: *"looks okay"*.
+- *"i think you may need to review the other messages and see if my
+  fixes apply to them too?"*: the patterns above are applied across
+  every audited message before anything lands.
+
+Still open with Ken: the sprint-dates warning (A-60/A-67), the
+archived-user banner (A-100), the unreliable-filesystem banner (A-102),
+and the attachment-size message (B-57).
+
 ### A341 · CLI `--set` and MCP `replace_task_body` store one trailing newline, not two
 
 **Ticket:** found by the K124 e2e run: `loctt body T-1 --set $'Original.\n'` stored `Original.\n\n`. · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3 · **Scope:** core `withTrailingNewline`, CLI `body --set`, MCP `replace_task_body`.
