@@ -239,8 +239,7 @@ async function updateTaskBody(
     // body changed and never *to what*, so nothing can reconstruct a
     // prior version — and the git-sync merge rule (M2) that resolves a
     // contested field by taking the later write depends on being able to.
-    // Coalescing keeps this to one snapshot per editing burst rather
-    // than one per keystroke.
+    // One entry per write (K128): each Save is its own snapshot.
     await appendHistory(locttDir, taskId, [
       { timestamp: now, kind: "body_edited", before: body, after: newBody },
     ]);

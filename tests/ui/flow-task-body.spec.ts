@@ -784,6 +784,10 @@ test.describe("TSK — the body editor", () => {
     // Cancel: discard and close, asking first when there are changes.
     const key = onlyKey(await tracker.seed([{ title: "Escape cancels" }]));
     await tracker.run(["body", key, "--set", "Original body.\n"]);
+    // Snapshot the seeded bytes rather than restating them: `loctt body
+    // --set` stores the text plus its own trailing newline, so a literal
+    // that already ends in "\n" lands as "\n\n".
+    const seeded = await bodyOnDisk(tracker.root, key);
     const writes: string[] = [];
     await page.route(`**/api/tasks/*/body`, async route => {
       writes.push(route.request().postData() ?? "");
@@ -815,7 +819,7 @@ test.describe("TSK — the body editor", () => {
     await expect(page.getByTestId("body-rendered")).not.toContainText("Escaped edit.");
     await page.waitForTimeout(500);
     expect(writes, writes.join("\n")).toHaveLength(0);
-    expect(await bodyOnDisk(tracker.root, key)).toBe("Original body.\n");
+    expect(await bodyOnDisk(tracker.root, key)).toBe(seeded);
 
     // Nothing lingers: re-entering edit starts from the saved body.
     await enterEdit(page);
@@ -1101,6 +1105,10 @@ test.describe("TSK-73 — the unsaved draft survives a reload of the same tab", 
   }) => {
     const key = onlyKey(await tracker.seed([{ title: "Draft reload" }]));
     await tracker.run(["body", key, "--set", "Saved body.\n"]);
+    // Snapshot the seeded bytes rather than restating them: `loctt body
+    // --set` stores the text plus its own trailing newline, so a literal
+    // that already ends in "\n" lands as "\n\n".
+    const seeded = await bodyOnDisk(tracker.root, key);
     acceptLeavePrompts(page);
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
 
@@ -1111,7 +1119,7 @@ test.describe("TSK-73 — the unsaved draft survives a reload of the same tab", 
     await expect(rich).toContainText("Unsaved words.");
     await expect(page.getByTestId("body-rendered")).toHaveCount(0);
     await expect(indicator(page)).toHaveAttribute("data-state", "unsaved");
-    expect(await bodyOnDisk(tracker.root, key)).toBe("Saved body.\n");
+    expect(await bodyOnDisk(tracker.root, key)).toBe(seeded);
 
     // Save from the restored draft writes it and clears it: a second
     // reload opens on the rendered, saved body.
@@ -1157,18 +1165,22 @@ test.describe("TSK-73 — the unsaved draft survives a reload of the same tab", 
     await page.getByRole("heading", { level: 1 }).first().click();
 
     await tracker.run(["body", key, "--set", "Rewritten by the CLI.\n"]);
+    // Snapshot the seeded bytes rather than restating them: `loctt body
+    // --set` stores the text plus its own trailing newline, so a literal
+    // that already ends in "\n" lands as "\n\n".
+    const theirs = await bodyOnDisk(tracker.root, key);
     await page.reload();
 
     await expect(page.getByTestId("body-conflict")).toBeVisible();
     await expect(page.getByTestId("conflict-mine")).toContainText("My draft.");
     await expect(page.getByTestId("conflict-theirs")).toContainText("Rewritten by the CLI.");
     // Opening the dialog wrote nothing.
-    expect(await bodyOnDisk(tracker.root, key)).toBe("Rewritten by the CLI.\n");
+    expect(await bodyOnDisk(tracker.root, key)).toBe(theirs);
 
     // "Keep theirs" leaves the disk as it is and closes the editor.
     await page.getByTestId("conflict-choice-theirs").click();
     await page.getByTestId("conflict-apply").click();
     await expect(page.getByTestId("body-rendered")).toContainText("Rewritten by the CLI.");
-    expect(await bodyOnDisk(tracker.root, key)).toBe("Rewritten by the CLI.\n");
+    expect(await bodyOnDisk(tracker.root, key)).toBe(theirs);
   });
 });

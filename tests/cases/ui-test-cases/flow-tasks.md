@@ -199,16 +199,18 @@ the rich editor and stop.
 > cadence survives only for the unsaved draft kept in the tab (TSK-73).
 
 ### TSK-16 · M2 · major · P1
-**Rapid edits coalesce into one history entry.** Type continuously for
-30 seconds with several idle-save flushes.
+**Each save records its own history entry.** Edit the description and
+Save several times in quick succession.
 
-> **Amended (K124, Ken 2026-09-24).** The description no longer saves on
-> idle (TSK-15), so "several idle-save flushes" now means several Saves
-> in quick succession. The coalescing is the server's and is unchanged.
-
-- The activity feed shows a single coalesced `body_edited` entry for
-  the burst, not one per auto-save.
+- The activity feed shows one `body_edited` entry per Save, in order,
+  each with the body before and after that Save.
 - The final stored body matches exactly what is on screen.
+
+> **Amended (K124, then K128, Ken 2026-09-24).** This case read "Rapid
+> edits coalesce into one history entry … several idle-save flushes …
+> a single coalesced `body_edited` entry for the burst". K124 removed the
+> idle autosave; asked "one entry per Save (remove the 15-minute merge)"
+> or "keep the 15-minute merge", Ken chose **one entry per Save** (K128).
 
 ### TSK-17 · M2 · blocker · P10
 **The mode toggle preserves content between rich and raw markdown.**
