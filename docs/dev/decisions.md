@@ -22571,3 +22571,18 @@ re-add `archived = false` to the main `constructs` array in
 flow-list.spec.ts, delete the standalone archived-query assertion, and
 re-run `npm run cases:index`. Ken's underlying K121 #1 ruling itself is
 not revertible by an agent.
+
+### K123 · Messages state the outcome and do not editorialise; audit every message
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+On the link picker's empty result — *"No task matches 'sdf'. Former keys
+resolve too, so a retired key would have been found — check the
+spelling."* — Ken: *"yea this is a bad message. should just be 'No matches
+found.'. dont editorialise. audit all error messages"*.
+
+Built: the link picker says "No matches found." and its self-link branch
+"{key} is this task. A task can't link to itself."; REL-43 amended. The
+app-wide audit (every error, empty, result and confirm message outside
+Settings, which A322/A326 already covered) goes to Ken as a before/after
+list before anything changes, as the Settings trims did (K116).
