@@ -78,11 +78,15 @@ afterEach(() => {
 
 describe("SidebarGroupsPanel", () => {
   it("lists every built-in group and filter", async () => {
-    // @verifies SHL-45
+    // @verifies SHL-45. Amended (K125, Ken 2026-09-24): the built-in
+    // filters nest under one "Filters" group row, so their own labels
+    // dropped the "Filter · " prefix (the nesting itself now says what
+    // they are) — was "Filter · Overdue".
     renderPanel();
     await screen.findByText("Projects");
     screen.getByText("Recently viewed");
-    screen.getByText("Filter · Overdue");
+    screen.getByText("Filters");
+    screen.getByText("Overdue");
   });
 
   it("persists a hide choice through PUT /api/user-settings", async () => {
@@ -98,6 +102,84 @@ describe("SidebarGroupsPanel", () => {
     expect(groups.hidden).toContain("labels");
     // The full order is written too, so the file and the panel agree.
     expect(groups.order).toEqual(expect.arrayContaining(["projects", "labels"]));
+  });
+
+  it("K125: the built-in filters render nested under one 'Filters' row, not six top-level rows", async () => {
+    renderPanel();
+    await screen.findByText("Projects");
+    // The group itself is one top-level reorderable row…
+    expect(await screen.findByTestId("sidebar-group-row-filters")).toBeTruthy();
+    // …its own row is NOT the same testid space as its children.
+    expect(screen.queryByTestId("sidebar-group-row-overdue")).toBeNull();
+    // Every built-in still renders, as a nested (filter-prefixed testid) row.
+    for (const id of [
+      "assigned-to-me", "reported-by-me", "mentions-me",
+      "due-this-week", "overdue", "high-priority",
+    ]) {
+      expect(await screen.findByTestId(`sidebar-filter-row-${id}`)).toBeTruthy();
+    }
+  });
+
+  it("K125: switching the 'Filters' group off disables every child's switch and drag handle", async () => {
+    renderPanel();
+    await screen.findByText("Projects");
+    const groupToggle = await screen.findByTestId("sidebar-group-toggle-filters");
+    fireEvent.click(groupToggle);
+    await waitFor(() => { expect(PUTS.length).toBeGreaterThan(0); });
+
+    const childToggle = await screen.findByTestId("sidebar-filter-toggle-overdue");
+    expect((childToggle as HTMLInputElement).disabled).toBe(true);
+    const childHandle = await screen.findByTestId("sidebar-filter-handle-overdue");
+    expect((childHandle as HTMLButtonElement).disabled).toBe(true);
+    // Still VISIBLE, just inactive — Ken: "disable switching/reordering
+    // its child items too", not hide them.
+    expect(childToggle.hidden).toBe(false);
+    expect(getComputedStyle(childToggle).display).not.toBe("none");
+  });
+
+  it("K125: a child filter's own switch stays enabled while the group is on", async () => {
+    renderPanel();
+    await screen.findByText("Projects");
+    const childToggle = await screen.findByTestId("sidebar-filter-toggle-overdue");
+    expect((childToggle as HTMLInputElement).disabled).toBe(false);
+    const childHandle = await screen.findByTestId("sidebar-filter-handle-overdue");
+    expect((childHandle as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("K125: hiding one child filter persists only that child, not the group", async () => {
+    renderPanel();
+    await screen.findByText("Projects");
+    fireEvent.click(await screen.findByTestId("sidebar-filter-toggle-overdue"));
+    await waitFor(() => { expect(PUTS.length).toBeGreaterThan(0); });
+    const last = PUTS[PUTS.length - 1];
+    const groups = last?.["sidebar_groups"] as { hidden?: string[]; order?: string[] };
+    expect(groups.hidden).toContain("overdue");
+    expect(groups.hidden ?? []).not.toContain("filters");
+  });
+
+  it("K125: no row uses strikethrough for hidden — the switch alone carries the state", async () => {
+    renderPanel();
+    await screen.findByText("Projects");
+    fireEvent.click(await screen.findByTestId("sidebar-group-toggle-labels"));
+    await waitFor(() => { expect(PUTS.length).toBeGreaterThan(0); });
+    const row = await screen.findByTestId("sidebar-group-row-labels");
+    expect(row.innerHTML).not.toMatch(/line-through/);
+  });
+
+  it("MIGRATION (A339): an existing flat stored order with an individual filter placement still loads, group placed at its position", async () => {
+    // Pre-K125 stored shape: the user had moved "overdue" to lead the
+    // top-level order (the only kind of move that existed then).
+    SETTINGS = { sidebar_groups: { order: ["overdue", "projects", "labels"] } };
+    renderPanel();
+    await screen.findByText("Projects");
+    const rows = await screen.findAllByTestId(/^sidebar-group-row-/);
+    // "filters" (the migrated group) leads, where "overdue" used to be.
+    expect(rows[0]?.getAttribute("data-testid")).toBe("sidebar-group-row-filters");
+    // "overdue" itself no longer occupies a top-level slot.
+    expect(screen.queryByTestId("sidebar-group-row-overdue")).toBeNull();
+    // It is still there, nested, leading the group's own inner order.
+    const filterRows = await screen.findAllByTestId(/^sidebar-filter-row-/);
+    expect(filterRows[0]?.getAttribute("data-testid")).toBe("sidebar-filter-row-overdue");
   });
 
   it("shows the server message and a Retry when the save fails", async () => {

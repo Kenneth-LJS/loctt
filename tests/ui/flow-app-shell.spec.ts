@@ -104,17 +104,21 @@ test.describe("SHL — routing and history", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Beta task")).toBeHidden();
 
-    // Switching views carries the filter scope across (cross-view scope
-    // fix, Ken 2026-09-20). This assertion previously expected
-    // `/timeline$` — that encoded the bug where the view switcher dropped
-    // every URL param, so a filter set on the list vanished the moment you
-    // moved to the board or timeline. Per the repo rule on editing a green
-    // test that asserted the bug: the switcher now preserves the scope, so
-    // the status filter rides along and the URL keeps `status=in_progress`.
+    // Amended (K125, Ken 2026-09-24): this assertion previously expected
+    // the view switcher to CARRY `status=in_progress` across to
+    // `/timeline` (the 2026-09-20 cross-view scope fix, TML-57) — that
+    // is the exact carry-across K125 supersedes for the view switcher's
+    // OWN links. Ken, told List/Board/Timeline carried the project/
+    // filter scope and asked how to get back to all tasks, said "click
+    // 'list'?" — so a view-link click now CLEARS the sidebar-driven and
+    // toolbar scope instead of carrying it; "click a view" is now how
+    // you reach the fully unscoped view. The status filter must NOT
+    // ride along.
     await page.getByRole("link", { name: "Timeline" }).click();
-    await expect(page).toHaveURL(/\/timeline\?status=in_progress$/);
+    await expect(page).toHaveURL(/\/timeline$/);
 
-    // Three steps back, in reverse order, one navigation each.
+    // Two steps back, in reverse order, one navigation each: the
+    // /timeline entry (unscoped) and the /list?status=in_progress entry.
     await page.goBack();
     await expect(page).toHaveURL(/\/list\?status=in_progress$/);
     await page.goBack();
@@ -1323,9 +1327,14 @@ test.describe("SHL-33 — an unusual status count does not distort the shell", (
     // has no group here, so this set must not grow with status count.
     // (The labels are plain styled divs, not ARIA headings, so they
     // are matched by their exact text within the sidebar.)
+    // "Saved filters" was already stale before K125 (the sidebar has
+    // said "Views" there since K102); K125 (amended, Ken 2026-09-24)
+    // split that one section into two — "Filters" (the six built-ins)
+    // and "Saved views" (saved views only) — so both now appear here.
     const KNOWN_GROUPS = [
       "Projects",
-      "Saved filters",
+      "Filters",
+      "Saved views",
       "Milestones",
       "Sprints",
       "Labels",

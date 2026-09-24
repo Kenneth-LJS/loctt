@@ -22806,6 +22806,423 @@ Save that merges two deliberate Saves minutes apart into one history entry —
 the case that row's own rationale warned about. K124 did not rule on it and
 this entry does not change it.
 
+### A339 · K125 build: sidebar "All projects" removed, view-link carry-across dropped, Filters nested as one group
+
+**Ticket:** K125 (Ken's ruling — `docs/dev/decisions.md`) · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3 · **Scope:** `apps/web/src/client/shell/Sidebar.tsx` (+ test), `apps/web/src/client/settings/SidebarGroupsPanel.tsx` (+ test), `apps/web/src/client/settings/sidebarGroups.ts`, `apps/web/src/client/list/FilterBar.tsx` (+ test), `packages/core/src/users/sidebarGroups.ts` (+ test), `packages/core/src/users/index.ts`, `packages/contracts/src/users.ts`, `tests/cases/ui-test-cases/flow-app-shell.md`, `flow-timeline.md`.
+
+**Situation.** K125 recorded five rulings: remove the sidebar's "All
+projects" row (a plain duplicate of the view switcher's own
+"nothing-scoped" identity, per K118/A321's own tie-break note); make a
+view-link click (List/Board/Timeline) clear the sidebar-driven scope
+instead of carrying it (superseding the 2026-09-20 cross-view carry
+fix, TML-57, for those links specifically); nest the six built-in
+filters under one "Filters" group in the Customize-sidebar panel,
+movable/hideable as a unit, each still individually
+reorderable/hideable inside it; replace Show/Hide buttons with a
+Switch, disabling a child's switch+handle while its parent group is
+off; and grow "Save as view" to 28px (h-8).
+
+**What was built.**
+
+1. **"All projects" removed.** The `<Link data-testid="project-all">`
+   row and its `allActive` tie-break logic are deleted from
+   `ProjectsGroup`; the `ActiveRow` doc comment's tie-break prose is
+   rewritten to describe the CURRENT state (no second row to reconcile
+   against) rather than the now-obsolete arbitration. `deriveActiveRow`
+   itself is untouched — it already resolved "nothing scoped" to
+   `{kind: "view"}` before this ticket; only the duplicate row is gone.
+
+2. **View-link carry-across dropped.** `ViewSwitcher`'s `search={carryFilters}`
+   is replaced with `search={prev => clearSort(clearFilters(prev))}` —
+   the exact same pair every other sidebar row already uses. `carryFilters`
+   and its `CARRY_FILTER_KEYS` allow-list are deleted entirely (dead code
+   once `ViewSwitcher` was their only caller). **The carry rule chosen:**
+   nothing sidebar-driven OR toolbar-set carries across a view-link click —
+   `clearFilters` drops every `FILTER_KEYS` entry, which is deliberately
+   BOTH the sidebar-driven params (project/view/labels/sprint/q) AND the
+   toolbar facets (status/priority/type/assignee/reporter/milestone).
+   Reasoning: K125's own framing — "click List" is how you get back to
+   ALL tasks — means the destination must be unscoped, full stop; carrying
+   just the toolbar facets would leave List still filtered by whatever the
+   toolbar had set, contradicting that. Params `clearFilters`/`clearSort`
+   do NOT touch (page, zoom, grouping, arrows, and any other param outside
+   `FILTER_KEYS`/`SORT_KEYS`) are left alone — same as every other sidebar
+   row already behaved, so this is not a new carve-out.
+   `viewTo`'s "a PROJECT click stays on the current view" (2026-09-20) is
+   untouched — a different mechanism, on a different link.
+
+3. **"Filters" nested group.** Added `filters` to `SIDEBAR_GROUP_IDS`
+   (`packages/contracts/src/users.ts`) as a real, stored top-level group
+   id — NOT a presentation-only synthetic id — because K125 asks for it
+   to be "movable as a unit" (reordering it must move the whole block)
+   and independently hideable (hiding it must drop every built-in from
+   the live sidebar regardless of each filter's own `hidden` flag), both
+   of which need a real stored identity, not just a panel-rendering
+   trick. The six `SIDEBAR_FILTER_IDS` are unchanged and still
+   individually stored/ordered/hidden. New core function
+   `resolveGroupedSidebarOrder(groups, groupCatalog)`
+   (`packages/core/src/users/sidebarGroups.ts`) resolves the flat
+   `order`/`hidden` storage into the nested `GroupedSidebarRow[]` shape
+   the panel renders (`{kind:"item"}` | `{kind:"filters-group", hidden,
+   children}`), re-exported through `packages/core/src/users/index.ts`
+   and `apps/web/src/client/settings/sidebarGroups.ts`.
+   `SidebarGroupsPanel.tsx` was rewritten around it: one outer
+   `ReorderableRows` for top-level rows (with "filters" rendering an
+   inner `ReorderableRows` for its children, `enabled={!groupHidden}`),
+   Show/Hide buttons replaced by `ui/Toggle` (`role="switch"`, labelled
+   "Show {label} in the sidebar"), a child's switch getting `disabled=
+   {groupHidden}` directly. The live sidebar (`Sidebar.tsx`,
+   `SavedFiltersGroup`) now reads the `filters` group's own `hidden` flag
+   and empties `orderedFilters` entirely when it is set, on top of the
+   existing per-filter `hidden` filtering — this is the one live-sidebar
+   change beyond the panel; the built-ins' own visual position (inside
+   the "Views" section, alongside saved views) is UNCHANGED — K125's
+   scope heading names "Customize sidebar (...) and the sidebar-order
+   model in the sidebar's settings", not a new visual grouping in the
+   live sidebar itself, and splitting built-ins into their own visible
+   section would be new scope this ticket did not ask for.
+
+4. **Migration (the specific call this entry exists to record).** An
+   existing flat stored `order` from before this ticket can only ever
+   have placed a filter id as a top-level entry (there was no `filters`
+   id to place). `resolveGroupedSidebarOrder` detects this (`filters`
+   absent from `groups.order`) and splices the group in at the position
+   of the FIRST individual filter id found in that stored order, leaving
+   every filter's own inner order/hidden flag untouched (read via the
+   existing `resolveSidebarOrder(groups, SIDEBAR_FILTER_IDS)`, which the
+   migration does not alter). A user who never touched a filter's
+   position (no filter id anywhere in `order`) gets the group at its
+   plain default catalog slot instead — no special-casing. A user who
+   HAS already saved a post-migration order (an explicit `filters` entry)
+   is honored exactly as stored; the fallback only fires when `filters`
+   is absent. Every write from the panel from now on always emits the
+   full flattened `order`/`hidden` in the post-migration shape (`filters`
+   present, no bare filter id at the top level), so the migration path
+   only ever fires against OLD files, never files this ticket's own
+   panel wrote.
+
+5. **Switch + disabled children.** `ui/Toggle` (already existed,
+   previously unused) replaces the Show/Hide `Button`; strikethrough on
+   a hidden row is removed (the switch carries the state). A child row's
+   switch AND its `ReorderableRows` drag handle are both disabled while
+   the parent "Filters" group's own switch is off — `ReorderableRows`
+   needed no structural change for this: its existing `enabled` prop
+   (which already disabled the handle) is passed `!groupHidden` for the
+   inner instance, and `GroupRow`'s own new `disabled` prop covers the
+   switch. No nesting concept was added to `ReorderableRows` itself —
+   the nesting is two `ReorderableRows` instances composed by the panel
+   (an outer one for top-level rows, an inner one rendered inside the
+   "Filters" row for its children), which was simpler and lower-risk
+   than teaching the shared component a new nested-row shape it has
+   exactly one caller for.
+
+6. **"Save as view" → 28px.** `apps/web/src/client/list/FilterBar.tsx`'s
+   single icon-only `IconButton` (`aria-label="Save as view"`,
+   `testId="view-actions-save-view"`) changed `size="sm"` (h-7/24.5px) →
+   `size="md"` (h-8/28px) — this is the ONE call site; list, board and
+   timeline all render it through the shared `FilterBar`, so one change
+   covers all three toolbars. The ⋯ (`view-actions-menu`) beside it was
+   deliberately left at `sm` — Ken did not ask for it to grow, and
+   matching heights across a `secondary`/ghost pair is a separate call
+   this ticket does not make.
+
+**CLI/MCP parity.** Checked `apps/cli/src/commands/user.ts` and
+`apps/mcp/src/tools/user.ts`: both already operate generically over
+`SIDEBAR_ITEM_IDS`/`SIDEBAR_GROUP_IDS` (no hardcoded id lists), so the
+new `filters` group id flows through `loctt user sidebar-groups`,
+`get_sidebar_groups` and `set_sidebar_groups` with NO code change —
+verified by reading both files end to end. `docs/user/cli/reference.md`
+and `docs/user/mcp/reference.md` describe the surface generically
+("Read or set the sidebar layout" / a tool table) without enumerating
+ids, so neither needed a text change either.
+
+**Rejected.**
+- A synthetic, non-stored `"filters"` presentation id for the panel
+  only (no schema/CLI/MCP change) — rejected because K125 explicitly
+  wants the group "movable as a unit" and independently hideable in the
+  LIVE sidebar too, which needs a real stored position/hidden flag, not
+  just a panel rendering trick.
+- Visually re-grouping the built-ins into their own top-level live-
+  sidebar section (matching the panel's nesting one-for-one) — rejected
+  as scope beyond what K125's heading asks ("Customize sidebar ... and
+  the sidebar-order model in the sidebar's settings"); the built-ins
+  already render together, contiguously, in their existing inner order,
+  inside "Views" — that status quo is preserved, only its hide-as-a-unit
+  behavior is new.
+- Carrying toolbar facets (status/priority/etc.) across a view-link
+  click while dropping only the sidebar-driven params — rejected because
+  it would contradict K125's own "click List gets you back to all
+  tasks" framing; the ticket's text anticipated and pre-empted this
+  option explicitly.
+
+**Why.** Matches K125 literally on all five points; the migration rule
+was the one genuinely new design decision K125 did not spell out to the
+byte, and is recorded here rather than inferred silently, per
+housekeeping's "a call the docs did not settle" rule.
+
+**To revert.** `git diff`/`git checkout --` the file list above against
+the commit before this change. The `filters` id addition to
+`SIDEBAR_GROUP_IDS` is additive to the schema (an old stored file with
+no `filters` id anywhere in it round-trips unchanged); reverting the
+contracts change would need any user who saved a POST-migration order
+(one that already names `filters`) to re-run Reset — a real but narrow
+loss, since this ticket has not shipped yet in any release.
+
+---
+
+### Addendum (same date) · Gap fix: "Filters" now has its OWN live-sidebar section
+
+**Wrong call, caught before commit.** Point 3 above and the "Rejected"
+list's second bullet were WRONG. They read K125's scope heading
+("Customize sidebar ... and the sidebar-order model in the sidebar's
+settings") as meaning the live sidebar's own visual grouping was out of
+scope, and left the built-ins rendering inside the saved-views section
+regardless of where `filters` sat in the stored order. That is exactly
+the disconnect Ken's ORIGINAL complaint named — a customiser that lets
+built-ins "move around, so its not connected" to the sidebar — and Ken
+caught it: *"As built, the customiser shows a movable 'Filters' row, but
+`Sidebar.tsx` returns null for `case "filters"` and still renders the
+six built-ins inside the `saved-filters` section (heading 'Views') above
+the saved views. So moving 'Filters' in the customiser changes nothing
+visible, which is the disconnect Ken complained about. Your A339 note
+calls a separate section 'new scope'; the chosen option says otherwise."*
+The option Ken actually picked, verbatim: *"Nest under 'Filters' — One
+'Filters' section you can move as a unit; inside it, each built-in
+filter can be hidden and reordered. They stay together in the sidebar."*
+"They stay together in the sidebar" is the live sidebar, not only the
+panel — my original reading missed that.
+
+**Fixed.** `Sidebar.tsx`: the six built-ins now render in a NEW,
+dedicated `FiltersGroup` component, its own `SectionShell id="filters"
+label="Filters"`, at the `filters` group's resolved position in the
+top-level `SIDEBAR_GROUP_IDS` order (via `resolveSidebarOrder`, the same
+mechanism every other section already uses) — wired into `SidebarGroups`'
+`render()` switch at `case "filters"` (previously `return null`).
+Hiding the group now removes the section entirely (an early `return
+null` in `FiltersGroup` plus the pre-existing outer `item.hidden` skip
+in `SidebarGroups` — both independently correct, verified by disabling
+each separately and confirming the other still holds the behavior).
+What was `SavedFiltersGroup` is renamed `SavedViewsGroup` and now
+renders ONLY saved views (+ "New view"); its stored group id
+(`saved-filters`) is UNCHANGED — only the human label and the built-ins'
+half of its old rendering moved out.
+
+**Label parity (Ken's point 2).** The saved-views section's heading was
+"Views" in the sidebar but "Saved filters" in the Customize-sidebar
+panel — two different labels for the one section, itself a smaller
+instance of the same "can't map a customiser row to a sidebar section"
+problem. Both are now "Saved views" (`Sidebar.tsx`'s
+`SectionShell`, and `SidebarGroupsPanel.tsx`'s `LABELS["saved-filters"]`)
+— matches the Settings "Saved views" page and the "Save as view" button.
+The STORED id (`saved-filters`) is unchanged, so no data migration is
+needed for this rename; it is purely a display-string change.
+
+**Active-row / keyboard nav (Ken's point 3), checked, not changed.**
+`deriveActiveRow` derives `{kind:"builtin"|"saved-view", id}` purely
+from `pathname`/`search` — it has no notion of which DOM section a row
+renders in, so splitting the built-ins into their own section changes
+nothing about the derivation or the "exactly one row lit" invariant
+(K118/A321). Searched the whole file for a keyboard-roving mechanism
+(arrow-key navigation across sidebar rows): none exists — the only
+`onKeyDown` handler in `Sidebar.tsx` is the resize-handle's, unrelated.
+Each section's collapse toggle (`SectionShell`) is independently keyed
+by its own `id` string, so `"filters"` and `"saved-filters"` now being
+two different ids simply means two independently collapsible sections,
+which needs no special-casing — standard browser Tab order threads
+through the new section like any other.
+
+**Cases amended:** `flow-app-shell.md` (SHL-8, SHL-32; SHL-45's
+amendment gained a second "Amended again" block recording this fix —
+SHL-33's own case text is unaffected, only its e2e spec's group-label
+allowlist changed), `flow-cross-surface.md` (XS-66), `flow-onboarding.md`
+(ONB-1, ONB-9). e2e: `flow-app-shell.spec.ts`'s `KNOWN_GROUPS` allowlist
+(SHL-33's shell-stability test), `flow-onboarding.spec.ts`'s absence
+check, and `flow-sidebar-k125.spec.ts` gained K125-8 (moves the group via
+the panel's keyboard reorder, reloads, and asserts the live section
+order actually changed — the literal regression this fix closes) plus
+corrected "Views"/"Filters" text in K125-4/5/6.
+
+**Red-proof performed:**
+1. Reverted `case "filters"` to `return null` → the new
+   `Sidebar.test.tsx` test ("moving 'filters' in the stored order moves
+   the rendered Filters section") failed (section never appears to
+   move, because it never appears at all as its own thing).
+2. Reverted `SidebarGroups`' outer `item.hidden` skip alone (kept
+   `FiltersGroup`'s inner `return null` guard) → the "removes the whole
+   Filters section" test still passed, because the inner guard alone
+   is sufficient. Reverted the inner guard alone (kept the outer skip)
+   → also still passed, for the same reason from the other direction.
+   Both guards are independently sufficient — confirmed defense-in-
+   depth, not one dead line.
+3. All six pre-existing `Sidebar.test.tsx` failures from the section
+   split (stale "Views"/"Saved filters" text assertions) were run RED
+   before being fixed, confirming each was a real fallout of the
+   split and not a pre-existing failure.
+
+**To revert (this addendum only).** Re-inline `FiltersGroup`'s JSX back
+into `SavedViewsGroup` (revert to the shape point 3 above originally
+described: built-ins + saved views under one section, `case "filters":
+return null`), rename `SavedViewsGroup` back to `SavedFiltersGroup`, and
+revert the "Saved views"/"Views" label changes in both `Sidebar.tsx` and
+`SidebarGroupsPanel.tsx`. No schema or stored-data change to undo — the
+`saved-filters`/`filters` ids themselves are unchanged by this addendum,
+only which component renders under them and what they are labelled.
+
+---
+
+### Second addendum (same date) · Live verification caught a second gap: the migration only ran in the panel, not the live sidebar
+
+**Found live, at http://localhost:7700, on the tracker's real stored
+settings** (`GET /api/user-settings` returned `sidebar_groups.order:
+["views","overdue","projects","saved-filters","milestones","labels",
+"recents","reported-by-me","assigned-to-me","sprints","mentions-me",
+"due-this-week","high-priority"]`, hidden: `["sprints"]` — a genuine
+pre-K125 flat order with `overdue` at the top level and no `filters`
+entry anywhere). Describing the rendered sidebar order:
+
+- **Before (bug):** `Projects, Saved views, Milestones, Labels,
+  Recently viewed, Filters` — Filters landed LAST, matching neither the
+  stored order (where `overdue` led, right after `views`) nor the
+  Customize-sidebar panel's own read of the same data (which correctly
+  showed Filters SECOND, right after Views, in the Customize sidebar
+  screenshot taken at the same moment).
+- **Root cause:** `SidebarGroups` (the live sidebar's own top-level
+  renderer, `Sidebar.tsx`) called the plain `resolveSidebarOrder(groups,
+  SIDEBAR_GROUP_IDS)` directly — the exact call the first addendum's fix
+  was supposed to route through the migration-aware
+  `resolveGroupedSidebarOrder`, but the first addendum only fixed WHICH
+  component rendered under `case "filters"`, not WHICH RESOLVER computed
+  the top-level order feeding that switch. The panel
+  (`SidebarGroupsPanel.tsx`) already called `resolveGroupedSidebarOrder`
+  and so already migrated correctly — the panel and the live sidebar
+  disagreed with each other on this tracker's data, which is the same
+  "customiser and sidebar don't agree" shape as Ken's original complaint,
+  just relocated to a second spot the first addendum missed.
+- **Fixed:** `SidebarGroups` now calls `resolveGroupedSidebarOrder`
+  (imported from `../settings/sidebarGroups.ts`, already exported for
+  the panel) and maps its `GroupedSidebarRow[]` back to the flat
+  `{id, hidden}[]` shape the existing render loop expects — one `.map()`,
+  no change to the loop or the `render()` switch itself.
+- **After (live-verified via the SAME running :7700 server, before a
+  rebuild):** opened Customize sidebar, focused the Filters row's drag
+  handle (`sidebar-group-handle-filters`), pressed ArrowDown three times
+  (`Overdue`-second → past Projects/Saved-views/Milestones), closed the
+  panel. The live sidebar order became `Projects, Saved views,
+  Milestones, Filters, Labels, Recently viewed` — Filters now sits
+  exactly where the panel put it. This proves the CORE mechanism (the
+  `case "filters"` render + position wiring from the first addendum) is
+  correct and live-verified end to end: once `filters` is EXPLICITLY in
+  `order` — which is what the panel writes on every edit, including this
+  one — the live sidebar honors it precisely.
+- **What is NOT live-verified:** the migration-on-read fix itself (the
+  `resolveSidebarOrder` → `resolveGroupedSidebarOrder` swap in
+  `SidebarGroups`) needs a rebuilt `apps/cli/dist` to demo against the
+  ORIGINAL pre-migration stored order (the one with `overdue` at the top
+  level) — the running :7700 server is still serving the pre-fix build,
+  and I was told not to rebuild it (another agent owns
+  `npm run build`/Playwright on this branch). The fix is instead
+  red-proven in `Sidebar.test.tsx` ("K125 gap fix: a pre-migration flat
+  stored order... still places the live Filters section at the migrated
+  position") against the LITERAL stored order this tracker had live —
+  reverting the `resolveGroupedSidebarOrder` call back to
+  `resolveSidebarOrder` reproduces the exact live-observed bug (Filters
+  fails to lead when `overdue` led the stored order) and fails that
+  test; restoring the fix passes it.
+
+**To revert (this second addendum only).** In `SidebarGroups`
+(`Sidebar.tsx`), replace `resolveGroupedSidebarOrder(groups,
+[...SIDEBAR_GROUP_IDS]).map(...)` back with
+`resolveSidebarOrder(groups, [...SIDEBAR_GROUP_IDS])` directly. This
+reintroduces the migration gap for any user whose stored order predates
+`filters` — a real regression, so only revert this if the whole
+`filters`-as-its-own-section design (both addenda) is being reverted
+together.
+
+---
+
+### Third addendum (same date) · Playwright pass after a fresh build: 4 failures, all triaged
+
+Coordinator ran `npx playwright test tests/ui/flow-sidebar-k125.spec.ts
+tests/ui/flow-app-shell.spec.ts tests/ui/flow-onboarding.spec.ts
+tests/ui/flow-timeline.spec.ts --workers=2` after `npm run build`: 4
+failed, 110 passed. Triaged each; final run of all four files together:
+**114 passed, 0 failed, exit code 0.**
+
+1. **`flow-app-shell.spec.ts:85` SHL-15 (back/forward).** SPEC bug, not
+   product — asserted the superseded carry. The test clicked "Timeline"
+   after setting `?status=in_progress` on `/list` and expected the URL
+   to keep `status=in_progress` on `/timeline` (the 2026-09-20
+   cross-view carry, TML-57) — exactly the behavior K125 replaces for
+   the view switcher's own links. Fixed: now expects `/timeline$` (no
+   param), amended the surrounding comment to cite K125 instead of the
+   old carry-fix reasoning, and adjusted the subsequent `goBack()`
+   sequence (one fewer "carried" URL to walk back through since
+   `/timeline` has no query string of its own now).
+
+2. **`flow-sidebar-k125.spec.ts:27` K125-1.** SPEC bug — my own. Fresh
+   locator collision: `page.getByText("Projects")` strict-mode-matched
+   BOTH the sidebar's own "Projects" section toggle AND the FilterBar
+   toolbar's wrapping `<div>`, whose concatenated text content
+   ("ProjectStatusPriorityAssigneeAdd filter") contains "Project" as a
+   substring of that combined string — Playwright's `getByText` matches
+   on any element's full text content, and an ancestor's concatenated
+   text can spuriously match even when no single descendant's own text
+   does. Fixed: scoped to `page.locator("aside")` and switched to the
+   `sidebar-section-toggle-projects` testid instead of a text match.
+
+3. **`flow-sidebar-k125.spec.ts:131` (now `:137`) K125-8.** SPEC bug —
+   my own, a genuine race, reproduced 3/3 without `--trace`, disappeared
+   with `--trace on` (the extra CDP overhead papered over it — a strong
+   flakiness signal, which is why the coordinator's rule to always
+   re-run without assuming a trace run is representative caught it).
+   `sectionOrder()` read the sidebar's section headings immediately
+   after `page.goto()`, racing the async user-settings query that
+   sidebar rendering depends on — an early read returned `[]`. Fixed:
+   added `await expect(page.getByTestId("sidebar-section-toggle-projects")).toBeVisible()`
+   before each of the two `sectionOrder()` reads (before the move, and
+   after the reload), anchoring the read to "the sidebar has actually
+   finished its first render". Re-ran 5/5 green after the fix.
+
+4. **`flow-timeline.spec.ts:1093` TML-12 ("drags snap to whole
+   days").** SPEC bug, NOT mine, NOT related to K125/sidebar work at
+   all (zero diff in `apps/web/src/client/timeline/` from this branch).
+   Ran 3x alone per instruction: consistently red at normal speed,
+   passed once under `--trace on` — same "trace overhead masks a race"
+   pattern as #3. Instrumented with `console.log` to confirm: the drag
+   correctly armed, the label correctly showed the candidate date, and
+   `page.mouse.up()` correctly triggered `setDates.mutate()` — but
+   `expect(seen.calls).toHaveLength(1)` immediately after `mouse.up()`
+   (no wait at all) checked before the resulting `fetch()` had actually
+   reached the network layer the `page.on("request", ...)` listener
+   observes. Confirmed by inserting `page.waitForTimeout(300)`: passed.
+   Every OTHER drag-write test in the same file that checks
+   `seen.calls` right after `mouse.up()` (TML-38, TML-39, the sibling
+   "releasing without crossing a snap boundary" TML-12 test) already
+   has this wait; this one specific test was the one missing it — an
+   omission in the spec, not a behavior change anywhere in the app.
+   Fixed with `await expect.poll(() => seen.calls.length).toBe(1)`
+   (matches the file's existing `expect.poll` idiom two lines below,
+   used for the on-disk write) rather than a bare timeout. Re-ran 5/5
+   green after the fix, ~3s each (no fixed-wait tax).
+
+**Files touched this pass:** `tests/ui/flow-app-shell.spec.ts`,
+`tests/ui/flow-sidebar-k125.spec.ts`, `tests/ui/flow-timeline.spec.ts`.
+No product code changed in this pass — all four were spec-side fixes
+(one superseded-behavior assertion, two of my own races, one
+pre-existing race unrelated to this ticket).
+
+**Gates:** `npx tsc --build` clean; `npx tsc -p tests/ui --noEmit`
+clean; `eslint` on the three touched spec files: 0 errors (9
+pre-existing non-null-assertion warnings in `flow-timeline.spec.ts`,
+none on touched lines). Final combined run: `npx playwright test
+tests/ui/flow-sidebar-k125.spec.ts tests/ui/flow-app-shell.spec.ts
+tests/ui/flow-onboarding.spec.ts tests/ui/flow-timeline.spec.ts
+--workers=2` → **114 passed, exit code 0**.
+
+**To revert.** `git checkout --` the three spec files above against the
+commit before this pass. No product code, schema, or stored data is
+touched by this addendum.
+
 ### A338 · Description-editor drafts persist to sessionStorage (PM call for K124)
 
 **Ticket:** K124's open question (Ken: *"we save in session storage? how

@@ -171,19 +171,33 @@ export type SidebarPins = z.infer<typeof SidebarPinsSchema>;
  *
  * These are the stable identities a `sidebar_groups` entry refers to.
  * The group ids name the top-level sidebar sections; the filter ids
- * name the built-in saved filters inside the "Saved filters" group (they
- * mirror `apps/web/src/client/sidebar/builtinFilters.ts`). Both are
- * kept here so core, CLI and MCP validate against the same catalog the
- * web sidebar renders from.
+ * name the built-in saved filters (they mirror
+ * `apps/web/src/client/sidebar/builtinFilters.ts`). Both are kept here
+ * so core, CLI and MCP validate against the same catalog the web
+ * sidebar renders from.
  *
  * `views` (the List/Board/Timeline switcher) and `saved-filters` are
  * deliberately hideable/reorderable too, per Ken's 2026-09-06 ruling
  * (built-in groups AND filters are both).
+ *
+ * **`filters` (K125, Ken 2026-09-24).** The six `SIDEBAR_FILTER_IDS`
+ * nest under this one group id — "Nest under 'Filters'" — so the
+ * Customize-sidebar panel shows ONE reorderable/hideable row for the
+ * whole set, alongside `projects`/`milestones`/etc., while each built-in
+ * is still individually reorderable/hideable INSIDE it (its id stays in
+ * `SIDEBAR_FILTER_IDS`, ordered/hidden exactly as before — `filters`
+ * adds a group-level entry, it does not replace the per-filter ones).
+ * Hiding `filters` hides every built-in filter from the sidebar
+ * regardless of each one's own `hidden` flag; reordering it moves the
+ * whole block as a unit. CLI/MCP need no change beyond this catalog
+ * addition — `order`/`hidden` are still flat id lists over
+ * `SIDEBAR_ITEM_IDS`, and `filters` is just one more valid id in it.
  */
 export const SIDEBAR_GROUP_IDS = [
   "views",
   "projects",
   "saved-filters",
+  "filters",
   "milestones",
   "sprints",
   "labels",
@@ -191,6 +205,12 @@ export const SIDEBAR_GROUP_IDS = [
 ] as const;
 export type SidebarGroupId = (typeof SIDEBAR_GROUP_IDS)[number];
 
+/**
+ * The built-in filters nested under the `filters` group (K125). Each
+ * id here is ALSO individually reorderable/hideable via the same
+ * `sidebar_groups.order`/`hidden` lists — nesting under one group row
+ * in the Customize-sidebar panel does not collapse their own identity.
+ */
 export const SIDEBAR_FILTER_IDS = [
   "assigned-to-me",
   "reported-by-me",

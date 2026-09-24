@@ -12,8 +12,9 @@ export type CreateViewBody = CreateViewRequest;
 
 /**
  * Creates a saved view via `POST /api/views`. On success the views
- * query is invalidated so the sidebar's "Saved filters" group picks up
- * the new entry without a reload.
+ * query is invalidated so the sidebar's "Saved views" section (K125,
+ * amended Ken 2026-09-24 — was "Saved filters"/"Views") picks up the
+ * new entry without a reload.
  */
 export function useCreateView() {
   const qc = useQueryClient();

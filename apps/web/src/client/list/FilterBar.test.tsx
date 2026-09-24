@@ -945,6 +945,17 @@ describe("FilterBar — toolbar redesign (A210 / K97)", () => {
     expect(screen.queryByTestId("export-csv")).toBeNull();
     expect(screen.queryByTestId("export-json")).toBeNull();
   });
+
+  it("K125: 'Save as view' is 28px (h-8), the toolbar's own control height", async () => {
+    // Ken, 2026-09-24: "Keep bookmark, grow to 28px" — up from the `sm`
+    // IconButton size (24.5px) it shipped at under U23/K30-web. Matches
+    // list, board and timeline: all three render this button through the
+    // one shared `FilterBar`, so a single assertion covers all of them.
+    mountViewActions();
+    const save = await screen.findByTestId("view-actions-save-view");
+    expect(save.className).toMatch(/\bh-8\b/);
+    expect(save.className).not.toMatch(/\bh-7\b/);
+  });
 });
 
 /**
