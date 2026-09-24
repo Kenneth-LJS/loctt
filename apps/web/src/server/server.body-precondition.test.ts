@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createWebApp } from "./server.js";
 
 /**
- * K2's precondition on the body write path, and TSK-16's coalescing.
+ * K2's precondition on the body write path, and TSK-16's one entry per save (K128).
  *
  * Core had `bodyToken`, `BodyWriteOptions.expectedToken` and
  * `StaleBodyWriteError` with **no caller anywhere** — this is the
@@ -152,11 +152,17 @@ describe("POST /api/tasks/:ref/body — the K2 precondition", () => {
 });
 
 /**
- * TSK-16. Coalescing is core's, not the web layer's — the point of
- * this test is to notice if it stops happening, since autosave is
- * what makes it matter (a 30-second burst is ~20 writes).
+ * TSK-16, amended by K128 (Ken, 2026-09-24): every body save records its
+ * own history entry.
+ *
+ * SUPERSEDED: this test asserted "rapid body writes coalesce into one
+ * history entry" — core's 15-minute same-actor merge, made for the old
+ * autosave. It was green and asserted the rule Ken removed: under K124
+ * each write is a deliberate Save, and merging folded Saves minutes
+ * apart into one entry. The web path is covered here so a merge
+ * reintroduced anywhere below the route is noticed.
  */
-describe("TSK-16 — rapid body writes coalesce into one history entry", () => {
+describe("TSK-16 — each body write records its own history entry", () => {
   let root: string;
   let app: ReturnType<typeof createWebApp>;
   let base: string;
@@ -183,7 +189,7 @@ describe("TSK-16 — rapid body writes coalesce into one history entry", () => {
   });
 
   // @verifies TSK-16
-  it("records one body_edited entry for a burst, and the final text is what was sent", async () => {
+  it("records one body_edited entry per write, each with its own before and after", async () => {
     const drafts = ["one", "one two", "one two three", "one two three four"];
     for (const body of drafts) {
       const res = await fetch(`${base}/api/tasks/T-1/body`, {
@@ -195,20 +201,12 @@ describe("TSK-16 — rapid body writes coalesce into one history entry", () => {
     const history = await readHistory(join(root, ".loctt"), taskId);
     const bodyEdits = history.filter(h => h.kind === "body_edited");
 
-    /**
-     * The paired positive, and it is not optional. "Exactly one
-     * body_edited entry" is satisfied trivially by a build that
-     * records **no** history at all — vacuity shape 3, an absence
-     * that gets easier to satisfy the less the app does. So the entry
-     * has to exist, name the right kind, and carry the last draft.
-     */
-    expect(bodyEdits).toHaveLength(1);
-    expect(bodyEdits[0]?.kind).toBe("body_edited");
-    expect(bodyEdits[0]?.after).toContain("one two three four");
-    // Coalescing keeps the *original* pre-burst text as `before`, so
-    // the burst is reconstructible as one change rather than as the
-    // last hop of four.
-    expect(bodyEdits[0]?.before).not.toContain("one two three");
+    // One per write, in order, each hop reconstructible on its own.
+    expect(bodyEdits).toHaveLength(drafts.length);
+    bodyEdits.forEach((entry, i) => {
+      expect(entry.after).toContain(drafts[i]);
+      if (i > 0) expect(entry.before).toBe(bodyEdits[i - 1]?.after);
+    });
 
     // TSK-16's second bullet — the far end, read off disk.
     const raw = await readFile(join(root, ".loctt/tasks", taskId, "task.md"), "utf-8");

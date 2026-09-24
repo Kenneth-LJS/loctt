@@ -1534,6 +1534,10 @@ test.describe("TSK — K33 read-then-edit description", () => {
     const [key] = await tracker.seed([{ title: "Blur keeps" }]);
     if (key === undefined) throw new Error("seed returned no key");
     await tracker.run(["body", key, "--set", "Original.\n"]);
+    // Snapshot the seeded bytes rather than restating them: `loctt body
+    // --set` stores the text plus its own trailing newline, so a literal
+    // that already ends in "\n" lands as "\n\n".
+    const seeded = await bodyOf(tracker.root, key);
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
 
     await enterEdit(page);
@@ -1544,7 +1548,7 @@ test.describe("TSK — K33 read-then-edit description", () => {
     await page.waitForTimeout(2000);
     await expect(bodyRich(page)).toContainText("Appended.");
     await expect(page.getByTestId("body-rendered")).toHaveCount(0);
-    expect(await bodyOf(tracker.root, key)).toBe("Original.\n");
+    expect(await bodyOf(tracker.root, key)).toBe(seeded);
 
     await page.getByTestId("body-editor").getByTestId("body-save").click();
     await expect(page.getByTestId("body-rendered")).toBeVisible();

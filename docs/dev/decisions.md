@@ -22672,6 +22672,19 @@ been saved. Please check and try again.'"* Applied verbatim in
 `error/RegionErrorBoundary.tsx`; the ERR-35 unit test asserts the exact
 string.
 
+### K128 · One history entry per description save; the 15-minute merge is removed
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+Supersedes invariants.md Q18/D4's coalescing rule.
+
+`body_edited` history entries by the same actor merged within a rolling
+15-minute window (capped at 60 minutes), a rule made for the 1.5s
+autosave. Under K124 each write is a deliberate Save, so the merge folded
+two Saves minutes apart into one entry. Asked "one entry per Save
+(remove the 15-minute merge)" or "keep the 15-minute merge", Ken chose
+**one entry per Save**. The merge is removed in core, so every body write
+(web Save, CLI, MCP) records its own entry.
+
 ### A340 · Description editor Save/Cancel: implementation calls under K124 and A338
 
 **Ticket:** K124 (Ken) + A338 (PM) — the description editor saves only on Save · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3

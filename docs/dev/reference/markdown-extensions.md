@@ -154,11 +154,9 @@ tab in `sessionStorage` (`loctt:draft:<taskId>:body`, A338) on a 1.5s idle
 cadence and restored on reload.
 
 Each save sends one `POST /api/tasks/:ref/body` request carrying the base
-token (K2). Consecutive `body_edited` history entries by the same actor
-within a 15-minute window are **coalesced into one entry**
-(`packages/core/src/task/history.ts:12`, `COALESCEABLE_KINDS` at `:24`).
-Under explicit Save that window can merge two deliberate saves minutes
-apart; K124 did not change it (see invariants.md Q18/D4, open).
+token (K2), and records one `body_edited` history entry with its own
+`before` and `after` (K128). There is no merging of entries: the
+15-minute same-actor coalescing that existed for autosave was removed.
 
 The editor surfaces:
 
