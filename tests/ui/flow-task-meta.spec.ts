@@ -1819,7 +1819,7 @@ test.describe("TSK-43 / TSK-55 — immutable key, and a failed inline label", ()
     // Nothing in the More menu edits key or key_history. Copy key is
     // a read, Move rekeys via a project change (TSK-21) — neither is a
     // direct key edit.
-    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
     const itemText = (await menu.getByRole("menuitem").allInnerTexts())
