@@ -26,7 +26,7 @@ import { MilestoneEditDialog } from "../settings/MilestoneEditDialog.tsx";
 import { ProjectEditDialog } from "../settings/ProjectEditDialog.tsx";
 import { RowActions } from "../settings/RowActions.tsx";
 import { DEFAULT_SECTION } from "../settings/sections.ts";
-import { readSidebarGroups, resolveSidebarOrder } from "../settings/sidebarGroups.ts";
+import { readSidebarGroups, resolveGroupedSidebarOrder, resolveSidebarOrder } from "../settings/sidebarGroups.ts";
 import { SidebarGroupsPanel } from "../settings/SidebarGroupsPanel.tsx";
 import { readSidebarPins } from "../settings/sidebarPins.ts";
 import { SprintEditDialog } from "../settings/SprintEditDialog.tsx";
@@ -432,7 +432,18 @@ function MobileSidebarDrawer({
 const GROUP_REGION: Record<SidebarGroupId, string> = {
   views: "the view switcher",
   projects: "the projects list",
-  "saved-filters": "the saved filters",
+  "saved-filters": "the saved views",
+  // K125 (amended, Ken 2026-09-24): "Nest under 'Filters' — One 'Filters'
+  // section you can move as a unit ... They stay together in the
+  // sidebar." The first cut of this ticket made `filters` a real,
+  // independently orderable/hideable stored group id but gave it no
+  // live-sidebar row of its own — moving it in the Customize-sidebar
+  // panel changed nothing visible, exactly the "not connected to the
+  // sidebar" disconnect Ken's original complaint named. Fixed: `filters`
+  // now renders its own section (`FiltersGroup` below), headed
+  // "Filters", at this id's own position in the stored order — moving
+  // or hiding the group in the panel now moves or hides a real section.
+  filters: "the built-in filters",
   milestones: "the milestones list",
   sprints: "the sprints list",
   labels: "the labels list",
@@ -453,7 +464,21 @@ function SidebarGroups({
   // A failed / in-flight settings read is not a customization — fall
   // back to the default (every group, default order, all visible).
   const groups = readSidebarGroups(settings.data?.settings);
-  const resolved = resolveSidebarOrder(groups, [...SIDEBAR_GROUP_IDS]);
+  // K125 gap fix (Ken 2026-09-24): this MUST go through the same
+  // migration-aware resolver the Customize-sidebar panel uses
+  // (`resolveGroupedSidebarOrder`), not the plain `resolveSidebarOrder`.
+  // A pre-K125 stored `order` can only ever have placed an individual
+  // filter id at the top level (there was no `filters` id yet); reading
+  // it with the plain resolver put `filters` at its bare default
+  // catalog slot regardless of where the user's own filters actually
+  // sat, so an existing user's Filters section jumped to an unrelated
+  // position on first load after this ticket. Mapping the grouped rows
+  // back to `{id, hidden}` here keeps the render loop below unchanged.
+  const resolved = resolveGroupedSidebarOrder(groups, [...SIDEBAR_GROUP_IDS]).map(r => (
+    r.kind === "filters-group"
+      ? { id: "filters" as const, hidden: r.hidden }
+      : { id: r.id, hidden: r.hidden }
+  ));
   // Resolved against the group-only catalog, so every id is a group id;
   // the guard narrows `SidebarItemId` to `SidebarGroupId` for TS.
   const isGroupId = (id: string): id is SidebarGroupId =>
@@ -467,7 +492,7 @@ function SidebarGroups({
         return <ProjectsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "saved-filters":
         return (
-          <SavedFiltersGroup
+          <SavedViewsGroup
             collapsed={collapsed}
             currentUserId={currentUserId}
             today={today}
@@ -481,6 +506,8 @@ function SidebarGroups({
         return <LabelsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
       case "recents":
         return <RecentsGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
+      case "filters":
+        return <FiltersGroup collapsed={collapsed} currentUserId={currentUserId} today={today} />;
     }
   };
 
@@ -818,33 +845,27 @@ function ViewIcon({ icon, color }: {
  *    clears the others before setting its own), so the priority order
  *    only matters for a URL edited by hand or bookmarked
  *    mid-transition.
- *  - "All projects" and the view switcher (List/Board/Timeline) both
- *    describe the SAME state — "this view, with nothing else scoped" —
- *    but they are two separate rows in two separate groups, so K118's
- *    "exactly one row lit" needs a tie-breaker between them. Ken's own
- *    framing of the question ("on /list with no other sidebar state,
- *    is 'List' lit, or 'All projects'?") points at the view switcher:
- *    it is called out as "a separate nav axis" from the scoping groups
- *    (Projects, Views, Milestones, …), which reads as the axis that
- *    should win when nothing else claims the row. So `deriveActiveRow`
- *    resolves the nothing-scoped state to `{kind: "view"}`, the view
- *    switcher lights from it directly, and `ProjectsGroup` explicitly
- *    does NOT also light "All projects" from that same identity — see
- *    `allActive` below, which is false whenever `active` is a `view`
- *    row, precisely so the two rows are never both marked even though
- *    they both describe a state that is technically true of each. The
- *    instant a project or filter is picked, `active` changes kind and
- *    neither row reads as selected (though the URL is of course still
- *    /list, /board or /timeline).
+ *  - The view switcher (List/Board/Timeline) lights when nothing else
+ *    is scoped — `deriveActiveRow` resolves the nothing-scoped state to
+ *    `{kind: "view"}` and the switcher lights from it directly. K118
+ *    originally had to arbitrate a tie here against a separate "All
+ *    projects" sidebar row that described the identical state; K125
+ *    (Ken, 2026-09-24) removed that row as a plain duplicate ("take out
+ *    the 'All projects' then? if its duplicate"), so there is no longer
+ *    a second row to reconcile against — "click List" (or Board/
+ *    Timeline) IS how you get back to the unscoped view, per K125.
  *  - /milestones and /milestones/$id, /sprints (the overview links),
  *    and /tasks/$key each select their own single row.
  *
  * Kept OUT of this function: whether List/Board/Timeline carries the
- * filter scope across a switch (`carryFilters`) and whether a
- * project/view click stays on the current view (`viewTo` in
- * `ProjectsGroup`) — both are just what a click's `search`/`to` should
- * produce, not what is lit afterward, and the K118 fix does not touch
- * either (Ken, 2026-09-20, preserved as-is).
+ * filter scope across a switch and whether a project/view click stays
+ * on the current view (`viewTo` in `ProjectsGroup`) — both are just
+ * what a click's `search`/`to` should produce, not what is lit
+ * afterward. `viewTo`/the cross-view scope fix (Ken, 2026-09-20) is
+ * preserved as-is; the view switcher's OWN `search` function is no
+ * longer `carryFilters` — see K125 above `ViewSwitcher`, which
+ * supersedes the 2026-09-20 carry-across for the sidebar-driven params
+ * a view-link click now clears.
  */
 type ActiveRow =
   | { readonly kind: "view"; readonly to: "/list" | "/board" | "/timeline" }
@@ -892,7 +913,8 @@ function sameRow(a: ActiveRow | null, b: ActiveRow | null): boolean {
  * `resolvedBuiltins` is the set of built-ins whose `resolve()` did not
  * return `null` (an inert built-in has nothing to match against), each
  * paired with the exact `q` it resolves to for THIS `ctx` — the same
- * comparison `SavedFiltersGroup` used to do locally.
+ * comparison `FiltersGroup` (formerly part of `SavedFiltersGroup`)
+ * used to do locally.
  */
 /**
  * A csv-codec search param (`project`/`labels`/`sprint`) normally
@@ -974,7 +996,8 @@ function deriveActiveRow(
  *
  * Reads the route itself (pathname + search) and resolves the
  * built-ins against the live workflow config + current user, exactly
- * as `SavedFiltersGroup` already did locally — moved here so
+ * as `FiltersGroup` (formerly part of `SavedFiltersGroup`) already did
+ * locally — moved here so
  * `deriveActiveRow` (route-only, easily unit-tested) stays separate
  * from the query data needed only to resolve a `q` back to a builtin
  * id. Cheap to call from every group: `useWorkflow`/`useRouterState`
@@ -1024,13 +1047,32 @@ function ViewSwitcher({
           to={v.to}
           title={v.label}
           className="no-underline"
-          // Cross-view scope fix (Ken 2026-09-20): switching views carries
-          // the filter scope (q/project/status/…/vf/field.*) so
-          // List↔Board↔Timeline show the same tasks, and drops the
-          // view-private display params (page/sort/dir/zoom/…) so each view
-          // opens at its own default. TanStack's `<Link>` default drops
-          // every param, which is what stripped the scope before.
-          search={carryFilters}
+          // K125 (Ken, 2026-09-24): a view link is a sidebar row like any
+          // other, and K118's rule is "clicking any sidebar row replaces
+          // the whole sidebar-driven state" — so List/Board/Timeline now
+          // CLEAR the sidebar-driven scope (project, saved view, built-in
+          // filter's q, labels, sprint) instead of carrying it, dropping
+          // the ambient sort too (LST-55). This supersedes the
+          // 2026-09-20 cross-view carry-across (`carryFilters`, removed)
+          // for exactly these params: Ken's own framing was "click
+          // 'list'?" as the answer to "how do I get back to all tasks",
+          // so the result of clicking a view link must be the fully
+          // unscoped view.
+          //
+          // The rule we chose for what ELSE carries: nothing does.
+          // `clearFilters` drops every `FILTER_KEYS` entry, which
+          // includes the toolbar facets (status/priority/type/assignee/
+          // reporter/milestone) as well as the sidebar-driven ones —
+          // carrying just the toolbar facets would leave "click List"
+          // still scoped to whatever the toolbar had set, contradicting
+          // K125's "get back to all tasks" framing. So a view-link click
+          // is now a full reset of the query, same as every other
+          // sidebar row, and NOT the same click as the in-view toggle
+          // between List/Board/Timeline that used to preserve a toolbar
+          // search — that carry-across is gone. `viewTo`'s "stay on the
+          // current view for a PROJECT click" (2026-09-20) is untouched;
+          // this only changes the view switcher's OWN links.
+          search={prev => clearSort(clearFilters(prev))}
         >
           <ItemShell
             active={sameRow(active, { kind: "view", to: v.to })}
@@ -1277,18 +1319,6 @@ function ProjectsGroup({
     : filtered;
   const hiddenCount = filtered.length - visible.length;
 
-  // "All projects" describes the same state as the view switcher's own
-  // "nothing scoped" row (see the `ActiveRow` type doc's tie-breaker
-  // discussion) — but K118 wants exactly ONE row lit, and the view
-  // switcher is the one that wins that tie. So "All projects" is never
-  // itself marked active: it is always a plain, clickable row, never
-  // highlighted, regardless of scope. This is a deliberate departure
-  // from the pre-K118 behaviour (`allActive = onView && project
-  // scope empty`), which always highlighted it — that was exactly the
-  // "two rows lit" defect on a bare /list (List AND All projects both
-  // marked) this fix removes.
-  const allActive = false;
-
   return (
     <>
     <SectionShell id="projects" label="Projects" collapsed={collapsed}>
@@ -1299,29 +1329,13 @@ function ProjectsGroup({
         <GroupEmpty collapsed={collapsed}>No projects yet</GroupEmpty>
       ) : null}
 
-      {!failed && items.length > 0 ? (
-        <Link
-          to={viewTo}
-          data-testid="project-all"
-          // Clears the project facet (and only it — the other filters
-          // are left alone, matching a project click). The ambient sort
-          // is dropped too (LST-55). Route-aware `to` keeps a click made
-          // on the board/timeline on that view (cross-view scope fix).
-          search={prev => {
-            const { project: _drop, ...rest } = prev as { project?: unknown };
-            return clearSort(rest);
-          }}
-          title="All projects"
-          className="no-underline"
-        >
-          <ItemShell active={allActive} collapsed={collapsed} title="All projects">
-            {/* No mark (Ken, 2026-09-24): like the project rows below it,
-                an unmarked row closes up rather than reserving a slot
-                (UI-26b). */}
-            {!collapsed ? <span className="truncate">All projects</span> : null}
-          </ItemShell>
-        </Link>
-      ) : null}
+      {/* K125 (Ken, 2026-09-24): the "All projects" row is removed. It
+          described the exact same state as the view switcher's own
+          "nothing scoped" row (see the `ActiveRow` type doc's
+          tie-breaker discussion, now also removed) — Ken: "take out the
+          'All projects' then? if its duplicate". Getting back to all
+          tasks is now "click List" (or Board/Timeline), which K125 also
+          makes drop the project scope — see `ViewSwitcher` below. */}
 
       {searchable ? (
         <TextField
@@ -1547,7 +1561,17 @@ function ProjectRowActions({
   );
 }
 
-function SavedFiltersGroup({
+/**
+ * K125 (amended, Ken 2026-09-24). Was `SavedFiltersGroup` and rendered
+ * BOTH the six built-in filters and saved views under one heading
+ * ("Views") — the built-ins' rendering moved out to `FiltersGroup`
+ * below, in its own section, when the Customize-sidebar panel's
+ * "Filters" row was made to actually move/hide a real section (see the
+ * `GROUP_REGION` comment above). What is left here is saved views only,
+ * so the heading is renamed "Saved views" to match — see the rename
+ * note on `SectionShell`'s call below.
+ */
+function SavedViewsGroup({
   collapsed,
   currentUserId,
   today,
@@ -1557,10 +1581,6 @@ function SavedFiltersGroup({
   today: string;
 }) {
   const views = useViews();
-  const workflow = useWorkflow();
-  const priorities = workflow.data?.priorities;
-  const ctx = { currentUserId, today, priorities };
-  const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
   // K118: the one derivation every group compares against. Previously
   // this group computed its own active state from `search.q`/
   // `search.view` directly (UI-16b) — which is exactly the "each group
@@ -1577,20 +1597,6 @@ function SavedFiltersGroup({
   // the pins panel is what tells the user it went.
   const settings = useUserSettings();
   const pins = readSidebarPins(settings.data?.settings);
-  // SHL-45: the built-in filters can be hidden/reordered by the same
-  // per-user setting. `resolveSidebarOrder` against the filter catalog
-  // gives their order + hidden flags; a hidden filter renders nothing.
-  const filterOrder = resolveSidebarOrder(
-    readSidebarGroups(settings.data?.settings),
-    [...SIDEBAR_FILTER_IDS],
-  );
-  const filterById = new Map(BUILTIN_FILTERS.map(f => [f.id, f]));
-  const orderedFilters = filterOrder
-    .filter(f => !f.hidden)
-    .flatMap(f => {
-      const def = filterById.get(f.id);
-      return def === undefined ? [] : [def];
-    });
   const saveSettings = useUserSettingsMutation();
   const del = useDeleteView();
   // The saved-filter dialog state, mirroring `SavedViewsPanel`'s
@@ -1719,67 +1725,19 @@ function SavedFiltersGroup({
   };
 
   return (
-    <SectionShell id="saved-filters" label="Views" collapsed={collapsed}>
+    // K125 (amended, Ken 2026-09-24): renamed "Views" → "Saved views" so
+    // the sidebar heading matches the Customize-sidebar panel's own row
+    // label for this section (both now say "Saved views"), and matches
+    // the Settings page "Saved views" heading and the "Save as view"
+    // button's own wording — a user can map a customiser row to a
+    // sidebar section by name. The stored group id (`saved-filters`,
+    // SHL-45's original identity) is UNCHANGED — only the human label
+    // moved, so no migration is needed for existing `sidebar_groups`
+    // order/hidden entries.
+    <SectionShell id="saved-filters" label="Saved views" collapsed={collapsed}>
       {failed && (
         <GroupError collapsed={collapsed} error={views.error} onRetry={() => { void views.refetch(); }} />
       )}
-
-      {orderedFilters.map(f => {
-        const search = f.resolve(ctx);
-        const count = counts[f.id]?.count;
-        const countPending = counts[f.id]?.isLoading === true;
-        const countUnavailable = counts[f.id]?.unavailable === true;
-        // Non-resolvable built-ins (a user filter with no current user, or
-        // "High priority" on a scale that cannot express it) render as
-        // inert text, not a link.
-        if (search === null) {
-          return (
-            // SHL-8: says why it is inert and when it arrives, rather
-            // than being silently dead. `aria-disabled` carries the
-            // state to assistive tech, so the dimming is not the only
-            // signal (A11Y-31).
-            <div
-              key={f.id}
-              aria-disabled="true"
-              title={inertReason(f.id, f.label)}
-              className="opacity-50"
-            >
-              <ItemShell collapsed={collapsed} title={f.label}>
-                <span className="flex w-4 shrink-0 justify-center">
-                  <Icon name={f.icon} size={14} />
-                </span>
-                {!collapsed ? <span className="truncate">{f.label}</span> : null}
-              </ItemShell>
-            </div>
-          );
-        }
-        const active = sameRow(activeRow, { kind: "builtin", id: f.id });
-        return (
-          <Link
-            key={f.id}
-            to="/list"
-            search={prev => ({ ...clearSort(clearFilters(prev)), ...search })}
-            title={f.label}
-            className="no-underline"
-          >
-            <ItemShell active={active} collapsed={collapsed} title={f.label}>
-              <span className="flex w-4 shrink-0 justify-center">
-                <Icon name={f.icon} size={14} />
-              </span>
-              {!collapsed ? (
-                <>
-                  <span className="truncate">{f.label}</span>
-                  <Badge
-                    value={count}
-                    pending={countPending}
-                    unavailable={countUnavailable}
-                  />
-                </>
-              ) : null}
-            </ItemShell>
-          </Link>
-        );
-      })}
 
       {userViews.map(v => {
         const active = sameRow(activeRow, { kind: "saved-view", id: v.id });
@@ -2013,6 +1971,132 @@ function SavedFiltersGroup({
             : {})}
         />
       ) : null}
+    </SectionShell>
+  );
+}
+
+/**
+ * The six built-in filters (Assigned to me, Reported by me, Mentions
+ * me, Due this week, Overdue, High priority), in their own section
+ * headed "Filters" (K125, amended Ken 2026-09-24).
+ *
+ * Split out of what was `SavedFiltersGroup` (now `SavedViewsGroup`
+ * above) specifically so the Customize-sidebar panel's "Filters" row —
+ * which the panel already let the user move/hide as one unit — moves
+ * and hides a REAL section here. Before this split, the built-ins
+ * always rendered inside the saved-views section regardless of the
+ * `filters` group's position in the stored top-level order, so
+ * reordering "Filters" in the panel changed nothing visible: Ken's
+ * original complaint about the pre-K125 customiser ("so its not
+ * connected" to the sidebar) reproduced under the very shape the K125
+ * ruling was meant to fix. Now `filters`'s resolved position (from
+ * `resolveSidebarOrder` against the group catalog, same mechanism every
+ * other section uses) is this section's actual position, and hiding
+ * the group here (`filtersGroupHidden`) removes the section entirely —
+ * not just its contents — matching `MilestonesGroup`/`SprintsGroup`/etc.
+ */
+function FiltersGroup({
+  collapsed,
+  currentUserId,
+  today,
+}: {
+  collapsed: boolean;
+  currentUserId: string | null;
+  today: string;
+}) {
+  const workflow = useWorkflow();
+  const priorities = workflow.data?.priorities;
+  const ctx = { currentUserId, today, priorities };
+  const counts = useBuiltinCounts(BUILTIN_FILTERS, ctx);
+  const activeRow = useActiveRow(currentUserId, today);
+  const settings = useUserSettings();
+  // SHL-45: the built-in filters can be hidden/reordered by the same
+  // per-user setting. `resolveSidebarOrder` against the filter catalog
+  // gives their order + hidden flags; a hidden filter renders nothing.
+  const storedGroups = readSidebarGroups(settings.data?.settings);
+  const filterOrder = resolveSidebarOrder(storedGroups, [...SIDEBAR_FILTER_IDS]);
+  const filterById = new Map(BUILTIN_FILTERS.map(f => [f.id, f]));
+  // K125: the "Filters" group in the Customize-sidebar panel is one
+  // hideable unit — hiding it drops the WHOLE section (not just its
+  // contents), regardless of each built-in's own hidden flag (which the
+  // panel still lets the user set independently for when the group is
+  // back on). `SidebarGroups` (the caller) also skips rendering when
+  // `resolveSidebarOrder` marks this group hidden — this local check is
+  // for the per-filter contents WITHIN a visible section.
+  const filtersGroupHidden = (storedGroups.hidden ?? []).includes("filters");
+  const orderedFilters = filtersGroupHidden
+    ? []
+    : filterOrder
+        .filter(f => !f.hidden)
+        .flatMap(f => {
+          const def = filterById.get(f.id);
+          return def === undefined ? [] : [def];
+        });
+
+  // A hidden group still renders nothing, but the SECTION itself must
+  // also not appear — an empty "Filters" heading with no rows would be
+  // a worse signal than no heading at all (SHL-9's carve-out is for a
+  // group with genuinely no entries, not one its own user switched off).
+  if (filtersGroupHidden) return null;
+
+  return (
+    <SectionShell id="filters" label="Filters" collapsed={collapsed}>
+      {orderedFilters.map(f => {
+        const search = f.resolve(ctx);
+        const count = counts[f.id]?.count;
+        const countPending = counts[f.id]?.isLoading === true;
+        const countUnavailable = counts[f.id]?.unavailable === true;
+        // Non-resolvable built-ins (a user filter with no current user, or
+        // "High priority" on a scale that cannot express it) render as
+        // inert text, not a link.
+        if (search === null) {
+          return (
+            // SHL-8: says why it is inert and when it arrives, rather
+            // than being silently dead. `aria-disabled` carries the
+            // state to assistive tech, so the dimming is not the only
+            // signal (A11Y-31).
+            <div
+              key={f.id}
+              aria-disabled="true"
+              title={inertReason(f.id, f.label)}
+              className="opacity-50"
+            >
+              <ItemShell collapsed={collapsed} title={f.label}>
+                <span className="flex w-4 shrink-0 justify-center">
+                  <Icon name={f.icon} size={14} />
+                </span>
+                {!collapsed ? <span className="truncate">{f.label}</span> : null}
+              </ItemShell>
+            </div>
+          );
+        }
+        const active = sameRow(activeRow, { kind: "builtin", id: f.id });
+        return (
+          <Link
+            key={f.id}
+            to="/list"
+            search={prev => ({ ...clearSort(clearFilters(prev)), ...search })}
+            title={f.label}
+            className="no-underline"
+          >
+            <ItemShell active={active} collapsed={collapsed} title={f.label}>
+              <span className="flex w-4 shrink-0 justify-center">
+                <Icon name={f.icon} size={14} />
+              </span>
+              {!collapsed ? (
+                <>
+                  <span className="truncate">{f.label}</span>
+                  <Badge
+                    value={count}
+                    pending={countPending}
+                    unavailable={countUnavailable}
+                  />
+                </>
+              ) : null}
+            </ItemShell>
+          </Link>
+        );
+      })}
     </SectionShell>
   );
 }
@@ -2743,38 +2827,14 @@ function clearFilters(prev: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * The filter keys that DEFINE the scope and must survive a view switch,
- * so List↔Board↔Timeline show the same set of tasks (the cross-view
- * scope fix, Ken 2026-09-20). Sourced from {@link FILTER_KEYS} so the
- * allow-list cannot drift from the built-in filters, plus the filter
- * params that live outside it: `labels_match` (the label AND/OR mode), `vf` (the visible-filter set),
- * and any `field.<key>` custom-enum filter. View-private display params
- * (page/sort/dir/edit and the timeline's zoom/grouping/arrows) are
- * dropped, so each view falls back to its own default for what it owns.
+ * K125 (Ken, 2026-09-24) removed the view switcher's carry-across:
+ * `CARRY_FILTER_KEYS` and `carryFilters` (the 2026-09-20 cross-view
+ * scope fix for List/Board/Timeline's OWN links) are gone — a view-link
+ * click now clears the sidebar-driven scope like every other sidebar
+ * row (see the K125 comment above `ViewSwitcher`). The `viewTo`
+ * mechanism in `ProjectsGroup` (a PROJECT click staying on the current
+ * view) is a separate thing and is preserved.
  */
-const CARRY_FILTER_KEYS = [
-  ...FILTER_KEYS, "labels_match", "vf",
-] as const;
-
-/**
- * Keep only the scope-defining filter params when switching between the
- * List, Board and Timeline views — dropping every view-private display
- * param (page/sort/dir/edit and the timeline's zoom/grouping/arrows).
- *
- * TanStack Router's `<Link>` default drops ALL search params, so a plain
- * view-switcher link stripped the user's filters and project scope on
- * every switch. This carries them across while leaving each view free to
- * fall back to its own default for the display params it owns.
- */
-function carryFilters(prev: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(prev)) {
-    if ((CARRY_FILTER_KEYS as readonly string[]).includes(k) || k.startsWith("field.")) {
-      out[k] = v;
-    }
-  }
-  return out;
-}
 
 /** The three main-pane views the filter scope carries between. */
 const VIEW_PATHS = ["/list", "/board", "/timeline"] as const;

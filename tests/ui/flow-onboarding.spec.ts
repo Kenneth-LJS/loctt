@@ -155,7 +155,12 @@ test("an uninitialized directory routes to the wizard on every route, never to a
       // ONB-1: the sidebar's task-bearing groups are absent — no count
       // badge renders a `0` implying a tracker exists.
       await expect(page.getByLabel("Toggle sidebar")).toHaveCount(0);
-      await expect(page.getByText("Saved filters")).toHaveCount(0);
+      // "Saved filters" was already stale (the sidebar has said "Views"
+      // there since K102); K125 (amended, Ken 2026-09-24) split that
+      // section into "Filters" (built-ins) and "Saved views" (saved
+      // views) — checking both real current headings' absence.
+      await expect(page.getByText("Filters")).toHaveCount(0);
+      await expect(page.getByText("Saved views")).toHaveCount(0);
       await expect(page.getByText("Recently viewed")).toHaveCount(0);
     }
 

@@ -18,7 +18,11 @@ the list view's own empty/loading behaviour beyond first load is
 - `GET /api/info` returns `exists: false` and the app lands on `/init`, whatever path was requested.
 - The screen's heading names the situation in the user's terms — a tracker has not been set up in this directory — rather than reporting a task count.
 - The screen does **not** render the list table, an empty-list illustration, "No tasks found", or "0 tasks". An uninitialized directory and an empty tracker are visibly different screens.
-- The sidebar's task-bearing groups (Saved filters, Milestones, Sprints, Labels, Recently viewed) are either absent or visibly inert; no count badge renders a `0` that implies a tracker exists.
+- The sidebar's task-bearing groups (Filters, Saved views, Milestones,
+  Sprints, Labels, Recently viewed — K125, amended Ken 2026-09-24: the
+  built-ins and saved views used to share one "Saved filters"/"Views"
+  section, now split in two) are either absent or visibly inert; no
+  count badge renders a `0` that implies a tracker exists.
 
 ### ONB-2 · M4 · blocker · P4 P6
 **The init screen shows which directory it is about to initialize.** Continue from ONB-1.
@@ -73,7 +77,10 @@ the list view's own empty/loading behaviour beyond first load is
 ### ONB-9 · M1 · blocker · P6 P7
 **On an empty tracker the sidebar groups render with zero counts, not absent.** Same state as ONB-8.
 
-- Views (List / Board / Timeline), Projects, Saved filters, Milestones, Sprints, Labels, and Recently viewed all render as groups.
+- Views (List / Board / Timeline), Projects, Filters, Saved views,
+  Milestones, Sprints, Labels, and Recently viewed all render as groups
+  (K125, amended Ken 2026-09-24: Filters and Saved views were one
+  combined "Saved filters"/"Views" section before this split).
 - Groups whose underlying config is empty show an explicit empty affordance inside the group (e.g. "No labels yet") rather than the group vanishing.
 - The five live built-in saved filters render with a count badge of `0` — a real zero, not a blank, not a dash, not the badge omitted.
 - A user cannot mistake "this tracker has nothing in it" for "this feature is missing".

@@ -756,9 +756,13 @@ export function FilterBar({
               <Tooltip label="Save as view" testId="view-actions-save-view-tip">
                 <IconButton
                   variant="secondary"
-                  // `sm` (24.5px), matching the board's "+ Add task" and
-                  // the ⋯ beside it.
-                  size="sm"
+                  // K125 (Ken, 2026-09-24): "Keep bookmark, grow to
+                  // 28px" — `md` (h-8/28px), the toolbar's own control
+                  // height, up from `sm` (24.5px). The ⋯ beside it stays
+                  // `sm` (Ken did not ask for it to grow, and matching it
+                  // to a `secondary`/ghost row height difference is a
+                  // separate call this ticket doesn't make).
+                  size="md"
                   aria-label="Save as view"
                   testId="view-actions-save-view"
                   onClick={() => { setSaveOpen(true); }}

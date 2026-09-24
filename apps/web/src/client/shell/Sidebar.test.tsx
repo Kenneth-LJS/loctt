@@ -292,9 +292,16 @@ describe("Sidebar", () => {
     await renderSidebarAt("/list");
 
     // Group headers
-    // "Views" was "Saved filters" — renamed per the View-vs-Filter vocab
-    // (K102): a saved thing is a "view".
-    for (const label of ["Projects", "Views", "Milestones", "Sprints", "Labels", "Recently viewed"]) {
+    // "Saved views" was "Views", was "Saved filters" — K102 renamed
+    // "Saved filters" → "Views" (a saved thing is a "view"); K125
+    // (amended, Ken 2026-09-24) renamed it again to "Saved views" once
+    // the built-in filters got their OWN "Filters" section (see below) —
+    // "Views" no longer described only saved views once "Filters" was a
+    // sibling section, and the Customize-sidebar panel needed the same
+    // label to make the connection between the two surfaces visible.
+    for (const label of [
+      "Projects", "Filters", "Saved views", "Milestones", "Sprints", "Labels", "Recently viewed",
+    ]) {
       expect(await screen.findByText(label)).toBeTruthy();
     }
     // Project items
@@ -514,19 +521,26 @@ describe("Sidebar Views section active state (UI-16b)", () => {
     const savedView = (screen.getByText("My open bugs")).closest("a") as HTMLElement;
     expect(savedView.getAttribute("aria-current")).toBeNull();
 
-    // Only one row within the Views section (built-ins + saved views) is
-    // active at a time. Scoped to that section's body — the List/Board/
-    // Timeline switcher above it is independently active on `/list` and
-    // is not what this assertion is about.
+    // Only one row within the Filters section is active at a time.
+    // Scoped to that section's body — the List/Board/Timeline switcher
+    // above it is independently active on `/list` and is not what this
+    // assertion is about.
+    //
+    // K125 (amended, Ken 2026-09-24): built-ins moved OUT of the
+    // "sidebar-section-saved-filters" body (now saved views only, headed
+    // "Saved views") into their own "sidebar-section-filters" body
+    // (headed "Filters") — was scoped to `saved-filters` when both
+    // rendered together under one heading.
+    //
     // Scoped to `ItemShell`'s own `data-active` marker (`[data-active]`),
     // not `[aria-current="page"]`: TanStack Router's `<Link>` ALSO sets
     // `aria-current="page"` on its own `<a>` for an exact-match `to`, so a
     // plain `aria-current` query double-counts one active row (the `<a>`
     // and the `ItemShell` `<span>` inside it). `data-active` is the
     // component's own state and appears exactly once per active row.
-    const viewsSection = document.getElementById("sidebar-section-saved-filters");
-    expect(viewsSection).not.toBeNull();
-    const activeRows = viewsSection?.querySelectorAll("[data-active]");
+    const filtersSection = document.getElementById("sidebar-section-filters");
+    expect(filtersSection).not.toBeNull();
+    const activeRows = filtersSection?.querySelectorAll("[data-active]");
     expect(activeRows?.length).toBe(1);
   });
 });
@@ -1035,7 +1049,9 @@ describe("Sidebar with a saved view deleted from queries.yaml", () => {
 
     FAIL_VIEWS = true;
     await renderSidebarAt("/list");
-    await screen.findByText("Views"); // renamed from "Saved filters" (K102 vocab)
+    // "Saved views" — was "Views" (K102 vocab), renamed again by K125
+    // (amended, Ken 2026-09-24) once "Filters" became its own section.
+    await screen.findByText("Saved views");
     expect(screen.queryByText(/was removed/)).toBeNull();
   });
 });
@@ -1072,16 +1088,89 @@ describe("Sidebar groups customization (SHL-45)", () => {
     expect(screen.queryByText(/No labels yet/)).toBeNull();
   });
 
-  it("hides a built-in filter without removing the Views group", async () => {
-    // @verifies SHL-45 — built-in filters are hideable too
+  it("hides a built-in filter without removing the Filters section", async () => {
+    // @verifies SHL-45 — built-in filters are hideable too.
+    // Amended (K125, Ken 2026-09-24): the built-ins now render in their
+    // own "Filters" section (was "Views", the combined built-ins +
+    // saved-views section, before the K125 split above).
     SETTINGS = { sidebar_groups: { hidden: ["overdue"] } };
     await renderSidebarAt("/list");
     await waitFor(() => {
       expect(screen.queryByText("Overdue")).toBeNull();
     });
-    screen.getByText("Views"); // renamed from "Saved filters" (K102 vocab)
+    screen.getByText("Filters");
     // A non-hidden filter still shows.
     screen.getByText("Assigned to me");
+  });
+
+  it("K125 (amended, Ken 2026-09-24): moving 'filters' in the stored order moves the rendered Filters section, connecting the customiser to the sidebar", async () => {
+    // Ken's fix ruling, verbatim: "Nest under 'Filters' — One 'Filters'
+    // section you can move as a unit ... They stay together in the
+    // sidebar." The first cut of this ticket gave `filters` a real
+    // stored identity but no live-sidebar row of its own — moving it in
+    // the Customize-sidebar panel changed nothing visible, which was
+    // the exact "not connected to the sidebar" complaint Ken's original
+    // ticket raised. This is the literal round-trip: an explicit
+    // `filters` position in the stored order must move where the
+    // "Filters" section (heading + its built-ins) renders relative to
+    // the other sections — same mechanism every other section already
+    // uses (`resolveSidebarOrder` against the group catalog).
+    SETTINGS = { sidebar_groups: { order: ["filters", "projects", "labels"] } };
+    await renderSidebarAt("/list");
+    await waitFor(() => {
+      const filtersHeader = screen.getByText("Filters");
+      const projectsHeader = screen.getByText("Projects");
+      expect(
+        filtersHeader.compareDocumentPosition(projectsHeader)
+          & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+    screen.getByText("Assigned to me");
+    // The section heading is the real label, not the raw stored id.
+    expect(screen.queryByText("filters")).toBeNull();
+  });
+
+  it("K125 gap fix: a pre-migration flat stored order (a filter id at the top level, no 'filters' entry) still places the live Filters section at the migrated position", async () => {
+    // Regression guard for a bug caught live: the panel's
+    // `resolveGroupedSidebarOrder` already ran this migration, but
+    // `SidebarGroups` (the LIVE sidebar) called the plain
+    // `resolveSidebarOrder` directly and so never migrated — an
+    // existing user's stored order (from before `filters` existed,
+    // with an individual filter id like "overdue" at the top level)
+    // put the live Filters section at its bare DEFAULT catalog slot
+    // instead of where the user's own filter position implied,
+    // discovered by describing a real tracker's sidebar order live.
+    SETTINGS = { sidebar_groups: { order: ["overdue", "projects", "labels"] } };
+    await renderSidebarAt("/list");
+    await waitFor(() => {
+      const filtersHeader = screen.getByText("Filters");
+      const projectsHeader = screen.getByText("Projects");
+      // "overdue" led the pre-migration order, so the migrated Filters
+      // section leads too — same rule `resolveGroupedSidebarOrder`
+      // documents (A339): spliced in at the first filter id's own
+      // position.
+      expect(
+        filtersHeader.compareDocumentPosition(projectsHeader)
+          & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
+
+  it("K125: hiding the 'filters' group removes the whole Filters section, not just its rows", async () => {
+    // The six built-ins now live in their own "Filters" section; hiding
+    // that group must drop the SECTION (heading included) — same as
+    // every other hidden group (Milestones/Sprints/etc.) — not just
+    // empty out its contents under a heading with nothing beneath it.
+    SETTINGS = { sidebar_groups: { hidden: ["filters"] } };
+    await renderSidebarAt("/list");
+    await waitFor(() => {
+      expect(screen.queryByText("Overdue")).toBeNull();
+    });
+    expect(screen.queryByText("Assigned to me")).toBeNull();
+    expect(screen.queryByText("Due this week")).toBeNull();
+    expect(screen.queryByText("Filters")).toBeNull();
+    // The Saved views section still renders — only Filters is gone.
+    screen.getByText("Saved views");
   });
 
   it("falls back to the default (all groups) when the setting is corrupt", async () => {
@@ -1605,10 +1694,14 @@ describe("Sidebar strips the ambient sort from nav hrefs (LST-55)", () => {
     expect(href).not.toContain("dir=");
   });
 
-  it("the All-projects link drops sort and dir", async () => {
-    // @verifies LST-55
+  it("the List view-switcher link drops sort and dir", async () => {
+    // @verifies LST-55 — was "the All-projects link drops sort and dir"
+    // before K125 removed that row (Ken, 2026-09-24: it was a plain
+    // duplicate of the view switcher's own "nothing scoped" state).
+    // The same LST-55 guarantee now applies to the row that replaced it
+    // as the way back to an unscoped list.
     await renderSidebarAt("/list", AMBIENT);
-    const href = hrefOf(await screen.findByText("All projects"));
+    const href = hrefOf(await screen.findByText("List"));
     expect(href).not.toContain("sort=");
     expect(href).not.toContain("dir=");
   });
@@ -1647,11 +1740,19 @@ describe("Sidebar strips the ambient sort from nav hrefs (LST-55)", () => {
 /**
  * @verifies TML-57
  *
- * The cross-view scope fix (Ken 2026-09-20): List/Board/Timeline share
- * the filter scope. The view switcher must CARRY the filter keys and DROP
- * the view-private display params when moving between views, and a project
- * click made on the board/timeline must stay on that view rather than
- * jumping to /list.
+ * Amended (K125, Ken 2026-09-24). The 2026-09-20 cross-view scope fix
+ * made the view switcher CARRY the filter keys across List/Board/
+ * Timeline; K125 supersedes that carry-across for the view switcher's
+ * OWN links — Ken: told that List/Board/Timeline carried the project
+ * scope and asked how to get back to all tasks, he said *"click
+ * 'list'?"*, so a view-link click now clears the sidebar-driven scope
+ * (project, saved view, built-in filter's q, labels, sprint) like every
+ * other sidebar row (K118), same as `clearFilters`. This suite now
+ * covers the CLEARING behaviour for the view switcher's own links; the
+ * "project click stays on the current view" half of the 2026-09-20 fix
+ * (`viewTo` in `ProjectsGroup`) is untouched and still verified below.
+ * "All projects" is removed by K125 (a plain duplicate of the view
+ * switcher's own "nothing scoped" row); its two mentions here are gone.
  *
  * These need the sibling view routes registered so TanStack can produce
  * real hrefs for `to="/board"`/`to="/timeline"` and so the Sidebar can
@@ -1659,7 +1760,7 @@ describe("Sidebar strips the ambient sort from nav hrefs (LST-55)", () => {
  * The `<Link>`s compute their href from the current search + pathname, so
  * reading each href proves the behaviour without clicking through.
  */
-describe("Sidebar cross-view filter scope (2026-09-20)", () => {
+describe("Sidebar cross-view filter scope (2026-09-20, amended K125)", () => {
   async function renderShellAt(pathname: string, search: Record<string, unknown> = {}) {
     if (priorQc) {
       await priorQc.cancelQueries();
@@ -1704,28 +1805,37 @@ describe("Sidebar cross-view filter scope (2026-09-20)", () => {
 
   const hrefOf = (el: HTMLElement): string => el.closest("a")?.getAttribute("href") ?? "";
 
-  it("the view switcher carries filter keys to the sibling view", async () => {
+  it("K125: the view switcher CLEARS the sidebar-driven scope to the sibling view (was: carries it)", async () => {
+    // Amended (K125, Ken 2026-09-24): this test used to assert the
+    // OPPOSITE — that Board/Timeline kept status/project/labels from
+    // /list. That was the 2026-09-20 carry-across K125 supersedes for
+    // the view switcher's own links: "click List" is now how you get
+    // back to all tasks, so the destination must be unscoped. The view
+    // switcher now runs the exact same `clearFilters`/`clearSort` pair
+    // every other sidebar row uses, so — like a project or built-in
+    // click — an un-honoured stray param (`archived`) or a display
+    // param neither function targets is left alone; only FILTER_KEYS
+    // and SORT_KEYS are guaranteed dropped.
     await renderShellAt("/list", {
       status: "in_progress",
       project: "p_api",
       labels: "l_fe",
-      archived: "all",
     });
-    // The Board and Timeline switcher links keep the scope. (Decoded and
-    // matched by value, since this harness JSON-encodes array params
-    // rather than using the app's CSV serializer.)
     for (const name of ["Board", "Timeline"]) {
       const href = decodeURIComponent(hrefOf(await screen.findByText(name)));
-      expect(href, `${name} keeps status`).toContain("in_progress");
-      expect(href, `${name} keeps project`).toContain("p_api");
-      expect(href, `${name} keeps labels`).toContain("l_fe");
-      // K121 #1: a stray `archived` param is not a scope any view honours,
-      // so the switcher does not carry it.
-      expect(href, `${name} drops archived`).not.toContain("archived");
+      expect(href, `${name} drops status`).not.toContain("in_progress");
+      expect(href, `${name} drops project`).not.toContain("p_api");
+      expect(href, `${name} drops labels`).not.toContain("l_fe");
     }
   });
 
-  it("the view switcher drops view-private params (page/sort/dir/zoom/grouping/arrows)", async () => {
+  it("K125: the view switcher drops the ambient sort and the filter scope (page/zoom/grouping/arrows are not filters and are left alone, like any other sidebar row)", async () => {
+    // Amended (K125, Ken 2026-09-24): was "…keeps the filter, drops the
+    // display state" — the filter is no longer kept either; see above.
+    // page/zoom/grouping/arrows are outside `FILTER_KEYS`/`SORT_KEYS`
+    // (clearFilters/clearSort's allow-lists), so — same as a project or
+    // built-in-filter click — they are NOT stripped by this change; only
+    // sort/dir and the filter-bearing keys are.
     await renderShellAt("/timeline", {
       status: "in_progress",
       page: "3",
@@ -1735,31 +1845,47 @@ describe("Sidebar cross-view filter scope (2026-09-20)", () => {
       grouping: "assignee",
       arrows: "true",
     });
-    // Switching to the List keeps the filter, drops the display state.
     const href = decodeURIComponent(hrefOf(await screen.findByText("List")));
-    expect(href).toContain("in_progress");
-    for (const key of ["page=", "sort=", "dir=", "zoom=", "grouping=", "arrows="]) {
+    expect(href).not.toContain("in_progress");
+    for (const key of ["sort=", "dir="]) {
       expect(href, `List drops ${key}`).not.toContain(key);
+    }
+    for (const key of ["page=", "zoom=", "grouping=", "arrows="]) {
+      expect(href, `List leaves ${key} alone (not a filter key)`).toContain(key);
     }
   });
 
   it("a project link on /board stays on /board and keeps display state", async () => {
     await renderShellAt("/board", { status: "in_progress" });
-    // The project link (and All-projects) target /board, not /list.
+    // The project link targets /board, not /list (2026-09-20, preserved
+    // by K125 — only the VIEW switcher's own links changed).
     const web = hrefOf(await screen.findByText("Web"));
     expect(web.startsWith("/board")).toBe(true);
     // The project scope rides along (this test harness JSON-encodes the
     // array param rather than CSV; the point is the value is present and
     // the destination is /board, not /list).
     expect(decodeURIComponent(web)).toContain("p_web");
-    const all = hrefOf(await screen.findByText("All projects"));
-    expect(all.startsWith("/board")).toBe(true);
   });
 
   it("a project link on /list still targets /list", async () => {
     await renderShellAt("/list");
     const web = hrefOf(await screen.findByText("Web"));
     expect(web.startsWith("/list")).toBe(true);
+  });
+
+  it("K125: a project scope is cleared from the URL by clicking List", async () => {
+    // The literal round-trip Ken's own framing describes: scope a
+    // project, then click List — the URL must carry no project.
+    await renderShellAt("/list", { project: "p_api" });
+    const href = decodeURIComponent(hrefOf(await screen.findByText("List")));
+    expect(href).not.toContain("p_api");
+    expect(href).not.toContain("project");
+  });
+
+  it("K125: on a plain /list the List row is lit (deriveActiveRow stays consistent)", async () => {
+    await renderShellAt("/list");
+    const list = (await screen.findByText("List")).closest("a");
+    expect(list?.querySelector("[data-active]")).not.toBeNull();
   });
 
   it("a milestone link targets the milestone detail page (U14 merge)", async () => {
@@ -1787,13 +1913,13 @@ describe("Sidebar cross-view filter scope (2026-09-20)", () => {
  * unified icon set, not hardcoded hex or an ad-hoc star.
  */
 describe("Sidebar tokens and icon glyphs (S-11, S-8)", () => {
-  it("neither All projects nor a project row draws a dot", async () => {
-    // Ken, 2026-09-24: "we dont need the dot on the 'all projects'". The
-    // project item dots went earlier (UI-20); the anchor row's neutral
-    // dot was the last constant mark in the group.
+  it("a project row draws no dot", async () => {
+    // Ken, 2026-09-24 (UI-20/UI-26b): the project item dots went earlier;
+    // this used to also assert the "All projects" anchor row drew no
+    // dot, but K125 removed that row entirely (a plain duplicate of the
+    // view switcher's own "nothing scoped" row) — nothing left to assert
+    // there.
     await renderSidebarAt("/list");
-    const allProjects = (await screen.findByText("All projects")).closest("a") as HTMLElement;
-    expect(allProjects.querySelector("span[style]")).toBeNull();
     const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
     expect(web.querySelector("span[style]")).toBeNull();
   });
@@ -2265,7 +2391,9 @@ describe("Sidebar point-of-use editing (K100)", () => {
     // test that only checked the marked rows would stay green if the
     // empty slots came back.
     const unmarkedRows = [
-      "All projects", // anchor row — dot dropped (Ken, 2026-09-24)
+      // "All projects" removed entirely by K125 (Ken, 2026-09-24) — was
+      // listed here as "anchor row — dot dropped"; the row itself is
+      // gone, so there is nothing left to assert.
       "Web", // project item — dot dropped (UI-26b)
       "All milestones", // anchor row — flag glyph dropped (UI-20)
       "v1.0", // milestone item

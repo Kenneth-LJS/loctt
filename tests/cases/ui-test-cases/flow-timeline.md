@@ -438,13 +438,21 @@ TML-8, TML-29, TML-41).
 - The filter is reflected in the URL so the filtered timeline is shareable, and the server is what narrowed the result (the API returns the filtered set), not the client hiding rows from a full response.
 
 ### TML-57 · M3 · major · P2 P10
-**Switching between List, Board and Timeline carries the filter scope and drops each view's private display params.** From a filtered, project-scoped list.
+**Switching between List, Board and Timeline clears the sidebar-driven scope and drops each view's private display params.** From a filtered, project-scoped list.
 
-- The view switcher links to Board and Timeline keep the scope params (`q`, `project`, `status`, `assignee`, `milestone`, `sprint`, `priority`, `task_type`, `label`, `vf`, `field.*`). An `archived` param is not scope and is not carried (K121 #1: no URL parameter shows archived tasks).
-- The same switch drops the view-private display params, so each view opens at its own default: the list's `page`/`sort`/`dir` and the timeline's `zoom`/`grouping`/`arrows` do not ride across.
-- A project (or saved-filter) click made while on the Board or Timeline stays on that view rather than jumping to the list.
+- The view switcher links to Board and Timeline DROP the scope params (`q`, `project`, `status`, `assignee`, `milestone`, `sprint`, `priority`, `task_type`, `label`, `vf`, `field.*`) — clicking a view link is a sidebar row like any other, and K118's rule is "clicking any sidebar row replaces the whole sidebar-driven state" (K125).
+- The same switch drops the view-private display params, so each view opens at its own default: the list's `page`/`sort`/`dir` and the timeline's `zoom`/`grouping`/`arrows` do not ride across either.
+- A project (or saved-filter) click made while on the Board or Timeline stays on that view rather than jumping to the list — this half is UNCHANGED by K125 (it is `viewTo` in `ProjectsGroup`, not the view switcher's own links).
 
-> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* `archived` was in the carried list; the list no longer reads it, so the switcher drops it.
+> **Amended (K125, Ken 2026-09-24).** Was "…carries the filter scope…"
+> (the 2026-09-20 cross-view scope fix, keeping `q`/`project`/`status`/etc.
+> across a List/Board/Timeline switch). Ken, told that List/Board/Timeline
+> carried the project scope and asked how to get back to all tasks, said
+> *"click 'list'?"* — so a view-link click must now produce the fully
+> UNSCOPED view, not a re-scoped one. This supersedes the carry-across
+> for the view switcher's OWN links only.
+>
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* `archived` was in the (then-)carried list; the list no longer reads it regardless.
 
 ### TML-58 · M3 · major · P3 P10
 **The full group-by set is reachable through a searchable picker, including a single-value enum custom field.** A workspace with enough single-value enum custom fields that the picker's list crosses the search threshold; two dated tasks carry different values of one such field ("Area").
