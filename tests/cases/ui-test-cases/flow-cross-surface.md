@@ -96,20 +96,24 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 ### Body editing
 
 ### XS-11 · M2 · blocker · P1
-**The body editor fetches the latest body before writing.** Open `/tasks/T-12`, switch to edit mode, wait, then run `loctt body T-12 --append $'\n\nNote from CLI'` before triggering the auto-save.
+**The body editor fetches the latest body before writing.** Open `/tasks/T-12`, switch to edit mode, wait, then run `loctt body T-12 --append $'\n\nNote from CLI'` before pressing Save.
 
 - The save request is preceded by a read of the current body — observable as a GET (or a conditional write carrying a base version) immediately before the write.
 - The CLI's appended paragraph is not lost.
 - If the two edits do not overlap, the result contains both the user's text and the CLI's paragraph; the user is told a merge happened rather than it being silent.
 
+> **Amended (K124, Ken 2026-09-24).** "Before triggering the auto-save" became "before pressing Save": the description saves only on Save (TSK-15). An edit can now stay open for minutes, across a window refocus that refetches the task, so the base version the write carries must survive that refetch.
+
 ### XS-12 · M2 · blocker · P1 P4
-**A genuine body conflict shows both versions and asks which to keep.** Open the body editor, edit the same region the CLI is about to rewrite, then run `loctt body T-12 --set "Completely different text"` and let the auto-save fire.
+**A genuine body conflict shows both versions and asks which to keep.** Open the body editor, edit the same region the CLI is about to rewrite, then run `loctt body T-12 --set "Completely different text"` and press Save.
 
 - The UI does not write. It presents a conflict resolution surface naming both sides — the version now on disk and the version in the editor.
 - Both texts are shown in full (or scrollable in full), not summarized, not diff-only-with-no-way-to-see-the-original.
 - The user is offered explicit choices: keep mine, keep theirs, or keep both — with the outcome of each stated before clicking.
 - Whichever choice is made, the resulting file matches exactly what the choice promised, verified with `loctt body T-12`.
 - Dismissing the conflict without choosing does **not** write. The editor content is retained so nothing the user typed is lost.
+
+> **Amended (K124, Ken 2026-09-24).** "Let the auto-save fire" became "press Save" (TSK-15).
 
 ### XS-13 · M2 · blocker · P1 P4
 **A conflict that arrives between the pre-fetch and the write is caught, not lost.** Arrange the CLI write to land in the window after the UI's pre-fetch and before its PUT.
@@ -120,11 +124,13 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - If the design accepts a residual race window, it is documented with its size and the failure mode is last-writer-wins-with-notification, never last-writer-wins-silently.
 
 ### XS-14 · M2 · major · P1
-**Body auto-save does not resurrect deleted content after a refetch.** Type into the body editor, let auto-save fire, then run `loctt body T-12 --set ""` in the CLI and let the next auto-save cycle run with no further typing.
+**A body save does not resurrect deleted content after a refetch.** Type into the body editor and Save, then run `loctt body T-12 --set ""` in the CLI and wait with no further typing.
 
 - An idle editor with no new keystrokes does not re-write its stale buffer over the CLI's change.
-- Auto-save is dirty-flag driven — no user input since the last save means no write.
+- Saving is dirty-flag driven — no change since the last save means no write, even when Save is pressed.
 - The editor either adopts the CLI's empty body or raises the conflict surface; it does not silently restore the old text.
+
+> **Amended (K124, Ken 2026-09-24).** There is no auto-save cycle any more (TSK-15); the case now waits with no typing, and "dirty-flag driven" applies to Save.
 
 ### Query and view parity
 

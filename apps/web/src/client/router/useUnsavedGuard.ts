@@ -1,25 +1,25 @@
 /**
- * In-app navigation guard for an unsaved editor buffer (A246).
+ * In-app navigation guard for an editor with unsaved changes (A246,
+ * reshaped by K124).
  *
  * `beforeunload` (in `useBodyAutosave`) covers tab-close and reload, but
  * it cannot see a client-side route change — TanStack Router never
  * unloads the document, it swaps the matched route and tears the old
- * one's tree down. So a `router.navigate` / `<Link>` click from the task
- * detail to another view unmounted the body editor with no `beforeunload`
- * firing; the unmount flush is the only thing that runs, and if that
- * flush *fails* the text is gone with nowhere to show the error.
+ * one's tree down.
  *
  * This hook closes that gap with the router's own `useBlocker`: while the
- * editor has unsaved work, an in-app navigation is intercepted, the
- * buffer is flushed, and the navigation proceeds ONLY if the flush left
- * the editor clean. If the write failed (or a conflict is open), the
- * navigation is blocked and the editor stays mounted showing its existing
- * failed / conflict UI (SaveIndicator, BodyConflictDialog) — the same
- * outcome `beforeunload` produces for a tab-close, now for in-app nav.
+ * editor has unsaved work, a navigation to another page is intercepted
+ * and `onNavigateAway` decides whether it proceeds. Since K124 the
+ * description editor answers by asking the user ("Discard changes?"):
+ * Discard lets the navigation through, Keep editing blocks it. Before
+ * K124 it answered by flushing an autosave (A246); nothing is written on
+ * navigation any more.
  *
- * This is not a "cancel": it extends K96's "every exit keeps the text" to
- * the in-app-nav exit. A clean flush lets the navigation through; only a
- * refused write holds the editor open so the text is not lost silently.
+ * Only a change of PAGE is intercepted. The task page records its
+ * activity tab and a scroll-to anchor in the URL, and switching the
+ * Comments/Activity tab while the description is open must not prompt a
+ * discard: the editor stays mounted across those navigations, so there
+ * is nothing to lose.
  */
 
 import { useBlocker } from "@tanstack/react-router";
@@ -32,19 +32,15 @@ export interface UnsavedGuardOptions {
    */
   readonly hasUnsavedWork: boolean;
   /**
-   * Attempt to persist the buffer for an in-app navigation. Resolves to
-   * `true` when the editor is now safe to unmount (the write landed, or
-   * there was nothing to write), and `false` when the write was refused
-   * and the editor must stay mounted to show the failure. It must not
-   * throw — a rejected promise is treated as "not safe" (block).
+   * Decide a navigation away from the page. Resolves `true` to let it
+   * proceed (the user chose to discard) and `false` to block it (the
+   * user kept editing). It must not throw — a rejected promise is
+   * treated as "block".
    */
   readonly onNavigateAway: () => Promise<boolean>;
 }
 
-/**
- * Blocks an in-app route change while the body editor is dirty/failed,
- * flushing first and only letting the navigation through on a clean save.
- */
+/** Blocks a page change while the editor has unsaved work, unless `onNavigateAway` allows it. */
 export function useUnsavedGuard({ hasUnsavedWork, onNavigateAway }: UnsavedGuardOptions): void {
   useBlocker({
     // No interception at all when there is nothing to lose — a clean
@@ -53,15 +49,15 @@ export function useUnsavedGuard({ hasUnsavedWork, onNavigateAway }: UnsavedGuard
     // `beforeunload` is already installed by `useBodyAutosave`; leaving
     // the router's own out avoids a second, duplicate browser prompt.
     enableBeforeUnload: false,
-    shouldBlockFn: async () => {
+    shouldBlockFn: async ({ current, next }) => {
+      // Same page, different search or hash: the editor survives it.
+      if (current.pathname === next.pathname) return false;
       try {
-        // Flush for the navigation. Block (return true) unless the flush
-        // reports the editor is now clean and safe to unmount.
-        const safe = await onNavigateAway();
-        return !safe;
+        const proceed = await onNavigateAway();
+        return !proceed;
       } catch {
-        // A thrown flush means we could not confirm the text is saved:
-        // keep the editor mounted rather than risk losing it.
+        // Could not get an answer: keep the editor rather than risk
+        // losing the text.
         return true;
       }
     },

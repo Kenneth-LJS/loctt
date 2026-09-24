@@ -178,21 +178,33 @@ several fields in succession.
   "Previous keys:" label.
 
 ### TSK-15 · M2 · blocker · P8
-**The body editor saves after 1.5s idle and on blur.** Type a paragraph
-into the rich editor and stop.
+**The body editor saves when the user saves.** Type a paragraph into
+the rich editor and stop.
 
-- Approximately 1.5s after the last keystroke, one save fires — not one
-  per keystroke.
-- Clicking outside the editor before the idle timer elapses saves
-  immediately rather than waiting.
-- A save indicator communicates saved / saving / unsaved so the user
-  is never guessing.
-- Reloading the page shows the typed content, confirming it reached
-  `task.md`.
+- Nothing is written while typing, nor after typing stops, however long
+  the editor sits idle. One save fires when the user presses Save (or
+  Cmd/Ctrl+Enter) — not one per keystroke.
+- Clicking outside the editor neither saves nor discards: the editor
+  stays open with the text.
+- Save is disabled while there are no changes, and shows it is working
+  while the write is in flight.
+- A save indicator communicates unsaved changes / saving / saved /
+  failed so the user is never guessing.
+- Reloading the page after Save shows the typed content, confirming it
+  reached `task.md`.
+
+> **Amended (K124, Ken 2026-09-24).** Ken: *"once in editing mode, i think there should be a save button to save, and cancel. in which case, things dont get saved and history isnt updated. because right now, a lot of accidental click-outs are happening which saves unintentionally."* This case read "saves
+> after 1.5s idle and on blur": its first two bullets asserted the idle
+> autosave and the save on click-away, which are removed. The 1.5s
+> cadence survives only for the unsaved draft kept in the tab (TSK-73).
 
 ### TSK-16 · M2 · major · P1
 **Rapid edits coalesce into one history entry.** Type continuously for
 30 seconds with several idle-save flushes.
+
+> **Amended (K124, Ken 2026-09-24).** The description no longer saves on
+> idle (TSK-15), so "several idle-save flushes" now means several Saves
+> in quick succession. The coalescing is the server's and is unchanged.
 
 - The activity feed shows a single coalesced `body_edited` entry for
   the burst, not one per auto-save.
@@ -311,8 +323,13 @@ several thousand lines.
 - The editor becomes interactive without a multi-second freeze.
 - Typing at the bottom does not lag noticeably or scroll-jump to the
   top.
-- Auto-save still fires once per idle window rather than repeatedly
+- Typing sends nothing; Save sends the document once, rather than
   re-sending the whole document per keystroke.
+
+> **Amended (K124, Ken 2026-09-24).** The third bullet read "auto-save
+> still fires once per idle window". There is no auto-save to disk any
+> more (TSK-15); the guarantee it protected — no per-keystroke resend of
+> a large document — is what the bullet now states.
 
 ### TSK-28 · M2 · minor · P9
 **Dates in 1970 and 2099 are accepted and displayed.**
@@ -532,8 +549,8 @@ the status write.
 - Reloading confirms the file still holds the old status.
 
 ### TSK-48 · M2 · blocker · P4
-**A failed body auto-save never shows "saved".** Fail the body write
-after an idle flush.
+**A failed body save never shows "saved".** Fail the body write, then
+press Save.
 
 - The indicator moves to an explicit unsaved/failed state, not "saved"
   and not back to idle.
@@ -542,6 +559,10 @@ after an idle flush.
 - The typed content stays in the editor — it is not reverted to the
   last-saved version, which would destroy the user's writing.
 - Leaving the page warns that unsaved changes exist.
+
+> **Amended (K124, Ken 2026-09-24).** Ken: *"once in editing mode, i think there should be a save button to save, and cancel. in which case, things dont get saved and history isnt updated. because right now, a lot of accidental click-outs are happening which saves unintentionally."* Read "a failed body
+> auto-save … after an idle flush". Only Save writes now, so the failure
+> is a failed Save. The bullets are unchanged.
 
 ### TSK-49 · M2 · major · P4
 **A validation failure on a custom field names the field and the
@@ -736,15 +757,28 @@ edit mode.**
   editable content.)
 
 ### TSK-71 · M2 · minor · P8
-**Leaving edit mode returns to the rendered view; the body is saved, not
-lost.**
+**Leaving edit mode: Save writes, Cancel and Escape discard, click-away
+does neither.**
 
-- Clicking away (blur) flushes the existing idle autosave (TSK-15/K2) and
-  returns to the rendered view showing the saved content.
-- Pressing Escape cancels the edit and returns to the rendered view
-  showing the last-saved content.
-- Nothing is silently lost, and a failed save keeps the editor open in
-  its unsaved state (TSK-48), not dropped back to a stale render.
+- Save (the button, or Cmd/Ctrl+Enter) writes the body once and returns
+  to the rendered view showing the saved content.
+- Clicking away (blur) keeps the editor open. Nothing is saved and
+  nothing is discarded.
+- Cancel or Escape with no changes returns to the rendered view at once.
+  With changes it first asks "Discard changes?" (Discard / Keep
+  editing). Discard returns to the rendered view showing the last-saved
+  content and writes nothing; Keep editing leaves the editor and its
+  text as they were.
+- Nothing is written, and no history entry is added, unless the user
+  saves.
+- A failed save keeps the editor open in its unsaved state (TSK-48), not
+  dropped back to a stale render.
+
+> **Amended (K124, Ken 2026-09-24).** Ken: *"once in editing mode, i think there should be a save button to save, and cancel. in which case, things dont get saved and history isnt updated. because right now, a lot of accidental click-outs are happening which saves unintentionally."* This case read "clicking
+> away flushes the idle autosave and returns to the rendered view", and
+> K96 (2026-09-19) had made Escape exit *keeping* the text. Both are
+> superseded: click-away stays in edit mode, and Escape is Cancel, which
+> asks first when there are changes.
 
 ### TSK-72 · M2 · minor · P8
 **The formatting toolbar stays on one row; when it cannot, groups fold
@@ -766,3 +800,25 @@ into menus rather than the row wrapping.** *(UI-23c/UI-23d, Ken
   item whose checked state matches the caret.
 - Every toolbar glyph is drawn centred in its box, so no control sits
   out of line with its neighbours.
+
+### TSK-73 · M2 · major · P1
+**Unsaved description edits survive a reload of the same tab, and only
+that tab.** *(A338, the PM's call on K124's open question — Ken:
+*"we save in session storage? how would that work, get a PM"*)* Edit the
+description without saving, then reload.
+
+- Reloading reopens the description in edit mode with the unsaved text,
+  showing "Unsaved changes". Nothing was written to `task.md`.
+- Closing the tab and opening the task in a new tab shows the saved
+  body, not the draft.
+- If the body changed on disk since the draft was written (e.g.
+  `loctt body --set`), reopening shows the conflict surface (XS-12) with
+  the draft as yours and the disk version as theirs — never a silent
+  overwrite in either direction.
+- Two tabs editing the same task keep independent drafts; neither
+  restores the other's.
+- Save, Cancel and a confirmed discard clear the draft. Closing the
+  editor any other way does not.
+- With browser storage blocked (private mode, a full quota) editing and
+  saving work as normal; there is no draft to restore, and no error is
+  shown.

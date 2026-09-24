@@ -22672,6 +22672,115 @@ been saved. Please check and try again.'"* Applied verbatim in
 `error/RegionErrorBoundary.tsx`; the ERR-35 unit test asserts the exact
 string.
 
+### A340 · Description editor Save/Cancel: implementation calls under K124 and A338
+
+**Ticket:** K124 (Ken) + A338 (PM) — the description editor saves only on Save · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3
+
+**The situation.** K124 fixed the model: explicit Save and Cancel, click-away
+keeps editing, leaving warns, Escape = Cancel (asking first when there are
+changes). A338 fixed the drafts: `sessionStorage` under
+`loctt:draft:${taskId}:${field}`, restored silently, conflict dialog if the
+file moved. Neither settled where the buttons go, what the prompt says, what
+the indicator's states mean, or several mechanics the old autosave hid
+(`apps/web/src/client/editor/BodyEditor.tsx`, `useBodyAutosave.ts`,
+`bodyDraft.ts`, `router/useUnsavedGuard.ts`, `ui/ConfirmDialog.tsx`).
+
+**What had to be decided.**
+1. Where do Save and Cancel sit, and what does Save do after writing?
+2. What does the discard prompt say?
+3. What does the indicator show now?
+4. Which keys save, and where are they heard?
+5. What does the in-app navigation guard do, and on which navigations?
+6. On a refetch while the editor has unsaved text, which token does Save carry?
+7. Does a draft whose token moved always open the conflict dialog?
+8. What does "Keep theirs" write?
+
+**Options considered.**
+1. (a) A footer row under the framed editor, primary Save then secondary
+   Cancel, left-aligned — the comment composer's Comment/Cancel layout;
+   (b) the toolbar's right cluster beside the indicator — crowds a row whose
+   width already had to be reserved for the indicator (TSK-18) and differs
+   from the composer. After a landed write: (a) close to the rendered view,
+   like saving a comment edit; (b) stay open showing "Saved" — the user then
+   has to Cancel out of an editor with nothing in it.
+2. (a) Title "Discard changes?", actions "Discard" (danger) / "Keep editing",
+   no body text; (b) add an explanation line — messaging.md §1 says the page
+   works without it.
+3. (a) Keep four kinds — unsaved changes / saving / saved / failed with Retry
+   — with "Saved" meaning "the editor matches disk"; (b) hide the indicator
+   when clean — changes the TSK-18 width-reservation grid for no gain.
+4. (a) Save on the button, Cmd/Ctrl+Enter and Cmd/Ctrl+S, heard only inside
+   the editor's subtree, in the capture phase; (b) window-level as before —
+   with click-away no longer closing the editor, an Escape or Cmd+Enter meant
+   for another control (the status picker, the comment composer) would act on
+   the description. Capture phase because TipTap binds Mod-Enter to a hard
+   break, which would otherwise be inserted into the text being saved.
+5. (a) The guard shows the same "Discard changes?" prompt (Discard lets the
+   navigation through and drops the draft; Keep editing blocks it), and only
+   intercepts a change of pathname; (b) intercept every navigation — the task
+   page records its activity tab and a scroll-to anchor in the search/hash,
+   so switching Comments/Activity would ask to discard an editor that is not
+   going anywhere.
+6. (a) Keep the base token unless the refetched body still equals the base
+   body (only frontmatter moved, e.g. a status change bumped `updated_at`), in
+   which case adopt it; (b) adopt unconditionally, the pre-K124 rule — under
+   explicit Save an edit stays open across window refocuses, and adopting a
+   token for a body the CLI rewrote lets Save silently overwrite it (XS-11);
+   (c) never adopt — every status change made during an edit becomes a false
+   conflict.
+7. (a) Restore silently when the token matches OR the draft's base body equals
+   the body on disk (the draft stores both); conflict dialog otherwise;
+   (b) A338's literal "token differs → conflict" — the token covers
+   `updated_at`, so a status change in another tab would put a conflict
+   dialog with two identical "theirs"/"base" bodies in front of the user.
+8. (a) Nothing: the disk already holds theirs; adopt it, clear the draft,
+   close; (b) write theirs back — adds a `body_edited` history entry for a
+   change nobody made, which K124 names as the harm.
+
+**Decided.** 1a (footer row; a landed write closes the editor; Save disabled
+with no changes, `loading` while writing; Retry and a conflict's Apply count
+as saves). 2a. 3a. 4a. 5a. 6a. 7a. 8a. The hook file keeps its name
+(`useBodyAutosave.ts`) with the module doc saying it no longer autosaves, to
+keep the diff readable; `ConfirmDialog` gained an optional `cancelLabel` and
+an optional `body`.
+
+**Why.** 1–3 follow the app's own patterns (the composer's footer,
+`ui/Button` `loading`, `ui/ConfirmDialog`) and messaging.md. 4–5 exist
+because K124 removed the one thing that used to end an edit on its own
+(click-away): the editor can now sit open while the user works elsewhere on
+the page, so its keys and its guard must not fire for things outside it.
+6–8 hold XS-11/XS-12's "never a silent overwrite" and K124's "history isn't
+updated" at the points explicit Save newly exposes. A live check also found
+that ProseMirror calls `preventDefault` on every Escape keydown
+(prosemirror-view `captureKeyDown`), so the Escape handler is not gated on
+`defaultPrevented`; overlays that own Escape stop propagation or are
+detected (`[data-portal-panel]`, the mention menu, the conflict dialog).
+
+**To revert.**
+1. `BodyEditor.tsx`: move the `body-save`/`body-cancel` row into
+   `MarkdownField`'s `toolbarTrailing`; drop the `awaitingWrite` effect to
+   stay open after a write.
+2. `BodyEditor.tsx` `ConfirmDialog` props (`title`, `confirmLabel`,
+   `cancelLabel`, add `body`).
+3. `SaveIndicator.tsx` `ORDINARY_KINDS`/labels.
+4. `BodyEditor.tsx` keyboard effect: `onSaveKey` capture listener and
+   `onEscape` on `wrapperRef` → a `window` listener.
+5. `router/useUnsavedGuard.ts`: remove the `current.pathname ===
+   next.pathname` early return; `confirmNavigation` in `BodyEditor.tsx`.
+6. `useBodyAutosave.ts` refetch effect: the `loadedBody === savedRef.current`
+   condition.
+7. `useBodyAutosave.ts` `seedFrom`: drop `|| initialDraft.baseBody ===
+   loadedBody`; `bodyDraft.ts` `baseBody` field.
+8. `useBodyAutosave.ts` `resolve`: remove the `text === open.theirs` branch.
+Tests pinning each: `BodyEditor.test.tsx`, `BodyEditor.leave-race.test.tsx`,
+`useBodyAutosave.test.ts`, `bodyDraft.test.ts`, `useUnsavedGuard.test.tsx`.
+
+**Open for Ken (not decided here).** invariants.md Q18/D4: `body_edited`
+entries still coalesce within a 15-minute same-actor window. Under explicit
+Save that merges two deliberate Saves minutes apart into one history entry —
+the case that row's own rationale warned about. K124 did not rule on it and
+this entry does not change it.
+
 ### A338 · Description-editor drafts persist to sessionStorage (PM call for K124)
 
 **Ticket:** K124's open question (Ken: *"we save in session storage? how

@@ -25,7 +25,7 @@
  * the point of the prop contract:
  *
  *  - **The buffer is the caller's.** `MarkdownField` never owns a
- *    `RichBuffer` — the description autosaves it, the composer submits
+ *    `RichBuffer` — the description saves it on Save, the composer submits
  *    it, and each seeds/resets it differently (a task switch vs. a
  *    post-clears-and-refocuses remount). The caller passes `text` and
  *    the two write callbacks (`onRichDoc`, `onRawChange`) that feed its
@@ -33,14 +33,15 @@
  *  - **`mode` is controlled** so the caller can force raw for a lossy
  *    body (B5) or open an edit in source mode (CMT-3).
  *  - **`footer`** is a slot: the composer puts its submit/cancel row
- *    there; the description leaves it empty (it autosaves).
+ *    there; the description renders its Save/Cancel row itself, under
+ *    its framed box, so it leaves this empty.
  *  - **`toolbarTrailing`** is rendered beside the toolbar: the
  *    description's `SaveIndicator` lives there.
  *  - **`banner`** renders between the toolbar and the surface: the
  *    description's lossy-constructs notice.
  *
- * Everything above the buffer — the autosave hook, the K96 exit
- * gesture, the conflict dialog, the submit button — stays in the two
+ * Everything above the buffer — the save hook, the K124 Save/Cancel
+ * gestures, the conflict dialog, the submit button — stays in the two
  * callers, unchanged.
  */
 

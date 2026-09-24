@@ -15,6 +15,7 @@ import {
   useSprints,
   useUsers,
 } from "../api/hooks/sidebarData.ts";
+import { activityQueryKey } from "../api/hooks/useActivity.ts";
 import { useCalendar } from "../api/hooks/useCalendar.ts";
 import { useCreateLabel } from "../api/hooks/useCreateLabel.ts";
 import { useCurrentUser } from "../api/hooks/useCurrentUser.ts";
@@ -676,6 +677,7 @@ export function TaskDetail({
                   re-render by design. */}
               <BodyEditor
                 key={task.data.frontmatter.id}
+                taskId={task.data.frontmatter.id}
                 taskRef={taskRef}
                 body={task.data.body}
                 bodyToken={task.data.bodyToken}
@@ -690,6 +692,8 @@ export function TaskDetail({
                   void queryClient.invalidateQueries({ queryKey: ["task", taskRef] });
                   void queryClient.invalidateQueries({ queryKey: ["tasks"] });
                   void queryClient.invalidateQueries({ queryKey: ["tasks-feed"] });
+                  // The save adds a `body_edited` history entry.
+                  void queryClient.invalidateQueries({ queryKey: activityQueryKey(taskRef) });
                 }}
                 mentionCandidates={(users.data?.items ?? []).map(u => ({
                   id: u.id,

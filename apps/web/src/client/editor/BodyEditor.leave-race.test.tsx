@@ -1,45 +1,32 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { draftKey } from "./bodyDraft.ts";
+
 /**
- * Fix-review HIGH #1 — the blur-leave race (TSK-48 / TSK-71).
+ * The save-then-leave race (TSK-48), with the REAL `useBodyAutosave`.
  *
- * This is the ONE `BodyEditor` test that mounts the REAL `useBodyAutosave`
- * rather than the mocked hook in `BodyEditor.test.tsx`. The mocked-hook
- * test cannot see this bug: the mock's `state` is whatever the test set,
- * so there is no `unsaved → saving` transition and no microtask gap to
- * race against. The bug lives exactly in that gap, so only the real hook
- * with a controlled write can reproduce it.
+ * The mocked-hook test in `BodyEditor.test.tsx` cannot see this bug: the
+ * mock's `state` is whatever the test set, so there is no
+ * `unsaved → saving` transition and no microtask gap to race against.
  *
  * ## The race
  *
- * `requestLeave` (on blur) does two things in one synchronous block:
- * `setWantsLeave(true)` and `void flush()`. `flush` runs the network
- * `write()` in a MICROTASK (`prior.then(() => write())`), and `write()`
- * is what moves the state to `saving`. So React can re-render from
- * `setWantsLeave(true)` and run the `wantsLeave` effect while the state
- * is STILL `unsaved` — the pre-flush state — because the `saving`
- * transition has not run yet.
+ * `requestSave` sets "leave once the write lands" and calls `save()`.
+ * `save` runs the network `write()` in a MICROTASK, and `write()` is what
+ * moves the state to `saving` — so React can run the leave effect while
+ * the state is STILL the pre-write `unsaved`. An effect that treated
+ * that as "clean, safe to leave" unmounted the editor before the POST
+ * started, and a failing save then landed on an unmounted component with
+ * the user's text lost and no error shown. The effect leaves only on
+ * `saved`.
  *
- * The ORIGINAL effect gated on `state.kind === "saving"` only ("leave
- * unless we are saving"), so it treated that pre-flush `unsaved` as
- * "clean, safe to leave" and called `onLeave()` — unmounting the edit
- * surface BEFORE the POST even started. A failing save then landed on an
- * unmounted component and the user's typed text was lost with no error
- * shown (the TSK-48 violation).
- *
- * THE FIX: the effect leaves ONLY on `state.kind === "saved"`. It waits
- * through `unsaved` and `saving`, and a `failed` write keeps the editor
- * open on the unsaved text.
- *
- * ## How this test controls the timing
- *
- * Only the network is mocked (a DEFERRED `fetch` we resolve by hand,
- * like `useBodyAutosave.test.ts`'s held-fetch). We type, blur, and let
- * the leave-effect run WHILE the write is still pending — then resolve
- * the write as a FAILURE and assert the editor stayed mounted with the
- * typed text retained and a failed state shown.
+ * Originally written (fix-review HIGH #1) against the pre-K124
+ * blur-save; K124 made Save the only write, so the trigger is now the
+ * Save button and the same guarantee is asserted through it. The file
+ * also covers, with the real hook, K124's "click-away writes nothing"
+ * and A338's reload restore.
  */
 
 // The deferred write: `fetch` records the call and hands back a promise
@@ -95,7 +82,7 @@ vi.mock("./BodyConflictDialog.tsx", () => ({
 }));
 
 // The router nav-guard (A246) needs a RouterProvider this bare render
-// lacks; this test is about the blur-leave race, not in-app navigation,
+// lacks; this file is about the save-then-leave race, not in-app navigation,
 // so mock the guard to a no-op. (Its own behaviour is covered by
 // useUnsavedGuard/useBodyAutosave tests.)
 vi.mock("../router/useUnsavedGuard.ts", () => ({
@@ -104,20 +91,27 @@ vi.mock("../router/useUnsavedGuard.ts", () => ({
 
 const { BodyEditor } = await import("./BodyEditor.tsx");
 
-beforeEach(() => { installDeferredFetch(); });
+beforeEach(() => { installDeferredFetch(); window.sessionStorage.clear(); });
 afterEach(() => {
   cleanup();
+  window.sessionStorage.clear();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
-function renderEditor(body = "Some body text.") {
+const TASK_ID = "01TESTTASK000000000000000D";
+
+function renderEditor(
+  body = "Some body text.",
+  lossyConstructs: readonly { readonly kind: string; readonly line: number }[] = [],
+) {
   return render(
     <BodyEditor
+      taskId={TASK_ID}
       taskRef="WEB-7"
       body={body}
       bodyToken="tok-1"
-      lossyConstructs={[]}
+      lossyConstructs={lossyConstructs}
       mentionCandidates={[]}
     />,
   );
@@ -141,20 +135,22 @@ async function enterEditAndType(): Promise<void> {
   });
 }
 
-describe("BodyEditor — blur-leave race (fix-review HIGH #1)", () => {
+function succeedLast(): void {
+  const p = pending.shift();
+  if (p === undefined) throw new Error("no pending write to settle");
+  p.settle(new Response(JSON.stringify({ ok: true, bodyToken: "tok-2" }), {
+    status: 200, headers: { "Content-Type": "application/json" },
+  }));
+}
+
+describe("BodyEditor — save-then-leave race (TSK-48)", () => {
   // @verifies TSK-48
-  it("a failing save on blur keeps the editor open and does NOT drop to the rendered view", async () => {
+  it("a failing Save keeps the editor open and does NOT drop to the rendered view", async () => {
     renderEditor();
     await enterEditAndType();
 
-    // Blur out of the editor. This is `requestLeave`: it sets
-    // `wantsLeave` AND flushes — and the flush's `write()` is a
-    // microtask, so the leave-effect can run on the pre-flush `unsaved`
-    // state. `act` flushes React's work here; the fix must hold the
-    // editor open through `unsaved`/`saving` rather than leave on the
-    // pre-flush `unsaved`.
     await act(async () => {
-      fireEvent.blur(screen.getByTestId("body-editor"), { relatedTarget: null });
+      fireEvent.click(screen.getByTestId("body-save"));
       await Promise.resolve();
     });
 
@@ -162,25 +158,75 @@ describe("BodyEditor — blur-leave race (fix-review HIGH #1)", () => {
     expect(pending.length).toBe(1);
     expect(pending[0]?.body).toBe("precious words the user typed");
 
-    // THE ASSERTION THAT GOES RED ON THE ORIGINAL CODE: the editor must
-    // still be mounted. The original effect left on the pre-flush
-    // `unsaved`, unmounting the surface before the POST resolved.
+    // The editor must still be mounted while the write is pending.
     expect(screen.queryByTestId("body-rendered")).toBeNull();
     expect(screen.getByTestId("markdown-editor")).toBeTruthy();
 
-    // Now the write FAILS. A failing save landing on an unmounted
-    // component was the data loss; with the editor still mounted it
-    // surfaces as a failed state and the text is retained.
     await act(async () => {
       failLast();
       await Promise.resolve();
     });
 
-    // Editor still mounted, text retained, failure shown — not a silent
-    // drop to a stale render.
+    // Editor still mounted, text retained, failure shown.
     expect(screen.queryByTestId("body-rendered")).toBeNull();
-    expect(screen.getByTestId("markdown-editor")).toBeTruthy();
     expect(markdownValue()).toBe("precious words the user typed");
     expect(screen.getByText(/No space left on device/)).toBeTruthy();
+  });
+
+  // @verifies TSK-15
+  it("a Save that lands returns to the rendered view", async () => {
+    renderEditor();
+    await enterEditAndType();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("body-save"));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      succeedLast();
+      await Promise.resolve();
+    });
+    await waitFor(() => { expect(screen.getByTestId("body-rendered")).toBeTruthy(); });
+  });
+});
+
+describe("BodyEditor — K124 with the real hook", () => {
+  // @verifies TSK-71
+  it("clicking away sends no write and keeps the editor open with the text", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    renderEditor();
+    await enterEditAndType();
+
+    await act(async () => {
+      fireEvent.blur(screen.getByTestId("body-editor"), { relatedTarget: null });
+      // Well past the old idle-autosave window.
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(pending).toHaveLength(0);
+    expect(screen.queryByTestId("body-rendered")).toBeNull();
+    expect(markdownValue()).toBe("precious words the user typed");
+    // The draft holds the text for this tab (A338).
+    expect(window.sessionStorage.getItem(draftKey(TASK_ID))).toContain("precious words the user typed");
+  });
+
+  // @verifies TSK-73
+  it("a reload mid-edit reopens the editor on the draft, unsaved", async () => {
+    // First visit: type, then the page goes away (unmount, as a reload does).
+    const first = renderEditor("Some body text.", [{ kind: "footnote", line: 1 }]);
+    fireEvent.click(screen.getByTestId("body-edit"));
+    const textarea = screen.getByTestId("markdown-editor");
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "draft that must survive" } });
+      await Promise.resolve();
+    });
+    first.unmount();
+    expect(pending).toHaveLength(0);
+
+    // Second visit, same tab: straight into edit, on the draft.
+    renderEditor("Some body text.", [{ kind: "footnote", line: 1 }]);
+    expect(screen.queryByTestId("body-rendered")).toBeNull();
+    expect(markdownValue()).toBe("draft that must survive");
+    expect(screen.getByTestId("save-indicator").getAttribute("data-state")).toBe("unsaved");
+    expect(pending).toHaveLength(0);
   });
 });

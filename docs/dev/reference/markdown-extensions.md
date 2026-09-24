@@ -146,30 +146,32 @@ except by not writing the example.
 
 ## Save semantics
 
-The editor **autosaves** after roughly 1.5s of idle typing, and also on
-blur. `Ctrl/Cmd+S` forces an immediate save.
+The description editor writes **only on Save** (K124, Ken 2026-09-24):
+the Save button, `Ctrl/Cmd+Enter` or `Ctrl/Cmd+S`. Clicking away keeps
+the editor open and writes nothing; Cancel or `Escape` discards, asking
+"Discard changes?" first when there are changes. Unsaved text is kept per
+tab in `sessionStorage` (`loctt:draft:<taskId>:body`, A338) on a 1.5s idle
+cadence and restored on reload.
 
-Each save sends one `POST /api/tasks/:ref/body` request. Consecutive
-`body_edited` history entries by the same actor within a 15-minute window
-are **coalesced into one entry**
-(`packages/core/src/task/history.ts:12`, `COALESCEABLE_KINDS` at `:24`),
-so a long editing session produces one activity row rather than dozens.
+Each save sends one `POST /api/tasks/:ref/body` request carrying the base
+token (K2). Consecutive `body_edited` history entries by the same actor
+within a 15-minute window are **coalesced into one entry**
+(`packages/core/src/task/history.ts:12`, `COALESCEABLE_KINDS` at `:24`).
+Under explicit Save that window can merge two deliberate saves minutes
+apart; K124 did not change it (see invariants.md Q18/D4, open).
 
 The editor surfaces:
 
-- A saving / saved indicator.
-- A warn-on-navigate-away while a save is in flight or has failed.
-- `Ctrl/Cmd+S` to save immediately.
+- An indicator: unsaved changes / saving / saved / failed (with Retry).
+- A warning on reload, tab close, or in-app navigation while there are
+  unsaved changes.
 
 Markdown source mode and WYSIWYG mode share the same backing buffer
 and save flow.
 
-> An earlier revision of this document specified an explicit Save button
-> with no autosave. That contradicted both the history-coalescing window
-> (which has nothing to coalesce under explicit save — it would merge two
-> deliberate saves minutes apart) and the UI acceptance criteria in
-> `tests/cases/ui-test-cases/flow-tasks.md`. Autosave is the intended
-> behaviour.
+> Earlier revisions specified autosave (1.5s idle and on blur) and argued
+> against an explicit Save button. K124 reversed that: accidental
+> click-outs were saving unintentionally.
 
 ## Features dropped (not representable in markdown)
 

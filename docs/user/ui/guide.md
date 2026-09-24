@@ -159,8 +159,10 @@ Opening a task shows everything about it on one page.
 - **Header** — a breadcrumb, the task's key, its title (editable in place),
   and a More menu: copy the key or a link, duplicate, move to another
   project, archive, or delete.
-- **Description** — a markdown editor with autosave and `@`-mentions of
-  users.
+- **Description** — a markdown editor with `@`-mentions of users. Select
+  Edit to change it, then Save (or Ctrl/Cmd+Enter). Cancel or Escape
+  discards your changes, asking first. Clicking elsewhere keeps the
+  editor open, and unsaved text survives a reload of the same tab.
 - **Related** — the task's relationships (blocks, parent/child, and any you
   configure); add and remove links here.
 - **Attachments** — files on the task; upload more.

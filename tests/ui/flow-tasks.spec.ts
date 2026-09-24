@@ -1219,9 +1219,9 @@ test.describe("TSK — rich-text editor (B3)", () => {
       await expectComboValueOn(page, blockType, String(level));
     }
 
-    // Save the last level (6) via the blur+flush path, and confirm it
-    // lands on disk as `#`×6 — the serialisation half of the round trip.
-    await page.getByTestId("meta-panel").click();
+    // Save the last level (6) — Save, since K124 — and confirm it lands
+    // on disk as `#`×6 — the serialisation half of the round trip.
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
     await expect.poll(() => bodyOf(tracker.root, key)).toContain("###### A heading line");
 
     // Reload: the stored `#{1,6}` parses back to a heading whose level
@@ -1259,7 +1259,7 @@ test.describe("TSK — rich-text editor (B3)", () => {
     await orderedList.click();
     await expect(orderedList).toHaveAttribute("aria-pressed", "true");
 
-    await page.getByTestId("meta-panel").click();
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
     await expect
       .poll(() => bodyOf(tracker.root, key))
       .toContain("1. first item");
@@ -1326,7 +1326,7 @@ test.describe("TSK — rich-text editor (B3)", () => {
     await expect(bodyRich(page)).not.toContainText("# Heading");
 
     // And it lands on disk as markdown, not escaped characters.
-    await page.getByTestId("meta-panel").click();
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
     await expect.poll(() => bodyOf(tracker.root, key)).toContain("# Heading");
     await expect.poll(() => bodyOf(tracker.root, key)).toContain("- item");
   });
@@ -1401,8 +1401,9 @@ test.describe("TSK — rich-text editor (B3)", () => {
  * K33 (Ken, 2026-09-09): the task description is read-then-edit,
  * Jira-style. Rendered read-only by default; a click enters edit; a
  * click on a link opens it and a click on an image opens a lightbox,
- * neither entering edit; blur saves and returns to rendered, Escape
- * cancels, and a failed save keeps the editor open. TSK-68..71.
+ * neither entering edit; Save writes and returns to rendered, click-away
+ * keeps editing, Escape cancels (K124), and a failed save keeps the
+ * editor open. TSK-68..71.
  */
 test.describe("TSK — K33 read-then-edit description", () => {
   // @verifies TSK-68
@@ -1525,10 +1526,12 @@ test.describe("TSK — K33 read-then-edit description", () => {
   });
 
   // @verifies TSK-71
-  test("TSK-71: blurring out saves and returns to the rendered view", async ({
+  test("TSK-71: blurring out keeps editing and writes nothing; Save writes and returns to rendered", async ({
     page, tracker,
   }) => {
-    const [key] = await tracker.seed([{ title: "Blur saves" }]);
+    // SUPERSEDED (K124): this spec asserted "blurring out saves and
+    // returns to the rendered view" — the click-out save Ken ruled out.
+    const [key] = await tracker.seed([{ title: "Blur keeps" }]);
     if (key === undefined) throw new Error("seed returned no key");
     await tracker.run(["body", key, "--set", "Original.\n"]);
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
@@ -1537,18 +1540,21 @@ test.describe("TSK — K33 read-then-edit description", () => {
     await bodyRich(page).click();
     await page.keyboard.type(" Appended.");
 
-    // Blur by clicking the meta panel (outside the editor). The idle
-    // autosave flushes, and the surface returns to the rendered view.
     await page.getByTestId("meta-panel").click();
+    await page.waitForTimeout(2000);
+    await expect(bodyRich(page)).toContainText("Appended.");
+    await expect(page.getByTestId("body-rendered")).toHaveCount(0);
+    expect(await bodyOf(tracker.root, key)).toBe("Original.\n");
+
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
     await expect(page.getByTestId("body-rendered")).toBeVisible();
     await expect(bodyRich(page)).toHaveCount(0);
-    // The rendered view shows the saved content, and it reached disk.
     await expect(page.getByTestId("body-rendered")).toContainText("Appended.");
     await expect.poll(() => bodyOf(tracker.root, key)).toContain("Appended.");
   });
 
   // @verifies TSK-71
-  test("TSK-71: Escape cancels the edit and returns to the rendered view", async ({
+  test("TSK-71: Escape with no changes returns to the rendered view at once", async ({
     page, tracker,
   }) => {
     const [key] = await tracker.seed([{ title: "Escape cancels" }]);
@@ -1588,10 +1594,10 @@ test.describe("TSK — K33 read-then-edit description", () => {
         body: JSON.stringify({ code: "io_failed", message: "Disk is full." }),
       }));
 
-    // Blur to trigger the flush. The save fails, so the editor STAYS
-    // open on the typed text rather than dropping back to a stale
-    // render (TSK-48).
-    await page.getByTestId("meta-panel").click();
+    // Save. The write fails, so the editor STAYS open on the typed text
+    // rather than dropping back to a stale render (TSK-48).
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
+    await expect(page.getByTestId("save-indicator")).toHaveAttribute("data-state", "failed");
     await expect(page.getByTestId("body-editor")).toBeVisible();
     await expect(bodyRich(page)).toBeVisible();
     await expect(bodyRich(page)).toContainText("Words the user must not lose.");
