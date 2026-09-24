@@ -1787,24 +1787,13 @@ describe("Sidebar cross-view filter scope (2026-09-20)", () => {
  * unified icon set, not hardcoded hex or an ad-hoc star.
  */
 describe("Sidebar tokens and icon glyphs (S-11, S-8)", () => {
-  it("the all-projects dot uses a CSS-variable colour, not hardcoded hex", async () => {
-    // Covers S-11 (review item; no case ID).
-    //
-    // UI-20 (2026-09-23) deleted the per-project item dot this test used
-    // to check (`ColorDot color="var(--status-active-fg)"` on every
-    // project row) — it was a hardcoded constant colour encoding
-    // nothing, not a token-vs-hex question, so there is no longer a dot
-    // on a project ITEM row to assert about. The "All projects" anchor
-    // row still carries a dot (a neutral "nothing scoped" marker, not a
-    // per-project mark), so the token-not-hex assertion moves there; the
-    // second half of this test now checks the item row has no dot at all.
+  it("neither All projects nor a project row draws a dot", async () => {
+    // Ken, 2026-09-24: "we dont need the dot on the 'all projects'". The
+    // project item dots went earlier (UI-20); the anchor row's neutral
+    // dot was the last constant mark in the group.
     await renderSidebarAt("/list");
     const allProjects = (await screen.findByText("All projects")).closest("a") as HTMLElement;
-    const dot = allProjects.querySelector("span[style]") as HTMLElement;
-    // A token reference, never a raw #RRGGBB.
-    expect(dot.getAttribute("style") ?? "").toMatch(/var\(--/);
-    expect(dot.getAttribute("style") ?? "").not.toMatch(/#[0-9a-fA-F]{6}/);
-
+    expect(allProjects.querySelector("span[style]")).toBeNull();
     const web = (await screen.findByText("Web")).closest("a") as HTMLElement;
     expect(web.querySelector("span[style]")).toBeNull();
   });
@@ -2256,7 +2245,6 @@ describe("Sidebar point-of-use editing (K100)", () => {
     await renderSidebarAt("/list");
     // Rows that draw a mark, and so must share the w-4 slot.
     const markedRows = [
-      "All projects", // anchor row (icon slot)
       "Assigned to me", // built-in filter (icon slot)
       "My open bugs", // saved view (icon slot)
       "frontend", // label item (dot slot)
@@ -2277,6 +2265,7 @@ describe("Sidebar point-of-use editing (K100)", () => {
     // test that only checked the marked rows would stay green if the
     // empty slots came back.
     const unmarkedRows = [
+      "All projects", // anchor row — dot dropped (Ken, 2026-09-24)
       "Web", // project item — dot dropped (UI-26b)
       "All milestones", // anchor row — flag glyph dropped (UI-20)
       "v1.0", // milestone item

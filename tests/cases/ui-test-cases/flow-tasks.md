@@ -222,15 +222,6 @@ Write formatted content in TipTap, toggle to CodeMirror.
 - Applying a link prompts for a URL rather than inserting an empty
   anchor.
 
-### TSK-19 · M2 · major · P8
-**"Copy key" and "Copy link" put the right things on the clipboard.**
-
-- Copy key yields the bare current key (`WEB-7`), with no URL, prefix
-  noise, or surrounding whitespace.
-- Copy link yields an absolute URL that, pasted into a new tab, opens
-  this task.
-- Both give visible confirmation that the copy happened.
-
 ### TSK-20 · M2 · blocker · P5
 **Duplicate creates a new task and navigates to it.**
 

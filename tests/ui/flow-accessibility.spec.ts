@@ -1506,7 +1506,7 @@ test.describe("ERR — error surfaces across routes and layers", () => {
     // Layer 1: the ⋯ menu. Its trigger's accessible name is "More" —
     // the `Actions for <KEY>` label sits on the menu it opens, not on
     // the button, so selecting by that name finds nothing.
-    const menuTrigger = page.getByRole("button", { name: "More", exact: true });
+    const menuTrigger = page.getByRole("button", { name: "Task actions" });
     await menuTrigger.focus();
     await page.keyboard.press("Enter");
     const menu = page.getByRole("menu");

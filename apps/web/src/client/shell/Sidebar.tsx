@@ -1315,13 +1315,9 @@ function ProjectsGroup({
           className="no-underline"
         >
           <ItemShell active={allActive} collapsed={collapsed} title="All projects">
-            {/* UI-25: the dot lives inside the same `w-4` slot the icon
-                rows use (milestones/sprints/saved-views/built-ins), so
-                "All projects" lines up with every other anchor row
-                instead of sitting 7px further left. */}
-            <span className="flex w-4 shrink-0 justify-center">
-              <ColorDot color="var(--text-tertiary)" />
-            </span>
+            {/* No mark (Ken, 2026-09-24): like the project rows below it,
+                an unmarked row closes up rather than reserving a slot
+                (UI-26b). */}
             {!collapsed ? <span className="truncate">All projects</span> : null}
           </ItemShell>
         </Link>

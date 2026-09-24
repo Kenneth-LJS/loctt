@@ -48,10 +48,9 @@ export function SaveIndicator(
    *
    * The two are equivalent to a screen reader, but `role="status"` is
    * also a *landmark role* that `getByRole("status")` matches — and
-   * this indicator is permanently on screen, so adding one made every
-   * existing `getByRole("status")` on the task page ambiguous. It
-   * broke TSK-19's "Key copied" assertion, which had been correctly
-   * matching the one transient status on the page.
+   * this indicator is permanently on screen, so adding one would make
+   * every `getByRole("status")` on the task page ambiguous with the
+   * transient confirmations that page shows.
    *
    * An always-present indicator is not the same kind of thing as a
    * transient confirmation, and should not compete with it for the

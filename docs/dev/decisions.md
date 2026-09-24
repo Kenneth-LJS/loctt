@@ -22586,3 +22586,88 @@ Built: the link picker says "No matches found." and its self-link branch
 app-wide audit (every error, empty, result and confirm message outside
 Settings, which A322/A326 already covered) goes to Ken as a before/after
 list before anything changes, as the Settings trims did (K116).
+
+### K124 · The description editor saves only on Save; click-away keeps editing; Escape cancels
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+Ken, on the description editor: *"once in editing mode, i think there
+should be a save button to save, and cancel. in which case, things dont
+get saved and history isnt updated. because right now, a lot of
+accidental click-outs are happening which saves unintentionally."*
+Today it autosaves 1.5s after typing stops (TSK-15), saves on click-away
+(TSK-71), and Escape exits keeping the text (K96). Asked, with each
+option's cost:
+- Click-away with unsaved changes: *"Stay in edit mode"* — nothing saves
+  or discards; the editor stays open until Save or Cancel.
+- Leaving the page: *"Warn before leaving"* — the unsaved-changes guard.
+- Escape: *"Same as Cancel"* — discard and close, asking first when there
+  are changes. Replaces K96's "Escape keeps the text".
+- Whether anything still saves automatically: *"we save in session
+  storage? how would that work, get a PM"* — referred to the PM voice;
+  the answer is recorded as its own decision before this is built.
+
+Supersedes TSK-15's autosave and TSK-71's blur-save for the description;
+those cases get amended when this is built.
+
+### K125 · Task page scrolls as one; ⋯ task menu; sidebar and customiser changes
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+- **Task page scroll.** *"why is the ticket view INSIDE the header thing?
+  no, the header + ticket details should be part of the page scroll, not
+  some inner window"*. Built: `task/TaskDetail.tsx` no longer nests its
+  own scroller; the shell's `<main>` scrolls the whole page.
+- **Task actions menu.** *"this button should NOT be 'More'. and we dont
+  need 'Copy key, copy link'"*, then *"in this case, i think '...' is
+  warranted"*. Built: a ⋯ `IconButton` ("Task actions"); Copy key and
+  Copy link removed. TSK-19 (which existed only for those two items) is
+  retired and removed entirely.
+- **Sidebar "All projects".** *"we dont need the dot on the 'all
+  projects'"*; then, told it and "List" describe the same state: *"take
+  out the 'All projects' then? if its duplicate"*. Told that List/Board/
+  Timeline currently carry the project scope (the 2026-09-20 cross-view
+  ruling), so "All projects" was the only sidebar reset, and asked how to
+  get back to all tasks: *"click 'list'?"*. So: "All projects" is removed,
+  and the view links (List/Board/Timeline) clear the sidebar-driven scope
+  (project, saved view, label, sprint, built-in filter) like every other
+  sidebar row (K118). This supersedes the 2026-09-20 carry-across for
+  those params.
+- **Customize sidebar.** Built-in filters nest under one "Filters" group
+  (*"Nest under 'Filters'"*), movable as a unit, each still hideable and
+  reorderable inside it. Show/Hide becomes the Switch (`ui/Toggle`,
+  role="switch"): *"yes use switch. and when an item is switched off,
+  disable switching/reordering its child items too"*.
+- **Save as view.** *"Keep bookmark, grow to 28px"* — the toolbar's
+  control height (h-8), up from 24.5px.
+- **Editor drafts** (K124's open question): decided by the PM voice
+  (A338): sessionStorage, restored silently, conflict dialog if the disk
+  version moved. Reported to Ken with the option of a restore prompt.
+
+
+### A338 · Description-editor drafts persist to sessionStorage (PM call for K124)
+
+**Ticket:** K124's open question (Ken: *"we save in session storage? how
+would that work, get a PM"*) · **Date:** 2026-09-24
+
+**Decided (PM voice).** Unsaved description edits are kept in
+`sessionStorage` under `loctt:draft:${taskId}:${field}`, written on the
+existing 1.5s idle cadence (`BODY_IDLE_MS`) and flushed on blur, Escape,
+Cmd/Ctrl+Enter and `beforeunload`; cleared on Save, Cancel and a confirmed
+discard, never on unmount alone. Reopening the task with a draft whose
+base token matches the file restores it silently into edit mode (the
+unsaved indicator shows); if the file changed on disk since, the existing
+`BodyConflictDialog` opens (mine = draft, theirs = disk) instead. Storage
+failure (private mode, quota) degrades silently to no draft, mirroring
+`shell/storage.ts`. Per-tab by nature: two tabs keep independent drafts.
+Comment composer out of scope.
+
+**Rejected.** No persistence (a refresh loses a long edit); localStorage
+(a closed tab's draft resurfaces days later with no natural clear point).
+
+**Why.** Never silently lose data (refresh/crash covered) without a
+"keep forever" store; the stale-draft path reuses TSK-35's conflict rule;
+no banner, per messaging.md ("would the page work without it").
+
+**To revert.** Remove the draft hook and its `readSession`/`writeSession`
+helpers; no schema, API or on-disk change.
