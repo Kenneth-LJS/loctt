@@ -22671,3 +22671,165 @@ no banner, per messaging.md ("would the page work without it").
 
 **To revert.** Remove the draft hook and its `readSession`/`writeSession`
 helpers; no schema, API or on-disk change.
+
+### A337 · "Save as view" filter preview: resolved names + chips replace the DSL-shaped text dump
+
+**Ticket:** Ken, verbatim, on a screenshot of the dialog's Filters box
+(`project in "01M33FN47B9B55YP89X786V1VB"` / `milestone in
+"01M33FN6NWKG9TEJ2MAW23A6WE", "01M33FN6C78FDY98FG37TRJM30"`): *"why is
+the filter preview just text?! that's bad UX. get the UI designer to
+design a better preview, not just an ugly text dump."* · **Date:**
+2026-09-24 · **Commit:** (uncommitted; Ken integrates) · **Scope:** web
+UI only (`apps/web/src/client/list/SaveViewDialog.tsx` and a new
+`list/filterPreview.tsx`).
+
+**Situation.** `SaveViewDialog`'s Filters box rendered each stored
+`Filter` through core's `filterToSummary` — `field op values` in a
+monospace `<code>` line, one per filter. Two faults: (1) it read as
+query text (a DSL rendering) rather than as the filters the user built
+via dropdowns, which is exactly the K102 complaint Ken had already ruled
+on for this same dialog ("QUERY IS ADVANCED SHIT... average people dont
+need to see the fucking DSL QUERY") — this was a second-generation
+regression of it; (2) `filterToSummary` prints the filter's stored
+`values` verbatim, which for project/milestone/label/assignee/etc. are
+ULIDs — a direct P-4 violation (`tests/cases/ui-test-cases/README.md`:
+no raw ids in UI content).
+
+**The call made.** Built `list/filterPreview.tsx`, a pure resolver:
+`Filter[]` + the SAME `FacetOptions` (`buildFacetOptions`) and workflow
+custom-field config the filter bar and `ViewFormDialog` already resolve
+against → `ResolvedFilterRow[]`. `SaveViewDialog` renders one row per
+resolved filter:
+
+- **Simple filter:** field label (from the same `FACET_TO_FIELD`/
+  `viewFilterFields.ts` vocabulary, e.g. "Milestone", "Status") +
+  operator in plain words (reusing `viewFilterFields.ts`'s `OP_LABEL` —
+  "is any of", "is not", "is empty") + each value as its own `ui/Chip`
+  (`variant="accent"`, the same pill primitive the rest of the app uses
+  for filter chips) carrying the resolved NAME, never the id.
+- **Multi-value:** every value gets its own chip — a set, not a
+  comma-joined string — so "Label: bug, urgent" reads as two chips, not
+  one blob.
+- **Dangling reference** (an id that resolves to nothing in the loaded
+  options — a deleted milestone/label/user/etc.): a warn-toned degraded
+  chip reading "Deleted milestone" (etc.), mirroring `FilterBar`'s
+  LST-33 "no longer exists" dangling-chip treatment. The raw id never
+  appears in the label under any circumstance — confirmed by a
+  dedicated unit test asserting the id string is absent from the
+  resolved label.
+- **Advanced filter:** still shown as its own DSL text under an
+  "Advanced query" heading — legitimate here, since it IS what the user
+  typed (unchanged call from K102/the docstring's original wording).
+- **Sort:** when `search.sort` is set, a separate "Sort" row in the same
+  vocabulary ("Priority · descending"), using the same field-label
+  lookup.
+- **Empty state:** unchanged wording ("No filters — this view will show
+  every task."), now gated on BOTH no filters and no sort (a
+  sort-with-no-filter search no longer shows the empty state next to a
+  sort row).
+- **Accessibility:** each row carries an `aria-label` stating field +
+  operator + resolved values as one sentence ("Milestone: is any of Beta
+  launch"), so a screen reader gets one coherent announcement per row
+  rather than reading chip-by-chip; the chip row itself is
+  `aria-hidden` to avoid double announcement.
+
+**Where it landed.** New file `apps/web/src/client/list/filterPreview.tsx`
+(pure resolver + types, no React state, no query client — unit-testable
+standalone). `apps/web/src/client/list/SaveViewDialog.tsx` rewired to
+fetch the same `useProjects/useUsers/useLabels/useMilestones/useSprints/
+useWorkflow` hooks `FilterBar`/`ViewFormDialog` already use, build
+`FacetOptions` via the shared `buildFacetOptions`, and render
+`resolveFilterRows(...)` instead of calling `filterToSummary`.
+`filterToSummary`/`@loctt/core/query/filters.js` import removed from this
+file — no other change to core.
+
+**Tests.** `filterPreview.test.ts` (new, 10 tests) unit-tests the
+resolver directly — id→name resolution, multi-value-as-set, dangling
+degradation with the raw id asserted ABSENT, custom-enum-field
+resolution, operator wording, valueless ops, free-text fields (never
+dangling), advanced-filter passthrough, and `sortFieldLabel`.
+`SaveViewDialog.test.tsx` rewritten (8 tests) with a realistic
+`routeFetch` fixture (mirroring `FilterBar.test.tsx`'s pattern) covering
+the resolved-name assertion, the milestone-ULID-absence assertion, the
+multi-value-chips assertion, the dangling-degraded assertion, the
+messaging.md empty state, and the sort row. Every new/changed assertion
+was red-proven (see below) before this entry was written.
+
+**Red-proofs (mutate → watch fail → restore).**
+1. *Names not ULIDs*: in `filterPreview.ts`'s `resolveSimpleValues`,
+   changed the resolved-hit branch to return the raw id as the label
+   instead of `hit.label`. 4 tests went red across both files
+   (`filterPreview.test.ts`'s milestone/multi-value cases,
+   `SaveViewDialog.test.tsx`'s milestone-name test) with diffs showing
+   `"label": "m_live"` where `"Beta launch"` was expected.
+2. *Dangling degraded*: changed the no-hit branch to return
+   `{ label: v, dangling: false }` (the raw id, undangled) instead of
+   `"Deleted <field>"` / `dangling: true`. 2 tests went red — the
+   resolver unit test's exact-shape assertion and the dialog's
+   dangling-chip test, both showing the raw id (`m_deleted`,
+   `m_deleted_but_gone`) leaking into the rendered text.
+3. *DSL shown for advanced filter*: in `SaveViewDialog.tsx`, deleted the
+   `<code>{r.query}</code>` line from the advanced-row branch. The
+   "carries a free-text q verbatim" test went red:
+   `expected 'Advanced query' to contain 'has_link(...)'`.
+4. *Empty state*: replaced the empty-state condition with a hardcoded
+   `false`. The empty-state test went red (`save-view-no-filters` not
+   found).
+5. *Multi-value collapsed to a string*: replaced the per-value `Chip`
+   map with `r.values.map(v => v.label).join(", ")`. The multi-value
+   test (after being tightened — see below) went red.
+
+**A test that needed tightening before it caught its own mutation.**
+The first draft of the multi-value test asserted
+`row.querySelectorAll("span").length > 1`, which passed even against
+the collapsed-string mutation (the row already has ≥2 `<span>`s from the
+field-label and operator spans, independent of how values render). That
+assertion would have shipped **asserting nothing about the multi-value
+behaviour it claimed to cover** — exactly the trap this repo's testing
+philosophy calls out ("a test that still passes with the behaviour
+deleted asserts nothing"). Tightened to require ≥2 elements matching
+`[data-testid], .inline-flex` (the chip-specific class) AND that no
+single text node joins both values with `", "`; confirmed this version
+fails against mutation 5 above, then confirmed it passes on the restored
+code.
+
+**Cases.** Grepped `tests/cases/` for "Save as view" / "SaveViewDialog" /
+`VUE-`. No case in `tests/cases/ui-test-cases/flow-saved-views.md` (VUE-1
+through VUE-42) pins the preview's LOOK — VUE-6 ("Save as view in basic
+mode writes to queries.yaml...") is about the write path and does not
+mention rendering. No case needed amending or adding: the preview's
+visual form was never asserted at the case layer, only at the component-
+test layer (`SaveViewDialog.test.tsx`, now updated in place per Ken's
+words above — the prior "shows a human-readable filter summary, not the
+DSL" test asserted the OLD design's absence of `"archived !="`/`"AND"`,
+which is superseded, not wrong; it is replaced rather than kept
+alongside the new assertions to avoid two tests pinning two different
+"human-readable" bars).
+
+**E2e.** Grepped `tests/e2e` and every `*.spec.ts` in the repo for
+`save-view-filter-summary`/`save-view-no-filters`/`filterToSummary` —
+zero hits. No e2e spec locates the old preview by its markup, so none
+needed updating.
+
+**Gates.** `npx tsc --build`: 0 errors from this change (3 pre-existing
+errors remain in `apps/web/src/client/task/TaskDetail.tsx`, from a
+change this session did not make — an `IconButton` import apparently
+dropped and an unused `Button` import — not touched here). `npm run
+test -w apps/web`: 2643/2643 passed across 258 files (one pre-existing
+unhandled-rejection warning from `ActivityPanel.test.tsx`'s ProseMirror
+teardown timing, untouched by this change, not a new failure). `npx
+eslint` on the four touched/added files: 0 errors, 0 warnings. `npm run
+cases:check`: up to date (1053 cases, no drift).
+
+**To revert.** Delete `apps/web/src/client/list/filterPreview.tsx` and
+`filterPreview.test.ts`. In `SaveViewDialog.tsx`, restore the
+`filterToSummary` import from `@loctt/core/query/filters.js`, drop the
+`useProjects/useUsers/useLabels/useMilestones/useSprints/useWorkflow`
+hooks and the `options`/`customFields`/`resolvedRows` memos, and replace
+the `<ul data-testid="save-view-filter-summary">` block's row rendering
+with the original `f.kind === "advanced" ? <code>{f.query}</code> :
+filterToSummary(f)` ternary over `filters` directly (drop the `sortEntry`
+row and restore the empty-state condition to `filters.length === 0`
+alone). Restore `SaveViewDialog.test.tsx` to the two-test version that
+asserted `summary.textContent` against `"status in backlog"` and the
+absence of `"AND"`/`"archived !="`.
