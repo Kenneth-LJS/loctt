@@ -484,7 +484,7 @@ export {
 } from "./task/index.js";
 export { appendHistory, isMalformedHistoryEntry, readHistory, readHistoryRows, validHistory } from "./task/index.js";
 export { assembleTaskFile, parseFrontmatter, renderRawText, serializeFrontmatter, splitTaskFile, TaskParseError } from "./task/index.js";
-export { ALL_FIELDS_TOUCHED, appendTaskBody, assertWriteSafe, CorruptWriteError, readTask, readTaskBody, writeTask, writeTaskBody } from "./task/index.js";
+export { ALL_FIELDS_TOUCHED, appendTaskBody, assertWriteSafe, CorruptWriteError, readTask, readTaskBody, withTrailingNewline, writeTask, writeTaskBody } from "./task/index.js";
 export { listTaskIds, loadAllTasks, loadAllTasksDetailed, lookupById, lookupByKey, lookupTask, TaskNotFoundError, type UnreadableTask, UnreadableTaskError } from "./task/index.js";
 export { createTask } from "./task/index.js";
 export { type DuplicateResult,duplicateTask } from "./task/index.js";

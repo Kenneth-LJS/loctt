@@ -75,6 +75,7 @@ export {
   CorruptWriteError,
   readTask,
   readTaskBody,
+  withTrailingNewline,
   writeTask,
   writeTaskBody,
 } from "./io.js";

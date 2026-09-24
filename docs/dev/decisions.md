@@ -22685,6 +22685,18 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### A341 · CLI `--set` and MCP `replace_task_body` store one trailing newline, not two
+
+**Ticket:** found by the K124 e2e run: `loctt body T-1 --set $'Original.\n'` stored `Original.\n\n`. · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3 · **Scope:** core `withTrailingNewline`, CLI `body --set`, MCP `replace_task_body`.
+
+**Situation.** Both surfaces appended `"\n"` unconditionally, so text that already ended in a newline (a heredoc, a file piped in, an agent's string) gained a blank line on every replace. The web Save writes the editor's serialised body as-is.
+
+**Options.** (a) Add the newline only when missing, in one core helper both surfaces call; (b) normalise to exactly one trailing newline, stripping any extra: would silently drop trailing blank lines a caller deliberately sent; (c) leave it and document it.
+
+**Decided.** (a): `withTrailingNewline` in `packages/core/src/task/io.ts`; CLI and MCP call it. Both reference docs state the rule. Tests: `apps/cli/src/cli.test.ts` "stores --set text that already ends in a newline…", `apps/mcp/src/tools/task-body.test.ts`; both red with the unconditional append restored.
+
+**To revert.** Replace the two `withTrailingNewline(...)` calls with `... + "\n"`, delete the helper and its exports, the two tests, and the two doc sentences.
+
 ### A340 · Description editor Save/Cancel: implementation calls under K124 and A338
 
 **Ticket:** K124 (Ken) + A338 (PM) — the description editor saves only on Save · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3

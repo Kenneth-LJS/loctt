@@ -156,7 +156,7 @@ tools.
 | Tool | Purpose | Key params |
 |---|---|---|
 | `append_task_body` | Append to the markdown body. | `ref`, `text`, `expected_token` |
-| `replace_task_body` | Replace the markdown body. | `ref`, `body`, `expected_token` |
+| `replace_task_body` | Replace the markdown body. Stored ending in one newline, whether or not `body` ends in one. | `ref`, `body`, `expected_token` |
 
 `expected_token` is the `body_token` from a `get_task` read; pass it to
 refuse a stale write.

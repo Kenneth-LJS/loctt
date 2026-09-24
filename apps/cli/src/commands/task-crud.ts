@@ -38,6 +38,7 @@ import {
   unsetField,
   ViewError,
   withStateLock,
+  withTrailingNewline,
   writeTaskBody,
 } from "@loctt/core";
 
@@ -901,7 +902,7 @@ export async function body(args: string[], root: string): Promise<void> {
     }
     const opts = expected === undefined ? {} : { expectedToken: expected };
     if (newBody !== undefined) {
-      await writeTaskBody(locttDir, task.frontmatter.id, newBody + "\n", opts);
+      await writeTaskBody(locttDir, task.frontmatter.id, withTrailingNewline(newBody), opts);
       console.log(`Updated body for ${task.frontmatter.key}`);
     } else {
       await appendTaskBody(locttDir, task.frontmatter.id, appendText as string, opts);

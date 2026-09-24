@@ -193,7 +193,7 @@ body.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
-| `--set` | markdown | — | Replace the body. Mutually exclusive with `--append`. |
+| `--set` | markdown | — | Replace the body. Stored ending in one newline, whether or not the text ends in one. Mutually exclusive with `--append`. |
 | `--append` | markdown | — | Append to the body. |
 | `--expect` | token | — | Write only if the body still matches this token (optimistic concurrency). |
 | `--token` | — | — | Print the current body's token and exit. |
