@@ -119,6 +119,41 @@ describe("useGitSync invalidation (GIT-23)", () => {
     expect(err.code).toBe("git_failed");
     expect(err.message).toBe("disk full");
   });
+
+  // @verifies GIT-13, GIT-12 (A342)
+  it("a plain-JSON planning-phase failure is read off the one response, not re-fetched", async () => {
+    // `handleGitSync` answers a planning-phase refusal (reconcile
+    // needed, a conflict, …) as ordinary JSON — no NDJSON header — and
+    // by then it has already written whatever sentinel that refusal
+    // implies (e.g. the reconcile.yaml a `reconcile_needed` leaves for
+    // the panel to read). `streamSync` used to react to "not NDJSON" by
+    // POSTing to `/api/git/sync` a SECOND time to re-derive the
+    // ApiError via `apiClient.post` — sending a non-idempotent write
+    // twice. The second call landed on the sentinel the first call's
+    // failure had just written and reported a DIFFERENT, wrong error
+    // ("a previous sync was interrupted") instead of the original
+    // refusal. Fixed by parsing the `Response` already in hand
+    // (`resolveResponse`) instead of re-fetching.
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(
+        { code: "reconcile_needed", message: "reconciliation needed", data_state: "not_saved", recovery: { kind: "none" } },
+        409,
+      ),
+    );
+    const { wrapper } = harness();
+    const { result } = renderHook(() => useGitSync(), { wrapper });
+
+    result.current.mutate();
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    // Exactly one request went out — no repeat POST.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    const err = result.current.error as { status?: number; code?: string; message: string };
+    expect(err.status).toBe(409);
+    expect(err.code).toBe("reconcile_needed");
+    expect(err.message).toBe("reconciliation needed");
+  });
 });
 
 /**

@@ -1,7 +1,7 @@
 import type { ErrorResponse } from "@loctt/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiClient, ApiError, createDeadline, isAbort } from "../client.ts";
+import { apiClient, ApiError, createDeadline, isAbort, resolveResponse } from "../client.ts";
 
 /**
  * Settings → Tracker → Sync, over the five `/api/git/*` routes.
@@ -222,9 +222,13 @@ export interface SyncProgress {
  *    a 200 header — so it is reconstructed into the identical `ApiError`
  *    (envelope + status) the plain error path would have thrown.
  *  - **JSON** (a no-op sync, or a planning-phase failure): the ordinary
- *    body via `apiClient`. A non-2xx here (a 409 conflict, a 500) is
- *    thrown by `apiClient.post` exactly as before, so the `/api/git/sync`
- *    error contract is unchanged.
+ *    body, parsed off the `Response` already fetched below via
+ *    `resolveResponse` — NOT a second `apiClient.post` (A342: `sync` is
+ *    not idempotent, so re-POSTing to re-derive the error landed on
+ *    whatever the first call's failure had just written and reported a
+ *    different, wrong error). A non-2xx here (a 409 conflict, a 500) is
+ *    thrown exactly as `apiRequest` would, so the `/api/git/sync` error
+ *    contract is unchanged.
  */
 async function streamSync(onProgress: (p: SyncProgress) => void): Promise<SyncResult> {
   const endpoint = "/api/git/sync";
@@ -259,11 +263,12 @@ async function streamSync(onProgress: (p: SyncProgress) => void): Promise<SyncRe
   if (!contentType.includes("application/x-ndjson") || !res.body) {
     deadline.clear();
     // Non-stream reply: a no-op sync's JSON body, or a planning-phase
-    // error. Reuse the transport's own parsing + ApiError throwing.
-    // apiRequest gets its own (fixed, write-default) deadline for this
-    // path — a JSON reply this small is not the "large tree" case the
-    // inactivity deadline exists for.
-    return apiClient.post<SyncResult>(endpoint, {});
+    // error. Parse the `Response` already in hand rather than issuing a
+    // second POST — `sync` is not idempotent, and a second call lands
+    // on whatever the first one's failure just wrote (A342: a
+    // `reconcile_needed` refusal's sentinel made the repeat call
+    // misreport itself as "a previous sync was interrupted").
+    return resolveResponse<SyncResult>(res, endpoint);
   }
 
   const reader = res.body.getReader();

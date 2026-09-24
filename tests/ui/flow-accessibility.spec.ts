@@ -1104,11 +1104,17 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
       await tracker.run(["project", "create", `Project ${n}`, "--prefix", prefix]);
     }
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByTestId("project-all")).toBeVisible();
+    // K125 removed the sidebar's "All projects" row; List is the real,
+    // keyboard-reachable entry for "all tasks" now.
+    const listLink = page.locator("aside").getByRole("link", { name: "List", exact: true });
+    await expect(listLink).toBeVisible();
 
-    // Group entries are reachable by keyboard: the "All projects" entry
+    // Group entries are reachable by keyboard: the sidebar's List entry
     // and a project link can hold focus (they are real links in tab
     // order, not click-only divs).
+    await listLink.focus();
+    await expect(listLink).toBeFocused();
+
     const firstProject = page.getByRole("link", { name: /Project 01/ });
     await firstProject.focus();
     await expect(firstProject).toBeFocused();

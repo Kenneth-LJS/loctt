@@ -22766,6 +22766,98 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A342 · Git sync parses its own error reply instead of POSTing sync a second time
+
+**Decision.** `streamSync` (`apps/web/src/client/api/hooks/useGit.ts`), on
+receiving a plain-JSON (non-NDJSON) reply from `POST /api/git/sync`, used
+to re-derive the `ApiError` by issuing a **second** `POST /api/git/sync`
+via `apiClient.post`, instead of parsing the `Response` it already had
+from the first request. `sync` is not idempotent: when the first call
+failed in its planning phase (e.g. `reconcile_needed`, which writes a
+reconcile sentinel before throwing), the second call landed on that
+sentinel and misreported itself as `reconcile_in_progress` ("a previous
+sync was interrupted... partly-applied") — a different, wrong, and much
+scarier error than the clean refusal the first response actually carried.
+The reconciliation panel (`git-reconcile-panel`) never rendered; the user
+saw a false "interrupted sync" alert. Fixed by adding an exported
+`resolveResponse<T>(res, endpoint)` helper to `apps/web/src/client/api/
+client.ts` (factored out of `apiRequest`'s own tail) and having
+`streamSync` call it on the `Response` already in hand, instead of
+re-POSTing.
+
+**Why:** this was diagnosed as the real cause of the "GIT-14/GIT-12 panel
+never visible" flakiness flagged in the task — the failure moved to a
+different test on each run (GIT-14, then GIT-7/31/12/38, then GIT-13,
+then GIT-12) but always the same signature: two POSTs to `/api/git/sync`
+in the trace, the second returning `reconcile_in_progress` instead of the
+panel opening. Confirmed via `test-results/*/trace.zip` network log
+(`0-trace.network`) showing the double POST and the two distinct 409
+bodies, then reproduced deterministically by running GIT-12 alone
+repeatedly (3/3 failures) before the fix and 3/3 passes after.
+
+**Scope:** client-only. No server/core change — `handleGitSync` /
+`sync()` already behaved correctly; the bug was the client re-issuing a
+non-idempotent write to interpret its own already-received answer.
+
+**Evidence:** new unit test `apps/web/src/client/api/hooks/useGit.test.tsx`
+→ `"a plain-JSON planning-phase failure is read off the one response, not
+re-fetched"` — asserts `fetch` called exactly once and the surfaced
+`ApiError` carries the original `reconcile_needed` envelope. Shown red
+against the pre-fix code (`fetch` called 2 times), green after.
+`npm run test:ui -- tests/ui/flow-accessibility.spec.ts tests/ui/flow-git-sync.spec.ts tests/ui/flow-projects-users-switcher.spec.ts tests/ui/flow-git-reconcile.spec.ts --reporter=line`
+→ 107 passed, 0 failed (previously 6 failed across these files, plus a
+since-resolved additional flake instance each run).
+
+**To revert:** revert `apps/web/src/client/api/client.ts` (remove the
+exported `resolveResponse` function, restore the inline body directly
+under `apiRequest`) and `apps/web/src/client/api/hooks/useGit.ts`
+(`streamSync`'s non-NDJSON branch back to `return apiClient.post
+<SyncResult>(endpoint, {})`, drop the `resolveResponse` import). Remove
+the new test case in `useGit.test.tsx` ("a plain-JSON planning-phase
+failure is read off the one response, not re-fetched"). No config,
+schema, or on-disk format changes to revert.
+
+---
+
+## § 8 agent-made — A342 (spec amendments for K125)
+
+**Decision.** Four Playwright specs still referenced the sidebar's "All
+projects" row (`getByTestId("project-all")`), which K125 (Ken,
+2026-09-24) removed — "take out the 'All projects' then? if its
+duplicate" — in favour of List clearing sidebar/toolbar scope (A339).
+Amended each to use the sidebar's List link instead:
+
+- `tests/ui/flow-accessibility.spec.ts` A11Y-12: added a focus check on
+  the sidebar's List link as the keyboard-reachable "all tasks" entry,
+  kept the rest of the test (project truncation/expand) unchanged.
+- `tests/ui/flow-git-sync.spec.ts` GIT-3 (:219) and GIT-23 (:661): replaced
+  the `project-all` click with
+  `page.locator("aside").getByRole("link", { name: "List", exact: true }).click()`
+  to reach the unscoped `/list` after a sync, matching the pattern
+  already used in `flow-app-shell.spec.ts` / `flow-sidebar-k125.spec.ts`.
+- `tests/ui/flow-projects-users-switcher.spec.ts` PRU-21 (:155): retitled
+  the test ("All projects is pinned" → "List stays reachable") and
+  replaced the `project-all` visibility assertion with the same List-link
+  check.
+
+Case docs amended in `tests/cases/ui-test-cases/` (grepped every "All
+projects" mention across the tree): `flow-board.md`, `flow-bulk.md`,
+`flow-projects-users.md` — each given the note:
+> **Amended (K125, Ken 2026-09-24).** The sidebar's "All projects" row was
+> removed (Ken: *"take out the 'All projects' then? if its duplicate"*);
+> List shows all tasks.
+
+`npm run cases:index` and `npm run cases:check` run after the doc edits
+(clean).
+
+**Why:** these specs asserted the row K125 superseded; they were stale,
+not wrong about product behaviour at the time they were written.
+
+**To revert:** restore `getByTestId("project-all")` usages in the four
+spec files and drop the added amendment notes from the three case docs;
+re-run `cases:index`/`cases:check` after. (Reverting only makes sense
+together with reverting K125 itself, which this decision does not touch.)
+
 ### A341 · CLI `--set` and MCP `replace_task_body` store one trailing newline, not two
 
 **Ticket:** found by the K124 e2e run: `loctt body T-1 --set $'Original.\n'` stored `Original.\n\n`. · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3 · **Scope:** core `withTrailingNewline`, CLI `body --set`, MCP `replace_task_body`.
