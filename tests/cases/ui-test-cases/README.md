@@ -226,6 +226,21 @@ must not invent divergent concepts.
 **Violations:** a UI-only "Done" filter that doesn't correspond to any
 status category; a search box that accepts syntax `loctt list` rejects.
 
+## P11 — Their files, their process
+
+LocTT tracks work; it does not police how a team runs it. State
+changes are the user's to make in any order: a sprint can be reopened,
+left active past its end date, or closed early, and nothing warns,
+blocks, or asks for a force flag. LocTT refuses only what it cannot
+store or draw (an invalid date, an end before a start), never a
+process choice. *(K130, Ken 2026-09-24: "we're not babysitting policy,
+we're being a better task tracker, not here to lock behaviour. because
+end of the day, its their files, i let them track however they want.")*
+
+**Violations:** a warning that an active sprint's dates have passed; a
+reopen that needs `--force`; a confirmation step before a harmless
+state change.
+
 ---
 
 ## Principle → flow index
@@ -243,4 +258,5 @@ Reverse lookup: change something, find what it might break.
 | P7 Config drift | [cross-surface](flow-cross-surface.md), [settings](flow-settings.md) |
 | P8 Fast paths | [accessibility](flow-accessibility.md), [task-create](flow-task-create.md) |
 | P9 Scale | [list](flow-list.md), [board](flow-board.md), [bulk](flow-bulk.md) |
+| P11 Their process | [sprints](flow-sprints.md) |
 | P10 One mental model | [cross-surface](flow-cross-surface.md), [saved-views](flow-saved-views.md) |
