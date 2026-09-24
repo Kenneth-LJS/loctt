@@ -344,11 +344,15 @@ a violation of P4.
 **A route-level render failure is caught by the error boundary inside the shell.** Force a component in the main pane to throw.
 
 - The header and sidebar survive; only the main pane is replaced by the error state, so the user can navigate away.
-- The message says what was being displayed and that the user's tasks were not affected, and offers reload plus a way back to the list.
+- The message says what was being displayed, and offers reload plus a way back to the list.
 
 > **Amended (K120, Ken 2026-09-23).** Dropped "that the failure is a bug":
 > under the messaging rules the screen states the data outcome, not an
 > explanation of the fault.
+
+> **Amended (K126, Ken 2026-09-24).** Dropped "that the user's tasks were
+> not affected". Ken: *"i dont think the 'your tasks werent affected'
+> message is needed."*
 - No raw stack trace is presented as the primary message.
 
 ### SHL-43 · M1 · minor · P4 P7
