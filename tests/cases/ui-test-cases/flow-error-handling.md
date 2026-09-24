@@ -301,6 +301,9 @@ Failures of the error system itself.
 > **Amended (K126, Ken 2026-09-24).** The "Your tasks weren't affected."
 > line is removed. Ken: *"i dont think the 'your tasks werent affected'
 > message is needed."* Only the in-flight-write warning remains.
+
+> **Amended (K127, Ken 2026-09-24).** The in-flight warning reads
+> *"Your changes may not have been saved. Please check and try again."*
 ### ERR-36 · M1 · blocker · P4 P6
 **The error boundary offers reload as a control and names what broke.** Trigger the boundary.
 

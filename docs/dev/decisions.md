@@ -22660,6 +22660,18 @@ claim about the data it cannot back" and keeps only the in-flight
 requirement; SHL-42 drops "the user's tasks were not affected". Unit
 and e2e assertions now require the line to be absent.
 
+### K127 · The error screen's in-flight warning wording
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+Supersedes K120's in-flight line.
+
+The warning the error card shows when a write was in flight read *"A
+change was being saved, so it may not have been. Reload to check before
+trying it again."* Ken: *"we can change it to 'Your changes may not have
+been saved. Please check and try again.'"* Applied verbatim in
+`error/RegionErrorBoundary.tsx`; the ERR-35 unit test asserts the exact
+string.
+
 ### A338 · Description-editor drafts persist to sessionStorage (PM call for K124)
 
 **Ticket:** K124's open question (Ken: *"we save in session storage? how
