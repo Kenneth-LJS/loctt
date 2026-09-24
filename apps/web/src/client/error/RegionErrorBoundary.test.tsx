@@ -63,20 +63,18 @@ describe("RegionErrorBoundary", () => {
   /**
    * @verifies ERR-35
    *
-   * "The single most reassuring true thing the app can say here" — and
-   * it must stay true: with a write in flight it says what it does not
-   * know rather than claiming the last action landed.
+   * K126: no reassurance line. With a write in flight it says what it
+   * does not know rather than claiming the last action landed.
    */
-  it("says the data on disk is unaffected, and does not overclaim a write", () => {
+  it("makes no data claim unless a write was in flight", () => {
     const { unmount } = render(
       <RegionErrorBoundary region="the task list">
         <Boom explode />
       </RegionErrorBoundary>,
     );
     const text = screen.getByRole("alert").textContent ?? "";
-    // K120: the data outcome, in the user's words, and nothing else —
-    // no path, no explanation of the fault (messaging.md).
-    expect(text).toMatch(/your tasks weren.t affected/i);
+    // K126: no "tasks weren't affected" line, no path, no explanation.
+    expect(text).not.toMatch(/affected/i);
     expect(text).not.toContain(".loctt/");
     // Nothing was in flight, so no claim either way is made about one.
     expect(text).not.toMatch(/being saved/i);
@@ -369,8 +367,8 @@ describe("RegionErrorBoundary at route level", () => {
     const alert = await screen.findByRole("alert");
     // Says what was being displayed, in user terms.
     expect(alert.querySelector("h2")?.textContent).toContain("the board");
-    // K120: the data outcome, nothing more.
-    expect(alert.textContent).toMatch(/your tasks weren.t affected/i);
+    // K126: no reassurance line.
+    expect(alert.textContent).not.toMatch(/affected/i);
     // No raw stack as the primary message — it is behind the
     // disclosure, which is closed.
     expect(alert.querySelector("details")?.hasAttribute("open")).toBe(false);

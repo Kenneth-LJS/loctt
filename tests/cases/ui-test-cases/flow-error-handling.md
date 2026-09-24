@@ -286,10 +286,10 @@ Failures of the error system itself.
 - Navigation away from the broken region works and clears the boundary.
 
 ### ERR-35 · M1 · blocker · P4 P1
-**The error boundary tells the user their data is on disk and unaffected.** Trigger the boundary.
+**The error boundary makes no claim about the data it cannot back.** Trigger the boundary.
 
-- The message says the user's tasks were not affected.
-- It does not claim data *was* saved if a write was in flight; it distinguishes "your existing data is fine" from "your last action definitely landed".
+- The message makes no statement about the user's data when nothing was being written.
+- It does not claim data *was* saved if a write was in flight; it says the last change may not have been saved.
 
 
 > **Amended (K120, Ken 2026-09-23).** Previously required naming the
@@ -297,6 +297,10 @@ Failures of the error system itself.
 > Ken chose the wording *"Your tasks weren't affected."* under the
 > messaging rules (`docs/dev/design/messaging.md`): the data-state
 > statement stays; the path and the explanation go.
+
+> **Amended (K126, Ken 2026-09-24).** The "Your tasks weren't affected."
+> line is removed. Ken: *"i dont think the 'your tasks werent affected'
+> message is needed."* Only the in-flight-write warning remains.
 ### ERR-36 · M1 · blocker · P4 P6
 **The error boundary offers reload as a control and names what broke.** Trigger the boundary.
 

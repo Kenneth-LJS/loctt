@@ -499,8 +499,8 @@ test.describe("SHL — render failures", () => {
     // component name.
     await expect(alert).toContainText("the task list");
     await expect(alert).not.toContainText("ListView");
-    // The tasks are said to be unaffected, in the user's words (K120).
-    await expect(alert).toContainText(/your tasks weren.t affected/i);
+    // No reassurance line (K126).
+    await expect(alert).not.toContainText(/affected/i);
 
     // The header and sidebar survive, so the user can navigate away.
     await expect(page.getByLabel("Toggle sidebar")).toBeVisible();

@@ -22645,6 +22645,21 @@ those cases get amended when this is built.
   version moved. Reported to Ken with the option of a restore prompt.
 
 
+### K126 · The error screen drops "Your tasks weren't affected."
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+Supersedes K120's wording.
+
+On a screenshot of the full-page error card ("Something went wrong
+displaying the app" / "Your tasks weren't affected." / Reload / Show
+details), Ken: *"i dont think the 'your tasks werent affected' message
+is needed."* The line is removed from `error/RegionErrorBoundary.tsx`;
+the card is now the heading, the conditional in-flight-write warning,
+the actions and the details disclosure. ERR-35 is retitled to "makes no
+claim about the data it cannot back" and keeps only the in-flight
+requirement; SHL-42 drops "the user's tasks were not affected". Unit
+and e2e assertions now require the line to be absent.
+
 ### A338 · Description-editor drafts persist to sessionStorage (PM call for K124)
 
 **Ticket:** K124's open question (Ken: *"we save in session storage? how

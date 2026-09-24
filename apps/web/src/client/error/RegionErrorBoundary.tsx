@@ -21,8 +21,8 @@ import { Disclosure } from "../ui/Disclosure.tsx";
  *
  * What the fallback owes the user, per ERR-35/36/37:
  *   - it names the region in user terms, not a component name
- *   - it says this is a *display* fault and that the tasks on disk are
- *     unaffected — without claiming an in-flight write landed
+ *   - it makes no claim about the data, except to warn when a write
+ *     was in flight that it may not have landed (K126)
  *   - it offers reload, and — at region scope — a narrower "try this
  *     region again" that does not cost the rest of the page
  *   - it keeps the stack out of the headline but retrievable
@@ -191,9 +191,6 @@ export function RegionErrorFallback({
       <h2 className="mb-2 text-[1.0714rem] font-semibold text-danger-fg">
         Something went wrong displaying {region}
       </h2>
-      <p className="mb-2 text-[0.9286rem] text-text-secondary">
-        Your tasks weren&rsquo;t affected.
-      </p>
       {writeInFlight ? (
         <p className="mb-2 text-[0.9286rem] text-warn-fg">
           A change was being saved, so it may not have been. Reload to check
