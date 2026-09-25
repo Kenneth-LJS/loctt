@@ -423,13 +423,14 @@ test.describe("TSK — task detail read shell", () => {
     await page.getByRole("menuitem", { name: "Delete" }).click();
 
     const dialog = page.getByRole("dialog");
-    // States the key, that it is permanent, and names archive as the
-    // reversible alternative — the three things that keep it from
-    // reading like an archive prompt.
+    // States the key and that it is permanent. K129 (Ken, 2026-09-24)
+    // dropped the archive suggestion from this dialog: "im sure the
+    // archive is somewhere the user can see first, so they should
+    // know" — so the confirmation states only irreversibility, no
+    // archive mention.
     await expect(dialog).toContainText(doomed);
     await expect(dialog).toContainText(/permanent/i);
-    await expect(dialog).toContainText(/cannot be undone/i);
-    await expect(dialog).toContainText(/archive/i);
+    await expect(dialog).toContainText(/is irreversible\. continue\?/i);
 
     const confirmButton = dialog.getByRole("button", { name: new RegExp(`^Delete ${doomed}$`) });
     const input = dialog.getByRole("textbox");

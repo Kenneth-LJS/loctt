@@ -68,15 +68,15 @@ export function titleProjectName(
 /**
  * Builds the document title.
  *
- * `LocTT — <project> — <view>` when both resolve. With no project the
+ * `LocTT · <project> · <view>` when both resolve. With no project the
  * shape falls back to the pre-existing `<view> · LocTT` rather than
  * emitting an empty segment or a placeholder, and with no view (an
  * unmatched route) it is the bare app name.
  */
 export function documentTitleFor(view: string | null, project: string | null): string {
-  if (view === null) return project === null ? "LocTT" : `LocTT — ${project}`;
+  if (view === null) return project === null ? "LocTT" : `LocTT · ${project}`;
   if (project === null) return `${view} · LocTT`;
-  return `LocTT — ${project} — ${view}`;
+  return `LocTT · ${project} · ${view}`;
 }
 
 /**

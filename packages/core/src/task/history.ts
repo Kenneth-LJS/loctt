@@ -73,7 +73,7 @@ export class HistoryParseError extends LocttError {
     super("io_failed",
       reason === undefined
         ? `${filePath} is not a list of history entries. `
-          + `It has not been modified — open it and repair or remove it.`
+          + `It has not been modified. Open it and repair or remove it.`
         // The parse position is the actionable half. Without it the
         // user is told a file is broken and left to find where.
         : `${filePath} could not be parsed as YAML, so LocTT will not `

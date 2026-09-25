@@ -755,7 +755,7 @@ function checkExpectedId(
     envelope: {
       message:
         "This task's key now belongs to a different task, so your edit was "
-        + "not saved — it would have changed the wrong task. Reload the page "
+        + "not saved. It would have changed the wrong task. Reload the page "
         + "to continue on the task you were viewing.",
       code: "conflict",
       data_state: "not_saved",
@@ -3820,7 +3820,7 @@ export function createWebApp(options: WebAppOptions) {
       error(
         res,
         `The status "${status}" no longer exists in workflow.yaml. `
-        + `This board is showing stale configuration — reload to see the current columns.`,
+        + `This board is showing stale configuration. Reload to see the current columns.`,
         400,
         {
           ...REJECTED_WRITE_NO_RETRY,
@@ -4974,7 +4974,7 @@ export function createWebApp(options: WebAppOptions) {
       // The CLI already rewrites it to name `loctt user switch`; the
       // equivalent route out here is the header's user menu.
       const message = /no current user/i.test((err as Error).message)
-        ? "A user must be selected before you can comment — pick one from "
+        ? "A user must be selected before you can comment. Pick one from "
           + "the user menu, then post again."
         : (err as Error).message;
       error(res, message, 400, { ...REJECTED_WRITE, field: "body" });

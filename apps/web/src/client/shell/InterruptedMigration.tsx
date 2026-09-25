@@ -36,8 +36,7 @@ export function InterruptedMigration({
         </h1>
         <p className="mb-3 text-[0.9286rem] text-text-secondary">
           A previous migration crashed part-way. The data directory may be
-          partly upgraded. Nothing here can be opened or changed until this
-          is resolved.
+          partly upgraded.
         </p>
 
         <dl className="mb-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[0.8571rem]">
@@ -51,7 +50,7 @@ export function InterruptedMigration({
           ) : null}
           <dt className="text-text-tertiary">Backup</dt>
           <dd className="break-all text-text-primary">
-            {backup ?? "not recorded — read the sentinel file below"}
+            {backup ?? "not recorded, read the sentinel file below"}
           </dd>
           <dt className="text-text-tertiary">Sentinel</dt>
           <dd className="break-all text-text-primary">{sentinelPath}</dd>

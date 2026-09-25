@@ -156,7 +156,7 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
           path: taskPath,
           message:
             `field "${h.field}" ${h.kind === "unrecognised" ? "is not recognised" : "is corrupt"} `
-            + `(${h.kind}: ${h.rawText || "malformed"} — ${h.error}). It has been kept `
+            + `(${h.kind}: ${h.rawText || "malformed"}, ${h.error}). It has been kept `
             + `in place and is preserved by every write; repair it with `
             + `\`loctt set\` / \`loctt unset\`, or edit the file by hand.`,
         });
@@ -336,7 +336,7 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
         severity: "malformed",
         path: getCalendarConfigPath(locttDir),
         message:
-          `timezone "${cal.timezone}" is not a resolvable IANA zone — dates are `
+          `timezone "${cal.timezone}" is not a resolvable IANA zone. Dates are `
           + `rendered in UTC until it is fixed. Pick a valid zone in Settings → `
           + `Calendar, or edit calendar.yaml.`,
       });
@@ -381,7 +381,7 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
           path: getUserProfilePath(locttDir, p.id),
           message:
             `field "${h.field}" ${h.kind === "unrecognised" ? "is not recognised" : "is corrupt"} `
-            + `(${h.kind}: ${h.rawText || "malformed"} — ${h.error}). It has been kept `
+            + `(${h.kind}: ${h.rawText || "malformed"}, ${h.error}). It has been kept `
             + `in place and is preserved by every write; repair the profile to have it load again.`,
         });
       }

@@ -390,7 +390,7 @@ function renderText(node: JSONContent): React.ReactNode {
                 {out}
                 {" ("}
                 <span className="text-[0.8571rem]">{href}</span>
-                {" — link not followed)"}
+                {", link not followed)"}
               </span>
             );
         break;

@@ -509,7 +509,7 @@ describe("Dropdown — menu mode semantics", () => {
         options={[]}
         selected={[]}
         onToggle={() => {}}
-        noMatchesText="Labels options could not be loaded — see the sidebar for why."
+        noMatchesText="Labels options could not be loaded. See the sidebar for why."
         trigger={({ ref, toggle, ...aria }) => (
           <button ref={ref} type="button" data-testid="trigger" onClick={toggle} {...aria}>
             Labels

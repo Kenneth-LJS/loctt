@@ -1752,7 +1752,7 @@ test.describe("TML — timeline error cases (section C)", () => {
     const err = page.getByTestId("timeline-drag-error");
     await expect(err).toBeVisible();
     // The specific claim: both dates unchanged, not "a date failed".
-    await expect(err).toContainText("neither the start date nor the due date was changed");
+    await expect(err).toContainText("Neither the start date nor the due date was changed");
 
     // The half-applied shift this case exists to catch: a duration
     // that silently changed. Neither field moved on disk.
@@ -1907,7 +1907,7 @@ test.describe("TML — timeline error cases (section C)", () => {
     const notice = page.getByTestId("timeline-unreadable");
     await expect(notice).toBeVisible();
     await expect(notice).toContainText("could not be read");
-    await expect(notice).toContainText("Check the file");
+    await expect(notice).toContainText("Missing from this timeline");
 
     // The counts are honest about the unreadable task.
     await expect(page.getByTestId("timeline-total-unreadable")).toContainText("1 unreadable");

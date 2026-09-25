@@ -35,9 +35,9 @@ const SCALES = ["free", "linear", "fibonacci"] as const;
  * matching how `UNIT_LABEL` treats units.
  */
 const SCALE_LABEL: Record<(typeof SCALES)[number], string> = {
-  free: "Free — any value",
-  linear: "Linear — 1, 2, 3, …",
-  fibonacci: "Fibonacci — 1, 2, 3, 5, 8, …",
+  free: "Free: any value",
+  linear: "Linear: 1, 2, 3, …",
+  fibonacci: "Fibonacci: 1, 2, 3, 5, 8, …",
 };
 
 /**

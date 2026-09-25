@@ -416,7 +416,7 @@ function RowFields({
         <span
           data-testid={`priorities-value-${row.key}`}
           className="text-[0.8571rem] text-text-tertiary"
-          title="Recomputed from position — lower sorts first."
+          title="Recomputed from position. Lower sorts first."
         >
           value {String((row as PriorityDef).value ?? "—")}
         </span>

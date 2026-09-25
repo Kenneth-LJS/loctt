@@ -406,16 +406,16 @@ function UserMenu({
           data-testid="user-menu-trigger"
           aria-label={
             identityUnknown
-              ? "User menu — signed-in user unknown"
+              ? "User menu, signed-in user unknown"
               : currentArchived
-                ? `User menu — ${currentUser.name} is archived`
+                ? `User menu, ${currentUser.name} is archived`
                 : "User menu"
           }
           title={
             identityUnknown
               ? UNKNOWN_IDENTITY_REASON
               : currentArchived
-                ? `${currentUser.name} is archived — switch to an active user`
+                ? `${currentUser.name} is archived, switch to an active user`
                 : undefined
           }
           className={[

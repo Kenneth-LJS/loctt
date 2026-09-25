@@ -25,7 +25,7 @@ export class QueryValidationError extends LocttError {
     public readonly position: number,
     public readonly suggestions: readonly string[] = [],
   ) {
-    const hint = suggestions.length > 0 ? ` — did you mean ${suggestions.map(s => `"${s}"`).join(" or ")}?` : "";
+    const hint = suggestions.length > 0 ? `. Did you mean ${suggestions.map(s => `"${s}"`).join(" or ")}?` : "";
     // A mistyped query is a known, nameable cause — the position and
     // any suggestions are right here. Left as a bare `Error` it reached
     // a surface as `unknown`, which ERR-31 forbids: the generic handler
@@ -209,8 +209,8 @@ function assertSatisfiable(
   // lacks these counts".
   if (node.call?.name === "link_count" && isList) {
     throw new QueryValidationError(
-      `link_count(...) compares a number, so "${node.op}" with a list can never match `
-      + `— use =, !=, <, <=, > or >=`,
+      `link_count(...) compares a number, so "${node.op}" with a list can never match. `
+      + `Use =, !=, <, <=, > or >=`,
       pos,
       [],
     );
@@ -218,7 +218,7 @@ function assertSatisfiable(
 
   if (value.type === "list" && value.values.length === 0) {
     throw new QueryValidationError(
-      `an empty list can never match — remove the comparison or give it values`,
+      `an empty list can never match. Remove the comparison or give it values`,
       pos,
       [],
     );
@@ -256,7 +256,7 @@ function validateComparison(
   // field.
   if (field === "relationship" || field.startsWith("relationship.")) {
     throw new QueryValidationError(
-      `"${field}" is no longer supported — use has_link("<kind>"), `
+      `"${field}" is no longer supported. Use has_link("<kind>"), `
       + `has_link("<kind>", "<target>"), or link_count("<kind>")`,
       pos,
       [],
@@ -296,7 +296,7 @@ function validateComparison(
   // them silently produce a confidently wrong result.
   if (field === "text" && node.op !== "~") {
     throw new QueryValidationError(
-      `"text" is a substring search — use "text ~ <term>". `
+      `"text" is a substring search. Use "text ~ <term>". `
       + `The operator "${node.op}" is not supported on text.`,
       pos,
       [],
@@ -346,7 +346,7 @@ function validateDateFunctions(
     if (v.type !== "date_fn") continue;
     if (kind === "none") {
       throw new QueryValidationError(
-        `"${field}" is not a date field — ${v.fn}() can only be compared `
+        `"${field}" is not a date field. ${v.fn}() can only be compared `
         + `against a date field (e.g. due_date, start_date, updated_at)`,
         pos,
         [],

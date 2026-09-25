@@ -76,7 +76,7 @@ export function DeleteProjectDialog({
       <div className="grid gap-3" data-testid="project-delete-dialog">
         <p className="text-[0.9286rem] text-text-secondary">
           {needsRemap
-            ? `${String(taskCount)} task${taskCount === 1 ? "" : "s"} reference this project. Choose where they should go — their existing keys will not change.`
+            ? `${String(taskCount)} task${taskCount === 1 ? "" : "s"} reference this project. Choose where they should go. Their existing keys will not change.`
             : `No tasks reference this project.`}
         </p>
 

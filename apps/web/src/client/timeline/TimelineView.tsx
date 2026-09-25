@@ -374,7 +374,7 @@ export function TimelineView() {
                   : (req.start_date ?? req.due_date ?? ""),
               message:
                 gone
-                  ? "It no longer exists — it was deleted somewhere else."
+                  ? "It no longer exists. It was deleted somewhere else."
                   : envelope?.message
                     ?? (err instanceof Error ? err.message : "The server could not be reached."),
               gone,
@@ -653,10 +653,10 @@ export function TimelineView() {
           <span className="min-w-0 flex-1">
             <strong>{dropError.key}</strong>{" "}
             {dropError.edge === "body"
-              ? "was not moved — neither the start date nor the due date was changed."
+              ? "was not moved. Neither the start date nor the due date was changed."
               : dropError.edge === "end"
-                ? "was not resized — the due date was not changed."
-                : "was not resized — the start date was not changed."}
+                ? "was not resized. The due date was not changed."
+                : "was not resized. The start date was not changed."}
             {dropError.attempted !== "" && (
               <>
                 {" "}Attempted:{" "}

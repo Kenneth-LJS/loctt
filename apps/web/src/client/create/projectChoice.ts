@@ -116,7 +116,7 @@ export function resolveProjectChoice(
  * NEW-19 quotes only the first sentence, so both cases hold.
  */
 export const NO_PROJECT_MESSAGE =
-  "Pick a project — this workspace has no default. "
+  "Pick a project. This workspace has no default. "
   + "Set one in Settings \u2192 Projects so this stops recurring.";
 
 /**
@@ -128,7 +128,7 @@ export const NO_PROJECT_MESSAGE =
  * the two cannot drift and NEW-19's first-sentence quote still holds.
  */
 export const NO_PROJECT_MESSAGE_PARTS = {
-  before: "Pick a project \u2014 this workspace has no default. Set one in ",
+  before: "Pick a project. This workspace has no default. Set one in ",
   link: "Settings \u2192 Projects",
   after: " so this stops recurring.",
 } as const;

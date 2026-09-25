@@ -253,7 +253,7 @@ export function tokenize(input: string): Token[] {
     // languages write one nothing about how to write it here.
     if (ch === "[" || ch === "]") {
       throw new TokenizeError(
-        `unexpected character "${ch}" — lists use parentheses, e.g. status in (backlog, done)`,
+        `unexpected character "${ch}": lists use parentheses, e.g. status in (backlog, done)`,
         i,
       );
     }
@@ -269,7 +269,7 @@ export function tokenize(input: string): Token[] {
       const doubled = input.slice(i, i + 2);
       const typed = doubled === "&&" || doubled === "||" ? doubled : ch;
       throw new TokenizeError(
-        `unexpected character "${typed}" — use '${wordForm}', e.g. `
+        `unexpected character "${typed}": use '${wordForm}', e.g. `
         + `status = done ${wordForm === "not" ? "and not (…)" : `${wordForm} priority = high`}`,
         i,
       );

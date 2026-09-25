@@ -364,7 +364,7 @@ export function AttachmentsPanel({
                 )}
                 {item.state === "done" && (
                   <span className="text-text-tertiary">
-                    Uploaded{item.message === undefined ? "" : ` — ${item.message}`}
+                    Uploaded{item.message === undefined ? "" : `: ${item.message}`}
                   </span>
                 )}
                 {item.state === "failed" && (

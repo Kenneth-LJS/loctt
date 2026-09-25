@@ -132,14 +132,14 @@ describe("document title names the project (SHL-11, SHL-31)", () => {
   it("names the sole filtered project on a board", async () => {
     renderAt("/board?project=p_api");
     await waitFor(() => {
-      expect(document.title).toBe("LocTT — API — Board");
+      expect(document.title).toBe("LocTT · API · Board");
     });
   });
 
   it("names the workspace default when nothing is filtered", async () => {
     renderAt("/list");
     await waitFor(() => {
-      expect(document.title).toBe("LocTT — Web — List");
+      expect(document.title).toBe("LocTT · Web · List");
     });
   });
 
@@ -168,7 +168,7 @@ describe("document title names the project (SHL-11, SHL-31)", () => {
   it("names the project alone on an unmatched route", async () => {
     renderAt("/nowhere");
     await waitFor(() => {
-      expect(document.title).toBe("LocTT — Web");
+      expect(document.title).toBe("LocTT · Web");
     });
   });
 
@@ -200,7 +200,7 @@ describe("document title names the project (SHL-11, SHL-31)", () => {
 
     release();
     await waitFor(() => {
-      expect(document.title).toBe("LocTT — Web — Board");
+      expect(document.title).toBe("LocTT · Web · Board");
     });
   });
 });

@@ -371,7 +371,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "get_calendar",
-    description: "Returns the workspace calendar config (timezone, working days, holidays). Read-only — calendar is configured via the UI.",
+    description: "Returns the workspace calendar config (timezone, working days, holidays). Read-only: calendar is configured via the UI.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const cfg = await loadCalendarConfig(locttDir);

@@ -83,7 +83,7 @@ export function validateNewEntry(
   }
 
   if (key.length === 0) {
-    problems.key = "A key is required — task files store it, so it is permanent.";
+    problems.key = "A key is required. Task files store it, so it is permanent.";
   } else if (!KEY_RE.test(key)) {
     const suggested = keyFromLabel(key);
     problems.key = "A key is lowercase letters, digits or underscore, starting "
@@ -224,7 +224,7 @@ export function validateNewRelationship(
       extra.inverse = "A directional relationship needs an inverse key "
         + "(or mark it symmetric).";
     } else if (draft.inverse.trim() === draft.key.trim()) {
-      extra.inverse = "The inverse equals the key — mark the relationship "
+      extra.inverse = "The inverse equals the key. Mark the relationship "
         + "symmetric instead.";
     }
     if (draft.inverse_label.trim().length === 0) {
@@ -292,7 +292,7 @@ export function validateNewCustomField(
           break;
         }
         if (seen.has(k)) {
-          extra.values = `Duplicate value key "${k}" — a task storing it would be ambiguous.`;
+          extra.values = `Duplicate value key "${k}". A task storing it would be ambiguous.`;
           break;
         }
         seen.add(k);

@@ -71,7 +71,7 @@ export const QUERY_SYNTAX_HELP: readonly SyntaxHelpSection[] = [
       },
       {
         syntax: "link_count(kind?)",
-        meaning: "how many links the task has — must be compared to a number",
+        meaning: "how many links the task has, must be compared to a number",
         example: 'link_count("blocks") > 1',
       },
     ],

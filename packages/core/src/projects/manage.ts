@@ -72,7 +72,7 @@ export class PartialRemapError extends LocttError {
       "conflict",
       `remapped ${String(remapped)} task(s); ${String(n)} could not be written `
       + `(${failedKeys.join(", ")}). The ${noun} has NOT been deleted and those `
-      + `tasks still reference it. Retry to finish — tasks already moved are skipped.`,
+      + `tasks still reference it. Retry to finish. Tasks already moved are skipped.`,
       // `saved` rather than `not_saved`: those 7 writes really did
       // land, and telling the user nothing was saved would send them
       // looking for tasks that have already moved. There is no

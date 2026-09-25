@@ -267,7 +267,7 @@ function GroupsEditor({ stored, embedded }: { readonly stored: UserSettings; rea
           type="button"
           data-testid="sidebar-groups-reset"
           onClick={resetAll}
-          className="text-[0.8571rem] text-text-secondary underline decoration-border-strong underline-offset-2 hover:text-text-primary"
+          className="inline-flex min-h-[24px] items-center text-[0.8571rem] text-text-secondary underline decoration-border-strong underline-offset-2 hover:text-text-primary"
         >
           Reset to default
         </button>

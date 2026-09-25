@@ -312,7 +312,7 @@ export async function list(args: string[], root: string): Promise<void> {
     // results are narrower than the view's author intended — so say
     // so. stderr keeps the task list on stdout pipeable.
     onWarning: err => {
-      console.error(`Warning: saved view "${view ?? ""}" — ${err.message}`);
+      console.error(`Warning: saved view "${view ?? ""}": ${err.message}`);
     },
   });
 
@@ -538,7 +538,7 @@ export async function show(args: string[], root: string): Promise<void> {
   // directory that may be full — the conflation the core fix removed,
   // reintroduced one layer up.
   if (model.attachmentsError !== undefined) {
-    console.log(`Attachments: could not be read — ${model.attachmentsError}`);
+    console.log(`Attachments: could not be read: ${model.attachmentsError}`);
   } else if (model.attachments.length > 0) {
     console.log(`Attachments:`);
     for (const a of model.attachments) {
@@ -565,7 +565,7 @@ export async function show(args: string[], root: string): Promise<void> {
     if (needsAttention.length > 0) {
       console.log(`\nNeeds attention:`);
       for (const h of needsAttention) {
-        console.log(`  ⚠ ${h.field}: ${truncateUlids(h.rawText)} — ${truncateUlids(h.error)}`);
+        console.log(`  ⚠ ${h.field}: ${truncateUlids(h.rawText)}, ${truncateUlids(h.error)}`);
       }
     }
     if (unrecognised.length > 0) {

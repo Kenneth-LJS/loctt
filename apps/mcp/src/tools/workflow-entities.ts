@@ -518,7 +518,7 @@ async function dispatchCustomField(locttDir: string, op: Op, args: Record<string
       if (type === undefined) throw new FieldsError(`\`fields.type\` is required (one of: ${VALID_FIELD_TYPES.join(", ")})`);
       const values = parseFieldValueSeeds(fields);
       if (type === "enum" && (values === undefined || values.length === 0)) {
-        throw new FieldsError("an enum field needs at least one value at creation — pass `fields.values: [{key,label}, …]`");
+        throw new FieldsError("an enum field needs at least one value at creation. Pass `fields.values: [{key,label}, …]`");
       }
       if (type !== "enum" && values !== undefined && values.length > 0) {
         throw new FieldsError("`fields.values` is only meaningful for type \"enum\"");
@@ -753,7 +753,7 @@ export const TOOLS: readonly ToolDef[] = [
         ...("weights" in args ? { weights: args["weights"] as Record<string, number> | null } : {}),
       };
       if (Object.keys(changes).length === 0) {
-        return errorResult("nothing to change — supply at least one estimation field");
+        return errorResult("nothing to change. Supply at least one estimation field");
       }
       await editEstimationConfig(locttDir, changes);
       return text("Updated estimation config");
@@ -779,7 +779,7 @@ export const TOOLS: readonly ToolDef[] = [
         ...("default_grouping" in args ? { default_grouping: args["default_grouping"] as TimelineGrouping | null } : {}),
       };
       if (Object.keys(changes).length === 0) {
-        return errorResult("nothing to change — supply at least one timeline field");
+        return errorResult("nothing to change. Supply at least one timeline field");
       }
       await editTimelineConfig(locttDir, changes);
       return text("Updated timeline config");

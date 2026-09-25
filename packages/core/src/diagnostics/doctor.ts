@@ -83,7 +83,7 @@ async function* checkSchemaVersion(
       name,
       status: "error",
       message:
-        `an interrupted migration is in progress — `
+        `an interrupted migration is in progress. `
         + `.loctt/.schema-migration-in-progress records the backup to restore from. `
         + `Do not run other commands until it is resolved`,
     };
@@ -97,7 +97,7 @@ async function* checkSchemaVersion(
     yield {
       name,
       status: "error",
-      message: `${(err as Error).message} — expected ${String(CURRENT_SCHEMA_VERSION)}`,
+      message: `${(err as Error).message}. Expected ${String(CURRENT_SCHEMA_VERSION)}`,
     };
     return;
   }
@@ -109,7 +109,7 @@ async function* checkSchemaVersion(
       name,
       status: "error",
       message:
-        `no .schema-version file — this tracker predates schema versioning `
+        `no .schema-version file. This tracker predates schema versioning `
         + `and must be re-initialized (expected ${String(CURRENT_SCHEMA_VERSION)})`,
     };
     return;
@@ -120,8 +120,8 @@ async function* checkSchemaVersion(
       name,
       status: "error",
       message:
-        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)} `
-        + `— update LocTT rather than migrating down`,
+        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)}. `
+        + `Update LocTT rather than migrating down`,
     };
     return;
   }
@@ -131,8 +131,8 @@ async function* checkSchemaVersion(
       name,
       status: "error",
       message:
-        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)} `
-        + `— run loctt migrate`,
+        `on disk ${String(onDisk)}, this build supports ${String(CURRENT_SCHEMA_VERSION)}. `
+        + `Run loctt migrate`,
     };
     return;
   }
@@ -160,7 +160,7 @@ export async function* runDoctorStream(
 
   // Check .loctt exists
   if (!(await fileExists(locttDir))) {
-    yield { name: ".loctt directory", status: "error", message: "not found — run loctt init" };
+    yield { name: ".loctt directory", status: "error", message: "not found. Run loctt init" };
     return;
   }
   yield { name: ".loctt directory", status: "ok", message: "exists" };
@@ -179,7 +179,7 @@ export async function* runDoctorStream(
 
   // Check tasks directory
   if (!(await fileExists(getTasksDir(locttDir)))) {
-    yield { name: "tasks directory", status: "warn", message: "missing .loctt/tasks/ — will be created on first task" };
+    yield { name: "tasks directory", status: "warn", message: "missing .loctt/tasks/. Will be created on first task" };
   } else {
     yield { name: "tasks directory", status: "ok", message: "exists" };
   }
@@ -215,7 +215,7 @@ export async function* runDoctorStream(
   // conditions-derivation path it described.)
   const queriesPath = getQueriesConfigPath(locttDir);
   if (!(await fileExists(queriesPath))) {
-    yield ({ name: "queries.yaml", status: "warn", message: "missing — saved views unavailable", fix: "restore-missing" });
+    yield ({ name: "queries.yaml", status: "warn", message: "missing. Saved views unavailable", fix: "restore-missing" });
   } else {
     try {
       const queriesConfig = await loadQueriesConfig(locttDir);
@@ -228,7 +228,7 @@ export async function* runDoctorStream(
           status: "warn",
           message:
             `${brokenViews.length} saved view(s) could not be loaded (their filters are unreadable): `
-            + `${sample}${more} — kept as-is; fix the filters to restore`,
+            + `${sample}${more}. Kept as-is, fix the filters to restore`,
         });
       }
       if (brokenViews.length === 0) {
@@ -430,7 +430,7 @@ export async function* runDoctorStream(
           name: "workflow drift",
           status: "error",
           message:
-            `${String(driftCount)} task(s) hold a value workflow.yaml does not define — `
+            `${String(driftCount)} task(s) hold a value workflow.yaml does not define. `
             + `${driftSamples.join("; ")}. Restore the key, or remap the tasks.`,
         });
       }
@@ -489,7 +489,7 @@ export async function* runDoctorStream(
         message:
           `interrupted rename of project ${pending.project_id} ` +
           `from '${pending.from}' to '${pending.to}' (started ` +
-          `${pending.started_at}) — run any loctt command to finish it`,
+          `${pending.started_at}). Run any loctt command to finish it`,
       });
     }
   } catch (err) {
@@ -513,7 +513,7 @@ export async function* runDoctorStream(
         status: "error",
         message:
           `interrupted '${pending.mode}' reconciliation started ${pending.started_at} `
-          + `(${pending.base_commit.slice(0, 8)} → ${pending.remote_commit.slice(0, 8)}) — `
+          + `(${pending.base_commit.slice(0, 8)} → ${pending.remote_commit.slice(0, 8)}). `
           + `your workspace may hold a partly-applied sync. Compare it against the branch, `
           + `make it whole, then delete .loctt/local/reconcile.yaml. Sync refuses to run `
           + `until that record is cleared.`,
@@ -536,7 +536,7 @@ export async function* runDoctorStream(
         yield ({
           name: "key index",
           status: "warn",
-          message: "no index on disk — will rebuild on next lookup",
+          message: "no index on disk. Will rebuild on next lookup",
         });
       } else {
         const allTaskIds = new Set(await listTaskIds(locttDir));
@@ -573,7 +573,7 @@ export async function* runDoctorStream(
           yield ({
             name: "key index",
             status: "warn",
-            message: `${parts.join("; ")} — run \`loctt doctor --rebuild-index\` to repair`,
+            message: `${parts.join("; ")}. Run \`loctt doctor --rebuild-index\` to repair`,
             fix: "rebuild-index",
           });
         } else {

@@ -207,7 +207,7 @@ export async function run(args: string[], root: string): Promise<void> {
           // Named, not counted: "removed 2 pins" tells the user
           // nothing they can act on.
           for (const id of sweep.removed) {
-            console.log(`Removed pin ${id} — no such view in queries.yaml`);
+            console.log(`Removed pin ${id}: no such view in queries.yaml`);
           }
           return;
         }

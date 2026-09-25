@@ -86,7 +86,7 @@ export function RemapDeleteDialog({
           ? `${String(count)} task${count === 1 ? "" : "s"} currently ${count === 1 ? "uses" : "use"} `
           : `No tasks use `}
         <code className="rounded bg-bg-muted px-1 py-0.5">{itemKey}</code>
-        {inUse ? "." : " — deleting it affects nothing."}
+        {inUse ? "." : ". Deleting it affects nothing."}
       </p>
 
       {inUse && (

@@ -22790,6 +22790,195 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A347 · B25 close-out: stale delete-confirm specs, A11Y-55 Toggle fix, InterruptedMigration sentence, em-dash sweep
+
+**Ticket:** B25 (backlog.md) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 (uncommitted at write time)
+
+**Decision.**
+
+- **TSK-22 / A11Y-50 stale specs.** `tests/ui/flow-tasks.spec.ts` (TSK-22)
+  and `tests/ui/flow-accessibility.spec.ts` (A11Y-50) asserted
+  `/cannot be undone/i` and, in TSK-22's case, also `/archive/i` and
+  named archive as one of "the three things that keep it from reading
+  like an archive prompt". Both are pre-K129. Updated both specs to
+  assert the exact current copy `/is irreversible\. continue\?/i` and
+  dropped the `/archive/i` assertion from TSK-22 (K129 removed the
+  archive suggestion from both `DeleteConfirmDialog.tsx` and
+  `DeleteTaskDialog.tsx` on purpose). Grepped the whole tree for
+  "cannot be undone", "archive instead", and "reversible": no other
+  spec or unit test asserts pre-K129 delete/confirm wording. The
+  "archive is the reversible alternative" hits that remain (CLI usage
+  text, MCP tool descriptions, `UserDeleteDialog`/`DeleteProjectDialog`,
+  PRU-42 specs) are a *different* flow K129 did not touch — those
+  dialogs still legitimately offer archive as an alternative to a
+  *different* delete (user/project), which K129's ruling was scoped to
+  "delete confirmations (bulk delete, task delete)" only.
+
+- **A11Y-55: `ui/Toggle` grown to a 24px hit target.** The primitive's
+  track was `h-4 w-7` (16px tall) — under the WCAG 2.5.8 minimum on the
+  short axis. Grepped every `<Toggle` use in `apps/web/src/client`:
+  only `SidebarGroupsPanel.tsx`'s `GroupRow` uses it, so fixing the
+  primitive covers every site by construction (no other Toggle use to
+  audit separately). First attempt used Tailwind's `h-6 w-11` scale
+  classes — this measured 21×38.5px in the browser, not 24×44, because
+  this app's `html` sets `font-size: 87.5%` (14px root), so `rem`-based
+  utilities (`--spacing: .25rem` × 6 = 1.5rem = 21px at 14px root, not
+  24px at the assumed 16px root) measure short. Re-did it with pixel
+  arbitrary values (`h-[24px] w-[44px]` track, `h-[16px] w-[16px]`
+  thumb, `translate-x-[20px]`), which is the same pattern the codebase
+  already uses elsewhere for this exact reason (`labelPillStyle.ts`,
+  `ReorderableRows.tsx`, `CardLayoutPanel.tsx` all use `min-h-[24px]`
+  rather than `h-6`). Confirmed 24×44px in the browser after rebuilding.
+  Also grew `SidebarGroupsPanel.tsx`'s "Reset to default" text-link
+  button (17px tall) to `min-h-[24px]` with `inline-flex items-center`,
+  matching A334's treatment of the Pinned-views text buttons — the
+  known-gaps entry for A11Y-55 named this control specifically (17.2px).
+  Per K31's "grow the visible control, not an invisible overlay"
+  pattern (the A334 drag-handle fix), this is the control itself
+  growing, not a padded/invisible hit-area wrapper.
+  Red-proved: reverted `Toggle.tsx`'s track/thumb back to the original
+  `h-4 w-7`/`h-3 w-3` classes, rebuilt, ran
+  `flow-accessibility.spec.ts -g "A11Y-55"`, confirmed it failed with
+  the exact original measurement (24.5×14.0px, matching known-gaps'
+  own numbers), restored the fix, rebuilt, reran and confirmed green.
+  Removed the A11Y-50 and A11Y-55 entries from `docs/dev/known-gaps.md`.
+
+- **InterruptedMigration.tsx sentence removed.** Deleted "Nothing here
+  can be opened or changed until this is resolved." from the intro
+  paragraph per K129 (Ken: *"take out the last sentence, its not
+  required because the user can see it themselves"*). Updated
+  `AppBootstrap.test.tsx`'s `SET-31` test, which pinned the sentence
+  verbatim, to assert the intro sentence that remains and assert the
+  removed sentence's absence instead.
+
+- **Em-dash sweep.** Ran a custom string-literal scanner (stateful,
+  comment-aware — plain grep over-matched doc-comment prose and
+  backtick-quoted code inside `/** */` blocks) over
+  `apps/web/src/client`, `apps/web/src/server`, `packages/core/src`,
+  `apps/cli/src`. Before: roughly 140 em-dashes inside real string
+  literals across those four trees (16 in client after subtracting
+  placeholder glyphs, ~3 server, ~40 core, ~30 CLI — see below for the
+  exact split). After: 0 in server/core/cli; 16 remain in
+  `apps/web/src/client`, all of them the single-character `"—"` used as
+  the empty/no-value placeholder glyph (e.g. `Dropdown.tsx`'s
+  `placeholder = "—"`, table-cell fallbacks in `MetaPanel.tsx`,
+  `CustomFields.tsx`, `EstimationPanel.tsx`, `activity/describe.ts`'s
+  `EMPTY_VALUE`, `health/fieldHealth.ts`'s corrupt-value UI-string) —
+  confirmed each by reading its call site; none is prose with a dash in
+  it, all render as a standalone dash meaning "no value". These are the
+  "separator inside a label that isn't prose" carve-out messaging.md's
+  own checklist names, applied to the empty-value convention rather
+  than a "Label — Subtitle" select option (no genuine "Label — Subtitle"
+  case existed after the EstimationPanel/TimelinePanel fixes below).
+
+  Every other hit was rewritten per messaging.md §2: usually split into
+  two sentences (capitalizing the following clause), a small number
+  became a colon (where the second half is explicitly introducing a
+  correction/detail, e.g. `"invalid offset ... : expected ..."`,
+  `"${key}: no such view"`) or a comma (short parenthetical inside an
+  aria-label/title, e.g. `"${label}, open Diagnostics"`). One
+  inconsistency found in passing: `useRouteAnnouncement.ts`'s
+  `documentTitleFor` mixed `—` and an existing `·` separator for the
+  *same* title shape in the same function — aligned all three branches
+  on `·` (the pre-existing convention) rather than introducing a third
+  separator style. Updated every test/spec that pinned an exact string
+  that changed: `Header.test.tsx`, `useRouteAnnouncement.test.tsx`,
+  `flow-app-shell.spec.ts`, `TimelinePanel.test.tsx`, `Dropdown.test.tsx`,
+  `flow-task-meta.spec.ts` (comment only), `projectChoice.test.ts`
+  (case fix: "This workspace" now capitalized after the sentence
+  split), `tests/cases/ui-test-cases/flow-task-create.md` (NEW-19's
+  quoted example wording).
+
+  `flow-timeline.spec.ts` needed a real fix, found only by running the
+  gate (TML-43 asserted the lowercase substring "neither the start
+  date..." which the sentence-split capitalized to "Neither..." —
+  updated the assertion's case to match). Also found and fixed a
+  second, unrelated stale assertion in the same file while gating:
+  TML-47 asserted `.toContainText("Check the file")` against
+  `TimelineView.tsx`'s `timeline-unreadable` notice, but that exact
+  phrase was removed from the notice's copy back in commit `19f7d3ec`
+  (the earlier message-audit pass on this branch) and the test was
+  never updated — confirmed via `git log -p` on the file, the trailing
+  "Check the file." clause is gone from every revision since that
+  commit. This is a stale spec of the same *kind* as TSK-22/A11Y-50
+  (a message-audit wording change whose test assertion was missed), so
+  fixed it here rather than leaving the required gate run red for an
+  unrelated pre-existing defect: changed the assertion to
+  `toContainText("Missing from this timeline")`, which is present in
+  the current copy.
+
+  **Intentionally NOT swept:** `apps/mcp/src/tools/*.ts` tool
+  *descriptions* (the long strings passed as `description:` in tool
+  definitions, ~70 remaining em-dashes) — these are agent-facing tool
+  documentation read by an LLM caller, not UI text a human end user
+  reads on screen; messaging.md's stated scope is "the web client" /
+  what the UI shows. MCP *runtime* error and result strings (the ones
+  actually returned from a tool call to describe what happened) were
+  swept and fixed alongside the CLI/core sweep — e.g. `git.ts`'s
+  `FAILED —`, `cannot rekey —`, `Reconciliation incomplete —`, etc.,
+  and `workflow-entities.ts`'s two `errorResult(...)` messages. If this
+  boundary is wrong, the MCP description sweep is a follow-up of the
+  same shape as this one (scan with the same script, same fix
+  patterns) and was left out only for time/scope, not because it
+  couldn't be done.
+
+  Also left as-is: `packages/core/src/init/init.ts`'s `.gitignore`
+  comment line 289 (`# Per-checkout pointers ... — do not commit.`) —
+  this is a comment written into a git-ignored config file on disk, not
+  UI copy; and `packages/core/src/state/journal.ts`'s `console.error`
+  diagnostic (developer-only log per the task's own carve-out).
+
+**Why.** K129 and messaging.md are specific about the *shape* users
+should see (short declarative sentences, no em dash, no semicolon); the
+sweep's job was to bring every reachable surface into that shape without
+changing meaning or adding words. Where a case document
+(`tests/cases/ui-test-cases/flow-task-create.md`) quoted the old exact
+wording, it was updated to match — messaging.md's own checklist says a
+case that pins wording failing the guide gets amended, not the guide,
+and NEW-19's spec assertion was already loose (`/no default/i`) so no
+behavior changed, only the doc's illustrative quote.
+
+**Options considered.** A11Y-55: (a) grow the primitive's real track to
+24px (chosen, matches K31's "grow the visible control" precedent); (b)
+wrap the existing 16px track in an invisible padded hit-area — rejected,
+that is exactly the anti-pattern K31's fix supersedes. Em-dash
+replacement character: colon vs. comma vs. period chosen per clause
+shape (colon when introducing a specific correction/value, comma for a
+short trailing qualifier inside an aria-label/title, period whenever the
+two halves are separately readable sentences) rather than one blanket
+substitution, to avoid producing awkward comma-spliced sentences.
+
+**Tests.** `tests/ui/flow-tasks.spec.ts` (TSK-22), `tests/ui/flow-accessibility.spec.ts`
+(A11Y-50, A11Y-55 — red-proven by reverting Toggle.tsx, rebuilding, and
+rerunning), `tests/ui/flow-timeline.spec.ts` (TML-43 case fix, TML-47
+stale "Check the file" fix), `AppBootstrap.test.tsx` (SET-31,
+InterruptedMigration sentence), `Header.test.tsx`,
+`useRouteAnnouncement.test.tsx`, `flow-app-shell.spec.ts`,
+`TimelinePanel.test.tsx`, `Dropdown.test.tsx`, `projectChoice.test.ts`
+(case fix). All required gates green: `tsc --build`, `tsc -p tests/ui`,
+`npm run test` (2691/2691), `npm run test:integration` (611/611),
+`npm run lint` (0 errors, 65 pre-existing warnings unrelated to this
+change), `cases:index`/`cases:check`/`cases:coverage` (1053/1053),
+and `npm run test:ui` on all six touched/named spec files (276/276,
+2 workers).
+
+**To revert.**
+- TSK-22/A11Y-50: restore `/cannot be undone/i` (and TSK-22's `/archive/i`)
+  assertions; no source change to revert (the dialogs' copy is
+  unchanged from before this session — only the specs were stale).
+- A11Y-55: in `Toggle.tsx`, restore `TRACK_BASE`'s `h-4 w-7` and
+  `THUMB`'s `h-3 w-3 left-0.5 peer-checked:translate-x-3`; in
+  `SidebarGroupsPanel.tsx`, drop `inline-flex min-h-[24px] items-center`
+  from the reset button's className.
+- InterruptedMigration: restore the removed sentence to the `<p>` in
+  `InterruptedMigration.tsx` and revert `AppBootstrap.test.tsx`'s
+  SET-31 assertion.
+- Em-dash sweep: each file's diff is a mechanical `—` → (`.`/`,`/`:`)
+  substitution with a capitalization fix on the following word where a
+  period was used; `git diff` on each listed file shows the exact
+  before/after per line, there is no structural change to revert
+  beyond restoring the em dash and re-lowercasing the following word.
+
 ### A346 · Review fixes on ui/polish-wave-3 (Save in flight, sidebar read-back, init over an empty `.loctt`, wording)
 
 **Ticket:** review findings M1, M2, M3, m1-m7 (m8 owned by another agent) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 · **Scope:** core, CLI, MCP, web.

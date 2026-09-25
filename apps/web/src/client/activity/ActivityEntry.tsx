@@ -106,7 +106,7 @@ export function Actor({
       <span
         data-testid="activity-actor"
         data-actor="system"
-        title="No user was recorded for this change — it was made by LocTT itself."
+        title="No user was recorded for this change. It was made by LocTT itself."
         className="font-medium text-text-tertiary"
       >
         {NO_ACTOR}

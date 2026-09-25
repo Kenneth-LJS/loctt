@@ -1888,7 +1888,7 @@ test.describe("TSK-43 / TSK-55 — immutable key, and a failed inline label", ()
     // labels and the create failed, so there must be *zero* pills —
     // not merely no pill whose text reads "phantomlabel". An
     // optimistically attached phantom renders as an unresolved pill
-    // ("unresolved — not in the current config") rather than the typed
+    // ("unresolved, not in the current config") rather than the typed
     // name, so a name-filtered count would miss it; the total count
     // will not.
     await expect(page.getByTestId("label-pill")).toHaveCount(0);

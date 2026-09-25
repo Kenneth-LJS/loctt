@@ -978,9 +978,11 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     await expect(page.getByText("Bulk victim 1")).toBeVisible();
 
     // Second bullet: the dialog's accessible name states the count and
-    // the description states the irreversibility.
+    // the description states the irreversibility. K129 (Ken,
+    // 2026-09-24) changed the wording from "cannot be undone" to
+    // "is irreversible. Continue?" with no archive suggestion.
     await expect(dialog).toHaveAccessibleName(/4 tasks/);
-    await expect(dialog).toContainText(/cannot be undone/i);
+    await expect(dialog).toContainText(/is irreversible\. continue\?/i);
 
     // Third bullet: the typed-confirmation requirement is announced,
     // "including exactly what string must be typed". The input's own

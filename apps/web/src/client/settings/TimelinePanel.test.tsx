@@ -139,7 +139,7 @@ describe("TimelinePanel", () => {
     // <select>'s `.value` could not, so asserting only the value above
     // stopped covering A31/TML-34 the moment the control became a button.
     expect(comboOptions("timeline-dependency-relationship"))
-      .toContainEqual({ value: "depends_on", label: "depends_on — no longer defined" });
+      .toContainEqual({ value: "depends_on", label: "depends_on (no longer defined)" });
     // ...and Save is NOT blocked — the dangle is preserved on the wire (A31).
     fireEvent.click(screen.getByTestId("timeline-save"));
     await waitFor(() => { expect(putBodies.length).toBe(1); });

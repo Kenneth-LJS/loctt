@@ -770,7 +770,7 @@ export function DeleteVsEditRow({ row, choice, onChoose }: {
       {decided && (
         <span data-testid="git-reconcile-dve-decided" className="mt-1 block text-[0.8571rem] text-text-tertiary">
           {keepingTask
-            ? "keeping the task — if its key now collides, you will confirm a renumber next"
+            ? "keeping the task. If its key now collides, you will confirm a renumber next"
             : "keeping the deletion"}
         </span>
       )}

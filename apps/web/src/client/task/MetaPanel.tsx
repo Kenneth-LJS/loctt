@@ -290,7 +290,7 @@ export function MetaPanel({
           <span className="text-[0.9286rem] text-text-primary">
             {fm.project === undefined
               ? <span className="text-text-tertiary">—</span>
-              : project?.name ?? "unresolved — not in the current config"}
+              : project?.name ?? "unresolved, not in the current config"}
           </span>
         </Row>
 
@@ -579,7 +579,7 @@ function Footer({
               why (XS-46's second bullet). */}
           Previously {history.map(k => <code key={k}>{k}</code>)
             .reduce<React.ReactNode[]>((acc, node, i) => i === 0 ? [node] : [...acc, ", ", node], [])}
-          {" — now "}
+          {". Now "}
           <code>{fm.key}</code>. Old links still resolve.
         </p>
       )}

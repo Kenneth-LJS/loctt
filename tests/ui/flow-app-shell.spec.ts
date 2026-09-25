@@ -454,8 +454,8 @@ test.describe("SHL — scale and isolation", () => {
         // The window title names the project, so the two windows are
         // tellable apart from the tab strip alone — no file path on
         // the page, and nothing added to the sidebar.
-        await expect(pageA).toHaveTitle("LocTT — Alpha Service — List");
-        await expect(pageB).toHaveTitle("LocTT — Beta Service — List");
+        await expect(pageA).toHaveTitle("LocTT · Alpha Service · List");
+        await expect(pageB).toHaveTitle("LocTT · Beta Service · List");
 
         // The point of the case: the labels *differ*.
         expect(await pageA.title()).not.toBe(await pageB.title());
