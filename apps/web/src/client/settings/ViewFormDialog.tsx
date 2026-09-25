@@ -1,4 +1,12 @@
-import type { ComparisonOp, EntityColor, Filter, SavedQuery } from "@loctt/contracts";
+import {
+  type ComparisonOp,
+  type EntityColor,
+  type Filter,
+  isViewNameTaken,
+  type SavedQuery,
+  VIEW_NAME_TAKEN_MESSAGE,
+  viewNameKey,
+} from "@loctt/contracts";
 import { useMemo, useState } from "react";
 
 import {
@@ -7,6 +15,7 @@ import {
   useProjects,
   useSprints,
   useUsers,
+  useViews,
 } from "../api/hooks/sidebarData.ts";
 import { useCreateView } from "../api/hooks/useCreateView.ts";
 import { useEditView } from "../api/hooks/useEditView.ts";
@@ -216,6 +225,10 @@ export function ViewFormDialog({
     return seed.length > 0 ? seed.map(f => row(f)) : [emptySimpleRow()];
   });
 
+  // B21 (K129): a name another view has is refused before any request.
+  // Core refuses it too, for when this list is stale.
+  const [nameTaken, setNameTaken] = useState(false);
+  const views = useViews();
   const create = useCreateView();
   const edit = useEditView();
   const pending = create.isPending || edit.isPending;
@@ -290,6 +303,15 @@ export function ViewFormDialog({
 
   const submit = (): void => {
     if (disabled) return;
+    // Same rule as core's: keeping the view's own name (or changing only
+    // its case or spacing) is not a clash, so an edit to one of two views
+    // that already share a name still saves.
+    const renamed = existing === undefined || viewNameKey(name) !== viewNameKey(existing.name);
+    const onDisk = [...(views.data?.queries ?? []), ...(views.data?.broken ?? [])];
+    if (renamed && isViewNameTaken(name, onDisk, existing?.id)) {
+      setNameTaken(true);
+      return;
+    }
     // Ken's ruling, 2026-09-22: `archivedScope` is deliberately NOT sent.
     // On create, core applies its own default (`active`). On edit,
     // omitting it makes `editView` keep whatever the view already has —
@@ -398,7 +420,7 @@ export function ViewFormDialog({
             data-testid="view-form-name"
             autoFocus
             value={name}
-            onChange={e => { setName(e.target.value); }}
+            onChange={e => { setName(e.target.value); setNameTaken(false); }}
             placeholder="e.g. My open bugs"
           />
         </label>
@@ -536,7 +558,13 @@ export function ViewFormDialog({
           </label>
         )}
 
-        {failure !== undefined && failure !== null && (
+        {nameTaken && (
+          <Callout tone="danger" role="alert" testId="view-form-name-taken">
+            {VIEW_NAME_TAKEN_MESSAGE}
+          </Callout>
+        )}
+
+        {!nameTaken && failure !== undefined && failure !== null && (
           <Callout tone="danger" role="alert" testId="view-form-error">
             <span>
               {failure instanceof Error ? failure.message : "The view could not be saved."}

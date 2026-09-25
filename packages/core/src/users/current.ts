@@ -34,7 +34,7 @@ export async function writeCurrentUserId(
   userId: string,
 ): Promise<void> {
   if (userId.length === 0) {
-    throw new CurrentUserError("user id must be non-empty");
+    throw new CurrentUserError("User id must not be empty.");
   }
   await writeFileAtomically(getCurrentUserPath(locttDir), `${userId}\n`);
 }

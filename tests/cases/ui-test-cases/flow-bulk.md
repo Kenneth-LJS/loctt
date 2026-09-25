@@ -142,14 +142,17 @@ confirm.** Select 6 tasks and choose Archive.
 **Bulk Delete demands a typed confirmation scaled to the blast radius.**
 Select 12 tasks and choose Delete.
 - A modal opens naming the count and the irreversibility in plain words
-  ("Permanently delete 12 tasks. This cannot be undone.").
+  ("Deleting 12 tasks is irreversible. Continue?").
 - The modal requires typing an exact confirmation string; the delete
   button stays disabled until it matches.
 - Initial focus is on the text input or Cancel — never on the delete
   button.
 - `Esc` and Cancel both close the modal with nothing deleted.
-- The modal states that delete is distinct from archive and offers
-  archive as the reversible alternative.
+
+Amended (K129, Ken 2026-09-24): the modal no longer states that delete
+is distinct from archive or offers archive as the reversible
+alternative. Ken: *"Deleting is irreversible. Continue? im sure the
+archive is somewhere the user can see first, so they should know."*
 
 ### BLK-12 · M1 · blocker · P5 P9
 **Confirmed bulk delete removes the tasks and reports honestly.**

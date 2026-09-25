@@ -1,4 +1,4 @@
-import type { QuerySort } from "@loctt/contracts";
+import { isViewNameTaken, type QuerySort, VIEW_NAME_TAKEN_MESSAGE } from "@loctt/contracts";
 import { useMemo, useState } from "react";
 
 import {
@@ -7,6 +7,7 @@ import {
   useProjects,
   useSprints,
   useUsers,
+  useViews,
 } from "../api/hooks/sidebarData.ts";
 import { useCreateView } from "../api/hooks/useCreateView.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
@@ -66,6 +67,10 @@ export function SaveViewDialog({
   readonly onClose: () => void;
 }) {
   const [name, setName] = useState("");
+  // B21 (K129): a name another view has is refused here, before any
+  // request, and by core if the list below was stale.
+  const [nameTaken, setNameTaken] = useState(false);
+  const views = useViews();
   const createView = useCreateView();
   // The filters as authored — this is exactly what gets stored. Nothing
   // is merged into a query string on the way out.
@@ -123,6 +128,11 @@ export function SaveViewDialog({
 
   const submit = (): void => {
     if (name.trim().length === 0) return;
+    const onDisk = [...(views.data?.queries ?? []), ...(views.data?.broken ?? [])];
+    if (isViewNameTaken(name, onDisk)) {
+      setNameTaken(true);
+      return;
+    }
     createView.mutate(
       {
         name: name.trim(),
@@ -141,7 +151,7 @@ export function SaveViewDialog({
           <TextField
             autoFocus
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={e => { setName(e.target.value); setNameTaken(false); }}
             onKeyDown={e => {
               if (e.key === "Enter") submit();
             }}
@@ -241,7 +251,11 @@ export function SaveViewDialog({
           )}
         </div>
 
-        {createView.isError ? (
+        {nameTaken ? (
+          <p className="text-[0.8571rem] text-danger-fg" role="alert" data-testid="save-view-name-taken">
+            {VIEW_NAME_TAKEN_MESSAGE}
+          </p>
+        ) : createView.isError ? (
           <p className="text-[0.8571rem] text-danger-fg">
             {createView.error instanceof Error ? createView.error.message : "Failed to save view."}
           </p>

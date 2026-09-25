@@ -33,8 +33,6 @@ import {
   bucketBySprint,
   deriveSprintColumns,
   isActive,
-  sprintCountdown,
-  windowDisagrees,
 } from "./columns.ts";
 import { VirtualCards } from "./VirtualCards.tsx";
 
@@ -148,9 +146,8 @@ export function SprintsView() {
   );
   const buckets = useMemo(() => bucketBySprint(columns, items), [columns, items]);
 
-  // The workspace's date, not the browser's — SPR-20's hint compares
-  // against the tracker's calendar, so a user in another timezone must
-  // not see a different set of overrun sprints than the CLI reports.
+  // The workspace's date, not the browser's, so a user in another
+  // timezone sees the same due-date states the CLI would.
   const today = info.data?.today ?? new Date().toISOString().slice(0, 10);
 
   const cardLayout = useMemo(
@@ -277,10 +274,9 @@ export function SprintsView() {
             {sprintsConfigError.envelope?.message ?? sprintsConfigError.message}
           </p>
           <p className="mt-3 text-[0.9286rem] text-text-secondary">
-            No sprints could be loaded — the whole file failed to parse, so
-            this is not an empty tracker. Fix{" "}
+            No sprints could be loaded. The file failed to parse. Fix{" "}
             <code>.loctt/config/sprints.yaml</code> and
-            reload. LocTT will not repair the file for you.
+            reload.
           </p>
         </div>
       </div>
@@ -368,8 +364,8 @@ export function SprintsView() {
           className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <span className="min-w-0 flex-1">
-            <strong>{moveError.key}</strong> was not moved to{" "}
-            <strong>{moveError.sprintLabel}</strong> — the assignment was not
+            <strong>{moveError.key}</strong> wasn't moved to{" "}
+            <strong>{moveError.sprintLabel}</strong>. The assignment wasn't
             saved. {moveError.message}
           </span>
           <button
@@ -409,12 +405,9 @@ export function SprintsView() {
         >
           <p className="font-medium">
             {brokenSprints.length === 1
-              ? "1 sprint could not be read from sprints.yaml"
-              : `${String(brokenSprints.length)} sprints could not be read from sprints.yaml`}
-            {" "}— fix{" "}
-            <code>.loctt/config/sprints.yaml</code> and
-            reload to restore {brokenSprints.length === 1 ? "it" : "them"}.
-            LocTT will not repair the file for you.
+              ? "1 sprint in sprints.yaml is broken"
+              : `${String(brokenSprints.length)} sprints in sprints.yaml are broken`}
+            . Fix the file and reload.
           </p>
           <ul className="mt-1.5 space-y-1">
             {brokenSprints.map(b => (
@@ -450,8 +443,7 @@ export function SprintsView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
-          {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
-          {" "}missing from this view. Check the file.
+          {" "}could not be read. Missing from this view.
         </div>
       )}
 
@@ -470,7 +462,7 @@ export function SprintsView() {
           data-testid="sprints-empty"
           className="flex flex-col items-center gap-3 rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
-          <span>No sprints yet.</span>
+          <span>No sprints found.</span>
           {/* K105: create in place, not a link to Settings. */}
           <Button
             variant="secondary"
@@ -667,8 +659,6 @@ function Column({
   ) => void;
 }) {
   const active = column.kind === "sprint" && isActive(column.sprint as SprintDef);
-  const overrun = column.kind === "sprint"
-    && windowDisagrees(column.sprint as SprintDef, today);
   const isDropTarget = drag !== null && drag.over?.columnId === column.id;
   const draggingKey = drag?.key;
   const dropIndex = isDropTarget ? drag.over?.index : undefined;
@@ -678,10 +668,6 @@ function Column({
   // entry into an explicit "No tasks"/"unavailable" rather than a
   // fabricated 0/0.
   const readout: Readout = progressState(progress);
-  const countdown = column.kind === "sprint"
-    ? sprintCountdown((column.sprint as SprintDef).end_date, today)
-    : undefined;
-  const overdue = countdown !== undefined && countdown.endsWith("overdue");
 
   return (
     <section
@@ -764,13 +750,13 @@ function Column({
         </button>
 
         {/* SPR-39 / K-14: the at-a-glance card. The whole block opens the
-            sprint's detail (progress, dates, days-remaining, and a
+            sprint's detail (progress, dates, and a
             mini-bar that is the "burndown equivalent" — the real chart is
             one Open-away, A165). It is a sibling of the toggle, not a
             child: the header button owns the collapse gesture (SPR-2),
             and nesting a navigable region in a button is invalid.
 
-            The at-a-glance *data* (mini-bar + countdown) shows only when
+            The at-a-glance *data* (the mini-bar) shows only when
             the column is expanded — SPR-2 keeps a collapsed column to
             "header plus task count only", and expanding is one click of
             the toggle above. The Open-sprint link stays visible either
@@ -787,7 +773,6 @@ function Column({
         {column.kind === "sprint" && (
           <div
             data-testid={`sprint-card-${column.id}`}
-            data-overdue={overdue ? "true" : "false"}
             role="link"
             tabIndex={0}
             aria-label={`Open ${column.label}`}
@@ -809,21 +794,10 @@ function Column({
                 (SPR-2). */}
             {expanded && <SprintMiniProgress readout={readout} columnId={column.id} />}
 
-            <div className="mt-1 flex items-center justify-between gap-2">
-              {/* SPR-39: days-remaining, or overdue once the window has
-                  passed (the SPR-20 disagreement, read as a countdown).
-                  Expanded only, so a collapsed column stays minimal. */}
-              {expanded && countdown !== undefined && (
-                <span
-                  data-testid={`sprint-countdown-${column.id}`}
-                  className={[
-                    "text-[0.7857rem] tabular-nums",
-                    overdue ? "font-medium text-danger-fg" : "text-text-tertiary",
-                  ].join(" ")}
-                >
-                  {countdown}
-                </span>
-              )}
+            {/* No countdown to the end date (K131): the date range is on
+                the card, and "N days overdue" nudged a process choice
+                that is the user's (P11). */}
+            <div className="mt-1 flex items-center justify-end gap-2">
               {/* SPR-7: the explicit navigate affordance is kept — a real
                   anchor, so middle-click / open-in-new-tab work, and it
                   stays visible whether the column is expanded or not. The
@@ -853,20 +827,6 @@ function Column({
           </div>
         )}
       </header>
-
-      {/* SPR-20: the window is in the past while the state says active.
-          An informational hint — not an error, and nothing here
-          rewrites `state`. */}
-      {overrun && expanded && (
-        <p
-          data-testid={`sprint-window-hint-${column.id}`}
-          className="border-b border-border-subtle px-3 py-2 text-[0.7857rem] text-text-secondary"
-        >
-          This sprint is still marked <strong>active</strong>, but its dates
-          ({column.sprint?.start_date} → {column.sprint?.end_date}) do not
-          include today. LocTT does not change sprint state on its own.
-        </p>
-      )}
 
       {/* SPR-27: names the dangling id, so the user can find it. The
           rest of the view keeps rendering around it. */}

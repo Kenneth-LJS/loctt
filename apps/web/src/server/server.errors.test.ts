@@ -438,11 +438,11 @@ describe("state-lock contention", () => {
     expect(res.ok).toBe(false);
 
     const envelope = (await res.json()) as ErrorResponse;
-    // Second bullet: the failure says another LocTT process holds the
+    // Second bullet: the failure says another process holds the
     // lock. `conflict`, not `unknown` — ERR-31's prohibition, and the
     // code the client branches on to pick this message at all.
     expect(envelope.code).toBe("conflict");
-    expect(envelope.message).toMatch(/another LocTT process/i);
+    expect(envelope.message).toMatch(/another process/i);
     // Third bullet: it states the change was **not** saved, and offers
     // retry as a control. `retry` specifically: contention clears on
     // its own, so unlike a git conflict this one is worth repeating.
@@ -536,7 +536,7 @@ describe("state-lock contention", () => {
 
     // Names the lock, and says the write did not complete.
     expect(envelope.code).toBe("conflict");
-    expect(envelope.message).toMatch(/another LocTT process/i);
+    expect(envelope.message).toMatch(/another process/i);
     expect(envelope.data_state).toBe("not_saved");
 
     // Names the filesystems where the lock is not trustworthy...
@@ -599,7 +599,7 @@ describe("state-lock contention", () => {
     // First bullet: the failure names the lock and states that the
     // write did not complete.
     expect(envelope.code).toBe("conflict");
-    expect(envelope.message).toMatch(/another LocTT process/i);
+    expect(envelope.message).toMatch(/another process/i);
     // Second bullet: a warning rather than "the write being retried
     // into possible corruption" — `not_saved` is the claim that
     // nothing was half-written.

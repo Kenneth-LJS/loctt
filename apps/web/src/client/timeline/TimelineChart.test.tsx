@@ -211,7 +211,9 @@ describe("TimelineChart owns the viewport (redesign)", () => {
     expect(container.querySelector('[data-testid="timeline-header"]')).not.toBeNull();
     const notice = container.querySelector('[data-testid="timeline-no-dated-tasks"]');
     expect(notice).not.toBeNull();
-    expect(notice?.textContent).toContain("nothing to chart");
+    // K129 pass: "so there is nothing to chart" was trimmed as a
+    // filler clause restating the state the empty notice itself shows.
+    expect(notice?.textContent).toContain("has both a start date and a due date");
   });
 
   // @verifies TML-55

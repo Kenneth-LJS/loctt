@@ -1,4 +1,5 @@
 import type { ArchivedScope, BrokenSavedQuery, EntityColor, Filter, QueriesConfig, SavedQuery, WorkflowConfig } from "@loctt/contracts";
+import { isViewNameTaken, VIEW_NAME_TAKEN_MESSAGE, viewNameKey } from "@loctt/contracts";
 import { ulid } from "ulid";
 
 import {
@@ -17,6 +18,33 @@ export class ViewError extends Error {
   }
 }
 
+/**
+ * A write that would give a view a name another view already has (B21,
+ * K129). A `ViewError`, so every surface that already reports view errors
+ * reports this one; its own class so the API can point at the name field.
+ */
+export class ViewNameTakenError extends ViewError {
+  constructor() {
+    super(VIEW_NAME_TAKEN_MESSAGE);
+    this.name = "ViewNameTakenError";
+  }
+}
+
+/**
+ * Refuses `name` when another view on disk already answers to it
+ * (K129). Every entry counts: archived views and broken entries still
+ * resolve by name, so a clash with either makes `--view <name>`
+ * ambiguous just the same. `exceptId` is the view being renamed.
+ *
+ * Only NEW clashes are refused. Two views that already share a name on
+ * disk (written before K129, or by hand) keep loading, running by id,
+ * and taking edits that leave their name alone.
+ */
+function assertNameFree(config: QueriesConfig, name: string, exceptId?: string): void {
+  const entries = [...config.queries, ...(config.broken ?? [])];
+  if (isViewNameTaken(name, entries, exceptId)) throw new ViewNameTakenError();
+}
+
 /** Resolves a view ref (id or unique name) to its definition. */
 export function findView(config: QueriesConfig, ref: string): SavedQuery {
   const byId = config.queries.find(q => q.id === ref);
@@ -27,9 +55,9 @@ export function findView(config: QueriesConfig, ref: string): SavedQuery {
     if (only) return only;
   }
   if (byName.length > 1) {
-    throw new ViewError(`multiple views named '${ref}'; refer by id instead`);
+    throw new ViewError(`Multiple views named '${ref}'. Refer by id instead.`);
   }
-  throw new ViewError(`unknown view: ${ref}`);
+  throw new ViewError(`Unknown view: ${ref}`);
 }
 
 /**
@@ -61,14 +89,14 @@ export function findViewOrBroken(
   const namedBroken = broken.filter(b => b.name === ref);
   const total = namedViews.length + namedBroken.length;
   if (total > 1) {
-    throw new ViewError(`multiple views named '${ref}'; refer by id instead`);
+    throw new ViewError(`Multiple views named '${ref}'. Refer by id instead.`);
   }
   const onlyView = namedViews[0];
   if (onlyView) return { kind: "view", view: onlyView };
   const onlyBroken = namedBroken[0];
   if (onlyBroken) return { kind: "broken", entry: onlyBroken };
 
-  throw new ViewError(`unknown view: ${ref}`);
+  throw new ViewError(`Unknown view: ${ref}`);
 }
 
 /**
@@ -79,7 +107,7 @@ export function findViewOrBroken(
  */
 function brokenWriteGate(entry: BrokenSavedQuery, verb: "replace" | "delete"): ViewError {
   return new ViewError(
-    `view '${entry.name}' (${entry.id}) is broken: its stored filters could not be read (${entry.error}). `
+    `View '${entry.name}' (${entry.id}) is broken. Its stored filters could not be read (${entry.error}). `
     + `Its original text is preserved in queries.yaml and ${verb === "delete" ? "deleting" : "replacing"} it would discard that text. `
     + `Fix queries.yaml by hand to keep it, or ${verb} it anyway with --force (CLI), `
     + `replaceBroken: true (MCP and API).`,
@@ -110,8 +138,8 @@ function assertNotBrokenForArchive(
   if (resolved.kind !== "broken") return;
   const entry = resolved.entry;
   throw new ViewError(
-    `view '${entry.name}' (${entry.id}) is broken: its stored filters could not be read (${entry.error}). `
-    + `A broken view cannot be ${verb}d — ${verb === "archive" ? "archiving" : "unarchiving"} it would imply it still works. `
+    `View '${entry.name}' (${entry.id}) is broken. Its stored filters could not be read (${entry.error}). `
+    + `A broken view cannot be ${verb}d: ${verb === "archive" ? "archiving" : "unarchiving"} it would imply it still works. `
     + `Fix queries.yaml by hand, or replace or delete the view.`,
   );
 }
@@ -146,14 +174,14 @@ async function assertFiltersValid(locttDir: string, filters: readonly Filter[]):
   try {
     node = filtersToNode(filters);
   } catch (err) {
-    throw new ViewError(`invalid filter: ${(err as Error).message}`);
+    throw new ViewError(`Invalid filter: ${(err as Error).message}`);
   }
   // An empty filter list is valid — it matches everything in scope.
   if (node === undefined) return;
   try {
     validateQuery(node, workflow ? { workflow } : {});
   } catch (err) {
-    throw new ViewError(`invalid filter: ${(err as Error).message}`);
+    throw new ViewError(`Invalid filter: ${(err as Error).message}`);
   }
 }
 
@@ -183,6 +211,7 @@ export async function createView(
   await assertFiltersValid(locttDir, input.filters);
   return withStateLock(locttDir, async () => {
     const config = await loadQueriesConfig(locttDir);
+    assertNameFree(config, input.name);
     const created: SavedQuery = {
       id: ulid(),
       name: input.name,
@@ -240,6 +269,12 @@ export async function editView(
       return repairBrokenView(locttDir, config, resolved.entry, changes);
     }
     const existing = resolved.view;
+    // A rename is checked; keeping the name (or changing only its case
+    // or spacing) is not, so an edit to one of two views that already
+    // share a name still goes through.
+    if (changes.name !== undefined && viewNameKey(changes.name) !== viewNameKey(existing.name)) {
+      assertNameFree(config, changes.name, existing.id);
+    }
     const updated: SavedQuery = {
       id: existing.id,
       name: changes.name ?? existing.name,
@@ -317,6 +352,9 @@ async function repairBrokenView(
 ): Promise<SavedQuery> {
   if (changes.replaceBroken !== true) {
     throw brokenWriteGate(entry, "replace");
+  }
+  if (changes.name !== undefined && viewNameKey(changes.name) !== viewNameKey(entry.name)) {
+    assertNameFree(config, changes.name, entry.id);
   }
   const repaired: SavedQuery = {
     id: entry.id,

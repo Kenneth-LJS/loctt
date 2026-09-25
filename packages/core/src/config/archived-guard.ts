@@ -265,7 +265,7 @@ export function assertNotArchivedReferences(
       // read the set" are different answers, and only one of them is
       // safe to act on.
       errors.push(
-        `cannot set ${field} to "${next}": LocTT could not determine whether that ${kindLabel} is archived (${unknown})`,
+        `Cannot set ${field} to "${next}". Could not determine whether that ${kindLabel} is archived (${unknown}).`,
       );
       continue;
     }
@@ -277,8 +277,8 @@ export function assertNotArchivedReferences(
       // can either unarchive them or choose someone else — the field
       // has already reverted, so "choose a different" is actionable.
       errors.push(
-        `cannot assign archived ${kindLabel} "${displayNameFor(defs, next)}" `
-        + `to ${field}; unarchive it first, or choose a different ${field}`,
+        `Cannot assign archived ${kindLabel} "${displayNameFor(defs, next)}" `
+        + `to ${field}. Unarchive it first, or choose a different ${field}.`,
       );
     }
   }
@@ -293,13 +293,13 @@ export function assertNotArchivedReferences(
       if (prior.has(k)) continue;
       if (unknown !== undefined) {
         errors.push(
-          `cannot attach label "${k}": LocTT could not determine whether it is archived (${unknown})`,
+          `Cannot attach label "${k}". Could not determine whether it is archived (${unknown}).`,
         );
         continue;
       }
       if (archived.has(k)) {
         errors.push(
-          `cannot attach archived label "${k}"; unarchive it first`,
+          `Cannot attach archived label "${k}". Unarchive it first.`,
         );
       }
     }
@@ -325,6 +325,6 @@ export function assertNotArchivedRelationshipTarget(
   // archive). The caller decides what counts as "already linked".
   if (alreadyLinkedKeys.has(targetFm.id)) return;
   throw new ArchivedReferenceError(
-    `cannot link to archived task ${targetFm.key}; unarchive it first`,
+    `Cannot link to archived task ${targetFm.key}. Unarchive it first.`,
   );
 }

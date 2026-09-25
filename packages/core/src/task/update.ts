@@ -124,7 +124,7 @@ export class TaskUpdateError extends LocttError {
  */
 /** Shared so the two write paths cannot drift apart. */
 const UPDATED_AT_REFUSAL =
-  `cannot set "updated_at" directly; it is stamped on every write`;
+  `Cannot set "updated_at" directly. It is stamped on every write.`;
 
 export const USER_IMMUTABLE_FIELDS: ReadonlySet<string> = new Set([
   "id",
@@ -469,12 +469,12 @@ export async function setField(opts: SetFieldOptions): Promise<Task> {
     throw new TaskUpdateError(UPDATED_AT_REFUSAL);
   }
   if (USER_IMMUTABLE_FIELDS.has(opts.field)) {
-    throw new TaskUpdateError(`cannot set immutable field "${opts.field}"`);
+    throw new TaskUpdateError(`Cannot set immutable field "${opts.field}".`);
   }
   if (AUTO_MANAGED_FIELDS.has(opts.field)) {
     throw new TaskUpdateError(
-      `cannot set auto-managed field "${opts.field}" directly; ` +
-      `it is updated automatically based on status changes`,
+      `Cannot set auto-managed field "${opts.field}" directly. ` +
+      `It is updated automatically based on status changes.`,
     );
   }
 
@@ -490,7 +490,7 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
 
   if (field === "title") {
     if (typeof value !== "string" || value.length === 0) {
-      throw new TaskUpdateError("title must be a non-empty string");
+      throw new TaskUpdateError("Title must be a non-empty string.");
     }
     updated = { ...task.frontmatter, title: value, updated_at: now };
   } else if (field === "updated_at") {
@@ -702,12 +702,12 @@ export async function unsetField(
  */
 export function assertUnsettable(field: string): void {
   if (USER_IMMUTABLE_FIELDS.has(field) || field === "title" || field === "updated_at") {
-    throw new TaskUpdateError(`cannot unset required field "${field}"`);
+    throw new TaskUpdateError(`Cannot unset required field "${field}".`);
   }
   if (AUTO_MANAGED_FIELDS.has(field)) {
     throw new TaskUpdateError(
-      `cannot unset auto-managed field "${field}" directly; ` +
-      `it is updated automatically based on status changes`,
+      `Cannot unset auto-managed field "${field}" directly. ` +
+      `It is updated automatically based on status changes.`,
     );
   }
 }
@@ -754,7 +754,7 @@ async function unsetFieldLocked(
     // Custom field under fields:
     const existingFields = { ...(task.frontmatter.fields ?? {}) };
     if (!(field in existingFields)) {
-      throw new TaskUpdateError(`custom field "${field}" is not set`);
+      throw new TaskUpdateError(`Custom field "${field}" is not set.`);
     }
     delete existingFields[field];
     const fields = Object.keys(existingFields).length > 0 ? existingFields : undefined;
@@ -833,12 +833,12 @@ export function assertChangesWritable(
   allowAutoManaged: ReadonlySet<string> = new Set(),
 ): void {
   if (changes.length === 0) {
-    throw new TaskUpdateError(`${label} requires at least one change`);
+    throw new TaskUpdateError(`${label} requires at least one change.`);
   }
   const seen = new Set<string>();
   for (const c of changes) {
     if (seen.has(c.field)) {
-      throw new TaskUpdateError(`duplicate field in ${label}: "${c.field}"`);
+      throw new TaskUpdateError(`Duplicate field in ${label}: "${c.field}".`);
     }
     seen.add(c.field);
     if (c.field === "updated_at") {
@@ -848,7 +848,7 @@ export function assertChangesWritable(
       throw new TaskUpdateError(UPDATED_AT_REFUSAL);
     }
     if (USER_IMMUTABLE_FIELDS.has(c.field)) {
-      throw new TaskUpdateError(`cannot set immutable field "${c.field}"`);
+      throw new TaskUpdateError(`Cannot set immutable field "${c.field}".`);
     }
     // An auto-managed field stays refused unless this caller is the
     // code that *owns* it. `board_rank` is owned by the board-move
@@ -860,11 +860,11 @@ export function assertChangesWritable(
     // caller behave exactly as before.
     if (AUTO_MANAGED_FIELDS.has(c.field) && !allowAutoManaged.has(c.field)) {
       throw new TaskUpdateError(
-        `cannot set auto-managed field "${c.field}" directly`,
+        `Cannot set auto-managed field "${c.field}" directly.`,
       );
     }
     if (c.value === undefined && c.field === "title") {
-      throw new TaskUpdateError(`cannot unset required field "${c.field}"`);
+      throw new TaskUpdateError(`Cannot unset required field "${c.field}".`);
     }
   }
 }
@@ -937,7 +937,7 @@ export async function setFieldsLocked(
   for (const { field, value } of changes) {
     if (field === "title") {
       if (typeof value !== "string" || value.length === 0) {
-        throw new TaskUpdateError("title must be a non-empty string");
+        throw new TaskUpdateError("Title must be a non-empty string.");
       }
       patch["title"] = value;
     } else if (field === "updated_at") {
@@ -994,7 +994,7 @@ export async function setFieldsLocked(
             h => h.field.replace(/[[.].*$/, "") === field,
           );
           if (!healthOnly) {
-            throw new TaskUpdateError(`custom field "${field}" is not set`);
+            throw new TaskUpdateError(`Custom field "${field}" is not set.`);
           }
         } else {
           const next = { ...existingFields };

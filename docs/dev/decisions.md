@@ -22685,6 +22685,30 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K132 · Milestones carry no countdown and no Overdue badge
+
+**Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
+
+Following K131, told milestones show the same countdown ("in 5 days" /
+red "3 days overdue", MSL-40), Ken: *"yes remove too"*. Asked about the
+separate "Overdue" badge beside the milestone name on the Milestones page
+and the milestone page (MSL-17: target date passed, open tasks remain),
+he chose **"Remove the badge too"**. Both go; MSL-17 and MSL-40 are
+amended. Task due dates turning red in the list and board are a
+different indicator and are unchanged.
+
+### K131 · Sprint cards carry no countdown to the end date
+
+**Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
+
+Each Sprints-board card showed "N days left", turning red "N days
+overdue" once the end date passed (SPR-39). Asked what it should do past
+the end date, Ken: *"why is there a countdown even?"* Told it came from
+SPR-39 and duplicates the date range already on the card: *"remove the
+countdown"*. Removed (`sprints/SprintsView.tsx`, `sprintCountdown` in
+`sprints/columns.ts` and its tests deleted); SPR-39 amended. Web only:
+the CLI and MCP never showed one.
+
 ### K130 · Sprints: no process policing; product principle P11; last message rulings
 
 **Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
@@ -22765,6 +22789,252 @@ Ken's answers on the "needs your call" rows of the app-message audit
 Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
+
+### A344 · B21–B23 implementation choices (unique view names, init over an empty `.loctt`, sprint guards removed)
+
+**Ticket:** B21, B22, B23 (K129, K130) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 · **Scope:** core, CLI, MCP, web. *(Reconstructed from the implementing agent's report; its scratchpad draft was lost in a session restart.)*
+
+**B21 — what "the same name" means.** Names compare trimmed and case-insensitively, over every view including archived and broken ones (they still answer to their name). Only an edit that changes the name is checked, so keeping a name, or changing only its case, always saves: that is what lets two views that already share a name on disk still be edited. The comparison and the message ("Another view with that name already exists.") live in `packages/contracts/src/query.ts`; core (`views/manage.ts`) applies them on create, rename and broken-view repair; the server points the 400 at the name field; `SaveViewDialog` and `ViewFormDialog` check on Save and send nothing. `list/viewNameCollision.ts` (never wired into a dialog) and its test are deleted. Existing duplicates load and run by id; `loctt list --view <dup>` still refuses the ambiguous name. VUE-20's built-in-filter-name bullet was dropped: a view may share a built-in filter's label, which lives in a separate namespace and does not shadow it.
+
+**B22 — one path for empty and missing.** Core `initLoctt` sets up an empty `.loctt/` exactly like a missing one, keeping anything already there; a tracker that still has tasks is still refused. The web server's call to repair for this case is removed (repair skipped `.gitignore`, the starter docs and the default user). CLI `loctt init` no longer sends you to `--repair`; MCP `init` lets an empty folder through.
+
+**B23 — what stays refused.** The state-transition guard and `force` (core, CLI `--force`, MCP `force`) are gone. End before start stays refused with "End date is before the start date." (the dates cannot be drawn otherwise, K130); YYYY-MM-DD validation stays. `overrun`/`windowDisagrees` and the SPR-20 hint are deleted. SPR-33 amended: the plain message no longer names both dates; they are in the fields beside it.
+
+**To revert.** B21: remove the name check from `views/manage.ts` and the two dialogs, restore `viewNameCollision.ts` from git. B22: restore the empty-folder refusal in `initLoctt`, the server's repair call and the CLI/MCP checks. B23: restore `SPRINT_STATE_TRANSITIONS`, the `force` option and flags, the old end-before-start message, and the SPR-20 hint, from git history. Each has tests pinning the new behaviour (`views/manage.test.ts`, `init/init.test.ts`, `sprints/manage.test.ts`, `tests/integration/cli/{views-manage,init,sprint-state}.test.ts`, `tests/integration/mcp/view-name-unique.test.ts`).
+
+### A343 · B20 implementation choices (message-audit apply pass)
+
+**Ticket:** B20 (backlog.md) — apply the approved message audit
+(K123, K126, K127, K129, K130) · **Date:** 2026-09-24/26 · **Commit:**
+ui/polish-wave-3
+
+**Situation.** The audit tables (app-message-trim-A/B/C.md,
+error-text-trim.md) were written against a snapshot of the code that
+had since moved in places, and a few rows' proposed AFTER text
+conflicted with case requirements the tables' own authors had not
+re-checked. This entry records every place I applied intent over
+literal table text, and why. The session also spanned a restart; some
+scratchpad artifacts from the first half were lost, and this file is
+reconstructed from the final code state plus what remained in context.
+
+## 1. AdvisoryFsBanner (A-102) — case XS-50 required the internal
+mechanism name
+
+**Table said:** apply K130's exact wording verbatim (no options given
+— it's Ken's own wording, not a proposal).
+
+**Found:** `AdvisoryFsBanner.test.tsx` and `flow-cross-surface.md`
+XS-50 both required the banner to name "POSIX advisory locks" and
+"concurrent writes... corrupt state" specifically, plus a best-effort/
+Diagnostics caveat inline.
+
+**Decided.** Applied K130's exact wording ("This tracker is in a
+network folder, which may lead to data corruption if multiple machines
+edit the files at the same time. Keep it on a local disk to be safe.")
+since it is Ken's own ruling, not a proposal — it supersedes the
+mechanism-naming requirement as a plain-language description of the
+same risk. Amended XS-50's first bullet and rewrote the component test
+to assert the new wording instead of "POSIX advisory locks"/"best-effort"/
+"Diagnostics". The best-effort caveat was already relocated to the UI
+guide doc by a prior (2026-09-23) ruling recorded in XS-50, so nothing
+needed to move for that part.
+
+**To revert.** Restore AdvisoryFsBanner.tsx's original two-span text
+(POSIX advisory locks / Diagnostics), restore the test's original
+assertions, and revert the XS-50 bullet-one edit in
+`tests/cases/ui-test-cases/flow-cross-surface.md`.
+
+## 2. init/InitWizard.tsx skip-docs explainer — batch B row 69's
+removal would break ONB-4
+
+**Table said:** remove the whole explainer paragraph ("LocTT normally
+writes a few short markdown files...") as a page-intro/explainer-before-
+action pattern (K129 applied generally).
+
+**Found:** `flow-onboarding.md` ONB-4 explicitly requires "Its label or
+helper text says what the docs are, not just 'skip starter docs' — a
+user who has never seen them can decide."
+
+**Decided.** Left the explainer paragraph in place, unedited. This is
+a case conflict of the same shape as BLK-11/TSK-22/23 (K129 pattern vs.
+an explicit case requirement), but ONB-4 is not in K129's own list of
+conflicts Ken already resolved, so I did not touch it rather than
+resolve it unilaterally. (Note: this section of InitWizard.tsx was
+independently rewritten by the concurrent B22 agent during this session
+for the empty-`.loctt` behavior change — the explainer paragraph itself
+survived that rewrite untouched.)
+
+**To revert (if Ken confirms removal).** Delete the explainer `<p>`
+block at `apps/web/src/client/init/InitWizard.tsx` and amend ONB-4 to
+drop its helper-text requirement.
+
+## 3. shell/ShortcutHelpDialog.tsx footnote — batch B row 110's removal
+risked leaving A11Y-43 unsatisfiable
+
+**Table said:** remove "Single-key shortcuts are ignored while a text
+field, editor, or dialog has focus..." as a justification-for-design-
+choice pattern (K129 applied generally).
+
+**Found:** `flow-accessibility.md` A11Y-43 requires shortcuts to either
+not shadow screen-reader browse commands, or be turned off/remapped, or
+be "documented in the `?` reference as suppressible." No remap/off
+switch exists in the codebase (grepped), so this footnote is the only
+thing currently satisfying that third option.
+
+**Decided.** Left the footnote in place, unedited, for the same
+case-conflict reason as item 2.
+
+**To revert (if Ken confirms removal).** Delete the `<p>` block at
+`apps/web/src/client/shell/ShortcutHelpDialog.tsx` only once shortcuts
+are actually remappable/toggleable, or after amending A11Y-43 to drop
+the third option.
+
+## 4. state/staged-swap.ts `SwapRollbackError` — direct instruction
+text would have dropped the journal-entry id a test requires
+
+**Table said (C112):** trim mechanically, keep the journal entry id
+("both needed for by-hand recovery").
+
+**Task instructions said:** use the exact text "A change to several
+files failed and could not be undone. The next command will try the
+undo again. If it fails again, copy the files in ${backupDir} back by
+hand. Cause: ${cause}" — which drops the journal entry id from the
+rendered message.
+
+**Found:** `state/staged-swap.test.ts`'s own test ("carries the backup
+directory and journal id for manual recovery") asserts
+`err.message.toContain("01ABC")` — the id must appear in the rendered
+message, with the test's own comment stating why: "it has to name
+where the originals are, because nothing else will."
+
+**Decided.** Kept the instruction's new lead sentences ("A change to
+several files failed... the next command will try the undo again")
+since that claim is true (verified: `state/journal.ts`'s
+`recoveryHandlers`/replay-on-`withStateLock` mechanism does retry on
+the next command), but folded the journal entry id back in as
+`(journal entry ${journalEntryId})` rather than dropping it. This is
+the one place I did not follow the direct instruction text verbatim,
+because doing so would have silently broken an existing, load-bearing
+test rather than just changing wording.
+
+**To revert.** Drop the `(journal entry ${journalEntryId})` parenthetical
+to match the instruction text exactly, and delete or rewrite the
+staged-swap.test.ts assertion that requires the id in the message.
+
+## 5. Test-regex case-sensitivity — a table claim was wrong
+
+The table (app-message-trim-C.md, row C130) asserted the
+`config/router.test.ts` regex `/not inside a Git repository/` (no `/i`
+flag) was safe against the new capitalized "Not inside a Git
+repository." — verified this is false (JS regex without `/i` is
+case-sensitive), and the test would have failed. Fixed by adding `/i`
+to that regex and every other case-sensitive regex/string assertion
+found broken by capitalization or wording changes across this pass
+(see the final report's "tests updated" list — several dozen sites
+across core, CLI, MCP, web unit tests, integration tests, and e2e
+specs, mostly `was not saved`→`wasn't saved`, `did not respond`→
+`didn't respond`, and lowercase-vs-capitalized leading words).
+
+**To revert.** N/A — these are correctness fixes to the gate itself,
+not a design choice to revert.
+
+## 6. Additional call sites found beyond the tables' line numbers
+
+Several family groups (projects.ts's `unknown project:`, labels.ts's
+`unknown label(s):` plural-ids guard) had more call sites in the
+current code than the tables listed, because the code moved since the
+audit was written. Applied the same mechanical trim to every site
+found by grep, not just the ones named, per the task's "apply to every
+site" instruction for grouped families.
+
+**To revert.** Not applicable — same trim as named siblings, at sites
+the table's line numbers had drifted past.
+
+## 7. MilestonesView.tsx subhead — removed the element, not just the text
+
+**Table said (batch A row 81):** flagged as "the page's own progress
+bars and task counts already show what it is for," recommending removal
+but flagging it as a visible change someone might be attached to.
+
+**Decided.** Removed the `<p data-testid="milestones-subhead">` element
+entirely rather than emptying it (messaging.md's page-intro rule: "would
+the page work without it? Then don't add it"). Rewrote
+`MilestonesView.test.tsx`'s MSL-42-adjacent test and
+`tests/ui/flow-milestones.spec.ts`'s MSL-42 test, both of which had
+asserted the subhead's presence/text. Confirmed no case (MSL-42 or
+otherwise) actually requires a subhead on this page — MSL-42 is about
+Settings → Milestones' own copy pointing at the reachable /milestones
+view, a separate, still-open concern this pass did not build.
+
+Note: this removal turned out to align with a later, broader ruling
+(K131/K132, "no countdown, no Overdue badge," built by a concurrent
+agent during this session) that removed the milestone card's
+countdown/breakdown/subhead entirely for other reasons. No conflict —
+my earlier, narrower removal was a strict subset of the later one.
+
+**To revert.** Restore the `<p>` block in `MilestonesView.tsx` (now
+moot given K131/K132 also removed the surrounding card content) and
+the two test files' original assertions.
+
+## 8. sprints.yaml end/start-date validation message (leftover from B23)
+
+**Instruction (coordinator, after B23 finished):** the hand-edited
+`sprints.yaml` path in `packages/contracts/src/sprints.ts` still said
+"end_date (…) must not be before start_date (…)" — make it "End date
+is before the start date." with the file named, per K129's
+invalid-config pattern, and update SPR-31's spec and tests.
+
+**Decided.** Changed the zod `superRefine` custom-issue message in
+`SprintDefSchema` (packages/contracts/src/sprints.ts) from
+`` `end_date (${s.end_date}) must not be before start_date (${s.start_date})` ``
+to `` `End date is before the start date.` ``. This issue is consumed by
+`formatZodIssues` in `config/sprints.ts:63`'s existing
+`` `sprints.yaml is not valid: ${formatZodIssues(...)}` `` wrapper (one
+of the 9 sites that already names the file), so the file name and field
+path (`sprints[N].end_date`) both still appear ahead of the plain
+message — matching K129's "the file and the field to fix" shape without
+any further wrapper changes needed.
+
+Updated: `packages/core/src/config/sprints.test.ts` (two assertions),
+`apps/web/src/client/sprints/SprintsView.test.tsx` (mock fixture +
+assertion), `tests/cases/ui-test-cases/flow-sprints.md` SPR-31's first
+bullet, and `tests/ui/flow-sprints.spec.ts`'s SPR-31 test (dropped the
+now-removed "will not repair the file for you" assertion the same test
+was still checking, and asserts the new plain-English rule instead of
+the raw field-name phrasing).
+
+Did NOT touch `packages/core/src/sprints/manage.ts`'s own, separate
+`SPRINT_END_BEFORE_START_MESSAGE` ("End date is before the start
+date.") — that's the field-level metadata-edit message (SPR-33's own,
+pre-existing, already-correct wording), a different code path from the
+whole-file schema validator this item was about. Also left
+`packages/core/src/sprints/burndown.ts`'s
+`` `end_date (${endDate}) is before start_date (${startDate})` `` alone —
+confirmed unchanged per the C-family table (format-hint shape), a third
+distinct code path.
+
+**To revert.** Restore the original template-literal message in
+`packages/contracts/src/sprints.ts`, and revert the four touched test/
+case files listed above.
+
+## 9. Concurrent-session interactions (informational, not a choice)
+
+Across this session two other agents worked in the same tree on B21
+(saved-view uniqueness — deleted `list/viewNameCollision.ts` entirely,
+superseding my earlier wording trim to that file, which is now moot),
+B22 (empty-`.loctt` setup — rewrote `InitWizard.tsx`'s init-branch logic;
+my unrelated wording edits in that file survived), and B23/K130/K131
+(sprint state-guard removal, SPR-20 hint removal, sprint+milestone
+countdown removal). None of their behavior changes were reverted or
+reworded by me. Where their edits and mine touched the same file
+(`InitWizard.tsx`, `SprintsView.tsx`, `MilestonesView.tsx`,
+`flow-sprints.spec.ts`, `flow-onboarding.spec.ts`), I re-read the file
+immediately before each edit during the second half of the session, per
+the coordinator's explicit instruction, and confirmed no wording edit of
+mine was overwritten (one exception: a `MilestonesView.tsx` red-proof
+scaffold from the concurrent agent transiently broke `npm run test`;
+it resolved itself within seconds when they finished their own
+red-proof, no action needed from me).
 
 ### A342 · Git sync parses its own error reply instead of POSTing sync a second time
 

@@ -731,10 +731,10 @@ export function ListView() {
         // may have succeeded is how one archive becomes two.
         setBulkResult({
           message:
-            `LocTT sent ${String(refs.length)} `
-            + `${refs.length === 1 ? "task" : "tasks"} to be ${verb} and the `
-            + `server did not respond. Some may have been ${verb}. Reload to `
-            + `see the current state, then retry the rest.`,
+            `Sent ${String(refs.length)} `
+            + `${refs.length === 1 ? "task" : "tasks"} to be ${verb}. The `
+            + `server didn't respond. Some may have been ${verb}. Reload, `
+            + `then retry the rest.`,
           failures: [],
         });
         return [];
@@ -742,7 +742,7 @@ export function ListView() {
       // The batch never ran (BLK-39): distinct from a partial failure,
       // and the selection survives so the user can retry it.
       setBulkResult({
-        message: `Nothing was ${verb} — the operation could not run.`,
+        message: `Nothing was ${verb}. The operation didn't run.`,
         failures: [(err as Error).message],
       });
       return [];
@@ -813,7 +813,7 @@ export function ListView() {
         >
           <p className="font-medium">
             <code>.loctt/config/workflow.yaml</code> has an
-            entry that does not parse, so some statuses or fields may be missing
+            entry that does not parse. Some statuses or fields may be missing
             from the filters below.
           </p>
           <p className="mt-1">
@@ -825,9 +825,7 @@ export function ListView() {
             >
               Open Diagnostics
             </Link>
-            {" "}to see the problem, or fix the file (or run{" "}
-            <code className="font-mono">loctt doctor</code>), then refresh. The
-            rest of the list loaded normally.
+            {" "}to see the problem, or fix the file and refresh.
           </p>
           <ul className="mt-1 list-none space-y-0.5 p-0" data-testid="workflow-config-broken-list">
             {brokenWorkflowEntries.map(e => (
@@ -857,8 +855,8 @@ export function ListView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg"
         >
           <p className="font-medium">
-            The saved view <code>{brokenView.name}</code> could
-            not be run: its query no longer parses.
+            <code>{brokenView.name}</code> could
+            not be run. Its query no longer parses.
           </p>
           {/* The loader's message. It names the offending position
               itself — a character offset when it has one, otherwise the
@@ -907,9 +905,8 @@ export function ListView() {
           role="status"
           className="rounded-md border border-warn-fg/30 bg-warn-bg px-4 py-2 text-[0.8571rem] text-warn-fg"
         >
-          The saved view <code>{missingView}</code> no longer
-          exists, so this is showing every task instead. It was probably deleted
-          from <code>.loctt/config/queries.yaml</code>.{" "}
+          <code>{missingView}</code> no longer
+          exists. Showing every task instead.{" "}
           <button
             type="button"
             onClick={() => { void navigate({ search: prev => ({ ...prev, view: undefined }) }); }}
@@ -922,9 +919,8 @@ export function ListView() {
       {unreadable.length > 0 && (
         <div role="alert" className="mb-2 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg">
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
-          {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
-          {" "}missing from this list. A hand-edit is the usual cause — LocTT
-          {" "}writes atomically, so a half-written file is not.
+          {" "}could not be read. Missing from this list. A hand-edit is
+          {" "}the usual cause.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
               <li key={u.id} className="text-[0.7857rem]">
@@ -1097,7 +1093,7 @@ export function ListView() {
                     </>
                   ) : (
                     <div className="flex flex-col items-center gap-3">
-                      <span>No tasks yet. Create your first one to get started.</span>
+                      <span>No tasks found.</span>
                       <Button
                         variant="primary"
                         size="sm"
@@ -1252,7 +1248,7 @@ export function ListView() {
               </>
             ) : (
               <div className="flex flex-col items-center gap-3">
-                <span>No tasks yet. Create your first one to get started.</span>
+                <span>No tasks found.</span>
                 <Button
                   variant="primary"
                   size="sm"

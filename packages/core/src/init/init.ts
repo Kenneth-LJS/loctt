@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { IanaTimezone } from "@loctt/contracts";
@@ -10,6 +10,7 @@ import {
   serializeCalendarConfig,
 } from "../config/calendar.js";
 import { getProjectsConfigPath, loadProjectsConfig } from "../config/projects.js";
+import { getTrackerInfo } from "../diagnostics/info.js";
 import {
   getDocsDir,
   getQueriesConfigPath,
@@ -193,6 +194,10 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   const { ulid } = await import("ulid");
   const projectId = ulid();
 
+  // B22 (K129): an EMPTY `.loctt/` (no config, no state, no tasks) is
+  // set up like a missing one, with no message and no extra step. Ken:
+  // "just ignore, proceed with steps. dont even show this to the user".
+  let intoExisting = false;
   if (await fileExists(locttDir)) {
     // A tracker already here is either healthy — in which case re-init
     // is a mistake and must be refused — or damaged, in which case
@@ -202,10 +207,18 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
     if (missing.length === 0) {
       throw new Error(`.loctt directory already exists at ${locttDir}`);
     }
-    if (options.repair !== true) {
-      throw new InitRepairNeededError(locttDir, missing);
+    // `getTrackerInfo` owns the empty-versus-damaged line, so what the
+    // web shows as "no tracker" and what init fills in cannot disagree.
+    // Only `empty` is safe here: a `damaged` tracker still has tasks,
+    // and a fresh state.yaml would reissue their keys.
+    if ((await getTrackerInfo(root)).initState === "empty") {
+      intoExisting = true;
+    } else {
+      if (options.repair !== true) {
+        throw new InitRepairNeededError(locttDir, missing);
+      }
+      return repairLoctt(locttDir, { prefix, projectName, timezone, projectId });
     }
-    return repairLoctt(locttDir, { prefix, projectName, timezone, projectId });
   }
 
   // Stage everything in a sibling temp directory and atomically
@@ -294,9 +307,18 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
       created.push(join(getDocsDir(locttDir), "agents.md"));
     }
 
-    // Atomic flip — after this point, `.loctt/` exists in its
-    // final form or not at all.
-    await rename(stageDir, locttDir);
+    if (intoExisting) {
+      // The folder is already there, so it cannot be renamed into
+      // place. The staged files are moved in instead, and anything
+      // already in the folder is kept as it is. Not atomic: a crash
+      // part-way leaves a `damaged` tracker, which `--repair` finishes.
+      await moveEntriesInto(stageDir, locttDir);
+      await rm(stageDir, { recursive: true, force: true });
+    } else {
+      // Atomic flip — after this point, `.loctt/` exists in its
+      // final form or not at all.
+      await rename(stageDir, locttDir);
+    }
   } catch (err) {
     // Clean up the staging directory; the user's project root is
     // unchanged because we never wrote into the final path.
@@ -317,6 +339,24 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
   await ensureDefaultUser(locttDir);
 
   return { locttDir, created };
+}
+
+/**
+ * Moves every entry of `src` into `dest`, merging directories and never
+ * replacing anything `dest` already holds. Used to set up an empty
+ * `.loctt/` in place (B22).
+ */
+async function moveEntriesInto(src: string, dest: string): Promise<void> {
+  for (const entry of await readdir(src, { withFileTypes: true })) {
+    const from = join(src, entry.name);
+    const to = join(dest, entry.name);
+    if (!(await fileExists(to))) {
+      await rename(from, to);
+    } else if (entry.isDirectory() && (await stat(to)).isDirectory()) {
+      await moveEntriesInto(from, to);
+    }
+    // Otherwise `dest` already has a file here: it is the user's, kept.
+  }
 }
 
 async function ensureRootGitignoreEntry(rootDir: string): Promise<void> {

@@ -124,7 +124,7 @@ export function BulkBar({
               Letting the server's validator be the first mention leaks
               its own jargon to the user (ERR-16) and wastes a round
               trip on a request that cannot succeed. */}
-          Bulk actions apply to at most {MAX_BULK_REFS} tasks at once —
+          Bulk actions apply to at most {MAX_BULK_REFS} tasks at once.
           {" "}{count} are selected. Clear some, or act in batches.
         </p>
       )}

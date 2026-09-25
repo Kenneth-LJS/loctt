@@ -351,7 +351,14 @@ test.describe("MSL — the milestones view", () => {
   });
 
   // @verifies MSL-17
-  test("MSL-17: overdue keys off incomplete tasks, not the date, and changes no number", async ({
+  //
+  // > **Amended (K132, Ken 2026-09-26).** Milestones show no countdown and
+  // > no Overdue badge. Ken, on the countdown: "yes remove too"; on the
+  // > badge he chose "Remove the badge too". MSL-17's whole claim — a
+  // > worded overdue indication keyed off incomplete tasks — is gone: there
+  // > is no overdue indication of any kind, on a past-due milestone with
+  // > open tasks or otherwise.
+  test("MSL-17 (K132): no Overdue indication for a past-due milestone with open tasks, and the numbers are unaffected", async ({
     page,
     tracker,
   }) => {
@@ -359,32 +366,31 @@ test.describe("MSL — the milestones view", () => {
 
     await page.goto(`${tracker.baseURL}/milestones`);
     const row = page.locator(`[data-milestone-id="${alpha}"]`);
+    await expect(row).toBeVisible();
 
-    // A past date with 4 tasks still incomplete.
-    await expect(row).toHaveAttribute("data-overdue", "true");
-    // Not colour alone — the indication is a word.
-    await expect(row.getByTestId("milestone-overdue")).toHaveText("Overdue");
+    // A past date with 4 tasks still incomplete: still no badge, no
+    // `data-overdue` attribute at all (K132 — the attribute itself is
+    // retired, not merely `"false"`).
+    await expect(row).not.toHaveAttribute("data-overdue");
+    await expect(row.getByTestId("milestone-overdue")).toHaveCount(0);
 
-    // The flag is additive: the numbers are what they were.
+    // The numbers themselves are unaffected by the removal.
     await expect(page.getByTestId(`milestone-${alpha}-readout`)).toContainText("4 / 8");
 
-    // Now complete the remaining work. Same past date; the flag must
-    // go, which is what distinguishes "driven by incomplete tasks"
-    // from "driven by the date".
+    // Completing the remaining work changes nothing about this — there
+    // was no flag to begin with, dated in the past or not.
     const keys = (await tracker.run(["list", "--query", `milestone = "${alpha}"`]))
       .trim().split("\n").map(l => l.trim().split(/\s+/)[0] ?? "").filter(Boolean);
     for (const k of keys) await tracker.run(["set", k, "status", "done"]);
 
     await page.reload();
-    await expect(row).toHaveAttribute("data-overdue", "false");
+    await expect(row).not.toHaveAttribute("data-overdue");
     await expect(row.getByTestId("milestone-overdue")).toHaveCount(0);
-    // Positive control: the row is still on the page and still dated
-    // in the past — the flag went, not the row.
     await expect(row.getByTestId("milestone-date")).toHaveText("Jan 1, 2025");
   });
 
   // @verifies MSL-18
-  test("MSL-18: a 100% milestone reads n / n, full, and completed rather than overdue", async ({
+  test("MSL-18: a 100% milestone reads n / n, full, and completed", async ({
     page,
     tracker,
   }) => {
@@ -401,8 +407,8 @@ test.describe("MSL — the milestones view", () => {
     await expect(page.getByTestId(`milestone-${alpha}-bar`))
       .toHaveAttribute("data-fill", "1.0000");
 
-    // A past target date on a complete milestone reads completed, not
-    // overdue.
+    // A past target date on a complete milestone reads completed. There
+    // is no overdue concept to distinguish it from (K132).
     await expect(row.getByTestId("milestone-complete")).toHaveText("Completed");
     await expect(row.getByTestId("milestone-overdue")).toHaveCount(0);
   });
@@ -556,13 +562,19 @@ test.describe("MSL — the milestones view", () => {
   });
 
   // @verifies MSL-40
-  test("MSL-40: a dated card shows a countdown, a past one shows overdue, undated degrades", async ({
+  //
+  // > **Amended (K132, Ken 2026-09-26).** Milestones show no countdown and
+  // > no Overdue badge. Ken, on the countdown: "yes remove too"; on the
+  // > badge he chose "Remove the badge too". MSL-40's whole claim — a
+  // > countdown or overdue duration beside the date — is gone: no card
+  // > shows one, dated in the future, dated in the past, or undated.
+  test("MSL-40 (K132): no countdown on any card — future-dated, past-dated, or undated", async ({
     page,
     tracker,
   }) => {
     // The tracker's today, read from the server, is the frame the
-    // countdown is measured in — computed here so the fixture dates are
-    // relative to it and the test does not drift with the wall clock.
+    // fixture dates are relative to, so the test does not drift with the
+    // wall clock.
     const info = await (await page.request.get(`${tracker.baseURL}/api/info`)).json() as {
       today: string;
     };
@@ -578,20 +590,27 @@ test.describe("MSL — the milestones view", () => {
     const late = ms.find(m => m.name === "Late")?.id ?? "";
     const someday = ms.find(m => m.name === "Someday")?.id ?? "";
 
-    // "Late" needs an incomplete task so it reads overdue rather than
-    // just past — MSL-40's marker rides the same overdue rule (MSL-17).
+    // "Late" has an incomplete task — under the old MSL-17 rule this
+    // would have read overdue; K132 removed the concept, so this proves
+    // absence even in the case most likely to have shown one.
     const out = await tracker.run(["create", "L task"]);
     const key = (/Created (\S+):/.exec(out)?.[1] ?? "").replace(/:$/, "");
     await tracker.run(["set", key, "milestone", late]);
 
     await page.goto(`${tracker.baseURL}/milestones`);
+    await expect(page.getByTestId("milestone-row")).toHaveCount(3);
 
-    // A future date: days-remaining.
-    await expect(page.getByTestId(`milestone-${soon}-countdown`)).toContainText("in 5 days");
-    // A past date with work left: an overdue duration.
-    await expect(page.getByTestId(`milestone-${late}-countdown`)).toContainText("3 days overdue");
-    // Undated: no countdown at all, and the date slot still says so.
+    // No countdown anywhere: future-dated, past-dated with open work, or
+    // undated.
+    await expect(page.getByTestId(`milestone-${soon}-countdown`)).toHaveCount(0);
+    await expect(page.getByTestId(`milestone-${late}-countdown`)).toHaveCount(0);
     await expect(page.getByTestId(`milestone-${someday}-countdown`)).toHaveCount(0);
+    // No Overdue badge on the past-dated, incomplete milestone either.
+    await expect(
+      page.locator(`[data-milestone-id="${late}"]`).getByTestId("milestone-overdue"),
+    ).toHaveCount(0);
+
+    // The dates themselves are still shown as-is.
     await expect(
       page.locator(`[data-milestone-id="${someday}"]`).getByTestId("milestone-date"),
     ).toHaveText("No target date");
@@ -638,13 +657,13 @@ test.describe("MSL — the milestones view", () => {
     // milestone' affordance opening the shared create dialog … Not a
     // deep link to a Settings form" (`milestones/MilestonesView.tsx`).
     //
-    // The durable requirement — UX-15's "a view you cannot find" gap:
-    // the view must say what it is FOR and offer the management action —
-    // is what is asserted now.
-    const subhead = page.getByTestId("milestones-subhead");
-    await expect(subhead).toBeVisible();
-    await expect(subhead).toContainText(/progress toward every milestone/i);
-
+    // SUPERSEDED AGAIN under K129: the page's own subhead ("Progress
+    // toward every milestone…") was removed as a page-intro that
+    // restates what the page's own progress bars and counts already
+    // show (messaging.md §1). UX-15's durable requirement — the view
+    // must offer the management action, not just describe itself — is
+    // what remains assertable here.
+    //
     // And the management action is right here, opening in place.
     await page.getByTestId("milestones-new").click();
     await expect(page.getByTestId("milestone-create-dialog")).toBeVisible();

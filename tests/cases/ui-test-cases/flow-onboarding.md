@@ -70,7 +70,7 @@ the list view's own empty/loading behaviour beyond first load is
 ### ONB-8 · M1 · blocker · P6
 **A freshly initialized, empty tracker shows a designed empty list, not a blank pane.** Load `/list` on a tracker with zero tasks.
 
-- The main pane shows an explicit empty state naming the state ("No tasks yet") and offering the next action (create a task), not an empty table body and not a spinner.
+- The main pane shows an explicit empty state naming the state ("No tasks found.", amended K129) and offering the next action (create a task), not an empty table body and not a spinner.
 - The empty state is distinguishable from "your filter matched nothing" — no filter chips are active and the copy does not suggest clearing filters.
 - The table header row either renders with the configured columns or is absent by design; it does not render half-formed with misaligned widths.
 
@@ -132,9 +132,17 @@ the list view's own empty/loading behaviour beyond first load is
 ### ONB-16 · M4 · major · P6 P7
 **A directory where `.loctt/` exists but is empty is treated as uninitialized, not as a broken tracker.** Create an empty `.loctt/` directory and load the UI.
 
-- The app routes to `/init` and the copy accounts for the directory already existing — it does not promise to "create `.loctt/`" when the folder is already there.
-- The user is told what will happen to the existing empty directory (it will be populated), so submitting doesn't feel like it might clobber something.
+- The app routes to `/init`, which reads exactly as it does with no `.loctt/`: no message, warning or extra confirmation about the folder already being there.
+- One submit sets the tracker up in that folder: the same files a fresh setup writes (config, state, starter docs unless skipped, `.gitignore`, the default user), keeping anything the folder already held.
+- `loctt init` and MCP `init` do the same over an empty `.loctt/`: no refusal, no `--repair`.
 - The app does not render a generic crash, a schema banner, or a zero-task list.
+
+> **Amended (K129, Ken 2026-09-24).** Ken: *"why is there even an error
+> then? just ignore, proceed with steps. dont even show this to the
+> user, dont show the messages, dont show warning, dont even stop with
+> this extra confirmation step because that causes friction."* The first
+> two bullets previously required copy that accounted for the folder
+> already existing and told the user it would be populated.
 
 ### ONB-17 · M4 · major · P4 P5
 **Init run concurrently in two tabs does not produce a half-initialized tracker.** Open `/init` in two tabs, submit both within a second of each other.

@@ -43,6 +43,7 @@ Keys (`P-1`, `Q10`, …) come from the v1 decision register; see
 | Key | Invariant | What breaks if violated |
 |---|---|---|
 | **Q10** | Multiple simultaneously-`active` sprints are allowed. LocTT performs **no** automatic state transitions and **no** carryover. | "Helpfully" auto-completing a sprint past its end date mutates user data nobody asked to change. |
+| — | Sprint `state` moves freely: any state to any state, on every surface, with no force flag. **K130 removed the transition guard** (completed could not be reopened without CLI `--force` / MCP `force`) under P11. The one refusal is an `end_date` before `start_date` ("End date is before the start date."), a storage rule, not policy. | Reinstating a guard, a warning or a confirmation on a state change polices the user's process (P11). |
 | — | Tasks reference sprints by **id**. A sprint's `name` is mutable and not unique. | Renaming a sprint would detach its tasks. |
 
 ## Local-only state

@@ -299,7 +299,7 @@ describe("setField / unsetField", () => {
           { field: "priority", value: "high" },
           { field: "priority", value: "low" },
         ],
-      })).rejects.toThrow(/duplicate/);
+      })).rejects.toThrow(/duplicate/i);
     });
 
     it("rejects immutable fields", async () => {

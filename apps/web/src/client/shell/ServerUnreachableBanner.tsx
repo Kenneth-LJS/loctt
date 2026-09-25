@@ -124,7 +124,7 @@ export function ServerUnreachableBanner() {
       <span className="font-semibold">The LocTT server is not responding.</span>
       <span className="opacity-90">
         The terminal running <code className="font-mono">loctt ui</code> may have
-        stopped — restart it and this will clear on its own.
+        stopped. Restart it to continue.
       </span>
       {/*
         A311: `variant="current"` inherits this banner's `text-danger-fg`

@@ -78,7 +78,7 @@ describe("createUser", () => {
   });
 
   it("rejects an empty name", async () => {
-    await expect(createUser(locttDir, { name: "   " })).rejects.toThrow(/non-empty/);
+    await expect(createUser(locttDir, { name: "   " })).rejects.toThrow(/must not be empty/);
   });
 
   // Parity with the web write path (A152): core is the authority the
@@ -335,7 +335,7 @@ describe("deleteUser", () => {
       });
       await saveState(locttDir, state);
     });
-    await expect(deleteUser(locttDir, u.id)).rejects.toThrow(/pass remapTo or unassign/);
+    await expect(deleteUser(locttDir, u.id)).rejects.toThrow(/pass remapTo or unassign/i);
   });
 
   it("rejects passing both --remap-to and --unassign", async () => {
@@ -343,7 +343,7 @@ describe("deleteUser", () => {
     const other = await createUser(locttDir, { name: "Other" });
     await expect(
       deleteUser(locttDir, u.id, { remapTo: other.id, unassign: true }),
-    ).rejects.toThrow(/mutually exclusive/);
+    ).rejects.toThrow(/not both/);
   });
 
   it("remaps assignee/reporter to the target user", async () => {
@@ -454,11 +454,11 @@ describe("resolveUserRef", () => {
   it("throws on ambiguous name", async () => {
     await createUser(locttDir, { name: "Same" });
     await createUser(locttDir, { name: "Same" });
-    await expect(resolveUserRef(locttDir, "Same")).rejects.toThrow(/multiple users/);
+    await expect(resolveUserRef(locttDir, "Same")).rejects.toThrow(/multiple users/i);
   });
 
   it("throws on unknown name", async () => {
-    await expect(resolveUserRef(locttDir, "NotHere")).rejects.toThrow(/unknown user/);
+    await expect(resolveUserRef(locttDir, "NotHere")).rejects.toThrow(/unknown user/i);
   });
 });
 

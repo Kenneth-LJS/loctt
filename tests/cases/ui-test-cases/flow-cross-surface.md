@@ -427,7 +427,7 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 ### XS-50 · M4 · major · P4 P7
 **The UI warns when the tracker sits on a filesystem where advisory locks are unsafe.** Run `loctt ui` against a `.loctt/` inside Dropbox, iCloud Drive, OneDrive, or an NFS/SMB mount.
 
-- A warning surface names the specific risk: LocTT's locks are POSIX advisory and are not safe on network or sync-service filesystems, so concurrent writes from two machines can corrupt state.
+- A warning surface names the specific risk in plain terms: the tracker is in a network folder, which may lead to data corruption if multiple machines edit the files at the same time (K130, Ken 2026-09-24 — exact wording: "This tracker is in a network folder, which may lead to data corruption if multiple machines edit the files at the same time. Keep it on a local disk to be safe."). This states the outcome without naming the internal mechanism ("POSIX advisory locks"), which the case previously required naming.
 - The warning names the detected path so the user can confirm which directory triggered it.
 - It is informational, not blocking — the app still works, since the risk is concurrency-dependent.
 - It is dismissible and does not re-nag every refetch within a session.

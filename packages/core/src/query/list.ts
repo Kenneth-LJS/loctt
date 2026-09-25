@@ -177,8 +177,8 @@ export function resolveView(
   const byName = queriesConfig.queries.filter(q => q.name === ref);
   if (byName.length > 1) {
     throw new Error(
-      `multiple views named '${ref}'; refer by id instead `
-      + `(${byName.map(q => q.id).join(", ")})`,
+      `Multiple views named '${ref}'. Refer by id instead `
+      + `(${byName.map(q => q.id).join(", ")}).`,
     );
   }
   return byName[0];
@@ -280,7 +280,7 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     }
     const view = resolveView(queriesConfig, options.view);
     if (!view) {
-      throw new Error(`unknown view "${options.view}"`);
+      throw new Error(`Unknown view "${options.view}".`);
     }
     viewNode = filtersToNode(view.filters);
     viewScope = view.archivedScope;

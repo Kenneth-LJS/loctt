@@ -60,10 +60,10 @@ class StateLockedError extends LocttError {
   constructor(detail: string) {
     super(
       "conflict",
-      "another LocTT process is writing to this tracker; wait for it to "
-      + "finish and try again. If no other process is running, note that "
+      "Another process is writing to this tracker. Wait for it to "
+      + "finish and try again. If no other process is running, "
       + "the state lock uses POSIX advisory locks, which are not reliable "
-      + "on iCloud Drive, Dropbox, OneDrive, NFS or SMB — move the tracker "
+      + "on iCloud Drive, Dropbox, OneDrive, NFS or SMB. Move the tracker "
       + "to a local disk.",
       {
         // Nothing was attempted: the lock is taken before any write.

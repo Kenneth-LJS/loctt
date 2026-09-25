@@ -136,7 +136,7 @@ export function AttachmentsPanel({
         // show, a 400 does and must keep it.
         const droppedMidUpload = err instanceof ApiError && err.status === 0;
         const message = droppedMidUpload
-          ? `${file.name} did not finish uploading — it was not attached. You can retry.`
+          ? `${file.name} did not finish uploading. It was not attached. You can retry.`
           : err instanceof Error ? err.message : String(err);
         patch(id, { state: "failed", message, file });
       }
@@ -211,7 +211,7 @@ export function AttachmentsPanel({
         {attachmentsError !== undefined ? (
           <div data-testid="attachments-error" className="mb-2 text-[0.9286rem]">
             <p className="text-danger-fg">
-              Attachments could not be read — {attachmentsError}
+              Attachments could not be read. {attachmentsError}
             </p>
             {onRetry !== undefined && (
               <Button
@@ -227,7 +227,7 @@ export function AttachmentsPanel({
           </div>
         ) : attachments.length === 0 ? (
           <p data-testid="attachments-empty" className="mb-2 text-[0.9286rem] text-text-secondary">
-            No attachments on this task yet.
+            No attachments found.
           </p>
         ) : null}
         <p className="text-[0.8571rem] text-text-tertiary">

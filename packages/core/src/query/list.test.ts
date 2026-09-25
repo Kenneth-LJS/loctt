@@ -299,7 +299,7 @@ describe("listTasks", () => {
 
   it("throws for unknown view", () => {
     expect(() => listTasks({ tasks, options: { view: "bogus" }, queriesConfig, workflowConfig: config }))
-      .toThrow("unknown view");
+      .toThrow(/unknown view/i);
   });
 
   it("throws QueriesConfigError when --view is requested but queriesConfig is missing", () => {

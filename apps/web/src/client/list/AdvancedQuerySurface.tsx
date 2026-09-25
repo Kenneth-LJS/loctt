@@ -455,7 +455,7 @@ function TextMode({
           role="status"
           className="m-0 rounded border border-border-subtle bg-bg-surface/60 px-2 py-1 text-[0.8571rem] text-text-secondary"
         >
-          This query can't be shown in the visual builder: {refuseReason}. Editing as text.
+          Can't show this query in the visual builder: {refuseReason}.
         </p>
       )}
 

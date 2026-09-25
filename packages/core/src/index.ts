@@ -589,4 +589,5 @@ export {
   findViewOrBroken,
   unarchiveView,
   ViewError,
+  ViewNameTakenError,
 } from "./views/index.js";

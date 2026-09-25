@@ -79,7 +79,7 @@ function simpleToNode(f: SimpleFilter): QueryNode {
 
   if (f.values.length === 0) {
     throw new FilterError(
-      `filter on "${f.field}" needs a value for the "${f.op}" operator`,
+      `Filter on "${f.field}" needs a value for the "${f.op}" operator.`,
     );
   }
 
@@ -120,7 +120,7 @@ function simpleToNode(f: SimpleFilter): QueryNode {
     };
   }
   throw new FilterError(
-    `filter on "${f.field}" has ${f.values.length} values, which the "${f.op}" operator cannot combine`,
+    `Filter on "${f.field}" has ${f.values.length} values, which the "${f.op}" operator cannot combine.`,
   );
 }
 
@@ -130,7 +130,7 @@ function advancedToNode(f: AdvancedFilter): QueryNode {
     return parseQuery(tokenize(f.query));
   } catch (err) {
     if (err instanceof TokenizeError || err instanceof ParseError) {
-      throw new FilterError(`advanced filter does not parse: ${err.message}`);
+      throw new FilterError(`Advanced filter does not parse: ${err.message}.`);
     }
     throw err;
   }

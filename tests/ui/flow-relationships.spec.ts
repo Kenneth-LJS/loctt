@@ -1060,7 +1060,7 @@ test("REL-21: a hand-edited cycle renders, names the repeat, and does not hang t
     .toContainText(`cycle detected — ${a ?? ""} already appears above`);
   // Named, with a next action: which links, and what to do.
   await expect(page.getByTestId("relationship-cycle")).toContainText("contains a cycle");
-  await expect(page.getByTestId("relationship-cycle")).toContainText("remove one of the two links");
+  await expect(page.getByTestId("relationship-cycle")).toContainText(/remove one of the two links/i);
 
   // The page is alive: the tab did not lock. A frozen render would
   // never reach this, and the header is proof the rest of the page
@@ -1671,11 +1671,11 @@ test("REL-45: a link blocked by the state lock names the contention, adds nothin
 
   await addLink(page, "blocks", t2 ?? "");
 
-  // The message says another LocTT process is writing, and suggests
+  // The message says another process is writing, and suggests
   // retrying — rather than an opaque `ELOCKED`.
   const err = page.getByTestId("link-error");
   await expect(err).toBeVisible();
-  await expect(err).toContainText("another LocTT process is writing");
+  await expect(err).toContainText(/another process is writing/i);
   await expect(err).toContainText("try again");
   // Not the library's own words.
   await expect(err).not.toContainText("ELOCKED");

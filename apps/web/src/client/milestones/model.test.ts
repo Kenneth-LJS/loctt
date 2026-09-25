@@ -5,7 +5,6 @@ import type { Progress } from "./model.ts";
 import {
   compareMilestones,
   discardedNote,
-  isOverdue,
   progressState,
   sortMilestones,
 } from "./model.ts";
@@ -164,53 +163,6 @@ describe("progressState", () => {
     const r = progressState({ done: 0, active: 0, total: 0, discarded: 0, fraction: 0 });
     expect(r.kind).toBe("none");
     expect(r.activeFill).toBeUndefined();
-  });
-});
-
-describe("isOverdue", () => {
-  const today = "2026-09-01";
-
-  // @verifies MSL-17
-  it("flags a past target date only while incomplete tasks remain", () => {
-    const past = m({ id: "a", target_date: "2025-01-01" });
-    const readout = progressState(p(4, 8, 2));
-    expect(isOverdue(past, readout, today)).toBe(true);
-    // MSL-17's last bullet: the flag is additive — it changes no
-    // number. Same readout, before and after asking.
-    expect(readout.done).toBe(4);
-    expect(readout.total).toBe(8);
-  });
-
-  // @verifies MSL-17
-  // @verifies MSL-18
-  it("does not flag a fully-complete milestone whose date has passed", () => {
-    // The discriminator between "driven by the date" and "driven by
-    // incomplete tasks existing". An implementation keying off the
-    // date alone passes the test above and fails this one.
-    const past = m({ id: "a", target_date: "2025-01-01" });
-    expect(isOverdue(past, progressState(p(5, 5, 0)), today)).toBe(false);
-  });
-
-  // @verifies MSL-17
-  it("does not flag a future date with incomplete work", () => {
-    const future = m({ id: "a", target_date: "2099-01-01" });
-    expect(isOverdue(future, progressState(p(1, 8, 0)), today)).toBe(false);
-  });
-
-  // @verifies MSL-16
-  it("never flags an undated milestone", () => {
-    // No date means nothing has passed. Guards against a comparison
-    // that treats a missing date as epoch and calls every undated
-    // milestone overdue.
-    expect(isOverdue(m({ id: "a" }), progressState(p(1, 8, 0)), today)).toBe(false);
-  });
-
-  // Untagged for the same reason as above.
-  it("does not flag a milestone whose progress could not be computed", () => {
-    // The flag asserts something about counts. With no counts it would
-    // be a guess presented as a fact.
-    const past = m({ id: "a", target_date: "2025-01-01" });
-    expect(isOverdue(past, progressState(undefined), today)).toBe(false);
   });
 });
 

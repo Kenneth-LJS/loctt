@@ -111,9 +111,9 @@ export function BurndownChart(props: Props) {
           data-testid="burndown-enum-fallback"
           className="mb-2 rounded border border-border-subtle bg-bg-muted px-2 py-1.5 text-[0.8571rem] text-text-secondary"
         >
-          Estimation is set to <code>custom_enum</code>, whose
-          values cannot be added up. This chart is counting <strong>tasks</strong>,
-          not effort. To burn down effort instead, add a{" "}
+          Estimation is set to <code>custom_enum</code>, which
+          can't be added up. This chart is counting <strong>tasks</strong>,
+          not effort. To burn down effort, add a{" "}
           <code>weights</code> map under{" "}
           <code>estimation</code> in{" "}
           <code>workflow.yaml</code>.
@@ -126,7 +126,7 @@ export function BurndownChart(props: Props) {
           data-testid="burndown-empty"
           className="px-3 py-8 text-center text-[0.9286rem] text-text-tertiary"
         >
-          Nothing to burn down — no tasks were in this sprint during its window.
+          Nothing to burn down. No tasks were in this sprint during its window.
         </p>
       ) : (
         <svg

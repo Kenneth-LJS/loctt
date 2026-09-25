@@ -150,11 +150,20 @@ comes from `workflow.yaml#estimation` and resolves to one of
 - A task appears in exactly one column (its assigned sprint), never duplicated into both because their windows overlap.
 - No warning implies overlap is invalid — the schema permits it.
 
-### SPR-20 · M3 · major · P3 P7
+### SPR-20 · M3 · major · P3 P7 P11
 **A sprint whose `end_date` has passed but whose `state` is still `active` renders as active.**
 - The column is highlighted and expanded, because `state` drives presentation and LocTT performs no automatic transitions.
-- The UI surfaces the discrepancy — the window is in the past while the state says active — as an informational hint, not an error and not a silent auto-correction.
+- No hint, warning or message remarks that the dates do not include today.
 - Nothing in the UI rewrites `state` on the user's behalf.
+- State moves freely on every surface: a `completed` sprint can go back to `active` or `future` with no force flag and no confirmation (web, `loctt sprint edit --state`, MCP `edit_sprint`).
+- The one refusal is an `end_date` before `start_date`, with "End date is before the start date." Dates must still be `YYYY-MM-DD`.
+
+> **Amended (K130, Ken 2026-09-24).** Ken: *"we're not babysitting
+> policy, we're being a better task tracker, not here to lock
+> behaviour."* The second bullet previously required an informational
+> hint that the window is in the past while the state says active. The
+> state-transition guard (completed could not be reopened without CLI
+> `--force` / MCP `force`) is removed on every surface.
 
 ### SPR-21 · M4 · major · P6
 **Burndown for a sprint whose window is entirely in the future.**
@@ -213,7 +222,7 @@ comes from `workflow.yaml#estimation` and resolves to one of
 
 ### SPR-31 · M3 · blocker · P4 P7
 **A malformed `sprints.yaml` explains itself instead of blanking the view.** Introduce a sprint whose `end_date` precedes `start_date`.
-- The sprints view shows an error naming the file, the offending sprint, and the specific rule broken (`end_date must not be before start_date`).
+- The sprints view shows an error naming the file, the offending sprint, and the specific rule broken (K129: "End date is before the start date.").
 - The message tells the user to fix the file and reload — the UI does not offer to "repair" it silently.
 - Other, valid sprints still render if the loader can partially recover; if it cannot, the page says the whole file failed to parse rather than showing an empty state that reads as "no sprints".
 
@@ -225,9 +234,15 @@ comes from `workflow.yaml#estimation` and resolves to one of
 ### SPR-33 · M4 · blocker · P4
 **A rejected metadata edit reports the field and the reason inline.** Set `end_date` earlier than `start_date` in the detail header.
 - The error appears next to the `end_date` control, not only as a toast.
-- The message names the constraint and both offending values.
+- The message names the constraint: "End date is before the start date." Both values stay visible in the date fields beside it.
 - The previous valid value is retained on disk; the header does not persist the invalid state.
 - The user can correct the field directly from the error state without reloading.
+
+> **Amended (K130, Ken 2026-09-24).** Asked whether an end date before
+> the start date should stay refused, Ken chose to keep refusing it with
+> a plain message. The second bullet previously required the message to
+> name both offending values; the plain message does not repeat what the
+> two date fields already show.
 
 ### SPR-34 · M4 · major · P4
 **A burndown that fails to compute says so instead of drawing an empty chart.** Force `readBurndownSeries` to throw (unknown sprint id, unreadable history).
@@ -258,8 +273,10 @@ comes from `workflow.yaml#estimation` and resolves to one of
 
 ### SPR-39 · M4 · major · P8
 **The sprints overview surfaces at-a-glance data per card.**
-- Each sprint card shows progress (done / total), the date range, days-remaining (or overdue), and a mini-burndown or equivalent.
+- Each sprint card shows progress (done / total), the date range, and a mini-burndown or equivalent. It shows no countdown to the end date.
 - The whole card is clickable → detail.
+
+> **Amended (K131, Ken 2026-09-26).** Dropped "days-remaining (or overdue)". Asked what the countdown should do past the end date, Ken: *"why is there a countdown even?"*, then *"remove the countdown"*. The date range already carries it, and a red "N days overdue" nudged a process choice that is the user's (P11).
 
 ### SPR-40 · M4 · major · P10
 **Sprint create / delete / archive / unarchive are reachable from Settings**, reaching parity with the CLI (`sprint archive`, `--all`).

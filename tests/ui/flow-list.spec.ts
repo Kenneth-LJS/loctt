@@ -630,10 +630,10 @@ test.describe("BLK — bulk actions", () => {
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("Permanently delete 2 tasks");
-    await expect(dialog).toContainText("cannot be undone");
-    // Archive named as the reversible alternative, at the moment of
-    // the decision.
-    await expect(dialog).toContainText("archive");
+    // K129 (Ken, 2026-09-24): the archive alternative is gone. The
+    // confirmation states only that deleting is irreversible.
+    await expect(dialog).toContainText("Deleting tasks is irreversible");
+    await expect(dialog).not.toContainText("archive");
 
     // Focus is the input, never the destructive button.
     const input = dialog.getByLabel("Type DELETE to confirm");
@@ -1444,7 +1444,7 @@ test.describe("BLK — bounded and honest failures", () => {
     });
     await page.getByRole("button", { name: "Archive", exact: true }).click();
 
-    const status = page.getByRole("status").filter({ hasText: "did not respond" });
+    const status = page.getByRole("status").filter({ hasText: "didn't respond" });
     // All three, per P4's rare exception: what was attempted, what state
     // the data is in, what to do.
     await expect(status).toContainText("2 tasks");
@@ -1480,7 +1480,7 @@ test.describe("BLK — lock contention", () => {
 
     const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
     // Names the contention and advises waiting.
-    await expect(status).toContainText("another LocTT process is writing");
+    await expect(status).toContainText(/another process is writing/i);
     await expect(status).toContainText(/wait|try again/i);
     // No proper-lockfile internals and no stack trace (ERR-16).
     await expect(status).not.toContainText("Lock file is already being held");
@@ -1906,7 +1906,9 @@ test.describe("BLK — failures that must not be silent", () => {
     await page.getByRole("button", { name: "Archive", exact: true }).click();
 
     const status = page.getByRole("status").filter({ hasText: /archiv/i });
-    await expect(status).toContainText(/could not|did not/i);
+    // K129 pass: "the operation could not run" trimmed to "The
+    // operation didn't run."
+    await expect(status).toContainText(/could not|did not|didn't/i);
     // It must not claim either outcome.
     await expect(status).not.toContainText("2 tasks archived");
   });
@@ -2807,7 +2809,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
     const body = page.locator("tbody");
     // Names the state and offers the next action. Telling a new user
     // to clear filters they never set is nonsense.
-    await expect(body).toContainText(/No tasks yet/i);
+    await expect(body).toContainText(/No tasks found/i);
     await expect(body).not.toContainText(/Clear filters/i);
     await expect(body).not.toContainText(/match these filters/i);
     // No filter chips are active.
@@ -2815,7 +2817,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
   });
 
   // @verifies ONB-33
-  test("ONB-33: a 500 on first load is an error in the table, never 'No tasks yet'", async ({
+  test("ONB-33: a 500 on first load is an error in the table, never 'No tasks found.'", async ({
     page,
     tracker,
   }) => {
@@ -2830,7 +2832,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
     await page.goto(`${tracker.baseURL}/list`);
 
     // A load failure must never read as data loss.
-    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/No tasks found/i)).toHaveCount(0);
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
@@ -2852,7 +2854,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
     let sawEmpty = false;
     const poll = setInterval(() => {
       void page.locator("tbody").innerText()
-        .then(t => { if (/No tasks yet|match these filters/i.test(t)) sawEmpty = true; })
+        .then(t => { if (/No tasks found|match these filters/i.test(t)) sawEmpty = true; })
         .catch(() => undefined);
     }, 20);
     await page.reload();
@@ -2969,7 +2971,7 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
 
     // 1. A fresh tracker.
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.locator("tbody")).toContainText(/No tasks yet/i);
+    await expect(page.locator("tbody")).toContainText(/No tasks found/i);
     const fresh = await read();
 
     // 2. A filter matching nothing.
@@ -2987,7 +2989,7 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     // All three read differently, and neither failure borrows the
     // empty-state copy — a load failure must never read as data loss.
     expect(new Set([fresh, filtered]).size).toBe(2);
-    expect(unreachable).not.toMatch(/No tasks yet/i);
+    expect(unreachable).not.toMatch(/No tasks found/i);
     expect(unreachable).not.toMatch(/match these filters/i);
 
     // **Bullet 1: distinct *copy*, not merely distinct from the
@@ -3283,7 +3285,7 @@ test.describe("LST — columns, staleness, unreachable (M1.2)", () => {
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     // Never the empty-tracker copy — a load failure must not read as
     // data loss.
-    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/No tasks found/i)).toHaveCount(0);
     await expect(page.getByText(/match these filters/i)).toHaveCount(0);
   });
 });
@@ -3616,7 +3618,7 @@ test.describe("XS/ONB — staleness and the skeleton (M1.2)", () => {
     void tracker;
     await page.setViewportSize({ width: 768, height: 800 });
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.locator("tbody")).toContainText(/No tasks yet/i);
+    await expect(page.locator("tbody")).toContainText(/No tasks found/i);
 
     // The page body does not scroll sideways.
     const overflow = await page.evaluate(() =>
@@ -3670,7 +3672,9 @@ test.describe("The last of M1.2", () => {
 
     // Bounded: the wait ends, and the message says what was attempted
     // and what state the data is in.
-    const status = page.getByRole("status").filter({ hasText: /did not respond/i });
+    // K129 pass: "the server did not respond" trimmed to "The server
+    // didn't respond."
+    const status = page.getByRole("status").filter({ hasText: /didn't respond/i });
     await expect(status).toBeVisible({ timeout: 20_000 });
     await expect(status).toContainText(/2 tasks/);
     await expect(status).toContainText(/Reload/i);
@@ -3948,7 +3952,7 @@ test.describe("LST — query errors and composition (M1.3)", () => {
     // A parse failure must never be presentable as a legitimate
     // zero-match result.
     await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
-    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/No tasks found/i)).toHaveCount(0);
 
     const alert = page.getByRole("alert");
     await expect(alert).toBeVisible({ timeout: 15_000 });
@@ -4076,7 +4080,7 @@ test.describe("LST — filters that fail honestly (M1.3)", () => {
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
     // Never presented as an empty tracker.
-    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/No tasks found/i)).toHaveCount(0);
 
     // Retry succeeding replaces the error without a reload.
     hang = false;

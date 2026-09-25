@@ -549,7 +549,7 @@ function GroupNode({
 
       <div className="flex flex-col gap-1.5 pl-3">
         {node.children.length === 0 ? (
-          <p className="text-[0.8571rem] text-text-tertiary">No conditions yet.</p>
+          <p className="text-[0.8571rem] text-text-tertiary">No conditions found.</p>
         ) : (
           node.children.map((child, i) => (
             // A leaf's remove button centers with its single row of h-7

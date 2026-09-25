@@ -24,7 +24,7 @@ export class TaskNotFoundError extends LocttError {
     // No `data_state`: nothing was attempted, so there is no claim to
     // make about the user's data (ERR-18 scopes the requirement to
     // write paths).
-    super("not_found", `task not found: "${ref}"`);
+    super("not_found", `Task not found: "${ref}"`);
     this.name = "TaskNotFoundError";
     this.ref = ref;
   }
@@ -105,8 +105,8 @@ export class UnreadableTaskError extends LocttError {
     // can actually press. The only fix is to edit the file, which the
     // message names.
     super("io_failed", indeterminate
-      ? `No task matched "${ref}", but LocTT could not read every task `
-        + `file, so it cannot confirm that the task does not exist. `
+      ? `No task matched "${ref}", but not every task file could be read, `
+        + `so whether the task exists is unknown. `
         + `Repair ${paths.length === 1 ? "this file" : "these files"} `
         + `and try again: ${list}. ${reason}`
       : `${ref} could not be read because `
@@ -114,8 +114,7 @@ export class UnreadableTaskError extends LocttError {
             ? `${list} could not be parsed`
             : `none of these could be parsed: ${list}`}. `
         + `The file appears to have been edited by hand or by another `
-        + `tool — LocTT writes task.md atomically, so this is not a `
-        + `half-written file. ${reason}`,
+        + `tool, not a half-written write. ${reason}`,
       { detail: reason, recovery: { kind: "none" }, cause });
     this.name = "UnreadableTaskError";
     this.ref = ref;

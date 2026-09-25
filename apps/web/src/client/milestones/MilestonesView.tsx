@@ -2,7 +2,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { type MouseEvent, useMemo, useState } from "react";
 
 import { useCalendar } from "../api/hooks/useCalendar.ts";
-import { useInfo } from "../api/hooks/useInfo.ts";
 import {
   useMilestonesWithProgress,
   useOrphanedMilestoneTasks,
@@ -22,46 +21,10 @@ import { PageHeader } from "../ui/PageHeader.tsx";
 import type { MilestoneWithProgress, Readout } from "./model.ts";
 import {
   EXCLUDE_DISCARDED_QUERY,
-  isOverdue,
   progressState,
   sortMilestones,
 } from "./model.ts";
 import { ProgressReadout } from "./ProgressReadout.tsx";
-
-/**
- * MSL-40: the human countdown to (or past) a target date.
- *
- * Both dates are `YYYY-MM-DD` calendar days in the workspace's frame —
- * `info.today` is the tracker's day, not the browser's — so the diff is
- * a whole-day count taken from the date parts alone. Parsing at UTC noon
- * avoids the midnight-rolls-back-a-day trap `formatWorkspaceDate`
- * documents; since both operands get the same treatment the offset
- * cancels and the day delta is exact.
- *
- * Returns `undefined` for an undated milestone (MSL-40's "degrades
- * cleanly") and for an unparseable date — the date slot still renders
- * the raw/absent value, but there is no countdown to compute.
- *
- * The wording mirrors the case's own examples ("in 5 days" /
- * "3 days overdue"), with "Today" / "Tomorrow" / "Yesterday" as the
- * natural readings of 0 / +1 / -1.
- */
-export function milestoneCountdown(
-  target: string | undefined,
-  today: string,
-): string | undefined {
-  if (target === undefined || target === "") return undefined;
-  const t = Date.parse(`${target.slice(0, 10)}T12:00:00Z`);
-  const n = Date.parse(`${today.slice(0, 10)}T12:00:00Z`);
-  if (Number.isNaN(t) || Number.isNaN(n)) return undefined;
-
-  const days = Math.round((t - n) / 86_400_000);
-  if (days === 0) return "Today";
-  if (days === 1) return "Tomorrow";
-  if (days === -1) return "Yesterday";
-  if (days > 1) return `in ${String(days)} days`;
-  return `${String(-days)} days overdue`;
-}
 
 /**
  * MSL-41: the at-a-glance category breakdown.
@@ -108,7 +71,6 @@ function breakdown(readout: Readout): Breakdown | undefined {
 export function MilestonesView() {
   const milestones = useMilestonesWithProgress();
   const calendar = useCalendar();
-  const info = useInfo();
   const navigate = useNavigate();
 
   // MSL-25 / K121 #1: archived milestones are never shown here. They are
@@ -149,11 +111,6 @@ export function MilestonesView() {
     [all],
   );
 
-  // The tracker's date, not the browser's: two users in different
-  // zones must not disagree about which milestones are overdue, and
-  // the CLI has no browser to ask.
-  const today = info.data?.today ?? new Date().toISOString().slice(0, 10);
-
   if (milestones.isLoading) {
     return (
       <div data-testid="milestones" aria-busy="true" className="p-4">
@@ -181,16 +138,6 @@ export function MilestonesView() {
     <div data-testid="milestones" className="flex h-full flex-col gap-3 overflow-auto p-4">
       <PageHeader
         title="Milestones"
-        subtitle={
-          /* K105: the subhead describes the page — no "Manage them in
-             Settings → Milestones" pointer (Ken: useless copywriting;
-             creation now lives in the "+ New milestone" action beside the
-             title). MSL-42's discoverability is satisfied by the page
-             existing and being reachable, not by prose. */
-          <p data-testid="milestones-subhead" className="text-[0.8571rem] text-text-tertiary">
-            Progress toward every milestone, with the tasks counting toward each.
-          </p>
-        }
         actions={
           <>
             {/* K105: create is a "+ New milestone" affordance opening the
@@ -222,8 +169,8 @@ export function MilestonesView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
-          {" "}could not be read, so the totals below are short by
-          {" "}{unreadable.length === 1 ? "it" : "them"}. Check the file.
+          {" "}could not be read. Totals below are short by
+          {" "}{unreadable.length}.
         </div>
       )}
 
@@ -243,10 +190,9 @@ export function MilestonesView() {
               {orphans.data.tasks.length}
             </strong>{" "}
             {orphans.data.tasks.length === 1 ? "task names" : "tasks name"} a
-            milestone that{" "}
-            <code>milestones.yaml</code> does not define,
-            so {orphans.data.tasks.length === 1 ? "it is" : "they are"} counted
-            toward no milestone below:{" "}
+            milestone{" "}
+            <code>milestones.yaml</code> doesn't define. Not counted
+            toward any milestone below:{" "}
             {orphans.data.ids.map(id => (
               <code
                 key={id}
@@ -272,7 +218,7 @@ export function MilestonesView() {
           className="flex flex-col items-center gap-3 rounded-md border border-border-subtle bg-bg-surface px-4 py-8 text-center"
         >
           <p className="text-[0.9286rem] text-text-tertiary">
-            No milestones yet. Create one and its progress will show up here.
+            No milestones found.
           </p>
           <Button
             variant="primary"
@@ -290,7 +236,6 @@ export function MilestonesView() {
             <MilestoneRow
               key={m.id}
               milestone={m}
-              today={today}
               timezone={calendar.data}
               onOpen={() => void navigate({ to: "/milestones/$id", params: { id: m.id } })}
               onRetry={() => void milestones.refetch()}
@@ -325,21 +270,17 @@ const INTERACTIVE_WITHIN_CARD = "a, button, input, select, textarea, label, [rol
 
 function MilestoneRow({
   milestone,
-  today,
   timezone,
   onOpen,
   onRetry,
 }: {
   readonly milestone: MilestoneWithProgress;
-  readonly today: string;
   readonly timezone: Parameters<typeof formatWorkspaceDate>[1];
   readonly onOpen: () => void;
   readonly onRetry: () => void;
 }) {
   const readout: Readout = progressState(milestone.progress);
-  const overdue = isOverdue(milestone, readout, today);
   const dated = milestone.target_date !== undefined;
-  const countdown = milestoneCountdown(milestone.target_date, today);
   const bd = breakdown(readout);
 
   // MSL-39: the whole card opens the milestone, but a click that landed
@@ -356,7 +297,6 @@ function MilestoneRow({
     <li
       data-testid="milestone-row"
       data-milestone-id={milestone.id}
-      data-overdue={overdue ? "true" : "false"}
       data-complete={readout.complete ? "true" : "false"}
       // MSL-39: the card announces itself as a link and is keyboard-
       // operable. Enter/Space open it, mirroring a real link/button, so
@@ -395,19 +335,6 @@ function MilestoneRow({
         </Link>
 
         <div className="flex items-center gap-2">
-          {/* MSL-17: the overdue indication does not rely on colour
-              alone — it is a word. MSL-18: a 100% milestone with a
-              past date reads completed, and `isOverdue` returns false
-              for it, so the two are mutually exclusive by
-              construction rather than by ordering here. */}
-          {overdue && (
-            <span
-              data-testid="milestone-overdue"
-              className="rounded-full border border-danger-fg/40 px-1.5 py-0.5 text-[0.7143rem] font-semibold uppercase text-danger-fg"
-            >
-              Overdue
-            </span>
-          )}
           {readout.complete && (
             <span
               data-testid="milestone-complete"
@@ -420,9 +347,8 @@ function MilestoneRow({
           {/* MSL-1 / MSL-16: the date per the workspace calendar, or
               an explicit "No target date". Never blank, never a bare
               dash, never today's date standing in for an absent one.
-              MSL-40: a dated milestone also shows a countdown (or an
-              overdue duration) beside it; an undated one shows no
-              countdown at all rather than a fabricated one. */}
+              K132: no countdown and no overdue indication beside it —
+              Ken removed both. */}
           <span
             data-testid="milestone-date"
             data-dated={dated ? "true" : "false"}
@@ -433,17 +359,6 @@ function MilestoneRow({
           >
             {formatWorkspaceDate(milestone.target_date, timezone)}
           </span>
-          {countdown !== undefined && (
-            <span
-              data-testid={`milestone-${milestone.id}-countdown`}
-              className={[
-                "text-[0.7857rem] tabular-nums",
-                overdue ? "font-semibold text-danger-fg" : "text-text-tertiary",
-              ].join(" ")}
-            >
-              {countdown}
-            </span>
-          )}
         </div>
       </div>
 

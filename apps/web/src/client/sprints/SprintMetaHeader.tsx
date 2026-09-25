@@ -90,9 +90,8 @@ type FieldKey = "name" | "start_date" | "end_date" | "state" | "goal";
  * `field: "end_date"`, so its `field` alone cannot be trusted — a
  * rejection of ANY field arrives falsely labelled `end_date`. We correct
  * that from the message, which core writes distinctly:
- *  - `state transition '…' -> '…' is not allowed …` → `state`
  *  - `state must be one of …` → `state`
- *  - `end_date (…) must not be before start_date (…)` → `end_date`
+ *  - `End date is before the start date.` → `end_date`
  *    (the window rule — the one error that genuinely belongs to end_date)
  *  - `start_date must be YYYY-MM-DD, got: …` → `start_date`
  *  - `end_date must be YYYY-MM-DD, got: …` → `end_date`
@@ -105,8 +104,8 @@ type FieldKey = "name" | "start_date" | "end_date" | "state" | "goal";
 export function attributeSprintError(message: string): FieldKey | null {
   // The window rule names both dates; check it before the bare
   // "start_date must be…" match so it is not mis-read as a start_date fault.
-  if (/must not be before start_date/i.test(message)) return "end_date";
-  if (/state transition/i.test(message) || /^state must be/i.test(message)) return "state";
+  if (/^end date is before the start date/i.test(message)) return "end_date";
+  if (/^state must be/i.test(message)) return "state";
   if (/^start_date must be/i.test(message)) return "start_date";
   if (/^end_date must be/i.test(message)) return "end_date";
   if (/^name /i.test(message)) return "name";
@@ -256,10 +255,11 @@ export function SprintMetaHeader({ sprint, foldReadMeta = false }: Props) {
           //
           // The server's `handleUpdateSprint` stamps EVERY `SprintError`
           // with `field: "end_date"` (its most common cause is the
-          // window rule), so a state-transition rejection arrives falsely
-          // labelled `end_date`. Anchoring it there would be a lie, so we
-          // read the message: a `state transition … not allowed` error is
-          // attributed to `state`; the window rule keeps `end_date`;
+          // window rule), so a state rejection arrives falsely labelled
+          // `end_date`. Anchoring it there would be a lie, so we read the
+          // message: a `state must be …` error is attributed to `state`
+          // (there is no transition guard since K130); the window rule
+          // keeps `end_date`;
           // anything else (or no field) falls back to the generic Callout
           // rather than borrowing the End-date anchor.
           const field = attributeSprintError(err.message);
@@ -388,7 +388,7 @@ export function SprintMetaHeader({ sprint, foldReadMeta = false }: Props) {
             onChange={v => setField("state", v)}
             options={STATES.map(s => ({ value: s, label: STATE_LABELS[s] }))}
           />
-          {/* SPR-37: a rejected state transition anchors here, next to the
+          {/* SPR-37: a rejected state value anchors here, next to the
               control it is about — never under End date. */}
           {errorFor("state") !== null && (
             <span
@@ -421,7 +421,7 @@ export function SprintMetaHeader({ sprint, foldReadMeta = false }: Props) {
           data-testid="sprint-meta-goal"
           value={editing.goal}
           rows={2}
-          placeholder="No goal set — describe what this sprint is for."
+          placeholder="No goal set."
           onChange={e => setField("goal", e.target.value)}
           className="max-h-32 resize-y overflow-auto"
         />

@@ -75,7 +75,7 @@ function findKeyDef(key: string): ConfigKeyDef {
   const def = CONFIG_KEYS.find(d => d.key === key);
   if (!def) {
     const valid = CONFIG_KEYS.map(d => d.key).join(", ");
-    throw new ConfigRouterError(`unknown config key '${key}'. valid keys: ${valid}`);
+    throw new ConfigRouterError(`Unknown config key '${key}'. Valid keys: ${valid}.`);
   }
   return def;
 }
@@ -132,7 +132,7 @@ export function parseConfigValue(def: ConfigKeyDef, raw: string): string | boole
     const v = raw.trim().toLowerCase();
     if (v === "true" || v === "1" || v === "yes") return true;
     if (v === "false" || v === "0" || v === "no") return false;
-    throw new ConfigRouterError(`'${def.key}' is a boolean — got '${raw}'. accepted: true/false/1/0/yes/no`);
+    throw new ConfigRouterError(`'${def.key}' is a boolean. Got '${raw}'. Accepted: true/false/1/0/yes/no.`);
   }
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -159,7 +159,7 @@ function defaultFor(key: string): string | boolean {
 async function requireSyncState(locttDir: string): Promise<SyncState> {
   const path = getSyncStatePath(locttDir);
   if (!(await fileExists(path))) {
-    throw new ConfigRouterError("git mode is not enabled; run 'loctt git enable' first");
+    throw new ConfigRouterError("Git mode is not enabled. Run 'loctt git enable' first.");
   }
   return loadSyncState(locttDir);
 }

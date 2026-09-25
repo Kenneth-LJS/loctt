@@ -212,3 +212,41 @@ describe("MilestoneDetail — back-link arrow is a drawn Icon (A208 / K111)", ()
     expect(back.textContent).not.toContain("←");
   });
 });
+
+/**
+ * K132 (2026-09-26), superseding MSL-17's "Overdue" badge on this header.
+ * Ken, asked about the badge specifically: "Remove the badge too". There
+ * was never a countdown on this page (MSL-40 only ever applied to the
+ * list row), so this only needs to prove the badge is gone.
+ */
+describe("MilestoneDetail — no Overdue badge (K132, superseding MSL-17)", () => {
+  it("shows no Overdue badge for a milestone whose target date has passed with open tasks", async () => {
+    MILESTONES = [
+      {
+        id: "ms_1",
+        name: "Beta launch",
+        target_date: "2020-01-01",
+        progress: { done: 1, total: 4, discarded: 0, fraction: 0.25 },
+      },
+    ];
+    await renderDetail("ms_1");
+
+    await screen.findByTestId("milestone-detail-name");
+    expect(screen.queryByTestId("milestone-detail-overdue")).toBeNull();
+  });
+
+  it("shows no Overdue badge for a milestone dated ahead of today", async () => {
+    MILESTONES = [
+      {
+        id: "ms_1",
+        name: "Beta launch",
+        target_date: "2099-01-01",
+        progress: { done: 1, total: 4, discarded: 0, fraction: 0.25 },
+      },
+    ];
+    await renderDetail("ms_1");
+
+    await screen.findByTestId("milestone-detail-name");
+    expect(screen.queryByTestId("milestone-detail-overdue")).toBeNull();
+  });
+});

@@ -17,7 +17,7 @@ import { createWebApp } from "./server.js";
  *    GET /api/tasks/T-1"}`, the parse detail buried in `detail`. P4
  *    reserves `unknown` for causes that genuinely cannot be
  *    determined; this one was fully known.
- *  - key not in the index → 404 `task not found: "T-1"`, asserting the
+ *  - key not in the index → 404 `Task not found: "T-1"`, asserting the
  *    task does not exist with the file on disk. ERR-1's prohibition.
  *
  * TSK-54 wants the detail view to state that the file could not be

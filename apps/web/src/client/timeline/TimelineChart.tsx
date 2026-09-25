@@ -793,8 +793,8 @@ export const TimelineChart = forwardRef<HTMLDivElement, TimelineChartProps>(
               className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-[0.8571rem] text-text-secondary"
             >
               <span className="max-w-sm">
-                None of these tasks has both a start date and a due date, so there is
-                nothing to chart. They are listed under Unscheduled below.
+                None of these tasks has both a start date and a due date.
+                Listed under Unscheduled below.
               </span>
             </div>
           )}

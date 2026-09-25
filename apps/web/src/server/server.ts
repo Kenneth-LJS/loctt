@@ -240,6 +240,7 @@ import {
   validateQuery,
   validHistory,
   ViewError,
+  ViewNameTakenError,
   withStateLock,
   writeTaskBody,
 } from "@loctt/core";
@@ -1896,7 +1897,8 @@ export function createWebApp(options: WebAppOptions) {
       // ViewError is core's own user-facing text (a bad query, a
       // duplicate name), so it is the headline verbatim per ERR-6.
       if (err instanceof ViewError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "filters" });
+        // B21: a taken name points at the name field, not the filters.
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: err instanceof ViewNameTakenError ? "name" : "filters" });
         return;
       }
       throw err;
@@ -1930,7 +1932,8 @@ export function createWebApp(options: WebAppOptions) {
       json(res, updated);
     } catch (err) {
       if (err instanceof ViewError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "filters" });
+        // B21: a taken name points at the name field, not the filters.
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: err instanceof ViewNameTakenError ? "name" : "filters" });
         return;
       }
       throw err;
@@ -3196,7 +3199,7 @@ export function createWebApp(options: WebAppOptions) {
     const remapToRef = url.searchParams.get("remap_to") ?? undefined;
     const unassign = url.searchParams.get("unassign") === "true";
     if (remapToRef !== undefined && unassign) {
-      error(res, "Choose either a user to reassign to, or unassign — not both.", 400, {
+      error(res, "Choose either a user to reassign to, or unassign, not both.", 400, {
         ...REJECTED_WRITE,
         field: "remap_to",
       });
@@ -3376,25 +3379,16 @@ export function createWebApp(options: WebAppOptions) {
   const handleInit: RouteHandler = async ({ req, res }) => {
     const r = await parseJsonBodyWithSchema(req, res, InitRequestSchema);
     try {
-      // An **empty** `.loctt/` needs `repair`, not a plain init: core
-      // refuses an existing directory outright and only fills in
-      // missing files under that flag. Without this the wizard ONB-16
-      // requires offered a button that could not work — it rendered
-      // for the empty directory and then failed with "exists but is
-      // incomplete".
-      //
-      // Passing it only for `empty` is the whole safety argument. A
-      // `damaged` tracker — core files missing but tasks still on
-      // disk — must never reach this: repair rebuilds `state.yaml`
-      // with the key counter back at 1, which reissues keys that
-      // already exist. That tracker gets the schema banner and the
-      // CLI's `--repair`, which says so.
-      const info = await getTrackerInfo(root);
+      // An **empty** `.loctt/` is set up by core exactly like a missing
+      // one (B22, K129), so the wizard sends the same request either
+      // way. It used to pass `repair: true` for it, which skipped the
+      // starter docs, the .gitignore and the default user. A `damaged`
+      // tracker is still refused by core and never repaired from here:
+      // repair rebuilds `state.yaml` with the key counter back at 1.
       const result = await initLoctt(root, {
         ...(r.prefix !== undefined ? { prefix: r.prefix } : {}),
         ...(r.projectLabel !== undefined ? { projectName: r.projectLabel } : {}),
         ...(r.docs !== undefined ? { docs: r.docs } : {}),
-        ...(info.initState === "empty" ? { repair: true } : {}),
       });
       json(res, { locttDir: result.locttDir, created: result.created.length }, 201);
     } catch (err) {
@@ -5022,8 +5016,8 @@ export function createWebApp(options: WebAppOptions) {
       if (/unknown comment id/i.test(raw)) {
         error(
           res,
-          "That comment is already gone — someone else deleted it. "
-            + "Your edit was not saved; refreshing will bring this list up to date.",
+          "That comment is already gone. Someone else deleted it. "
+            + "Your edit was not saved. Refreshing will bring this list up to date.",
           400,
           { ...REJECTED_WRITE_NO_RETRY, recovery: { kind: "reload" } },
         );
@@ -5060,7 +5054,7 @@ export function createWebApp(options: WebAppOptions) {
       // it names is one the user never typed and cannot act on.
       const raw = (err as Error).message;
       const message = /unknown comment id/i.test(raw)
-        ? "That comment is already gone — someone else deleted it. "
+        ? "That comment is already gone. Someone else deleted it. "
           + "Refreshing will bring this list up to date."
         : raw;
       error(res, message, 400, {

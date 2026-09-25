@@ -3,8 +3,7 @@
  * burndown read reconstructs a per-day "remaining" series from task
  * history without persisting snapshots.
  *
- * `edit_sprint` blocks re-opening a completed sprint unless
- * `force: true` is passed.
+ * `edit_sprint` moves a sprint to any state from any state (K130, P11).
  */
 
 import {
@@ -104,8 +103,9 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "edit_sprint",
     description:
-      "Edit a sprint. `sprint` accepts id or name. Pass null goal to clear. Re-opening " +
-      "a completed sprint requires `force: true`.",
+      "Edit a sprint. `sprint` accepts id or name. Pass null goal to clear. `state` can " +
+      "change from any state to any state. An `end_date` before `start_date` is rejected " +
+      "(\"End date is before the start date.\"); dates are YYYY-MM-DD.",
     inputSchema: {
       sprint: z.string().describe("Sprint id or name"),
       name: z.string().optional(),
@@ -113,7 +113,6 @@ export const TOOLS: readonly ToolDef[] = [
       end_date: z.string().optional(),
       state: z.enum(["active", "completed", "future"]).optional(),
       goal: z.string().nullable().optional(),
-      force: z.boolean().optional(),
     },
     handler: async ({ locttDir }, args) => {
       const cfg = await loadSprintsConfig(locttDir);
@@ -125,7 +124,6 @@ export const TOOLS: readonly ToolDef[] = [
         ...(args["end_date"] !== undefined ? { end_date: args["end_date"] as string } : {}),
         ...(args["state"] !== undefined ? { state: args["state"] as "active" | "completed" | "future" } : {}),
         ...("goal" in args ? { goal: goal ?? null } : {}),
-        ...(args["force"] === true ? { force: true } : {}),
       });
       return text(`Updated sprint ${id}`);
     },

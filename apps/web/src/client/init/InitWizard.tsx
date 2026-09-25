@@ -24,13 +24,14 @@ import { firstKeyPreview, PREFIX_RULE, prefixProblem } from "./prefix.ts";
  * populate, and a sidebar with zero counts is precisely the reading
  * the case forbids.
  *
- * ## Why the copy branches on `initState`
+ * ## An empty `.loctt/` reads exactly like a missing one
  *
- * `absent` and `empty` are different sentences. Promising to "create
- * `.loctt/`" when the folder is already sitting there is the specific
- * wrong note ONB-16 names, so the empty case says it will be populated
- * instead. The distinction comes from the server (`initState`), not
- * from `exists`, which cannot express it.
+ * B22 (K129). Ken, on the old "already exists … but is empty. Setting up
+ * will fill it in." line: *"just ignore, proceed with steps. dont even
+ * show this to the user, dont show the messages, dont show warning, dont
+ * even stop with this extra confirmation step because that causes
+ * friction."* So the copy does not branch on `initState`, and core fills
+ * the empty folder in on the same request.
  *
  * ## What this does not do
  *
@@ -117,8 +118,6 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
     }
   }
 
-  const alreadyThere = info.initState === "empty";
-
   return (
     <main className="min-h-screen overflow-y-auto bg-bg-canvas px-6 py-12 font-sans text-text-primary">
       <div className="mx-auto w-full max-w-lg">
@@ -139,13 +138,9 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
           screen alone.
         */}
         <p className="mt-2 text-[0.9286rem] text-text-secondary">
-          {alreadyThere
-            ? <>A <code className="rounded bg-bg-muted px-1 py-0.5">.loctt</code> folder already
-              exists in <strong className="font-medium text-text-primary break-all">{info.cwd}</strong> but
-              is empty. Setting up will fill it in — there is nothing in it to overwrite.</>
-            : <>LocTT will create its <code className="rounded bg-bg-muted px-1 py-0.5">.loctt</code> folder
-              in <strong className="font-medium text-text-primary break-all">{info.cwd}</strong>. Everything
-              it tracks lives in that folder.</>}
+          LocTT will create its <code className="rounded bg-bg-muted px-1 py-0.5">.loctt</code> folder
+          in <strong className="font-medium text-text-primary break-all">{info.cwd}</strong>. Everything
+          it tracks lives in that folder.
         </p>
 
         {failure !== null && (
@@ -221,7 +216,7 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
               */}
               {prefixIssue === null
                 ? <>First task will be <code className="text-text-primary">{firstKeyPreview(prefix)}</code>.</>
-                : <>No key preview — fix the prefix below.</>}
+                : <>No key preview. Fix the prefix below.</>}
             </p>
             {showProblems && prefixIssue !== null && (
               <p id={`${prefixId}-err`} className="mt-1 text-[0.8571rem] text-danger-fg" role="alert">

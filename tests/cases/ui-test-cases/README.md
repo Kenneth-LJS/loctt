@@ -258,5 +258,5 @@ Reverse lookup: change something, find what it might break.
 | P7 Config drift | [cross-surface](flow-cross-surface.md), [settings](flow-settings.md) |
 | P8 Fast paths | [accessibility](flow-accessibility.md), [task-create](flow-task-create.md) |
 | P9 Scale | [list](flow-list.md), [board](flow-board.md), [bulk](flow-bulk.md) |
-| P11 Their process | [sprints](flow-sprints.md) |
+| P11 Their process | [sprints](flow-sprints.md), [milestones-labels](flow-milestones-labels.md) |
 | P10 One mental model | [cross-surface](flow-cross-surface.md), [saved-views](flow-saved-views.md) |
