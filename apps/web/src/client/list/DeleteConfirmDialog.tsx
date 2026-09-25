@@ -61,7 +61,7 @@ export function DeleteConfirmDialog({
       confirmLabel={`Delete ${String(count)} ${noun}`}
       onConfirm={onConfirm}
       onCancel={onCancel}
-      typeHint={required !== DELETE_CONFIRM_WORD ? "— the count, because this is a large batch" : undefined}
+      typeHint={required !== DELETE_CONFIRM_WORD ? "(the count, because this is a large batch)" : undefined}
       body={
         <p>
           Deleting {noun} is irreversible. Continue?

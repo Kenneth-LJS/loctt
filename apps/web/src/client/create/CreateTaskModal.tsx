@@ -391,7 +391,7 @@ export function CreateTaskModal({
       // NEW-12: the toast names the key and title and offers "Open".
       // NEW-13: this is the confirmation for a task that does not match
       // the active filter, and the link is its escape hatch.
-      toasts.show(`Created ${created.key} — ${created.title}`, {
+      toasts.show(`Created ${created.key}: ${created.title}`, {
         label: "Open",
         onAct: () => { void navigate({ to: "/tasks/$key", params: { key: created.key } }); },
       });
@@ -818,11 +818,11 @@ function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
     if (err.envelope === undefined) {
       if (err.status === 0) {
         return {
-          message: `${prefix}The task was not created — the server could not be reached. Your entries are kept; retry when it is back.`,
+          message: `${prefix}The task was not created. The server could not be reached. Your entries are kept. Retry when it is back.`,
         };
       }
       return {
-        message: `${prefix}The task may or may not have been created — the server's reply could not be read. Reload the list to check before retrying.`,
+        message: `${prefix}The task may or may not have been created. The server's reply could not be read. Reload the list to check before retrying.`,
       };
     }
     return {
@@ -842,8 +842,8 @@ function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
   // becomes two.
   if (err instanceof UnparseableBodyError) {
     return {
-      message: `${prefix}The task may or may not have been created — `
-        + `the server replied, but the reply could not be read. Reload `
+      message: `${prefix}The task may or may not have been created. `
+        + `The server replied, but the reply could not be read. Reload `
         + `the list to check before retrying.`,
     };
   }
@@ -858,7 +858,7 @@ function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
   // claim is safe: a request that never left cannot have been applied.
   if (err instanceof TypeError) {
     return {
-      message: `${prefix}The task was not created — the server could not be reached. Your entries are kept; retry when it is back.`,
+      message: `${prefix}The task was not created. The server could not be reached. Your entries are kept. Retry when it is back.`,
     };
   }
   return {

@@ -318,7 +318,7 @@ describe("Header with an unknown identity (SHL-40)", () => {
     UNKNOWN = true;
     await renderHeader();
 
-    const trigger = screen.getByLabelText("User menu — signed-in user unknown");
+    const trigger = screen.getByLabelText("User menu, signed-in user unknown");
     // Not blank, and not initials derived from nothing.
     expect(trigger.textContent).toBe("?");
     expect(trigger.getAttribute("title")).toMatch(/could not be determined/i);
@@ -330,7 +330,7 @@ describe("Header with an unknown identity (SHL-40)", () => {
     UNKNOWN = true;
     await renderHeader();
 
-    await click(screen.getByLabelText("User menu — signed-in user unknown"));
+    await click(screen.getByLabelText("User menu, signed-in user unknown"));
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/signed-in user unknown/i);

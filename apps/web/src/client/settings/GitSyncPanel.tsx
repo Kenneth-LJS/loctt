@@ -622,7 +622,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
             {localDrift === undefined
               ? "could not determine"
               : localDrift === 0
-                ? "none — nothing to publish"
+                ? "none, nothing to publish"
                 : `${String(localDrift)} file${localDrift === 1 ? "" : "s"} not yet published`}
           </span>
         </Row>
@@ -636,7 +636,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               ? "could not determine"
               : status.remoteChanges
                 ? "the branch has moved since the last sync"
-                : "none — up to date with the branch"}
+                : "none, up to date with the branch"}
           </span>
         </Row>
 
@@ -753,7 +753,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
         >
           <p>
             {!publish.data.committed
-              ? "Nothing to publish — local state already matches the branch."
+              ? "Nothing to publish. Local state already matches the branch."
               : publish.data.pushed === true
                 ? `Published to ${status.remote}/${publish.data.branch}.`
                 : publish.data.pushFailure !== undefined
@@ -812,7 +812,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
             {sync.data.updated
               ? `Synced: ${String(sync.data.copied ?? 0)} file(s) taken from the branch, `
                 + `${String(sync.data.merged ?? 0)} merged, ${String(sync.data.deleted ?? 0)} removed.`
-              : "Already up to date — the branch has not moved since the last sync."}
+              : "Already up to date. The branch has not moved since the last sync."}
             {/* GIT-30: name the remote and say it could not be reached,
                 distinguishing this from "nothing to sync", and state
                 explicitly that local state is untouched. */}
@@ -858,7 +858,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                 {sync.data.malformed.map(m => (
                   <li key={m.id} data-task-id={m.id}>
                     <code className="text-[0.8571rem]">{m.path}</code>
-                    {" — "}
+                    {": "}
                     <span className="text-text-secondary">{m.reason}</span>
                   </li>
                 ))}
@@ -1122,9 +1122,9 @@ export function GitSyncPanel() {
           </code>{" "}
           branch as the sync baseline.{" "}
           {adoptReport.inAgreement === true
-            ? "Local state agrees with it — no sync needed."
+            ? "Local state agrees with it. No sync needed."
             : adoptReport.inAgreement === false
-              ? "Local state differs from it — run Sync to reconcile."
+              ? "Local state differs from it. Run Sync to reconcile."
               : "Whether local state agrees could not be determined."}
         </div>
       )}

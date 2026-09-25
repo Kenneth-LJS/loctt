@@ -52,7 +52,7 @@ export async function run(args: string[], root: string): Promise<void> {
   console.log(``);
 
   if (dryRun) {
-    console.log(`Dry run only — no changes made.`);
+    console.log(`Dry run only. No changes made.`);
     return;
   }
 

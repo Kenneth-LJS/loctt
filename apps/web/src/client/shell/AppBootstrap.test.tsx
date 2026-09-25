@@ -379,11 +379,12 @@ describe("AppBootstrap with an interrupted migration", () => {
     mount();
 
     const text = (await screen.findByRole("alert")).textContent ?? "";
-    // K129 pass: "safely ... resolved by hand" was trimmed to "Nothing
-    // here can be opened or changed until this is resolved." — the
-    // numbered recovery steps below it are what states the manual
-    // procedure, which "resolved" still points the user at.
-    expect(text).toContain("Nothing here can be opened or changed until this is resolved.");
+    // B25 (K129, Ken 2026-09-24): "take out the last sentence, its not
+    // required because the user can see it themselves." The numbered
+    // recovery steps below the intro paragraph are what states the
+    // manual procedure.
+    expect(text).toContain("A previous migration crashed part-way.");
+    expect(text).not.toContain("Nothing here can be opened or changed");
     expect(text).toContain("loctt migrate");
     expect(text).toContain("loctt doctor");
   });

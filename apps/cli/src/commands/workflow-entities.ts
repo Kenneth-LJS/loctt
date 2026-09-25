@@ -632,7 +632,7 @@ export async function customField(args: string[], root: string): Promise<void> {
         const values = parseFieldValueSeeds(args);
         if (type === "enum" && values.length === 0) {
           throw new UsageError(
-            `an enum field needs at least one value at creation — pass --enum-value key=label (repeatable)`,
+            `an enum field needs at least one value at creation. Pass --enum-value key=label (repeatable)`,
             usage,
           );
         }

@@ -269,7 +269,7 @@ function renderText(node: JSONContent): React.ReactNode {
                 {out}
                 {" ("}
                 <span className="text-[0.8571rem]">{href}</span>
-                {" — link not followed)"}
+                {", link not followed)"}
               </span>
             );
         break;
@@ -371,8 +371,8 @@ function MentionChip({
       // not, filters the list to that user.
       title={
         target.archived
-          ? `${target.name} (archived) — show their tasks`
-          : `${target.name} — show their tasks`
+          ? `${target.name} (archived), show their tasks`
+          : `${target.name}, show their tasks`
       }
       onClick={() => { activate(target.id); }}
       className={className}

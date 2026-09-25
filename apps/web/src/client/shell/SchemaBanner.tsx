@@ -195,7 +195,7 @@ function describe(status: SchemaStatusResponse): {
         // user to take an irreversible-looking step on trust.
         detail:
           `The data directory is at schema v${status.on_disk}, but this build expects ` +
-          `v${status.current}. Use Migrate now below to update it — it takes a backup ` +
+          `v${status.current}. Use Migrate now below to update it. It takes a backup ` +
           "before changing anything. Writes are blocked until then.",
       };
     case "future":
@@ -208,7 +208,7 @@ function describe(status: SchemaStatusResponse): {
         detail:
           `The data directory is at schema v${status.on_disk}, ahead of this build ` +
           `(v${status.current}). Update LocTT to continue (\`npm install -g ` +
-          "@loctt/cli@latest\`) — a newer schema can't be downgraded.",
+          "@loctt/cli@latest\`). A newer schema can't be downgraded.",
       };
     case "unknown":
       return {
@@ -220,7 +220,7 @@ function describe(status: SchemaStatusResponse): {
         // whether anything had been touched.
         detail:
           `Reading the tracker's schema version did not produce a result that could ` +
-          `be interpreted: ${status.message} Your data is untouched — nothing has ` +
+          `be interpreted: ${status.message} Your data is untouched. Nothing has ` +
           "been changed. Open Settings → Diagnostics to run the health checks; if the " +
           "schema file itself is corrupt, inspect `.loctt/.schema-version` by hand.",
       };
@@ -231,7 +231,7 @@ function describe(status: SchemaStatusResponse): {
         detail:
           "The data directory has no `.schema-version`, so its layout can't be "
           + "confirmed. Run `loctt migrate` to stamp and upgrade it. Do not "
-          + "reinitialize — a directory holding tasks is a damaged tracker, not "
+          + "reinitialize. A directory holding tasks is a damaged tracker, not "
           + "an empty one, and reinitializing would risk the data.",
       };
     case "interrupted":

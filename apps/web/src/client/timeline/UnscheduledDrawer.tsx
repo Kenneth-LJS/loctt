@@ -95,7 +95,7 @@ function UnscheduledRow(props: {
         type="button"
         data-testid={`timeline-unscheduled-row-${r.task.key}`}
         onClick={() => { props.onOpenTask(r.task.key); }}
-        // Below sm the reason chip ("No start date — due …") would crush
+        // Below sm the reason chip ("No start date, due …") would crush
         // the title to a few px on one fixed-height line (UX eval #9).
         // Allow the row to wrap the chip onto a second line on a phone,
         // and use min-height (not a fixed height) so the wrapped row is

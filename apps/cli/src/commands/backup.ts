@@ -112,7 +112,7 @@ export async function restore(args: string[], root: string): Promise<void> {
     id => { if (!dryRun) console.log(`Restoring ${id}`); },
   );
 
-  console.log(dryRun ? `Dry run (${mode}) — nothing written:` : `Restored (${mode}):`);
+  console.log(dryRun ? `Dry run (${mode}), nothing written:` : `Restored (${mode}):`);
   console.log(`  created: ${String(report.created)}`);
   console.log(`  skipped: ${String(report.skipped)}`);
   console.log(`  overwritten: ${String(report.overwritten)}`);

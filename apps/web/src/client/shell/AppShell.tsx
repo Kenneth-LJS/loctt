@@ -171,8 +171,8 @@ function ShellChrome({
           {...(info.schemaStatus.kind !== "current"
             ? {
                 createBlocked:
-                  "This tracker's schema does not match this LocTT — "
-                  + "creating a task would be refused. See the banner above.",
+                  "This tracker's schema does not match this LocTT. "
+                  + "Creating a task would be refused. See the banner above.",
               }
             : {})}
         />

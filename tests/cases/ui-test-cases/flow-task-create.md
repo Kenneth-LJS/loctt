@@ -151,7 +151,7 @@ editor (as opposed to the compact one here) is
 
 - The project field opens **empty** and is marked required for this session.
 - The task is not created with an arbitrarily picked project — picking "the first one" here is the failure this case exists to catch.
-- Submitting without choosing shows an inline message on the project field naming what's needed and why ("Pick a project — this workspace has no default"), not a generic form error.
+- Submitting without choosing shows an inline message on the project field naming what's needed and why ("Pick a project. This workspace has no default"), not a generic form error.
 - Once a project is chosen, submission succeeds.
 
 ### NEW-20 · M3 · major · P3 P7

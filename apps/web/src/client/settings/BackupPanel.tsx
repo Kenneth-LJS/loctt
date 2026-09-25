@@ -283,8 +283,8 @@ export function BackupPanel() {
                 className="mt-0.5"
               />
               <span>
-                <span className="font-medium text-text-primary">{MODE_LABEL[m]}</span>
-                {" — "}
+                <span className="font-medium text-text-primary">{MODE_LABEL[m]}:</span>
+                {" "}
                 {MODE_HELP[m]}
               </span>
             </label>

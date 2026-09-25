@@ -65,7 +65,7 @@ export async function run(args: string[], root: string): Promise<void> {
     if (result.created.includes("state.yaml")) {
       // Key counters restart at 1, which would reissue keys already on
       // disk. Say so rather than leaving it to be discovered.
-      console.log("state.yaml was rebuilt — run 'loctt doctor --rebuild-index' to resync key allocation");
+      console.log("state.yaml was rebuilt. Run 'loctt doctor --rebuild-index' to resync key allocation");
     }
     return;
   }

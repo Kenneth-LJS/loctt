@@ -80,7 +80,7 @@ export class InitRepairNeededError extends Error {
     readonly missing: readonly string[],
   ) {
     super(
-      `.loctt directory at ${locttDir} exists but is incomplete — missing: `
+      `.loctt directory at ${locttDir} exists but is incomplete. Missing: `
       + `${missing.join(", ")}. Run 'loctt init --repair' to restore the missing `
       + `files; your tasks are left untouched. Run 'loctt doctor' for the full report.`,
     );

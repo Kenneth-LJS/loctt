@@ -347,7 +347,7 @@ class Parser {
       if (v === "null" || v === "none") {
         const suggestion = op === "=" ? "is empty" : "is not empty";
         throw new ParseError(
-          `use "${fieldTok.value} ${suggestion}" to test for an ${op === "=" ? "unset" : "set"} field — `
+          `use "${fieldTok.value} ${suggestion}" to test for an ${op === "=" ? "unset" : "set"} field. `
           + `"${op} ${value.value}" compares against the literal text "${value.value}"`,
           opTok.position,
         );

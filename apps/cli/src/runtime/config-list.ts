@@ -112,6 +112,6 @@ export function renderBrokenEntries(
     // Name it by id when the loader could read one, else by position —
     // the id is exactly what failed in the latter case.
     const label = b.id !== undefined ? b.id : `#${b.index}`;
-    log(`${b.rawText}\t[broken: ${label} — ${b.error}]`);
+    log(`${b.rawText}\t[broken: ${label}: ${b.error}]`);
   }
 }

@@ -152,7 +152,7 @@ function TimelineEditor({ workflow }: { readonly workflow: WorkflowConfig }) {
             ...relationships.map(r => ({ value: r.key, label: r.label })),
             // Keep the dangling key selectable so it is visible and not
             // silently dropped when the form is saved.
-            ...(depDangling ? [{ value: dep, label: `${dep} — no longer defined` }] : []),
+            ...(depDangling ? [{ value: dep, label: `${dep} (no longer defined)` }] : []),
           ]}
         />
         {depDangling && (

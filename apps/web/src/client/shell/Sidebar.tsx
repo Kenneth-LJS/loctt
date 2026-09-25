@@ -1133,7 +1133,7 @@ function GroupError({
     return (
       <div
         role="alert"
-        title={headline ?? "Could not load — click to retry"}
+        title={headline ?? "Could not load, click to retry"}
         onClick={onRetry}
         className="mx-auto my-1 cursor-pointer text-[0.7857rem] text-danger-fg"
       >
@@ -1830,7 +1830,7 @@ function SavedViewsGroup({
           <Link
             to="/list"
             search={prev => ({ ...clearSort(clearFilters(prev)), view: v.id })}
-            title={`${v.name} — broken: ${v.error}`}
+            title={`${v.name}, broken: ${v.error}`}
             className={collapsed ? "no-underline" : "min-w-0 flex-1 no-underline"}
             data-broken-view={v.id}
           >
@@ -2795,9 +2795,9 @@ function inertReason(id: string, label: string): string {
   // current user, which the generic "not available yet" reason (shared
   // with "Assigned to me") already covers.
   if (id === "high-priority") {
-    return `${label} — this workspace's priorities don't distinguish a high one`;
+    return `${label}, this workspace's priorities don't distinguish a high one`;
   }
-  return `${label} — not available yet`;
+  return `${label}, not available yet`;
 }
 
 /**

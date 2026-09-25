@@ -302,7 +302,7 @@ export function validateWorkflowConfig(config: WorkflowConfig): readonly Validat
           field: `boards.columns[${String(i)}].statuses`,
           message:
             `column "${col.key}" lists status "${key}", which is not in `
-            + `statuses — the column would render permanently empty`,
+            + `statuses. The column would render permanently empty`,
         });
       }
     }
@@ -318,7 +318,7 @@ export function validateWorkflowConfig(config: WorkflowConfig): readonly Validat
         field: "relationships",
         message:
           `relationship "${r.key}" declares inverse "${r.inverse}", which is `
-          + `itself a declared relationship — the two would write the same edge`,
+          + `itself a declared relationship. The two would write the same edge`,
       });
     }
   }

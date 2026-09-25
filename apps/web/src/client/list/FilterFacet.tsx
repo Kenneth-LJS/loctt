@@ -93,7 +93,7 @@ export function FilterFacet({
       searchPlaceholder={`Search ${label.toLowerCase()}…`}
       noMatchesText={
         unavailable
-          ? `${label} options could not be loaded — see the sidebar for why.`
+          ? `${label} options could not be loaded. See the sidebar for why.`
           : "No options"
       }
       panelClassName="max-w-[320px]"

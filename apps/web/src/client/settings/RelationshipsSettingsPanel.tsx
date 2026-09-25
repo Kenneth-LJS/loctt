@@ -119,7 +119,7 @@ function RelationshipsEditor({
           ) {
             throw new ConcurrentWorkflowEditError(
               `These settings changed outside the app while this dialog was `
-              + `open — the relationship "${opts.staleBaseline.key}" is not what it `
+              + `open. The relationship "${opts.staleBaseline.key}" is not what it `
               + `was. Reload the panel, then re-apply your `
               + `change. Your edit was not saved.`,
             );
