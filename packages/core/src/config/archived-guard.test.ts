@@ -59,6 +59,35 @@ describe("archived-reference guard: createTask", () => {
     ).rejects.toThrow(ArchivedReferenceError);
   });
 
+  // A346 (review m5): the messages are whole sentences now, so joining
+  // them with "; " produced "first.; Cannot …". They join with a space.
+  it("joins several refusals as sentences, with no stray semicolon", async () => {
+    const bug = await createLabel(locttDir, { name: "Bug" });
+    const ui = await createLabel(locttDir, { name: "UI" });
+    await archiveLabel(locttDir, bug.id);
+    await archiveLabel(locttDir, ui.id);
+    const archivedGuard = await loadArchivedGuardConfigs(locttDir);
+
+    let message = "";
+    await withStateLock(locttDir, async () => {
+      const state = await loadState(locttDir);
+      try {
+        await createTask({
+          locttDir, state, archivedGuard,
+          options: { project: taskProjectId, title: "T", labels: [bug.id, ui.id] },
+        });
+      } catch (err) {
+        message = (err as Error).message;
+      } finally {
+        await saveState(locttDir, state);
+      }
+    });
+    expect(message).toBe(
+      `Cannot attach archived label "${bug.id}". Unarchive it first. `
+      + `Cannot attach archived label "${ui.id}". Unarchive it first.`,
+    );
+  });
+
   it("rejects createTask with an archived milestone", async () => {
     const v1 = await createMilestone(locttDir, { name: "v1" });
     await archiveMilestone(locttDir, v1.id);

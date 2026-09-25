@@ -26,7 +26,7 @@ import {
   loadUserSettings,
   readSidebarGroups,
   readSidebarPins,
-  resolveSidebarOrder,
+  resolveRenderedSidebarItems,
   resolveUserRef,
   saveUserSettings,
   SIDEBAR_VALID_IDS,
@@ -124,16 +124,16 @@ export const TOOLS: readonly ToolDef[] = [
      * capability, so an agent can read/configure it too.
      */
     name: "get_sidebar_groups",
-    description: "Returns the active user's sidebar-groups customization (SHL-45): which built-in sidebar groups/filters show and in what order. `resolved` is the full ordered list with a `hidden` flag per item (what the sidebar renders); `stored` is the raw per-user setting. Group ids: " + SIDEBAR_GROUP_IDS.join(", ") + ". Filter ids: " + SIDEBAR_ITEM_IDS.slice(SIDEBAR_GROUP_IDS.length).join(", ") + ".",
+    description: "Returns the active user's sidebar-groups customization (SHL-45): which built-in sidebar groups/filters show and in what order. `resolved` is the full ordered list with a `hidden` flag per item, exactly as the sidebar renders it: the built-in filters follow the `filters` group, and all read hidden while that group is hidden. `stored` is the raw per-user setting. Group ids: " + SIDEBAR_GROUP_IDS.join(", ") + ". Filter ids: " + SIDEBAR_ITEM_IDS.slice(SIDEBAR_GROUP_IDS.length).join(", ") + ".",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const current = await getCurrentUser(locttDir);
       if (!current) return errorResult("no users registered");
       const settings = await loadUserSettings(locttDir, current.id);
       const stored = readSidebarGroups(settings);
-      // Full item catalog (groups + filters) so a hidden filter appears
-      // in `resolved`, matching CLI read (B2 bug 3).
-      const resolved = resolveSidebarOrder(stored, [...SIDEBAR_ITEM_IDS]);
+      // Every item id (groups + filters, B2 bug 3), resolved as the web
+      // sidebar renders it (A346), matching the CLI read.
+      const resolved = resolveRenderedSidebarItems(stored);
       return text(JSON.stringify({ user: current.id, stored, resolved }, null, 2));
     },
   },
@@ -189,9 +189,9 @@ export const TOOLS: readonly ToolDef[] = [
         await saveUserSettings(locttDir, current.id, { ...settings, sidebar_groups: next });
       }
       const after = readSidebarGroups(await loadUserSettings(locttDir, current.id));
-      // Resolve the FULL item catalog (groups + filters) so a hidden
-      // filter round-trips in `resolved`, matching CLI read (B2 bug 3).
-      const resolved = resolveSidebarOrder(after, [...SIDEBAR_ITEM_IDS]);
+      // Every item id (groups + filters, B2 bug 3), resolved as the web
+      // sidebar renders it (A346), matching the CLI read.
+      const resolved = resolveRenderedSidebarItems(after);
       return text(JSON.stringify({ user: current.id, stored: after, resolved }, null, 2));
     },
   },

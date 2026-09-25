@@ -926,7 +926,7 @@ describe("ListView with a deleted saved view", () => {
 
     const notice = screen.getByRole("status");
     expect(notice.textContent).toContain("v_gone");
-    expect(notice.textContent).toMatch(/no longer exists/i);
+    expect(notice.textContent).toContain("no longer exists");
     // K129 pass: "It was probably deleted from .loctt/config/queries.yaml"
     // was trimmed as speculation the user cannot act on differently
     // (messaging.md §1); the notice now states only what happened and

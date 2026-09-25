@@ -530,7 +530,7 @@ describe("MCP executeTool", () => {
     it("returns a clean error for an unknown sprint", async () => {
       const result = await executeTool(root, "get_sprint_burndown", { sprint: "01HXNOSUCH" });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text ?? "").toMatch(/unknown sprint/i);
+      expect(result.content[0]?.text ?? "").toBe("Error: Unknown sprint: 01HXNOSUCH");
     });
   });
 

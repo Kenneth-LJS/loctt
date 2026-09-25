@@ -11,6 +11,7 @@ import { loadUserSettings, saveUserSettings } from "./settings.js";
 import {
   readSidebarGroups,
   resolveGroupedSidebarOrder,
+  resolveRenderedSidebarItems,
   resolveSidebarOrder,
   salvageSidebarGroups,
 } from "./sidebarGroups.js";
@@ -288,5 +289,27 @@ describe("resolveGroupedSidebarOrder (K125 nesting + migration)", () => {
     const rows = resolveGroupedSidebarOrder(stored, GROUP_CATALOG);
     const topLevelFilterRow = rows.find(r => r.kind === "item" && (r.id as string) === "overdue");
     expect(topLevelFilterRow).toBeUndefined();
+  });
+});
+
+describe("resolveRenderedSidebarItems (A346: the CLI/MCP read-back)", () => {
+  it("lists every item id once, in the order the grouped sidebar renders", () => {
+    const items = resolveRenderedSidebarItems({ order: ["overdue", "projects"] });
+    expect(items.map(i => i.id)).toEqual([
+      "filters", "overdue", "assigned-to-me", "reported-by-me", "mentions-me",
+      "due-this-week", "high-priority",
+      "projects", "views", "saved-filters", "milestones", "sprints", "labels", "recents",
+    ]);
+    expect(new Set(items.map(i => i.id))).toEqual(new Set(SIDEBAR_ITEM_IDS));
+  });
+
+  it("marks every built-in hidden while the filters group is hidden, and only then", () => {
+    const hiddenGroup = resolveRenderedSidebarItems({ hidden: ["filters"] });
+    expect(hiddenGroup.filter(i => i.hidden).map(i => i.id).sort()).toEqual([
+      "assigned-to-me", "due-this-week", "filters", "high-priority",
+      "mentions-me", "overdue", "reported-by-me",
+    ]);
+    const oneFilter = resolveRenderedSidebarItems({ hidden: ["overdue"] });
+    expect(oneFilter.filter(i => i.hidden).map(i => i.id)).toEqual(["overdue"]);
   });
 });

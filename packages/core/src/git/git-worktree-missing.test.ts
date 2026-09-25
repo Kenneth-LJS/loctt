@@ -160,3 +160,26 @@ describe("GIT-36 · a missing/corrupt publish/sync worktree", () => {
     expect(caught).not.toBeInstanceOf(GitWorktreeMissingError);
   });
 });
+
+describe("GitWorktreeMissingError message (A346, K129)", () => {
+  // "This is not an ordinary git failure. The worktree named above is the
+  // specific thing that is wrong." was removed: cause and repair only.
+  it("is exactly the cause, the no-change note and the repair steps", () => {
+    const err = new GitWorktreeMissingError({ worktreeDir: "/r/.wt", operation: "sync", detail: "fatal" });
+    expect(err.message).toBe(
+      "Sync could not start: the temporary git worktree at '/r/.wt' is missing, "
+      + "but git still has it registered (most likely it was deleted by hand while "
+      + "git had it locked), so it cannot be re-created.\n\n"
+      + "Your local task files were not touched: the sync never reached the point "
+      + "of writing to .loctt/, so nothing was applied.\n\n"
+      + "Repair with either:\n"
+      + "  - Re-establish the worktree: run 'git worktree prune' (or, if git reports "
+      + "it locked, 'git worktree remove --force /r/.wt' or 'git worktree unlock "
+      + "/r/.wt'), then sync again. This clears git's stale bookkeeping only, "
+      + "leaving your .loctt/ task files as they are.\n"
+      + "  - Disable and re-enable git sync: 'loctt git disable' then 'loctt git "
+      + "enable'. This rebuilds the git setup from scratch and also leaves your "
+      + ".loctt/ task files exactly as they are on disk.",
+    );
+  });
+});

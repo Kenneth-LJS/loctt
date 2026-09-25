@@ -1235,8 +1235,7 @@ test.describe("BRD — board view", () => {
     // message is the failure this case names. An explanation appears…
     const alert = page.getByTestId("board-chip-error");
     await expect(alert).toBeVisible();
-    // K129 pass: "was not saved" trimmed to "wasn't saved."
-    await expect(alert).toContainText(/wasn't saved|not saved/i);
+    await expect(alert).toContainText("wasn't saved");
 
     // …and the optimistic hide is rolled back, so the board and the
     // file agree rather than the browser presenting its own state as
@@ -1609,8 +1608,7 @@ test.describe("BRD — board view", () => {
     const err = page.getByTestId("board-move-error");
     await expect(err).toBeVisible();
     await expect(err).toContainText(mover);
-    // K129 pass: "was not saved" trimmed to "wasn't saved."
-    await expect(err).toContainText(/wasn't saved|not saved/i);
+    await expect(err).toContainText("wasn't saved");
     await expect(page.getByTestId("board-move-retry")).toBeVisible();
 
     // The card is back in its original column, and disk shows the
@@ -1675,8 +1673,7 @@ test.describe("BRD — board view", () => {
     const err = page.getByTestId("board-move-error");
     await expect(err).toBeVisible();
     await expect(err).toContainText(mover);
-    // K129 pass: "was not saved" trimmed to "wasn't saved."
-    await expect(err).toContainText(/wasn't saved|not saved/i);
+    await expect(err).toContainText("wasn't saved");
 
     // The card is not left rendered in the destination while the file
     // says otherwise.

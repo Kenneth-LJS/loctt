@@ -257,7 +257,7 @@ describe("data-panel deletes are deletes", () => {
       // 400 with core's message, not a 404 route-miss: the route
       // exists, the label does not.
       expect(res.status).toBe(400);
-      expect((await res.json() as { message: string }).message).toMatch(/unknown label/i);
+      expect((await res.json() as { message: string }).message).toBe("Unknown label: NOPE");
     });
   });
 
@@ -368,7 +368,7 @@ describe("data-panel deletes are deletes", () => {
         method: "POST", headers: csrf, body: "{}",
       });
       expect(res.status).toBe(400);
-      expect((await res.json() as { message: string }).message).toMatch(/unknown sprint/i);
+      expect((await res.json() as { message: string }).message).toBe("Unknown sprint: NOPE");
     });
   });
 });

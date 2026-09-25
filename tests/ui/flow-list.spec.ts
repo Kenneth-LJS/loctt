@@ -1906,9 +1906,7 @@ test.describe("BLK — failures that must not be silent", () => {
     await page.getByRole("button", { name: "Archive", exact: true }).click();
 
     const status = page.getByRole("status").filter({ hasText: /archiv/i });
-    // K129 pass: "the operation could not run" trimmed to "The
-    // operation didn't run."
-    await expect(status).toContainText(/could not|did not|didn't/i);
+    await expect(status).toContainText("The operation didn't run.");
     // It must not claim either outcome.
     await expect(status).not.toContainText("2 tasks archived");
   });
@@ -2697,10 +2695,12 @@ test.describe("ERR — one corrupt task file (M1.2)", () => {
 
     // And the bad file is named, with the path and the YAML error, so
     // the user can reconcile 2 rows against 3 directories.
+    // A-7 (K129, Ken 2026-09-24): the general "A hand-edit is the usual
+    // cause." sentence was cut; the per-file path and parse-error reason
+    // remain the required content (see ERR-9's amendment).
     const alert = page.getByRole("alert");
     await expect(alert).toContainText(victim);
     await expect(alert).toContainText("task.md");
-    await expect(alert).toContainText(/hand-edit/i);
   });
 });
 

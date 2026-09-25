@@ -480,7 +480,7 @@ export function ViewFormDialog({
 
           {rows.length === 0 ? (
             <p data-testid="view-no-filters" className="m-0 text-[0.8571rem] text-text-tertiary">
-              No filters — this view will show every task in its scope.
+              No filters. This view shows every task in its scope.
             </p>
           ) : (
             rows.map((r, i) => (

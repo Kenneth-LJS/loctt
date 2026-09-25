@@ -42,4 +42,4 @@ export type { SidebarGroupsDropReport } from "./settings.js";
 export { loadUserSettings, saveUserSettings } from "./settings.js";
 export { collectSidebarGroupsDrops } from "./settings.js";
 export type { GroupedSidebarRow, ResolvedSidebarItem, SalvagedSidebarGroups, SidebarGroupsDrop } from "./sidebarGroups.js";
-export { readSidebarGroups, resolveGroupedSidebarOrder, resolveSidebarOrder, salvageSidebarGroups, SIDEBAR_VALID_IDS, validateSidebarIds } from "./sidebarGroups.js";
+export { readSidebarGroups, resolveGroupedSidebarOrder, resolveRenderedSidebarItems, resolveSidebarOrder, salvageSidebarGroups, SIDEBAR_VALID_IDS, validateSidebarIds } from "./sidebarGroups.js";

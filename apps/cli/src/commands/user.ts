@@ -1,5 +1,4 @@
 import type { SidebarGroups, SidebarItemId } from "@loctt/contracts";
-import { SIDEBAR_ITEM_IDS } from "@loctt/contracts";
 import {
   applyArchivedScope,
   archiveUser,
@@ -14,7 +13,7 @@ import {
   readSidebarGroups,
   readSidebarPins,
   resolveLocttDir,
-  resolveSidebarOrder,
+  resolveRenderedSidebarItems,
   resolveUserRef,
   saveUserSettings,
   SIDEBAR_VALID_IDS,
@@ -238,7 +237,7 @@ export async function run(args: string[], root: string): Promise<void> {
      * — read or set the per-user `sidebar_groups` setting (SHL-45).
      *
      * Ken's layer rule: the web sidebar-groups editor is a core
-     * capability (`readSidebarGroups` / `resolveSidebarOrder`), so it
+     * capability (`readSidebarGroups` / `resolveRenderedSidebarItems`), so it
      * reaches CLI and MCP too — an agent may configure the UI.
      *
      * With no flags it prints the resolved order (one id per line) with
@@ -295,14 +294,14 @@ export async function run(args: string[], root: string): Promise<void> {
           });
         }
 
-        // Always print the resolved state (after any write). Resolve
-        // against the FULL item catalog (groups + built-in filters), not
-        // just the groups — otherwise a hidden *filter* (`--hidden
-        // overdue`) is written but never shown on read-back, because a
-        // filter id is not in the group catalog. The read must round-trip
-        // exactly what `set` accepts (SHL-45, B2 bug 3).
+        // Always print the resolved state (after any write): every item
+        // id (groups + built-in filters, so a hidden filter reads back,
+        // SHL-45 B2 bug 3), resolved through the same grouped resolver
+        // the web sidebar uses (A346) — the K125 migration of an older
+        // stored order, the built-ins listed after the `filters` row,
+        // and all of them hidden while that group is hidden.
         const after = readSidebarGroups(await loadUserSettings(locttDir, current.id));
-        const resolved = resolveSidebarOrder(after, [...SIDEBAR_ITEM_IDS]);
+        const resolved = resolveRenderedSidebarItems(after);
         for (const item of resolved) {
           console.log(`${item.id}\t${item.hidden ? "hidden" : "visible"}`);
         }

@@ -210,9 +210,9 @@ test("the form collects name and prefix, previews the first key, and names the d
     await page.getByLabel("Project name").fill("Customer Portal v2");
     await expect(prefix).toHaveValue("WEB");
 
-    // ONB-4: the toggle explains what it skips — the docs are named
-    // and described, not just referred to.
-    const docs = page.getByLabel("Skip the starter docs");
+    // ONB-4 (amended K129): the label itself names what the docs are —
+    // no separate helper-text paragraph is required.
+    const docs = page.getByLabel("Skip the starter docs in .loctt/docs/");
     await expect(docs).toBeVisible();
     // Default matches `loctt init`, whose docs default is on: the
     // *skip* toggle is therefore off.

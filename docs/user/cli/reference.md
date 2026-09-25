@@ -660,7 +660,7 @@ Created project "Mobile App" (slug mobile-app, prefix MOB, id 01J…)
 | `create` | `loctt user create <name> [--email] [--timezone] [--avatar <path>] [--switch]` | `--switch` makes the new user current. |
 | `edit` | `loctt user edit <id-or-name> [--name] [--email] [--timezone] [--avatar <path> \| --remove-avatar]` | |
 | `settings` | `loctt user settings [--sweep-pins]` | Print per-user settings. `--sweep-pins` drops pins for deleted views. |
-| `sidebar-groups` | `loctt user sidebar-groups [--order <ids> \| --hidden <ids> \| --reset]` | Read or set the sidebar layout. |
+| `sidebar-groups` | `loctt user sidebar-groups [--order <ids> \| --hidden <ids> \| --reset]` | Read or set the sidebar layout. Prints each id with `visible` or `hidden`, in the order the sidebar shows them: the built-in filters follow `filters`, and read `hidden` while `filters` is hidden. |
 | `archive` / `unarchive` | `loctt user archive <id-or-name>` | |
 | `references` | `loctt user references <id-or-name>` | Count where the user is assignee or reporter. |
 | `delete` | `loctt user delete <id-or-name> [--remap-to <id-or-name> \| --unassign] [--yes]` | Reassigns or clears the user's references. Prompts. |

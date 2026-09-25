@@ -25,7 +25,7 @@ import type { BodyAutosave, BodyAutosaveOptions, SaveState } from "./useBodyAuto
  */
 
 const save = vi.fn(async () => {});
-const cancel = vi.fn();
+const cancel = vi.fn(() => true);
 const flushDraft = vi.fn();
 let currentState: SaveState = { kind: "saved" };
 let currentConflict: BodyAutosave["conflict"] = null;

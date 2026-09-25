@@ -558,8 +558,9 @@ describe("BoardView — loading state (BRD-39)", () => {
       expect(view.queryAllByTestId("board-skeleton")).toHaveLength(0);
       const alert = view.getByRole("alert");
       // ERR-5: the message names what was waited for.
-      expect(alert.textContent).toMatch(/loading the board/i);
-      expect(alert.textContent).toMatch(/tasks/i);
+      expect(alert.textContent).toContain("Loading the board's tasks");
+      // messaging.md: no em dashes in visible text (A346).
+      expect(alert.textContent).not.toContain("—");
       expect(alert.textContent).toMatch(/did not respond/i);
       expect(view.getByRole("button", { name: /retry/i })).toBeTruthy();
     } finally {

@@ -237,21 +237,16 @@ export function InitWizard({ info }: { info: TrackerInfoResponse }) {
               className="mt-0.5"
             />
             <div>
-              <label htmlFor={docsId} className="block text-[0.9286rem] font-medium text-text-primary">
-                Skip the starter docs
-              </label>
               {/*
-                ONB-4: what the docs *are*, not just the toggle's name —
-                a user who has never seen them can decide. Unchecked by
-                default, matching `loctt init`, whose `docs` defaults to
-                true and whose opt-out is the explicit `--no-docs`.
+                ONB-4 (amended K129): the label itself carries what the
+                docs are, so the explainer paragraph that used to spell
+                it out is cut (B-69). Unchecked by default, matching
+                `loctt init`, whose `docs` defaults to true and whose
+                opt-out is the explicit `--no-docs`.
               */}
-              <p className="text-[0.8571rem] text-text-secondary">
-                LocTT normally writes a few short markdown files into{" "}
-                <code>.loctt/docs/</code> explaining how tasks,
-                statuses and queries work in this tracker. Tick this to start with an
-                empty tracker instead; you can add them later.
-              </p>
+              <label htmlFor={docsId} className="block text-[0.9286rem] font-medium text-text-primary">
+                Skip the starter docs in <code>.loctt/docs/</code>
+              </label>
             </div>
           </div>
 

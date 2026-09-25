@@ -447,7 +447,7 @@ describe("attachments", () => {
       // detail the user cannot act on differently (messaging.md §1).
       // What remains is the name, its length, and the one action.
       expect(err.message).toMatch(new RegExp(`\\(${String(name.length)} characters\\)`));
-      expect(err.message).toMatch(/rename the file/i);
+      expect(err.message).toContain("Rename the file and attach it again.");
     });
 
     it("leaves no partial file behind", async () => {

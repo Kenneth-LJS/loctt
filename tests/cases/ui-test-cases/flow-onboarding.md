@@ -41,8 +41,14 @@ the list view's own empty/loading behaviour beyond first load is
 ### ONB-4 · M4 · major · P6
 **The skip-starter-docs toggle is present and explains what it skips.** On `/init`.
 
+> **Amended (K129, Ken 2026-09-24).** Ken: *"rest of the 'needs your
+> call' looks okay"* (he approved cutting the explainer paragraph,
+> B-69). The checkbox label itself now names what the docs are
+> ("Skip the starter docs in `.loctt/docs/`"); no separate helper text
+> is required.
+
 - A toggle controls whether `.loctt/docs/` helper docs are generated.
-- Its label or helper text says what the docs are, not just "skip starter docs" — a user who has never seen them can decide.
+- Its label names what the docs are, not just "skip starter docs" — a user who has never seen them can decide.
 - The default state matches the CLI's default behaviour for `loctt init`.
 
 ### ONB-5 · M4 · major · P4 P10

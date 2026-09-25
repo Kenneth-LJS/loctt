@@ -307,7 +307,7 @@ export function BoardView() {
     return (
       <ErrorState
         error={tasks.error ?? workflow.error}
-        context="Loading the board — tasks"
+        context="Loading the board's tasks"
         onRetry={() => {
           void tasks.refetch();
           void workflow.refetch();

@@ -7,7 +7,7 @@ import { LocttError, type LocttErrorOptions } from "../errors.js";
 import { getTaskFilePath } from "../paths/index.js";
 import { withStateLock } from "../state/lock.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
-import { assembleTaskFile, parseFrontmatter, splitTaskFile } from "./frontmatter.js";
+import { assembleTaskFile, parseFrontmatter, splitTaskFile, TaskParseError } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
 import { clearLookupCaches } from "./lookup-cache.js";
 
@@ -26,7 +26,23 @@ export async function readTask(locttDir: string, taskId: string): Promise<Task> 
   const filePath = getTaskFilePath(locttDir, taskId);
   const content = await readFile(filePath, "utf-8");
   const { rawYaml, body } = splitTaskFile(content);
-  const { frontmatter, health } = parseFrontmatter(rawYaml);
+  let parsed: { frontmatter: Task["frontmatter"]; health: FieldHealth[] };
+  try {
+    parsed = parseFrontmatter(rawYaml);
+  } catch (err) {
+    // Object-fatal corruption: re-wrap with the file that is broken, the
+    // same shape every config-file parser already uses ("{file} is not
+    // valid: ..."). `parseFrontmatter` itself is path-unaware — it is
+    // called from several places (git merge, backup restore) that don't
+    // all have one obvious file to name — so this is the read path's own
+    // wrap, done here rather than by threading a path parameter through
+    // the parse function and every one of its callers (A345).
+    if (err instanceof TaskParseError) {
+      throw new TaskParseError(`${filePath} is not valid: ${err.message}`);
+    }
+    throw err;
+  }
+  const { frontmatter, health } = parsed;
   return { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
 }
 

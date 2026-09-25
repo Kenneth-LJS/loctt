@@ -230,3 +230,81 @@ describe("BodyEditor — K124 with the real hook", () => {
     expect(pending).toHaveLength(0);
   });
 });
+
+describe("BodyEditor — a Save in flight (A346)", () => {
+  /**
+   * Review M1: Cancel/Escape during an in-flight Save used to reset the
+   * buffer under the write; when it landed, the old text was flushed as a
+   * draft against the new token and restored on the next open as
+   * "Unsaved changes". The write cannot be recalled, so Cancel and
+   * Escape are unavailable until it settles.
+   */
+  // @verifies TSK-71
+  it("Cancel is disabled and Escape does nothing while saving; no stale draft is left", async () => {
+    renderEditor();
+    await enterEditAndType();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("body-save"));
+      await Promise.resolve();
+    });
+    expect(pending).toHaveLength(1);
+
+    expect(screen.getByTestId("body-cancel").hasAttribute("disabled")).toBe(true);
+    await act(async () => {
+      fireEvent.keyDown(screen.getByTestId("markdown-editor"), { key: "Escape" });
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId("body-discard-dialog")).toBeNull();
+    expect(screen.queryByTestId("body-rendered")).toBeNull();
+
+    await act(async () => {
+      succeedLast();
+      await Promise.resolve();
+    });
+    await waitFor(() => { expect(screen.getByTestId("body-rendered")).toBeTruthy(); });
+    expect(window.sessionStorage.getItem(draftKey(TASK_ID))).toBeNull();
+  });
+
+  /**
+   * Review M3: a refetch that lands while the Save is in flight must not
+   * swap the displayed text. The hook keeps the user's text in its
+   * buffer; showing the other writer's text instead meant the editor
+   * displayed theirs while a 409 conflict held "mine".
+   */
+  // @verifies XS-12
+  it("a refetch during the save does not replace the text on screen, and a 409 keeps it", async () => {
+    const view = renderEditor();
+    await enterEditAndType();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("body-save"));
+      await Promise.resolve();
+    });
+    expect(pending).toHaveLength(1);
+
+    // The CLI wrote the body meanwhile; the refetch brings it in.
+    view.rerender(
+      <BodyEditor
+        taskId={TASK_ID}
+        taskRef="WEB-7"
+        body="the CLI's text"
+        bodyToken="tok-cli"
+        lossyConstructs={[]}
+        mentionCandidates={[]}
+      />,
+    );
+    expect(markdownValue()).toBe("precious words the user typed");
+
+    await act(async () => {
+      const p = pending.shift();
+      p?.settle(new Response(JSON.stringify({
+        code: "conflict",
+        message: "WEB-7 changed since you read it.",
+        data_state: "not_saved",
+        detail: JSON.stringify({ theirs: "the CLI's text", bodyToken: "tok-cli" }),
+      }), { status: 409, headers: { "Content-Type": "application/json" } }));
+      await Promise.resolve();
+    });
+    await waitFor(() => { expect(screen.getByTestId("body-conflict-dialog")).toBeTruthy(); });
+    expect(markdownValue()).toBe("precious words the user typed");
+  });
+});

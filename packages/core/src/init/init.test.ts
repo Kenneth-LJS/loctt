@@ -10,6 +10,7 @@ import { parseWorkflowConfig } from "../config/workflow.js";
 import { resolveLocttDir } from "../paths/index.js";
 import { filtersToNode } from "../query/filters.js";
 import { validateQuery } from "../query/validate.js";
+import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
 import { parseState } from "../state/state.js";
 import { initLoctt } from "./init.js";
 
@@ -182,6 +183,31 @@ describe("initLoctt", () => {
     const result = await initLoctt(root);
     expect(await readFile(join(result.locttDir, "notes.txt"), "utf-8")).toBe("left over");
     await expect(access(join(result.locttDir, "config", "workflow.yaml"))).resolves.toBeUndefined();
+  });
+
+  /**
+   * A346 (review m1): `rm -rf .loctt/*` leaves dotfiles behind, so an
+   * "empty" tracker can still hold an old `.schema-version`. It describes
+   * nothing (there is no config, state or task), and keeping it stamped
+   * the fresh tracker with a version it was not written at. `created`
+   * listed files that were never written, too.
+   */
+  // @verifies ONB-16
+  it("over an empty .loctt, overwrites a stale .schema-version and lists only what it wrote", async () => {
+    const dir = join(root, ".loctt");
+    await mkdir(dir);
+    await writeFile(join(dir, ".schema-version"), `${String(CURRENT_SCHEMA_VERSION + 6)}\n`, "utf-8");
+    await writeFile(join(dir, ".gitignore"), "# the user's own\n", "utf-8");
+
+    const result = await initLoctt(root);
+
+    expect((await readFile(join(dir, ".schema-version"), "utf-8")).trim())
+      .toBe(String(CURRENT_SCHEMA_VERSION));
+    expect(result.created).toContain(join(dir, ".schema-version"));
+    // The user's .gitignore is kept, so it is not reported as created.
+    expect(await readFile(join(dir, ".gitignore"), "utf-8")).toBe("# the user's own\n");
+    expect(result.created).not.toContain(join(dir, ".gitignore"));
+    expect(result.created).toContain(join(dir, "state.yaml"));
   });
 
   it("returns list of created files", async () => {

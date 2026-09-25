@@ -248,8 +248,8 @@ describe("BackupPanel — split backup (several parts)", () => {
     // "Select every part of the backup." — same instruction, same testid.
     expect(screen.getByTestId("backup-restore-selection").textContent)
       .toMatch(/select every part of the backup/i);
-    expect(screen.getByTestId("backup-restore-selection").textContent)
-      .toMatch(/part 1 of 3/);
+    expect(screen.getAllByTestId("backup-restore-part-label").map(e => e.textContent))
+      .toEqual(["Part 1 of 3", "Part 2 of 3"]);
   });
 
   it("marks a selected file that is not a backup at all", async () => {
@@ -257,9 +257,10 @@ describe("BackupPanel — split backup (several parts)", () => {
     const junk = new File(["hello, not json\n"], "notes.txt", { type: "text/plain" });
     pickFiles([partFile(1, 2), junk]);
     await waitFor(() => {
-      expect(screen.getByTestId("backup-restore-selection").textContent)
-        .toMatch(/not recognised as a backup/);
+      expect(screen.getAllByTestId("backup-restore-part-label").map(e => e.textContent))
+        .toEqual(["Part 1 of 2", "Not a backup"]);
     });
+    expect(screen.getByTestId("backup-restore-selection").textContent).not.toContain("—");
   });
 
   it("no longer tells the user to go and run the CLI", () => {

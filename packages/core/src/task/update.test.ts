@@ -60,6 +60,23 @@ describe("setField / unsetField", () => {
       expect(updated.frontmatter.title).toBe("New title");
     });
 
+    // Guards the dead-branch removal in `setFieldLocked` (known-gaps):
+    // the refusal must come from the guard in `setField`, before
+    // `setFieldLocked` is ever reached, for every value shape.
+    it("rejects a direct write to updated_at", async () => {
+      await seedTask();
+      await expect(
+        setField({ locttDir, taskId: "abc", field: "updated_at", value: "2025-01-01T00:00:00Z" }),
+      ).rejects.toThrow(/Cannot set "updated_at" directly/);
+    });
+
+    it("rejects a direct write to updated_at with a non-string value", async () => {
+      await seedTask();
+      await expect(
+        setField({ locttDir, taskId: "abc", field: "updated_at", value: 12345 }),
+      ).rejects.toThrow(/Cannot set "updated_at" directly/);
+    });
+
     it("sets a custom field under fields:", async () => {
       await seedTask();
       const updated = await setField({ locttDir, taskId: "abc", field: "owner_team", value: "platform" });
@@ -308,6 +325,25 @@ describe("setField / unsetField", () => {
         locttDir, taskId: "abc",
         changes: [{ field: "id", value: "x" }],
       })).rejects.toThrow(TaskUpdateError);
+    });
+
+    // Guards the dead-branch removal in `setFieldsLocked` (known-gaps):
+    // `assertChangesWritable` refuses updated_at before the write loop
+    // is ever reached, for every value shape.
+    it("rejects a direct write to updated_at", async () => {
+      await seedTask();
+      await expect(setFields({
+        locttDir, taskId: "abc",
+        changes: [{ field: "updated_at", value: "2025-01-01T00:00:00Z" }],
+      })).rejects.toThrow(/Cannot set "updated_at" directly/);
+    });
+
+    it("rejects a direct write to updated_at with a non-string value", async () => {
+      await seedTask();
+      await expect(setFields({
+        locttDir, taskId: "abc",
+        changes: [{ field: "updated_at", value: 12345 }],
+      })).rejects.toThrow(/Cannot set "updated_at" directly/);
     });
 
     // @verifies BRD-9

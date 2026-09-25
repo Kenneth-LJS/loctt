@@ -370,7 +370,9 @@ Every config-entity list (`list_labels`, `list_milestones`, `list_sprints`,
 
 Per-user settings and sidebar layout have their own read/write tools:
 `get_user_settings`, `get_sidebar_groups`, `set_sidebar_groups`,
-`sweep_sidebar_pins`.
+`sweep_sidebar_pins`. The `resolved` list the sidebar-groups tools return is
+in the order the sidebar shows it: the built-in filters follow `filters`,
+and read `hidden: true` while `filters` is hidden.
 
 ### Configuration and machine-local settings
 

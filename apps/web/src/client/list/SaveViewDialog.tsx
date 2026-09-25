@@ -166,7 +166,7 @@ export function SaveViewDialog({
               className="text-[0.8571rem] text-text-tertiary"
               data-testid="save-view-no-filters"
             >
-              No filters — this view will show every task.
+              No filters. This view shows every task.
             </p>
           ) : (
             // A real list — `aria-label`ed rows a screen reader reads as

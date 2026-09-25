@@ -369,9 +369,17 @@ minority of these.
 ### A11Y-43 · M4 · minor · P8
 **Keyboard shortcuts do not collide with browser or screen-reader shortcuts.** With a screen reader running in browse mode, exercise the shortcut set.
 
+> **Amended (K129, Ken 2026-09-24).** Ken: *"rest of the 'needs your
+> call' looks okay"* (he approved cutting the `?` dialog's footnote,
+> A-110, that documented single-key shortcuts as suppressed while
+> typing). The underlying behaviour — shortcuts are ignored while a
+> text field, editor, or dialog has focus — is unchanged and still
+> covered by its own tests; only the third bullet's "documented in the
+> reference" option is dropped, since nothing currently satisfies it.
+
 - App shortcuts do not shadow the screen reader's own single-key browse commands in a way that makes the page unnavigable, or the app documents the required mode switch.
 - No shortcut overrides a browser-reserved combination.
-- Single-key shortcuts can be turned off or remapped, or are documented in the `?` reference as suppressible.
+- Single-key shortcuts can be turned off or remapped.
 
 ### A11Y-44 · M4 · minor · P8
 **A skip link reaches the main content.** Press `Tab` as the very first interaction after load.

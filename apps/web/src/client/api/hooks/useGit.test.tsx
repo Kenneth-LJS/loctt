@@ -120,7 +120,8 @@ describe("useGitSync invalidation (GIT-23)", () => {
     expect(err.message).toBe("disk full");
   });
 
-  // @verifies GIT-13, GIT-12 (A342)
+  // A342: sync sends one request. Untagged: GIT-12 and GIT-13 are about
+  // how conflicts display, which this does not exercise.
   it("a plain-JSON planning-phase failure is read off the one response, not re-fetched", async () => {
     // `handleGitSync` answers a planning-phase refusal (reconcile
     // needed, a conflict, …) as ordinary JSON — no NDJSON header — and

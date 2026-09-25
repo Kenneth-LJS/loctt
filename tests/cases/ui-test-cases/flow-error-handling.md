@@ -87,11 +87,15 @@ below.
 ### ERR-9 · M1 · blocker · P4 P6 P9
 **One malformed `task.md` does not take down the list.** Corrupt the YAML frontmatter of one task, then load `/list` with 50 tasks.
 
+> **Amended (K129, Ken 2026-09-24).** Ken: *"rest of the 'needs your
+> call' looks okay"* (he approved cutting "A hand-edit is the usual
+> cause." from the banner, A-7). The per-file path and parse-error
+> reason still appear per file; only the general cause sentence is cut.
+
 - The other 49 tasks render. The view loads.
 - The bad task surfaces as a distinct problem row (or a banner naming it) — it is neither silently dropped nor allowed to crash the render.
 - The surface names the **file path** (`.loctt/tasks/<id>/task.md`) and the **parse error** — the specific YAML problem, so the user can go fix it.
 - The count is honest: either the total excludes it and the problem surface accounts for it, or the total includes it as a problem row. The user can reconcile what they see with what is on disk.
-- Per [flow-cross-surface.md](flow-cross-surface.md) XS-51, the message may confidently attribute this to a hand-edit — atomic writes rule out a torn write.
 
 ### ERR-10 · M1 · blocker · P4 P7
 **A malformed config file names the file, the failing field, and what was expected.** Break `workflow.yaml` against its Zod schema — a status missing `key`, a sprint with `end_date` before `start_date`, a label with a non-hex colour.

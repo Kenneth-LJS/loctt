@@ -919,8 +919,7 @@ export function ListView() {
       {unreadable.length > 0 && (
         <div role="alert" className="mb-2 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-4 py-2 text-[0.8571rem] text-danger-fg">
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
-          {" "}could not be read. Missing from this list. A hand-edit is
-          {" "}the usual cause.
+          {" "}could not be read. Missing from this list.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
               <li key={u.id} className="text-[0.7857rem]">
