@@ -250,11 +250,18 @@ export function BackupPanel() {
               {selected.map(s2 => (
                 <li key={s2.file.name} data-testid="backup-restore-selected-part">
                   {s2.file.name}
-                  {s2.header
-                    ? s2.header.parts > 1
-                      ? ` — part ${String(s2.header.part)} of ${String(s2.header.parts)}`
-                      : " — a complete backup"
-                    : " — not recognised as a backup"}
+                  {/* The file's status is its own label, not a clause
+                      hung off the name with a dash (messaging.md, A346). */}
+                  <span
+                    data-testid="backup-restore-part-label"
+                    className="ml-2 text-text-tertiary"
+                  >
+                    {s2.header
+                      ? s2.header.parts > 1
+                        ? `Part ${String(s2.header.part)} of ${String(s2.header.parts)}`
+                        : "Complete backup"
+                      : "Not a backup"}
+                  </span>
                 </li>
               ))}
             </ul>

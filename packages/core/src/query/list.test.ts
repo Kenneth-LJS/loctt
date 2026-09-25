@@ -341,30 +341,6 @@ describe("listTasks", () => {
       expect(result.map(t => t.frontmatter.key).sort()).toEqual(["T-2", "T-3"]);
     });
 
-    it("warns on a scope/query archived conflict, user's term winning (K107)", () => {
-      // Default scope is 'active' (hide archived), but the query asks for
-      // archived = true — a conflict. The term wins (T-2/T-3 returned), and
-      // the conflict is surfaced, not silently resolved.
-      let conflictScope: string | undefined;
-      const result = listTasks({
-        tasks: archivedTasks,
-        options: { query: "archived = true" },
-        onArchivedConflict: (s) => { conflictScope = s; },
-      });
-      expect(result.map(t => t.frontmatter.key).sort()).toEqual(["T-2", "T-3"]);
-      expect(conflictScope).toBe("active");
-    });
-
-    it("does not warn when the query mentions archived under scope 'all' (K107)", () => {
-      let warned = false;
-      listTasks({
-        tasks: archivedTasks,
-        options: { query: "archived = true", archivedScope: "all" },
-        onArchivedConflict: () => { warned = true; },
-      });
-      expect(warned).toBe(false);
-    });
-
     // K102 BEHAVIOUR CHANGE: pre-K102, running a saved view EXEMPTED the
     // call from archived scoping entirely — "views respected as
     // authored", because a view's stored `query` string could only

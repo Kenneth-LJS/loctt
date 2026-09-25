@@ -112,14 +112,6 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
           </section>
         ))}
 
-        <p className="m-0 text-[0.8571rem] text-text-secondary">
-          {/* A11Y-43's third bullet: single-key shortcuts are
-              documented as suppressed while typing, which is the
-              mode-switch note the case asks for. */}
-          Single-key shortcuts are ignored while a text field, editor,
-          or dialog has focus, so they never shadow typing.
-        </p>
-
         {/* CONFIG-5 / P4: this overlay is the discoverable summary; the
             full, rebindable reference lives in Settings → Keyboard. A
             deep link (labelled as navigation) keeps the two from being

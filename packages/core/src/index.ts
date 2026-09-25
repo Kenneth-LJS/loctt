@@ -552,6 +552,7 @@ export {
   readSidebarPins,
   RECENTS_CAP,
   removeRecent,
+  resolveRenderedSidebarItems,
   resolveSidebarOrder,
   resolveUserRef,
   salvageSidebarGroups,

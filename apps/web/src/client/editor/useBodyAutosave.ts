@@ -105,8 +105,12 @@ export interface BodyAutosave {
    * Cancel (K124): drop the in-editor text and the draft, returning to
    * what is on disk WITHOUT writing. The caller asks first when there
    * are changes; this is the discard itself.
+   *
+   * Refused while a Save is in flight (A346): the write cannot be
+   * recalled, so there is nothing honest to discard. Returns whether it
+   * discarded, so the caller only closes the editor when it did.
    */
-  readonly cancel: () => void;
+  readonly cancel: () => boolean;
   /** True while there is anything the user would lose by leaving. */
   readonly hasUnsavedWork: boolean;
 }
@@ -381,14 +385,22 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
    * to the base WITHOUT writing. Setting `bufferRef` back to `savedRef`
    * is what makes every later exit (unmount, beforeunload) see a clean
    * editor, so a cancelled edit cannot come back as a draft.
+   *
+   * A346: a Save already in flight wins. Resetting the buffer under it
+   * made the landed write look like newer keystrokes, and the old text
+   * came back as a draft against the new token. The editor disables
+   * Cancel and Escape while saving; this is the same rule where the
+   * refs live, for the moment before the indicator reads "saving".
    */
-  const cancel = useCallback(() => {
+  const cancel = useCallback((): boolean => {
+    if (inFlightRef.current !== null) return false;
     clearDraftTimer();
     forceRef.current = false;
     bufferRef.current = savedRef.current;
     setConflict(null);
     setState({ kind: "saved" });
     clearBodyDraft(taskIdRef.current);
+    return true;
   }, [clearDraftTimer, setConflict]);
 
   /**
@@ -520,6 +532,6 @@ function failureCopy(err: unknown): { message: string; detail?: string } {
     };
   }
   return {
-    message: "Description not saved. Your text is still here.",
+    message: "Description not saved.",
   };
 }

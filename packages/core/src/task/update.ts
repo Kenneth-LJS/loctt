@@ -493,11 +493,6 @@ async function setFieldLocked(opts: SetFieldOptions): Promise<Task> {
       throw new TaskUpdateError("Title must be a non-empty string.");
     }
     updated = { ...task.frontmatter, title: value, updated_at: now };
-  } else if (field === "updated_at") {
-    if (typeof value !== "string") {
-      throw new TaskUpdateError("updated_at must be a string");
-    }
-    updated = { ...task.frontmatter, updated_at: value };
   } else if (BUILTIN_OPTIONAL_FIELDS.has(field)) {
     const patch = toMutable(task.frontmatter);
     // Resolve a milestone/sprint given by name to its id before writing.
@@ -940,11 +935,6 @@ export async function setFieldsLocked(
         throw new TaskUpdateError("Title must be a non-empty string.");
       }
       patch["title"] = value;
-    } else if (field === "updated_at") {
-      if (typeof value !== "string") {
-        throw new TaskUpdateError("updated_at must be a string");
-      }
-      patch["updated_at"] = value;
     } else if (AUTO_MANAGED_FIELDS.has(field)) {
       // Reached only when the caller was granted this field above.
       // These live at the *top level* of frontmatter, so they must not

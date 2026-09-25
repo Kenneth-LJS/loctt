@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { parseUserProfile, serializeUserProfile, UserProfileError } from "./profile.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { getUserProfilePath } from "../paths/index.js";
+import { loadUserProfile, parseUserProfile, serializeUserProfile, UserProfileError } from "./profile.js";
 
 describe("parseUserProfile", () => {
   it("parses a complete profile", () => {
@@ -162,5 +167,33 @@ phone: "+1 555"
       "Mars/Olympus_Mons",
     );
     expect(reloaded.health?.find(f => f.field === "phone")?.raw).toBe("+1 555");
+  });
+});
+
+describe("loadUserProfile", () => {
+  let locttDir: string;
+
+  beforeEach(async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "loctt-test-"));
+    locttDir = join(tmp, ".loctt");
+  });
+
+  afterEach(async () => {
+    await rm(join(locttDir, ".."), { recursive: true, force: true });
+  });
+
+  // C110: an object-fatal profile failure must name the broken file, like
+  // every config-file parser already does ("{file} is not valid: ...").
+  // `parseUserProfile` itself has no path to name, so `loadUserProfile`
+  // wraps it with the path it already has (A345).
+  it("names the profile.yaml path in an object-fatal profile error", async () => {
+    const path = getUserProfilePath(locttDir, "u1");
+    await mkdir(join(locttDir, "users", "u1"), { recursive: true });
+    // Missing `id` is object-fatal: the profile cannot be addressed.
+    await writeFile(path, "name: Ken\ntimezone: UTC\n", "utf-8");
+
+    await expect(loadUserProfile(locttDir, "u1")).rejects.toThrow(
+      `${path} is not valid: id is required (expected string)`,
+    );
   });
 });

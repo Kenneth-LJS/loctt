@@ -306,7 +306,7 @@ export function assertNotArchivedReferences(
   }
 
   if (errors.length > 0) {
-    throw new ArchivedReferenceError(errors.join("; "));
+    throw new ArchivedReferenceError(errors.join(" "));
   }
 }
 

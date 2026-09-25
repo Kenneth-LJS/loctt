@@ -238,8 +238,8 @@ export class GitHistoryRewrittenError extends GitSyncError {
       `Sync aborted: the history of ${where} was rewritten. The last commit `
       + `synced against (${opts.missingCommit.slice(0, 8)}) is no longer part `
       + `of the branch (its head is now ${opts.remoteHead.slice(0, 8)}), so there is `
-      + `no shared base to merge against. This is not an ordinary conflict. A force-push `
-      + `or history rewrite happened on the remote.\n\n`
+      + `no shared base to merge against. A force-push or history rewrite happened `
+      + `on the remote.\n\n`
       + `Nothing was written. Your local files are untouched, and last_synced_commit `
       + `was not changed.\n\n`
       + `Recover in git:\n`
@@ -293,8 +293,7 @@ export class GitRemoteSchemaNewerError extends GitSyncError {
       + `up to schema v${opts.localVersion}. Applying it could corrupt or drop data, so `
       + `nothing was written. Your local files are untouched.\n\n`
       + `Upgrade LocTT to a version that supports schema v${opts.remoteVersion} or newer, `
-      + `then sync again. This is not a migration: the branch is already ahead of what `
-      + `this build can read, so 'loctt migrate' has nothing to do here.`,
+      + `then sync again.`,
     );
     this.name = "GitRemoteSchemaNewerError";
     this.remoteVersion = opts.remoteVersion;
@@ -352,8 +351,7 @@ export class GitWorktreeMissingError extends GitSyncError {
       `${op} could not start: the temporary git worktree at `
       + `'${opts.worktreeDir}' is missing, but git still has it registered `
       + `(most likely it was deleted by hand while git had it locked), so it `
-      + `cannot be re-created. This is not an ordinary git failure. The `
-      + `worktree named above is the specific thing that is wrong.\n\n`
+      + `cannot be re-created.\n\n`
       + `Your local task files were not touched: the ${opts.operation} never `
       + `reached the point of writing to .loctt/, so nothing was applied.\n\n`
       + `Repair with either:\n`

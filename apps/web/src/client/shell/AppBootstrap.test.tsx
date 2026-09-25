@@ -383,7 +383,7 @@ describe("AppBootstrap with an interrupted migration", () => {
     // here can be opened or changed until this is resolved." — the
     // numbered recovery steps below it are what states the manual
     // procedure, which "resolved" still points the user at.
-    expect(text).toMatch(/nothing here can be opened or changed until this is resolved/i);
+    expect(text).toContain("Nothing here can be opened or changed until this is resolved.");
     expect(text).toContain("loctt migrate");
     expect(text).toContain("loctt doctor");
   });

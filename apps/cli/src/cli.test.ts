@@ -734,7 +734,7 @@ describe("CLI commands", () => {
     await main();
     expect(process.exitCode).toBe(1);
     const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
-    expect(stderr).toMatch(/unknown sprint/i);
+    expect(stderr).toContain("Error: Unknown sprint: Nonexistent");
   });
 
   it("sprint burndown rejects an unknown --format", async () => {

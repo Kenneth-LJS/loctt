@@ -458,7 +458,7 @@ describe("resolveUserRef", () => {
   });
 
   it("throws on unknown name", async () => {
-    await expect(resolveUserRef(locttDir, "NotHere")).rejects.toThrow(/unknown user/i);
+    await expect(resolveUserRef(locttDir, "NotHere")).rejects.toThrow("Unknown user: NotHere");
   });
 });
 

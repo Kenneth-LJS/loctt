@@ -436,8 +436,14 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 ### XS-51 · M2 · major · P1 P6
 **A malformed file the UI reads is a genuine hand-edit, never a torn write.** Corrupt a `task.md` mid-YAML and load the list; separately, hammer the UI with writes while reading.
 
+> **Amended (K129, Ken 2026-09-24).** Ken: *"rest of the 'needs your
+> call' looks okay"* (he approved cutting "A hand-edit is the usual
+> cause." from the banner, A-7). The claim that a parse error can only
+> be a hand-edit (not a torn write) still holds and is not restated in
+> the UI; the per-file path and reason remain the visible surface.
+
 - Atomic writes (temp file + rename) mean readers see either the old file or the new one — repeated concurrent read/write cycles never produce a parse error attributable to LocTT's own writing.
-- Therefore the parse-error surface can and does say the file appears to have been edited by hand or by another tool, naming the path — it does not hedge with "the file may have been written incompletely".
+- Therefore the parse-error surface does not hedge with "the file may have been written incompletely" — it states the path and the parse error plainly, without a general cause sentence.
 - The rest of the list still loads; one bad file does not take down the view. (Full treatment in [flow-error-handling.md](flow-error-handling.md) § B.)
 
 ### XS-52 · M4 · minor · P1

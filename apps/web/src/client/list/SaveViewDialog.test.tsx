@@ -230,7 +230,7 @@ describe("SaveViewDialog", () => {
       { wrapper: wrapper() },
     );
     expect(screen.getByTestId("save-view-no-filters").textContent)
-      .toBe("No filters — this view will show every task.");
+      .toBe("No filters. This view shows every task.");
     expect(screen.queryByTestId("save-view-filter-summary")).not.toBeInTheDocument();
   });
 

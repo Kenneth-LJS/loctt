@@ -192,3 +192,18 @@ describe("git-sync newer-remote-schema refusal (GIT-35 / K94)", () => {
     expect(result.updated).toBe(true);
   });
 });
+
+describe("GitRemoteSchemaNewerError message (A346, K129)", () => {
+  // "This is not a migration: …" was removed: the recovery (upgrade)
+  // already says what to do.
+  it("is exactly the cause and the recovery", () => {
+    const err = new GitRemoteSchemaNewerError({ remoteVersion: 3, localVersion: 2, branch: "loctt" });
+    expect(err.message).toBe(
+      "Sync aborted: the loctt branch was written by a newer version of LocTT "
+      + "(schema v3), but this installation only understands up to schema v2. "
+      + "Applying it could corrupt or drop data, so nothing was written. Your local "
+      + "files are untouched.\n\n"
+      + "Upgrade LocTT to a version that supports schema v3 or newer, then sync again.",
+    );
+  });
+});

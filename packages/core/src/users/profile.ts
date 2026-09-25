@@ -214,7 +214,20 @@ export async function loadUserProfile(
 ): Promise<UserProfile> {
   const path = getUserProfilePath(locttDir, userId);
   const raw = await readFile(path, "utf-8");
-  const profile = parseUserProfile(raw);
+  let profile: UserProfile;
+  try {
+    profile = parseUserProfile(raw);
+  } catch (err) {
+    // Object-fatal corruption: re-wrap with the file that is broken, the
+    // same shape every config-file parser already uses ("{file} is not
+    // valid: ..."). `parseUserProfile` itself is path-unaware, so this is
+    // the read path's own wrap rather than a signature change to the
+    // parse function (A345).
+    if (err instanceof UserProfileError) {
+      throw new UserProfileError(`${path} is not valid: ${err.message}`);
+    }
+    throw err;
+  }
   if (profile.id !== userId) {
     throw new UserProfileError(
       `profile.yaml at ${path} has id '${profile.id}', expected '${userId}'`,

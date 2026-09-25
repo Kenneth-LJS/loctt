@@ -131,6 +131,23 @@ describe("bulkSetFields", () => {
       changes: [{ field: "id", value: "x" }],
     })).rejects.toThrow();
   });
+
+  // Guards the dead-branch removal in `setFieldsLocked` (known-gaps):
+  // `assertChangesWritable`, shared with `setFields`, refuses updated_at
+  // up front — the per-task write loop never sees it.
+  it("rejects a direct write to updated_at up front", async () => {
+    await expect(bulkSetFields({
+      locttDir, taskRefs: [],
+      changes: [{ field: "updated_at", value: "2025-01-01T00:00:00Z" }],
+    })).rejects.toThrow(/Cannot set "updated_at" directly/);
+  });
+
+  it("rejects a direct write to updated_at with a non-string value up front", async () => {
+    await expect(bulkSetFields({
+      locttDir, taskRefs: [],
+      changes: [{ field: "updated_at", value: 12345 }],
+    })).rejects.toThrow(/Cannot set "updated_at" directly/);
+  });
 });
 
 describe("bulkArchive", () => {

@@ -1,5 +1,5 @@
 import type { SidebarFilterId, SidebarGroupId, SidebarGroups, SidebarItemId, UserSettings } from "@loctt/contracts";
-import { SIDEBAR_FILTER_IDS, SIDEBAR_ITEM_IDS, SidebarGroupsSchema } from "@loctt/contracts";
+import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS, SIDEBAR_ITEM_IDS, SidebarGroupsSchema } from "@loctt/contracts";
 
 /**
  * Sidebar-groups customization (SHL-45): reading and resolving the
@@ -317,4 +317,32 @@ export function resolveGroupedSidebarOrder(
   return resolved.map(r =>
     r.id === "filters" ? filtersGroupRow : { kind: "item", id: r.id as SidebarGroupId, hidden: r.hidden },
   );
+}
+
+/**
+ * What the sidebar renders, as one flat `{id, hidden}` list over every
+ * `SIDEBAR_ITEM_IDS` entry — the read-back CLI and MCP print (A346).
+ *
+ * Built from `resolveGroupedSidebarOrder`, the resolver the web sidebar
+ * and the Customize-sidebar panel use, so all three surfaces agree: a
+ * pre-K125 stored order gets the same migration (the `filters` group
+ * lands where the first filter id sat), and the six built-ins follow
+ * the `filters` row in their own resolved order. A child is reported
+ * hidden when its own flag is set OR the `filters` group is hidden —
+ * hiding the group hides every built-in (K125), and a read-back that
+ * said "visible" for them would not be what the sidebar shows.
+ */
+export function resolveRenderedSidebarItems(groups: SidebarGroups): readonly ResolvedSidebarItem[] {
+  const out: ResolvedSidebarItem[] = [];
+  for (const row of resolveGroupedSidebarOrder(groups, SIDEBAR_GROUP_IDS)) {
+    if (row.kind === "item") {
+      out.push({ id: row.id, hidden: row.hidden });
+      continue;
+    }
+    out.push({ id: "filters", hidden: row.hidden });
+    for (const child of row.children) {
+      out.push({ id: child.id, hidden: row.hidden || child.hidden });
+    }
+  }
+  return out;
 }

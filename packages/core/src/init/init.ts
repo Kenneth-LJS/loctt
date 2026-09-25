@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 
 import { IanaTimezone } from "@loctt/contracts";
 
@@ -312,8 +312,21 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
       // place. The staged files are moved in instead, and anything
       // already in the folder is kept as it is. Not atomic: a crash
       // part-way leaves a `damaged` tracker, which `--repair` finishes.
-      await moveEntriesInto(stageDir, locttDir);
+      //
+      // One exception (A346): `.schema-version`. An empty tracker has no
+      // config, state or task for an old stamp to describe, and
+      // `rm -rf .loctt/*` leaves this dotfile behind; keeping it would
+      // stamp the fresh tracker with a version it was not written at.
+      await rm(getSchemaVersionPath(locttDir), { force: true });
+      const kept = await moveEntriesInto(stageDir, locttDir);
       await rm(stageDir, { recursive: true, force: true });
+      // `created` names what was written, not what was staged: a file
+      // the folder already held was kept, so it was not created.
+      const notWritten = (p: string): boolean =>
+        kept.some(k => p === k || p.startsWith(`${k}${sep}`));
+      const written = created.filter(p => !notWritten(p));
+      created.length = 0;
+      created.push(...written);
     } else {
       // Atomic flip — after this point, `.loctt/` exists in its
       // final form or not at all.
@@ -344,19 +357,25 @@ export async function initLoctt(root: string, options: InitOptions = {}): Promis
 /**
  * Moves every entry of `src` into `dest`, merging directories and never
  * replacing anything `dest` already holds. Used to set up an empty
- * `.loctt/` in place (B22).
+ * `.loctt/` in place (B22). Returns the `dest` paths it left alone
+ * because something was already there, so the caller can report only
+ * what it actually wrote.
  */
-async function moveEntriesInto(src: string, dest: string): Promise<void> {
+async function moveEntriesInto(src: string, dest: string): Promise<string[]> {
+  const kept: string[] = [];
   for (const entry of await readdir(src, { withFileTypes: true })) {
     const from = join(src, entry.name);
     const to = join(dest, entry.name);
     if (!(await fileExists(to))) {
       await rename(from, to);
     } else if (entry.isDirectory() && (await stat(to)).isDirectory()) {
-      await moveEntriesInto(from, to);
+      kept.push(...(await moveEntriesInto(from, to)));
+    } else {
+      // `dest` already has something here: it is the user's, kept.
+      kept.push(to);
     }
-    // Otherwise `dest` already has a file here: it is the user's, kept.
   }
+  return kept;
 }
 
 async function ensureRootGitignoreEntry(rootDir: string): Promise<void> {

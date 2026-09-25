@@ -373,6 +373,8 @@ test.describe("MSL — the milestones view", () => {
     // retired, not merely `"false"`).
     await expect(row).not.toHaveAttribute("data-overdue");
     await expect(row.getByTestId("milestone-overdue")).toHaveCount(0);
+    // By text too: a relabelled badge would pass the retired testid check.
+    await expect(row).not.toContainText(/overdue|days? (left|ago)|in \d+ days?/i);
 
     // The numbers themselves are unaffected by the removal.
     await expect(page.getByTestId(`milestone-${alpha}-readout`)).toContainText("4 / 8");
@@ -386,6 +388,7 @@ test.describe("MSL — the milestones view", () => {
     await page.reload();
     await expect(row).not.toHaveAttribute("data-overdue");
     await expect(row.getByTestId("milestone-overdue")).toHaveCount(0);
+    await expect(row).not.toContainText(/overdue|days? (left|ago)|in \d+ days?/i);
     await expect(row.getByTestId("milestone-date")).toHaveText("Jan 1, 2025");
   });
 
@@ -411,6 +414,7 @@ test.describe("MSL — the milestones view", () => {
     // is no overdue concept to distinguish it from (K132).
     await expect(row.getByTestId("milestone-complete")).toHaveText("Completed");
     await expect(row.getByTestId("milestone-overdue")).toHaveCount(0);
+    await expect(row).not.toContainText(/overdue|days? (left|ago)|in \d+ days?/i);
   });
 
   // @verifies MSL-24
@@ -609,6 +613,13 @@ test.describe("MSL — the milestones view", () => {
     await expect(
       page.locator(`[data-milestone-id="${late}"]`).getByTestId("milestone-overdue"),
     ).toHaveCount(0);
+    // By text as well as by the retired testids: no countdown or overdue
+    // wording on any row.
+    for (const id of [soon, late, someday]) {
+      await expect(page.locator(`[data-milestone-id="${id}"]`)).not.toContainText(
+        /overdue|days? (left|ago)|in \d+ days?/i,
+      );
+    }
 
     // The dates themselves are still shown as-is.
     await expect(

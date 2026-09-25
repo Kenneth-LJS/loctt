@@ -22790,6 +22790,341 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A346 · Review fixes on ui/polish-wave-3 (Save in flight, sidebar read-back, init over an empty `.loctt`, wording)
+
+**Ticket:** review findings M1, M2, M3, m1-m7 (m8 owned by another agent) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 · **Scope:** core, CLI, MCP, web.
+
+**Decision.**
+
+- **M1: Cancel and Escape are unavailable while a Save is in flight.** The Cancel button is `disabled` while the indicator reads "saving", Escape does nothing then, and the hook's `cancel()` refuses (returns `false`) while a write is in flight (`inFlightRef`). That covers the microtask before the state reaches "saving". `cancel()` now returns whether it discarded, and the editor closes only when it did.
+- **M3:** the edit surface's refetch guard skips while saving as well as while there is unsaved work. A refetch that lands mid-save no longer replaces the text on screen.
+- **M2:** new core export `resolveRenderedSidebarItems(groups)` (`packages/core/src/users/sidebarGroups.ts`). It flattens `resolveGroupedSidebarOrder`: each group row, with the `filters` row followed by its six children in their resolved order, and a child `hidden` when its own flag or the `filters` group is hidden. CLI `loctt user sidebar-groups` and MCP `get_sidebar_groups`/`set_sidebar_groups` read back through it. The output shape (`id` + visible/hidden, 14 entries) is unchanged. Order and hidden now match the web sidebar.
+- **m1:** init over an empty `.loctt` deletes an existing `.schema-version` before moving the staged files in. `created` lists only the files actually written. `moveEntriesInto` returns the paths it left alone, and those, with everything under them, are filtered out.
+- **m4:** the board's error context is "Loading the board's tasks" (the ERR-5 test needs "loading the board" and "tasks"). Backup restore rows show the file's status as a separate label: "Part N of M", "Complete backup" or "Not a backup". Empty-filter copy: "No filters. This view shows every task." (SaveViewDialog) and "No filters. This view shows every task in its scope." (ViewFormDialog, the same sentence).
+- **m5:** archived-guard refusals are joined with a space, not "; ".
+- **m6:** removed "This is not an ordinary conflict." (GitHistoryRewrittenError), "This is not an ordinary git failure. The worktree named above is the specific thing that is wrong." (GitWorktreeMissingError; the second sentence is also a justification), and "This is not a migration: …" (GitRemoteSchemaNewerError). A description save with no server envelope now reads "Description not saved." (K129).
+- **m7:** removed `ListOptions.onArchivedConflict`, its branch and its two tests. The user's `archived` term still wins, and the existing "respects an explicit archived filter" test covers that.
+
+**Why.** M1: the write cannot be recalled once sent. The other fix, suppressing the post-save draft flush after a cancel, would let Cancel close the editor while the "cancelled" text landed on disk anyway, which misreports what happened. Disabling Cancel is the honest version. M2: SHL-45 says CLI and MCP report "what the sidebar renders". The flat resolver had skipped the K125 migration and the group-hides-children rule. One core function keeps the two surfaces from drifting.
+
+**Options considered.** M1: (a) disable Cancel/Escape while saving (chosen); (b) keep Cancel live and skip the post-save `flushDraft` after a cancel. M2: flatten in each surface or in core. Core was chosen so CLI and MCP share one rule.
+
+**Tests.** `useBodyAutosave.test.ts` (cancel mid-save leaves no draft; exact "Description not saved."), `BodyEditor.leave-race.test.tsx` (Cancel disabled/Escape inert while saving; refetch mid-save keeps the displayed text through a 409), `sidebarGroups.test.ts`, `tests/integration/{cli/user-sidebar-groups,mcp/sidebar-groups}.test.ts` (pre-K125 order, hidden `filters`), `init/init.test.ts` (stale `.schema-version`, `created`), `archived-guard.test.ts` (join), `git/{history-rewritten,schema-remote-newer,git-worktree-missing}.test.ts` (exact messages). All red-proven.
+
+**To revert.** M1: drop `disabled={saving}` and the `saving` early return in `BodyEditor.tsx`, and the `inFlightRef` check in `cancel` (restore its `void` return). M3: drop `|| state.kind === "saving"` from the refetch guard. M2: switch CLI/MCP back to `resolveSidebarOrder(x, [...SIDEBAR_ITEM_IDS])` and delete `resolveRenderedSidebarItems`. m1: remove the `rm(getSchemaVersionPath…)` and the `kept` filter in `initLoctt`. m4-m7: restore the strings, the `"; "` join and the callback from git history.
+
+### A345 · B20 close-out: C110 file-naming, three approved cuts, dead-code removal, tightened tests
+
+**Ticket:** B20 (backlog.md), remaining items · **Date:** 2026-09-26 ·
+**Commit:** ui/polish-wave-3 (uncommitted at write time — see gate
+results below)
+
+**Note on backlog.md.** This session was instructed not to edit
+`docs/dev/backlog.md` or `docs/dev/decisions.md` directly, so this file
+is a holding pen for what would normally be recorded there. B20's
+remaining checklist (C110, the two approved cuts B-69/A-110, the A-7
+cut reverted-then-recut, the dead `update.ts` branches, and the
+loosened-test tightening) is now fully done per this record. Ken/an
+agent should fold this into `decisions.md` § 8 and delete B20 from
+`backlog.md` once reviewed.
+
+---
+
+## 1. C110 — object-fatal schema failures now name their file (5 sites)
+
+**Table/known-gaps said:** two options — thread a path/id parameter
+into `parseUserProfile` and `parseFrontmatter` (and every caller), or
+have the callers that already know the path catch and re-wrap
+(cheaper, no signature change).
+
+**Found:** `parseFrontmatter` has 8+ call sites across 5 files
+(`task/io.ts`, `git/resolve-conflicts.ts`, `backup/restore.ts`,
+`git/publish-sync.ts`, `git/reconcile-plan.ts`), most of them mid-git-
+merge/backup-restore contexts that already catch and re-wrap their own
+errors generically (e.g. `task ${id}: ${err.message}` in
+`backup/restore.ts`) rather than having one single "the broken file".
+Threading a path parameter into the parse functions themselves would
+ripple through all of them for no benefit to the sites that already
+handle it. `parseUserProfile`'s own unit tests (`profile.test.ts`) and
+`parseFrontmatter`'s (`frontmatter.test.ts`) call the functions with no
+path context at all, confirming they're meant to stay path-unaware.
+
+**Decided.** Went with catch-and-rewrap, but only at the two callers
+that own "the read of an entity's own file" and are the sites the
+known-gaps repro names (hand-edit the file, trigger a *read*):
+- `packages/core/src/task/io.ts`'s `readTask` now catches
+  `TaskParseError` from `parseFrontmatter` and re-throws
+  `` `${filePath} is not valid: ${err.message}` `` (`filePath` from
+  `getTaskFilePath`). This also incidentally covers the YAML-syntax-
+  error throw at the top of `parseFrontmatter` (not one of the 5 named
+  sites, but the same `TaskParseError` type flows through the same
+  catch) — strictly better, not scope creep, since it is the same
+  read-time wrap.
+- `packages/core/src/users/profile.ts`'s `loadUserProfile` now catches
+  `UserProfileError` from `parseUserProfile` the same way, wrapping
+  with `getUserProfilePath`'s path.
+- Left `saveUserProfile`'s and `assertWriteSafe`'s internal
+  `parseUserProfile`/`parseFrontmatter` re-parses (the write-time
+  round-trip self-check on just-serialized in-memory data) unwrapped —
+  wrapping those would misleadingly claim a file "is not valid" before
+  anything is written to it, and they're not in the known-gaps 5-site
+  list.
+- Other `parseFrontmatter` callers (git merge, backup restore, publish-
+  sync, reconcile-plan) were left as-is: they already have their own
+  wrapping conventions for their context (a task id inside a batch, not
+  a single file read), and none of the 5 known-gaps sites live there.
+
+**Path form.** Used the absolute path from `getTaskFilePath`/
+`getUserProfilePath` (whatever `locttDir` resolves to at runtime),
+matching the existing convention `UnreadableTaskError`/`UnreadableUser`
+already use for naming task/profile files in errors — not a
+`.loctt/...`-relative rewrite. The task brief's `.loctt/users/<id>/
+profile.yaml` example was illustrative, not a literal format
+requirement; following the codebase's own established convention (full
+resolved path) keeps this consistent with `UnreadableTaskError.paths`
+and `UnreadableUser.path`, which already print the same way.
+
+**Tests.** One per site family, red-proven by temporarily reverting the
+wrap and confirming the new assertion fails with the un-prefixed
+message, then restoring:
+- `packages/core/src/task/io.test.ts` — "names the task.md path in an
+  object-fatal frontmatter error" (missing `id`).
+- `packages/core/src/users/profile.test.ts` — "names the profile.yaml
+  path in an object-fatal profile error" (missing `id`).
+
+**To revert.** Remove the `try/catch` wraps in `readTask` and
+`loadUserProfile`, delete the two new tests, and restore
+`docs/dev/known-gaps.md`'s "Schema-failure messages missing the file
+name" entry (its text is preserved in git history at HEAD).
+
+---
+
+## 2. init/InitWizard.tsx skip-docs explainer — cut applied (B-69, amends ONB-4)
+
+Ken approved the cut ("rest of the 'needs your call' looks okay").
+Removed the explainer `<p>` ("LocTT normally writes a few short
+markdown files into .loctt/docs/ explaining...") and its ONB-4 comment
+block; changed the checkbox label itself from "Skip the starter docs"
+to "Skip the starter docs in `.loctt/docs/`" so the label carries what
+the docs are, per the task's instruction that "the checkbox label
+carries it."
+
+**Files:** `apps/web/src/client/init/InitWizard.tsx`.
+
+**Tests:** `tests/ui/flow-onboarding.spec.ts` — updated the
+`getByLabel("Skip the starter docs")` locator to the new label text.
+
+**Case:** `tests/cases/ui-test-cases/flow-onboarding.md` ONB-4 amended
+with `> **Amended (K129, Ken 2026-09-24).**` quoting "rest of the
+'needs your call' looks okay", dropping the "helper text" requirement
+in favor of the label alone.
+
+**To revert.** Restore the explainer `<p>` block and the original
+checkbox label text; revert the Playwright locator and the ONB-4
+amendment block.
+
+---
+
+## 3. shell/ShortcutHelpDialog.tsx footnote — cut applied (A-110, amends A11Y-43)
+
+Ken approved the cut. Removed the footnote `<p>` ("Single-key shortcuts
+are ignored while a text field, editor, or dialog has focus...") and
+its A11Y-43 comment. The underlying behaviour (shortcuts suppressed
+while typing) is unchanged and still covered by its own tests (e.g.
+`flow-task-create.spec.ts`'s NEW-31), which don't assert the footnote's
+wording and needed no change.
+
+**Files:** `apps/web/src/client/shell/ShortcutHelpDialog.tsx`.
+
+**Case:** `tests/cases/ui-test-cases/flow-accessibility.md` A11Y-43
+amended with `> **Amended (K129, Ken 2026-09-24).**`, dropping the
+third bullet's "or are documented in the `?` reference as suppressible"
+option, since the footnote was the only thing satisfying it and nothing
+else does (no remap/off switch exists, confirmed in A343 item 3, still
+true).
+
+**To revert.** Restore the footnote `<p>` block, and restore the third
+bullet's "or are documented in the `?` reference as suppressible" wording
+in A11Y-43 — but only once shortcuts are actually remappable/toggleable,
+per A343's original caveat.
+
+---
+
+## 4. list/ListView.tsx unreadable-files banner — cut applied (A-7, amends ERR-9, XS-51)
+
+Ken approved cutting "A hand-edit is the usual cause." (this had
+previously been reverted/kept per A343 item 1's neighbor entry — this
+session's task explicitly said Ken has now approved the cut). Removed
+the trailing sentence from the banner; the per-file `{path}: {reason}`
+list stays unchanged.
+
+**Files:** `apps/web/src/client/list/ListView.tsx`. Searched for a
+board/timeline sibling with the same sentence — none exists; only
+ListView had it.
+
+**Cases:** `tests/cases/ui-test-cases/flow-error-handling.md` ERR-9 and
+`tests/cases/ui-test-cases/flow-cross-surface.md` XS-51 both amended
+with `> **Amended (K129, Ken 2026-09-24).**`, dropping the requirement
+that the surface state a general cause; the per-file path and specific
+parse-error reason remain required.
+
+No test file asserted the literal "hand-edit is the usual cause" text,
+so nothing else needed updating.
+
+**To revert.** Restore the trailing sentence in `ListView.tsx`'s
+unreadable-files banner and revert the ERR-9/XS-51 amendments.
+
+---
+
+## 5. Dead `updated_at` validation branches deleted from `task/update.ts`
+
+Traced (per known-gaps) that `field === "updated_at"` can never reach
+either `setFieldLocked`'s `if (field === "updated_at") { ... }` branch
+or `setFieldsLocked`'s equivalent in its per-change loop: `setField`
+throws `UPDATED_AT_REFUSAL` up front for `opts.field === "updated_at"`,
+and `assertChangesWritable` (shared by `setFields` and `bulkSetFields`)
+throws the same refusal before either write loop ever sees the field.
+Deleted both dead branches entirely (not converted to an "unreachable"
+assertion — plain deletion was simpler and the guard upstream already
+documents why in its own comments).
+
+**Files:** `packages/core/src/task/update.ts` (two branches removed,
+one in `setFieldLocked`, one in `setFieldsLocked`'s loop).
+
+**Tests (red-proven).** Added coverage that `updated_at` writes are
+refused through all three public entry points, for both a string and a
+non-string value (to prove the *upstream* guard, not the deleted dead
+code, is what refuses it):
+- `packages/core/src/task/update.test.ts` — two new tests under
+  `describe("setField")` and two under `describe("setFields")`.
+- `packages/core/src/task/bulk.test.ts` — two new tests under
+  `describe("bulkSetFields")`.
+
+Red-proofed by temporarily removing the *upstream* early-refusal checks
+(the ones in `setField` and `assertChangesWritable`, not the dead code)
+and confirming all 6 new tests fail with the wrong message (they fell
+through to the generic `USER_IMMUTABLE_FIELDS` guard, which throws a
+different string — `Cannot set immutable field "updated_at".` instead
+of `Cannot set "updated_at" directly. It is stamped on every write.` —
+proving the tests actually pin the specific refusal message, not just
+"it throws something"), then restored.
+
+**To revert.** Restore the two deleted `else if (field === "updated_at")`
+branches from git history; the new tests can stay (they pass either
+way, since the upstream guard still fires first).
+
+---
+
+## 6. Tightened tests loosened during the B20 pass
+
+Could not use any `git` command (hard rule for this session), so found
+sites by searching test files for `/i)`-flagged regexes and `|`
+alternations near message assertions, cross-referencing comments left
+by the previous pass (several are explicitly tagged `// K129 pass:
+"..." trimmed to "..."` or `// K129: "..." trimmed to "..."`), then
+verifying the exact current source string for each and replacing the
+loose match with it.
+
+**11 sites tightened:**
+
+1. `packages/core/src/projects/slug.test.ts` — `/unknown project/i` →
+   `"Unknown project: no-such-slug"` (exact, from
+   `projects/manage.ts`'s `Unknown project: ${input}`).
+2. `packages/core/src/labels/manage.test.ts` — `/unknown label/i` →
+   exact `"Unknown label(s): 01HX0NOTHERE. Register first via the label
+   CRUD."` (from `labels/manage.ts`'s `assertLabelIdsRegistered`).
+3. `packages/core/src/users/manage.test.ts` — `/unknown user/i` →
+   `"Unknown user: NotHere"` (from `users/manage.ts`'s
+   `resolveUserRef`).
+4. `packages/core/src/task/entity-resolution-parity.test.ts` (×3) —
+   `/unknown user/i` → `"Unknown user: nobody"`; two `/unknown label/i`
+   → `"Unknown label: 01M0NOSUCHLABEL000000000"` (one on `setFields`,
+   one on `createTask`).
+5. `apps/web/src/server/server.data-delete.test.ts` (×2) — `/unknown
+   label/i` → `"Unknown label: NOPE"`; `/unknown sprint/i` → `"Unknown
+   sprint: NOPE"` (both exact `message` equality, verified the routes
+   pass `err.message` through unprefixed).
+6. `apps/web/src/server/server.test.ts` — `/unknown sprint/i` →
+   `"Unknown sprint: 01HXNOSUCH"` (exact `error` equality — the
+   burndown route passes `BurndownError.message` through unprefixed).
+7. `apps/mcp/src/mcp.test.ts` — `/unknown sprint/i` → exact `"Error:
+   Unknown sprint: 01HXNOSUCH"` (MCP's `errorResult` prefixes with
+   `"Error: "`).
+8. `apps/cli/src/cli.test.ts` — `/unknown sprint/i` → `toContain("Error:
+   Unknown sprint: Nonexistent")` (CLI's `runCommand` also prefixes
+   `"Error: "`; kept `toContain` rather than exact-stderr-equality since
+   `SprintError extends LocttError` and a `detail` line could follow,
+   which I did not fully trace — but the case-insensitive/alternation
+   looseness is gone).
+9. `packages/core/src/task/attachments.test.ts` — `/rename the file/i`
+   → `toContain("Rename the file and attach it again.")` (exact, from
+   `attachments.ts`'s over-long-name refusal).
+10. `apps/web/src/client/shell/AppBootstrap.test.tsx` —
+    `/nothing here can be opened or changed until this is resolved/i`
+    → exact `toContain(...)` (source text unchanged — confirmed
+    `InterruptedMigration.tsx` still has this sentence verbatim, so this
+    was pure `/i`-looseness, not a stale assertion of removed text; K129
+    asked for this line's removal but it evidently was not applied to
+    this specific banner — flagging that gap separately below).
+11. `apps/web/src/client/list/ListView.test.tsx` — `/no longer exists/i`
+    → `toContain("no longer exists")` (source already lowercase, so
+    `/i` was superfluous, not hiding a wording change).
+12. `tests/ui/flow-list.spec.ts` — `/could not|did not|didn't/i` →
+    exact `"The operation didn't run."` (from `ListView.tsx`'s bulk-
+    archive network-failure branch).
+13. `tests/ui/flow-board.spec.ts` (×3) — `/wasn't saved|not saved/i` →
+    exact `"wasn't saved"` (source: `BoardView.tsx`'s move-error and
+    chip-error banners both say "wasn't saved", confirmed by reading
+    the component).
+14. `tests/ui/flow-sprints.spec.ts` (one of two `not saved` sites) —
+    `/wasn't saved|not saved/i` → exact `"wasn't saved"` (source:
+    `SprintsView.tsx`'s move-error banner: "The assignment wasn't
+    saved.").
+
+**Left alone (checked, not loosened by this pass or not provably so):**
+`flow-onboarding.spec.ts:703` (`/was not saved/i` — could not find the
+matching source string near the init-screen network-failure banner to
+confirm a wording change happened here; no "K129 pass" comment marks
+it); `flow-settings-projects-users.spec.ts:1325` (`/prepared but not
+saved/i` — source `UsersPanel.tsx` still says "prepared but not saved"
+verbatim, unmarked, likely pre-existing style rather than this pass);
+`flow-sprints.spec.ts:1265` (`/not saved/i` on `sprint-meta-error` —
+source `SprintMetaHeader.tsx` still says "was not saved" verbatim, not
+"wasn't saved", so no wording drift to tighten against — the `/i` here
+predates or is unrelated to the trim); `MilestonesView.test.tsx` and
+`TimelineChart.test.tsx`'s K129-tagged assertions were already exact
+(`toContain`/element-absence checks, no `/i` or alternation) — nothing
+to tighten there despite the comment.
+
+**Gap noticed in passing, not fixed here (out of this ticket's scope):**
+K129 says the interrupted-migration banner should drop "Nothing here
+can be opened or changed until this is resolved." — but
+`apps/web/src/client/shell/InterruptedMigration.tsx:39-40` still has
+that sentence verbatim. This may be an unapplied K129 item rather than
+a loosened test; flagging for a separate look rather than changing
+banner copy under a "tighten the test" item.
+
+**To revert.** Each of the 14 tightened assertions can be reverted
+independently by restoring its original `/pattern/i` or alternation
+regex — see the list above for exact before/after per site. This is a
+correctness fix to the test gate itself (A343 item 5's framing), not a
+design choice, so there's no product reason to revert any of it.
+
+---
+
+## 7. known-gaps.md — both closed entries removed
+
+Deleted "Schema-failure messages missing the file name" (closed by
+item 1 above) and "Dead validation branches in `task/update.ts`..."
+(closed by item 5 above). The file now reads "Nothing is open." per its
+own stated convention for an empty list.
+
+**Not done here (per this session's hard rule):** `docs/dev/backlog.md`
+still lists B20 as "in progress" with all five remaining bullets — this
+file (A345) is the record of what closed them; someone with edit access
+to `backlog.md`/`decisions.md` should fold this in and delete the B20
+entry.
+
 ### A344 · B21–B23 implementation choices (unique view names, init over an empty `.loctt`, sprint guards removed)
 
 **Ticket:** B21, B22, B23 (K129, K130) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 · **Scope:** core, CLI, MCP, web. *(Reconstructed from the implementing agent's report; its scratchpad draft was lost in a session restart.)*

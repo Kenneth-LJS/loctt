@@ -167,9 +167,14 @@ function BodyEditSurface({
    * (typed, restored from a draft, or refused) the refetch must not
    * replace what the user sees: the hook keeps their text, and so does
    * the surface. The same guard the hook applies (XS-14).
+   *
+   * A Save in flight counts as unsaved here (A346): `hasUnsavedWork` is
+   * false while saving, and a refetch landing then used to swap in the
+   * other writer's text while the hook's buffer (and a 409's "mine")
+   * still held the user's.
    */
   useEffect(() => {
-    if (hasUnsavedWork) return;
+    if (hasUnsavedWork || state.kind === "saving") return;
     if (bufferRef.current.text === body) return;
     if (bufferRef.current.isRichDirty) return;
     bufferRef.current.reset(body);
@@ -237,23 +242,30 @@ function BodyEditSurface({
   /** The "Discard changes?" prompt, shared by Cancel/Escape and navigation. */
   const [pendingDiscard, setPendingDiscard] = useState<PendingDiscard>(null);
 
-  /** Cancel / Escape (K124): discard and close, asking first if there are changes. */
+  const saving = state.kind === "saving";
+
+  /**
+   * Cancel / Escape (K124): discard and close, asking first if there are changes.
+   *
+   * Unavailable while a Save is in flight (A346): the write cannot be
+   * recalled, so offering to discard it would be a lie. `cancel` refuses
+   * too, and the editor only closes when it actually discarded.
+   */
   const requestCancel = useCallback(() => {
+    if (saving) return;
     flushDraft();
     if (!hasUnsavedWork) {
-      cancel();
-      onLeave();
+      if (cancel()) onLeave();
       return;
     }
     setPendingDiscard({
       decide: discard => {
         setPendingDiscard(null);
         if (!discard) return;
-        cancel();
-        onLeave();
+        if (cancel()) onLeave();
       },
     });
-  }, [flushDraft, hasUnsavedWork, cancel, onLeave]);
+  }, [saving, flushDraft, hasUnsavedWork, cancel, onLeave]);
 
   /**
    * An in-app navigation with unsaved changes asks the same question
@@ -434,7 +446,7 @@ function BodyEditSurface({
             variant="primary"
             testId="body-save"
             disabled={!changed}
-            loading={state.kind === "saving"}
+            loading={saving}
             // `loading` hides the visible label; the name stays "Save".
             aria-label="Save"
             onClick={requestSave}
@@ -445,6 +457,7 @@ function BodyEditSurface({
             type="button"
             variant="secondary"
             testId="body-cancel"
+            disabled={saving}
             onClick={requestCancel}
           >
             Cancel

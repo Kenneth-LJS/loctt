@@ -251,6 +251,9 @@ describe("MilestonesView — no countdown, no Overdue badge (K132, superseding M
       expect(screen.queryByTestId("milestone-ms_1-countdown")).toBeNull();
       expect(screen.queryByTestId("milestone-overdue")).toBeNull();
     });
+    // By text too: a relabelled badge would pass the retired testid checks.
+    expect(screen.getByTestId("milestone-row").textContent)
+      .not.toMatch(/overdue|days? (left|ago)|in \d+ days?/i);
     // The date itself is still shown as-is.
     expect(screen.getByTestId("milestone-date").textContent).toContain(
       "Jun 5, 2026",
@@ -276,6 +279,9 @@ describe("MilestonesView — no countdown, no Overdue badge (K132, superseding M
       expect(screen.queryByTestId("milestone-ms_1-countdown")).toBeNull();
       expect(screen.queryByTestId("milestone-overdue")).toBeNull();
     });
+    // By text too: a relabelled badge would pass the retired testid checks.
+    expect(screen.getByTestId("milestone-row").textContent)
+      .not.toMatch(/overdue|days? (left|ago)|in \d+ days?/i);
     expect(screen.getByTestId("milestone-date").textContent).toContain(
       "Jun 13, 2026",
     );

@@ -9,23 +9,17 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-## B20 · Apply the message audit — **in progress** (main pass committed)
+## B25 · Last fixes before merge — **in progress**
 
-The approved wordings (K123, K126, K127, K129, K130) are applied across
-the web client, Settings and the shared core (A343). Left to do:
+Found by the branch review and the B20 close-out; each must land before
+`ui/polish-wave-3` merges (Ken: *"once all done, and all reviewed by
+another agent (and fix the issues), then you may push, merge"*).
 
-- **C110, 5 sites:** user-profile (`users/profile.ts` ×3) and task
-  frontmatter (`task/frontmatter.ts` ×2) schema failures must name the
-  file, like every other config file ("{file} is not valid: {field}
-  {problem}."). Needs the file path available where the error is built.
-- **Two approved cuts not yet applied:** the init wizard's "skip starter
-  docs" explainer (B-69; amend ONB-4) and the shortcut dialog's footnote
-  (A-110; amend A11Y-43). Ken approved both cuts ("rest of the 'needs
-  your call' looks okay").
-- **One approved cut reverted:** the unreadable-files banner's "A
-  hand-edit is the usual cause." (A-7) was put back for ERR-9/XS-51; Ken
-  approved cutting it. Cut it and amend the cases.
-- **Dead code:** the unreachable `updated_at must be a string` branches
-  in `task/update.ts` (see known-gaps) are deleted.
-- Tests loosened to case-insensitive patterns during the pass are
-  tightened back to the exact new strings.
+- TSK-22 and A11Y-50 e2e specs still expect "cannot be undone"; the
+  delete dialogs say "Deleting … is irreversible. Continue?" (K129).
+- A11Y-55: the Customize-sidebar switches measure ~14px tall, under the
+  24px target (introduced with the K125 switches).
+- `shell/InterruptedMigration.tsx` still has the sentence K129 dropped
+  ("Nothing here can be opened or changed until this is resolved.").
+- About 60 user-visible strings still contain em dashes
+  (messaging.md bans them), most older than this branch.

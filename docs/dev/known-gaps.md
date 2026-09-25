@@ -12,62 +12,42 @@ in `decisions.md` and git history, not here. Process lessons live in
 
 ---
 
-### Schema-failure messages missing the file name (5 sites remain; 3 fixed under B20)
+### A11Y-50: bulk-delete dialog text no longer matches the case's "cannot be undone" wording
 
-`formatZodIssues(prefix, err)` (`packages/core/src/config/zod-error.ts`)
-renders a field path plus a plain-English cause, but names the file
-only through its `prefix` argument, and only when an issue has no
-field path (an empty-object or wrong-type-at-the-root failure). B20
-wrapped the three sites with a fixed, statically-known filename in the
-same `` `${file} is not valid: ...` `` template their 9 config-loader
-siblings already use: `state/reconcile.ts:25` (`reconcile.yaml`),
-`state/sync.ts:29` (`sync.yaml`), `projects/prefix.ts:76`
-(`prefix-rename.yaml`).
+`tests/ui/flow-accessibility.spec.ts:983` asserts
+`await expect(dialog).toContainText(/cannot be undone/i);` but
+`list/DeleteConfirmDialog.tsx`'s body now reads "Deleting tasks is
+irreversible. Continue?" (K129's delete-confirmation ruling, applied
+before this session). The two say the same thing but don't share a
+substring, so the test fails deterministically, not flakily — confirmed
+by running it alone, repeatedly, unrelated to any other change in
+flight. Found while gating an unrelated B20 close-out session; not
+touched here since `DeleteConfirmDialog.tsx` and this test are outside
+that ticket's scope.
 
-**Still open — 5 sites**, all in files that parse a specific entity's
-own file (a user, or a task) rather than one fixed config path, so the
-identifying filename isn't known inside the parse function itself —
-fixing these means threading the file path (or user/task id) into
-`parseUserProfile`/frontmatter's parse functions from their callers,
-which is a signature change, not a wording trim:
-`users/profile.ts:96`, `users/profile.ts:158`, `users/profile.ts:170`,
-`task/frontmatter.ts:249`, `task/frontmatter.ts:268`.
+**Repro.** `npx playwright test tests/ui/flow-accessibility.spec.ts -g
+"A11Y-50"` — fails every time with the mismatch above.
 
-**Repro.** Hand-edit a user's `profile.yaml` (or a task's frontmatter)
-into an object-fatal shape (e.g. delete the `id` field entirely) and
-trigger a read. The thrown `UserProfileError`/`TaskParseError`'s
-message never names which user or task file is broken — contrast with
-`sync.yaml`, which now opens with `sync.yaml is not valid: ...` after
-this fix. Graded lower severity than the three fixed sites because both
-files already carry per-field tolerant-degrade paths (a corrupt single
-field degrades into `health` rather than going object-fatal in the
-common case), so this defect only bites the object-fatal branches —
-but those branches exist precisely for the more severe corruption
-cases, which is exactly when naming the file matters most.
+**What Ken needs to decide.** Whether to update the test's regex to the
+current wording, or reintroduce "cannot be undone" into the dialog copy
+— the case itself doesn't mandate either exact phrase, just that
+irreversibility is stated.
 
-**What Ken needs to decide.** Whether it's worth threading an
-identifying path/id parameter through `parseUserProfile` and the
-frontmatter parse functions (and updating every caller) to close the
-remaining 5 sites, or whether the callers should catch and re-wrap with
-the id they already have in scope (cheaper, no signature change to the
-parse functions themselves).
+### A11Y-55: `/settings/sidebar-groups` checkboxes are 14px tall, under the 24px pointer-target minimum
 
-### Dead validation branches in `task/update.ts` assume a reachable non-string `updated_at`
+`tests/ui/flow-accessibility.spec.ts:3608` (`A11Y-55: every pointer
+target on every Settings page is at least 24px`) fails deterministically
+(confirmed by running it alone, repeatedly): every "Show X in the
+sidebar" checkbox on `/settings/sidebar-groups`, plus its "Reset to
+default" control, measures 24.5×14.0 / 89.5×17.2 — under WCAG 2.5.8's
+24px minimum on the short axis. Found while gating an unrelated B20
+close-out session; not touched here since `SidebarGroupsPanel.tsx` is
+outside that ticket's scope.
 
-`setFieldLocked` (`update.ts:~498`) and `setFieldsLocked`'s per-change
-loop (`update.ts:~945`) each throw `"updated_at must be a string"` (now
-worded `` `${field} must be a string` `` after the K129 pass's
-mechanical trim was NOT applied here, since this is dead code, not a
-wording site) if `updated_at` is set to a non-string. Tracing both
-public entry points shows this can never fire: `setField` intercepts
-`opts.field === "updated_at"` and throws `UPDATED_AT_REFUSAL` before
-ever reaching `setFieldLocked`; `setFields`/`bulkSetFields` both call
-`assertChangesWritable`, which throws `UPDATED_AT_REFUSAL` for any
-change naming `updated_at` before `setFieldsLocked`'s loop sees it.
+**Repro.** `npx playwright test tests/ui/flow-accessibility.spec.ts -g
+"every pointer target on every Settings page"` — fails every time,
+naming all 15 undersized controls.
 
-**What Ken needs to decide.** Whether to delete these two branches, or
-convert them to an internal assertion (`throw new Error("unreachable:
-...")`) matching the pattern `git/publish-sync.ts`'s "unreachable
-through findMigrationPath" guard uses elsewhere. Left as-is for now —
-harmless (never fires) but could mislead a future reader into thinking
-it is reachable, user-facing validation.
+**What Ken needs to decide.** Whether to grow the checkbox row height on
+`/settings/sidebar-groups` to meet the 24px minimum, consistent with
+A334's fix for other Settings pointer targets.

@@ -444,8 +444,7 @@ test.describe("SPR — sprints overview", () => {
     await expect(alert).toBeVisible();
     await expect(alert).toContainText(String(key));
     await expect(alert).toContainText("To");
-    // K129 pass: "was not saved" trimmed to "wasn't saved."
-    await expect(alert).toContainText(/wasn't saved|not saved/i);
+    await expect(alert).toContainText("wasn't saved");
 
     // The card is back, and both counts reverted.
     await expect(page.getByTestId(`sprint-count-${fromId}`)).toHaveText("1");

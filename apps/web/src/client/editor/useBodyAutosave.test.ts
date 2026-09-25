@@ -183,6 +183,45 @@ describe("K124 — Cancel discards without writing", () => {
     await act(async () => { await result.current.save(); });
     expect(api.writes).toHaveLength(0);
   });
+
+  /**
+   * A346 (review M1): a Cancel while a Save is in flight cannot recall the
+   * write, so it is ignored. Before, it reset the buffer to the old base;
+   * when the POST landed the hook saw "newer" text (the old body) and
+   * flushed it as a draft against the new token, and the next open
+   * silently restored the old text as "Unsaved changes".
+   */
+  // @verifies TSK-71
+  it("cancel during an in-flight save leaves no draft and reverts nothing", async () => {
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>(r => { release = r; });
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", async (u: string | URL, init?: RequestInit) => {
+      await gate;
+      return original(u, init);
+    });
+
+    const { result } = harness("old text");
+    act(() => { result.current.edit("new text"); });
+    let saving: Promise<void> = Promise.resolve();
+    act(() => { saving = result.current.save(); });
+    await settle();
+    expect(result.current.state.kind).toBe("saving");
+
+    act(() => { result.current.cancel(); });
+
+    act(() => { release?.(); });
+    await act(async () => { await saving; });
+    await settle();
+
+    expect(api.writes.map(w => w.body)).toEqual(["new text"]);
+    expect(storedDraft()).toBeNull();
+    expect(result.current.state.kind).toBe("saved");
+    expect(result.current.hasUnsavedWork).toBe(false);
+    // Nothing reverts: a further Save has nothing to write.
+    await act(async () => { await result.current.save(); });
+    expect(api.writes).toHaveLength(1);
+  });
 });
 
 describe("XS-14 — Save is dirty-flag driven", () => {
@@ -478,6 +517,20 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
     expect(result.current.state.kind).toBe("failed");
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(result.current.state.kind).toBe("failed");
+  });
+
+  // K129 (Ken: "Description not saved. i think just leave it concise."):
+  // a failure with no server envelope (the request itself threw) says
+  // only that, and the text stays in the editor for a retry.
+  // @verifies ERR-27
+  it("a failure with no server envelope reads exactly 'Description not saved.'", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+    const { result } = harness();
+    act(() => { result.current.edit("kept"); });
+    await act(async () => { await result.current.save(); });
+    await settle();
+    expect(result.current.state).toEqual({ kind: "failed", message: "Description not saved." });
+    expect(result.current.hasUnsavedWork).toBe(true);
   });
 });
 
