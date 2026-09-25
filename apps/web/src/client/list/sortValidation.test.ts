@@ -27,7 +27,7 @@ describe("saved-view sort fields", () => {
     expect(problems[0]?.field).toBe("nonexistent_field");
     // The field is named, and the consequence stated.
     expect(problems[0]?.message).toContain("nonexistent_field");
-    expect(problems[0]?.message).toMatch(/not be sorted/i);
+    expect(problems[0]?.message).toMatch(/won't be sorted/i);
   });
 
   // @verifies VUE-37

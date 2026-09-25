@@ -130,6 +130,6 @@ const DATA_STATE_COPY = {
   saved: "Your change was saved.",
   not_saved: "Your change was not saved.",
   unknown:
-    "LocTT cannot tell whether this was saved. Reload the page, or run "
+    "Cannot tell whether this was saved. Reload the page, or run "
     + "`loctt show` in a terminal to see what the file holds.",
 } as const;

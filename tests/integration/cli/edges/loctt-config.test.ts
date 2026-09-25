@@ -31,7 +31,7 @@ describe("CLI loctt config edge cases (spawned binary)", () => {
     await withTmpLoctt(async ({ root }) => {
       const result = await runCli(["config", "set", "git.auto_push", "false"], { cwd: root });
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("git mode is not enabled");
+      expect(result.stderr).toMatch(/git mode is not enabled/i);
     });
   });
 
@@ -39,7 +39,7 @@ describe("CLI loctt config edge cases (spawned binary)", () => {
     await withTmpLoctt(async ({ root }) => {
       const result = await runCli(["config", "set", "unknown.key", "value"], { cwd: root });
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("unknown config key");
+      expect(result.stderr).toMatch(/unknown config key/i);
       expect(result.stderr).toContain("git.auto_push");
     });
   });

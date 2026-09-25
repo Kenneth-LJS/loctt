@@ -1,4 +1,4 @@
-import { access,mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -152,6 +152,36 @@ describe("initLoctt", () => {
   it("throws if .loctt already exists", async () => {
     await initLoctt(root);
     await expect(initLoctt(root)).rejects.toThrow("already exists");
+  });
+
+  // B22 (K129): "just ignore, proceed with steps." An empty `.loctt/`
+  // is set up like a missing one: no repair flag, no refusal, and the
+  // full fresh set of files, not the repair subset.
+  // @verifies ONB-16
+  it("sets up an empty .loctt straight through, like a missing one", async () => {
+    await mkdir(join(root, ".loctt"));
+    const result = await initLoctt(root, { prefix: "WEB", projectName: "Website" });
+    const dir = result.locttDir;
+    await expect(access(join(dir, "state.yaml"))).resolves.toBeUndefined();
+    await expect(access(join(dir, ".schema-version"))).resolves.toBeUndefined();
+    await expect(access(join(dir, ".gitignore"))).resolves.toBeUndefined();
+    await expect(access(join(dir, "docs", "README.md"))).resolves.toBeUndefined();
+    // The default user a fresh init creates.
+    expect((await readdir(join(dir, "users"))).length).toBe(1);
+    const projects = await readFile(join(dir, "config", "projects.yaml"), "utf-8");
+    expect(projects).toContain("WEB");
+    expect(projects).toContain("Website");
+    // No staging directory is left beside it.
+    expect((await readdir(root)).filter(n => n.endsWith(".tmp"))).toEqual([]);
+  });
+
+  // @verifies ONB-16
+  it("keeps what an empty .loctt already held when filling it in", async () => {
+    await mkdir(join(root, ".loctt", "tasks"), { recursive: true });
+    await writeFile(join(root, ".loctt", "notes.txt"), "left over", "utf-8");
+    const result = await initLoctt(root);
+    expect(await readFile(join(result.locttDir, "notes.txt"), "utf-8")).toBe("left over");
+    await expect(access(join(result.locttDir, "config", "workflow.yaml"))).resolves.toBeUndefined();
   });
 
   it("returns list of created files", async () => {

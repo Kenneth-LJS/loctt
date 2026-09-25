@@ -87,7 +87,7 @@ describe("parseSprintsConfig", () => {
     expect(cfg.sprints).toEqual([]);
     expect(cfg.broken).toHaveLength(1);
     expect(cfg.broken?.[0]?.error).toContain(
-      "end_date (2026-01-01) must not be before start_date (2026-01-14)",
+      "End date is before the start date.",
     );
   });
 
@@ -205,7 +205,7 @@ describe("parseSprintsConfig", () => {
       expect(cfg.sprints.map(s => s.id)).toEqual(["01HX0000000000000000000002"]);
       expect(cfg.broken).toHaveLength(1);
       expect(cfg.broken?.[0]?.error).toMatch(
-        /end_date \(2026-01-01\) must not be before start_date \(2026-01-14\)/,
+        /End date is before the start date\./,
       );
     });
 

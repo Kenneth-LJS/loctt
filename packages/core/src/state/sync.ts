@@ -26,7 +26,7 @@ export function parseSyncState(yamlContent: string): SyncState {
     return SyncStateSchema.parse(raw);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      throw new SyncStateError(formatZodIssues("sync state", err));
+      throw new SyncStateError(`sync.yaml is not valid: ${formatZodIssues("sync state", err)}`);
     }
     throw err;
   }

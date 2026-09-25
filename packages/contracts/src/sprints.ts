@@ -33,7 +33,7 @@ export const SprintDefSchema = z.object({
   if (s.end_date < s.start_date) {
     ctx.addIssue({
       code: "custom",
-      message: `end_date (${s.end_date}) must not be before start_date (${s.start_date})`,
+      message: `End date is before the start date.`,
       path: ["end_date"],
     });
   }

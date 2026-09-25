@@ -79,7 +79,7 @@ describe("MCP config parity with the CLI (stdio)", () => {
         // way to discover that git mode is the missing precondition.
         expect(result.isError).toBe(true);
         const mcpText = result.content[0]?.text ?? "";
-        expect(mcpText).toMatch(/git mode is not enabled/);
+        expect(mcpText).toMatch(/git mode is not enabled/i);
         expect(mcpText).toMatch(/loctt git enable/);
       } finally {
         await client.close();

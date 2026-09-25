@@ -177,7 +177,7 @@ describe("toFieldFailure", () => {
       rejected(
         {
           code: "not_found",
-          message: 'task not found: "01M15ZCHCK617ZZSWNR38CHNE8"',
+          message: 'Task not found: "01M15ZCHCK617ZZSWNR38CHNE8"',
           data_state: "not_saved",
           recovery: { kind: "reload" },
         },

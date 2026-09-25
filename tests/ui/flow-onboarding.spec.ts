@@ -350,7 +350,7 @@ test("a deep link into an uninitialized tracker shows the wizard, not a task-not
 });
 
 // @verifies ONB-16
-test("an empty .loctt/ is treated as uninitialized, with copy that accounts for the folder", async ({ page }) => {
+test("an empty .loctt/ is set up like a missing one, with no message and no extra step", async ({ page }) => {
   const t = await bootUninitialized({ emptyLocttDir: true });
   try {
     await page.goto(`${t.baseURL}/list`);
@@ -366,16 +366,15 @@ test("an empty .loctt/ is treated as uninitialized, with copy that accounts for 
     await expect(page.getByRole("table")).toHaveCount(0);
     await expect(page.getByText(/\b0 tasks\b/i)).toHaveCount(0);
 
-    // The copy does not promise to *create* a folder that is already
-    // there, and says what will happen to it instead.
-    await expect(page.getByText(/already\s+exists/i)).toBeVisible();
-    await expect(page.getByText(/nothing in it to overwrite/i)).toBeVisible();
-    await expect(page.getByText(/will create its/i)).toHaveCount(0);
+    // B22 (K129): Ken, "dont even show this to the user, dont show the
+    // messages, dont show warning, dont even stop with this extra
+    // confirmation step". No sentence about the folder already being
+    // there. This test used to require that sentence, which is the
+    // superseded behaviour.
+    await expect(page.getByText(/already\s+exists/i)).toHaveCount(0);
+    await expect(page.getByText(/is empty|fill it in/i)).toHaveCount(0);
 
-    // And it still initializes *into* that directory — the button the
-    // wizard offers has to actually work. Before this ticket core
-    // refused an existing `.loctt/` outright, so this screen rendered
-    // and then failed with "exists but is incomplete".
+    // One submit goes straight through into that directory.
     await fillWizard(page, "Website", "WEB");
     await page.getByRole("button", { name: /set up tracker/i }).click();
     await page.waitForURL(/\/list$/, { timeout: 15_000 });
@@ -389,6 +388,10 @@ test("an empty .loctt/ is treated as uninitialized, with copy that accounts for 
     expect(projects).toContain("WEB");
     expect(projects).toContain("Website");
     expect(await readFile(path.join(locttDir, "state.yaml"), "utf8")).toContain("WEB");
+    // The full fresh set, not the repair subset: .gitignore and the
+    // default user are there too.
+    await expect(stat(path.join(locttDir, ".gitignore"))).resolves.toBeTruthy();
+    await expect(stat(path.join(locttDir, "users"))).resolves.toBeTruthy();
   } finally {
     await t.stop();
   }

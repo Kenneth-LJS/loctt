@@ -51,7 +51,7 @@ describe("branchHasForeignContent", () => {
     // code read git's empty stdout as "no foreign content" — the answer
     // that lets a publish mirror over whatever is actually there.
     expect(() => branchHasForeignContent(dir, "does-not-exist"))
-      .toThrow(/could not read branch/);
+      .toThrow(/could not read branch/i);
   });
 });
 
@@ -105,6 +105,6 @@ describe("deriveKeyState", () => {
       state({ p1: { prefix: "", next_number: 1 } }),
       state({ p1: { prefix: "", next_number: 1 } }),
       [],
-    )).toThrow(/neither side records a key prefix/);
+    )).toThrow(/neither side records a key prefix/i);
   });
 });

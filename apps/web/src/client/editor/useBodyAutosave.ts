@@ -520,8 +520,6 @@ function failureCopy(err: unknown): { message: string; detail?: string } {
     };
   }
   return {
-    message:
-      "The description could not be saved — the server did not respond. "
-      + "Your text is still here; copy it out if you need to.",
+    message: "Description not saved. Your text is still here.",
   };
 }

@@ -132,7 +132,7 @@ tools.
 | `get_workflow_key_usage` | How many tasks reference each workflow key. Call before proposing a deletion from the workflow config. |
 | `get_calendar` | Timezone, working days, and holidays (read-only; configured in the UI). |
 | `list_palette_colors` | The built-in palette: every entry's `id` plus its `light` and `dark` values. Call before writing a `{"palette": "<id>"}` color — the ids are a fixed built-in set, so do not guess them. |
-| `list_views` | Saved views (address a view by id — names are not unique). Returns each view's ordered `filters` plus a display-only `summary`. Takes `archived` (`active` default hides archived, `archived` = only archived, `all` = both); broken views are always returned. |
+| `list_views` | Saved views (address a view by id — views that shared a name before names became unique still load, and an ambiguous name does not resolve). Returns each view's ordered `filters` plus a display-only `summary`. Takes `archived` (`active` default hides archived, `archived` = only archived, `all` = both); broken views are always returned. |
 
 ### Tasks
 
@@ -217,8 +217,8 @@ starting point is a task, not a link.
 
 | Tool | Purpose | Key params |
 |---|---|---|
-| `create_view` | Create a saved view (filters validated on write). | `name`, `filters`, `sort`, `archivedScope`, `icon`, `color` |
-| `edit_view` | Change a view (`sort: null` clears the sort, `icon: null` clears the icon, `color: null` clears the colour). Also repairs a broken view. | `view`, `name`, `filters`, `sort`, `archivedScope`, `icon`, `color`, `replaceBroken` |
+| `create_view` | Create a saved view (filters validated on write). A name matching another view's (trimmed, case-insensitive, archived and broken views included) is rejected: `Another view with that name already exists.` | `name`, `filters`, `sort`, `archivedScope`, `icon`, `color` |
+| `edit_view` | Change a view (`sort: null` clears the sort, `icon: null` clears the icon, `color: null` clears the colour). Renaming to another view's name is rejected as on `create_view`; keeping the view's own name is always allowed. Also repairs a broken view. | `view`, `name`, `filters`, `sort`, `archivedScope`, `icon`, `color`, `replaceBroken` |
 | `archive_view` / `unarchive_view` | Hide or restore a view (still runnable by id when archived). Refused for a broken view. | `view` |
 | `delete_view` | Permanently remove a view. Requires `confirm`. | `view`, `confirm`, `replaceBroken` |
 
@@ -342,7 +342,7 @@ Every config-entity list (`list_labels`, `list_milestones`, `list_sprints`,
 |---|---|---|---|
 | Labels | `list_labels` | `name`, `color` | `list_labels` takes `q`, `limit`, `offset`, `archived`. `delete_label` remaps or drops the label from every task. `color` takes any of the three shapes — see [Colors](#colors). |
 | Milestones | `list_milestones` | `name`, `target_date` | `list_milestones` takes `q`, `limit`, `offset`, `archived`, `progress`; `{progress:true}` adds done/total per milestone. |
-| Sprints | `list_sprints` | `name`, `start_date`, `end_date`, `state`, `goal` | `list_sprints` takes `q`, `limit`, `offset`, `archived`, `progress`. `get_sprint_burndown` returns the burndown series. |
+| Sprints | `list_sprints` | `name`, `start_date`, `end_date`, `state`, `goal` | `list_sprints` takes `q`, `limit`, `offset`, `archived`, `progress`. `get_sprint_burndown` returns the burndown series. `edit_sprint` moves `state` from any state to any state (there is no `force`). An `end_date` before `start_date` is rejected: `End date is before the start date.` |
 
 ### Projects
 
@@ -497,7 +497,7 @@ web UI (Settings → Sync), or MCP:
 |---|---|---|
 | `info` | Prose summary of the tracker. | — |
 | `doctor` | Diagnostic checks; each check may carry a `fix` (`rebuild-index` or `restore-missing`) naming its programmatic repair. `rebuild_index` rebuilds the key cache; `restore_missing` recreates missing core config/state files with defaults (existence-guarded — never overwrites surviving data). | `rebuild_index`, `restore_missing` |
-| `init` | Bootstrap a new tracker. | `prefix`, `project_label`, `no_docs`, `timezone` |
+| `init` | Bootstrap a new tracker. An empty `.loctt/` folder is filled in like a missing one. | `prefix`, `project_label`, `no_docs`, `timezone` |
 | `migrate_schema` | Preview (`confirm:false`) or apply (`confirm:true`) a schema upgrade. | `confirm` |
 | `backup` | Whole-tracker JSONL backup. Requires `confirm`. | `output`, `no_history`, `split_bytes`, `confirm` |
 | `restore` | Restore a backup (`bare`/`merge`/`overwrite`). Requires `confirm` unless `dry_run`. | `files`, `mode`, `dry_run`, `confirm` |

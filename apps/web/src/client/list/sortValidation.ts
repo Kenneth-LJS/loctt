@@ -44,7 +44,7 @@ export function validateSortFields(
         problems.push({
           index,
           field,
-          message: `“${field}” is not a custom field in this workspace, so rows will not be sorted by it.`,
+          message: `“${field}” isn't a custom field. Rows won't be sorted by it.`,
         });
       }
       return;
@@ -54,7 +54,7 @@ export function validateSortFields(
       problems.push({
         index,
         field,
-        message: `“${field}” is not a task field, so rows will not be sorted by it.`,
+        message: `“${field}” isn't a task field. Rows won't be sorted by it.`,
       });
     }
   });

@@ -61,7 +61,7 @@ describe("an unreadable task.md is reported as unreadable, not as missing", () =
       expect(res.exitCode).not.toBe(0);
       // ERR-1: the exact sentence that told the user their task was
       // gone while the file was on disk.
-      expect(out).not.toMatch(/task not found/);
+      expect(out).not.toMatch(/task not found/i);
       // TSK-54: the path under .loctt/tasks/<id>/, and the line.
       expect(out).toContain(file);
       expect(out).toMatch(/line \d+/);
@@ -78,7 +78,7 @@ describe("an unreadable task.md is reported as unreadable, not as missing", () =
       // The inverse conflation: absence must stay absence. Every file
       // here parses, so there is nothing to be uncertain about.
       expect(res.exitCode).not.toBe(0);
-      expect(out).toMatch(/task not found/);
+      expect(out).toMatch(/task not found/i);
     });
   });
 
@@ -95,7 +95,7 @@ describe("an unreadable task.md is reported as unreadable, not as missing", () =
         // A domain error the agent can act on and relay, rather than
         // an unhandled throw the MCP framework reports as a fault.
         expect(res.isError).toBe(true);
-        expect(text).not.toMatch(/task not found/);
+        expect(text).not.toMatch(/task not found/i);
         expect(text).toContain(file);
         expect(text).toMatch(/line \d+/);
       } finally {

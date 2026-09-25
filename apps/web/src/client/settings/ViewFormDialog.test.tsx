@@ -501,3 +501,67 @@ describe("ViewFormDialog — colour, and the emoji rule", () => {
     expect(writeCalls("POST")[0]?.body?.["color"]).toBe("#1e6fcb");
   });
 });
+
+/**
+ * B21 (K129): "if you save a view, and the name already matches, then
+ * we should just error." The dialog refuses before sending anything; core
+ * refuses the same write for a stale list.
+ */
+describe("ViewFormDialog — a taken name is refused (B21)", () => {
+  function withViews(queries: { id: string; name: string }[]): QueryClient {
+    const base = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((url, init) => {
+      const u = String(url);
+      const method = (init as RequestInit | undefined)?.method;
+      if (u.includes("/api/views?") && (method === undefined || method === "GET")) {
+        return Promise.resolve(jsonResponse({ queries: queries.map(q => ({ ...q, filters: [] })) }));
+      }
+      if (base === undefined) throw new Error("no base fetch mock");
+      return base(url, init) as Promise<Response>;
+    });
+    return new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+  }
+
+  async function renderLoaded(qc: QueryClient, existing?: ViewFormTarget): Promise<void> {
+    render(
+      <QueryClientProvider client={qc}>
+        <ViewFormDialog {...(existing !== undefined ? { existing } : {})} onClose={() => {}} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => { expect(qc.getQueryData(["views"])).toBeDefined(); });
+  }
+
+  // @verifies VUE-20
+  it("a rename to another view's name shows the error and does not PUT", async () => {
+    const qc = withViews([{ id: "v1", name: "Existing" }, { id: "v2", name: "Overdue" }]);
+    await renderLoaded(qc, target([]));
+    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "overdue" } });
+    fireEvent.click(screen.getByTestId("view-form-save"));
+    expect((await screen.findByTestId("view-form-name-taken")).textContent)
+      .toBe("Another view with that name already exists.");
+    expect(writeCalls("PUT")).toHaveLength(0);
+  });
+
+  // @verifies VUE-20
+  it("a new view with a taken name shows the error and does not POST", async () => {
+    const qc = withViews([{ id: "v2", name: "Overdue" }]);
+    await renderLoaded(qc);
+    fireEvent.change(screen.getByTestId("view-form-name"), { target: { value: "Overdue " } });
+    fireEvent.click(screen.getByTestId("view-form-save"));
+    await screen.findByTestId("view-form-name-taken");
+    expect(writeCalls("POST")).toHaveLength(0);
+  });
+
+  // @verifies VUE-20
+  it("keeping the view's own name saves, even when another view already shares it", async () => {
+    // Two views named "Existing" on disk, from before K129. Editing one
+    // without renaming it is not a new clash.
+    const qc = withViews([{ id: "v1", name: "Existing" }, { id: "v9", name: "Existing" }]);
+    await renderLoaded(qc, target([]));
+    fireEvent.click(screen.getByTestId("view-form-save"));
+    await waitFor(() => { expect(writeCalls("PUT")).toHaveLength(1); });
+    expect(screen.queryByTestId("view-form-name-taken")).toBeNull();
+  });
+});

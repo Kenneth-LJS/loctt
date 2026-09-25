@@ -40,7 +40,7 @@ describe("CLI link relationship edge cases (spawned binary)", () => {
 
       const result = await runCli(["link", "T-1", "blocks", "T-1"], { cwd: root });
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("cannot link a task to itself");
+      expect(result.stderr).toContain("A task can't link to itself");
       expect(result.stderr).toContain("T-1");
     });
   });

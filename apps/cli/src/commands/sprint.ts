@@ -38,7 +38,7 @@ import { EXIT, runCommand, UsageError } from "../runtime/errors.js";
  * CLI never read, so the worked example created a project named
  * `web` and discarded the label (PRU-C9).
  */
-const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--end", "--filter", "--force", "--format", "--goal", "--ids", "--limit", "--name", "--offset", "--progress", "--remap-to", "--start", "--state", "--yes"];
+const ACCEPTED_FLAGS: readonly string[] = ["--all", "--archived", "--end", "--filter", "--format", "--goal", "--ids", "--limit", "--name", "--offset", "--progress", "--remap-to", "--start", "--state", "--yes"];
 
 export async function run(args: string[], root: string): Promise<void> {
   rejectUnknownFlags(args, ACCEPTED_FLAGS);
@@ -148,7 +148,7 @@ export async function run(args: string[], root: string): Promise<void> {
         if (!ref) {
           throw new UsageError(
             "missing sprint ref",
-            "loctt sprint edit <name|id> [--name <n>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]",
+            "loctt sprint edit <name|id> [--name <n>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->]",
           );
         }
         const cfg = await loadSprintsConfig(locttDir);
@@ -157,16 +157,14 @@ export async function run(args: string[], root: string): Promise<void> {
         const start = getArg(args, "--start");
         const end = getArg(args, "--end");
         const state = getArg(args, "--state");
-        const force = hasFlag(args, "--force");
         // As above: core owns the enum check (V1).
         const goalArg = getArg(args, "--goal");
-        // `--force` alone is not a change: it only relaxes a guard on
-        // one, so an edit naming nothing still reported success.
+        // An edit naming nothing is a usage error, not a silent success.
         if (name === undefined && start === undefined && end === undefined
             && state === undefined && goalArg === undefined) {
           throw new UsageError(
             "nothing to change",
-            "loctt sprint edit <name|id> [--name <n>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->] [--force]",
+            "loctt sprint edit <name|id> [--name <n>] [--start <d>] [--end <d>] [--state <s>] [--goal <g|->]",
           );
         }
         await editSprint(locttDir, id, {
@@ -175,7 +173,6 @@ export async function run(args: string[], root: string): Promise<void> {
           ...(end !== undefined ? { end_date: end } : {}),
           ...(state !== undefined ? { state: state as SprintState } : {}),
           ...(goalArg !== undefined ? { goal: goalArg === "-" ? null : goalArg } : {}),
-          ...(force ? { force: true } : {}),
         });
         console.log(`Updated sprint ${ref}`);
       });

@@ -125,12 +125,12 @@ export function RelationshipRowView({
           <span className="truncate">
             {missingCorrupt ? (
               <>
-                Corrupt task — cannot be read; repair its file{" "}
+                Corrupt task, cannot be read. Repair its file{" "}
                 <code className="text-[0.8571rem]">{row.target}</code>
               </>
             ) : (
               <>
-                Broken link — no task with id{" "}
+                Broken link. No task with id{" "}
                 <code className="text-[0.8571rem]">{row.target}</code>
               </>
             )}

@@ -73,7 +73,7 @@ export async function readPrefixRenameState(
     return PrefixRenameStateSchema.parse(parseYaml(content));
   } catch (err) {
     if (err instanceof z.ZodError) {
-      throw new ProjectError(formatZodIssues("prefix rename state", err));
+      throw new ProjectError(`prefix-rename.yaml is not valid: ${formatZodIssues("prefix rename state", err)}`);
     }
     throw err;
   }

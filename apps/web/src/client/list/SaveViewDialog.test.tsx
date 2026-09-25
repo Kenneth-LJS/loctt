@@ -246,4 +246,45 @@ describe("SaveViewDialog", () => {
     expect(sortRow.textContent).toContain("Sort");
     expect(sortRow.textContent).toMatch(/descending/i);
   });
+
+  // B21 (K129): "if you save a view, and the name already matches, then
+  // we should just error." The dialog refuses before sending anything.
+  // @verifies VUE-20
+  it("refuses a name another view already has: shows the error and does not POST", async () => {
+    fetchMock.mockImplementation((...args: [RequestInfo | URL, RequestInit?]) => {
+      const [input, init] = args;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      if (init?.method === "POST") return Promise.resolve(jsonResponse({ id: "vNew", name: "n", filters: [] }, 201));
+      if (path.startsWith("/api/views")) {
+        return Promise.resolve(jsonResponse({ queries: [{ id: "v_old", name: "Overdue", filters: [] }] }));
+      }
+      return Promise.resolve(jsonResponse(routeFetch(path)));
+    });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <SaveViewDialog search={STRAY_ARCHIVED} onClose={() => {}} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => { expect(qc.getQueryData(["views"])).toBeDefined(); });
+
+    // Trimmed and case-insensitive: " overdue " is the same name.
+    fireEvent.change(screen.getByPlaceholderText(/My open bugs/), { target: { value: " overdue " } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+
+    expect((await screen.findByTestId("save-view-name-taken")).textContent)
+      .toBe("Another view with that name already exists.");
+    expect(fetchMock.mock.calls.some(c => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(false);
+
+    // Changing the name clears the error, and a free name saves.
+    fireEvent.change(screen.getByPlaceholderText(/My open bugs/), { target: { value: "Overdue bugs" } });
+    expect(screen.queryByTestId("save-view-name-taken")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(c => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(true);
+    });
+  });
 });

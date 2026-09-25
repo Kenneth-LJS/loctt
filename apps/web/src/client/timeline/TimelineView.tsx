@@ -580,7 +580,7 @@ export function TimelineView() {
         >
           Group by{" "}
           <code data-testid="timeline-grouping-dangling-key">{groupingResolved.dangling}</code>
-          {" "}is no longer a single-value enum field — showing{" "}
+          {" "}is no longer a single-value enum field. Showing{" "}
           {grouping === "none" ? "flat" : "the next available grouping"}.
         </div>
       )}
@@ -598,8 +598,8 @@ export function TimelineView() {
         >
           <strong>workflow.yaml</strong>: <code>timeline.dependency_relationship</code>
           {" "}names <code data-testid="timeline-dependency-missing-key">{depStatus.key}</code>,
-          {" "}which is not defined in <code>relationships</code>. No dependency
-          {" "}arrows can be drawn until that key is corrected.{" "}
+          {" "}which <code>relationships</code> doesn't define. No dependency
+          {" "}arrows until it's corrected.{" "}
           <Link
             to="/settings/$section"
             params={{ section: "timeline" }}
@@ -619,8 +619,8 @@ export function TimelineView() {
           data-testid="timeline-calendar-error"
           className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[0.8571rem] text-text-primary"
         >
-          <strong>calendar.yaml</strong> could not be read, so weekend and holiday
-          {" "}shading is switched off and the today-marker is placed in{" "}
+          <strong>calendar.yaml</strong> could not be read. Weekend and holiday
+          {" "}shading is off and the today-marker uses{" "}
           <strong>UTC</strong>. Fix the file to restore them.{" "}
           <span data-testid="timeline-calendar-error-detail">
             {calendarError instanceof ApiError
@@ -729,8 +729,7 @@ export function TimelineView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
-          {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
-          {" "}missing from this timeline and from the counts below. Check the file.
+          {" "}could not be read. Missing from this timeline and from the counts below.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
               <li key={u.id} className="text-[0.7857rem]">

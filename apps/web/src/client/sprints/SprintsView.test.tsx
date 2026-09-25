@@ -149,7 +149,7 @@ describe("SprintsView — titled header (Ken 2026-09-20)", () => {
 describe("SprintsView — corrupt sprint-config entry (A138)", () => {
   it("surfaces a broken sprint entry, named and marked, alongside the healthy ones", async () => {
     BROKEN_SPRINTS = [
-      { id: "sp_bad", index: 1, rawText: "id: sp_bad\nend_date: 2026-01-01\nstart_date: 2026-06-01", error: "end_date must not be before start_date" },
+      { id: "sp_bad", index: 1, rawText: "id: sp_bad\nend_date: 2026-01-01\nstart_date: 2026-06-01", error: "End date is before the start date." },
     ];
     await renderView();
 
@@ -158,7 +158,7 @@ describe("SprintsView — corrupt sprint-config entry (A138)", () => {
     expect(notice.textContent).toContain("sp_bad");
     // Marked broken, and the validator's message shown.
     expect(notice.textContent).toContain("(broken)");
-    expect(notice.textContent).toContain("end_date must not be before start_date");
+    expect(notice.textContent).toContain("End date is before the start date.");
     // The healthy sprint still renders its column — one bad entry never
     // blanks the surface.
     expect(await screen.findByTestId("sprint-column-sp_12")).toBeTruthy();
@@ -243,8 +243,10 @@ describe("SprintsView — SPR-39 at-a-glance data on the overview card", () => {
     expect(readout.textContent).not.toContain("NaN");
   });
 
+  // K131 (Ken: "remove the countdown"). The card carries no countdown
+  // to the end date, open or past: the date range is already on it.
   // @verifies SPR-39
-  it("shows days-remaining while the window is open and overdue once its end has passed", async () => {
+  it("shows no countdown on a sprint card, whether its end date is ahead or past", async () => {
     // info.today is stubbed to 2026-06-08 in routeFetch.
     SPRINTS = [
       { id: "sp_open", name: "Open", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
@@ -252,12 +254,30 @@ describe("SprintsView — SPR-39 at-a-glance data on the overview card", () => {
     ];
     await renderView();
 
-    // 2026-06-08 → 2026-06-14 is 6 days out.
-    const open = await screen.findByTestId("sprint-countdown-sp_open");
-    expect(open.textContent).toMatch(/6 days/);
-    // 2026-05-14 is in the past → overdue wording.
-    const past = await screen.findByTestId("sprint-countdown-sp_past");
-    expect(past.textContent).toMatch(/overdue/i);
+    for (const id of ["sp_open", "sp_past"]) {
+      const card = await screen.findByTestId(`sprint-card-${id}`);
+      // Expanded, so the at-a-glance data would render if it were there.
+      expect(screen.getByTestId(`sprint-toggle-${id}`).getAttribute("aria-expanded")).toBe("true");
+      expect(card.textContent).not.toMatch(/days? left|overdue|ends today/i);
+    }
+  });
+
+  // B23 (K130, P11): Ken, "we're not babysitting policy". An active
+  // sprint whose dates do not include today is shown like any other
+  // active sprint: no hint about its state.
+  // @verifies SPR-20
+  it("shows no state hint on an active sprint whose dates have passed", async () => {
+    SPRINTS = [
+      { id: "sp_past", name: "Past", start_date: "2026-05-01", end_date: "2026-05-14", state: "active" },
+    ];
+    await renderView();
+    const column = await screen.findByTestId("sprint-column-sp_past");
+    // Expanded, so a hint would render if there were one.
+    await screen.findByTestId("sprint-card-sp_past");
+    expect(screen.getByTestId("sprint-toggle-sp_past").getAttribute("aria-expanded")).toBe("true");
+    expect(column.getAttribute("data-active")).toBe("true");
+    expect(screen.queryByTestId("sprint-window-hint-sp_past")).toBeNull();
+    expect(column.textContent).not.toMatch(/still marked|do not include today|does not change sprint state/i);
   });
 
   // @verifies SPR-39

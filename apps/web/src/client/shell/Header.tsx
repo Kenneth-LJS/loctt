@@ -482,23 +482,6 @@ function UserMenu({
             </div>
           )}
 
-          {currentArchived ? (
-            // PRU-24: the actor is archived. Say so and point at the
-            // fix — switching to an active user — rather than leaving
-            // the writes to fail (or land under an archived actor)
-            // without explanation. The switch list below is the action.
-            <div
-              role="alert"
-              data-testid="user-menu-archived-prompt"
-              className="border-b border-border-subtle px-3 py-2.5 text-[0.8571rem] text-text-secondary"
-            >
-              <div className="font-medium text-warn-fg">You are acting as an archived user</div>
-              <div className="mt-0.5">
-                Switch to an active user below to keep your changes attributed to a current user.
-              </div>
-            </div>
-          ) : null}
-
           {others.length > 0 ? (
             <div className="py-1">
               <div className="px-3 py-1 text-[0.7857rem] font-semibold uppercase tracking-wide text-text-tertiary">

@@ -927,7 +927,7 @@ test.describe("BRD — board view", () => {
     // One board-level empty state offering "+ Add task".
     const empty = page.getByTestId("board-empty");
     await expect(empty).toBeVisible();
-    await expect(empty).toContainText("No tasks yet");
+    await expect(empty).toContainText("No tasks found");
     // UI-13 relabelled this "+ Add task" → "+ New task" ("New" is the
     // house term — the sidebar already says "+ New project" / "+ New
     // view"). The empty state keeps its button: on a board with no
@@ -1235,7 +1235,8 @@ test.describe("BRD — board view", () => {
     // message is the failure this case names. An explanation appears…
     const alert = page.getByTestId("board-chip-error");
     await expect(alert).toBeVisible();
-    await expect(alert).toContainText("not saved");
+    // K129 pass: "was not saved" trimmed to "wasn't saved."
+    await expect(alert).toContainText(/wasn't saved|not saved/i);
 
     // …and the optimistic hide is rolled back, so the board and the
     // file agree rather than the browser presenting its own state as
@@ -1608,7 +1609,8 @@ test.describe("BRD — board view", () => {
     const err = page.getByTestId("board-move-error");
     await expect(err).toBeVisible();
     await expect(err).toContainText(mover);
-    await expect(err).toContainText("not saved");
+    // K129 pass: "was not saved" trimmed to "wasn't saved."
+    await expect(err).toContainText(/wasn't saved|not saved/i);
     await expect(page.getByTestId("board-move-retry")).toBeVisible();
 
     // The card is back in its original column, and disk shows the
@@ -1673,7 +1675,8 @@ test.describe("BRD — board view", () => {
     const err = page.getByTestId("board-move-error");
     await expect(err).toBeVisible();
     await expect(err).toContainText(mover);
-    await expect(err).toContainText("not saved");
+    // K129 pass: "was not saved" trimmed to "wasn't saved."
+    await expect(err).toContainText(/wasn't saved|not saved/i);
 
     // The card is not left rendered in the destination while the file
     // says otherwise.

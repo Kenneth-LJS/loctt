@@ -2,7 +2,6 @@ import { Link, useNavigate, useRouterState, useSearch } from "@tanstack/react-ro
 import { useMemo, useState } from "react";
 
 import { useCalendar } from "../api/hooks/useCalendar.ts";
-import { useInfo } from "../api/hooks/useInfo.ts";
 import { useMilestonesWithProgress } from "../api/hooks/useMilestoneProgress.ts";
 import { tasksParamsFromSearch, useTasks } from "../api/hooks/useTasks.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
@@ -22,7 +21,7 @@ import { IconButton } from "../ui/IconButton.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 import type { MilestoneWithProgress } from "./model.ts";
-import { EXCLUDE_DISCARDED_QUERY, isOverdue, progressState } from "./model.ts";
+import { EXCLUDE_DISCARDED_QUERY, progressState } from "./model.ts";
 import { ProgressReadout } from "./ProgressReadout.tsx";
 
 /**
@@ -56,7 +55,6 @@ import { ProgressReadout } from "./ProgressReadout.tsx";
 export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string }) {
   const milestones = useMilestonesWithProgress();
   const calendar = useCalendar();
-  const info = useInfo();
   const workflow = useWorkflow();
   const navigate = useNavigate();
   const search = useSearch({ from: "/milestones/$id" });
@@ -94,7 +92,6 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
   }, [search, milestoneId]);
 
   const tasks = useTasks(params);
-  const today = info.data?.today ?? new Date().toISOString().slice(0, 10);
 
   // Only the workflow-derived lookups are used: this table shows
   // status, type and priority, none of which need the project, user or
@@ -168,7 +165,6 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
   }
 
   const readout = progressState(milestone.progress);
-  const overdue = isOverdue(milestone, readout, today);
   const items = tasks.data?.items ?? [];
   const total = tasks.data?.total ?? items.length;
 
@@ -212,14 +208,6 @@ export function MilestoneDetail({ milestoneId }: { readonly milestoneId: string 
                 className="rounded-full bg-bg-muted px-1.5 py-0.5 text-[0.7143rem] uppercase text-text-tertiary"
               >
                 Archived
-              </span>
-            )}
-            {overdue && (
-              <span
-                data-testid="milestone-detail-overdue"
-                className="rounded-full border border-danger-fg/40 px-1.5 py-0.5 text-[0.7143rem] font-semibold uppercase text-danger-fg"
-              >
-                Overdue
               </span>
             )}
             {readout.complete && (

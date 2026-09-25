@@ -335,3 +335,40 @@ export const QueriesConfigSchema = z.object({
   broken: z.array(BrokenSavedQuerySchema).optional(),
 }).strict();
 export type QueriesConfig = z.infer<typeof QueriesConfigSchema>;
+
+/**
+ * B21 / K129: saved-view names are unique. Ken: *"if you save a view,
+ * and the name already matches, then we should just error. 'Another view
+ * with that name already exists.' do not allow merging, do not allow
+ * keeping."*
+ *
+ * Lives in contracts, not core, because two places must agree on it:
+ * core refuses the write (so CLI, MCP and the API all refuse), and the
+ * web dialogs refuse before sending the request. One rule, one place.
+ */
+export const VIEW_NAME_TAKEN_MESSAGE = "Another view with that name already exists.";
+
+/**
+ * The comparison key for a view name: trimmed and lower-cased, the way a
+ * user reads it. "Overdue " and "overdue" are the same name to a reader,
+ * and `loctt list --view` is typed by hand (A344).
+ */
+export function viewNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/**
+ * Whether `name` is already used by a view in `entries` other than
+ * `exceptId` (the view being renamed). Callers pass every view on disk:
+ * archived ones and broken ones included, since each still answers to
+ * its name in `loctt list --view`.
+ */
+export function isViewNameTaken(
+  name: string,
+  entries: readonly { readonly id: string; readonly name: string }[],
+  exceptId?: string,
+): boolean {
+  const key = viewNameKey(name);
+  if (key === "") return false;
+  return entries.some(e => e.id !== exceptId && viewNameKey(e.name) === key);
+}

@@ -35,8 +35,7 @@ export function TaskNotFound({ taskKey }: { readonly taskKey: string }) {
           </code>
         </h1>
         <p className="mb-1 text-[0.9286rem] text-text-secondary">
-          Nothing in this tracker uses that key — not as a current key,
-          and not as a retired one.
+          Nothing in this tracker uses that key, current or retired.
         </p>
         {/* "where the app can tell" (ERR-7): the app cannot distinguish
             a key that was never allocated from one deleted elsewhere,

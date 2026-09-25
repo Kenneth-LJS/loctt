@@ -47,7 +47,7 @@ export type LabelByNameResult =
 /** Looks up a label definition. Throws on unknown id. */
 export function findLabel(config: LabelsConfig, id: string): LabelDef {
   const def = config.labels.find(l => l.id === id);
-  if (!def) throw new LabelError(`unknown label: ${id}`);
+  if (!def) throw new LabelError(`Unknown label: ${id}`);
   return def;
 }
 
@@ -86,10 +86,10 @@ export function resolveLabelIdFromInput(
   if (byName.kind === "ambiguous") {
     const ids = byName.matches.map(l => l.id).join(", ");
     throw new LabelError(
-      `label name '${input}' is ambiguous — matches ${byName.matches.length} labels (${ids}). Pass the id instead.`,
+      `Label name '${input}' is ambiguous. Matches ${byName.matches.length} labels (${ids}). Pass the id instead.`,
     );
   }
-  throw new LabelError(`unknown label: ${input}`);
+  throw new LabelError(`Unknown label: ${input}`);
 }
 
 /**
@@ -104,7 +104,7 @@ export function assertLabelIdsRegistered(
   const unknown = ids.filter(k => !known.has(k));
   if (unknown.length > 0) {
     throw new LabelError(
-      `unknown label(s): ${unknown.join(", ")}. ` +
+      `Unknown label(s): ${unknown.join(", ")}. ` +
       `Register first via the label CRUD.`,
     );
   }
@@ -154,9 +154,9 @@ export async function editLabel(
   await withStateLock(locttDir, async () => {
     const config = await loadLabelsConfig(locttDir);
     const idx = config.labels.findIndex(l => l.id === id);
-    if (idx === -1) throw new LabelError(`unknown label: ${id}`);
+    if (idx === -1) throw new LabelError(`Unknown label: ${id}`);
     const existing = config.labels[idx];
-    if (!existing) throw new LabelError(`unknown label: ${id}`);
+    if (!existing) throw new LabelError(`Unknown label: ${id}`);
 
     const updated: LabelDef = {
       id: existing.id,
@@ -181,9 +181,9 @@ export async function archiveLabel(locttDir: string, id: string): Promise<void> 
   await withStateLock(locttDir, async () => {
     const config = await loadLabelsConfig(locttDir);
     const idx = config.labels.findIndex(l => l.id === id);
-    if (idx === -1) throw new LabelError(`unknown label: ${id}`);
+    if (idx === -1) throw new LabelError(`Unknown label: ${id}`);
     const existing = config.labels[idx];
-    if (!existing) throw new LabelError(`unknown label: ${id}`);
+    if (!existing) throw new LabelError(`Unknown label: ${id}`);
     if (existing.archived === true) return;
     const next = [...config.labels];
     next[idx] = { ...existing, archived: true };
@@ -196,9 +196,9 @@ export async function unarchiveLabel(locttDir: string, id: string): Promise<void
   await withStateLock(locttDir, async () => {
     const config = await loadLabelsConfig(locttDir);
     const idx = config.labels.findIndex(l => l.id === id);
-    if (idx === -1) throw new LabelError(`unknown label: ${id}`);
+    if (idx === -1) throw new LabelError(`Unknown label: ${id}`);
     const existing = config.labels[idx];
-    if (!existing) throw new LabelError(`unknown label: ${id}`);
+    if (!existing) throw new LabelError(`Unknown label: ${id}`);
     if (existing.archived !== true) return;
     const next = [...config.labels];
     const cleared: LabelDef = { id: existing.id, name: existing.name };
@@ -224,7 +224,7 @@ export async function deleteLabel(
 ): Promise<{ affectedTaskCount: number }> {
   if (options.hard !== true) {
     if (options.remapTo !== undefined) {
-      throw new LabelError(`--remap-to only applies to --hard delete`);
+      throw new LabelError(`--remap-to only applies to --hard delete.`);
     }
     await archiveLabel(locttDir, id);
     return { affectedTaskCount: 0 };
@@ -232,19 +232,19 @@ export async function deleteLabel(
   return withStateLock(locttDir, async () => {
     const config = await loadLabelsConfig(locttDir);
     if (!config.labels.some(l => l.id === id)) {
-      throw new LabelError(`unknown label: ${id}`);
+      throw new LabelError(`Unknown label: ${id}`);
     }
     if (options.remapTo !== undefined) {
       if (options.remapTo === id) {
-        throw new LabelError(`remap target must differ from the label being deleted`);
+        throw new LabelError(`Remap target must differ from the label being deleted.`);
       }
       const target = config.labels.find(l => l.id === options.remapTo);
       if (!target) {
-        throw new LabelError(`unknown remap target label: ${options.remapTo}`);
+        throw new LabelError(`Unknown remap target label: ${options.remapTo}`);
       }
       if (target.archived === true) {
         throw new LabelError(
-          `remap target label '${options.remapTo}' is archived; unarchive it first or pick an active label`,
+          `Remap target label '${options.remapTo}' is archived. Unarchive it first, or pick an active label.`,
         );
       }
     }

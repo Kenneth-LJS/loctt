@@ -261,8 +261,8 @@ Write formatted content in TipTap, toggle to CodeMirror.
 ### TSK-22 · M2 · blocker · P5
 **Delete requires typing the key and is permanent.**
 
-- The dialog states the task key and that deletion is permanent and
-  cannot be undone, and distinguishes itself from archive.
+- The dialog states the task key and that deleting it is irreversible
+  ("Deleting {key} is irreversible. Continue?").
 - The confirm button stays disabled until the exact key is typed;
   a near-miss (wrong case, trailing space, the title instead of the
   key) does not enable it.
@@ -271,6 +271,11 @@ Write formatted content in TipTap, toggle to CodeMirror.
 - `Esc` cancels with nothing deleted.
 - On confirm the task is removed from disk and the app navigates away
   to the list; the task is gone from the list, not merely hidden.
+
+Amended (K129, Ken 2026-09-24): the dialog no longer distinguishes
+itself from archive or offers archive as the alternative. Ken:
+*"Deleting is irreversible. Continue? im sure the archive is somewhere
+the user can see first, so they should know."*
 
 ### TSK-23 · M2 · blocker · P5 P10
 **Archive is immediate, reversible, and distinct from delete.**
@@ -283,6 +288,12 @@ Write formatted content in TipTap, toggle to CodeMirror.
   removed and the task back in default list results.
 - Archiving sets the archived flag; it never removes the task
   directory from disk.
+
+Amended (K129, Ken 2026-09-24): delete's own confirmation no longer
+names archive as the reversible alternative (see TSK-22); this case's
+own archive-side behavior is unchanged. Ken: *"Deleting is irreversible.
+Continue? im sure the archive is somewhere the user can see first, so
+they should know."*
 
 > **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "appears with Show archived on". Unarchive from the task's own menu (reached by direct link) is unchanged.
 

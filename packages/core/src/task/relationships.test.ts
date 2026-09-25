@@ -174,7 +174,7 @@ describe("relationships", () => {
       ).rejects.toThrow(RelationshipError);
       await expect(
         linkTask({ locttDir, taskId: "a", type: "blocks", target: "a", workflowConfig: workflow }),
-      ).rejects.toThrow(/cannot link a task to itself \(T-1\)/);
+      ).rejects.toThrow(/T-1 is this task\. A task can't link to itself\./);
       const after = await readTask(locttDir, "a");
       expect(after.frontmatter).toEqual(before.frontmatter);
     });

@@ -406,7 +406,7 @@ export function deriveKeyState(
     const prefix = i?.prefix ?? l?.prefix;
     if (prefix === undefined || prefix === "") {
       throw new Error(
-        `cannot derive key state for project '${project}': neither side `
+        `Cannot derive key state for project '${project}'. Neither side `
         + `records a key prefix. Fix the prefix in state.yaml on one side `
         + `and sync again.`,
       );

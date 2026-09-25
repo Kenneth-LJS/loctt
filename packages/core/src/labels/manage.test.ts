@@ -279,6 +279,6 @@ describe("assertLabelIdsRegistered", () => {
 
   it("throws on unknown ids", async () => {
     const cfg = await loadLabelsConfig(locttDir);
-    expect(() => assertLabelIdsRegistered(cfg, ["01HX0NOTHERE"])).toThrow(/unknown label/);
+    expect(() => assertLabelIdsRegistered(cfg, ["01HX0NOTHERE"])).toThrow(/unknown label/i);
   });
 });

@@ -103,18 +103,18 @@ function describeUnreadable(path: string, code: string): string {
   switch (code) {
     case "EACCES":
     case "EPERM":
-      return `LocTT does not have permission to read ${path}. Check the file's permissions and the ownership of the .loctt directory.`;
+      return `Permission denied reading ${path}. Check the file's permissions and the ownership of the .loctt directory.`;
     case "EISDIR":
-      return `${path} is a directory, but LocTT expected a file.`;
+      return `${path} is a directory, not a file.`;
     case "ELOOP":
-      return `${path} is a symlink loop, so LocTT could not read it.`;
+      return `${path} is a symlink loop and could not be read.`;
     case "EMFILE":
     case "ENFILE":
-      return `The system ran out of file handles while LocTT was reading ${path}. Close some applications, or raise the open-file limit, and try again.`;
+      return `The system ran out of file handles while reading ${path}. Close some applications, or raise the open-file limit, and try again.`;
     default:
       return code.length > 0
-        ? `LocTT could not read ${path} (${code}).`
-        : `LocTT could not read ${path}.`;
+        ? `Could not read ${path} (${code}).`
+        : `Could not read ${path}.`;
   }
 }
 

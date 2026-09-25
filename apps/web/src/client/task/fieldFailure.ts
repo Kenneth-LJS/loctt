@@ -215,7 +215,7 @@ export function toFieldFailure(
     return {
       field,
       message:
-        `${taskKey} no longer exists — it was deleted by another process `
+        `${taskKey} no longer exists. It was deleted by another process `
         + `(the CLI, the MCP server, or another tab) while this page was open.`,
       code: envelope.code,
       dataState: envelope.data_state ?? "not_saved",

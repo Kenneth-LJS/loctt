@@ -115,8 +115,8 @@ export async function assertWriteSafe(
   for (const h of afterHealth) {
     if (!beforeSet.has(key(h)) && !declaredSet.has(key(h))) {
       throw new CorruptWriteError(
-        `refusing to write ${taskId}: this write would introduce corruption in `
-        + `"${h.field}" (${h.kind}: ${h.error})`,
+        `Refusing to write ${taskId}. This write would introduce corruption in `
+        + `"${h.field}" (${h.kind}: ${h.error}).`,
         h.field,
       );
     }
@@ -128,8 +128,8 @@ export async function assertWriteSafe(
       if (afterSet.has(key(h))) continue; // still present
       if (touched.has(h.field)) continue; // repaired by a write that names it
       throw new CorruptWriteError(
-        `refusing to write ${taskId}: it would drop the preserved value of `
-        + `corrupt field "${h.field}" (${h.kind}) that this write does not touch`,
+        `Refusing to write ${taskId}. It would drop the preserved value of `
+        + `corrupt field "${h.field}" (${h.kind}), which this write does not touch.`,
         h.field,
       );
     }
@@ -288,7 +288,7 @@ export interface BodyWriteOptions {
 export class StaleBodyWriteError extends Error {
   constructor(readonly ref: string) {
     super(
-      `${ref} changed since you read it — your text has NOT been saved. `
+      `${ref} changed since you read it. Your text has NOT been saved. `
       + `Re-read the task, reapply your edit, and write again.`,
     );
     this.name = "StaleBodyWriteError";

@@ -116,7 +116,7 @@ describe("structural cycle-check cap", () => {
     expect(err).toBeInstanceOf(RelationshipError);
     // Names the cap, so the user knows what was exceeded rather than
     // just that something was.
-    expect(err.message).toMatch(/too large to verify cycles/);
+    expect(err.message).toMatch(/too large to verify/i);
     expect(err.message).toContain(String(MAX_CYCLE_CHECK_VISITS));
   }, 120_000);
 

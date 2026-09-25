@@ -106,7 +106,7 @@ describe("a name resolves to an id on every write path", () => {
     // and wrote a reference to a user who does not exist.
     await expect(
       setFields({ locttDir, taskId: a, changes: [{ field: "assignee", value: "nobody" }] }),
-    ).rejects.toThrow(/unknown user/);
+    ).rejects.toThrow(/unknown user/i);
   });
 
   it("leaves an id alone rather than double-resolving it", async () => {
@@ -143,7 +143,7 @@ describe("a write refuses a reference to an entity that does not exist", () => {
         workflowConfig: wf,
         archivedGuard: guard,
       }),
-    ).rejects.toThrow(/unknown label/);
+    ).rejects.toThrow(/unknown label/i);
   });
 
   it("rejects an unregistered label on create too", async () => {
@@ -158,7 +158,7 @@ describe("a write refuses a reference to an entity that does not exist", () => {
         workflowConfig: wf,
         archivedGuard: guard,
       });
-    })).rejects.toThrow(/unknown label/);
+    })).rejects.toThrow(/unknown label/i);
   });
 
   it("says what is wrong when labels is not an array", async () => {

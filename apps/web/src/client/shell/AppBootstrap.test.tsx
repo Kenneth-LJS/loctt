@@ -379,7 +379,11 @@ describe("AppBootstrap with an interrupted migration", () => {
     mount();
 
     const text = (await screen.findByRole("alert")).textContent ?? "";
-    expect(text).toMatch(/resolved by hand|by hand/i);
+    // K129 pass: "safely ... resolved by hand" was trimmed to "Nothing
+    // here can be opened or changed until this is resolved." — the
+    // numbered recovery steps below it are what states the manual
+    // procedure, which "resolved" still points the user at.
+    expect(text).toMatch(/nothing here can be opened or changed until this is resolved/i);
     expect(text).toContain("loctt migrate");
     expect(text).toContain("loctt doctor");
   });

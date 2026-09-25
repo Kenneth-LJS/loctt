@@ -66,15 +66,15 @@ function describe(kind: FsFailureKind, path: string): string {
   const at = path.length > 0 ? ` (${path})` : "";
   switch (kind) {
     case "permission_denied":
-      return `LocTT does not have permission to write to this file${at}. Check the file's permissions and the ownership of the .loctt directory.`;
+      return `Permission denied writing to this file${at}. Check the file's permissions and the ownership of the .loctt directory.`;
     case "read_only":
-      return `This file is on a read-only filesystem${at}, so LocTT cannot save to it.`;
+      return `This file is on a read-only filesystem${at} and cannot be saved to.`;
     case "disk_full":
-      return `There is no space left on the disk, so LocTT could not save${at}. Free up space and try again.`;
+      return `There is no space left on the disk, so the save failed${at}. Free up space and try again.`;
     case "quota_exceeded":
-      return `Your disk quota is exhausted, so LocTT could not save${at}. Free up space and try again.`;
+      return `Your disk quota is exhausted, so the save failed${at}. Free up space and try again.`;
     case "too_many_open_files":
-      return `The system ran out of file handles while LocTT was saving${at}. Close some applications, or raise the open-file limit, and try again.`;
+      return `The system ran out of file handles while saving${at}. Close some applications, or raise the open-file limit, and try again.`;
   }
 }
 

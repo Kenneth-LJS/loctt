@@ -9,10 +9,10 @@ import { withTmpLoctt } from "../fixtures/tmp-loctt.js";
 /**
  * @verifies CMT-C2
  *
- * `postComment` threw "no current user set; pass an explicit author" —
- * true, and unusable from a CLI that has no author flag. The user is
- * told what is wrong and neither how to fix it nor what happened to the
- * paragraph they just typed.
+ * `postComment` threw "No current user is set. An author must be
+ * given." — true, and unusable from a CLI that has no author flag. The
+ * user is told what is wrong and neither how to fix it nor what
+ * happened to the paragraph they just typed.
  */
 describe("posting a comment with no current user", () => {
   it("names the fix and echoes the text back", async () => {

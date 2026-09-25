@@ -56,10 +56,10 @@ describe("list_tasks with a broken saved view (UI-9)", () => {
     // detection to LOAD time, which made core's resolver report
     // `unknown view` — true of the lookup, wrong for the agent, who
     // would go hunting for the right id instead of repairing the DSL.
-    expect(msg).toContain(
-      "advanced filter does not parse: expected value but got \"=\" at position 9",
+    expect(msg).toMatch(
+      /advanced filter does not parse: expected value but got "=" at position 9/i,
     );
-    expect(msg).not.toContain("unknown view");
+    expect(msg).not.toMatch(/unknown view/i);
   });
 
   it("still runs an unrelated ordinary call", async () => {

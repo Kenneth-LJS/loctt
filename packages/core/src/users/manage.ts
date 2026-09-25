@@ -28,7 +28,7 @@ export async function resolveUserRef(
   }
   if (exact.length > 1) {
     throw new UserError(
-      `multiple users named '${ref}'; refer by ID instead`,
+      `Multiple users named '${ref}'. Refer by ID instead.`,
     );
   }
   const lowered = ref.toLowerCase();
@@ -39,11 +39,11 @@ export async function resolveUserRef(
   }
   if (prefix.length > 1) {
     throw new UserError(
-      `'${ref}' matches ${prefix.length} users (${prefix.map(u => u.name ?? u.id).join(", ")}); ` +
-      `refer by ID or full name instead`,
+      `'${ref}' matches ${prefix.length} users (${prefix.map(u => u.name ?? u.id).join(", ")}). ` +
+      `Refer by ID or full name instead.`,
     );
   }
-  throw new UserError(`unknown user: ${ref}`);
+  throw new UserError(`Unknown user: ${ref}`);
 }
 
 /**
@@ -76,7 +76,7 @@ export async function switchCurrentUser(
   userId: string,
 ): Promise<void> {
   if (!(await userExists(locttDir, userId))) {
-    throw new UserError(`unknown user: ${userId}`);
+    throw new UserError(`Unknown user: ${userId}`);
   }
   await writeCurrentUserId(locttDir, userId);
 }

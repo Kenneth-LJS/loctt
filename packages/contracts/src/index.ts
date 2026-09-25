@@ -84,6 +84,7 @@ export {
   ComparisonOpSchema,
   DEFAULT_ARCHIVED_SCOPE,
   FilterSchema,
+  isViewNameTaken,
   QueriesConfigSchema,
   QuerySortSchema,
   QueryValueSchema,
@@ -92,6 +93,8 @@ export {
   SavedViewModeSchema,
   SimpleFilterSchema,
   SortDirectionSchema,
+  VIEW_NAME_TAKEN_MESSAGE,
+  viewNameKey,
 } from "./query.js";
 export type {
   AutoMergedField,

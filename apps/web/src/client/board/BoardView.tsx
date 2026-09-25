@@ -376,7 +376,7 @@ export function BoardView() {
           className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <span className="min-w-0 flex-1">
-            <strong>{moveError.key}</strong> was not moved — the change was not
+            <strong>{moveError.key}</strong> wasn't moved. The change wasn't
             saved. {moveError.message}
           </span>
           <Button
@@ -409,7 +409,7 @@ export function BoardView() {
           data-testid="board-chip-error"
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
-          Column visibility was not saved, so it will reset when you reload.{" "}
+          Column visibility wasn't saved. It will reset when you reload.{" "}
           {chipError instanceof ApiError ? chipError.envelope?.message ?? chipError.message : "The server could not be reached."}
         </div>
       )}
@@ -458,8 +458,7 @@ export function BoardView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
-          {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
-          {" "}missing from this board. Check the file.
+          {" "}could not be read. Missing from this board.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
               <li key={u.id} className="text-[0.7857rem]">
@@ -497,7 +496,7 @@ export function BoardView() {
           data-testid="board-empty"
           className="rounded-md border border-border-subtle bg-bg-surface px-4 py-6 text-center text-[0.9286rem] text-text-tertiary"
         >
-          No tasks yet.{" "}
+          No tasks found.{" "}
           {/* BRD-40's affordance, pointed at the create modal (M3.4)
               rather than at `/list`.
 
@@ -640,7 +639,7 @@ function ColumnDriftBanner({ columns }: { readonly columns: readonly BoardColumn
           Column <strong>{c.label}</strong> lists{" "}
           {c.missingStatuses?.length === 1 ? "a status" : "statuses"}{" "}
           <code>{c.missingStatuses?.join(", ")}</code>{" "}
-          that <code>workflow.yaml</code> no longer defines.
+          <code>workflow.yaml</code> no longer defines.
         </div>
       ))}
       {/* K100: the banner names the fault; it must also lead to the fix.

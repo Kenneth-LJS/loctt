@@ -154,11 +154,20 @@ ships; do not fold the multi-sort bullets back here.*
 > bullet — *stating* the resolved date and zone in the UI.
 
 ### VUE-20 · M4 · major · P1 P7
-**A saved view whose name collides with an existing one is handled explicitly.**
-- Saving a second view named `overdue` warns before writing, since CLI `--view` resolution is by name.
-- The user can rename or explicitly confirm; if confirmed, the UI states how `loctt list --view overdue` will resolve the ambiguity.
-- The written entries retain distinct `id`s regardless.
-- Collision with a **built-in** name is likewise flagged rather than shadowing it silently.
+**A saved view whose name collides with an existing one is refused.**
+- Saving a second view named `overdue` (or ` Overdue `: names compare trimmed and case-insensitively) shows "Another view with that name already exists." and writes nothing. No request is sent; core refuses the same write, so the CLI and MCP refuse it too.
+- Renaming a view to another view's name is refused the same way. Keeping a view's own name, or changing only its case, is not a clash.
+- Views that already share a name on disk (from before this rule, or a hand edit) still load, list and render, and each can be edited without renaming it. `loctt list --view <name>` refuses the ambiguous name and asks for the id.
+
+> **Amended (K129, Ken 2026-09-24).** Ken: *"if you save a view, and the
+> name already matches, then we should just error. 'Another view with
+> that name already exists.' do not allow merging, do not allow keeping,
+> just clash and say CANNOT."* This case previously required a warning
+> the user could confirm past, keeping both views. The built-in-name
+> bullet ("collision with a built-in name is likewise flagged") is
+> dropped: built-in filters are not saved views and sit in their own
+> sidebar section (K125), so a view with a built-in filter's label does
+> not shadow it (A344).
 
 ### VUE-21 · M4 · major · P7
 **A saved view referencing a deleted custom field degrades visibly.** Delete a custom field from `workflow.yaml` that a saved view filters on.

@@ -202,7 +202,7 @@ export async function saveCalendarConfig(
   const tz = IanaTimezone.safeParse(config.timezone);
   if (!tz.success) {
     throw new CalendarConfigError(
-      `cannot save calendar.yaml: ${config.timezone} is not a valid IANA timezone`,
+      `Cannot save calendar.yaml. "${config.timezone}" is not a valid IANA timezone.`,
     );
   }
   const validated = parseCalendarConfig(serializeCalendarConfig(config));

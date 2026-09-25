@@ -148,15 +148,18 @@ describe("SprintMetaHeader — SPR-8 read-by-default", () => {
   });
 
   // @verifies SPR-37
-  it("a state-transition rejection is NOT anchored under the End-date field", async () => {
+  it("a state rejection is NOT anchored under the End-date field", async () => {
     // The server attributes a genuine window error to end_date; a state
-    // transition error must not borrow that anchor (it belongs to state).
+    // error must not borrow that anchor (it belongs to state). K130
+    // removed the transition guard, so this used a "transition not
+    // allowed" message, superseded behaviour; the state error core still
+    // raises is an invalid value.
     fetchMock.mockImplementation((_url, init) => {
       if ((init as RequestInit | undefined)?.method === "PUT") {
         return Promise.resolve(
           jsonResponse(
             {
-              message: "state transition 'active' -> 'future' is not allowed; pass force=true to override",
+              message: "state must be one of active|completed|future, got: paused",
               code: "rejected_write",
               data_state: "unchanged",
               field: "state",
@@ -175,11 +178,34 @@ describe("SprintMetaHeader — SPR-8 read-by-default", () => {
 
     // The generic Callout states the failure.
     const err = await screen.findByTestId("sprint-meta-error");
-    expect(err.textContent).toContain("not allowed");
+    expect(err.textContent).toContain("state must be one of");
     // It must NOT be rendered under the End-date control.
     expect(screen.queryByTestId("sprint-meta-end_date-problem")).toBeNull();
     // It IS shown near the State control.
-    expect(screen.getByTestId("sprint-meta-state-problem").textContent).toContain("not allowed");
+    expect(screen.getByTestId("sprint-meta-state-problem").textContent).toContain("state must be one of");
+  });
+
+  // B23 (K130): core's window rule now reads "End date is before the
+  // start date." It still belongs under End date.
+  // @verifies SPR-37
+  it("anchors the end-before-start rejection under End date", async () => {
+    fetchMock.mockImplementation((_url, init) => {
+      if ((init as RequestInit | undefined)?.method === "PUT") {
+        return Promise.resolve(
+          jsonResponse(
+            { message: "End date is before the start date.", code: "validation_failed", data_state: "not_saved", field: "end_date" },
+            400,
+          ),
+        );
+      }
+      return Promise.resolve(jsonResponse(SPRINT));
+    });
+    render(<SprintMetaHeader sprint={SPRINT} />, { wrapper: wrapper() });
+    fireEvent.click(screen.getByTestId("sprint-meta-edit"));
+    fireEvent.change(await screen.findByTestId("sprint-meta-name"), { target: { value: "After" } });
+    fireEvent.click(screen.getByTestId("sprint-meta-save"));
+    const problem = await screen.findByTestId("sprint-meta-end_date-problem");
+    expect(problem.textContent).toContain("End date is before the start date.");
   });
 
   // @verifies SPR-8
@@ -264,7 +290,7 @@ describe("SprintMetaHeader — SPR-8 read-by-default", () => {
       if ((init as RequestInit | undefined)?.method === "PUT") {
         return Promise.resolve(
           jsonResponse(
-            { message: "end_date must not be before start_date", code: "rejected_write", data_state: "unchanged", field: "end_date" },
+            { message: "End date is before the start date.", code: "rejected_write", data_state: "unchanged", field: "end_date" },
             400,
           ),
         );

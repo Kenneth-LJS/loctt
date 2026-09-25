@@ -178,7 +178,7 @@ export function parseWorkflowConfig(
     const defaults = statuses.valid.filter(s => s.default === true);
     if (defaults.length === 0) {
       throw new WorkflowConfigError(
-        `workflow.yaml is not valid: statuses must have exactly one status with 'default: true' — none does. Add it to the status new tasks should start in.`,
+        `workflow.yaml is not valid: statuses must have exactly one status with 'default: true', but none does. Add it to the status new tasks should start in.`,
       );
     }
     if (defaults.length > 1) {

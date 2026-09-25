@@ -14,6 +14,11 @@ import { useFocusTrap } from "../ui/useFocusTrap.ts";
  * typed". A constant is muscle memory by the second use; a key cannot
  * be typed without reading which task is about to go.
  *
+ * The confirmation states only that deleting is irreversible (K129,
+ * Ken 2026-09-24): "im sure the archive is somewhere the user can see
+ * first, so they should know" — no archive suggestion here, superseding
+ * this dialog's earlier "archive instead" line (TSK-22/TSK-23, amended).
+ *
  * The comparison is exact — `===` against the key, with no trimming,
  * no case folding. TSK-22 names wrong case and a trailing space as
  * near-misses that must *not* enable the button, so normalising the
@@ -86,16 +91,7 @@ export function DeleteTaskDialog({
         </p>
 
         <p className="mt-3 text-[0.9286rem] text-text-secondary">
-          This is permanent and cannot be undone. {taskKey} and all its
-          history, comments, and attachments are removed from disk.
-        </p>
-        {/* Names the reversible alternative at the moment of the
-            decision, so archive and delete cannot be confused for one
-            another (TSK-22, TSK-23). */}
-        <p className="mt-2 text-[0.9286rem] text-text-secondary">
-          If you only want it out of the way,
-          <strong className="font-medium text-text-primary"> archive </strong>
-          instead — archiving is reversible and keeps the files on disk.
+          Deleting {taskKey} is irreversible. Continue?
         </p>
 
         <label className="mt-4 block text-[0.8571rem] font-medium text-text-secondary">

@@ -341,8 +341,7 @@ function ActivityFeed({
           {message}
         </p>
         <p className="text-[0.9286rem] text-text-tertiary">
-          Fix the file at the path above, then try again. Comments and
-          the rest of this task are unaffected.
+          Fix the file at the path above, then try again.
         </p>
         <Button
           variant="secondary"

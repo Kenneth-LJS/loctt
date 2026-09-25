@@ -82,7 +82,7 @@ function storedDraft(): BodyDraft | null {
 
 const CONFLICT_409 = {
   code: "conflict",
-  message: "T-1 changed since you read it — your text has NOT been saved.",
+  message: "T-1 changed since you read it. Your text has NOT been saved.",
   data_state: "not_saved",
   detail: JSON.stringify({ theirs: "the CLI's text", bodyToken: "tok-cli" }),
 };
@@ -438,7 +438,7 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
     api.failWith(500, {
       code: "io_failed",
       message:
-        "LocTT does not have permission to write to this file "
+        "Permission denied writing to this file "
         + "(.loctt/tasks/T-1/task.md). Check the file's permissions and "
         + "the ownership of the .loctt directory.",
       data_state: "not_saved",
