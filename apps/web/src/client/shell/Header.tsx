@@ -46,6 +46,7 @@ export function Header({
   canToggleSidebar = true,
   sidebarCollapsed = false,
   createBlocked,
+  onOpenShortcutHelp,
 }: {
   /** Null when the current-user read failed (SHL-40). */
   readonly currentUser: UserProfile | null;
@@ -68,6 +69,12 @@ export function Header({
    * close, and unable to tell what pressing it just did.
    */
   readonly sidebarCollapsed?: boolean;
+  /**
+   * Opens the `?` shortcut dialog from the user menu (K133). The menu is
+   * the way in when `?` itself is switched off. Absent in isolated
+   * renders, where the item is left out rather than shown dead.
+   */
+  readonly onOpenShortcutHelp?: () => void;
   /**
    * NEW-41: a create started under a mismatched schema cannot land —
    * every `/api/` route 409s. The shell deliberately stays up in that
@@ -166,7 +173,11 @@ export function Header({
         <SrOnly id={NEW_TASK_REASON_ID}>{createBlocked}</SrOnly>
       )}
 
-      <UserMenu currentUser={currentUser} identityUnknown={identityUnknown} />
+      <UserMenu
+        currentUser={currentUser}
+        identityUnknown={identityUnknown}
+        {...(onOpenShortcutHelp !== undefined ? { onOpenShortcutHelp } : {})}
+      />
     </header>
   );
 }
@@ -376,9 +387,11 @@ function ThemeToggle() {
 function UserMenu({
   currentUser,
   identityUnknown,
+  onOpenShortcutHelp,
 }: {
   readonly currentUser: UserProfile | null;
   readonly identityUnknown: boolean;
+  readonly onOpenShortcutHelp?: () => void;
 }) {
   const users = useUsers();
   const switchUser = useSwitchUser();
@@ -550,6 +563,17 @@ function UserMenu({
             >
               Customize sidebar
             </Link>
+            {onOpenShortcutHelp !== undefined ? (
+              <MenuItem
+                testId="user-menu-shortcuts"
+                onSelect={() => {
+                  close();
+                  onOpenShortcutHelp();
+                }}
+              >
+                Keyboard shortcuts
+              </MenuItem>
+            ) : null}
             <Link
               to="/settings/$section"
               params={{ section: "users" }}

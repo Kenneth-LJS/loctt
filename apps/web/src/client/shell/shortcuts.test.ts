@@ -20,8 +20,8 @@ describe("the global shortcut table", () => {
     // would silently pick the first, and the reference would be
     // documenting an action that never fires.
     const seen = new Set<string>();
-    for (const s of GLOBAL_SHORTCUTS) {
-      const combo = s.keys.join(" ");
+    for (const b of GLOBAL_SHORTCUTS.flatMap(s => s.bindings)) {
+      const combo = b.keys.join(" ");
       expect(seen.has(combo), `duplicate binding for ${combo}`).toBe(false);
       seen.add(combo);
     }
@@ -34,13 +34,13 @@ describe("the global shortcut table", () => {
     for (const s of GLOBAL_SHORTCUTS) {
       expect(s.action.length, `${s.id} has no action text`).toBeGreaterThan(0);
       expect(s.group.length, `${s.id} has no group`).toBeGreaterThan(0);
-      expect(s.keys.length, `${s.id} has no keys`).toBeGreaterThan(0);
+      expect(s.bindings.length, `${s.id} has no keys`).toBeGreaterThan(0);
     }
   });
 
   // @verifies A11Y-1
   it("binds `n` to create, and does not bind `c` as an alias", () => {
-    expect(resolveShortcut("n", null)).toEqual({ kind: "fire", id: "new-task" });
+    expect(resolveShortcut("n", null)).toEqual({ kind: "fire", command: "new-task" });
     // A11Y-1's fourth bullet is explicit that `c` must not be a second
     // alias: "one binding, one action — a second alias is a key that
     // cannot then be used for anything else". Asserted as a positive
@@ -55,22 +55,22 @@ describe("the global shortcut table", () => {
   // known-gaps.md). Claiming the case from a test of the table alone
   // would be asserting the label rather than the effect.
   it("binds `/` to the search box", () => {
-    expect(resolveShortcut("/", null)).toEqual({ kind: "fire", id: "focus-search" });
+    expect(resolveShortcut("/", null)).toEqual({ kind: "fire", command: "focus-search" });
   });
 
   // @verifies A11Y-6
   it("binds `[` to the sidebar", () => {
-    expect(resolveShortcut("[", null)).toEqual({ kind: "fire", id: "toggle-sidebar" });
+    expect(resolveShortcut("[", null)).toEqual({ kind: "fire", command: "toggle-sidebar" });
   });
 
   // @verifies A11Y-7
   it("binds `t` to the theme", () => {
-    expect(resolveShortcut("t", null)).toEqual({ kind: "fire", id: "cycle-theme" });
+    expect(resolveShortcut("t", null)).toEqual({ kind: "fire", command: "cycle-theme" });
   });
 
   // @verifies A11Y-4
   it("binds `?` to the reference, and the reference documents itself", () => {
-    expect(resolveShortcut("?", null)).toEqual({ kind: "fire", id: "shortcut-help" });
+    expect(resolveShortcut("?", null)).toEqual({ kind: "fire", command: "shortcut-help" });
     // A help dialog that does not document how it was opened is the
     // one row a user cannot look up.
     expect(GLOBAL_SHORTCUTS.some(s => s.id === "shortcut-help")).toBe(true);
@@ -86,9 +86,9 @@ describe("chords", () => {
 
   // @verifies A11Y-3
   it("resolves g-l, g-b and g-t to the three routes", () => {
-    expect(resolveShortcut("l", "g")).toEqual({ kind: "fire", id: "goto-list" });
-    expect(resolveShortcut("b", "g")).toEqual({ kind: "fire", id: "goto-board" });
-    expect(resolveShortcut("t", "g")).toEqual({ kind: "fire", id: "goto-timeline" });
+    expect(resolveShortcut("l", "g")).toEqual({ kind: "fire", command: "goto-list" });
+    expect(resolveShortcut("b", "g")).toEqual({ kind: "fire", command: "goto-board" });
+    expect(resolveShortcut("t", "g")).toEqual({ kind: "fire", command: "goto-timeline" });
   });
 
   // @verifies A11Y-3
@@ -106,8 +106,8 @@ describe("chords", () => {
     // first, which would flip the theme instead of navigating — and
     // would leave `g t` permanently broken while every direct test of
     // `t` still passed.
-    expect(resolveShortcut("t", "g")).toEqual({ kind: "fire", id: "goto-timeline" });
-    expect(resolveShortcut("t", null)).toEqual({ kind: "fire", id: "cycle-theme" });
+    expect(resolveShortcut("t", "g")).toEqual({ kind: "fire", command: "goto-timeline" });
+    expect(resolveShortcut("t", null)).toEqual({ kind: "fire", command: "cycle-theme" });
   });
 
   // @verifies A11Y-3
@@ -116,5 +116,57 @@ describe("chords", () => {
     // pending, or every `t` would swallow the following keystroke.
     expect(isChordPrefix("l")).toBe(false);
     expect(isChordPrefix("b")).toBe(false);
+  });
+});
+
+/**
+ * K133's off switches (A11Y-43, WCAG 2.1.4): single-key shortcuts can
+ * be turned off, all at once or one by one. `resolveShortcut` takes the
+ * user's resolved switches as a filter; these pin what "off" means at
+ * the dispatch level.
+ */
+describe("off switches", () => {
+  const allOff = (): boolean => false;
+  const offExcept = (...ids: string[]) => (id: string): boolean => ids.includes(id);
+  const onExcept = (...ids: string[]) => (id: string): boolean => !ids.includes(id);
+
+  // @verifies A11Y-43
+  it("resolves nothing for any key when every shortcut is off", () => {
+    for (const key of ["n", "/", "[", "t", "?"]) {
+      expect(resolveShortcut(key, null, allOff), key).toEqual({ kind: "none" });
+    }
+    // And `g` does not arm a chord with nothing to complete.
+    expect(resolveShortcut("g", null, allOff)).toEqual({ kind: "none" });
+  });
+
+  // @verifies A11Y-43
+  it("silences only the shortcut switched off, leaving the rest bound", () => {
+    const isOn = onExcept("new-task");
+    expect(resolveShortcut("n", null, isOn)).toEqual({ kind: "none" });
+    // Positive control: a neighbour still fires, so this cannot pass by
+    // the filter silencing everything.
+    expect(resolveShortcut("t", null, isOn)).toEqual({ kind: "fire", command: "cycle-theme" });
+    expect(resolveShortcut("g", null, isOn)).toEqual({ kind: "chord-start", prefix: "g" });
+  });
+
+  // @verifies A11Y-43
+  // @verifies A11Y-57
+  it("does not arm `g` when the Go-to shortcut is off, so the next key is not swallowed", () => {
+    const isOn = onExcept("goto");
+    expect(isChordPrefix("g", isOn)).toBe(false);
+    expect(resolveShortcut("g", null, isOn)).toEqual({ kind: "none" });
+    // The key after `g` resolves on its own: `t` cycles the theme
+    // rather than being eaten as the tail of a dead chord.
+    expect(resolveShortcut("t", null, isOn)).toEqual({ kind: "fire", command: "cycle-theme" });
+  });
+
+  // @verifies A11Y-43
+  it("treats the three `g` sequences as one shortcut with one switch", () => {
+    const isOn = offExcept("goto");
+    expect(resolveShortcut("l", "g", isOn)).toEqual({ kind: "fire", command: "goto-list" });
+    expect(resolveShortcut("b", "g", isOn)).toEqual({ kind: "fire", command: "goto-board" });
+    expect(resolveShortcut("t", "g", isOn)).toEqual({ kind: "fire", command: "goto-timeline" });
+    const gotoOff = onExcept("goto");
+    expect(resolveShortcut("l", "g", gotoOff)).toEqual({ kind: "none" });
   });
 });

@@ -12,9 +12,11 @@
  */
 
 import type { SidebarGroups, SidebarItemId } from "@loctt/contracts";
+import { SHORTCUT_IDS } from "@loctt/contracts";
 import { SIDEBAR_GROUP_IDS, SIDEBAR_ITEM_IDS } from "@loctt/contracts";
 import {
   applyArchivedScope,
+  applyShortcutChanges,
   archiveUser,
   countUserReferences,
   createUser,
@@ -24,17 +26,22 @@ import {
   loadAllUsers,
   loadOptionalConfigs,
   loadUserSettings,
+  readKeyboardShortcuts,
   readSidebarGroups,
   readSidebarPins,
+  resolveKeyboardShortcuts,
   resolveRenderedSidebarItems,
   resolveUserRef,
   saveUserSettings,
+  SHORTCUT_VALID_IDS,
   SIDEBAR_VALID_IDS,
   sweepSidebarPins,
   switchCurrentUser,
   unarchiveUser,
   updateUser,
+  validateShortcutIds,
   validateSidebarIds,
+  withKeyboardShortcuts,
 } from "@loctt/core";
 import { z } from "zod";
 
@@ -85,7 +92,7 @@ export const TOOLS: readonly ToolDef[] = [
      * all three surfaces, not just the web UI that motivated it.
      */
     name: "get_user_settings",
-    description: "Returns the active user's personal settings (theme, card_layout, sidebar_pins, default_project). These are per-user render preferences stored in .loctt/users/<id>/settings.yaml.",
+    description: "Returns the active user's personal settings (theme, card_layout, sidebar_pins, sidebar_groups, keyboard_shortcuts, default_project). These are per-user render preferences stored in .loctt/users/<id>/settings.yaml.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const current = await getCurrentUser(locttDir);
@@ -193,6 +200,64 @@ export const TOOLS: readonly ToolDef[] = [
       // sidebar renders it (A346), matching the CLI read.
       const resolved = resolveRenderedSidebarItems(after);
       return text(JSON.stringify({ user: current.id, stored: after, resolved }, null, 2));
+    },
+  },
+  {
+    /**
+     * K133, Ken's layer rule: the web Keyboard settings are a core
+     * capability, so an agent can read and set the switches too.
+     */
+    name: "get_keyboard_shortcuts",
+    description: "Returns the active user's single-key shortcut switches (K133). `single_key` is the master switch: false turns every single-key shortcut off. `shortcuts` lists each shortcut with its keys, `on` (its own switch) and `active` (whether it fires now: its own switch and the master are both on). `stored` is the raw per-user setting. Shortcut ids: " + SHORTCUT_IDS.join(", ") + ". Keys are fixed; they can be switched off, not rebound.",
+    inputSchema: {},
+    handler: async ({ locttDir }) => {
+      const current = await getCurrentUser(locttDir);
+      if (!current) return errorResult("no users registered");
+      const stored = readKeyboardShortcuts(await loadUserSettings(locttDir, current.id));
+      return text(JSON.stringify({ user: current.id, stored, ...shortcutPayload(stored) }, null, 2));
+    },
+  },
+  {
+    name: "set_keyboard_shortcuts",
+    description: "Sets the active user's single-key shortcut switches (K133). `single_key` sets the master switch. `off` turns the listed shortcuts off, `on` turns them back on (an id in both ends up on). `reset: true` turns the master and every shortcut back on, and cannot be combined with the others. An unknown id is rejected with an error naming it, and nothing is written. Returns the resulting state, as get_keyboard_shortcuts does. Shortcut ids: " + SHORTCUT_IDS.join(", ") + ".",
+    inputSchema: {
+      single_key: z.boolean().optional().describe("Master switch: false turns every single-key shortcut off"),
+      off: z.array(z.string()).optional().describe("Shortcut ids to turn off"),
+      on: z.array(z.string()).optional().describe("Shortcut ids to turn back on"),
+      reset: z.boolean().optional().describe("Turn the master and every shortcut back on"),
+    },
+    handler: async ({ locttDir }, args) => {
+      const current = await getCurrentUser(locttDir);
+      if (!current) return errorResult("no users registered");
+      const reset = args["reset"] === true;
+      const singleKey = args["single_key"] as boolean | undefined;
+      const offArg = (args["off"] as string[] | undefined) ?? [];
+      const onArg = (args["on"] as string[] | undefined) ?? [];
+      if (reset && (singleKey !== undefined || offArg.length > 0 || onArg.length > 0)) {
+        return errorResult("reset cannot be combined with single_key/off/on");
+      }
+      const settings = await loadUserSettings(locttDir, current.id);
+      if (reset) {
+        await saveUserSettings(locttDir, current.id, withKeyboardShortcuts(settings, {}));
+      } else if (singleKey !== undefined || offArg.length > 0 || onArg.length > 0) {
+        const off = validateShortcutIds(offArg);
+        const on = validateShortcutIds(onArg);
+        const bad = [...off.unknown, ...on.unknown];
+        if (bad.length > 0) {
+          return errorResult(
+            `unknown shortcut${bad.length > 1 ? "s" : ""}: ${bad.join(", ")}. `
+            + `Valid ids: ${SHORTCUT_VALID_IDS.join(", ")}`,
+          );
+        }
+        const next = applyShortcutChanges(readKeyboardShortcuts(settings), {
+          ...(singleKey !== undefined ? { singleKey } : {}),
+          off: off.known,
+          on: on.known,
+        });
+        await saveUserSettings(locttDir, current.id, withKeyboardShortcuts(settings, next));
+      }
+      const stored = readKeyboardShortcuts(await loadUserSettings(locttDir, current.id));
+      return text(JSON.stringify({ user: current.id, stored, ...shortcutPayload(stored) }, null, 2));
     },
   },
   {
@@ -308,3 +373,18 @@ export const TOOLS: readonly ToolDef[] = [
     },
   },
 ];
+
+/** The resolved switch state both shortcut tools return. */
+function shortcutPayload(stored: Parameters<typeof resolveKeyboardShortcuts>[0]) {
+  const state = resolveKeyboardShortcuts(stored);
+  return {
+    single_key: state.singleKey,
+    shortcuts: state.shortcuts.map(s => ({
+      id: s.id,
+      action: s.action,
+      keys: s.bindings.map(b => b.keys.join(" ")),
+      on: s.on,
+      active: s.active,
+    })),
+  };
+}

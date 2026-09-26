@@ -22836,6 +22836,144 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A349 · B26 implementation choices (K133 single-key shortcut switches)
+
+**Date:** 2026-09-26 · agent-made, revertible.
+
+Ken's ruling (K133) fixed the shape: a master "Single-key shortcuts"
+switch plus one switch per shortcut, no rebinding, an in-dialog settings
+view, Reset to default with a warning, a disabled `?` dialog with a Turn
+on button, and a user-menu entry. These are the calls the ruling left
+open.
+
+## 1. Which shortcuts count as single-key
+
+**Context.** The master switch must turn "every single-key shortcut"
+off; the brief asked to verify which ones count.
+**Decided.** Exactly the global registry (`GLOBAL_SHORTCUTS`): `n`, `/`,
+`g` then `l`/`b`/`t`, `[`, `t`, `?`. None take Ctrl, Cmd or Alt. Not
+covered, and still working when the switch is off: Cmd/Ctrl+Enter and
+Cmd/Ctrl+S in the description editor, Ctrl+Enter in the advanced query
+editor, Ctrl+arrows on a focused board card, Esc anywhere, Enter in a
+single-field dialog, ↑/↓ on a focused reorder handle, and the rich
+editor's own Cmd+B/I/U/E marks. They carry a modifier or act only while
+their control has focus, which WCAG 2.1.4 exempts.
+**Why.** That is the WCAG 2.1.4 boundary, and the registry is already
+defined as "the keys that fire with nothing in particular focused".
+**To revert.** Add an entry to `GLOBAL_SHORTCUTS` in
+`packages/contracts/src/shortcuts.ts` for any key that should also be
+switchable. Removing one from the table unbinds it.
+
+## 2. The catalog moved to contracts; the unit is a shortcut, not a key
+
+**Context.** K133 says a Go-to sequence is one shortcut with one switch,
+and core, CLI, MCP and web all need the ids.
+**Decided.** `packages/contracts/src/shortcuts.ts` holds `SHORTCUT_IDS`
+(`new-task`, `focus-search`, `goto`, `toggle-sidebar`, `cycle-theme`,
+`shortcut-help`) and `GLOBAL_SHORTCUTS`, each shortcut carrying one or
+more `bindings` (`{command, keys, action}`). The web dispatcher keys its
+handlers by `command` (`goto-list` etc.), and the switches by shortcut
+`id`. The `?` dialog and the settings editor show Go to as one row,
+`g then l / b / t`, labelled "Go to List, Board or Timeline".
+`flow-accessibility.spec.ts` A11Y-4 was updated from three
+`shortcut-row-goto-*` ids to one `shortcut-row-goto`. That test was not
+asserting a bug; the model changed under it.
+**Why.** One table means a shortcut is bound, listed and switchable
+everywhere at once (A11Y-4's invariant carried to three surfaces).
+**To revert.** Split `goto` into three ids in `SHORTCUT_IDS` and
+`GLOBAL_SHORTCUTS`. The stored `disabled` ids for `goto` would then
+degrade as unknown (doctor names them).
+
+## 3. Stored shape and normalization
+
+**Decided.** `keyboard_shortcuts: { single_key?: boolean, disabled?:
+ShortcutId[] }` in the user's `settings.yaml`. `single_key` is stored
+only when `false` (absent means on). `disabled` is kept in catalog
+order, omitted when empty, and **kept while the master is off**, so
+turning the master back on restores the user's per-shortcut choices.
+When the value equals the default (everything on) the whole key is
+removed, so Reset and "Turn on" with nothing else off leave no trace in
+the file. The stored schema is strict (unknown or repeated id rejected
+on save).
+**To revert.** `applyShortcutChanges` / `withKeyboardShortcuts` in
+`packages/core/src/users/shortcuts.ts`.
+
+## 4. Degrade rules (corruption-handling guide)
+
+**Decided.** Field-local, never throwing (`salvageKeyboardShortcuts`,
+wired into `parseSettingsTolerant` beside `sidebar_groups`): an unknown,
+duplicate or non-string id in `disabled` drops that id only; a
+non-boolean `single_key` falls back to on without losing `disabled`; a
+stray key (`disable:`) is dropped and named; a value that is not an
+object falls back to all on. Every drop is a `malformed`, non-blocking
+doctor finding (`collectKeyboardShortcutsDrops`, in `integrity.ts` next
+to `sidebar_groups`). **Fail-open (shortcuts on)** because it is the
+state of a user who never touched the setting; doctor makes the drop
+visible.
+**To revert.** Remove the `keyboard_shortcuts` branch from
+`parseSettingsTolerant` and the block in `checkDataIntegrity`.
+
+## 5. While settings are loading or unreadable, shortcuts are on
+
+**Decided.** The web dispatcher treats a pending or failed settings read
+as the default (all on).
+**Why.** A failed read must not silently disable the keyboard. The
+window is one request long on load.
+**To revert.** In `useKeyboardShortcutSettings`, make `isOn` return
+false until `settingsQuery.data` is defined.
+
+## 6. The dialog and editor details
+
+- The `?` list view with the master off: every row `aria-disabled` and
+  dimmed, a `role="status"` notice "Single-key shortcuts are off." with
+  a primary "Turn on" button. With the master on, a shortcut switched
+  off on its own shows a muted "Off" after its action and its row is
+  `aria-disabled`.
+- Customize/Done swap the dialog body; focus lands on the dialog's
+  close button after each swap (the pressed button unmounts).
+- The Reset confirm renders inside the `?` dialog. The dialog ignores
+  Esc while a nested dialog is open, so Esc closes only the confirm.
+  Confirm tone is `danger` (it discards the user's choices); focus
+  starts on Cancel.
+- A failed save shows "Couldn't save your shortcut settings. Try
+  again." (the mutation already rolls the switch back).
+- The footer link to Settings → Keyboard (SHL-48) stays in the list
+  view.
+- Settings → Keyboard keeps its read-only reference for the
+  context-scoped keys, and the global group there is replaced by the
+  editor.
+- User menu: a "Keyboard shortcuts" `MenuItem` in the bottom group,
+  before "Settings". Header takes an optional `onOpenShortcutHelp`;
+  without it (isolated renders) the item is omitted.
+**To revert.** `shell/ShortcutHelpDialog.tsx`,
+`shell/ShortcutSettingsEditor.tsx`, `shell/Header.tsx`.
+
+## 7. CLI and MCP shape
+
+**Decided.** `loctt user shortcuts [--single-key on|off] [--off
+<id>...] [--on <id>...] [--reset]`. `--off`/`--on` repeat or take
+comma lists. `--reset` cannot be combined. It always prints the state
+read back from disk: `single-key\ton|off`, then `id\tkeys\ton|off\taction`
+per shortcut. MCP `get_keyboard_shortcuts` / `set_keyboard_shortcuts`
+(`single_key`, `off`, `on`, `reset`) return `stored`, `single_key` and
+each shortcut's `keys`, `on`, `active`. An unknown id is refused on both
+and nothing is written. An id in both `off` and `on` ends up on.
+`get_user_settings` also shows the raw value.
+**To revert.** `apps/cli/src/commands/user.ts` `case "shortcuts"`,
+`apps/mcp/src/tools/user.ts` the two tools.
+
+## 8. Brief discrepancy
+
+The first brief named `c` as New task's key. It is `n`, and A11Y-1
+forbids a `c` alias. The e2e uses `n`.
+
+## 9. Case ids
+
+UI cases A11Y-56 to A11Y-60 (flow-accessibility.md); surface cases
+PRU-C13 (CLI) and PRU-C14 (MCP) in surface flow-projects-users.md,
+since user settings live there. A11Y-43's third bullet amended per
+K133.
+
 ### A348 · Branch review follow-ups: path said once, doctor/restore punctuation, unknown-outcome copy, A11Y-43 gap
 
 **Ticket:** independent review of ui/polish-wave-3 (items 1-8 + tone nits) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 (uncommitted at write time) · **Scope:** core, CLI, MCP, web.

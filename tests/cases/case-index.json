@@ -1,9 +1,9 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1053,
-    "ui": 953,
-    "surface": 100,
+    "total": 1060,
+    "ui": 958,
+    "surface": 102,
     "resolved": 4
   },
   "cases": [
@@ -709,7 +709,7 @@
       "id": "A11Y-44",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 384,
+      "line": 390,
       "title": "A skip link reaches the main content.",
       "milestone": "M4",
       "severity": "minor",
@@ -725,7 +725,7 @@
       "id": "A11Y-45",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 391,
+      "line": 397,
       "title": "Route changes are announced.",
       "milestone": "M4",
       "severity": "minor",
@@ -742,7 +742,7 @@
       "id": "A11Y-46",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 400,
+      "line": 406,
       "title": "A failed save is announced, not just coloured.",
       "milestone": "M4",
       "severity": "blocker",
@@ -759,7 +759,7 @@
       "id": "A11Y-47",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 408,
+      "line": 414,
       "title": "An empty result and a failed load are audibly different.",
       "milestone": "M4",
       "severity": "blocker",
@@ -776,7 +776,7 @@
       "id": "A11Y-48",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 415,
+      "line": 421,
       "title": "The uninitialized-tracker screen is announced correctly.",
       "milestone": "M4",
       "severity": "blocker",
@@ -794,7 +794,7 @@
       "id": "A11Y-49",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 422,
+      "line": 428,
       "title": "The crashed-migration screen is fully readable by screen reader.",
       "milestone": "M4",
       "severity": "blocker",
@@ -811,7 +811,7 @@
       "id": "A11Y-50",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 429,
+      "line": 435,
       "title": "A destructive confirmation defaults focus to the safe choice and states the blast radius.",
       "milestone": "M4",
       "severity": "major",
@@ -828,7 +828,7 @@
       "id": "A11Y-51",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 437,
+      "line": 443,
       "title": "Partial bulk-operation results are announced accurately.",
       "milestone": "M4",
       "severity": "major",
@@ -846,7 +846,7 @@
       "id": "A11Y-52",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 444,
+      "line": 450,
       "title": "The server-unreachable state is announced and persistent.",
       "milestone": "M4",
       "severity": "major",
@@ -863,7 +863,7 @@
       "id": "A11Y-53",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 451,
+      "line": 457,
       "title": "A query-syntax error is conveyed without relying on the highlight.",
       "milestone": "M4",
       "severity": "major",
@@ -880,7 +880,7 @@
       "id": "A11Y-54",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 458,
+      "line": 464,
       "title": "The error boundary's fallback is keyboard-operable.",
       "milestone": "M4",
       "severity": "minor",
@@ -897,10 +897,92 @@
       "id": "A11Y-55",
       "tree": "ui",
       "file": "tests/cases/ui-test-cases/flow-accessibility.md",
-      "line": 465,
+      "line": 471,
       "title": "Every pointer target is at least 24×24px (WCAG 2.5.8 AA).",
       "milestone": "M4",
       "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "A11Y-56",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-accessibility.md",
+      "line": 480,
+      "title": "The master switch turns every single-key shortcut off.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P8",
+        "P10"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "A11Y-57",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-accessibility.md",
+      "line": 488,
+      "title": "One shortcut can be turned off on its own.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "A11Y-58",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-accessibility.md",
+      "line": 496,
+      "title": "The `?` dialog shows the switches' state and offers the way back.",
+      "milestone": "M4",
+      "severity": "major",
+      "principles": [
+        "P4",
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "A11Y-59",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-accessibility.md",
+      "line": 503,
+      "title": "Reset to default asks first.",
+      "milestone": "M4",
+      "severity": "minor",
+      "principles": [
+        "P4"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "A11Y-60",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-accessibility.md",
+      "line": 510,
+      "title": "The shortcuts dialog is reachable with `?` switched off.",
+      "milestone": "M4",
+      "severity": "major",
       "principles": [
         "P8"
       ],
@@ -9790,6 +9872,38 @@
       ],
       "surfaces": [
         "CLI",
+        "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "PRU-C13",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-projects-users.md",
+      "line": 227,
+      "title": "`loctt user shortcuts` reads and sets the single-key shortcut switches.",
+      "severity": "major",
+      "principles": [
+        "P10",
+        "P11"
+      ],
+      "surfaces": [
+        "CLI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "PRU-C14",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-projects-users.md",
+      "line": 245,
+      "title": "`get_keyboard_shortcuts` / `set_keyboard_shortcuts` read and set the switches.",
+      "severity": "major",
+      "principles": [
+        "P10",
+        "P11"
+      ],
+      "surfaces": [
         "MCP"
       ],
       "resolved": false

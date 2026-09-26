@@ -1,58 +1,64 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { useInertBackground } from "../ui/Modal.tsx";
 import { useFocusTrap } from "../ui/useFocusTrap.ts";
-import { GLOBAL_SHORTCUTS, type ShortcutSpec } from "./shortcuts.ts";
+import { groupsOf, ShortcutKeys } from "./ShortcutKeys.tsx";
+import { ShortcutSettingsEditor } from "./ShortcutSettingsEditor.tsx";
+import { useKeyboardShortcutSettings } from "./useKeyboardShortcutSettings.ts";
 
 /**
- * The `?` keyboard reference (A11Y-4).
+ * The `?` keyboard reference (A11Y-4), with its in-dialog settings view
+ * (K133).
  *
  * Rendered from `GLOBAL_SHORTCUTS` — the same table `useShortcuts`
- * dispatches from. That is the whole point of the registry: A11Y-4's
- * second bullet ("a shortcut that exists but isn't listed, or listed
- * but not bound, is a defect") is only assertable if the two cannot
- * drift, and they cannot drift when there is one array.
+ * dispatches from — so the list and the bindings cannot drift.
  *
- * Chords render as separate keys with a "then" between them, because
- * `g` `l` is two keystrokes in sequence and printing `g + l` would
- * teach the user to hold them together, which does nothing.
+ * ## Two views
+ *
+ * - **The list**: every shortcut with its keys. A shortcut switched off
+ *   on its own shows a muted "Off". With the master switch off, every
+ *   row is disabled and a notice at the top says so, with a "Turn on"
+ *   button right there (K133: "should show all the shortcuts but
+ *   disabled and a message that says about re-enabling it").
+ * - **Customize**: the same `ShortcutSettingsEditor` Settings → Keyboard
+ *   renders, with "Done" back to the list.
+ *
+ * Opened by `?` or from the user menu's "Keyboard shortcuts" item, which
+ * is how a user reaches it with `?` itself switched off.
  */
-function groupsOf(shortcuts: readonly ShortcutSpec[]): { group: string; items: ShortcutSpec[] }[] {
-  const order: string[] = [];
-  const byGroup = new Map<string, ShortcutSpec[]>();
-  for (const s of shortcuts) {
-    let bucket = byGroup.get(s.group);
-    if (bucket === undefined) {
-      bucket = [];
-      byGroup.set(s.group, bucket);
-      order.push(s.group);
-    }
-    bucket.push(s);
-  }
-  return order.map(g => ({ group: g, items: byGroup.get(g) ?? [] }));
-}
-
 export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const [view, setView] = useState<"list" | "customize">("list");
+  const { state, change } = useKeyboardShortcutSettings();
   useFocusTrap(panelRef, { initialFocus: closeRef });
   useInertBackground(panelRef);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      // A11Y-4's third bullet: the dialog closes on Esc. Bound here
-      // rather than globally so it closes *this* layer only.
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
+      if (e.key !== "Escape") return;
+      // A dialog opened from inside this one (the Reset confirm) owns
+      // Esc while it is open. Both listen on `document`, so without
+      // this one Esc would close the confirm and this dialog together.
+      if (panelRef.current?.querySelector('[role="dialog"]') !== null) return;
+      // A11Y-4's third bullet: the dialog closes on Esc.
+      e.stopPropagation();
+      onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); };
   }, [onClose]);
+
+  const switchView = (next: "list" | "customize"): void => {
+    setView(next);
+    // The button that was pressed unmounts with its view. Land focus on
+    // the close button, which is in both, rather than on `body`.
+    closeRef.current?.focus();
+  };
 
   return (
     <div
@@ -68,65 +74,120 @@ export function ShortcutHelpDialog({ onClose }: { readonly onClose: () => void }
         aria-label="Keyboard shortcuts"
         tabIndex={-1}
         data-testid="shortcut-help"
+        data-view={view}
         className="max-h-[80vh] w-full max-w-lg overflow-auto rounded-lg border border-border-default bg-bg-surface-raised p-4 shadow-overlay"
       >
-        <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-[1.0714rem] font-semibold text-text-primary">Keyboard shortcuts</h2>
-          <IconButton
-            ref={closeRef}
-            onClick={onClose}
-            testId="shortcut-help-close"
-            aria-label="Close keyboard shortcuts"
-            className="shrink-0"
-          >
-            <Icon name="close" />
-          </IconButton>
+          <div className="flex shrink-0 items-center gap-2">
+            {view === "list" ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => { switchView("customize"); }}
+                testId="shortcut-help-customize"
+              >
+                Customize
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => { switchView("list"); }}
+                testId="shortcut-help-done"
+              >
+                Done
+              </Button>
+            )}
+            <IconButton
+              ref={closeRef}
+              onClick={onClose}
+              testId="shortcut-help-close"
+              aria-label="Close keyboard shortcuts"
+            >
+              <Icon name="close" />
+            </IconButton>
+          </div>
         </div>
 
-        {groupsOf(GLOBAL_SHORTCUTS).map(({ group, items }) => (
-          <section key={group} className="mb-4">
-            <h3 className="mb-1.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary">
-              {group}
-            </h3>
-            <ul className="m-0 list-none p-0">
-              {items.map(s => (
-                <li
-                  key={s.id}
-                  data-testid={`shortcut-row-${s.id}`}
-                  className="flex items-baseline justify-between gap-4 border-b border-border-subtle py-1.5 last:border-b-0"
+        {view === "customize" ? (
+          <ShortcutSettingsEditor testIdPrefix="shortcut-help-settings" />
+        ) : (
+          <>
+            {!state.singleKey ? (
+              <div
+                role="status"
+                data-testid="shortcut-help-off-notice"
+                className="mb-3 flex items-center justify-between gap-3 rounded-md border border-border-subtle bg-bg-muted px-3 py-2"
+              >
+                <span className="text-[0.9286rem] text-text-primary">Single-key shortcuts are off.</span>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => { change({ singleKey: true }); }}
+                  testId="shortcut-help-turn-on"
                 >
-                  <span className="text-[0.9286rem] text-text-primary">{s.action}</span>
-                  <span className="shrink-0" data-testid={`shortcut-keys-${s.id}`}>
-                    {s.keys.map((k, i) => (
-                      <span key={`${k}-${String(i)}`}>
-                        {i > 0 ? <span className="mx-1 text-[0.7857rem] text-text-tertiary">then</span> : null}
-                        <kbd className="rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[0.7857rem] text-text-primary">
-                          {k}
-                        </kbd>
-                      </span>
-                    ))}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
+                  Turn on
+                </Button>
+              </div>
+            ) : null}
 
-        {/* CONFIG-5 / P4: this overlay is the discoverable summary; the
-            full, rebindable reference lives in Settings → Keyboard. A
-            deep link (labelled as navigation) keeps the two from being
-            two disconnected surfaces. Closes the dialog on the way. */}
-        <p className="mt-3 text-[0.8571rem] text-text-secondary">
-          <Link
-            to="/settings/$section"
-            params={{ section: "keyboard" }}
-            onClick={onClose}
-            data-testid="shortcut-help-keyboard-link"
-            className="text-accent underline hover:text-text-primary"
-          >
-            Full reference in Settings → Keyboard
-          </Link>
-        </p>
+            {groupsOf(state.shortcuts).map(({ group, items }) => (
+              <section key={group} className="mb-4">
+                <h3 className="mb-1.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary">
+                  {group}
+                </h3>
+                <ul className="m-0 list-none p-0">
+                  {items.map(s => (
+                    <li
+                      key={s.id}
+                      data-testid={`shortcut-row-${s.id}`}
+                      data-active={s.active ? "true" : "false"}
+                      aria-disabled={s.active ? undefined : "true"}
+                      className={[
+                        "flex items-baseline justify-between gap-4 border-b border-border-subtle py-1.5 last:border-b-0",
+                        s.active ? "" : "opacity-60",
+                      ].join(" ")}
+                    >
+                      <span className="text-[0.9286rem] text-text-primary">
+                        {s.action}
+                        {state.singleKey && !s.on ? (
+                          <span
+                            data-testid={`shortcut-off-${s.id}`}
+                            className="ml-2 text-[0.7857rem] text-text-tertiary"
+                          >
+                            Off
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0">
+                        <ShortcutKeys spec={s} />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+
+            {/* CONFIG-5 / P4: the fuller reference, which also covers the
+                context-scoped keys, lives in Settings → Keyboard. Closes
+                the dialog on the way. */}
+            <p className="mt-3 text-[0.8571rem] text-text-secondary">
+              <Link
+                to="/settings/$section"
+                params={{ section: "keyboard" }}
+                onClick={onClose}
+                data-testid="shortcut-help-keyboard-link"
+                className="text-accent underline hover:text-text-primary"
+              >
+                Full reference in Settings → Keyboard
+              </Link>
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

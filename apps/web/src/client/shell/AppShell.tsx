@@ -129,7 +129,7 @@ function ShellChrome({
   const today = info.today;
   useRouteAnnouncement();
 
-  const { helpDialog } = useGlobalShortcuts({
+  const { helpDialog, openHelp } = useGlobalShortcuts({
     // A11Y-2: `/` focuses the search box and scrolls it into view. The
     // box lives in the header, so the shell finds it by its accessible
     // name rather than threading a ref through Header's props — the
@@ -168,6 +168,7 @@ function ShellChrome({
           onToggleSidebar={toggle}
           canToggleSidebar={canToggle}
           sidebarCollapsed={collapsed}
+          onOpenShortcutHelp={openHelp}
           {...(info.schemaStatus.kind !== "current"
             ? {
                 createBlocked:

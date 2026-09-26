@@ -204,6 +204,10 @@ describe("E2E journey: MCP schema contract", () => {
             },
             {
               "hasDescription": true,
+              "name": "get_keyboard_shortcuts",
+            },
+            {
+              "hasDescription": true,
               "name": "get_reconcile_status",
             },
             {
@@ -261,6 +265,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "list_milestones",
+            },
+            {
+              "hasDescription": true,
+              "name": "list_palette_colors",
             },
             {
               "hasDescription": true,
@@ -333,6 +341,10 @@ describe("E2E journey: MCP schema contract", () => {
             {
               "hasDescription": true,
               "name": "set_estimation_config",
+            },
+            {
+              "hasDescription": true,
+              "name": "set_keyboard_shortcuts",
             },
             {
               "hasDescription": true,
