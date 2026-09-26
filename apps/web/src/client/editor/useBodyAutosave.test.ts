@@ -555,7 +555,7 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
     await settle();
     expect(result.current.state).toEqual({
       kind: "failed",
-      message: "Description may not have been saved. Please check and try again.",
+      message: "Your changes may not have been saved. Please try again.",
     });
   });
 

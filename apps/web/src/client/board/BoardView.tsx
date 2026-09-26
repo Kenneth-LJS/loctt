@@ -383,8 +383,7 @@ export function BoardView() {
           <span className="min-w-0 flex-1">
             {moveError.unknown ? (
               <>
-                <strong>{moveError.key}</strong> may not have been moved.
-                Please check and try again.
+                Your changes may not have been saved. Please try again.
               </>
             ) : (
               <>

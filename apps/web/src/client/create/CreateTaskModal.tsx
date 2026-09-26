@@ -826,16 +826,14 @@ export function describeFailure(err: unknown, createdSoFar: number): CreateFailu
         };
       }
       return {
-        message: `${prefix}The task may or may not have been created. The server's reply could not be read. Reload the list to check before retrying.`,
+        message: `${prefix}The task may not have been created. Check the list before trying again.`,
       };
     }
-    // A timed-out create may have landed. "Couldn't create the task"
-    // followed by "cannot tell whether this was saved" contradicts
-    // itself; K127's unknown-outcome wording says the one true thing
-    // (A348).
+    // A timed-out create may have landed. Retrying blind can make a
+    // duplicate, so the user checks the list first (K134).
     if (isUnknownOutcome(err)) {
       return {
-        message: `${prefix}The task may not have been created. Please check and try again.`,
+        message: `${prefix}The task may not have been created. Check the list before trying again.`,
       };
     }
     return {
@@ -855,9 +853,7 @@ export function describeFailure(err: unknown, createdSoFar: number): CreateFailu
   // becomes two.
   if (err instanceof UnparseableBodyError) {
     return {
-      message: `${prefix}The task may or may not have been created. `
-        + `The server replied, but the reply could not be read. Reload `
-        + `the list to check before retrying.`,
+      message: `${prefix}The task may not have been created. Check the list before trying again.`,
     };
   }
   // A `fetch` that never reached the server rejects with a bare

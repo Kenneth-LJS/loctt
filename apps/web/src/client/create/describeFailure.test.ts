@@ -23,15 +23,15 @@ describe("describeFailure: a timed-out create", () => {
     },
   });
 
-  it("says the task may not have been created, in K127's words", () => {
+  it("says the task may not have been created and to check the list first (K134)", () => {
     expect(describeFailure(timeout, 0)).toEqual({
-      message: "The task may not have been created. Please check and try again.",
+      message: "The task may not have been created. Check the list before trying again.",
     });
   });
 
   it("keeps the NEW-39 count of tasks already created", () => {
     expect(describeFailure(timeout, 2)).toEqual({
-      message: "2 tasks already created. The task may not have been created. Please check and try again.",
+      message: "2 tasks already created. The task may not have been created. Check the list before trying again.",
     });
   });
 

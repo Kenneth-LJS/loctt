@@ -22685,18 +22685,51 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
-### K133 · Single-key shortcuts get an off switch and remapping (A11Y-43)
+### K134 · Timed-out saves: "Please try again", except create
+
+**Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
+
+A write whose outcome is unknown (the client's deadline passed):
+description save, board move and sprint move read *"Your changes may
+not have been saved. Please try again."* Ken asked whether "reload the
+page" would lose the user's work. Told that a retry of those three is
+safe (the description retry is caught as a conflict if the first write
+landed, and the moves are idempotent) but a retried create can make a
+duplicate task, he chose for Create task: *"The task may not have been
+created. Check the list before trying again."* (the form stays open).
+ERR-4 is amended to match.
+
+### K133 · Single-key shortcuts: off switches, no rebinding (A11Y-43)
 
 **Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
 
 A11Y-43 requires "Single-key shortcuts can be turned off or remapped"
-(WCAG 2.1.4). Nothing implements it: the shortcut dialog's footnote had
-stood in for it, and Ken had that footnote cut (K129). Offered an off
-switch in Settings → Keyboard, retiring the requirement, or building
-remapping too, Ken first answered "Retire the requirement", then asked
-for the question again and chose **"Build remapping too"**: an off
-switch plus rebinding each shortcut. The retire answer is superseded.
-Built before `ui/polish-wave-3` merges (backlog B26).
+(WCAG 2.1.4). Nothing implemented it once the shortcut dialog's footnote
+was cut (K129). Ken first answered "Retire the requirement", asked for
+the question again and chose "Build remapping too", then worked through
+the design:
+- *"where's the setting, which category, what's the UI/UX? is there a
+  'shortcuts help' dialog, and if so, can there be a button that opens
+  an in-dialog settings? (so you can set it from the hotkey dialog and
+  the settings page)"*
+- *"a button for Reset to default (with a warning) and maybe a switch to
+  turn off hotkeys altogether (and then what's the hotkey dialog show
+  then? should show all the shortcuts but disabled and a message that
+  says about re-enabling it)"*
+- Shown how GitHub, Linear and Jira (fixed keys, an off switch) differ
+  from Gmail and VS Code (free remapping), he asked *"maybe just dont
+  allow rebinding and just allow disabling?"*, then chose **"Off
+  switches only, no rebinding"**.
+
+So: a master "Single-key shortcuts" switch plus one switch per shortcut,
+in Settings → Personal → Keyboard and in the `?` dialog's in-dialog
+settings view; "Reset to default" (with a warning) turns them all back
+on; when the master switch is off the `?` dialog lists every shortcut
+disabled with a message and a way to turn them back on; a "Keyboard
+shortcuts" item in the user menu opens the dialog, since `?` itself can
+be off. Stored per user; CLI and MCP read and write it. Built before
+`ui/polish-wave-3` merges (B26). The remapping answers (ignore case,
+per-row reset) lapse with rebinding.
 
 ### K132 · Milestones carry no countdown and no Overdue badge
 
