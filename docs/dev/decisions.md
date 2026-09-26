@@ -22685,6 +22685,23 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K136 · Release gate: close the blockers now; four fast-follows join the gate; DR-C1 retired
+
+**Date:** 2026-09-27 · **Ken's ruling — not revertible by an agent.**
+
+After the release-gate audit (1 resolved, 11 partly, 8 open of 20 items;
+0 of 5 blockers fully closed; RR-B4's "DONE" false):
+- **Close all 5 blockers now** (RR-B1, RR-B2, RR-B4, DR-A1, DR-A2), each
+  with code, a case, a `@verifies` test and a decisions entry.
+- **These fast-follows now gate the release:** DR-A3 (loading states),
+  RR-H1 (corruption audit), RR-H3 (community files), RR-H2 (git sync
+  stable). Ken: *"review everything lightly. we already done one round
+  of it"*: a light pass, not a fresh deep audit.
+- **DR-C1 (spacing tokens) is retired:** the rem-based text-zoom
+  rationale (A11Y-39) wins over fixed spacing tokens.
+- **Open with Ken:** whether `@loctt/mcp` stays a standalone package
+  (he asked for the context first).
+
 ### K135 · Post-merge cleanup rulings (wave 3 follow-ups)
 
 **Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
