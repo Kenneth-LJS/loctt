@@ -22699,8 +22699,13 @@ After the release-gate audit (1 resolved, 11 partly, 8 open of 20 items;
   of it"*: a light pass, not a fresh deep audit.
 - **DR-C1 (spacing tokens) is retired:** the rem-based text-zoom
   rationale (A11Y-39) wins over fixed spacing tokens.
-- **Open with Ken:** whether `@loctt/mcp` stays a standalone package
-  (he asked for the context first).
+- **`@loctt/mcp` stays standalone, per K89.** Asked whether to stop
+  publishing it, Ken: *"i think it makes sense to allow cli / mcp / ui to
+  be installed separately, but explain why we shouldnt/cant do it like
+  this"*. K89 (2026-09-11) already rules three independently installable
+  packages with core bundled into each; nothing prevents it (version skew
+  is handled by the schema-version guard). So @loctt/mcp gets its own
+  `loctt-mcp` command, sharing the server start-up with `loctt mcp`.
 
 ### K135 · Post-merge cleanup rulings (wave 3 follow-ups)
 
