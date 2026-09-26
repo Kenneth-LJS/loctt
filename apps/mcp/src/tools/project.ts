@@ -62,7 +62,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_project",
-    description: "Create a new project. Names are not unique — duplicates are disambiguated by the auto-generated id. Prefixes must be unique across the tracker, as are slugs. A slug is the project's stable URL-safe handle; it is generated from the name unless given, and does not change when the project is renamed. Setting `make_default: true` also sets the workspace default. Returns the generated id and slug.",
+    description: "Create a new project. Names are not unique. Duplicates are disambiguated by the auto-generated id. Prefixes must be unique across the tracker, as are slugs. A slug is the project's stable URL-safe handle; it is generated from the name unless given, and does not change when the project is renamed. Setting `make_default: true` also sets the workspace default. Returns the generated id and slug.",
     inputSchema: {
       name: z.string().describe("Human-readable display name"),
       prefix: z.string().describe("Task-key prefix, e.g. BACKEND-"),
@@ -104,7 +104,7 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "set_project_prefix",
     description:
-      "Change a project's key prefix, renaming every task in it — T-3 becomes WEB-3. " +
+      "Change a project's key prefix, renaming every task in it: T-3 becomes WEB-3. " +
       "Numbers are preserved, so nothing is renumbered, and each task's previous key is " +
       "appended to key_history so old references keep resolving. Prefixes must be unique " +
       "across projects; one already in use is rejected before anything is written. " +
@@ -134,7 +134,7 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "Permanently remove a project from projects.yaml. For projects with tasks, pass " +
       "EITHER `remap_to` (migrate them to another project) OR `clear_project_field: true` " +
-      "(clear their project field, leaving them with no project) — not both, and not neither. " +
+      "(clear their project field, leaving them with no project). Pass exactly one, not both and not neither. " +
       "Cannot delete the only project. The counter is preserved in retired_keys. Use " +
       "`archive_project` for the reversible (soft) variant. Always requires `confirm: true`.",
     inputSchema: {

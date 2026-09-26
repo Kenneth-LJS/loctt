@@ -28,7 +28,7 @@ export const TOOLS: readonly ToolDef[] = [
       refs: z.array(z.string()).min(1).max(500)
         .describe("Source task keys or IDs. Capped at 500."),
       type: z.string().describe("Relationship type (e.g. parent, blocks)"),
-      target: z.string().describe("Target task key or ID — every source links to this one"),
+      target: z.string().describe("Target task key or ID. Every source links to this one."),
     },
     handler: async ({ locttDir }, args) => {
       const refs = args["refs"] as string[];

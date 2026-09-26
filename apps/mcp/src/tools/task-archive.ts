@@ -50,7 +50,7 @@ export const TOOLS: readonly ToolDef[] = [
       "aborting the rest.",
     inputSchema: {
       refs: z.array(z.string()).min(1).max(500)
-        .describe("Task keys or IDs. Capped at 500 — one bulk op holds the tracker lock for its whole run."),
+        .describe("Task keys or IDs. Capped at 500, because one bulk op holds the tracker lock for its whole run."),
     },
     handler: async ({ locttDir }, args) => {
       const refs = args["refs"] as string[];
@@ -69,7 +69,7 @@ export const TOOLS: readonly ToolDef[] = [
       "without aborting the rest.",
     inputSchema: {
       refs: z.array(z.string()).min(1).max(500)
-        .describe("Task keys or IDs. Capped at 500 — one bulk op holds the tracker lock for its whole run."),
+        .describe("Task keys or IDs. Capped at 500, because one bulk op holds the tracker lock for its whole run."),
     },
     handler: async ({ locttDir }, args) => {
       const refs = args["refs"] as string[];

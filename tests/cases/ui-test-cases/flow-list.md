@@ -24,9 +24,11 @@ session, no stored state, tracker has tasks.
   bare `/list`, so a user who bookmarks it gets the default view, not
   one session's filters frozen in.
 
-### LST-2 · M1 · blocker · P3 P9
+### LST-2 · M1 · blocker · P3 P9 P11
 **The table renders all ten columns with the user's configured
 vocabulary.** Default `UserSettings.list_columns` (unset).
+
+> **Amended (K135, Ken 2026-09-26).** Ken: *"remove"* (task due dates turning red when overdue).
 
 - Columns present, left to right: key, project, title, status,
   priority, type, assignee, labels, due, updated.
@@ -41,6 +43,9 @@ vocabulary.** Default `UserSettings.list_columns` (unset).
 - `updated` reflects `updated_at`; `due` reflects `due_date`. A task
   with no `due_date` renders an empty cell, not "Invalid Date", "—"
   ambiguity aside, and not today's date.
+- A due date before today renders exactly like any other due date: no
+  red, no danger colour, no extra weight, no "overdue" text. The date is
+  shown, nothing more.
 
 ### LST-3 · M1 · blocker · P2
 **Clicking a column header sorts by it and writes the sort to the

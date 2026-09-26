@@ -47,7 +47,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "set_config_value",
-    description: "Changes machine-local config (currently git.* keys only). Echo the change you're making in your response so the user can see what was adjusted. Don't call speculatively — only when the user has indicated they want to change a setting.",
+    description: "Changes machine-local config (currently git.* keys only). Echo the change you're making in your response so the user can see what was adjusted. Don't call speculatively. Call it only when the user has indicated they want to change a setting.",
     inputSchema: {
       key: z.string(),
       value: z.string().describe("Stringified value; booleans accept true/false/1/0/yes/no."),
@@ -61,7 +61,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "unset_config_value",
-    description: "Restores a machine-local config key to its default. Echo the change so the user can see what was reset. Don't call speculatively — only when the user has indicated they want to revert a setting.",
+    description: "Restores a machine-local config key to its default. Echo the change so the user can see what was reset. Don't call speculatively. Call it only when the user has indicated they want to revert a setting.",
     inputSchema: {
       key: z.string(),
     },
@@ -73,7 +73,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "list_config_values",
-    description: "Lists all known config keys with their current values, types, and descriptions. Returns a JSON array of {key, value, type, description}. A key whose value could not be read carries `unreadable` with the reason — treat that as \"unknown\", not as \"not set\": `value` is null in both cases.",
+    description: "Lists all known config keys with their current values, types, and descriptions. Returns a JSON array of {key, value, type, description}. A key whose value could not be read carries `unreadable` with the reason. Treat that as \"unknown\", not as \"not set\": `value` is null in both cases.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const items = [];
@@ -104,7 +104,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "get_workflow_key_usage",
-    description: "Counts how many tasks reference each workflow key — every status, priority, task type, relationship, and custom-field enum value. Returns JSON {statuses, priorities, task_types, relationships, custom_field_values, custom_fields}, each a map of key to task count; a key absent from a map is referenced by no task. `custom_field_values` is field key → value key → count (enum values only); `custom_fields` is field key → count of tasks holding any value for the field, whatever its type — the blast radius of deleting a whole field, including number and boolean fields that have no enum values. Call this BEFORE proposing any deletion from workflow.yaml: removing a key that tasks still hold requires a remap, and this is what says how many tasks a remap would move.",
+    description: "Counts how many tasks reference each workflow key: every status, priority, task type, relationship, and custom-field enum value. Returns JSON {statuses, priorities, task_types, relationships, custom_field_values, custom_fields}, each a map of key to task count; a key absent from a map is referenced by no task. `custom_field_values` is field key → value key → count (enum values only); `custom_fields` is field key → count of tasks holding any value for the field, whatever its type. That is the blast radius of deleting a whole field, including number and boolean fields that have no enum values. Call this BEFORE proposing any deletion from workflow.yaml: removing a key that tasks still hold requires a remap, and this is what says how many tasks a remap would move.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       // Counts rather than presence — the same answer the web settings

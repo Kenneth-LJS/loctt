@@ -30,16 +30,16 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "List milestones defined in milestones.yaml. Each milestone has an " +
       "internal id (ULID) and a display name. Pass progress: true to " +
-      "include done/total per milestone — computed from status CATEGORY " +
+      "include done/total per milestone, computed from status CATEGORY " +
       "(so a renamed or deleted `done` status does not break it), with " +
       "discarded tasks excluded from the denominator so abandoned work " +
       "does not stall a milestone below 100% forever. A milestone whose " +
       "own progress could not be computed (an unreadable member attributed " +
       "to it) carries `progress: { unavailable: true, reason }` in place " +
-      "of the numbers — that one milestone fails independently; the others " +
+      "of the numbers. That one milestone fails independently; the others " +
       "still report real numbers. When an unreadable task cannot be " +
       "attributed to any milestone, the response carries a top-level " +
-      "`unreadable` list naming them — the totals count only the readable " +
+      "`unreadable` list naming them. The totals count only the readable " +
       "corpus, so a short total is explained rather than silent. "
       + "By default archived milestones are hidden (K107); pass "
       + "`archived: archived` for only archived or `archived: all` for both.",

@@ -33,16 +33,16 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "List sprints defined in sprints.yaml. Each sprint has an internal " +
       "id (ULID), a display name, dates, state, and optional goal. Pass " +
-      "progress: true to include done/total per sprint — computed from " +
+      "progress: true to include done/total per sprint, computed from " +
       "status CATEGORY (so a renamed or deleted `done` status does not " +
       "break it), with discarded tasks excluded from the denominator so " +
       "abandoned work does not stall a sprint below 100% forever. A sprint " +
       "whose own progress could not be computed (an unreadable member " +
       "attributed to it) carries `progress: { unavailable: true, reason }` " +
-      "in place of the numbers — that one sprint fails independently; the " +
+      "in place of the numbers. That one sprint fails independently; the " +
       "others still report real numbers. When an unreadable task cannot be " +
       "attributed to any sprint, the response carries a top-level " +
-      "`unreadable` list naming them — the totals count only the readable " +
+      "`unreadable` list naming them. The totals count only the readable " +
       "corpus, so a short total is explained rather than silent. "
       + "By default archived sprints are hidden (K107); pass "
       + "`archived: archived` for only archived or `archived: all` for both.",

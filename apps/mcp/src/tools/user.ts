@@ -103,7 +103,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "sweep_sidebar_pins",
-    description: "Removes pinned saved views whose views no longer exist in queries.yaml, and reports which were removed by id. Pins whose views merely match zero tasks are kept — this checks existence, not results.",
+    description: "Removes pinned saved views whose views no longer exist in queries.yaml, and reports which were removed by id. Pins whose views merely match zero tasks are kept. This checks existence, not results.",
     inputSchema: {},
     handler: async ({ locttDir }) => {
       const current = await getCurrentUser(locttDir);
@@ -146,7 +146,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "set_sidebar_groups",
-    description: "Sets the active user's sidebar-groups customization (SHL-45). `order` is the ids in render order (any built-in not listed follows in default order); `hidden` is the ids to hide (a hidden group renders nothing — a deliberate choice, distinct from an empty group). Omit both and pass reset=true to clear back to the default. An unknown id is rejected with an error naming it (a typo must not silently no-op); duplicates are de-duplicated. Returns the resolved state.",
+    description: "Sets the active user's sidebar-groups customization (SHL-45). `order` is the ids in render order (any built-in not listed follows in default order); `hidden` is the ids to hide (a hidden group renders nothing, a deliberate choice distinct from an empty group). Omit both and pass reset=true to clear back to the default. An unknown id is rejected with an error naming it (a typo must not silently no-op); duplicates are de-duplicated. Returns the resolved state.",
     inputSchema: {
       order: z.array(z.string()).optional().describe("Group/filter ids in render order"),
       hidden: z.array(z.string()).optional().describe("Group/filter ids to hide"),
@@ -274,7 +274,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_user",
-    description: "Creates a new user. Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone. Avatars are not settable via MCP — use the CLI or web UI.",
+    description: "Creates a new user. Names are not unique (UUIDs disambiguate). Timezone defaults to the system timezone. Avatars are not settable via MCP. Use the CLI or web UI.",
     inputSchema: {
       name: z.string(),
       email: z.string().optional(),
@@ -326,7 +326,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "unarchive_user",
-    description: "Reverses archive_user — clears the archived flag.",
+    description: "Reverses archive_user: clears the archived flag.",
     inputSchema: { ref: z.string() },
     handler: async ({ locttDir }, args) => {
       const target = await resolveUserRef(locttDir, args["ref"] as string);
@@ -336,7 +336,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "count_user_references",
-    description: "Counts how many tasks reference a user, split by role (assignee vs reporter). Read-only. Use it before delete_user to see what a remap or unassign will affect — the same split delete_user reports back.",
+    description: "Counts how many tasks reference a user, split by role (assignee vs reporter). Read-only. Use it before delete_user to see what a remap or unassign will affect. It is the same split delete_user reports back.",
     inputSchema: { ref: z.string() },
     handler: async ({ locttDir }, args) => {
       const target = await resolveUserRef(locttDir, args["ref"] as string);

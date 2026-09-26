@@ -164,6 +164,11 @@ Relationships:
 Steps to reproduce…
 ```
 
+A task file that will not parse is an error that names the file and the
+line, never "not found". When a key matches nothing and some task files
+could not be read, LocTT cannot tell whether the task exists, so the
+error says so and lists each unreadable file once, as `path: reason`.
+
 ### `loctt set <task> <field> <value>`
 
 Set one field on a task. `<task>` may be a comma-separated list

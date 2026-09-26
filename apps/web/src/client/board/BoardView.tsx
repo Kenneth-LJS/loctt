@@ -125,7 +125,7 @@ export function BoardView() {
   const buckets = useMemo(() => bucketTasks(columns, items), [columns, items]);
 
   // The workspace's date, not the browser's — the same source the
-  // list uses, so both views agree on which cards are overdue.
+  // list uses, so both views format due dates alike.
   const today = info.data?.today ?? new Date().toISOString().slice(0, 10);
 
   const cardLayout = useMemo(

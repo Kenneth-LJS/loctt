@@ -201,3 +201,24 @@ describe("BoardCard relationship markers (BRD-50 / UX-5)", () => {
     expect(container.querySelector('[data-testid^="board-card-epic"]')).toBeNull();
   });
 });
+
+describe("BoardCard due date (K135)", () => {
+  // K135: a past due date is shown plainly. The board used to colour it
+  // `text-danger-fg` and bold it; Ken ruled "remove". Asserted by the
+  // rendered class and text, not a testid, so a restyle that brings the
+  // red back under another name still fails here.
+  // @verifies BRD-5
+  it("renders a past due date exactly like a future one: no danger colour, no weight, no 'overdue'", () => {
+    const layout: readonly CardLayoutField[] = ["due_date"];
+    // `today` in renderCard is 2026-09-06.
+    renderCard({ id: "01DUEPAST", key: "WEB-20", title: "Past", due_date: "2026-06-20" }, { layout });
+    renderCard({ id: "01DUEFUTR", key: "WEB-21", title: "Future", due_date: "2026-12-01" }, { layout });
+
+    const past = within(screen.getByTestId("board-card-WEB-20")).getByText("Jun 20");
+    const future = within(screen.getByTestId("board-card-WEB-21")).getByText("Dec 1");
+
+    expect(past.className).not.toMatch(/danger|red|font-(medium|semibold|bold)/);
+    expect(past.className).toBe(future.className);
+    expect(screen.getByTestId("board-card-WEB-20").textContent).not.toMatch(/overdue/i);
+  });
+});

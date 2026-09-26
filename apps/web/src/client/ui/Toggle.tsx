@@ -31,16 +31,25 @@ export interface ToggleProps
 // the browser default, so `rem`-based sizes measure short (h-6 came
 // out 21px, not 24, the same trap `min-h-[24px]` elsewhere in this
 // codebase already routes around).
+//
+// K135 (B30): a disabled switch drops the accent entirely rather than
+// fading it. The old `opacity-50` over `bg-accent` still read as a
+// bright "on" in dark mode. Disabled, checked or not, the track takes
+// the muted `border-default` token and the thumb `bg-surface`, so the
+// state stays legible from the thumb's position while the colour says
+// "not available". `disabled:checked:` stacks two pseudo-classes, so
+// it outranks `checked:bg-accent` whatever order the utilities emit in.
 const TRACK_BASE =
   "peer appearance-none shrink-0 h-[24px] w-[44px] rounded-full border-0 bg-border-strong " +
   "cursor-pointer transition-colors " +
   "checked:bg-accent " +
-  "disabled:cursor-not-allowed disabled:opacity-50 " +
+  "disabled:cursor-not-allowed disabled:bg-border-default disabled:checked:bg-border-default " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-primary)]";
 
 const THUMB =
   "pointer-events-none absolute left-[4px] top-1/2 h-[16px] w-[16px] -translate-y-1/2 rounded-full " +
-  "bg-accent-contrast transition-transform peer-checked:translate-x-[20px]";
+  "bg-accent-contrast transition-transform peer-checked:translate-x-[20px] " +
+  "peer-disabled:bg-bg-surface";
 
 export const Toggle = forwardRef<HTMLInputElement, ToggleProps>(
   function Toggle({ className, ...rest }, ref) {

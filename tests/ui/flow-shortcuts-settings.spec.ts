@@ -216,4 +216,69 @@ test.describe("Single-key shortcut switches", () => {
     await expect(page.getByTestId("keyboard-shortcuts-toggle-goto")).toBeChecked();
     await expect.poll(() => settingsFile(tracker.root)).not.toMatch(/keyboard_shortcuts/);
   });
+  // K135 (B30): a disabled switch reads as disabled in both themes. It
+  // used to keep `bg-accent` at 50% opacity, which in dark mode still
+  // read as a bright "on". Asserted on computed colours in a real
+  // browser, against the tokens resolved in the same theme, so a class
+  // that emits in the wrong order (the accent winning) fails here.
+  // @verifies A11Y-57
+  test("A11Y-57 (K135): a disabled switch drops the accent in light and dark", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["user", "shortcuts", "--single-key", "off", "--off", "goto"]);
+    for (const theme of ["light", "dark"] as const) {
+      await openKeyboardSettings(page, tracker.baseURL);
+      await page.evaluate(t => { window.localStorage.setItem("tt-theme", t); }, theme);
+      await page.reload();
+      await expect(page.getByTestId("keyboard-shortcuts-master")).not.toBeChecked();
+      if (theme === "dark") await expect(page.locator("html")).toHaveClass(/dark/);
+      else await expect(page.locator("html")).not.toHaveClass(/dark/);
+
+      const on = page.getByTestId("keyboard-shortcuts-toggle-new-task");
+      const off = page.getByTestId("keyboard-shortcuts-toggle-goto");
+      await expect(on).toBeDisabled();
+      await expect(on).toBeChecked();
+      await expect(off).not.toBeChecked();
+
+      const read = await page.evaluate(() => {
+        const probe = (v: string): string => {
+          const el = document.createElement("span");
+          el.style.backgroundColor = `var(${v})`;
+          document.body.appendChild(el);
+          const c = getComputedStyle(el).backgroundColor;
+          el.remove();
+          return c;
+        };
+        const sw = (testId: string) => {
+          const i = document.querySelector(`[data-testid="${testId}"]`) as HTMLElement;
+          const thumb = i.nextElementSibling as HTMLElement;
+          return {
+            track: getComputedStyle(i).backgroundColor,
+            opacity: getComputedStyle(i).opacity,
+            thumb: getComputedStyle(thumb).backgroundColor,
+          };
+        };
+        return {
+          accent: probe("--accent"),
+          muted: probe("--border-default"),
+          surface: probe("--bg-surface"),
+          on: sw("keyboard-shortcuts-toggle-new-task"),
+          off: sw("keyboard-shortcuts-toggle-goto"),
+          master: sw("keyboard-shortcuts-master"),
+        };
+      });
+      // Checked and disabled: the muted track, not the accent.
+      expect(read.on.track, theme).not.toBe(read.accent);
+      expect(read.on.track, theme).toBe(read.muted);
+      expect(read.on.thumb, theme).toBe(read.surface);
+      // Unchecked and disabled looks the same; the thumb's side tells them apart.
+      expect(read.off.track, theme).toBe(read.muted);
+      expect(read.off.thumb, theme).toBe(read.surface);
+      // Not a fade over the old colours: full opacity, the tokens carry it.
+      expect(read.on.opacity, theme).toBe("1");
+      // The enabled master (off) keeps its normal, stronger track.
+      expect(read.master.track, theme).not.toBe(read.muted);
+    }
+  });
 });
