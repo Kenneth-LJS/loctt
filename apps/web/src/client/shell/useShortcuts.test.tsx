@@ -269,14 +269,24 @@ describe("off switches", () => {
   });
 
   // @verifies A11Y-43
+  // The real caller hands a NEW filter function each time the settings
+  // change (a fresh `useCallback` over new state), never mutating the
+  // old one. The previous version of this test flipped a variable the
+  // first function closed over, so it passed even with the filter
+  // captured once at install (A350).
   it("reads the switches per keystroke, so a change applies without remounting", () => {
     const onNew = vi.fn();
-    let on = true;
-    renderHook(() => useShortcuts({ "new-task": onNew }, () => on));
+    const allOn: (id: string) => boolean = () => true;
+    const newTaskOff: (id: string) => boolean = id => id !== "new-task";
+    const { rerender } = renderHook(
+      ({ isOn }: { isOn: (id: string) => boolean }) => useShortcuts({ "new-task": onNew }, isOn),
+      { initialProps: { isOn: allOn } },
+    );
     press("n");
     expect(onNew).toHaveBeenCalledTimes(1);
-    on = false;
+    rerender({ isOn: newTaskOff });
     press("n");
+    // The second `n` is ignored: the new filter was read on that key.
     expect(onNew).toHaveBeenCalledTimes(1);
   });
 

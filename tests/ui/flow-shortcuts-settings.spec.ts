@@ -174,11 +174,20 @@ test.describe("Single-key shortcut switches", () => {
     await expect(dialog.getByTestId("shortcut-help-off-notice")).toContainText("Single-key shortcuts are off.");
     await expect(dialog.getByTestId("shortcut-row-new-task")).toHaveAttribute("aria-disabled", "true");
 
-    await dialog.getByTestId("shortcut-help-turn-on").click();
+    // By keyboard, so the pressed button holds focus when it unmounts.
+    await dialog.getByTestId("shortcut-help-turn-on").focus();
+    await page.keyboard.press("Enter");
     await expect(dialog.getByTestId("shortcut-help-off-notice")).toHaveCount(0);
+    // A350: focus lands on the close button, not `body`, and the change
+    // is announced by a live region that outlived the notice.
+    await expect(dialog.getByTestId("shortcut-help-close")).toBeFocused();
+    await expect(dialog.getByRole("status").filter({ hasText: "Single-key shortcuts are on." })).toHaveCount(1);
     await expect.poll(() => settingsFile(tracker.root)).not.toMatch(/keyboard_shortcuts/);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
+    // A11Y-60 bullet 2: focus returns to the page, to the menu that
+    // opened the dialog, not to `document.body`.
+    await expect(page.getByTestId("user-menu-trigger")).toBeFocused();
 
     await pressOnPage(page, "n");
     await expect(page.getByTestId("create-task-modal")).toBeVisible();

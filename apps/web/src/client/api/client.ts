@@ -87,8 +87,10 @@ export class ApiError extends Error {
  * A surface that frames a failure with its own sentence ("wasn't
  * saved", "Couldn't create the task:") must branch on this first:
  * joining that frame to the timeout envelope asserts a failure and then
- * says the outcome is unknown. The unknown-outcome wording is K127's,
- * "... may not have been saved. Please check and try again." (A348).
+ * says the outcome is unknown. The unknown-outcome wording is K134's:
+ * "Your changes may not have been saved. Please try again.", except
+ * create, where a retry can duplicate: "The task may not have been
+ * created. Check the list before trying again."
  */
 export function isUnknownOutcome(err: unknown): boolean {
   return err instanceof ApiError && err.isTimeout && err.envelope?.data_state === "unknown";

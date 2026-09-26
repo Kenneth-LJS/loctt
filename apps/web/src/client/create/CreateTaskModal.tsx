@@ -807,7 +807,8 @@ interface CreateFailure {
  *    names the milestone, the project or the field, and a generic
  *    rewrite would discard exactly that. The exception is a timed-out
  *    write (`data_state: "unknown"`): it may have landed, so it gets
- *    K127's unknown-outcome line, not "Couldn't create the task" (A348).
+ *    K134's create line, "The task may not have been created. Check
+ *    the list before trying again.", not "Couldn't create the task".
  *
  * Exported for its unit test.
  */

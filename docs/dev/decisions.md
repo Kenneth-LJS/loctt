@@ -22836,6 +22836,67 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A350 · Fix the third review's findings (K133/K134 follow-ups, path-once)
+
+Agent-made implementation choices, § 8 format.
+
+#### 1. Attributed progress reason carries `path: reason`
+
+- **Decision:** `milestoneProgressDetailed`/`sprintProgressDetailed` store `${u.path}: ${u.reason}` as the per-row `{unavailable, reason}` for an attributed unreadable task (`packages/core/src/task/progress.ts`).
+- **Why:** A348 made `UnreadableTask.reason` path-free. An attributed task is kept out of the tracker-level `unreadable[]`, so the per-row reason is the only place the file is named. Without the prefix, MCP `list_milestones`/`list_sprints` (and CLI `--json`) no longer said which file was broken.
+- **Alternatives:** add a `path` field to `ProgressUnavailable` (contract change across three surfaces, wider than the finding).
+- **Other consumers checked:** CLI `list` (prints `path: reason`), MCP `list_tasks` (separate `path`/`reason` fields), web List/Board/Timeline banners (`{u.path}: {u.reason}`), git sync `malformed` (CLI/MCP `id: path: reason`, web shows path + reason), `export` (prints path only), doctor user rows (`path` beside message), `UnreadableTaskError` (headline names the path). Only progress lost the path.
+- **Web:** the per-row reason is not sent by `/api/milestones?progress=true` (the item just omits `progress`), so nothing changes there.
+- **To revert:** set `attributedFailures.set(recovered, u.reason)` again, and drop the two assertions in `progress-batch.test.ts` "marks a milestone unavailable…" and the `badFile` assertion in `tests/integration/mcp/list-sprints-progress.test.ts`.
+
+#### 5. Errno reasons drop Node's embedded path; id-mismatch carries `{ path }`
+
+- **Decision:** new `errnoReasonWithoutPath(err)` in `packages/core/src/utils/fs-errors.ts` turns `EACCES: permission denied, open '<path>'` into `EACCES: permission denied` (code + Node's short description). `TaskParseError.reasonOf` and `UserProfileError.reasonOf` use it, so `loadAllTasksDetailed`, `loadAllUsersDetailed`, the git-sync malformed readback and `UnreadableTaskError` all get a path-free reason. `loadUserProfile`'s id mismatch is now `new UserProfileError("has id 'x', expected 'y'", { path })`, so its message reads `<path> is not valid: has id 'x', expected 'y'`.
+- **Why:** those lists print `path: reason`; Node's message and the old id-mismatch text each named the path a second time.
+- **Alternatives:** store `code` as a separate field on `UnreadableTask`/`UnreadableUser` (contract growth for every surface); rewrite the errno into a sentence (would duplicate `FsAccessError`'s write-side wording for reads).
+- **To revert:** delete the `errnoReasonWithoutPath` branch from both `reasonOf`s and the helper, and restore the id-mismatch throw's old text without `{ path }`.
+
+#### 2–3. `?` dialog "Turn on": failure callout, focus, persistent live region
+
+- **Decision:** the off notice renders `shortcutSaveFailure(save.error)` in a `Callout role="alert"` when the save failed (the optimistic write rolls back, which brings the notice back). "Turn on" moves focus to the dialog's close button (as `switchView` does). The notice no longer carries `role="status"`; a persistent `sr-only` `role="status"` region (`shortcut-help-status`) outside it says "Single-key shortcuts are on." after Turn on succeeds, and is empty otherwise (it speaks only for the change; the visible notice is read in place, so the off state is not duplicated for screen-reader users).
+- **Why:** the button and the old `role="status"` element unmounted together, so focus fell to `body` and the region was removed at the moment it had something to say.
+- **Alternatives:** keep `role="status"` on the notice and add a second region (two regions, one of them still removed on change); announce through the app `useAnnouncer` (would work but couples the dialog to the shell provider, which the unit tests do not mount).
+- **To revert:** restore the notice's `role="status"`, delete the status region, the `turnedOn` state, the `closeRef.current?.focus()` call and the callout.
+
+#### 4. Editor failure line branches on `isUnknownOutcome`
+
+- **Decision:** `shortcutSaveFailure(err)` (exported from `ShortcutSettingsEditor.tsx`, shared with the dialog): timed-out write → K134's "Your changes may not have been saved. Please try again."; any other failure → "Couldn't save your shortcut settings. Try again."
+- **Why:** a timed-out write may have landed (K134). Retrying a switch write is idempotent, so K134's "Please try again" line applies, not create's "check the list".
+- **To revert:** return the fixed "Couldn't save…" string.
+
+#### 7. A11Y-60 e2e asserts focus returns to the user-menu trigger (test only)
+
+- **Decision:** no product change. `useInertBackground` (`ui/Modal.tsx`) already restores focus to the last surviving chrome focus, the trigger, after the dialog's own restore lands on a detached menu item. An interim `Header.tsx` change that focused the trigger in `onSelect` was measured redundant (the spec passed without it) and removed.
+- **Red-proof:** with the `queueMicrotask` recovery in `useInertBackground` disabled, the new `toBeFocused()` on `user-menu-trigger` fails.
+- **To revert:** delete the assertion in `tests/ui/flow-shortcuts-settings.spec.ts`.
+
+#### 11. e2e journey 04 uses the current MCP tool schemas
+
+- **Decision:** `archive_task`, `unarchive_task` and `delete_task` take `refs: [...]` (the bulk shape), so the journey's calls now pass `refs: ["T-1"]`; assertions unchanged. (`link_tasks` was already fixed by the coordinator; `unlink_tasks`, `update_task`, `unset_field`, body tools still take `ref`.)
+- **To revert:** n/a (the old args are rejected by the current schemas).
+
+#### 8. `loctt user shortcuts` refuses a valueless flag
+
+- **Decision:** `--single-key` with no value, or `--off`/`--on` with no id (bare, followed by another flag, `--on=`, or one of several occurrences valueless) throws `UsageError` (exit 2) naming the flag; `--off`/`--on` list the valid ids.
+- **Why:** they read as absent, so the command printed the state and exited 0 having changed nothing.
+- **Deviation from the review's wording:** presence is counted with a local `occurrences()` check, not `hasFlag`: `hasFlag("--off")` throws "Expected one of: true, false…" on `--off=new-task`, a valid use.
+- **To revert:** delete the `occurrences` block in `apps/cli/src/commands/user.ts`.
+
+#### 9. Editor heading level is a prop
+
+- **Decision:** `ShortcutSettingsEditor` takes `headingLevel?: 2 | 3` (default 3, for the dialog under its h2 title); Settings → Keyboard passes 2, so the page reads h1 → h2 (editor groups) → h2 (reference groups).
+- **To revert:** drop the prop and the `headingLevel={2}` in `KeyboardPanel.tsx`.
+
+#### 6, 10. Test and comment fixes
+
+- `useShortcuts.test.tsx` "reads the switches per keystroke" now `rerender`s with a new filter function (the real caller's shape) and was shown red with `isOn` captured once at install.
+- Stale K127 quotes in `api/client.ts` (`isUnknownOutcome` doc), `CreateTaskModal.tsx` (`describeFailure` doc), `describeFailure.test.ts` and `useBodyAutosave.test.ts` now quote K134. `ListView.error.test.tsx` and `RegionErrorBoundary.test.tsx` still cite K127 correctly (the error screen's wording).
+
 ### A349 · B26 implementation choices (K133 single-key shortcut switches)
 
 **Date:** 2026-09-26 · agent-made, revertible.

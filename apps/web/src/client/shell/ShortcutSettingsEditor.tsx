@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 
+import { isUnknownOutcome } from "../api/client.ts";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { ConfirmDialog } from "../ui/ConfirmDialog.tsx";
@@ -23,7 +24,30 @@ import { useKeyboardShortcutSettings } from "./useKeyboardShortcutSettings.ts";
  * keep their state (as the K125 Filters group's children do), so
  * turning the master back on restores the user's choices.
  */
-export function ShortcutSettingsEditor({ testIdPrefix = "shortcut-settings" }: { readonly testIdPrefix?: string }) {
+/**
+ * The sentence for a shortcut switch whose save failed. A timed-out
+ * write may have landed, so it gets K134's unknown-outcome wording
+ * rather than a claim that nothing was saved (A350).
+ */
+export function shortcutSaveFailure(err: unknown): string {
+  return isUnknownOutcome(err)
+    ? "Your changes may not have been saved. Please try again."
+    : "Couldn't save your shortcut settings. Try again.";
+}
+
+export function ShortcutSettingsEditor({
+  testIdPrefix = "shortcut-settings",
+  headingLevel = 3,
+}: {
+  readonly testIdPrefix?: string;
+  /**
+   * The level of the group headings. They sit one below whatever heads
+   * the editor: the `?` dialog's title is an h2, Settings → Keyboard's
+   * is an h1 and its reference groups beside the editor are h2 (A350).
+   */
+  readonly headingLevel?: 2 | 3;
+}) {
+  const GroupHeading = headingLevel === 2 ? "h2" : "h3";
   const { state, change, reset, settingsQuery, save } = useKeyboardShortcutSettings();
   const [confirmReset, setConfirmReset] = useState(false);
   const masterId = useId();
@@ -57,9 +81,9 @@ export function ShortcutSettingsEditor({ testIdPrefix = "shortcut-settings" }: {
 
       {groupsOf(state.shortcuts).map(({ group, items }) => (
         <section key={group} className="mb-4">
-          <h3 className="mb-1.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary">
+          <GroupHeading className="mb-1.5 text-[0.8571rem] font-semibold uppercase tracking-wide text-text-tertiary">
             {group}
-          </h3>
+          </GroupHeading>
           <ul className="m-0 list-none p-0">
             {items.map(s => (
               <li
@@ -97,7 +121,7 @@ export function ShortcutSettingsEditor({ testIdPrefix = "shortcut-settings" }: {
 
       {save.isError ? (
         <Callout tone="danger" role="alert" testId={`${testIdPrefix}-error`} className="mb-3">
-          Couldn&apos;t save your shortcut settings. Try again.
+          {shortcutSaveFailure(save.error)}
         </Callout>
       ) : null}
 

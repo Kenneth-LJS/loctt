@@ -73,7 +73,7 @@ describe("E2E journey: error paths", () => {
     await withTmpLoctt(async ({ root }) => {
       const result = await runCli(["config", "set", "git.auto_push", "true"], { cwd: root });
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("git mode is not enabled");
+      expect(result.stderr).toContain("Git mode is not enabled. Run 'loctt git enable' first.");
     });
   });
 

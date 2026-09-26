@@ -12,6 +12,7 @@ import {
 import { renderRawText } from "../task/frontmatter.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { errnoReasonWithoutPath } from "../utils/fs-errors.js";
 
 export class UserProfileError extends Error {
   /** The profile.yaml this came from, when the reader knew it. */
@@ -40,6 +41,10 @@ export class UserProfileError extends Error {
    */
   static reasonOf(err: unknown): string {
     if (err instanceof UserProfileError) return err.reason;
+    // A read failure (EACCES, EISDIR…) embeds the path in Node's own
+    // message; drop it so `path: reason` names the file once (A350).
+    const errno = errnoReasonWithoutPath(err);
+    if (errno !== undefined) return errno;
     return err instanceof Error ? err.message : String(err);
   }
 }
@@ -253,8 +258,12 @@ export async function loadUserProfile(
     throw err;
   }
   if (profile.id !== userId) {
+    // The path rides in `{ path }`, not the text: `message` leads with
+    // it for a direct throw and `reason` stays path-free for a
+    // `path: reason` list, so neither says it twice (A350).
     throw new UserProfileError(
-      `profile.yaml at ${path} has id '${profile.id}', expected '${userId}'`,
+      `has id '${profile.id}', expected '${userId}'`,
+      { path },
     );
   }
   return profile;
@@ -293,7 +302,7 @@ export interface UnreadableUser {
   /** The directory name, which is the user's id. */
   readonly id: string;
   readonly path: string;
-  /** One sentence naming the file and the cause. */
+  /** The cause, without the path — `path` is its own field (A348). */
   readonly reason: string;
 }
 

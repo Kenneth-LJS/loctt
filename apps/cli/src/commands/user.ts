@@ -339,6 +339,27 @@ export async function run(args: string[], root: string): Promise<void> {
         const onArg = getArgAll(args, "--on");
         const reset = hasFlag(args, "--reset");
 
+        // A flag given with no value (`--single-key` last, `--off` bare,
+        // `--on --reset`) used to read as absent, so the command printed
+        // the state and exited 0 having changed nothing (A350).
+        const occurrences = (flag: string): number => {
+          const end = args.indexOf("--");
+          return (end === -1 ? args : args.slice(0, end))
+            .filter(a => a === flag || a.startsWith(`${flag}=`)).length;
+        };
+        if (occurrences("--single-key") > 0 && singleKeyArg === undefined) {
+          throw new UsageError("--single-key needs a value: on or off.", usage);
+        }
+        for (const [flag, values] of [["--off", offArg], ["--on", onArg]] as const) {
+          const given = values.flatMap(v => v.split(",")).some(v => v.trim() !== "");
+          if (occurrences(flag) > values.length || (occurrences(flag) > 0 && !given)) {
+            throw new UsageError(
+              `${flag} needs one or more shortcut ids. Valid ids: ${SHORTCUT_VALID_IDS.join(", ")}`,
+              usage,
+            );
+          }
+        }
+
         if (reset && (singleKeyArg !== undefined || offArg.length > 0 || onArg.length > 0)) {
           throw new UsageError("--reset cannot be combined with --single-key/--off/--on", usage);
         }

@@ -109,7 +109,7 @@ export function KeyboardPanel() {
       <h1 className="mb-4 text-lg font-semibold text-text-primary">Keyboard</h1>
 
       <section className="mb-8 max-w-2xl">
-        <ShortcutSettingsEditor testIdPrefix="keyboard-shortcuts" />
+        <ShortcutSettingsEditor testIdPrefix="keyboard-shortcuts" headingLevel={2} />
       </section>
 
       {SHORTCUTS.map(group => (

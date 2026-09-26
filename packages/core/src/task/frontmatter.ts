@@ -3,6 +3,7 @@ import { TaskFrontmatterSchema } from "@loctt/contracts";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { formatZodIssues } from "../config/zod-error.js";
+import { errnoReasonWithoutPath } from "../utils/fs-errors.js";
 import { toMutable } from "./mutable.js";
 
 /**
@@ -43,6 +44,10 @@ export class TaskParseError extends Error {
    */
   static reasonOf(err: unknown): string {
     if (err instanceof TaskParseError) return err.reason;
+    // A read failure (EACCES, EISDIR…) embeds the path in Node's own
+    // message; drop it so `path: reason` names the file once (A350).
+    const errno = errnoReasonWithoutPath(err);
+    if (errno !== undefined) return errno;
     return err instanceof Error ? err.message : String(err);
   }
 }
