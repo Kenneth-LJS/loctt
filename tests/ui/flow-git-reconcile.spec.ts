@@ -17,6 +17,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { defined } from "./fixtures/defined.ts";
 import { deleteFromOtherClone, editFromOtherClone, expect, type GitTrackerFixture, linkFromOtherClone, test } from "./fixtures/git-tracker.ts";
 
 function syncYamlPath(root: string): string {
@@ -266,7 +267,7 @@ test("GIT-14: a drift value renders with a marker; keep-remote warns; pick-value
   const errors = guardPageErrors(page);
   // Remote sets a status; then it is deleted from the LOCAL workflow, so
   // the remote value references a status that no longer exists locally.
-  const key = (await gitTracker.seed(["Drift"]))[0]!;
+  const key = defined((await gitTracker.seed(["Drift"]))[0], "seeded key");
   await gitTracker.run(["git", "enable"]);
   await gitTracker.run(["git", "publish"]);
   await editFromOtherClone(gitTracker.remoteRepo, [{ key, field: "status", value: "in_progress" }]);
@@ -308,7 +309,7 @@ test("GIT-13: a parent conflict renders tasks (not ULIDs), a picker, and fixes t
   // @verifies GIT-13
   const errors = guardPageErrors(page);
   const seeded = await gitTracker.seed(["Child", "Parent one", "Parent two"]);
-  const child = seeded[0]!, p1 = seeded[1]!, p2 = seeded[2]!;
+  const child = defined(seeded[0], "seeded[0]"), p1 = defined(seeded[1], "seeded[1]"), p2 = defined(seeded[2], "seeded[2]");
   await gitTracker.run(["git", "enable"]);
   await gitTracker.run(["git", "publish"]);
   // Remote links the child's parent to p2; local links it to p1 — a
@@ -575,7 +576,7 @@ test("GIT-10: disable states the branch survives, modifies no task files, and re
   const [key] = await gitTracker.seed(["Keep me"]);
   await gitTracker.run(["git", "enable"]);
   await gitTracker.run(["git", "publish"]);
-  const before = await taskFileByKey(gitTracker.root, key!);
+  const before = await taskFileByKey(gitTracker.root, defined(key, "key"));
 
   await gotoSync(page, gitTracker.baseURL);
   await page.getByTestId("git-disable").click();
@@ -593,7 +594,7 @@ test("GIT-10: disable states the branch survives, modifies no task files, and re
   const syncYaml = await readFile(syncYamlPath(gitTracker.root), "utf8");
   expect(syncYaml).toMatch(/enabled:\s*false/);
   // No task file was modified by disabling; the branch still exists on the remote.
-  expect(await taskFileByKey(gitTracker.root, key!)).toBe(before);
+  expect(await taskFileByKey(gitTracker.root, defined(key, "key"))).toBe(before);
   expect(await gitTracker.bareHasRef("loctt")).toBe(true);
   expect(errors).toEqual([]);
 });

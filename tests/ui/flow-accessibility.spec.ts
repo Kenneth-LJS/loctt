@@ -37,6 +37,7 @@ import path from "node:path";
 
 import { AxeBuilder } from "@axe-core/playwright";
 
+import { defined } from "./fixtures/defined.ts";
 import { expect, test } from "./fixtures/tracker.ts";
 
 /**
@@ -2657,7 +2658,7 @@ test.describe("A11Y — persistent states and motion", () => {
     expect(shortTitleBox).not.toBeNull();
     // Bounded, not proportional to the character count. A 300-char
     // title at ~7px/char would be ~2100px unclamped.
-    expect(titleBox!.width).toBeLessThan(600);
+    expect(defined(titleBox, "titleBox").width).toBeLessThan(600);
 
     // ...and the table does not push the document into a horizontal
     // scroll, which is what an unclamped title actually does to the
@@ -2674,7 +2675,7 @@ test.describe("A11Y — persistent states and motion", () => {
     const shortBox = await shortRow.boundingBox();
     expect(longBox).not.toBeNull();
     expect(shortBox).not.toBeNull();
-    expect(longBox!.height).toBeLessThanOrEqual(shortBox!.height * 1.5);
+    expect(defined(longBox, "longBox").height).toBeLessThanOrEqual(defined(shortBox, "shortBox").height * 1.5);
 
     // ...and the remaining cells stay in their columns: the long row
     // has the same cell count as the short one, and its last cell
@@ -2683,7 +2684,7 @@ test.describe("A11Y — persistent states and motion", () => {
     expect(await longRow.locator("td").count()).toBe(await shortRow.locator("td").count());
     const longLast = await longRow.locator("td").last().boundingBox();
     const shortLast = await shortRow.locator("td").last().boundingBox();
-    expect(Math.abs(longLast!.x - shortLast!.x)).toBeLessThan(2);
+    expect(Math.abs(defined(longLast, "longLast").x - defined(shortLast, "shortLast").x)).toBeLessThan(2);
   });
 });
 
@@ -3516,10 +3517,12 @@ test.describe("A11Y — zoom and blocking screens", () => {
     const fit = await page.evaluate(() => {
       const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
       const visualH = window.innerHeight * zoom;
-      const m = document.querySelector('[data-testid="create-task-modal"]')!;
+      const m = document.querySelector('[data-testid="create-task-modal"]');
+      if (m === null) throw new Error("create-task-modal not in the DOM");
       const btn = [...m.querySelectorAll("button")].find(
         b => (b.textContent ?? "").trim() === "Create task",
-      )!;
+      );
+      if (btn === undefined) throw new Error("Create task button not in the modal");
       const mr = m.getBoundingClientRect();
       const br = btn.getBoundingClientRect();
       return {

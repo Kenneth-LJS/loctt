@@ -9,12 +9,7 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-## B32 · Zero lint warnings (K135) — **todo**
-
-Fix all 65 warnings (hook dependencies, non-null assertions) without
-changing behaviour.
-
-## B38 · One package, `loctt` (K139) — **todo** (after B32)
+## B38 · One package, `loctt` (K139) — **in progress**
 
 - Rename `@loctt/cli` to `loctt` (bin `loctt`), with core, the web
   client and the MCP server bundled. `@loctt/mcp` and `@loctt/web`
