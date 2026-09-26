@@ -524,12 +524,11 @@ function parseConflict(envelope: ErrorResponse, mine: string): BodyConflict {
  * errno is: server-side.
  */
 function failureCopy(err: unknown): { message: string; detail?: string } {
-  // A timed-out write may have landed. "Your text has not been saved"
-  // would contradict the envelope's own "cannot tell"; K127's wording,
-  // named for the description as K129 names it, says the one true thing
-  // (A348).
+  // A timed-out write may have landed (K134). Retrying is safe: if the
+  // first write did land, the retry carries a stale token and opens the
+  // conflict dialog rather than overwriting.
   if (isUnknownOutcome(err)) {
-    return { message: "Description may not have been saved. Please check and try again." };
+    return { message: "Your changes may not have been saved. Please try again." };
   }
   if (err instanceof ApiError) {
     const envelope = err.envelope;

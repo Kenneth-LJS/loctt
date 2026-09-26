@@ -483,7 +483,7 @@ test.describe("SPR — sprints overview", () => {
     const alert = page.getByTestId("sprints-move-error");
     await expect(alert).toBeVisible({ timeout: 10_000 });
     await expect(alert.locator("span").first()).toHaveText(
-      `${String(key)} may not have been moved to To. Please check and try again.`,
+      "Your changes may not have been saved. Please try again.",
     );
     await expect(alert).not.toContainText("wasn't saved");
   });

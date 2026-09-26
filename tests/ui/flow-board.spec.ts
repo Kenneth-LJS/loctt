@@ -1723,7 +1723,7 @@ test.describe("BRD — board view", () => {
     const err = page.getByTestId("board-move-error");
     await expect(err).toBeVisible({ timeout: 10_000 });
     await expect(err.locator("span").first()).toHaveText(
-      `${mover} may not have been moved. Please check and try again.`,
+      "Your changes may not have been saved. Please try again.",
     );
     await expect(err).not.toContainText("wasn't saved");
   });

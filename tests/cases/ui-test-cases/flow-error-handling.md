@@ -48,8 +48,10 @@ below.
 **A write whose outcome is genuinely unknown says so rather than guessing.** Kill the server after the request is sent but before the response arrives.
 
 - The message does not assert "saved" and does not assert "not saved" if the app cannot tell.
-- It says the outcome is unknown and tells the user how to find out — reload the page, or check the file / `loctt show <KEY>`.
+- It says the outcome is unknown. Where retrying is safe (a description save, a board or sprint move) it says to try again; where a retry could double-apply (creating a task) it says to check the list first.
 - It does not auto-retry a non-idempotent write on the user's behalf without saying so, since that could double-apply.
+
+> **Amended (K134, Ken 2026-09-26).** Was "tells the user how to find out: reload the page, or check the file / `loctt show <KEY>`". Ken, on the wording *"Your changes may not have been saved. Please try again."*: *"is that fine? because if we asked people to reload the page, wouldnt they lose everything?"* A description save, board move and sprint move use that wording; a create uses *"The task may not have been created. Check the list before trying again."*
 
 ### ERR-5 · M1 · major · P4 P6
 **A very slow request shows progress, then a bounded, actionable timeout.** Throttle the API so a request takes 30+ seconds.

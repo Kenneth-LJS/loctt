@@ -9,9 +9,10 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-## B26 · Single-key shortcuts: off switch and remapping (K133, A11Y-43) — **in progress**
+## B26 · Single-key shortcuts: off switches (K133, A11Y-43) — **in progress**
 
-Ken chose "Build remapping too" (WCAG 2.1.4). Settings → Keyboard gets
-a switch that turns every single-key shortcut off, and each shortcut
-can be rebound. Stored per user, so the CLI and MCP user-settings tools
-read and write it too. Lands before `ui/polish-wave-3` merges.
+Master "Single-key shortcuts" switch plus a switch per shortcut, in
+Settings → Keyboard and in the `?` dialog's settings view; "Reset to
+default" with a warning; a disabled-state `?` dialog; a "Keyboard
+shortcuts" user-menu item. Per user; CLI and MCP read and write it.
+No rebinding. Lands before `ui/polish-wave-3` merges.

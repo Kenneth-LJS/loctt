@@ -370,9 +370,7 @@ export function SprintsView() {
           <span className="min-w-0 flex-1">
             {moveError.unknown ? (
               <>
-                <strong>{moveError.key}</strong> may not have been moved to{" "}
-                <strong>{moveError.sprintLabel}</strong>. Please check and try
-                again.
+                Your changes may not have been saved. Please try again.
               </>
             ) : (
               <>
