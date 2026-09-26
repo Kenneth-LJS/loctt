@@ -48,9 +48,9 @@ roster).
 Beyond loopback-only binding and no CORS headers, later hardening also
 guards against a subtler network trick: the DNS-rebinding **Host guard**
 (a foreign `Host` header is refused; `server.host-guard.test.ts`) and a
-**Content-Security-Policy** (A206/A207; `server.csp.test.ts`). Neither is
-mentioned in README or SECURITY.md yet — the posture is stronger than
-either document currently says.
+**Content-Security-Policy** (A206/A207; `server.csp.test.ts`). Both are
+now documented in README and SECURITY.md, and covered end-to-end by case
+ONB-C10 (`server.security-posture.test.ts`).
 
 ---
 

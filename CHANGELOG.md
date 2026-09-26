@@ -18,10 +18,10 @@ three surfaces over one shared core: a CLI, an MCP server, and a web UI.
   always run the same version, so two surfaces can never disagree about
   the on-disk format.
 - **Replaces `@loctt/cli` and `@loctt/mcp`.** Early builds were published
-  under those names, with a separate `loctt-mcp` command. If you
-  installed one, run `npm uninstall -g @loctt/cli @loctt/mcp` and then
-  `npm install -g loctt`. In MCP client configs, use the command `loctt`
-  with the argument `mcp`, or `npx -y loctt mcp`. See
+  under those names. If you installed one, run
+  `npm uninstall -g @loctt/cli @loctt/mcp` and then `npm install -g loctt`.
+  In MCP client configs, use the command `loctt` with the argument
+  `mcp`, or `npx -y loctt mcp`. See
   [docs/user/common/upgrading.md](docs/user/common/upgrading.md).
 
 ### Core
@@ -125,9 +125,6 @@ three surfaces over one shared core: a CLI, an MCP server, and a web UI.
   one collapsible "Filters" row in the Customize-sidebar panel, while
   staying individually reorderable and hideable underneath it.
 - **Accessibility fixes:** dialogs consistently trap and restore focus,
-  `role="menu"` components support arrow-key navigation, loading regions
-  announce themselves to screen readers, and disabled switches now look
-  visibly disabled in dark mode as well as light.
-- **Editor Save/Cancel, sidebar Filters section, and a broader message
-  audit** landed alongside general lint and warning cleanup ahead of
-  publishing.
+  menus can be driven with the arrow keys, loading regions announce
+  themselves to screen readers, and disabled switches now look visibly
+  disabled in dark mode as well as light.

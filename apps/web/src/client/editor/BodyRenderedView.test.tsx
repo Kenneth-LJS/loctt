@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BodyRenderedView } from "./BodyRenderedView.tsx";
+import { CHROME_ATTR } from "../ui/Modal.tsx";
 
 /**
  * The K33 read state (TSK-68/69/70). This surface is deterministic —
@@ -224,6 +225,66 @@ describe("BodyRenderedView — K33 read state", () => {
   it("TSK-70: an unsafe image src does not become an <img>", () => {
     renderView("![x](javascript:alert(1))");
     expect(screen.queryByTestId("body-image")).toBeNull();
+  });
+
+  // @verifies A11Y-62 / A11Y-14 (m1, A352)
+  //
+  // jsdom does not implement `inert`'s focus-blocking semantics — a
+  // `.focus()` call on a descendant of an `inert` ancestor succeeds in
+  // jsdom, unlike Safari and Firefox where it is silently swallowed.
+  // Patching that in for the duration of this test is the only way to
+  // reproduce the real failure: a lightbox opened by a mouse click that
+  // never focused the trigger button (true of Safari/Firefox for a
+  // plain `<button>`) used to leave focus on `document.body` when
+  // closed, because `useFocusTrap`'s own restore ran while the app
+  // chrome was still `inert` and `useInertBackground`'s history-based
+  // recovery had nothing in its history for a trigger that was never
+  // focused. The fix focuses the trigger on click, before the lightbox
+  // (and the chrome's `inert`) exist.
+  it("A11Y-62: focus returns to the trigger button on close, for a click that never focused it", async () => {
+    const restoreFocus = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function (this: HTMLElement, ...args) {
+      if (this.closest("[inert]") !== null) return;
+      return restoreFocus.apply(this, args);
+    };
+    try {
+      render(
+        <div {...{ [CHROME_ATTR]: "" }}>
+          <BodyRenderedView
+            body="![x](/attachments/pic.png)"
+            placeholder="Describe this task…"
+            mentionCandidates={[]}
+            onEnterEdit={noop}
+          />
+        </div>,
+      );
+      const btn = screen.getByTestId("body-image-open");
+      const img = screen.getByTestId("body-image");
+      expect(document.activeElement).not.toBe(btn);
+
+      // Raw native dispatch, not fireEvent.click/element.click(): those
+      // helpers auto-focus the button in jsdom, which masks exactly the
+      // Safari/Firefox behavior under test (a mouse click that does not
+      // focus the element clicked).
+      act(() => {
+        img.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
+      expect(screen.getByTestId("body-image-lightbox")).toBeTruthy();
+      expect(document.activeElement).not.toBe(btn);
+
+      act(() => {
+        fireEvent.keyDown(document, { key: "Escape" });
+      });
+      expect(screen.queryByTestId("body-image-lightbox")).toBeNull();
+
+      // useInertBackground's recovery is deferred to a microtask.
+      await act(async () => {
+        await new Promise<void>(resolve => { queueMicrotask(() => { queueMicrotask(resolve); }); });
+      });
+      expect(document.activeElement).toBe(btn);
+    } finally {
+      HTMLElement.prototype.focus = restoreFocus;
+    }
   });
 });
 

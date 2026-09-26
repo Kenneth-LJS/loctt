@@ -264,7 +264,18 @@ function renderNode(
         // is also what focus returns to when the lightbox closes, which
         // is why it is handed to `openLightbox` rather than captured
         // from `document.activeElement` (a mouse click does not focus a
-        // button in every browser).
+        // button in every browser — Safari and Firefox don't focus a
+        // plain `<button>` on click at all).
+        //
+        // `useInertBackground`'s restore (Modal.tsx) walks a `focusin`
+        // history of the chrome, not `returnFocusTo` — `useFocusTrap`'s
+        // own restore runs first but while the chrome is still `inert`,
+        // so `.focus()` there is silently swallowed, and the *microtask*
+        // restore in `useInertBackground` is the one that actually lands
+        // focus back. That history only has the trigger in it if the
+        // trigger was actually focused, so a mouse click focuses it
+        // explicitly here rather than relying on native click-to-focus
+        // (m1, A352).
         return (
           <button
             type="button"
@@ -273,7 +284,11 @@ function renderNode(
             // `stopPropagation` is harmless now the region is no longer a
             // button (A247) but kept so the image never triggers an
             // ancestor click handler.
-            onClick={e => { e.stopPropagation(); openLightbox(src, e.currentTarget); }}
+            onClick={e => {
+              e.stopPropagation();
+              e.currentTarget.focus();
+              openLightbox(src, e.currentTarget);
+            }}
             className="my-1.5 inline-block cursor-zoom-in rounded align-top"
           >
             <img

@@ -22937,6 +22937,190 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A356 · Wave-4 review fixes (UI rebuild instructions, missing-client refusal test, lightbox focus, docs)
+
+#### A356 · Review findings: doc corrections, ONB-C8 unit test, lightbox focus-return fix (m1/m2/m4/m5/m6/m7, M1/M2)
+
+**Date:** 2026-09-27 · Agent-made, revertible (unless noted).
+
+**Context:** a review pass (post-A352/A355) found six doc drifts and two
+real gaps: a stale rebuild instruction in the UI harness README, and a
+genuine focus-return defect in the image lightbox for browsers that
+don't focus a `<button>` on mouse click (Safari/Firefox). Ken asked each
+finding re-verified against the code before fixing; all eight were
+confirmed as described.
+
+---
+
+**M1 — `tests/ui/README.md` rebuild table was wrong.**
+- **What was wrong:** the `apps/web/src/client/**` row said rebuild with
+  `npm run build -w @loctt/web`. Verified against `apps/cli/tsup.config.ts`:
+  the UI harness boots `apps/cli/dist/index.js`, which serves
+  `apps/cli/dist/client` — a copy `onSuccess: copyWebClient()` makes
+  FROM `apps/web/dist/client` on every CLI build. Building `@loctt/web`
+  alone updates the source the copy is made from, but never re-triggers
+  the copy into the CLI's own `dist/client` — so a web-only build spec
+  run against the harness serves the STALE copy.
+  `docs/dev/process/build-loop.md` already said the correct thing
+  ("rebuild web+cli") — no changes needed there.
+- **Fix:** changed the row to `npm run build` (root), with the
+  copy-mechanism explained inline.
+- **To revert:** restore the row to
+  `| apps/web/src/client/** | npm run build -w @loctt/web | The SPA is served from apps/web/dist/client |`
+  in `tests/ui/README.md`.
+
+**M2 — ONB-C8 ("an install without the web client refuses to start")
+had no test.**
+- **What was verified:** `apps/cli/src/commands/ui.ts` already HAS the
+  guard (`resolveClientDir()` returning `undefined` throws
+  `"The web UI files are missing from this install. Reinstall loctt."`,
+  caught by `index.ts`'s dispatcher and set to `EXIT.RUNTIME` = 1) — the
+  guard itself was not missing, only its test coverage.
+- **Decision:** added a CLI unit test rather than a second full
+  packaging install (`tests/packaging/install.test.ts` already does one
+  `npm pack` + tarball install per file in `beforeAll`, ~180s budget; a
+  second one only to flip one directory is disproportionate to what
+  `resolveClientDir`/`ui.ts` need). New file:
+  `apps/cli/src/commands/ui.test.ts`. It runs against the SOURCE `ui.ts`
+  (vitest/tsx, not `dist/`), so there is no `dist/client` beside it and
+  no `LOCTT_CLIENT_DIR` set in the test env — `resolveClientDir()`
+  already resolves to `undefined` in that environment, which is exactly
+  "an install without the web client".
+- **Red-proof:** temporarily removed the guard in `ui.ts` (restored the
+  old API-only-fallback shape: `createWebApp({ root, ...port,
+  ...(clientDir !== undefined ? { clientDir } : {}) })`, no throw). The
+  new test then hung and failed on a 5s timeout because `run()` started
+  a real server instead of throwing — confirms the test is not vacuous.
+  Restored the guard; test is green again.
+- **To revert:** delete `apps/cli/src/commands/ui.test.ts`.
+
+**m1 — Lightbox focus-return silently broken in Safari/Firefox.**
+- **Context:** `apps/web/src/client/editor/BodyRenderedView.tsx`'s
+  `ImageLightbox` passes `returnFocusTo={lightbox.trigger}` (the button
+  clicked) to `useFocusTrap`. That hook's own cleanup calls
+  `returnFocusTo.focus()` — but it runs while `useInertBackground`'s
+  chrome `inert` is STILL applied (React runs one component's unmount
+  cleanups in registration order; the dialog's focus-restore effect is
+  registered before `useInertBackground`'s). `.focus()` on a descendant
+  of an `inert` ancestor is a documented no-op in real browsers — it
+  silently fails. The actual restore that lands focus back is
+  `useInertBackground`'s own deferred microtask recovery in
+  `apps/web/src/client/ui/Modal.tsx`, which walks a `focusin` HISTORY
+  (`chromeFocusHistory`) of the app chrome, not `returnFocusTo` at all.
+  That history only contains the trigger button if the trigger was
+  actually FOCUSED at some point. A mouse click on a plain `<button>`
+  focuses it in Chrome/jsdom but NOT in Safari or Firefox — so in those
+  two browsers the trigger is never in the history, and the microtask
+  recovery restores to whatever chrome element WAS last focused (or
+  nothing), landing on `document.body`.
+- **Fix:** `apps/web/src/client/editor/BodyRenderedView.tsx`, the image
+  button's `onClick` now calls `e.currentTarget.focus()` before
+  `openLightbox(...)`, so the trigger is in `chromeFocusHistory` by
+  construction regardless of the browser's native click-to-focus
+  behavior.
+- **Test:** added
+  `apps/web/src/client/editor/BodyRenderedView.test.tsx` →
+  "A11Y-62: focus returns to the trigger button on close, for a click
+  that never focused it". jsdom does NOT implement `inert`'s
+  focus-blocking semantics (measured directly: `.focus()` on a
+  descendant of an `inert` ancestor succeeds in jsdom 29), so the test
+  patches `HTMLElement.prototype.focus` for its duration to make a
+  `.focus()` call under `[inert]` a no-op, matching real Safari/Firefox.
+  It also dispatches the open-click as a raw
+  `element.dispatchEvent(new MouseEvent("click", ...))` rather than
+  `fireEvent.click`/`element.click()`, because those testing-library/DOM
+  helpers auto-focus the target button in jsdom — which would silently
+  mask the exact behavior under test.
+- **Red-proof:** ran the test with the `e.currentTarget.focus()` line
+  removed — failed with `document.activeElement` = `document.body`
+  (confirmed via the full DOM diff in the failure output). Restored the
+  line — green, all 15 tests in the file pass (14 pre-existing + 1 new).
+- **Why this shape, not `useInertBackground`'s explicit restore
+  target:** focusing the trigger on click is one line at the call site
+  and needs no change to the shared hook's contract (other callers rely
+  on the history mechanism working as-is). Giving `useInertBackground` an
+  explicit restore target would work too but widens its API for a
+  single caller's browser-specific gap.
+- **To revert:** remove `e.currentTarget.focus();` from the image
+  button's `onClick` in `BodyRenderedView.tsx`. Delete the "A11Y-62:
+  focus returns to the trigger button…" test and its `CHROME_ATTR`
+  import from `BodyRenderedView.test.tsx`.
+
+**m4 — `docs/dev/design/design-review.md` §A1/§A2 said RESOLVED but
+bodies still said "not verified… do not mark closed until B34 lands".**
+- **Verified:** decisions.md already records A352.1 (DR-A1, lightbox
+  modal apparatus, case A11Y-62) and A352.2 (DR-A2, BulkBar → `ui/Menu`,
+  case A11Y-63) as done, both with tests. `list/BulkBar.tsx` confirmed
+  in code: `import { Menu, MenuItem } from "../ui/Menu.tsx"`.
+- **Fix:** replaced the "did not verify… do not mark closed until B34"
+  caveats in §A1 and §A2 with pointers to A352.1/A11Y-62 and
+  A352.2/A11Y-63 respectively. In §B5 (hand-rolled menus bypass
+  `ui/Menu`), changed the heading from "partly superseded" to "resolved"
+  and pointed the BulkBar half at A352.2 too.
+- **To revert:** restore the three removed "did not verify / B34" /
+  "partly superseded" sentences in `design-review.md` §A1, §A2, §B5.
+
+**m5 — `docs/dev/process/release-readiness.md` said Host guard/CSP
+"neither is mentioned in README or SECURITY.md yet".**
+- **Verified:** `README.md:252-253` and `SECURITY.md:22-23` both now
+  describe the Host guard and CSP. `tests/cases/case-index.json` has
+  ONB-C10, and decisions.md ties it to
+  `server.security-posture.test.ts` (6 tests).
+- **Fix:** rewrote the paragraph to say both are now documented and
+  covered by ONB-C10 / `server.security-posture.test.ts`.
+- **To revert:** restore the "Neither is mentioned in README or
+  SECURITY.md yet — the posture is stronger than either document
+  currently says" sentence.
+
+**m6 — Agent-instruction phrasing leaked into
+`docs/dev/reference/corruption-handling-guide.md` § 6.**
+- **Fix:** "this pass only checked the fields/objects the prompt named"
+  → "this pass only checked the fields/objects listed above".
+- **Searched for the same pattern elsewhere:** grepped
+  `docs/`, `tests/`, `tools/` for "the prompt named/asked/said", "this
+  prompt", "the instructions/ticket named" — no other occurrences
+  outside `decisions.md` (which Ken owns and this task was told not to
+  edit).
+- **To revert:** restore "the fields/objects the prompt named" in
+  `corruption-handling-guide.md` § 6.
+
+**m7 — `CHANGELOG.md` developer-facing bullet and menu wording.**
+- **Fix:** dropped the last bullet under the 0.1.0 UI section
+  ("Editor Save/Cancel, sidebar Filters section, and a broader message
+  audit landed alongside general lint and warning cleanup ahead of
+  publishing" — developer-facing, not user-facing changelog material).
+  Reworded `role="menu"` components support arrow-key navigation` to
+  `menus can be driven with the arrow keys` in the Accessibility-fixes
+  bullet.
+- **To revert:** restore the dropped bullet after the Accessibility
+  bullet, and revert the arrow-key wording to the `role="menu"` phrasing.
+
+**Also fixed, same pass, verified against `npm view @loctt/mcp@0.1.0
+bin` (empty) — CHANGELOG.md / upgrading.md `loctt-mcp` claim (m2 in
+Ken's numbering used twice; this is the "CHANGELOG:~20-21" one):**
+- `CHANGELOG.md`: removed "with a separate `loctt-mcp` command" (never
+  shipped — `@loctt/mcp@0.1.0`'s manifest `bin` field is empty).
+- `docs/user/common/upgrading.md`: "If you installed an old package,
+  remove it first, since it also provides a `loctt` command" →
+  "...since `@loctt/cli` also provides a `loctt` command" (only
+  `@loctt/cli` did; `@loctt/mcp` never had a bin at all). Also dropped
+  the `loctt-mcp` half of "If your MCP client config runs `loctt-mcp` or
+  npx -y @loctt/mcp`".
+- **To revert:** restore "with a separate `loctt-mcp` command" in
+  CHANGELOG.md, and restore the `@loctt/cli @loctt/mcp` / `loctt-mcp`
+  wording in upgrading.md.
+
+---
+
+**Gates run this pass (build was not free yet):** `npx vitest run
+apps/cli/src/commands/ui.test.ts`,
+`apps/web/src/client/editor/BodyRenderedView.test.tsx` — both green,
+both red-proven by temporarily reverting the fix under test. No
+`npm run build`, `tsc --build`, `test:integration`, `test:e2e`,
+`test:packaging`, or `test:ui` were run, per instruction. Full gates
+(typecheck, lint, cases:check/coverage, full `npm run test`,
+`test:packaging`, targeted `test:ui`) still owed once "build is free".
+
 ### A355 · One package, `loctt` (B38)
 
 #### A355 · One package, `loctt` (B38, K139)
