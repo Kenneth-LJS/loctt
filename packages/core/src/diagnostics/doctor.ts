@@ -97,7 +97,10 @@ async function* checkSchemaVersion(
     yield {
       name,
       status: "error",
-      message: `${(err as Error).message}. Expected ${String(CURRENT_SCHEMA_VERSION)}`,
+      // The reader's sentences end with a period already; appending
+      // ". Expected" without stripping it printed "is empty.. Expected".
+      message: `${(err as Error).message.replace(/\.$/, "")}. `
+        + `Expected ${String(CURRENT_SCHEMA_VERSION)}`,
     };
     return;
   }
@@ -228,7 +231,7 @@ export async function* runDoctorStream(
           status: "warn",
           message:
             `${brokenViews.length} saved view(s) could not be loaded (their filters are unreadable): `
-            + `${sample}${more}. Kept as-is, fix the filters to restore`,
+            + `${sample}${more}. Kept as-is. Fix the filters to restore them`,
         });
       }
       if (brokenViews.length === 0) {
@@ -514,7 +517,7 @@ export async function* runDoctorStream(
         message:
           `interrupted '${pending.mode}' reconciliation started ${pending.started_at} `
           + `(${pending.base_commit.slice(0, 8)} → ${pending.remote_commit.slice(0, 8)}). `
-          + `your workspace may hold a partly-applied sync. Compare it against the branch, `
+          + `Your workspace may hold a partly-applied sync. Compare it against the branch, `
           + `make it whole, then delete .loctt/local/reconcile.yaml. Sync refuses to run `
           + `until that record is cleared.`,
       });

@@ -2,7 +2,7 @@ import type { CardLayoutField } from "@loctt/contracts";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError } from "../api/client.ts";
+import { ApiError, isUnknownOutcome } from "../api/client.ts";
 import { useLabels, useMilestones, useProjects, useSprints, useUsers } from "../api/hooks/sidebarData.ts";
 import { useBoardMove } from "../api/hooks/useBoardMove.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
@@ -164,7 +164,11 @@ export function BoardView() {
   // move was not saved, and offer a retry. `lastMove` keeps the
   // arguments so the retry can re-issue exactly the same write rather
   // than asking the user to drag again.
-  const [moveError, setMoveError] = useState<{ key: string; message: string } | null>(null);
+  // `unknown`: the move timed out and may have landed, so the banner
+  // must not say it wasn't saved (A348).
+  const [moveError, setMoveError] = useState<
+    { key: string; message: string; unknown: boolean } | null
+  >(null);
   const lastMove = useRef<DropRequest | null>(null);
 
   const boardMove = useBoardMove();
@@ -183,6 +187,7 @@ export function BoardView() {
         onError: (err: unknown) => {
           setMoveError({
             key: req.key,
+            unknown: isUnknownOutcome(err),
             message:
               err instanceof ApiError
                 ? err.envelope?.message ?? err.message
@@ -376,8 +381,17 @@ export function BoardView() {
           className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <span className="min-w-0 flex-1">
-            <strong>{moveError.key}</strong> wasn't moved. The change wasn't
-            saved. {moveError.message}
+            {moveError.unknown ? (
+              <>
+                <strong>{moveError.key}</strong> may not have been moved.
+                Please check and try again.
+              </>
+            ) : (
+              <>
+                <strong>{moveError.key}</strong> wasn't moved. The change wasn't
+                saved. {moveError.message}
+              </>
+            )}
           </span>
           <Button
             variant="danger-outline"

@@ -23,7 +23,7 @@
 import type { ErrorResponse } from "@loctt/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiClient,ApiError } from "../api/client.ts";
+import { apiClient,ApiError, isUnknownOutcome } from "../api/client.ts";
 import { type BodyDraft, clearBodyDraft, writeBodyDraft } from "./bodyDraft.ts";
 
 /**
@@ -524,10 +524,20 @@ function parseConflict(envelope: ErrorResponse, mine: string): BodyConflict {
  * errno is: server-side.
  */
 function failureCopy(err: unknown): { message: string; detail?: string } {
+  // A timed-out write may have landed. "Your text has not been saved"
+  // would contradict the envelope's own "cannot tell"; K127's wording,
+  // named for the description as K129 names it, says the one true thing
+  // (A348).
+  if (isUnknownOutcome(err)) {
+    return { message: "Description may not have been saved. Please check and try again." };
+  }
   if (err instanceof ApiError) {
     const envelope = err.envelope;
+    const said = envelope?.message ?? err.message;
     return {
-      message: `${envelope?.message ?? err.message} Your text has not been saved.`,
+      // A server sentence without a closing period ran straight into
+      // the next one ("... was saved Your text ...").
+      message: `${/[.!?]$/.test(said) ? said : `${said}.`} Your text has not been saved.`,
       ...(envelope?.detail !== undefined ? { detail: envelope.detail } : {}),
     };
   }

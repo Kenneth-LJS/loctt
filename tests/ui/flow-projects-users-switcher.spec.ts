@@ -322,7 +322,7 @@ test.describe("PRU-41 — assigning an archived user through a stale picker", ()
 
 test.describe("PRU-24 — the current user is archived mid-session", () => {
   // @verifies PRU-24
-  test("PRU-24: the header marks the archived actor and prompts a switch", async ({
+  test("PRU-24: the header marks the archived actor; no switch prompt (K130)", async ({
     page,
     tracker,
   }) => {
@@ -361,11 +361,17 @@ test.describe("PRU-24 — the current user is archived mid-session", () => {
     // The current-user block now carries an "(archived)" marker…
     await expect(page.getByTestId("user-menu-current-archived")).toBeVisible();
     await expect(page.getByTestId("user-menu-current-archived")).toContainText("archived");
-    // …and a prompt to switch to an active user.
-    await expect(page.getByTestId("user-menu-archived-prompt")).toBeVisible();
-    await expect(page.getByTestId("user-menu-archived-prompt")).toContainText(/switch/i);
+    // …and the avatar's title says so. K130 (A-100) removed the menu's
+    // switch prompt: Ken, "no need then? users should know their
+    // settings change if they switch user." It must stay gone.
+    await expect(page.getByTestId("user-menu-archived-prompt")).toHaveCount(0);
+    await expect(page.getByTestId("user-menu-trigger")).toHaveAttribute(
+      "title",
+      "Carol is archived. Switch to an active user.",
+    );
 
-    // Switching to the active user clears the state without a reload.
+    // Switching to the active user from the menu's Switch user list
+    // clears the state without a reload.
     await page.getByText("Active Alice").click();
     await page.getByTestId("user-menu-trigger").click();
     await expect(page.getByTestId("user-menu-current")).toContainText("Active Alice");

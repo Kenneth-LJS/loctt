@@ -1133,7 +1133,7 @@ function GroupError({
     return (
       <div
         role="alert"
-        title={headline ?? "Could not load, click to retry"}
+        title={headline ?? "Could not load. Click to retry."}
         onClick={onRetry}
         className="mx-auto my-1 cursor-pointer text-[0.7857rem] text-danger-fg"
       >

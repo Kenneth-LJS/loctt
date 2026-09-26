@@ -110,7 +110,7 @@ describe("a mistyped query is a known cause, not an unknown one", () => {
     expect(err.position).toBe(0);
     expect(err.suggestions).toEqual(["status"]);
     // The hint survives the migration — it is the most useful part.
-    expect(err.message).toMatch(/did you mean "status"/);
+    expect(err.message).toMatch(/\. Did you mean "status"\?/);
   });
 });
 

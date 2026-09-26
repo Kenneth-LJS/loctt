@@ -9,5 +9,9 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-Empty. B20–B25 shipped on `ui/polish-wave-3` (2026-09-26); their
-records are K129–K132 and A339–A347 in `decisions.md`.
+## B26 · Single-key shortcuts: off switch and remapping (K133, A11Y-43) — **in progress**
+
+Ken chose "Build remapping too" (WCAG 2.1.4). Settings → Keyboard gets
+a switch that turns every single-key shortcut off, and each shortcut
+can be rebound. Stored per user, so the CLI and MCP user-settings tools
+read and write it too. Lands before `ui/polish-wave-3` merges.

@@ -1,6 +1,7 @@
 import type { Task } from "@loctt/contracts";
 
 import { getTaskFilePath } from "../paths/index.js";
+import { TaskParseError } from "./frontmatter.js";
 import { readTask } from "./io.js";
 import { listTaskIds } from "./list-ids.js";
 
@@ -102,7 +103,7 @@ export async function loadAllTasksDetailed(
         unreadable.push({
           id,
           path: getTaskFilePath(locttDir, id),
-          reason: err instanceof Error ? err.message : String(err),
+          reason: TaskParseError.reasonOf(err),
         });
         return undefined;
       }

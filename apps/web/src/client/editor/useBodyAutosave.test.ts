@@ -532,6 +532,47 @@ describe("TSK-48 / ERR-27 — a failed save is loud and keeps the text", () => {
     expect(result.current.state).toEqual({ kind: "failed", message: "Description not saved." });
     expect(result.current.hasUnsavedWork).toBe(true);
   });
+
+  // A348: a save the server never answered may have landed. The copy
+  // used to join the timeout envelope ("... cannot tell whether this
+  // was saved") to "Your text has not been saved." with no period
+  // between them, asserting both outcomes at once. K127's wording,
+  // named for the description (K129), replaces the whole line.
+  // @verifies ERR-27
+  it("a save that times out reads exactly the K127 unknown-outcome line", async () => {
+    vi.stubGlobal("fetch", vi.fn((_url: string | URL, init?: RequestInit) =>
+      new Promise<Response>((_res, rej) => {
+        init?.signal?.addEventListener("abort", () => {
+          rej(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      })));
+    const { result } = harness();
+    act(() => { result.current.edit("maybe landed"); });
+    const saving = act(async () => { await result.current.save(); });
+    // Past the client's 15s write deadline.
+    await act(async () => { await vi.advanceTimersByTimeAsync(16_000); });
+    await saving;
+    await settle();
+    expect(result.current.state).toEqual({
+      kind: "failed",
+      message: "Description may not have been saved. Please check and try again.",
+    });
+  });
+
+  // A348: a server sentence with no closing period no longer runs into
+  // the next one.
+  // @verifies ERR-27
+  it("puts a period between a server message and 'Your text has not been saved.'", async () => {
+    const { result } = harness();
+    api.failWith(500, { code: "io_failed", message: "Write failed", data_state: "not_saved" });
+    act(() => { result.current.edit("typed"); });
+    await act(async () => { await result.current.save(); });
+    await settle();
+    expect(result.current.state).toEqual({
+      kind: "failed",
+      message: "Write failed. Your text has not been saved.",
+    });
+  });
 });
 
 describe("A59 — no write leaves while the conflict dialog is open", () => {

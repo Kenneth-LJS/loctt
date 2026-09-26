@@ -450,7 +450,7 @@ export const TOOLS: readonly ToolDef[] = [
       } else {
         // GIT-12/GIT-32: an honest partial — the sentinel is kept with the
         // successes journalled; a re-call retries only the unwritten rows.
-        lines.push("", "Reconciliation incomplete. Some tasks failed, fix them and re-call resolve_reconcile to retry the remaining rows.");
+        lines.push("", "Reconciliation incomplete. Some tasks failed. Fix them and re-call resolve_reconcile to retry the remaining rows.");
       }
       return text(lines.join("\n"));
     },

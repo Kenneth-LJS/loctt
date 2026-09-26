@@ -166,7 +166,9 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
         findings.push({
           severity: "unreadable",
           path: taskPath,
-          message: `task.md could not be parsed: ${messageOf(err)}`,
+          // `path` is the finding's own field; the reason must not
+          // repeat it (A348).
+          message: `task.md could not be parsed: ${err.reason}`,
         });
       } else if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
         findings.push({

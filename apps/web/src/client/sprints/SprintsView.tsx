@@ -3,7 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { MouseEvent } from "react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError } from "../api/client.ts";
+import { ApiError, isUnknownOutcome } from "../api/client.ts";
 import { useLabels, useMilestones, useProjects, useSprints, useUsers } from "../api/hooks/sidebarData.ts";
 import { useInfo } from "../api/hooks/useInfo.ts";
 import { useSetField } from "../api/hooks/useSetField.ts";
@@ -168,10 +168,13 @@ export function SprintsView() {
 
   // SPR-5/SPR-36: a rejected write names the task, the target sprint,
   // and says plainly that the assignment was not saved.
+  // `unknown`: the write timed out and may have landed, so the banner
+  // must not say the assignment wasn't saved (A348).
   const [moveError, setMoveError] = useState<{
     key: string;
     sprintLabel: string;
     message: string;
+    unknown: boolean;
   } | null>(null);
 
   /**
@@ -343,6 +346,7 @@ export function SprintsView() {
             setMoveError({
               key: write.ref,
               sprintLabel: write.sprintLabel,
+              unknown: isUnknownOutcome(err),
               message:
                 err instanceof ApiError
                   ? err.envelope?.message ?? err.message
@@ -364,9 +368,19 @@ export function SprintsView() {
           className="flex items-center gap-3 rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           <span className="min-w-0 flex-1">
-            <strong>{moveError.key}</strong> wasn't moved to{" "}
-            <strong>{moveError.sprintLabel}</strong>. The assignment wasn't
-            saved. {moveError.message}
+            {moveError.unknown ? (
+              <>
+                <strong>{moveError.key}</strong> may not have been moved to{" "}
+                <strong>{moveError.sprintLabel}</strong>. Please check and try
+                again.
+              </>
+            ) : (
+              <>
+                <strong>{moveError.key}</strong> wasn't moved to{" "}
+                <strong>{moveError.sprintLabel}</strong>. The assignment wasn't
+                saved. {moveError.message}
+              </>
+            )}
           </span>
           <button
             type="button"

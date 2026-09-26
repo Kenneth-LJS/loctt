@@ -75,6 +75,26 @@ export class ApiError extends Error {
 }
 
 /**
+ * True when a write left and no answer came back, so whether it landed
+ * is unknown: the client's own write deadline fired (`isTimeout`, with
+ * the write-timeout envelope's `data_state: "unknown"`).
+ *
+ * Deliberately not every `data_state: "unknown"`: a server that
+ * answered with an unattributed failure ("The server failed while
+ * handling POST /api/tasks.") did answer, and NEW-32 wants its reason
+ * quoted as reported.
+ *
+ * A surface that frames a failure with its own sentence ("wasn't
+ * saved", "Couldn't create the task:") must branch on this first:
+ * joining that frame to the timeout envelope asserts a failure and then
+ * says the outcome is unknown. The unknown-outcome wording is K127's,
+ * "... may not have been saved. Please check and try again." (A348).
+ */
+export function isUnknownOutcome(err: unknown): boolean {
+  return err instanceof ApiError && err.isTimeout && err.envelope?.data_state === "unknown";
+}
+
+/**
  * Narrows a parsed response body to the error envelope.
  *
  * Only `code` and `message` are required — a body carrying neither is

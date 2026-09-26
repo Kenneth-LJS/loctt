@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-import { apiClient,ApiError, UnparseableBodyError } from "../api/client.ts";
+import { apiClient,ApiError, isUnknownOutcome, UnparseableBodyError } from "../api/client.ts";
 import {
   searchLabels,
   searchMilestones,
@@ -805,9 +805,13 @@ interface CreateFailure {
  *  - **An envelope** (NEW-32/34/35/40): the server explained itself.
  *    Its message is used verbatim rather than reworded, because it
  *    names the milestone, the project or the field, and a generic
- *    rewrite would discard exactly that.
+ *    rewrite would discard exactly that. The exception is a timed-out
+ *    write (`data_state: "unknown"`): it may have landed, so it gets
+ *    K127's unknown-outcome line, not "Couldn't create the task" (A348).
+ *
+ * Exported for its unit test.
  */
-function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
+export function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
   // NEW-39: when a "Create another" sequence fails part-way, the user
   // must not re-enter work that already exists.
   const prefix = createdSoFar > 0
@@ -823,6 +827,15 @@ function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
       }
       return {
         message: `${prefix}The task may or may not have been created. The server's reply could not be read. Reload the list to check before retrying.`,
+      };
+    }
+    // A timed-out create may have landed. "Couldn't create the task"
+    // followed by "cannot tell whether this was saved" contradicts
+    // itself; K127's unknown-outcome wording says the one true thing
+    // (A348).
+    if (isUnknownOutcome(err)) {
+      return {
+        message: `${prefix}The task may not have been created. Please check and try again.`,
       };
     }
     return {

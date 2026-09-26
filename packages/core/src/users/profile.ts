@@ -14,9 +14,33 @@ import { writeFileAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
 
 export class UserProfileError extends Error {
-  constructor(message: string) {
-    super(message);
+  /** The profile.yaml this came from, when the reader knew it. */
+  readonly path: string | undefined;
+  /**
+   * The failure without the file name. An aggregator that already
+   * prints `path: reason` uses this, so the path is not said twice;
+   * `message` leads with the path for a direct throw (A348).
+   */
+  readonly reason: string;
+
+  constructor(message: string, opts: { path?: string; cause?: unknown } = {}) {
+    super(
+      opts.path !== undefined ? `${opts.path} is not valid: ${message}` : message,
+      opts.cause !== undefined ? { cause: opts.cause } : undefined,
+    );
     this.name = "UserProfileError";
+    this.path = opts.path;
+    this.reason = message;
+  }
+
+  /**
+   * The reason to print beside a path the caller already names: the
+   * unwrapped failure for a `UserProfileError`, the message for
+   * anything else.
+   */
+  static reasonOf(err: unknown): string {
+    if (err instanceof UserProfileError) return err.reason;
+    return err instanceof Error ? err.message : String(err);
   }
 }
 
@@ -224,7 +248,7 @@ export async function loadUserProfile(
     // the read path's own wrap rather than a signature change to the
     // parse function (A345).
     if (err instanceof UserProfileError) {
-      throw new UserProfileError(`${path} is not valid: ${err.message}`);
+      throw new UserProfileError(err.reason, { path, cause: err });
     }
     throw err;
   }
@@ -309,7 +333,9 @@ export async function loadAllUsersDetailed(locttDir: string): Promise<AllUsers> 
       unreadable.push({
         id: entry.name,
         path: getUserProfilePath(locttDir, entry.name),
-        reason: err instanceof Error ? err.message : String(err),
+        // The path is already its own field; the reason must not
+        // repeat it, or every `path: reason` line says it twice (A348).
+        reason: UserProfileError.reasonOf(err),
       });
     }
   }

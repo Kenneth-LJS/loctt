@@ -454,6 +454,40 @@ test.describe("SPR — sprints overview", () => {
     expect(file).toMatch(new RegExp(`^sprint: ${fromId}$`, "m"));
   });
 
+  // A348: a write the server never answered may have landed, so the
+  // banner must not say the assignment "wasn't saved" and then quote
+  // the timeout envelope saying the outcome is unknown. K127's wording.
+  // @verifies SPR-5
+  test("SPR-5: a write that times out says the move may not have happened", async ({
+    tracker,
+    page,
+  }) => {
+    await tracker.run(["sprint", "create", "From", "--start", "2026-01-01", "--end", "2026-01-14", "--state", "active"]);
+    await tracker.run(["sprint", "create", "To", "--start", "2026-02-01", "--end", "2026-02-14", "--state", "active"]);
+    const byName = new Map((await readSprints(tracker.root)).map(s => [s.name, s.id]));
+    const toId = String(byName.get("To"));
+    const [key] = await tracker.seed([{ title: "mover" }]);
+    await assign(tracker, [[String(key), "From"]]);
+
+    await page.addInitScript(() => {
+      (globalThis as { __LOCTT_SET_FIELD_TIMEOUT_MS__?: number })
+        .__LOCTT_SET_FIELD_TIMEOUT_MS__ = 1_000;
+    });
+    await page.goto(`${tracker.baseURL}/sprints`);
+    await page.route("**/api/tasks/**/set", async () => {
+      await new Promise(() => { /* hangs */ });
+    });
+
+    await dragCard(page, String(key), await columnPoint(page, toId));
+
+    const alert = page.getByTestId("sprints-move-error");
+    await expect(alert).toBeVisible({ timeout: 10_000 });
+    await expect(alert.locator("span").first()).toHaveText(
+      `${String(key)} may not have been moved to To. Please check and try again.`,
+    );
+    await expect(alert).not.toContainText("wasn't saved");
+  });
+
   // @verifies SPR-6
   test("SPR-6: dropping on No sprint removes the field rather than writing an empty value", async ({
     tracker,

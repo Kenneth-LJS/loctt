@@ -1695,6 +1695,39 @@ test.describe("BRD — board view", () => {
     ).toHaveCount(0);
   });
 
+  // A348: a move the server never answered may have landed, so the
+  // banner must not say it "wasn't saved" and then quote the timeout
+  // envelope saying the outcome is unknown. K127's wording instead.
+  // @verifies BRD-43
+  test("BRD-43: a drop that times out says the move may not have happened", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "Mover" }]);
+    const [mover] = keys as [string];
+
+    await page.addInitScript(() => {
+      (globalThis as { __LOCTT_BOARD_MOVE_TIMEOUT_MS__?: number })
+        .__LOCTT_BOARD_MOVE_TIMEOUT_MS__ = 1_000;
+    });
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${mover}`)).toBeVisible();
+
+    // The request leaves and nothing comes back.
+    await page.route("**/board-move", async () => {
+      await new Promise(() => { /* hangs */ });
+    });
+
+    await dragCard(page, mover, await columnPoint(page, "in_progress"));
+
+    const err = page.getByTestId("board-move-error");
+    await expect(err).toBeVisible({ timeout: 10_000 });
+    await expect(err.locator("span").first()).toHaveText(
+      `${mover} may not have been moved. Please check and try again.`,
+    );
+    await expect(err).not.toContainText("wasn't saved");
+  });
+
   // @verifies BRD-44
   test("BRD-44: a drop next to a deleted task fails with a specific message", async ({
     page,
