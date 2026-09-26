@@ -71,11 +71,10 @@ modal outside K71's roster: the image lightbox
 (`apps/web/src/client/editor/BodyRenderedView.tsx`, `ImageLightbox`) had
 `role="dialog" aria-modal="true"` but no focus trap and no inert
 background. K136 named this one of the five release blockers to close.
-As of this pass, `BodyRenderedView.tsx` already references a fix
-(`A352`, `useFocusTrap`/`useInertBackground` wired into the lightbox),
-but that work is owned by the parallel B34 ticket and this pass did not
-verify it end-to-end (no decisions.md entry or e2e test for it was found
-yet) — do not mark this section closed until B34 lands and records it.
+`BodyRenderedView.tsx`'s lightbox now has `useFocusTrap`/`useInertBackground`
+wired in, recorded as decisions.md §8 A352.1 ("DR-A1: the image lightbox
+gets the modal apparatus") and verified by case A11Y-62 and its spec in
+`flow-accessibility.spec.ts`.
 
 **Fixed 2026-09-11** via a shared `ui/ConfirmDialog.tsx`
 (`ConfirmDialog` + `TypedConfirmDialog`, over `Dialog`/`Modal`). These
@@ -118,10 +117,9 @@ delete-dialog subset of this list at the same time.
 `ui/Menu.tsx` now implements arrow-key nav (initial focus, ArrowUp/Down
 wrap, Home/End, type-ahead — A11Y-13, A-MENU-ARROWNAV). The release-gate
 audit (K135) found one remaining hand-rolled instance,
-`list/BulkBar.tsx`'s `BulkPicker`, which the same file now appears to be
-migrating onto `ui/Menu` (it imports `Menu`/`MenuItem` and cites
-"DR-A2, K74" in its own comments) — that work is owned by the parallel
-B34 ticket; this pass did not verify it is finished or tested.
+`list/BulkBar.tsx`'s `BulkPicker`; it has since moved onto `ui/Menu`,
+recorded as decisions.md §8 A352.2 ("DR-A2: the bulk-bar pickers move
+onto `ui/Menu`") and verified by case A11Y-63 and its spec.
 
 Original finding, kept for context: `ui/Menu.tsx` set `role="menu"` /
 `role="menuitem"` and Escape but had **no ArrowUp/ArrowDown** handler. A
@@ -249,12 +247,13 @@ from 55/2 listed here) — treat the counts below as historical.
   `settings/RemapDeleteDialog.tsx:93,107` uses the `Radio` primitive for
   the identical remap-choice UI.
 
-### B5. Hand-rolled menus bypass `ui/Menu` — P2 — **partly superseded; `list/ExportMenu.tsx` deleted**
+### B5. Hand-rolled menus bypass `ui/Menu` — P2 — **resolved (`list/ExportMenu.tsx` deleted; `list/BulkBar.tsx` moved onto `ui/Menu`, A352.2)**
 **Status correction:** `list/ExportMenu.tsx`, cited below, no longer
-exists in the tree. `list/BulkBar.tsx` remains (same underlying issue as
-§A2) and is under the parallel B34 ticket as of this pass.
+exists in the tree. `list/BulkBar.tsx`'s `BulkPicker` (same underlying
+issue as §A2) now uses `ui/Menu`/`MenuItem` — decisions.md §8 A352.2,
+verified by case A11Y-63.
 
-`list/ExportMenu.tsx`, `list/BulkBar.tsx` (:345,:369) build `role="menu"`
+`list/ExportMenu.tsx`, `list/BulkBar.tsx` (:345,:369) built `role="menu"`
 dropdowns by hand instead of `ui/Menu` (used correctly by Header,
 TaskDetail, FilterFacet, RelationshipRow, KeyboardPanel).
 

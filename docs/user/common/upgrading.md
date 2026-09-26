@@ -8,16 +8,16 @@ npm install -g loctt
 
 LocTT used to be published as `@loctt/cli` and `@loctt/mcp`. It is now
 one package, `loctt`, that includes the CLI, the web UI (`loctt ui`) and
-the MCP server (`loctt mcp`). If you installed an old package, remove it
-first, since it also provides a `loctt` command:
+the MCP server (`loctt mcp`). If you installed the old packages, remove
+them first, since `@loctt/cli` also provides a `loctt` command:
 
 ```bash
 npm uninstall -g @loctt/cli @loctt/mcp
 npm install -g loctt
 ```
 
-If your MCP client config runs `loctt-mcp` or `npx -y @loctt/mcp`, change
-it to `loctt` with the argument `mcp` (or `npx -y loctt mcp`). See the
+If your MCP client config runs `npx -y @loctt/mcp`, change it to `loctt`
+with the argument `mcp` (or `npx -y loctt mcp`). See the
 [MCP reference](../mcp/reference.md).
 
 Most upgrades need nothing more. Occasionally a new version changes the

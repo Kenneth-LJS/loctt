@@ -250,9 +250,9 @@ This month's additions, walked against the checklists above:
 | Unique view names (B21/K129) | write-time refusal (not stored corruption) | n/a — a duplicate name already on disk (pre-K129, or hand-edited) keeps loading and running by id; only a *new write* to a taken name is refused | n/a — nothing to salvage on read | none — this is a write guard, not a degrade-on-load case; `views/manage.test.ts` covers the refusal |
 
 Everything else in `known-gaps.md`'s roster and the guide's own list
-still holds; this pass only checked the fields/objects the prompt named
-plus their obvious siblings, not a full re-audit (Ken: "we already done
-one round of it").
+still holds; this pass only checked the fields/objects listed above plus
+their obvious siblings, not a full re-audit (Ken: "we already done one
+round of it").
 
 ---
 
