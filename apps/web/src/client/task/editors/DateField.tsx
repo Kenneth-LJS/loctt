@@ -229,6 +229,6 @@ export function nonWorkingNote(
 ): string | undefined {
   const kind = classifyNonWorkingDay(date, calendar);
   if (kind === undefined) return undefined;
-  if ("holiday" in kind) return `${kind.holiday} — not a working day`;
+  if ("holiday" in kind) return `${kind.holiday} is not a working day`;
   return `${DAY_NAMES[kind.weekday] ?? "That day"} is not a working day`;
 }

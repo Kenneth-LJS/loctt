@@ -35,7 +35,8 @@ export type ButtonVariant =
   | "ghost-danger"
   | "danger"
   | "danger-outline"
-  | "warn-outline";
+  | "warn-outline"
+  | "current";
 export type ButtonSize = "sm" | "md";
 
 export interface ButtonProps
@@ -131,6 +132,21 @@ export const BUTTON_LOADING_SPINNER_SIZE: Record<ButtonSize, string> = {
  * other variant (and stay one lookup, not a variant×tone matrix). Tokens
  * only: `border-{tone}-fg` at 40% for a soft edge, `text-{tone}-fg`, and
  * a 10% tone wash on hover.
+ *
+ * `current` is the same tinted-outline shape, for a container whose tone
+ * is decided at *render* time rather than baked into the variant name —
+ * a banner that can be `warn` or `danger` depending on which of several
+ * kinds it is showing (`SchemaBanner`), or one whose tone is fixed but
+ * only known one level up (`ServerUnreachableBanner` is always danger,
+ * `AdvisoryFsBanner` always warn). Rather than forking `danger-outline`
+ * vs. `warn-outline` per call site, it borrows the ambient CSS `color`
+ * via `currentColor` — `border-current`, `hover:bg-current/10`,
+ * `active:bg-current/20` — inheriting whatever `text-warn-fg`/
+ * `text-danger-fg` the parent container already set, the same way the
+ * hand-rolled `border-current/30` buttons this variant replaces did. It
+ * emits no `text-*`/`bg-*`-at-rest utility of its own, so it never races
+ * a class the container or a caller's `className` sets (`cn` does not
+ * resolve Tailwind conflicts — see the module docstring).
  */
 export const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   primary:
@@ -152,6 +168,8 @@ export const BUTTON_VARIANT: Record<ButtonVariant, string> = {
     "border border-danger-fg/40 text-danger-fg hover:bg-danger-fg/10 active:bg-danger-fg/20",
   "warn-outline":
     "border border-warn-fg/40 text-warn-fg hover:bg-warn-fg/10 active:bg-warn-fg/20",
+  current:
+    "border border-current/30 hover:bg-current/10 active:bg-current/20",
 };
 
 /**

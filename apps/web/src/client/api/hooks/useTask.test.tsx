@@ -65,7 +65,7 @@ describe("useTask's recents invalidation", () => {
    */
   it("does not invalidate recents when the task is not found", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse({ code: "not_found", message: 'task not found: "T-9"' }, 404),
+      jsonResponse({ code: "not_found", message: 'Task not found: "T-9"' }, 404),
     );
     const { wrapper, recentsCalls } = harness();
     const { result } = renderHook(() => useTask("T-9"), { wrapper });

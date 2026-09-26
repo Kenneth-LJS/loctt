@@ -1,6 +1,7 @@
 import { forwardRef, type InputHTMLAttributes, useEffect, useRef } from "react";
 
 import { cn } from "./cn.ts";
+import { Icon } from "./Icon.tsx";
 
 /**
  * A themed checkbox that keeps the **real native `<input type="checkbox">`**
@@ -48,7 +49,7 @@ import { cn } from "./cn.ts";
  * directly with `appearance-none` at the full size, and the tick/dash
  * overlay centres on it the same way. The wrapper stays a `<span>`, not
  * a `<label>`: callers already wrap `<Checkbox>` in their own text
- * `<label>` ("Show archived", working-day toggles), and a label here
+ * `<label>` (working-day toggles, row selection), and a label here
  * would nest `<label>` elements — invalid HTML that breaks the outer
  * label's text→input association.
  *
@@ -81,8 +82,17 @@ export interface CheckboxProps
 const INPUT_BASE =
   "relative m-0 h-full w-full appearance-none rounded-sm cursor-pointer " +
   "border border-border-control bg-bg-surface transition-colors " +
-  "hover:bg-bg-muted-hover " +
+  // Hover is split by state. A bare `hover:bg-bg-muted-hover` beside
+  // `checked:bg-accent` is two same-specificity utilities, and the one
+  // Tailwind emits later wins — it was hover, so a CHECKED box went grey
+  // under the pointer while its tick stayed accent-contrast: a washed-out
+  // ghost tick (Ken: "the checkbox on hover looks terrible"). Unchecked
+  // boxes take the grey wash; filled ones darken like a primary button.
+  "enabled:[&:not(:checked):not([data-indeterminate])]:hover:bg-bg-muted-hover " +
   "checked:bg-accent checked:border-accent " +
+  "enabled:checked:hover:bg-accent-hover enabled:checked:hover:border-accent-hover " +
+  "data-[indeterminate]:bg-accent data-[indeterminate]:border-accent " +
+  "enabled:data-[indeterminate]:hover:bg-accent-hover enabled:data-[indeterminate]:hover:border-accent-hover " +
   "disabled:cursor-not-allowed disabled:border-border-default disabled:bg-bg-muted " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-primary)]";
 
@@ -127,14 +137,10 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
           disabled={disabled}
           {...(indeterminate ? { "data-indeterminate": "true" } : {})}
           {...(onClick !== undefined ? { onClick } : {})}
-          className={cn(
-            INPUT_BASE,
-            // `:indeterminate` cannot be targeted reliably across the
-            // appearance-none repaint (same reason the old sibling-box
-            // design gave for it), so the accent fill for that state
-            // keys off the data attribute instead of a CSS pseudo-class.
-            indeterminate && "bg-accent border-accent",
-          )}
+          // `:indeterminate` cannot be targeted reliably across the
+          // appearance-none repaint, so that state's fill keys off the
+          // `data-indeterminate` attribute (in INPUT_BASE) instead.
+          className={INPUT_BASE}
           {...rest}
         />
         {showMark ? (
@@ -142,11 +148,14 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
             aria-hidden="true"
             className={cn(
               "pointer-events-none absolute inset-0 grid place-items-center",
-              "text-meta font-bold leading-none text-accent-contrast",
+              "text-accent-contrast",
               disabled === true && "opacity-60",
             )}
           >
-            {indeterminate ? "–" : "✓"}
+            {/* Drawn, not typed (A208): the old `"✓"`/`"–"` literals
+                slipped past the glyph lint rule, which bans `✓` only as
+                bare JSX text. */}
+            <Icon name={indeterminate ? "minus" : "check"} size={14} />
           </span>
         ) : null}
       </span>

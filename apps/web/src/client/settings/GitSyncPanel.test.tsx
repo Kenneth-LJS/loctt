@@ -23,38 +23,48 @@ function failure(kind: GitRemoteFailure["kind"], detail: string): GitRemoteFailu
   return { kind, summary: `${kind} summary`, detail, message: detail, remote: "origin" };
 }
 
+// Wording trimmed under K116 (error-text-trim rows 58-61): each branch
+// used to spell out "The commit is safe locally; your work was not lost."
+// as a separate sentence. The trimmed copy folds the same committed-but-
+// not-pushed claim into the lead clause instead — "Committed to {branch}
+// locally, but ..." — so these assertions now check for "committed"
+// + "locally" together rather than the old "safe locally" phrase; the
+// claim being tested (GIT-29's local-state-not-modified guarantee) is
+// unchanged.
 describe("publishFailureLine (GIT-29)", () => {
   it("a non-fast-forward rejection recommends Sync first and names the remote", () => {
     const line = publishFailureLine("loctt", failure("non_fast_forward", "the remote has moved on since your last sync"));
-    expect(line).toMatch(/rejected/i);
-    expect(line).toMatch(/moved on/i);
-    expect(line).toMatch(/sync first/i);
+    expect(line).toMatch(/committed/i);
+    expect(line).toMatch(/locally/i);
+    expect(line).toMatch(/newer changes/i);
+    expect(line).toMatch(/sync/i);
     expect(line).toMatch(/origin/);
-    // The commit is safe — this is not a total failure.
-    expect(line).toMatch(/safe locally/i);
   });
 
   it("an auth failure points at git credentials, distinct from a non-ff rejection", () => {
     const line = publishFailureLine("loctt", failure("auth", "authentication failed"));
-    expect(line).toMatch(/authenticat/i);
+    expect(line).toMatch(/signing in/i);
     expect(line).toMatch(/credentials/i);
     // It must NOT tell the user to Sync — that is the non-ff remedy.
-    expect(line).not.toMatch(/sync first/i);
-    expect(line).toMatch(/safe locally/i);
+    expect(line).not.toMatch(/sync,? then/i);
+    expect(line).toMatch(/committed/i);
+    expect(line).toMatch(/locally/i);
   });
 
   it("an unreachable remote says so and names it, offering retry (not Sync)", () => {
     const line = publishFailureLine("loctt", failure("unreachable", "the remote could not be reached"));
-    expect(line).toMatch(/could not be reached/i);
+    expect(line).toMatch(/couldn't be reached/i);
     expect(line).toMatch(/origin/);
-    expect(line).not.toMatch(/sync first/i);
-    expect(line).toMatch(/safe locally/i);
+    expect(line).not.toMatch(/sync,? then/i);
+    expect(line).toMatch(/committed/i);
+    expect(line).toMatch(/locally/i);
   });
 
   it("an unrecognised failure falls back to the raw cause, still safe", () => {
     const line = publishFailureLine("loctt", failure("other", "some novel git failure"));
     expect(line).toMatch(/some novel git failure/);
-    expect(line).toMatch(/safe locally/i);
+    expect(line).toMatch(/committed/i);
+    expect(line).toMatch(/locally/i);
   });
 });
 

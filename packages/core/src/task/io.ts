@@ -7,7 +7,7 @@ import { LocttError, type LocttErrorOptions } from "../errors.js";
 import { getTaskFilePath } from "../paths/index.js";
 import { withStateLock } from "../state/lock.js";
 import { writeFileAtomically } from "../utils/atomic-yaml.js";
-import { assembleTaskFile, parseFrontmatter, splitTaskFile } from "./frontmatter.js";
+import { assembleTaskFile, parseFrontmatter, splitTaskFile, TaskParseError } from "./frontmatter.js";
 import { appendHistory } from "./history.js";
 import { clearLookupCaches } from "./lookup-cache.js";
 
@@ -25,8 +25,28 @@ import { clearLookupCaches } from "./lookup-cache.js";
 export async function readTask(locttDir: string, taskId: string): Promise<Task> {
   const filePath = getTaskFilePath(locttDir, taskId);
   const content = await readFile(filePath, "utf-8");
-  const { rawYaml, body } = splitTaskFile(content);
-  const { frontmatter, health } = parseFrontmatter(rawYaml);
+  let body: string;
+  let parsed: { frontmatter: Task["frontmatter"]; health: FieldHealth[] };
+  try {
+    const split = splitTaskFile(content);
+    body = split.body;
+    parsed = parseFrontmatter(split.rawYaml);
+  } catch (err) {
+    // Object-fatal corruption: re-wrap with the file that is broken, the
+    // same shape every config-file parser already uses ("{file} is not
+    // valid: ..."). `parseFrontmatter` itself is path-unaware — it is
+    // called from several places (git merge, backup restore) that don't
+    // all have one obvious file to name — so this is the read path's own
+    // wrap, done here rather than by threading a path parameter through
+    // the parse function and every one of its callers (A345). The
+    // unwrapped text stays on `reason`, so a caller that already names
+    // the path prints it once (A348).
+    if (err instanceof TaskParseError) {
+      throw new TaskParseError(err.reason, { path: filePath, cause: err });
+    }
+    throw err;
+  }
+  const { frontmatter, health } = parsed;
   return { frontmatter, body, ...(health.length > 0 ? { health } : {}) };
 }
 
@@ -115,8 +135,8 @@ export async function assertWriteSafe(
   for (const h of afterHealth) {
     if (!beforeSet.has(key(h)) && !declaredSet.has(key(h))) {
       throw new CorruptWriteError(
-        `refusing to write ${taskId}: this write would introduce corruption in `
-        + `"${h.field}" (${h.kind}: ${h.error})`,
+        `Refusing to write ${taskId}. This write would introduce corruption in `
+        + `"${h.field}" (${h.kind}: ${h.error}).`,
         h.field,
       );
     }
@@ -128,8 +148,8 @@ export async function assertWriteSafe(
       if (afterSet.has(key(h))) continue; // still present
       if (touched.has(h.field)) continue; // repaired by a write that names it
       throw new CorruptWriteError(
-        `refusing to write ${taskId}: it would drop the preserved value of `
-        + `corrupt field "${h.field}" (${h.kind}) that this write does not touch`,
+        `Refusing to write ${taskId}. It would drop the preserved value of `
+        + `corrupt field "${h.field}" (${h.kind}), which this write does not touch.`,
         h.field,
       );
     }
@@ -239,12 +259,21 @@ async function updateTaskBody(
     // body changed and never *to what*, so nothing can reconstruct a
     // prior version — and the git-sync merge rule (M2) that resolves a
     // contested field by taking the later write depends on being able to.
-    // Coalescing keeps this to one snapshot per editing burst rather
-    // than one per keystroke.
+    // One entry per write (K128): each Save is its own snapshot.
     await appendHistory(locttDir, taskId, [
       { timestamp: now, kind: "body_edited", before: body, after: newBody },
     ]);
   });
+}
+
+/**
+ * A body as a surface should store it: ending in exactly the newline
+ * the caller did not already supply. CLI `--set` and MCP
+ * `replace_task_body` both take text that may or may not end in one;
+ * adding "\n" unconditionally stored "x\n" as "x\n\n".
+ */
+export function withTrailingNewline(body: string): string {
+  return body.endsWith("\n") ? body : body + "\n";
 }
 
 /**
@@ -279,7 +308,7 @@ export interface BodyWriteOptions {
 export class StaleBodyWriteError extends Error {
   constructor(readonly ref: string) {
     super(
-      `${ref} changed since you read it — your text has NOT been saved. `
+      `${ref} changed since you read it. Your text has NOT been saved. `
       + `Re-read the task, reapply your edit, and write again.`,
     );
     this.name = "StaleBodyWriteError";

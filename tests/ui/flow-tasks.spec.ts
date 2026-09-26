@@ -244,7 +244,7 @@ test.describe("TSK — task detail read shell", () => {
     //
     // Interacting within the same task must not push a duplicate. The
     // More menu opens and closes without leaving the task.
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await page.keyboard.press("Escape");
     await expect(recents.getByRole("link", { name: /Recent one/ })).toHaveCount(1);
 
@@ -269,44 +269,6 @@ test.describe("TSK — task detail read shell", () => {
     expect(iFirst).toBeLessThan(iSecond);
   });
 
-  // @verifies TSK-19
-  test("TSK-19: Copy key and Copy link put the right things on the clipboard", async ({
-    page,
-    context,
-    tracker,
-  }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    const [key] = await tracker.seed([{ title: "Copyable task" }]);
-    if (key === undefined) throw new Error("seed returned no key");
-
-    await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await expect(page.getByRole("heading", { name: "Copyable task", level: 1 })).toBeVisible();
-
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Copy key" }).click();
-
-    // The bare key, exactly — no URL, no whitespace. `toBe` rather
-    // than a contains: "http://…/tasks/T-1" contains "T-1" and is
-    // precisely what the case rules out.
-    const copiedKey = await page.evaluate(() => navigator.clipboard.readText());
-    expect(copiedKey).toBe(key);
-    await expect(page.getByRole("status")).toContainText(/copied/i);
-
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Copy link" }).click();
-    const copiedLink = await page.evaluate(() => navigator.clipboard.readText());
-    expect(copiedLink).toMatch(/^https?:\/\//);
-    await expect(page.getByRole("status")).toContainText(/copied/i);
-
-    // The link is asserted by *using* it: pasted into a fresh page it
-    // opens this task. Asserting the string's shape would pass on a
-    // URL that 404s.
-    const fresh = await context.newPage();
-    await fresh.goto(copiedLink);
-    await expect(fresh.getByRole("heading", { name: "Copyable task", level: 1 })).toBeVisible();
-    await fresh.close();
-  });
-
   // @verifies TSK-58
   test("TSK-58: the task-detail More menu offers both Duplicate and Move (reachability)", async ({
     page,
@@ -320,7 +282,7 @@ test.describe("TSK — task detail read shell", () => {
     const [key] = await tracker.seed([{ title: "Reachable task" }]);
     if (key === undefined) throw new Error("seed returned no key");
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await expect(page.getByRole("menuitem", { name: "Duplicate" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: /Move to project/ })).toBeVisible();
   });
@@ -341,7 +303,7 @@ test.describe("TSK — task detail read shell", () => {
     await expect(page.getByRole("heading", { name: "Duplicable task", level: 1 })).toBeVisible();
     const sourceBefore = await frontmatterOf(tracker.root, key);
 
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await page.getByRole("menuitem", { name: "Duplicate" }).click();
 
     // Duplicating destroys nothing, so no typed confirmation stands
@@ -418,7 +380,7 @@ test.describe("TSK — task detail read shell", () => {
 
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByRole("heading", { name: "Uncopyable task", level: 1 })).toBeVisible();
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await page.getByRole("menuitem", { name: "Duplicate" }).click();
 
     await expect(page.getByRole("alert")).toContainText(/could not be written/i);
@@ -439,7 +401,7 @@ test.describe("TSK — task detail read shell", () => {
     // works once the write can land, which is what makes the offered
     // Duplicate a real recovery (ERR-3).
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await page.getByRole("menuitem", { name: "Duplicate" }).click();
     await expect(page.getByTestId("task-key-chip")).not.toHaveText(key);
   });
@@ -457,17 +419,18 @@ test.describe("TSK — task detail read shell", () => {
     if (doomed === undefined) throw new Error("seed returned no key");
 
     await page.goto(`${tracker.baseURL}/tasks/${doomed}`);
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
 
     const dialog = page.getByRole("dialog");
-    // States the key, that it is permanent, and names archive as the
-    // reversible alternative — the three things that keep it from
-    // reading like an archive prompt.
+    // States the key and that it is permanent. K129 (Ken, 2026-09-24)
+    // dropped the archive suggestion from this dialog: "im sure the
+    // archive is somewhere the user can see first, so they should
+    // know" — so the confirmation states only irreversibility, no
+    // archive mention.
     await expect(dialog).toContainText(doomed);
     await expect(dialog).toContainText(/permanent/i);
-    await expect(dialog).toContainText(/cannot be undone/i);
-    await expect(dialog).toContainText(/archive/i);
+    await expect(dialog).toContainText(/is irreversible\. continue\?/i);
 
     const confirmButton = dialog.getByRole("button", { name: new RegExp(`^Delete ${doomed}$`) });
     const input = dialog.getByRole("textbox");
@@ -494,8 +457,8 @@ test.describe("TSK — task detail read shell", () => {
     expect(await existsOnDisk(tracker.root, doomed)).toBe(true);
 
     // Reopen, confirm for real.
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("textbox").fill(doomed);
     await page
       .getByRole("dialog")
@@ -527,7 +490,7 @@ test.describe("TSK — task detail read shell", () => {
     await expect(page.getByTestId("archived-badge")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Archivable task", level: 1 })).toBeVisible();
 
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await page.getByRole("menuitem", { name: "Archive" }).click();
 
     // No typed confirmation stood between the click and the write —
@@ -539,19 +502,19 @@ test.describe("TSK — task detail read shell", () => {
     // still there. Archiving must never remove it from disk.
     expect(await frontmatterOf(tracker.root, target)).toMatch(/^archived:\s*true\s*$/m);
 
-    // Gone from the default list, present with archived shown. The
-    // second task is the control — if it vanished too, the filter
+    // Gone from the list, listed in Settings → Archived (amended, K121
+    // #1). The second task is the control — if it vanished too, the list
     // would be hiding everything rather than the archived row.
     await page.goto(`${tracker.baseURL}/list`);
     await expect(listRow(page, "Untouched task")).toHaveCount(1);
     await expect(listRow(page, "Archivable task")).toHaveCount(0);
-    await page.goto(`${tracker.baseURL}/list?archived=all`);
-    await expect(listRow(page, "Archivable task")).toHaveCount(1);
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await expect(page.getByTestId("archived-items")).toContainText("Archivable task");
 
     // Unarchive from the same menu restores it in place.
     await page.goto(`${tracker.baseURL}/tasks/${target}`);
     await expect(page.getByTestId("archived-badge")).toBeVisible();
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await page.getByRole("menuitem", { name: "Unarchive" }).click();
     await expect(page.getByTestId("archived-badge")).toHaveCount(0);
     expect(await frontmatterOf(tracker.root, target)).not.toMatch(/^archived:\s*true\s*$/m);
@@ -619,8 +582,8 @@ test.describe("TSK — task detail read shell", () => {
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
 
     // Delete: type the confirmation, then Cancel.
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("textbox").fill(key);
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -629,8 +592,8 @@ test.describe("TSK — task detail read shell", () => {
     // Reopening starts fresh — the typed key is not retained, so the
     // confirm button is disabled again. This is the bullet a
     // "dialog is visible" check would miss entirely.
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await expect(page.getByRole("dialog").getByRole("textbox")).toHaveValue("");
     await expect(
       page.getByRole("dialog").getByRole("button", { name: new RegExp(`^Delete ${key}$`) }),
@@ -642,8 +605,8 @@ test.describe("TSK — task detail read shell", () => {
     expect(await frontmatterOf(tracker.root, key)).toBe(before);
 
     // Move: choose a destination, then dismiss both ways.
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // A211: the destination picker is a searchable Combobox, not a native
     // <select> (control type changed, not behavior) - open the trigger,
     // then click the option.
@@ -653,8 +616,8 @@ test.describe("TSK — task detail read shell", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(await frontmatterOf(tracker.root, key)).toBe(before);
 
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // Fresh: the previous selection is gone, so Move is disabled.
     // K106: a button, not an `<input>` — the "nothing is pre-selected"
     // claim reads `data-value` (empty) and is backed by the Move button
@@ -745,8 +708,8 @@ test.describe("TSK — task detail read shell", () => {
       });
     });
 
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Delete…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("textbox").fill(key);
     await page
       .getByRole("dialog")
@@ -792,7 +755,7 @@ test.describe("TSK — task detail read shell", () => {
 
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await expect(page.getByRole("heading", { name: "Unarchivable task", level: 1 })).toBeVisible();
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await page.getByRole("menuitem", { name: "Archive" }).click();
 
     // The failure is named.
@@ -802,7 +765,7 @@ test.describe("TSK — task detail read shell", () => {
     // Unarchive — the pair is what makes this discriminate. A badge
     // check alone passes on a page that renders no header at all.
     await expect(page.getByTestId("archived-badge")).toHaveCount(0);
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await expect(page.getByRole("menuitem", { name: "Archive" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Unarchive" })).toHaveCount(0);
     await page.keyboard.press("Escape");
@@ -817,7 +780,7 @@ test.describe("TSK — task detail read shell", () => {
     // Retry works once the write can land — which is what makes the
     // offered Archive a real recovery rather than a dead control.
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     await page.getByRole("menuitem", { name: "Archive" }).click();
     await expect(page.getByTestId("archived-badge")).toBeVisible();
   });
@@ -965,8 +928,8 @@ test.describe("TSK — task detail read shell", () => {
     if (key === undefined) throw new Error("seed returned no key");
 
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // K106: the picker is a button-triggered listbox. The TRIGGER is
     // still inside the dialog; the PANEL is portalled to `document.body`,
     // so the option rows are located from `page`.
@@ -1031,8 +994,8 @@ test.describe("TSK — task detail read shell", () => {
       });
     });
 
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // A211: the destination picker is a searchable Combobox, not a native
     // <select> (control type changed, not behavior) - open the trigger,
     // then click the option.
@@ -1083,8 +1046,8 @@ test.describe("TSK — task detail read shell", () => {
     await expect(page.getByRole("heading", { name: "Movable task", level: 1 })).toBeVisible();
     await expect(page.getByTestId("task-key-chip")).toHaveText(key);
 
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Move to project…" }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
+    await page.getByRole("menuitem", { name: "Move to project" }).click();
     // A211: the destination picker is a searchable Combobox, not a native
     // <select> (control type changed, not behavior) - open the trigger,
     // then click the option.
@@ -1257,9 +1220,9 @@ test.describe("TSK — rich-text editor (B3)", () => {
       await expectComboValueOn(page, blockType, String(level));
     }
 
-    // Save the last level (6) via the blur+flush path, and confirm it
-    // lands on disk as `#`×6 — the serialisation half of the round trip.
-    await page.getByTestId("meta-panel").click();
+    // Save the last level (6) — Save, since K124 — and confirm it lands
+    // on disk as `#`×6 — the serialisation half of the round trip.
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
     await expect.poll(() => bodyOf(tracker.root, key)).toContain("###### A heading line");
 
     // Reload: the stored `#{1,6}` parses back to a heading whose level
@@ -1281,6 +1244,10 @@ test.describe("TSK — rich-text editor (B3)", () => {
   }) => {
     const [key] = await tracker.seed([{ title: "Ordered" }]);
     if (key === undefined) throw new Error("seed returned no key");
+    // Wide enough that the bar holds every group flat. At the default
+    // 1280px the lists group folds into its menu (TSK-72), and this case
+    // is about the button, not the fold.
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
     await enterEdit(page);
 
@@ -1293,7 +1260,7 @@ test.describe("TSK — rich-text editor (B3)", () => {
     await orderedList.click();
     await expect(orderedList).toHaveAttribute("aria-pressed", "true");
 
-    await page.getByTestId("meta-panel").click();
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
     await expect
       .poll(() => bodyOf(tracker.root, key))
       .toContain("1. first item");
@@ -1360,7 +1327,7 @@ test.describe("TSK — rich-text editor (B3)", () => {
     await expect(bodyRich(page)).not.toContainText("# Heading");
 
     // And it lands on disk as markdown, not escaped characters.
-    await page.getByTestId("meta-panel").click();
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
     await expect.poll(() => bodyOf(tracker.root, key)).toContain("# Heading");
     await expect.poll(() => bodyOf(tracker.root, key)).toContain("- item");
   });
@@ -1435,8 +1402,9 @@ test.describe("TSK — rich-text editor (B3)", () => {
  * K33 (Ken, 2026-09-09): the task description is read-then-edit,
  * Jira-style. Rendered read-only by default; a click enters edit; a
  * click on a link opens it and a click on an image opens a lightbox,
- * neither entering edit; blur saves and returns to rendered, Escape
- * cancels, and a failed save keeps the editor open. TSK-68..71.
+ * neither entering edit; Save writes and returns to rendered, click-away
+ * keeps editing, Escape cancels (K124), and a failed save keeps the
+ * editor open. TSK-68..71.
  */
 test.describe("TSK — K33 read-then-edit description", () => {
   // @verifies TSK-68
@@ -1559,30 +1527,39 @@ test.describe("TSK — K33 read-then-edit description", () => {
   });
 
   // @verifies TSK-71
-  test("TSK-71: blurring out saves and returns to the rendered view", async ({
+  test("TSK-71: blurring out keeps editing and writes nothing; Save writes and returns to rendered", async ({
     page, tracker,
   }) => {
-    const [key] = await tracker.seed([{ title: "Blur saves" }]);
+    // SUPERSEDED (K124): this spec asserted "blurring out saves and
+    // returns to the rendered view" — the click-out save Ken ruled out.
+    const [key] = await tracker.seed([{ title: "Blur keeps" }]);
     if (key === undefined) throw new Error("seed returned no key");
     await tracker.run(["body", key, "--set", "Original.\n"]);
+    // Snapshot the seeded bytes rather than restating them: `loctt body
+    // --set` stores the text plus its own trailing newline, so a literal
+    // that already ends in "\n" lands as "\n\n".
+    const seeded = await bodyOf(tracker.root, key);
     await page.goto(`${tracker.baseURL}/tasks/${key}`);
 
     await enterEdit(page);
     await bodyRich(page).click();
     await page.keyboard.type(" Appended.");
 
-    // Blur by clicking the meta panel (outside the editor). The idle
-    // autosave flushes, and the surface returns to the rendered view.
     await page.getByTestId("meta-panel").click();
+    await page.waitForTimeout(2000);
+    await expect(bodyRich(page)).toContainText("Appended.");
+    await expect(page.getByTestId("body-rendered")).toHaveCount(0);
+    expect(await bodyOf(tracker.root, key)).toBe(seeded);
+
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
     await expect(page.getByTestId("body-rendered")).toBeVisible();
     await expect(bodyRich(page)).toHaveCount(0);
-    // The rendered view shows the saved content, and it reached disk.
     await expect(page.getByTestId("body-rendered")).toContainText("Appended.");
     await expect.poll(() => bodyOf(tracker.root, key)).toContain("Appended.");
   });
 
   // @verifies TSK-71
-  test("TSK-71: Escape cancels the edit and returns to the rendered view", async ({
+  test("TSK-71: Escape with no changes returns to the rendered view at once", async ({
     page, tracker,
   }) => {
     const [key] = await tracker.seed([{ title: "Escape cancels" }]);
@@ -1622,10 +1599,10 @@ test.describe("TSK — K33 read-then-edit description", () => {
         body: JSON.stringify({ code: "io_failed", message: "Disk is full." }),
       }));
 
-    // Blur to trigger the flush. The save fails, so the editor STAYS
-    // open on the typed text rather than dropping back to a stale
-    // render (TSK-48).
-    await page.getByTestId("meta-panel").click();
+    // Save. The write fails, so the editor STAYS open on the typed text
+    // rather than dropping back to a stale render (TSK-48).
+    await page.getByTestId("body-editor").getByTestId("body-save").click();
+    await expect(page.getByTestId("save-indicator")).toHaveAttribute("data-state", "failed");
     await expect(page.getByTestId("body-editor")).toBeVisible();
     await expect(bodyRich(page)).toBeVisible();
     await expect(bodyRich(page)).toContainText("Words the user must not lose.");

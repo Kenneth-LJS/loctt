@@ -17,7 +17,7 @@ import { expect, test } from "./fixtures/tracker.ts";
 // The list-toolbar redesign folded advanced querying INTO the filter
 // system: the leading "Advanced" pill (`advanced-query-toggle`) is gone.
 // It is now reached one level in — open the "+ Add filter" menu, then
-// pick the "Advanced query…" item (`advanced-open`). This mirrors the
+// pick the "Advanced query" item (`advanced-open`). This mirrors the
 // FilterBar unit test's `openAdvanced` helper (FilterBar.test.tsx).
 const openAdvanced = async (page: Page): Promise<void> => {
   await page.getByTestId("add-filter").click();
@@ -630,10 +630,10 @@ test.describe("BLK — bulk actions", () => {
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("Permanently delete 2 tasks");
-    await expect(dialog).toContainText("cannot be undone");
-    // Archive named as the reversible alternative, at the moment of
-    // the decision.
-    await expect(dialog).toContainText("archive");
+    // K129 (Ken, 2026-09-24): the archive alternative is gone. The
+    // confirmation states only that deleting is irreversible.
+    await expect(dialog).toContainText("Deleting tasks is irreversible");
+    await expect(dialog).not.toContainText("archive");
 
     // Focus is the input, never the destructive button.
     const input = dialog.getByLabel("Type DELETE to confirm");
@@ -851,8 +851,7 @@ test.describe("BLK — entity pickers", () => {
     // it passes whether the client filters or not. Forcing the archived
     // user into the payload is what makes the assertion real: the
     // picker must drop it even when the server hands it over, which is
-    // also the honest contract, since ?include_archived=true is one
-    // query-param away.
+    // also the honest contract: the server can still be asked for them.
     await expect(menu.getByRole("menuitem", { name: "Gone" })).toHaveCount(0);
     await expect(menu.getByRole("menuitem", { name: "Unassign" })).toBeVisible();
 
@@ -1301,7 +1300,7 @@ test.describe("BLK — archive undo", () => {
   });
 
   // @verifies BLK-10
-  test("BLK-10: the archived tasks are visible under the archived-scope control", async ({
+  test("BLK-10: the archived tasks are listed in Settings → Archived", async ({
     page,
     tracker,
   }) => {
@@ -1313,19 +1312,14 @@ test.describe("BLK — archive undo", () => {
     await page.getByRole("button", { name: "Archive", exact: true }).click();
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
 
-    await page.getByTestId("list-archived-scope-all").click();
-    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
-    // With a badge, not a dimmed row: opacity alone is invisible to a
-    // screen reader and to anyone the contrast drop does not reach.
-    //
-    // Asserted against the row that carries it, not a page-wide count:
-    // "one Archived badge exists" is also true when the badge is on the
-    // wrong row.
-    // The list renders newest-first, so the first checkbox archived
-    // "Two", not "One".
-    const rows = page.locator("tbody tr");
-    await expect(rows.filter({ hasText: "Two" })).toContainText("Archived");
-    await expect(rows.filter({ hasText: "One" })).not.toContainText("Archived");
+    // K121 #1 (amended case): the list has no way to show them; Settings
+    // → Archived is where they are. The list renders newest-first, so
+    // the first checkbox archived "Two", not "One".
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await expect(page.getByTestId("archived-kind-tasks")).toHaveAttribute("data-count", "1");
+    const items = page.getByTestId("archived-items");
+    await expect(items).toContainText("Two");
+    await expect(items).not.toContainText("One");
   });
 
   // @verifies BLK-10
@@ -1450,7 +1444,7 @@ test.describe("BLK — bounded and honest failures", () => {
     });
     await page.getByRole("button", { name: "Archive", exact: true }).click();
 
-    const status = page.getByRole("status").filter({ hasText: "did not respond" });
+    const status = page.getByRole("status").filter({ hasText: "didn't respond" });
     // All three, per P4's rare exception: what was attempted, what state
     // the data is in, what to do.
     await expect(status).toContainText("2 tasks");
@@ -1486,7 +1480,7 @@ test.describe("BLK — lock contention", () => {
 
     const status = page.getByRole("region", { name: "Bulk actions" }).getByRole("status");
     // Names the contention and advises waiting.
-    await expect(status).toContainText("another LocTT process is writing");
+    await expect(status).toContainText(/another process is writing/i);
     await expect(status).toContainText(/wait|try again/i);
     // No proper-lockfile internals and no stack trace (ERR-16).
     await expect(status).not.toContainText("Lock file is already being held");
@@ -1728,12 +1722,14 @@ test.describe("BLK — refused and stale writes", () => {
     const seeded = await tracker.seed([
       { title: "One" }, { title: "Two" }, { title: "Three" },
     ]);
-    await tracker.run(["archive", String(seeded[0])]);
-
     await page.goto(`${tracker.baseURL}/list`);
-    await page.getByTestId("list-archived-scope-all").click();
     await expect(page.getByText("Showing 1–3 of 3")).toBeVisible();
     await page.getByRole("checkbox", { name: "Select all on this page" }).check();
+
+    // K121 #1 (amended case): the list never shows archived tasks, so the
+    // already-archived one reaches the selection by being archived
+    // elsewhere after it was selected.
+    await tracker.run(["archive", String(seeded[0])]);
 
     await page.getByRole("button", { name: "Archive", exact: true }).click();
 
@@ -1910,7 +1906,7 @@ test.describe("BLK — failures that must not be silent", () => {
     await page.getByRole("button", { name: "Archive", exact: true }).click();
 
     const status = page.getByRole("status").filter({ hasText: /archiv/i });
-    await expect(status).toContainText(/could not|did not/i);
+    await expect(status).toContainText("The operation didn't run.");
     // It must not claim either outcome.
     await expect(status).not.toContainText("2 tasks archived");
   });
@@ -2699,10 +2695,12 @@ test.describe("ERR — one corrupt task file (M1.2)", () => {
 
     // And the bad file is named, with the path and the YAML error, so
     // the user can reconcile 2 rows against 3 directories.
+    // A-7 (K129, Ken 2026-09-24): the general "A hand-edit is the usual
+    // cause." sentence was cut; the per-file path and parse-error reason
+    // remain the required content (see ERR-9's amendment).
     const alert = page.getByRole("alert");
     await expect(alert).toContainText(victim);
     await expect(alert).toContainText("task.md");
-    await expect(alert).toContainText(/hand-edit/i);
   });
 });
 
@@ -2811,7 +2809,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
     const body = page.locator("tbody");
     // Names the state and offers the next action. Telling a new user
     // to clear filters they never set is nonsense.
-    await expect(body).toContainText(/No tasks yet/i);
+    await expect(body).toContainText(/No tasks found/i);
     await expect(body).not.toContainText(/Clear filters/i);
     await expect(body).not.toContainText(/match these filters/i);
     // No filter chips are active.
@@ -2819,7 +2817,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
   });
 
   // @verifies ONB-33
-  test("ONB-33: a 500 on first load is an error in the table, never 'No tasks yet'", async ({
+  test("ONB-33: a 500 on first load is an error in the table, never 'No tasks found.'", async ({
     page,
     tracker,
   }) => {
@@ -2834,7 +2832,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
     await page.goto(`${tracker.baseURL}/list`);
 
     // A load failure must never read as data loss.
-    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/No tasks found/i)).toHaveCount(0);
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
@@ -2856,7 +2854,7 @@ test.describe("ONB — empty and loading states (M1.2)", () => {
     let sawEmpty = false;
     const poll = setInterval(() => {
       void page.locator("tbody").innerText()
-        .then(t => { if (/No tasks yet|match these filters/i.test(t)) sawEmpty = true; })
+        .then(t => { if (/No tasks found|match these filters/i.test(t)) sawEmpty = true; })
         .catch(() => undefined);
     }, 20);
     await page.reload();
@@ -2973,7 +2971,7 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
 
     // 1. A fresh tracker.
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.locator("tbody")).toContainText(/No tasks yet/i);
+    await expect(page.locator("tbody")).toContainText(/No tasks found/i);
     const fresh = await read();
 
     // 2. A filter matching nothing.
@@ -2991,7 +2989,7 @@ test.describe("ERR — malformed responses and distinct surfaces (M1.2)", () => 
     // All three read differently, and neither failure borrows the
     // empty-state copy — a load failure must never read as data loss.
     expect(new Set([fresh, filtered]).size).toBe(2);
-    expect(unreachable).not.toMatch(/No tasks yet/i);
+    expect(unreachable).not.toMatch(/No tasks found/i);
     expect(unreachable).not.toMatch(/match these filters/i);
 
     // **Bullet 1: distinct *copy*, not merely distinct from the
@@ -3287,7 +3285,7 @@ test.describe("LST — columns, staleness, unreachable (M1.2)", () => {
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
     // Never the empty-tracker copy — a load failure must not read as
     // data loss.
-    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/No tasks found/i)).toHaveCount(0);
     await expect(page.getByText(/match these filters/i)).toHaveCount(0);
   });
 });
@@ -3620,7 +3618,7 @@ test.describe("XS/ONB — staleness and the skeleton (M1.2)", () => {
     void tracker;
     await page.setViewportSize({ width: 768, height: 800 });
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.locator("tbody")).toContainText(/No tasks yet/i);
+    await expect(page.locator("tbody")).toContainText(/No tasks found/i);
 
     // The page body does not scroll sideways.
     const overflow = await page.evaluate(() =>
@@ -3674,7 +3672,9 @@ test.describe("The last of M1.2", () => {
 
     // Bounded: the wait ends, and the message says what was attempted
     // and what state the data is in.
-    const status = page.getByRole("status").filter({ hasText: /did not respond/i });
+    // K129 pass: "the server did not respond" trimmed to "The server
+    // didn't respond."
+    const status = page.getByRole("status").filter({ hasText: /didn't respond/i });
     await expect(status).toBeVisible({ timeout: 20_000 });
     await expect(status).toContainText(/2 tasks/);
     await expect(status).toContainText(/Reload/i);
@@ -3802,7 +3802,7 @@ test.describe("LST — the filter bar (M1.3)", () => {
   });
 
   // @verifies LST-12
-  test("LST-12: the archived-scope control toggles the param on and off, and marks the rows", async ({
+  test("LST-12: the list never shows archived tasks, whatever the URL or query says", async ({
     page,
     tracker,
   }) => {
@@ -3811,20 +3811,25 @@ test.describe("LST — the filter bar (M1.3)", () => {
 
     await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
-    await expect(page).not.toHaveURL(/archived/);
+    // No toggle, no scope control, nothing to reveal them with.
+    await expect(page.getByText(/show archived/i)).toHaveCount(0);
+    await expect(page.getByTestId("list-archived-scope")).toHaveCount(0);
 
-    const scope = page.getByTestId("list-archived-scope");
-    await scope.getByTestId("list-archived-scope-all").click();
-    await expect(page).toHaveURL(/archived=all/);
-    await expect(page.getByText("Showing 1–2 of 2")).toBeVisible();
-    // Marked, so an archived row is distinguishable from a live one.
-    await expect(
-      page.locator("tbody tr").filter({ hasText: "Gone" }),
-    ).toContainText("Archived");
+    // A pasted `?archived=` param changes nothing.
+    await page.goto(`${tracker.baseURL}/list?archived=all`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+    await expect(page.locator("tbody")).not.toContainText("Gone");
 
-    // Back to active removes the param rather than writing archived=active.
-    await scope.getByTestId("list-archived-scope-active").click();
-    await expect(page).not.toHaveURL(/archived/);
+    // A query naming `archived` is refused and says where they are.
+    const res = await page.request.get(
+      `${tracker.baseURL}/api/tasks?query=${encodeURIComponent("archived = true")}`,
+    );
+    expect(res.status()).toBe(400);
+    expect(((await res.json()) as { message: string }).message).toContain("Settings");
+
+    // Still present and restorable: Settings → Archived lists it.
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await expect(page.getByTestId("archived-items")).toContainText("Gone");
   });
 
   // @verifies LST-14
@@ -3899,23 +3904,17 @@ test.describe("LST — the filter bar (M1.3)", () => {
 
 test.describe("LST — URL params that could lie (M1.3)", () => {
   // @verifies LST-31
-  test("LST-31: archived=false and archived=0 do not enable the toggle", async ({
+  test("LST-31: no archived param value shows archived tasks", async ({
     page,
     tracker,
   }) => {
     const seeded = await tracker.seed([{ title: "Live" }, { title: "Gone" }]);
     await tracker.run(["archive", String(seeded[1])]);
 
-    for (const falsey of ["false", "0"]) {
-      await page.goto(`${tracker.baseURL}/list?archived=${falsey}`);
-      // An unrecognized scope value falling back to "active" (rather
-      // than being coerced into "all") is exactly what this case exists
-      // to catch.
+    for (const value of ["false", "0", "true", "all", "archived"]) {
+      await page.goto(`${tracker.baseURL}/list?archived=${value}`);
       await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
       await expect(page.locator("tbody")).not.toContainText("Gone");
-      // The control's visual state agrees with the result set.
-      await expect(page.getByTestId("list-archived-scope"))
-        .toHaveAttribute("data-value", "active");
     }
   });
 
@@ -3953,7 +3952,7 @@ test.describe("LST — query errors and composition (M1.3)", () => {
     // A parse failure must never be presentable as a legitimate
     // zero-match result.
     await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
-    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/No tasks found/i)).toHaveCount(0);
 
     const alert = page.getByRole("alert");
     await expect(alert).toBeVisible({ timeout: 15_000 });
@@ -4081,7 +4080,7 @@ test.describe("LST — filters that fail honestly (M1.3)", () => {
     await expect(page.getByRole("button", { name: /Retry|Try again/i }).first())
       .toBeVisible();
     // Never presented as an empty tracker.
-    await expect(page.getByText(/No tasks yet/i)).toHaveCount(0);
+    await expect(page.getByText(/No tasks found/i)).toHaveCount(0);
 
     // Retry succeeding replaces the error without a reload.
     hang = false;
@@ -4321,7 +4320,7 @@ test.describe("VUE — saving a view (M1.3)", () => {
 
     // Reachable — the assertion whose absence let six blockers pass.
     // The redesign folds advanced querying into the "+ Add filter" menu
-    // ("Advanced query…", `advanced-open`); there is no leading pill.
+    // ("Advanced query", `advanced-open`); there is no leading pill.
     await openAdvanced(page);
     const surface = page.getByTestId("advanced-query-surface");
     await expect(surface).toBeVisible();
@@ -4545,13 +4544,17 @@ test.describe("VUE — saving a view (M1.3)", () => {
     await expect(page.getByTestId("broken-view-error")).toContainText("[0].op");
     // Not an empty result masquerading as "no matches".
     await expect(page.getByText(/No tasks match these filters/i)).toHaveCount(0);
+    // ...and no rows either. A broken view is an error state, not an
+    // unfiltered list (A313): the server still sends every task beside
+    // `broken_view`, and the list used to render them all under the banner.
+    await expect(page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") })).toHaveCount(0);
 
     // Bullet 3 (as amended by K102): the entry's original YAML is shown,
     // so the text the user wrote is visible and they can fix the file by
     // hand and keep it. Repair-in-place is gone — the only client write
     // path is a typed `EditViewRequest`, which cannot express arbitrary
     // YAML — so the banner shows the bytes and points at Saved views,
-    // where Replace… sits behind an explicit confirmation.
+    // where Replace sits behind an explicit confirmation.
     const raw = page.getByTestId("broken-view-raw");
     await expect(raw).toBeVisible();
     await expect(raw).toContainText("name: Busted");
@@ -4702,7 +4705,6 @@ test.describe("XS — UI/CLI parity (M1.3)", () => {
       "(status = in_progress)",
       "due_date < today",
       "due_date >= 2020-01-01",
-      "archived = false",
       `parent = ${String(seeded[0])}`,
       'has_link("blocks")',
       "link_count(blocks) > 0",
@@ -4727,6 +4729,22 @@ test.describe("XS — UI/CLI parity (M1.3)", () => {
         .map(m => m[1] as string).sort();
       expect(uiKeys, `mismatch for: ${q}`).toEqual(cliKeys);
     }
+
+    // Amended (K121 #1, Ken 2026-09-23): `archived` is a documented
+    // construct the CLI still accepts, but the web list refuses it
+    // outright rather than parsing it — Settings → Archived is the
+    // one web surface for archived items. This asserts the divergence
+    // is deliberate and pointed, not a silent empty result.
+    const archivedQuery = "archived = false";
+    const uiRes = await page.request.get(
+      `${tracker.baseURL}/api/tasks?query=${encodeURIComponent(archivedQuery)}`,
+    );
+    expect(uiRes.status(), "UI must refuse a query naming archived").toBe(400);
+    const uiBody = await uiRes.json() as { error?: string };
+    expect(uiBody.error).toMatch(/settings.*archived/i);
+
+    const cliOut = await tracker.run(["list", "--query", archivedQuery]);
+    expect(cliOut).not.toMatch(/error/i);
   });
 
   // @verifies XS-15

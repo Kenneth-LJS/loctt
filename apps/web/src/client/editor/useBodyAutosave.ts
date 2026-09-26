@@ -1,40 +1,53 @@
 /**
- * Body autosave (TSK-15) and its concurrency guard (K2).
+ * The description editor's save flow: explicit Save (K124), the
+ * unsaved-draft store (A338), and the concurrency guard (K2).
  *
  * One hook rather than a component so the timing rules are testable
  * without a browser, and so the two editor surfaces (rich and raw)
  * share one save flow rather than each growing its own — the flow doc
  * requires "markdown source mode and WYSIWYG mode share the same
  * backing buffer and save flow".
+ *
+ * ## What writes, and when (K124, Ken 2026-09-24)
+ *
+ * Nothing reaches disk — and so nothing reaches the task's history —
+ * until the user saves (the Save button, Cmd/Ctrl+Enter, Cmd/Ctrl+S).
+ * This replaces TSK-15's 1.5s idle autosave and TSK-71's save-on-blur:
+ * Ken, *"a lot of accidental click-outs are happening which saves
+ * unintentionally."* The idle timer survives only as the cadence the
+ * unsaved text is copied to `sessionStorage` (A338), so a reload does
+ * not lose a long edit. The file keeps its name so the diff stays
+ * readable; the hook no longer autosaves to disk.
  */
 
 import type { ErrorResponse } from "@loctt/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiClient,ApiError } from "../api/client.ts";
+import { apiClient,ApiError, isUnknownOutcome } from "../api/client.ts";
+import { type BodyDraft, clearBodyDraft, writeBodyDraft } from "./bodyDraft.ts";
 
 /**
- * Idle delay before an autosave fires.
+ * Idle delay before the unsaved text is copied to the draft store.
  *
- * 1.5s is TSK-15's number. Overridable from the page because
- * Playwright's clock control does not reach the platform timer this
- * runs on — the same escape hatch `useSetField` uses for its deadline.
- * A spec that shortened it by mocking timers would be testing the mock.
+ * 1.5s was TSK-15's autosave number; A338 keeps it as the draft
+ * cadence. Overridable from the page because Playwright's clock
+ * control does not reach the platform timer this runs on — the same
+ * escape hatch `useSetField` uses for its deadline.
  */
 export const BODY_IDLE_MS = Number(
   (globalThis as { __LOCTT_BODY_IDLE_MS__?: unknown }).__LOCTT_BODY_IDLE_MS__ ?? 1500,
 );
 
 /**
- * What the indicator shows (TSK-15's third bullet: the user is never
- * guessing).
+ * What the indicator shows: unsaved changes, saving, saved, or failed.
  *
- * `unsaved` and `failed` are distinct states, and TSK-48 turns on the
- * difference: after a failed flush the indicator must move to an
- * "explicit unsaved/failed state, not 'saved' and not back to idle".
- * A single boolean cannot say "there are changes because you just
- * typed" apart from "there are changes because the write was refused",
- * and the second needs a message and a retry control.
+ * `saved` means the editor holds exactly what is on disk — nothing to
+ * lose. `unsaved` means there are changes nobody has saved yet (K124:
+ * they stay unsaved until the user saves). `unsaved` and `failed` are
+ * distinct states, and TSK-48 turns on the difference: after a refused
+ * write the indicator must move to an "explicit unsaved/failed state,
+ * not 'saved' and not back to idle", and the second needs a message
+ * and a retry control.
  */
 export type SaveState =
   | { readonly kind: "saved" }
@@ -54,9 +67,17 @@ export interface BodyConflict {
 
 export interface BodyAutosaveOptions {
   readonly taskRef: string;
+  /** The task's stable id — the draft store is keyed by it (A338). */
+  readonly taskId: string;
   /** Body and token as loaded from `GET /api/tasks/:ref`. */
   readonly loadedBody: string;
   readonly loadedToken: string;
+  /**
+   * A draft restored from `sessionStorage` (A338). Read ONCE, at mount:
+   * matching base → the editor opens on the draft, unsaved; a base the
+   * file has moved past → the conflict surface opens on it.
+   */
+  readonly initialDraft?: BodyDraft | null;
   /** Called after a write lands, so the caller can refresh caches. */
   readonly onSaved?: (nextToken: string) => void;
 }
@@ -64,104 +85,151 @@ export interface BodyAutosaveOptions {
 export interface BodyAutosave {
   readonly state: SaveState;
   readonly conflict: BodyConflict | null;
-  /** Records a user edit and (re)arms the idle timer. */
+  /** Records a user edit; the draft is copied out after the idle window. */
   readonly edit: (next: string) => void;
-  /** Flush now — blur, Ctrl/Cmd+S, or navigating away. */
-  readonly flush: () => Promise<void>;
+  /** Save (K124): the only thing that writes to disk. */
+  readonly save: () => Promise<void>;
   /** Retry after a failure, without needing another keystroke. */
   readonly retry: () => Promise<void>;
   /**
-   * Flush for an in-app navigation (A246) and report whether the editor
-   * is now safe to unmount. Resolves `true` when the buffer is clean
-   * (the write landed, or there was nothing to write) and `false` when
-   * the write was refused or a conflict is open — in which case the
-   * caller must keep the editor mounted so the failure stays visible.
+   * Copy the unsaved text to the draft store now rather than at the end
+   * of the idle window (A338: blur, Escape, Cmd/Ctrl+Enter). No-op when
+   * nothing is unsaved.
    */
-  readonly flushForNav: () => Promise<boolean>;
+  readonly flushDraft: () => void;
   /** Resolve a conflict by writing this exact text over `theirs`. */
   readonly resolve: (text: string) => Promise<void>;
   /** Dismiss the conflict surface *without* writing (XS-12). */
   readonly dismissConflict: () => void;
   /**
-   * Cancel (Escape, K33): discard the in-editor text, drop any pending
-   * idle timer, and return to the last-saved baseline WITHOUT writing.
-   * This is what makes Escape a true cancel — without it, unmounting the
-   * editor with a pending timer runs the unmount-flush and silently
-   * *writes* the edit the user was cancelling.
+   * Cancel (K124): drop the in-editor text and the draft, returning to
+   * what is on disk WITHOUT writing. The caller asks first when there
+   * are changes; this is the discard itself.
+   *
+   * Refused while a Save is in flight (A346): the write cannot be
+   * recalled, so there is nothing honest to discard. Returns whether it
+   * discarded, so the caller only closes the editor when it did.
    */
-  readonly cancel: () => void;
+  readonly cancel: () => boolean;
   /** True while there is anything the user would lose by leaving. */
   readonly hasUnsavedWork: boolean;
 }
 
-export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
-  const { taskRef, loadedBody, loadedToken, onSaved } = opts;
+/** Where the refs start: the loaded body, or a restored draft (A338). */
+interface Seed {
+  readonly buffer: string;
+  readonly saved: string;
+  readonly token: string;
+  readonly state: SaveState;
+  readonly conflict: BodyConflict | null;
+}
 
-  const [state, setState] = useState<SaveState>({ kind: "saved" });
-  const [conflict, setConflictState] = useState<BodyConflict | null>(null);
-
+function seedFrom(opts: BodyAutosaveOptions): Seed {
+  const { taskRef, loadedBody, loadedToken, initialDraft } = opts;
+  const clean: Seed = {
+    buffer: loadedBody, saved: loadedBody, token: loadedToken,
+    state: { kind: "saved" }, conflict: null,
+  };
+  if (initialDraft === undefined || initialDraft === null) return clean;
+  if (initialDraft.text === loadedBody) return clean;
   /**
-   * Mirror of `state` the unmount effect can read synchronously (A246).
+   * The file has not moved under the draft: restore it silently, unsaved.
    *
-   * The unmount cleanup runs with the closure captured at mount, so it
-   * cannot read the latest `state` through the state variable — it would
-   * see `saved`. A `failed` write leaves no idle timer, so the only way
-   * the cleanup can tell "this teardown is losing a failed save" is a
-   * ref updated on every render, the same trick `conflictRef` uses.
+   * The body digest is compared as well as the token because the token
+   * also covers `updated_at` (core's `bodyToken`), so a status change
+   * made in the meta panel moves it without touching the body. A draft
+   * whose base body is still exactly what is on disk cannot overwrite
+   * anyone's text, and the fresh token makes its Save succeed.
    */
-  const stateRef = useRef<SaveState>(state);
-  stateRef.current = state;
+  if (initialDraft.baseToken === loadedToken || initialDraft.baseBody === loadedBody) {
+    return {
+      buffer: initialDraft.text, saved: loadedBody, token: loadedToken,
+      state: { kind: "unsaved" }, conflict: null,
+    };
+  }
+  /**
+   * The body changed on disk since the draft was written: the conflict
+   * surface, never a silent overwrite (A338, TSK-35's rule). The refs sit
+   * exactly where a refused Save leaves them — the old base and its
+   * token — so every path out (apply, dismiss then retry, cancel)
+   * behaves as it does after a 409.
+   */
+  return {
+    buffer: initialDraft.text,
+    saved: initialDraft.baseBody,
+    token: initialDraft.baseToken,
+    state: {
+      kind: "failed",
+      message: `${taskRef} changed while you were editing. Your text has not been saved.`,
+    },
+    conflict: { mine: initialDraft.text, theirs: loadedBody, theirToken: loadedToken },
+  };
+}
+
+export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
+  const { taskRef, taskId, loadedBody, loadedToken, onSaved } = opts;
+
+  // The seed is computed once; later prop changes go through the refetch
+  // effect below, never back through the draft.
+  const [seed] = useState(() => seedFrom(opts));
+
+  const [state, setState] = useState<SaveState>(seed.state);
+  const [conflict, setConflictState] = useState<BodyConflict | null>(seed.conflict);
 
   /**
-   * Mirror of `conflict` that `flush` can read synchronously (A59).
+   * Mirror of `conflict` that `save` can read synchronously (A59).
    *
    * The guard below has to see the dialog close the instant `resolve`
-   * closes it — `resolve` clears the conflict and then flushes in the
+   * closes it — `resolve` clears the conflict and then saves in the
    * same tick, and a state read through a callback closure would still
    * say "open" and swallow the resolution write itself.
    */
-  const conflictRef = useRef<BodyConflict | null>(null);
+  const conflictRef = useRef<BodyConflict | null>(seed.conflict);
   const setConflict = useCallback((c: BodyConflict | null) => {
     conflictRef.current = c;
     setConflictState(c);
   }, []);
 
   /**
-   * The text the user has typed. A ref, not state: the timer callback
-   * that fires 1.5s later must read the *latest* text, and a closure
-   * over a state variable would send whatever was current when the
-   * timer was armed. That is TSK-38's "does not resurrect old text",
-   * and it is a bug that only appears under exactly the timing the
-   * case describes.
+   * The text the user has typed. A ref, not state: a write that lands
+   * later must compare against the *latest* text, and a closure over a
+   * state variable would see whatever was current when it started.
+   * That is TSK-38's "does not resurrect old text".
    */
-  const bufferRef = useRef(loadedBody);
-  /** The last text a write actually put on disk. */
-  const savedRef = useRef(loadedBody);
+  const bufferRef = useRef(seed.buffer);
+  /** The body the current token refers to — the base the edit is against. */
+  const savedRef = useRef(seed.saved);
   /** Precondition token for the next write (K2). */
-  const tokenRef = useRef(loadedToken);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Serialises writes so two flushes cannot interleave. */
+  const tokenRef = useRef(seed.token);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Serialises writes so two saves cannot interleave. */
   const inFlightRef = useRef<Promise<void> | null>(null);
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
+  const taskIdRef = useRef(taskId);
+  taskIdRef.current = taskId;
 
   /**
-   * A fresh load (navigating to another task, or a refetch) replaces
-   * the buffer.
+   * A fresh load (a refetch — on window focus, the 60s poll, or after
+   * any write to the task) lands here.
    *
-   * TSK-40 forbids task B's editor showing A's buffered content, and
-   * the hook is remounted per task by its `key`, but a refetch of the
-   * *same* task also lands here. Adopting a new body while the user
-   * has unsaved edits would destroy them, so the guard is on the
-   * buffer being clean — which is also XS-14's requirement that an
-   * idle editor adopt the CLI's change rather than fight it.
+   * Clean editor: adopt it — XS-14's requirement that an idle editor
+   * take the CLI's change rather than fight it.
+   *
+   * Dirty editor: keep the user's text. Whether to take the new token
+   * turns on the BODY, not the token: if the body on disk is still the
+   * base this edit started from, only frontmatter moved (a status change
+   * in the meta panel bumps `updated_at`, and so the token), and the
+   * fresh token lets Save through without a false conflict. If the body
+   * itself changed, the old token is kept so Save is refused and the
+   * conflict surface opens (XS-11/XS-12). Under K124 an edit can stay
+   * open for minutes across a window refocus, so adopting the token
+   * unconditionally here — the pre-K124 rule — would let Save silently
+   * overwrite a CLI edit made in the meantime.
    */
   useEffect(() => {
-    if (bufferRef.current !== savedRef.current) {
-      // Dirty: keep the user's text, but take the new token so the
-      // next write is checked against what is now on disk and raises
-      // a conflict rather than clobbering it.
-      tokenRef.current = loadedToken;
+    if (bufferRef.current !== savedRef.current || conflictRef.current !== null) {
+      if (loadedBody === savedRef.current) tokenRef.current = loadedToken;
       return;
     }
     bufferRef.current = loadedBody;
@@ -169,40 +237,46 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
     tokenRef.current = loadedToken;
   }, [loadedBody, loadedToken]);
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+  const clearDraftTimer = useCallback(() => {
+    if (draftTimerRef.current !== null) {
+      clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
     }
   }, []);
 
   /**
-   * One write. Not called concurrently — `flush` chains through
-   * `inFlightRef`.
+   * Copy the unsaved text to `sessionStorage` (A338), or clear the
+   * draft when there is nothing unsaved. Written from the refs, so it
+   * always carries the latest text and the base it is against.
    */
+  const flushDraft = useCallback(() => {
+    clearDraftTimer();
+    if (bufferRef.current === savedRef.current && conflictRef.current === null) return;
+    writeBodyDraft(taskIdRef.current, {
+      text: bufferRef.current,
+      baseToken: tokenRef.current,
+      baseBody: savedRef.current,
+    });
+  }, [clearDraftTimer]);
+
   /**
    * Set by `resolve` so a conflict resolution writes even when the
-   * chosen text equals the last thing this client saved — "keep mine"
-   * after a refusal is exactly that case, and the dirty-flag guard
-   * below would otherwise swallow it.
+   * chosen text equals the base — "keep mine" after a refusal is
+   * exactly that case, and the dirty-flag guard below would otherwise
+   * swallow it.
    */
   const forceRef = useRef(false);
 
+  /** One write. Not called concurrently — `save` chains through `inFlightRef`. */
   const write = useCallback(async (): Promise<void> => {
     const text = bufferRef.current;
     const forced = forceRef.current;
     forceRef.current = false;
 
     /**
-     * XS-14. Nothing to write means no write — full stop.
-     *
-     * Without this, an idle tab whose buffer equals its last save
-     * would still POST on any trigger that reached here, and that
-     * request would carry a stale token and land as a conflict the
-     * user did nothing to cause. Worse, before the token existed it
-     * would have silently restored the old text over a
-     * `loctt body --set ""`. Autosave is dirty-flag driven, which is
-     * the case's second bullet stated as code.
+     * XS-14. Nothing to write means no write — full stop. A Save with no
+     * changes (Cmd/Ctrl+Enter on an untouched editor) must not POST a
+     * stale buffer carrying a stale token.
      */
     if (!forced && text === savedRef.current) {
       setState({ kind: "saved" });
@@ -221,14 +295,19 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
 
       /**
        * TSK-38's third bullet: the indicator must not read "saved"
-       * while newer unsaved keystrokes exist. The user may well have
-       * typed while this request was in flight, so the state depends
-       * on the buffer *now*, not on the request having succeeded.
+       * while newer unsaved keystrokes exist. The user may have typed
+       * while this request was in flight, so the state depends on the
+       * buffer *now*. Those newer keystrokes are not saved for them
+       * (K124: only Save writes) — they stay unsaved, and their draft
+       * is re-based on what just landed.
        */
-      setState(bufferRef.current === text ? { kind: "saved" } : { kind: "unsaved" });
-      // Newer keystrokes arrived mid-flight: re-arm so they get their
-      // own save rather than waiting for the user to type again.
-      if (bufferRef.current !== text) scheduleRef.current();
+      if (bufferRef.current === text) {
+        setState({ kind: "saved" });
+        clearBodyDraft(taskIdRef.current);
+      } else {
+        setState({ kind: "unsaved" });
+        flushDraft();
+      }
     } catch (err) {
       if (err instanceof ApiError && err.envelope?.code === "conflict") {
         setConflict(parseConflict(err.envelope, text));
@@ -246,31 +325,22 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
       }
       setState({ kind: "failed", ...failureCopy(err) });
     }
-  }, [taskRef]);
+  }, [taskRef, setConflict, flushDraft]);
 
-  const flush = useCallback(async (): Promise<void> => {
-    clearTimer();
+  const save = useCallback(async (): Promise<void> => {
     /**
      * A59: while the conflict dialog is open, no write leaves.
      *
      * XS-12's first bullet — "The UI does not write. It presents a
-     * conflict resolution surface" — and it is not just principle.
-     * Clicking a choice radio blurs the editor, the blur-flush went
-     * out carrying the token the server had already refused, and its
-     * guaranteed 409 could land *after* Apply and re-open the dialog
-     * over a conflict the user had just resolved (the known-gaps
-     * race, measured at 4 in 10 runs once asserted directly). Worse,
-     * the refetch effect above adopts a fresh `loadedToken` even
-     * while dirty, so a mid-conflict refetch could let that blur
-     * write *succeed* — silently overwriting `theirs` while the
-     * dialog is still asking the user which side to keep (P1).
-     *
-     * The resolution write is not suppressed: `resolve` clears
-     * `conflictRef` synchronously before it flushes. Every other
-     * trigger — blur, Ctrl/Cmd+S, unmount — waits; the buffer keeps
-     * the text and `hasUnsavedWork` keeps the warnings armed.
+     * conflict resolution surface". The resolution write is not
+     * suppressed: `resolve` clears `conflictRef` synchronously before
+     * it saves. Every other trigger waits; the buffer keeps the text
+     * and `hasUnsavedWork` keeps the warnings armed.
      */
     if (conflictRef.current !== null) return;
+    // The draft is current before the write, so a tab that dies with
+    // the request in flight still has the text to restore.
+    flushDraft();
     // Chain rather than run in parallel: two overlapping POSTs would
     // race on the server and the older one could land last.
     const prior = inFlightRef.current ?? Promise.resolve();
@@ -278,95 +348,93 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
     inFlightRef.current = next;
     await next;
     if (inFlightRef.current === next) inFlightRef.current = null;
-  }, [clearTimer, write]);
+  }, [flushDraft, write]);
 
-  const flushRef = useRef(flush);
-  flushRef.current = flush;
-
-  const schedule = useCallback(() => {
-    clearTimer();
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      void flushRef.current();
-    }, BODY_IDLE_MS);
-  }, [clearTimer]);
-
-  const scheduleRef = useRef(schedule);
-  scheduleRef.current = schedule;
+  const saveRef = useRef(save);
+  saveRef.current = save;
 
   const edit = useCallback((next: string) => {
     bufferRef.current = next;
-    /**
-     * TSK-15's first bullet — "one save fires, not one per keystroke".
-     * Re-arming on every keystroke is what makes the timer *idle*
-     * rather than periodic: 30 seconds of continuous typing schedules
-     * ~one write, not twenty. Replacing `clearTimeout` with a
-     * "schedule only if none pending" check turns it into a
-     * fixed-interval save and the timing test goes red.
-     */
     setConflict(null);
-    setState(next === savedRef.current ? { kind: "saved" } : { kind: "unsaved" });
-    if (next !== savedRef.current) scheduleRef.current();
-  }, []);
+    if (next === savedRef.current) {
+      // Typed back to what is on disk: nothing unsaved, nothing to keep.
+      clearDraftTimer();
+      clearBodyDraft(taskIdRef.current);
+      setState({ kind: "saved" });
+      return;
+    }
+    setState({ kind: "unsaved" });
+    /**
+     * The draft copy is idle-debounced (A338 keeps TSK-15's cadence):
+     * re-armed on every keystroke, so continuous typing writes one draft
+     * at the end, not one per key. Nothing here touches the server.
+     */
+    clearDraftTimer();
+    draftTimerRef.current = setTimeout(() => {
+      draftTimerRef.current = null;
+      flushDraft();
+    }, BODY_IDLE_MS);
+  }, [setConflict, clearDraftTimer, flushDraft]);
 
   const retry = useCallback(async () => {
-    await flushRef.current();
+    await saveRef.current();
   }, []);
 
   /**
-   * A246: flush for an in-app navigation, then report — synchronously,
-   * off the refs — whether the editor is now clean enough to unmount.
+   * Cancel (K124): discard the in-editor text and the draft, returning
+   * to the base WITHOUT writing. Setting `bufferRef` back to `savedRef`
+   * is what makes every later exit (unmount, beforeunload) see a clean
+   * editor, so a cancelled edit cannot come back as a draft.
    *
-   * The render-time `hasUnsavedWork` cannot answer this: it is stale
-   * inside the async navigation closure that awaits the flush. The truth
-   * as of this instant lives in the refs `write` mutates SYNCHRONOUSLY:
-   * a successful write sets `savedRef` to the text (so the buffer is no
-   * longer dirty), while a refused write leaves `savedRef` untouched
-   * (still dirty) and a conflict sets `conflictRef`. So "safe to leave"
-   * is exactly "the buffer matches disk and no conflict is open". The
-   * `state` variable is deliberately NOT consulted here — its ref is
-   * only render-synced, so it can still read `failed` in the microtask
-   * gap right after a successful write sets `state` to `saved`.
+   * A346: a Save already in flight wins. Resetting the buffer under it
+   * made the landed write look like newer keystrokes, and the old text
+   * came back as a draft against the new token. The editor disables
+   * Cancel and Escape while saving; this is the same rule where the
+   * refs live, for the moment before the indicator reads "saving".
    */
-  const flushForNav = useCallback(async (): Promise<boolean> => {
-    await flushRef.current();
-    const dirty = bufferRef.current !== savedRef.current;
-    const conflicted = conflictRef.current !== null;
-    return !dirty && !conflicted;
-  }, []);
-
-  /**
-   * Escape / cancel (K33): discard the in-editor text and drop any
-   * pending idle timer, reverting to the last-saved baseline WITHOUT
-   * writing. Setting `bufferRef` back to `savedRef` is what makes the
-   * editor's unmount-flush a no-op (it only writes when buffer ≠ saved),
-   * so cancelling then leaving cannot silently persist the cancelled
-   * edit. A conflict is dismissed too — cancel means "forget this edit".
-   */
-  const cancel = useCallback(() => {
-    clearTimer();
+  const cancel = useCallback((): boolean => {
+    if (inFlightRef.current !== null) return false;
+    clearDraftTimer();
+    forceRef.current = false;
     bufferRef.current = savedRef.current;
     setConflict(null);
     setState({ kind: "saved" });
-  }, [clearTimer]);
+    clearBodyDraft(taskIdRef.current);
+    return true;
+  }, [clearDraftTimer, setConflict]);
 
   /**
-   * Write `text` over whatever is on disk, using the token from the
-   * conflicting read (XS-12's "keep mine" / "keep both").
+   * Apply a conflict resolution (XS-12's "keep mine" / "keep theirs" /
+   * "keep both").
    *
-   * Still a *conditional* write: a third writer between the refusal
-   * and the resolution would otherwise be clobbered by the resolution
-   * itself, which is the same bug one level up. It can conflict again,
-   * and that is correct.
+   * A text other than `theirs` is written using the token from the
+   * conflicting read. Still a *conditional* write: a third writer
+   * between the refusal and the resolution would otherwise be clobbered
+   * by the resolution itself, which is the same bug one level up.
+   *
+   * "Keep theirs" writes nothing: the promised result — the disk
+   * version — is already on disk, and a write of identical text would
+   * only add a history entry for a change nobody made (K124).
    */
   const resolve = useCallback(async (text: string) => {
+    const open = conflictRef.current;
+    if (open !== null && text === open.theirs) {
+      clearDraftTimer();
+      bufferRef.current = open.theirs;
+      savedRef.current = open.theirs;
+      tokenRef.current = open.theirToken;
+      setConflict(null);
+      setState({ kind: "saved" });
+      clearBodyDraft(taskIdRef.current);
+      onSavedRef.current?.(open.theirToken);
+      return;
+    }
     bufferRef.current = text;
-    if (conflict !== null) tokenRef.current = conflict.theirToken;
+    if (open !== null) tokenRef.current = open.theirToken;
     setConflict(null);
-    // Force the write even if `text` happens to equal the last save.
-    savedRef.current = "\0pending";
-    await flushRef.current();
-  }, [conflict]);
+    forceRef.current = true;
+    await saveRef.current();
+  }, [clearDraftTimer, setConflict]);
 
   const dismissConflict = useCallback(() => {
     /**
@@ -380,50 +448,51 @@ export function useBodyAutosave(opts: BodyAutosaveOptions): BodyAutosave {
       kind: "failed",
       message: `${taskRef} changed elsewhere and your text is not saved. Resolve the conflict to keep it.`,
     });
-  }, [taskRef]);
+  }, [taskRef, setConflict]);
 
-  // Flush a pending edit on unmount — navigating away between tasks
-  // (TSK-40's "flushed or the user is warned, not silently discarded").
-  //
-  // A246 (extends K96's "every exit keeps the text" to in-app nav): the
-  // flush must attempt whenever there is work to lose, NOT only when an
-  // idle timer is still pending. The old timer-gated guard silently
-  // dropped a dirty buffer that had no timer — the `failed` state (its
-  // write was refused, so no timer is armed) and a write that was in
-  // flight and then failed. Both are exactly the text the user most
-  // needs kept. So the trigger is "the buffer differs from what is on
-  // disk, or the last write failed", which is `hasUnsavedWork` minus the
-  // conflict case (a conflict is governed by BodyConflictDialog and the
-  // A59 flush-suppression, so a blind flush here would be swallowed
-  // anyway).
+  /**
+   * Unmount writes NOTHING to disk (K124) — the pre-K124 unmount flush
+   * (A246) is gone with autosave. It copies unsaved text to the draft
+   * instead, so an unmount no guard saw (the task view torn down by
+   * something other than a navigation) keeps the text for this tab.
+   * A338: the draft is never *cleared* on unmount alone.
+   */
   useEffect(() => () => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+    if (draftTimerRef.current !== null) {
+      clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
     }
-    const dirty = bufferRef.current !== savedRef.current;
-    if (dirty || stateRef.current.kind === "failed") void flushRef.current();
+    if (bufferRef.current !== savedRef.current || conflictRef.current !== null) {
+      writeBodyDraft(taskIdRef.current, {
+        text: bufferRef.current,
+        baseToken: tokenRef.current,
+        baseBody: savedRef.current,
+      });
+    }
   }, []);
 
   const hasUnsavedWork =
     state.kind === "unsaved" || state.kind === "failed" || conflict !== null;
 
   /**
-   * TSK-48's fourth bullet and ERR-12: leaving with unsaved text warns.
+   * TSK-48's fourth bullet and K124: leaving with unsaved text warns.
    * `beforeunload` covers reload and tab close; in-app navigation is
-   * covered by the unmount flush above and the router guard
-   * (`useUnsavedGuard`, wired in `BodyEditSurface`) that blocks the route
-   * change on a failed flush so the failure UI stays on screen (A246).
+   * covered by the router guard (`useUnsavedGuard`, wired in
+   * `BodyEditSurface`). The draft is flushed here too (A338), so a
+   * reload the user confirms comes back to the text.
    */
   useEffect(() => {
     if (!hasUnsavedWork) return undefined;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    const handler = (e: BeforeUnloadEvent) => {
+      flushDraft();
+      e.preventDefault();
+    };
     window.addEventListener("beforeunload", handler);
     return () => { window.removeEventListener("beforeunload", handler); };
-  }, [hasUnsavedWork]);
+  }, [hasUnsavedWork, flushDraft]);
 
   return {
-    state, conflict, edit, flush, retry, flushForNav, resolve, dismissConflict, cancel, hasUnsavedWork,
+    state, conflict, edit, save, retry, flushDraft, resolve, dismissConflict, cancel, hasUnsavedWork,
   };
 }
 
@@ -455,16 +524,23 @@ function parseConflict(envelope: ErrorResponse, mine: string): BodyConflict {
  * errno is: server-side.
  */
 function failureCopy(err: unknown): { message: string; detail?: string } {
+  // A timed-out write may have landed (K134). Retrying is safe: if the
+  // first write did land, the retry carries a stale token and opens the
+  // conflict dialog rather than overwriting.
+  if (isUnknownOutcome(err)) {
+    return { message: "Your changes may not have been saved. Please try again." };
+  }
   if (err instanceof ApiError) {
     const envelope = err.envelope;
+    const said = envelope?.message ?? err.message;
     return {
-      message: `${envelope?.message ?? err.message} Your text has not been saved.`,
+      // A server sentence without a closing period ran straight into
+      // the next one ("... was saved Your text ...").
+      message: `${/[.!?]$/.test(said) ? said : `${said}.`} Your text has not been saved.`,
       ...(envelope?.detail !== undefined ? { detail: envelope.detail } : {}),
     };
   }
   return {
-    message:
-      "The description could not be saved — the server did not respond. "
-      + "Your text is still here; copy it out if you need to.",
+    message: "Description not saved.",
   };
 }

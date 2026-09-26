@@ -35,13 +35,8 @@ export function InterruptedMigration({
           A schema migration did not finish
         </h1>
         <p className="mb-3 text-[0.9286rem] text-text-secondary">
-          LocTT found{" "}
-          <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
-            .schema-migration-in-progress
-          </code>{" "}
-          in this tracker. A previous migration crashed part-way, so the data
-          directory may be partly upgraded and partly not. Nothing here can be
-          opened or changed safely until that is resolved by hand.
+          A previous migration crashed part-way. The data directory may be
+          partly upgraded.
         </p>
 
         <dl className="mb-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[0.8571rem]">
@@ -55,7 +50,7 @@ export function InterruptedMigration({
           ) : null}
           <dt className="text-text-tertiary">Backup</dt>
           <dd className="break-all text-text-primary">
-            {backup ?? "not recorded — read the sentinel file below"}
+            {backup ?? "not recorded, read the sentinel file below"}
           </dd>
           <dt className="text-text-tertiary">Sentinel</dt>
           <dd className="break-all text-text-primary">{sentinelPath}</dd>
@@ -93,11 +88,6 @@ export function InterruptedMigration({
           </li>
         </ol>
 
-        <p className="mt-4 text-[0.8571rem] text-text-tertiary">
-          These steps are deliberately manual. Re-running a migration over a
-          half-migrated tracker compounds the damage, so LocTT will not offer
-          that as a single click.
-        </p>
       </div>
     </div>
   );

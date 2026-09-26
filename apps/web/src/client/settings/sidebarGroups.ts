@@ -8,8 +8,9 @@
  * paths module and `node:path` has no browser build. `users/sidebarGroups.js`
  * is pure logic over ids and imports nothing from node.
  */
-export type { ResolvedSidebarItem } from "@loctt/core/users/sidebarGroups.js";
+export type { GroupedSidebarRow, ResolvedSidebarItem } from "@loctt/core/users/sidebarGroups.js";
 export {
   readSidebarGroups,
+  resolveGroupedSidebarOrder,
   resolveSidebarOrder,
 } from "@loctt/core/users/sidebarGroups.js";

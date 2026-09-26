@@ -231,9 +231,38 @@ describe("MilestonesView — full-card click (MSL-39)", () => {
   });
 });
 
-describe("MilestonesView — countdown / overdue indicator (MSL-40)", () => {
+describe("MilestonesView — no countdown, no Overdue badge (K132, superseding MSL-40/MSL-17)", () => {
   // @verifies MSL-40
-  it("shows days-remaining for a future dated milestone", async () => {
+  // @verifies MSL-17
+  it("shows neither a countdown nor an Overdue badge for a past-due milestone with open tasks", async () => {
+    TODAY = "2026-06-08";
+    MILESTONES = [
+      {
+        id: "ms_1",
+        name: "v1",
+        target_date: "2026-06-05", // 3 days ago, still incomplete
+        progress: { done: 1, total: 4, discarded: 0, fraction: 0.25 },
+      },
+    ];
+    await renderView();
+
+    await screen.findByTestId("milestone-row");
+    await waitFor(() => {
+      expect(screen.queryByTestId("milestone-ms_1-countdown")).toBeNull();
+      expect(screen.queryByTestId("milestone-overdue")).toBeNull();
+    });
+    // By text too: a relabelled badge would pass the retired testid checks.
+    expect(screen.getByTestId("milestone-row").textContent)
+      .not.toMatch(/overdue|days? (left|ago)|in \d+ days?/i);
+    // The date itself is still shown as-is.
+    expect(screen.getByTestId("milestone-date").textContent).toContain(
+      "Jun 5, 2026",
+    );
+  });
+
+  // @verifies MSL-40
+  // @verifies MSL-17
+  it("shows neither a countdown nor an Overdue badge for a milestone dated ahead of today", async () => {
     TODAY = "2026-06-08";
     MILESTONES = [
       {
@@ -245,25 +274,17 @@ describe("MilestonesView — countdown / overdue indicator (MSL-40)", () => {
     ];
     await renderView();
 
-    const cd = await screen.findByTestId("milestone-ms_1-countdown");
-    expect(cd.textContent).toContain("in 5 days");
-  });
-
-  // @verifies MSL-40
-  it("shows an overdue countdown for a past dated milestone with work left", async () => {
-    TODAY = "2026-06-08";
-    MILESTONES = [
-      {
-        id: "ms_1",
-        name: "v1",
-        target_date: "2026-06-05", // 3 days ago
-        progress: { done: 1, total: 4, discarded: 0, fraction: 0.25 },
-      },
-    ];
-    await renderView();
-
-    const cd = await screen.findByTestId("milestone-ms_1-countdown");
-    expect(cd.textContent).toContain("3 days overdue");
+    await screen.findByTestId("milestone-row");
+    await waitFor(() => {
+      expect(screen.queryByTestId("milestone-ms_1-countdown")).toBeNull();
+      expect(screen.queryByTestId("milestone-overdue")).toBeNull();
+    });
+    // By text too: a relabelled badge would pass the retired testid checks.
+    expect(screen.getByTestId("milestone-row").textContent)
+      .not.toMatch(/overdue|days? (left|ago)|in \d+ days?/i);
+    expect(screen.getByTestId("milestone-date").textContent).toContain(
+      "Jun 13, 2026",
+    );
   });
 
   // @verifies MSL-40
@@ -335,17 +356,22 @@ describe("MilestonesView — status breakdown (MSL-41)", () => {
 });
 
 describe("MilestonesView — create affordance + copy (K105)", () => {
-  it("subhead describes the page and carries NO 'Settings → Milestones' pointer", async () => {
+  it("carries no page-intro subhead or 'Settings → Milestones' pointer", async () => {
     MILESTONES = [
       { id: "ms_1", name: "v1", progress: { done: 1, total: 2, discarded: 0, fraction: 0.5 } },
     ];
     await renderView();
 
-    // K105: Ken retired the "Manage them in Settings → Milestones" prose.
-    // The subhead still exists (describes the page) but points at nothing.
-    const sub = await screen.findByTestId("milestones-subhead");
-    expect(sub.textContent?.toLowerCase()).not.toContain("settings");
-    expect(sub.querySelector("a")).toBeNull();
+    // K105 retired the "Manage them in Settings → Milestones" prose.
+    // K129 pass: the subhead itself ("Progress toward every milestone,
+    // with the tasks counting toward each.") was then removed entirely
+    // as a page-intro (messaging.md §1 — the page's own progress bars
+    // and task counts already show what it is for). No case requires a
+    // subhead to exist (MSL-42 is about Settings' own copy, not this
+    // page), so the element is gone rather than emptied.
+    await screen.findByText("Milestones");
+    expect(screen.queryByTestId("milestones-subhead")).toBeNull();
+    expect(screen.queryByText(/settings/i)).toBeNull();
   });
 
   it("'+ New milestone' in the header opens the shared create dialog in place", async () => {

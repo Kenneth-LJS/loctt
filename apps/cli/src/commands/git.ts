@@ -71,9 +71,9 @@ export async function run(args: string[], root: string): Promise<void> {
           + `(head ${result.adopted.branchHead.slice(0, 8)}) as the sync baseline.`,
         );
         if (result.adopted.inAgreement === true) {
-          console.log("Local state agrees with the branch — no sync needed.");
+          console.log("Local state agrees with the branch. No sync needed.");
         } else if (result.adopted.inAgreement === false) {
-          console.log("Local state differs from the branch — run 'loctt git sync' to reconcile.");
+          console.log("Local state differs from the branch. Run 'loctt git sync' to reconcile.");
         }
       }
       // GIT-22: warn — do not block. The enable already succeeded; the
@@ -99,7 +99,7 @@ export async function run(args: string[], root: string): Promise<void> {
       if (status.unreadable) {
         console.error(`Error: ${status.unreadable.reason}`);
         console.error(
-          "Git mode status is unknown — this is not the same as git mode being disabled.",
+          "Git mode status is unknown. This is not the same as git mode being disabled.",
         );
         console.log("Enabled: unknown");
         console.log("Branch: unknown");
@@ -134,7 +134,7 @@ export async function run(args: string[], root: string): Promise<void> {
       }
       if (status.remoteChanges !== undefined) {
         console.log(
-          `Remote changes: ${status.remoteChanges ? "yes — run 'loctt git sync'" : "none"}`,
+          `Remote changes: ${status.remoteChanges ? "yes, run 'loctt git sync'" : "none"}`,
         );
       }
       // GIT-22: the filesystem-class advisory, printed to stderr so it
@@ -327,7 +327,7 @@ export async function run(args: string[], root: string): Promise<void> {
           + "(the rest of the sync was applied). Inspect:",
         );
         for (const m of result.malformed) {
-          console.error(`  ${m.id}: ${m.path} — ${m.reason}`);
+          console.error(`  ${m.id}: ${m.path}: ${m.reason}`);
         }
         process.exitCode = EXIT.RUNTIME;
       }
@@ -407,8 +407,8 @@ function reportReconcileNeeded(err: GitReconcileNeededError): void {
   // GIT-16: a task deleted one side and edited the other — name which is which.
   for (const d of plan.deleteVsEdit) {
     console.error(
-      `  ${d.taskKey}: deleted on ${d.deletedSide}, edited on ${d.editedSide} `
-      + "— choose keep-deletion or keep-task",
+      `  ${d.taskKey}: deleted on ${d.deletedSide}, edited on ${d.editedSide}. `
+      + "Choose keep-deletion or keep-task",
     );
   }
   console.error(
@@ -481,7 +481,7 @@ async function runReconcile(args: string[], locttDir: string, root: string): Pro
     const outcome = await applyReconcileDecisions(locttDir, root, decisions);
     for (const r of outcome.results) {
       if (!r.ok) {
-        console.log(`  ${r.taskKey}: FAILED — ${r.error ?? "unknown"}`);
+        console.log(`  ${r.taskKey}: FAILED: ${r.error ?? "unknown"}`);
         continue;
       }
       // GIT-16: a delete-vs-edit outcome names kept/deleted by key.
@@ -516,7 +516,7 @@ async function runReconcile(args: string[], locttDir: string, root: string): Pro
     if (outcome.reconciled) {
       console.log("Reconciliation complete; the operation finished.");
     } else {
-      console.error("Reconciliation incomplete — some tasks failed; rerun after fixing them.");
+      console.error("Reconciliation incomplete. Some tasks failed. Rerun after fixing them.");
       process.exitCode = EXIT.RUNTIME;
     }
     return;

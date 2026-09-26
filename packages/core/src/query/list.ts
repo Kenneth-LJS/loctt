@@ -37,9 +37,7 @@ export interface ListOptions {
    *
    * Precedence: when the user-provided query already mentions `archived`,
    * the user's term wins and NO scope filter is injected — the scope
-   * effectively resolves to `all` for that call. When that happens under a
-   * non-`all` requested scope it is a CONFLICT, surfaced via
-   * {@link ListOptions.onArchivedConflict} rather than silently resolved.
+   * effectively resolves to `all` for that call.
    *
    * Saved views (`view`) are respected as authored — the scope is not
    * injected into a view's own query here (a view carries its own scope
@@ -99,16 +97,6 @@ export interface ListTasksOptions {
    * problem. Ad hoc queries throw instead.
    */
   readonly onWarning?: (err: QueryValidationError) => void;
-  /**
-   * Called when the requested {@link ListOptions.archivedScope} conflicts
-   * with an explicit `archived` term in the user's query (e.g. scope
-   * `active` but the query says `archived = true`). The user's term wins
-   * (scope resolves to `all` for the call); this callback lets a surface
-   * warn that the flag was overridden rather than resolving it silently
-   * (K107). Not called when the scope is `all`, or when the query does not
-   * mention `archived`.
-   */
-  readonly onArchivedConflict?: (scope: ArchivedScope) => void;
 }
 
 /** Context provider for building EvalContext per task. */
@@ -177,8 +165,8 @@ export function resolveView(
   const byName = queriesConfig.queries.filter(q => q.name === ref);
   if (byName.length > 1) {
     throw new Error(
-      `multiple views named '${ref}'; refer by id instead `
-      + `(${byName.map(q => q.id).join(", ")})`,
+      `Multiple views named '${ref}'. Refer by id instead `
+      + `(${byName.map(q => q.id).join(", ")}).`,
     );
   }
   return byName[0];
@@ -280,7 +268,7 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
     }
     const view = resolveView(queriesConfig, options.view);
     if (!view) {
-      throw new Error(`unknown view "${options.view}"`);
+      throw new Error(`Unknown view "${options.view}".`);
     }
     viewNode = filtersToNode(view.filters);
     viewScope = view.archivedScope;
@@ -329,17 +317,16 @@ function applyListTasksFilterAndSort(opts: ListTasksOptions): Task[] {
   //  - `archived` → AND `archived = true`  (only archived).
   //  - `all`      → add nothing.
   // When the user's own ad-hoc query mentions `archived`, their term wins
-  // and nothing is added; if the requested scope was not `all`, that is a
-  // conflict surfaced via `onArchivedConflict`.
+  // and nothing is added. (The web list refuses such a query outright,
+  // K121 #1, so no surface reports the override; A346 removed the unused
+  // `onArchivedConflict` callback.)
   const scope: ArchivedScope =
     options.archivedScope ?? viewScope ?? DEFAULT_ARCHIVED_SCOPE;
   let scopeNode: QueryNode | undefined;
   if (scope !== "all") {
     const mentions = queryStr !== undefined && queryMentionsArchived(queryStr);
-    if (mentions) {
-      // User's term wins; report the conflict rather than double-filtering.
-      opts.onArchivedConflict?.(scope);
-    } else {
+    // User's term wins: no scope term is added on top of it.
+    if (!mentions) {
       scopeNode = {
         type: "comparison",
         field: "archived",

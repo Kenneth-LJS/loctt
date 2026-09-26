@@ -94,7 +94,7 @@ import { TextField } from "./TextField.tsx";
  * ### Why the native colour wells STAY, against UI-4
  *
  * UI-4 and Ken's *"native ui is bad"* rejected the native `<select>`
- * for Archived scope. That ruling does not reach here, and the reasons
+ * for the (since removed, K121 #1) archived-scope control. That ruling does not reach here, and the reasons
  * it gave are the reasons why:
  *
  *  1. UI-4's first objection was that the native path was gated on

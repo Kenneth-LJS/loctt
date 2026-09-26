@@ -297,7 +297,7 @@ function MultiEnum({
                 (opt === undefined ? "text-warn-fg" : "text-text-secondary")
               }
             >
-              {opt?.label ?? `${key} — not in the current config`}
+              {opt?.label ?? `${key}, not in the current config`}
               <button
                 type="button"
                 aria-label={`Remove ${opt?.label ?? key} from ${def.label}`}

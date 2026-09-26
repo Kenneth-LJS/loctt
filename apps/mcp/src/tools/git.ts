@@ -83,9 +83,9 @@ export const TOOLS: readonly ToolDef[] = [
           + `(head ${result.adopted.branchHead.slice(0, 8)}) as the sync baseline.`,
         );
         if (result.adopted.inAgreement === true) {
-          lines.push("Local state agrees with the branch — no sync needed.");
+          lines.push("Local state agrees with the branch. No sync needed.");
         } else if (result.adopted.inAgreement === false) {
-          lines.push("Local state differs from the branch — run sync_from_git to reconcile.");
+          lines.push("Local state differs from the branch. Run sync_from_git to reconcile.");
         }
       }
       // GIT-22: warn — do not block. Enable succeeded; if the tracker is
@@ -119,7 +119,7 @@ export const TOOLS: readonly ToolDef[] = [
       if (status.unreadable) {
         return errorResult(
           `${status.unreadable.reason}\n\n`
-          + "Git mode status is unknown — this is not the same as git mode being disabled. "
+          + "Git mode status is unknown. This is not the same as git mode being disabled. "
           + "Do not enable git mode or publish until this file can be read.",
         );
       }
@@ -293,7 +293,7 @@ export const TOOLS: readonly ToolDef[] = [
           + "(the rest of the sync was applied). Inspect:",
         );
         for (const m of result.malformed) {
-          lines.push(`  ${m.id}: ${m.path} — ${m.reason}`);
+          lines.push(`  ${m.id}: ${m.path}: ${m.reason}`);
         }
       }
       return text(lines.join("\n"));
@@ -385,7 +385,7 @@ export const TOOLS: readonly ToolDef[] = [
       const lines: string[] = [];
       for (const r of outcome.results) {
         if (!r.ok) {
-          lines.push(`  ${r.taskKey}: FAILED — ${r.error ?? "unknown"}`);
+          lines.push(`  ${r.taskKey}: FAILED: ${r.error ?? "unknown"}`);
           continue;
         }
         // GIT-16: a delete-vs-edit outcome names kept/deleted by key.
@@ -411,7 +411,7 @@ export const TOOLS: readonly ToolDef[] = [
             lines.push(`  ${l.key} → ${l.newKey ?? "(no key available)"} (keeper decided by ${l.tiebreak})`);
           }
           for (const s of rk.skipped) {
-            lines.push(`  ${s.key}: cannot rekey — ${s.reason}`);
+            lines.push(`  ${s.key}: cannot rekey: ${s.reason}`);
           }
           lines.push("", "Re-call resolve_reconcile with the same decisions plus confirm_rekey: true to renumber and finish.");
           return text(lines.join("\n"));
@@ -450,7 +450,7 @@ export const TOOLS: readonly ToolDef[] = [
       } else {
         // GIT-12/GIT-32: an honest partial — the sentinel is kept with the
         // successes journalled; a re-call retries only the unwritten rows.
-        lines.push("", "Reconciliation incomplete — some tasks failed; fix them and re-call resolve_reconcile to retry the remaining rows.");
+        lines.push("", "Reconciliation incomplete. Some tasks failed. Fix them and re-call resolve_reconcile to retry the remaining rows.");
       }
       return text(lines.join("\n"));
     },
@@ -510,7 +510,7 @@ function reconcileErrorText(err: unknown) {
 function reconcileNeededResult(err: GitReconcileNeededError) {
   const dve = err.plan.deleteVsEdit;
   const lines = [
-    `Reconciliation needed before ${err.plan.mode} can complete — `
+    `Reconciliation needed before ${err.plan.mode} can complete. `
     + `${String(err.plan.conflicts.length)} field conflict(s)`
     + `${dve.length > 0 ? ` + ${String(dve.length)} delete-vs-edit` : ""} changed on both sides. `
     + "Nothing was written.",
@@ -523,8 +523,8 @@ function reconcileNeededResult(err: GitReconcileNeededError) {
   // GIT-16: a task deleted one side and edited the other — name which is which.
   for (const d of dve) {
     lines.push(
-      `  ${d.taskKey}: deleted on ${d.deletedSide}, edited on ${d.editedSide} `
-      + "— keep-deletion or keep-task",
+      `  ${d.taskKey}: deleted on ${d.deletedSide}, edited on ${d.editedSide}. `
+      + "Keep-deletion or keep-task",
     );
   }
   lines.push("", "Resolve these in the web UI (Settings → Sync); the operation completes after Apply.");

@@ -14,7 +14,9 @@ import {
   useReconcileSession,
 } from "../api/hooks/useGit.ts";
 import { Button } from "../ui/Button.tsx";
+import { Disclosure } from "../ui/Disclosure.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { dataStateOf, InlineFailureNotice } from "../ui/InlineFailureNotice.tsx";
 import { ReconcilePanel } from "./ReconcilePanel.tsx";
 
 /**
@@ -57,37 +59,21 @@ function HistoryRewrittenRefusal({
       data-remote={info.remote ?? "none"}
       className="mb-3 rounded-md border border-danger-fg p-3 text-[0.9286rem] text-danger-fg"
     >
-      <p className="font-semibold">The history of {where} was rewritten.</p>
-      <p className="mt-1 text-text-secondary">
-        The last commit LocTT synced against —{" "}
-        <code className="text-[0.8571rem]">{info.missing_commit.slice(0, 8)}</code>{" "}
-        — is no longer part of the branch (its head is now{" "}
-        <code className="text-[0.8571rem]">{info.remote_head.slice(0, 8)}</code>).
-        This is not an ordinary conflict: a force-push or history rewrite
-        happened on {info.remote !== null ? `"${info.remote}"` : "the remote"}.
+      <p className="font-semibold">
+        The history of {where} was rewritten. The commit LocTT last synced
+        (<code className="text-[0.8571rem]">{info.missing_commit.slice(0, 8)}</code>) is gone.
+        Nothing was changed locally.
       </p>
-      <p className="mt-2 text-text-secondary">
-        <strong>Nothing was written.</strong> Your local task files are
-        untouched and the last-synced commit was not changed. LocTT will not
-        silently re-base onto the new head, because that would discard local
-        changes you have made since{" "}
-        <code className="text-[0.8571rem]">{info.missing_commit.slice(0, 8)}</code>.
-      </p>
-      <p className="mt-2 text-text-secondary">Recover in git (LocTT cannot do this for you):</p>
+      <p className="mt-2 text-text-secondary">To recover in git:</p>
       <ul className="mt-1 ml-4 list-disc text-text-secondary">
         <li data-testid={`${testId}-inspect`}>
-          <strong>Inspect the branch in git.</strong> Run{" "}
-          <code className="font-mono text-[0.8571rem]">git log {info.branch}</code>{" "}
-          and compare it with your local <code className="text-[0.8571rem]">.loctt/</code>{" "}
-          so you can see what the rewrite dropped. This only reads — it changes nothing.
+          Compare <code className="font-mono text-[0.8571rem]">git log {info.branch}</code>{" "}
+          with your local <code className="text-[0.8571rem]">.loctt/</code> folder.
         </li>
         <li data-testid={`${testId}-rebase`}>
-          <strong>Re-establish a base explicitly in git.</strong> Once you have
-          reviewed and merged the two by hand, point the branch at a commit you have
-          inspected (for example{" "}
-          <code className="font-mono text-[0.8571rem]">git branch -f {info.branch} &lt;commit&gt;</code>),
-          then sync again. Doing this by hand is what keeps the decision about
-          your local changes yours — LocTT will not make it for you.
+          After merging by hand, run{" "}
+          <code className="font-mono text-[0.8571rem]">git branch -f {info.branch} &lt;commit&gt;</code>,
+          then sync again.
         </li>
       </ul>
     </div>
@@ -136,21 +122,9 @@ function SchemaRemoteNewerRefusal({
       className="mb-3 rounded-md border border-danger-fg p-3 text-[0.9286rem] text-danger-fg"
     >
       <p className="font-semibold">
-        The {info.branch} branch was written by a newer version of LocTT.
-      </p>
-      <p className="mt-1 text-text-secondary">
-        The branch is at{" "}
-        <code className="text-[0.8571rem]">{remote}</code>, but this
-        installation only understands up to{" "}
-        <code className="text-[0.8571rem]">schema v{info.local_version}</code>.
-        Applying it could corrupt or drop data.
-      </p>
-      <p className="mt-2 text-text-secondary">
-        <strong>Nothing was written.</strong> Your local task files are
-        untouched. Schema never travels through sync — the fix is to{" "}
-        <strong>upgrade LocTT</strong> to a version that supports the branch's
-        schema, then sync again. This is not a migration: the branch is
-        already ahead of what this build can read.
+        The {info.branch} branch was written by a newer LocTT ({remote}). This
+        version supports up to <code className="text-[0.8571rem]">schema v{info.local_version}</code>.
+        Nothing was changed. Update LocTT, then sync again.
       </p>
     </div>
   );
@@ -213,46 +187,31 @@ function WorktreeMissingRefusal({
       className="mb-3 rounded-md border border-danger-fg p-3 text-[0.9286rem] text-danger-fg"
     >
       <p className="font-semibold">
-        {op} could not start: the git worktree is missing.
-      </p>
-      <p className="mt-1 text-text-secondary">
-        LocTT&rsquo;s temporary git worktree at{" "}
-        <code className="text-[0.8571rem]">{info.worktree}</code>{" "}
-        is registered by git but its directory is gone (most likely deleted
-        by hand while git had it locked), so it cannot be re-created. This is
-        not an opaque git error — the worktree named above is the specific
-        thing that is wrong.
+        {op} could not start because LocTT&rsquo;s git worktree at{" "}
+        <code className="text-[0.8571rem]">{info.worktree}</code> is missing.
+        Nothing was changed.
       </p>
       <p className="mt-2 text-text-secondary">
-        <strong>Your local task files were not modified.</strong> The {info.operation}{" "}
-        never reached the point of writing to{" "}
-        <code className="text-[0.8571rem]">.loctt/</code>, so nothing
-        was applied.
+        To fix it, run{" "}
+        <code className="font-mono text-[0.8571rem]">git worktree prune</code>,
+        then {info.operation} again. If git says it&rsquo;s locked, run{" "}
+        <code className="font-mono text-[0.8571rem]">git worktree unlock {info.worktree}</code>{" "}
+        first.
       </p>
-      <p className="mt-2 text-text-secondary">Repair with either:</p>
-      <ul className="mt-1 ml-4 list-disc text-text-secondary">
-        <li data-testid={`${testId}-reestablish`}>
-          <strong>Re-establish the worktree.</strong> Run{" "}
-          <code className="font-mono text-[0.8571rem]">git worktree prune</code>{" "}
-          (or, if git reports it locked,{" "}
-          <code className="font-mono text-[0.8571rem]">git worktree remove --force {info.worktree}</code>{" "}
-          or <code className="font-mono text-[0.8571rem]">git worktree unlock {info.worktree}</code>),
-          then {info.operation} again. This clears git&rsquo;s stale
-          bookkeeping only — your{" "}
-          <code className="text-[0.8571rem]">.loctt/</code> task files
-          are left exactly as they are.
-        </li>
-        <li data-testid={`${testId}-reenable`}>
-          <strong>Disable and re-enable git sync.</strong> Run{" "}
-          <code className="font-mono text-[0.8571rem]">loctt git disable</code>{" "}
-          then <code className="font-mono text-[0.8571rem]">loctt git enable</code>.
-          This rebuilds LocTT&rsquo;s git setup from scratch and also leaves your{" "}
-          <code className="text-[0.8571rem]">.loctt/</code> task files
-          exactly as they are on disk.
-        </li>
-      </ul>
     </div>
   );
+}
+
+/**
+ * A328 (B6): the Disable confirm box's copy, verbatim from the decision.
+ * `data_state: "unknown"` (a K115 timeout) reads differently from an
+ * ordinary rejection — the first cannot say the toggle failed, only that
+ * it could not be confirmed.
+ */
+export function disableFailureMessage(error: unknown): string {
+  return dataStateOf(error) === "unknown"
+    ? "Couldn't confirm git sync was turned off. Refresh to check."
+    : "Git sync wasn't turned off. Try again.";
 }
 
 /**
@@ -262,25 +221,15 @@ function WorktreeMissingRefusal({
  * points at credentials, distinguishing the two causes.
  */
 export function publishFailureLine(branch: string, failure: GitRemoteFailure): string {
-  const safe = "The commit is safe locally; your work was not lost.";
   switch (failure.kind) {
     case "non_fast_forward":
-      return (
-        `Committed to ${branch}, but the push was rejected: the remote "${failure.remote}" `
-        + `has moved on since your last sync. ${safe} Sync first to bring in the remote work, then publish again.`
-      );
+      return `Committed to ${branch} locally, but "${failure.remote}" has newer changes. Sync, then publish again.`;
     case "auth":
-      return (
-        `Committed to ${branch}, but the push failed authenticating to "${failure.remote}" `
-        + `(${failure.detail}). ${safe} Check your git credentials, then retry.`
-      );
+      return `Committed to ${branch} locally, but signing in to "${failure.remote}" failed (${failure.detail}). Check your git credentials and try again.`;
     case "unreachable":
-      return (
-        `Committed to ${branch}, but the remote "${failure.remote}" could not be reached `
-        + `(${failure.detail}). ${safe} Retry once the remote is reachable.`
-      );
+      return `Committed to ${branch} locally, but "${failure.remote}" couldn't be reached (${failure.detail}). Try again when it's reachable.`;
     default:
-      return `Committed to ${branch}, but the push failed: ${failure.detail}. ${safe}`;
+      return `Committed to ${branch} locally, but the push failed: ${failure.detail}.`;
   }
 }
 
@@ -405,21 +354,15 @@ function DisabledState({ status, onAdopted }: {
   if (!status.isGitRepo) {
     return (
       <div data-testid="git-not-a-repo" data-git-blocked="not-a-repo">
-        <p className="mb-2 text-[0.9286rem] text-text-secondary">
-          Git sync is off. LocTT works fully without it — it stores tasks as
-          files either way.
-        </p>
         <p role="alert" className="mb-2 text-[0.9286rem] text-danger-fg">
-          This directory is not a git repository, so git sync cannot be
-          enabled here.
+          This folder isn&apos;t a git repository.
         </p>
         <p className="text-[0.9286rem] text-text-secondary">
           Run{" "}
           <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] select-all">
             git init
           </code>{" "}
-          in the tracker&apos;s directory, or move the tracker into a repository
-          that already exists. Nothing has been created by this check.
+          here, or move the tracker into a repository.
         </p>
         <Button
           type="button"
@@ -428,7 +371,7 @@ function DisabledState({ status, onAdopted }: {
           disabled
           className="mt-3"
         >
-          Enable git sync
+          Enable git tracking
         </Button>
       </div>
     );
@@ -436,11 +379,6 @@ function DisabledState({ status, onAdopted }: {
 
   return (
     <div data-testid="git-disabled">
-      <p className="mb-3 text-[0.9286rem] text-text-secondary">
-        Git sync is off. LocTT works fully without it — it stores tasks as
-        files either way.
-      </p>
-
       {!status.remoteConfigured && (
         <p
           role="alert"
@@ -448,13 +386,10 @@ function DisabledState({ status, onAdopted }: {
           data-git-warning="no-remote"
           className="mb-3 text-[0.9286rem] text-warn-fg"
         >
-          This repository has no remote configured. Git sync can still be
-          enabled, and the panel will show it as local-only: commits land on
-          the branch, but there is nowhere to push them. Add one with{" "}
+          No git remote is set up. Git tracking stays local until you add one with{" "}
           <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-[0.8571rem] select-all">
             git remote add origin &lt;url&gt;
-          </code>{" "}
-          to publish.
+          </code>.
         </p>
       )}
 
@@ -475,47 +410,20 @@ function DisabledState({ status, onAdopted }: {
           className="mb-3 text-[0.9286rem] text-warn-fg"
         >
           This tracker is on{" "}
-          <strong>{status.fstypeAdvisory.label}</strong>, where POSIX advisory
-          locks are not reliable. Git sync can still be enabled, but a
-          key-allocation rekey during sync may fail to serialize. For reliable
-          locking, move the tracker to a local disk.
+          <strong>{status.fstypeAdvisory.label}</strong>, where file locking is
+          unreliable. Renumbering keys during sync may fail. Move the tracker
+          to a local disk to avoid this.
         </p>
       )}
 
-      {/*
-        GIT-1: Enable states what it will do *before* running, and the
-        gitignore guarantee is part of that statement — a user needs to
-        know their theme and current-user file are not about to be
-        published to a shared branch.
-      */}
+      {/* GIT-1's enable-time explainer list was removed per Ken's
+          always-visible-text ruling; this confirm step's container and
+          controls stay — see GIT-25's adopt-or-stop decision and the
+          plain confirm/cancel pair below, both still gated behind
+          `confirming`. */}
       {confirming
         ? (
             <div data-testid="git-enable-confirm" className="rounded-md border border-border-subtle p-3">
-              <p className="mb-2 text-[0.9286rem] text-text-primary">Enabling git sync will:</p>
-              <ul className="mb-3 ml-4 list-disc text-[0.9286rem] text-text-secondary">
-                <li>
-                  create a dedicated{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
-                    {status.branch}
-                  </code>{" "}
-                  branch and publish to it in the background, so your own
-                  working files and the branch you have checked out are
-                  never touched or switched;
-                </li>
-                <li>
-                  publish the tracker&apos;s task and config files to that branch;
-                </li>
-                <li>
-                  leave{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">local/</code>,{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">.current-user</code>{" "}
-                  and{" "}
-                  <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
-                    users/&lt;id&gt;/settings.yaml
-                  </code>{" "}
-                  gitignored — they are never published.
-                </li>
-              </ul>
               {/*
                 GIT-25: a pre-existing LocTT-written branch is not an
                 ordinary enable error — it is a decision. Render the
@@ -532,21 +440,19 @@ function DisabledState({ status, onAdopted }: {
                       className="mb-2 rounded-md border border-warn-fg/40 bg-warn-fg/5 p-3"
                     >
                       <p className="mb-2 text-[0.9286rem] text-text-primary">
-                        An existing{" "}
+                        A{" "}
                         <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                           {adoptInfo.branch}
                         </code>{" "}
-                        branch was found from a previous setup, at{" "}
+                        branch already exists (at{" "}
                         <code
                           data-testid="git-adopt-head"
                           className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem] select-all"
                         >
                           {adoptInfo.branch_head.slice(0, 12)}
                         </code>
-                        . LocTT can adopt it as the sync baseline, or you can stop
-                        and choose a different branch first. Adopting sets the
-                        last-synced commit to this head and does not overwrite the
-                        branch.
+                        ). Use it as the starting point, or choose a different
+                        branch. Using it won&apos;t overwrite it.
                       </p>
                       <Button
                         type="button"
@@ -581,10 +487,10 @@ function DisabledState({ status, onAdopted }: {
                         variant="primary"
                         testId="git-enable-confirm-button"
                         loading={enable.isPending}
-                        aria-label="Enable git sync"
+                        aria-label="Enable git tracking"
                         onClick={() => { enable.mutate(); }}
                       >
-                        Enable git sync
+                        Enable git tracking
                       </Button>
                       <Button
                         type="button"
@@ -605,7 +511,7 @@ function DisabledState({ status, onAdopted }: {
               testId="git-enable"
               onClick={() => { setConfirming(true); }}
             >
-              Enable git sync
+              Enable git tracking
             </Button>
           )}
     </div>
@@ -694,7 +600,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                 // defaults to "origin", so the name alone would announce
                 // a remote this repo does not have.
                 <span data-git-remote="none" className="text-warn-fg">
-                  none configured — local-only
+                  None (local only)
                 </span>
               )}
         </Row>
@@ -716,7 +622,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
             {localDrift === undefined
               ? "could not determine"
               : localDrift === 0
-                ? "none — nothing to publish"
+                ? "none, nothing to publish"
                 : `${String(localDrift)} file${localDrift === 1 ? "" : "s"} not yet published`}
           </span>
         </Row>
@@ -730,7 +636,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
               ? "could not determine"
               : status.remoteChanges
                 ? "the branch has moved since the last sync"
-                : "none — up to date with the branch"}
+                : "none, up to date with the branch"}
           </span>
         </Row>
 
@@ -763,9 +669,8 @@ function EnabledState({ status, checkedAt, onRefresh }: {
           data-git-blocked="reconcile-in-progress"
           className="mb-3 rounded-md border border-danger-fg p-2 text-[0.9286rem] text-danger-fg"
         >
-          A reconciliation is already in progress for this tracker. Publish and
-          sync are blocked until it is finished or abandoned — neither ran, and
-          nothing was pushed. Resolve it below, or abandon it, before retrying.
+          A reconciliation is in progress. Finish or abandon it before you
+          publish or sync. Nothing was pushed.
         </p>
       )}
 
@@ -848,14 +753,14 @@ function EnabledState({ status, checkedAt, onRefresh }: {
         >
           <p>
             {!publish.data.committed
-              ? "Nothing to publish — local state already matches the branch."
+              ? "Nothing to publish. Local state already matches the branch."
               : publish.data.pushed === true
                 ? `Published to ${status.remote}/${publish.data.branch}.`
                 : publish.data.pushFailure !== undefined
                   ? publishFailureLine(publish.data.branch, publish.data.pushFailure)
                   : publish.data.pushError !== undefined
-                    ? `Committed to ${publish.data.branch}, but the push failed: ${publish.data.pushError}. The commit is safe locally; your work was not lost.`
-                    : `Committed to ${publish.data.branch}. Not pushed — no remote is configured.`}
+                    ? `Committed to ${publish.data.branch} locally, but the push failed: ${publish.data.pushError}.`
+                    : `Committed to ${publish.data.branch} locally. Not pushed: no remote is set up.`}
           </p>
           {/* GIT-29: the push failed but the local commit landed — this is
               not a permanent error state. Offer Retry, and for a
@@ -907,7 +812,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
             {sync.data.updated
               ? `Synced: ${String(sync.data.copied ?? 0)} file(s) taken from the branch, `
                 + `${String(sync.data.merged ?? 0)} merged, ${String(sync.data.deleted ?? 0)} removed.`
-              : "Already up to date — the branch has not moved since the last sync."}
+              : "Already up to date. The branch has not moved since the last sync."}
             {/* GIT-30: name the remote and say it could not be reached,
                 distinguishing this from "nothing to sync", and state
                 explicitly that local state is untouched. */}
@@ -916,8 +821,8 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                 {sync.data.fetchFailure !== undefined
                   ? `The remote "${sync.data.fetchFailure.remote}" ${fetchFailureClause(sync.data.fetchFailure)}, `
                   : `The remote could not be reached (${sync.data.fetchError}), `}
-                so this compared against the local copy of the branch only. Your
-                local task files were not modified.
+                so only the local copy was compared. Your task files weren&apos;t
+                changed.
               </span>
             )}
             {sync.data.unresolvedKeys !== undefined && sync.data.unresolvedKeys.length > 0 && (
@@ -943,20 +848,17 @@ function EnabledState({ status, checkedAt, onRefresh }: {
             >
               <p className="font-semibold">
                 {sync.data.malformed.length === 1
-                  ? "1 synced task could not be parsed."
-                  : `${String(sync.data.malformed.length)} synced tasks could not be parsed.`}
+                  ? "1 synced task couldn't be read."
+                  : `${String(sync.data.malformed.length)} synced tasks couldn't be read.`}
               </p>
               <p className="mt-1 text-text-secondary">
-                The rest of the sync was applied (see the counts above). These
-                files came from the branch with malformed content — they were
-                kept, not silently discarded, and appear as broken-file rows in
-                the list. Open each one to fix it:
+                The rest of the sync was applied. Open each file below to fix it:
               </p>
               <ul className="mt-1 ml-4 list-disc" data-testid="git-sync-malformed-list">
                 {sync.data.malformed.map(m => (
                   <li key={m.id} data-task-id={m.id}>
                     <code className="text-[0.8571rem]">{m.path}</code>
-                    {" — "}
+                    {": "}
                     <span className="text-text-secondary">{m.reason}</span>
                   </li>
                 ))}
@@ -973,13 +875,19 @@ function EnabledState({ status, checkedAt, onRefresh }: {
             honest thing the data supports: the count by category, and a
             pointer to the list view — which now reflects the new
             population (the sync invalidated its query). Collapsed by
-            default via native `<details>`, keyboard-operable for free.
+            default via native `<details>`, keyboard-operable for free —
+            now through the shared `Disclosure` primitive, which kills the
+            browser's `▸` marker and draws our own caret. This summary
+            used to be `text-accent`; it is now the canonical neutral
+            tertiary, because accent is the link colour and an
+            expand-in-place control is not a navigation.
           */}
           {sync.data.updated && (
-            <details className="mb-1" data-testid="git-sync-details">
-              <summary className="cursor-pointer text-[0.8571rem] text-accent">
-                Show full breakdown
-              </summary>
+            <Disclosure
+              className="mb-1"
+              data-testid="git-sync-details"
+              summary="Show full breakdown"
+            >
               <ul className="mt-1 ml-4 list-disc text-[0.8571rem] text-text-secondary" data-testid="git-sync-breakdown">
                 <li>{sync.data.copied ?? 0} taken from the branch (created or updated)</li>
                 <li>{sync.data.merged ?? 0} merged field-by-field</li>
@@ -996,7 +904,7 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                 The synced tasks appear in the list, which now shows the
                 updated total.
               </p>
-            </details>
+            </Disclosure>
           )}
           {/* GIT-30: not a permanent error state — offer Retry inline so
               the user does not have to reload after the network returns. */}
@@ -1095,9 +1003,8 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                   <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
                     {status.branch}
                   </code>{" "}
-                  branch and its full history are <strong>left intact</strong> —
-                  nothing is deleted, and no task file is modified. Re-enabling
-                  later picks up from the commit already recorded.
+                  branch and its history are kept, and no task files change.
+                  Re-enabling picks up where you left off.
                 </p>
                 <Button
                   type="button"
@@ -1117,6 +1024,18 @@ function EnabledState({ status, checkedAt, onRefresh }: {
                 >
                   Cancel
                 </Button>
+                {/* A328 (B6): a timed-out or rejected Disable used to do
+                    nothing visible — the confirm box just sat there. The
+                    notice names the outcome and offers Try again; the box
+                    stays open either way, since the user has not left it. */}
+                {disable.isError && (
+                  <InlineFailureNotice
+                    testId="git-disable-error"
+                    message={disableFailureMessage(disable.error)}
+                    dataState={dataStateOf(disable.error)}
+                    onRetry={() => { disable.mutate(); }}
+                  />
+                )}
               </div>
             )
           : (
@@ -1146,13 +1065,9 @@ export function GitSyncPanel() {
 
   return (
     <div data-testid="git-panel">
-      <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
+      <h1 data-testid="settings-panel-title" className="mb-2 text-lg font-semibold text-text-primary">
         Sync
       </h1>
-      <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Git-backed mode publishes this tracker&apos;s files to a dedicated
-        branch so other clones can sync them.
-      </p>
 
       {status.isError && (
         <ErrorState
@@ -1176,15 +1091,15 @@ export function GitSyncPanel() {
       {status.data?.unreadable !== undefined && (
         <div role="alert" data-testid="git-status-unreadable" data-git-status="unreadable">
           <p className="mb-2 text-[0.9286rem] text-danger-fg">
-            Git sync settings could not be read, so this panel cannot report
-            whether git mode is on.
-          </p>
-          <p className="text-[0.9286rem] text-text-secondary">
+            Couldn&apos;t read git sync settings (
             <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               {status.data.unreadable.path}
-            </code>{" "}
-            — {status.data.unreadable.reason}. Fix or restore that file and
-            refresh. Do not re-enable git sync: that would overwrite it.
+            </code>
+            : {status.data.unreadable.reason}).
+          </p>
+          <p className="text-[0.9286rem] text-text-secondary">
+            Fix or restore the file, then refresh. Don&apos;t re-enable git
+            tracking, as that would overwrite it.
           </p>
         </div>
       )}
@@ -1207,9 +1122,9 @@ export function GitSyncPanel() {
           </code>{" "}
           branch as the sync baseline.{" "}
           {adoptReport.inAgreement === true
-            ? "Local state agrees with it — no sync needed."
+            ? "Local state agrees with it. No sync needed."
             : adoptReport.inAgreement === false
-              ? "Local state differs from it — run Sync to reconcile."
+              ? "Local state differs from it. Run Sync to reconcile."
               : "Whether local state agrees could not be determined."}
         </div>
       )}

@@ -1,5 +1,5 @@
-import type { SidebarGroups, SidebarItemId, UserSettings } from "@loctt/contracts";
-import { SIDEBAR_ITEM_IDS, SidebarGroupsSchema } from "@loctt/contracts";
+import type { SidebarFilterId, SidebarGroupId, SidebarGroups, SidebarItemId, UserSettings } from "@loctt/contracts";
+import { SIDEBAR_FILTER_IDS, SIDEBAR_GROUP_IDS, SIDEBAR_ITEM_IDS, SidebarGroupsSchema } from "@loctt/contracts";
 
 /**
  * Sidebar-groups customization (SHL-45): reading and resolving the
@@ -222,4 +222,127 @@ export function resolveSidebarOrder(
   const placed = new Set(order);
   const tail = catalog.filter(id => !placed.has(id));
   return [...order, ...tail].map(id => ({ id, hidden: hidden.has(id) }));
+}
+
+/**
+ * One row of the Customize-sidebar panel's NESTED view (K125): either a
+ * plain top-level item, or the "Filters" group with its built-ins as
+ * children.
+ *
+ * This is a presentation shape derived from the same flat
+ * `order`/`hidden` storage `resolveSidebarOrder` already reads — nesting
+ * the six `SIDEBAR_FILTER_IDS` under one group is a panel-rendering
+ * concern, not a new stored shape beyond the `filters` group id itself.
+ */
+export type GroupedSidebarRow =
+  | { readonly kind: "item"; readonly id: SidebarGroupId; readonly hidden: boolean }
+  | {
+      readonly kind: "filters-group";
+      readonly hidden: boolean;
+      readonly children: readonly { readonly id: SidebarFilterId; readonly hidden: boolean }[];
+    };
+
+/**
+ * Resolves `sidebar_groups` into the nested rows the Customize-sidebar
+ * panel renders: the top-level groups (from the `groupCatalog` passed in,
+ * normally `SIDEBAR_GROUP_IDS`) with the six built-ins collapsed into
+ * one `filters-group` row, in their own resolved order.
+ *
+ * **Migrating an existing flat stored order (K125).** Before this
+ * ticket, a user could only reorder/hide each built-in filter
+ * INDIVIDUALLY — there was no `filters` group id. A stored `order` from
+ * that era mixes filter ids in among the group ids at the top level
+ * (e.g. `["overdue", "projects", "labels"]`), with no `filters` entry
+ * to say where the new group row belongs. Rule chosen (recorded as
+ * A339): the migrated group's position is the position of the FIRST
+ * filter id found in the flat resolved order (falling back to
+ * `filters`'s own default catalog slot when no filter id appears in
+ * `order` at all — a user who never touched a filter's position gets
+ * the group in its natural default place). The six filters' own inner
+ * order and hidden flags are preserved exactly — this function reads
+ * them through the existing `resolveSidebarOrder(groups,
+ * SIDEBAR_FILTER_IDS)` call, unchanged by this migration. A user who HAS
+ * already explicitly placed `filters` in `order` (a fresh save made
+ * after this ticket) is honored as stored — the fallback only fires
+ * when `filters` itself is absent from `order`.
+ */
+export function resolveGroupedSidebarOrder(
+  groups: SidebarGroups,
+  groupCatalog: readonly SidebarGroupId[],
+): readonly GroupedSidebarRow[] {
+  const filterOrder = resolveSidebarOrder(groups, SIDEBAR_FILTER_IDS);
+  const filterIds: ReadonlySet<string> = new Set(SIDEBAR_FILTER_IDS);
+  const hiddenSet = new Set(groups.hidden ?? []);
+  const filtersGroupHidden = hiddenSet.has("filters");
+
+  const filtersGroupRow: GroupedSidebarRow = {
+    kind: "filters-group",
+    hidden: filtersGroupHidden,
+    children: filterOrder.map(f => ({ id: f.id as SidebarFilterId, hidden: f.hidden })),
+  };
+
+  // Migration: does the STORED order already say where `filters` goes?
+  const storedOrder = groups.order ?? [];
+  const filtersAlreadyPlaced = storedOrder.includes("filters");
+
+  if (filtersAlreadyPlaced) {
+    // Post-migration shape: resolve the group catalog normally (it
+    // already contains "filters" as one entry) and drop any lingering
+    // individual filter id from the top-level order — those only
+    // control the CHILDREN now, never a top-level slot.
+    const topOrder = storedOrder.filter(id => !filterIds.has(id));
+    const resolved = resolveSidebarOrder({ ...groups, order: topOrder }, groupCatalog);
+    return resolved.map(r =>
+      r.id === "filters" ? filtersGroupRow : { kind: "item", id: r.id as SidebarGroupId, hidden: r.hidden },
+    );
+  }
+
+  // Migration path: no `filters` entry in the stored order. Splice the
+  // group row in at the position of the first individual filter id in
+  // `storedOrder`, if any; otherwise fall through to the group's
+  // default catalog position (resolveSidebarOrder's normal behavior).
+  const firstFilterIndex = storedOrder.findIndex(id => filterIds.has(id));
+  const topOrderWithoutFilters = storedOrder.filter(id => !filterIds.has(id));
+
+  const migratedOrder =
+    firstFilterIndex === -1
+      ? topOrderWithoutFilters
+      : [
+          ...topOrderWithoutFilters.slice(0, firstFilterIndex),
+          "filters" as const,
+          ...topOrderWithoutFilters.slice(firstFilterIndex),
+        ];
+
+  const resolved = resolveSidebarOrder({ ...groups, order: migratedOrder }, groupCatalog);
+  return resolved.map(r =>
+    r.id === "filters" ? filtersGroupRow : { kind: "item", id: r.id as SidebarGroupId, hidden: r.hidden },
+  );
+}
+
+/**
+ * What the sidebar renders, as one flat `{id, hidden}` list over every
+ * `SIDEBAR_ITEM_IDS` entry — the read-back CLI and MCP print (A346).
+ *
+ * Built from `resolveGroupedSidebarOrder`, the resolver the web sidebar
+ * and the Customize-sidebar panel use, so all three surfaces agree: a
+ * pre-K125 stored order gets the same migration (the `filters` group
+ * lands where the first filter id sat), and the six built-ins follow
+ * the `filters` row in their own resolved order. A child is reported
+ * hidden when its own flag is set OR the `filters` group is hidden —
+ * hiding the group hides every built-in (K125), and a read-back that
+ * said "visible" for them would not be what the sidebar shows.
+ */
+export function resolveRenderedSidebarItems(groups: SidebarGroups): readonly ResolvedSidebarItem[] {
+  const out: ResolvedSidebarItem[] = [];
+  for (const row of resolveGroupedSidebarOrder(groups, SIDEBAR_GROUP_IDS)) {
+    if (row.kind === "item") {
+      out.push({ id: row.id, hidden: row.hidden });
+      continue;
+    }
+    out.push({ id: "filters", hidden: row.hidden });
+    for (const child of row.children) {
+      out.push({ id: child.id, hidden: row.hidden || child.hidden });
+    }
+  }
+  return out;
 }

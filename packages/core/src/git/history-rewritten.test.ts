@@ -214,3 +214,28 @@ describe("git-sync history-rewrite refusal (GIT-21 / K93)", () => {
     expect(result.updated).toBe(true);
   });
 });
+
+describe("GitHistoryRewrittenError message (A346, K129)", () => {
+  // The cause and the recovery, nothing arguing what it is not
+  // ("This is not an ordinary conflict." was removed).
+  it("is exactly the cause, the no-change note and the recovery steps", () => {
+    const err = new GitHistoryRewrittenError({
+      missingCommit: "aaaaaaaa11111111", remoteHead: "bbbbbbbb22222222",
+      branch: "loctt", remote: "origin",
+    });
+    expect(err.message).toBe(
+      "Sync aborted: the history of origin/loctt was rewritten. The last commit "
+      + "synced against (aaaaaaaa) is no longer part of the branch (its head is now "
+      + "bbbbbbbb), so there is no shared base to merge against. A force-push or "
+      + "history rewrite happened on the remote.\n\n"
+      + "Nothing was written. Your local files are untouched, and last_synced_commit "
+      + "was not changed.\n\n"
+      + "Recover in git:\n"
+      + "  - Inspect the rewritten branch: 'git log loctt' and compare with your "
+      + "local .loctt/, so you can see what the rewrite dropped.\n"
+      + "  - Re-establish a base explicitly in git once you have reviewed and merged "
+      + "the two by hand (for example 'git branch -f loctt <commit>' to a commit you "
+      + "have inspected), then sync again.",
+    );
+  });
+});

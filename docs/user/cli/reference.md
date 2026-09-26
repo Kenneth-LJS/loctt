@@ -45,7 +45,9 @@ repeats these tables.
 ### `loctt init`
 
 Create a new tracker in `.loctt/`. Idempotent — it writes only the files
-that are missing, so it is safe to re-run.
+that are missing, so it is safe to re-run. An empty `.loctt/` folder (no
+config, no state, no tasks) is filled in exactly like a missing one, with
+no extra flag or step.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
@@ -193,7 +195,7 @@ body.
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
-| `--set` | markdown | — | Replace the body. Mutually exclusive with `--append`. |
+| `--set` | markdown | — | Replace the body. Stored ending in one newline, whether or not the text ends in one. Mutually exclusive with `--append`. |
 | `--append` | markdown | — | Append to the body. |
 | `--expect` | token | — | Write only if the body still matches this token (optimistic concurrency). |
 | `--token` | — | — | Print the current body's token and exit. |
@@ -418,6 +420,20 @@ and ` (archived)` when it is archived. The summary is a readable
 rendering of the view's filters — it is for display only, and is not
 something you can paste back in as input.
 
+#### Names are unique
+
+A view's name must not match another view's name. The comparison ignores
+case and leading or trailing spaces, and archived and broken views count.
+`views create` with a taken name, or `views edit --name` to one, fails
+with `Another view with that name already exists.` and writes nothing.
+Editing a view without changing its name is always allowed.
+
+Views that already shared a name before this rule (or after a hand edit
+of `queries.yaml`) still load and list. `loctt list --view <name>` refuses
+an ambiguous name (`Multiple views named '<name>'. Refer by id instead.`),
+so run such a view by its id, or rename one of them with
+`loctt views edit <id> --name <new>`.
+
 #### Icon and colour
 
 `--icon` takes either a named icon (`circle-check`) or a **single**
@@ -470,6 +486,19 @@ Fix it, replace it, or delete it.
 
 A healthy view is unaffected by any of this — `--force` changes nothing
 about editing or deleting one.
+
+**Running a broken view.** `loctt list --view <broken-one>` (by name or
+id) is refused, not widened to an unfiltered list:
+
+```bash
+$ loctt list --view broken-one
+Error: saved view "broken-one" cannot run: [0].op must be one of: =, !=, in, not in, is empty, is not empty
+```
+
+This mirrors the web list's `broken_view` banner and MCP's `list_tasks`
+refusal — all three surfaces name the parse fault rather than reporting
+"unknown view" (the view exists; its filters just do not load) or
+silently returning every task in the tracker.
 
 #### Building a view's filters
 
@@ -585,8 +614,8 @@ Created milestone "v1.0 Launch" (id 01J…)
 | Subcommand | Synopsis | Notes |
 |---|---|---|
 | `list` | `loctt sprint list [--archived <active\|archived\|all>] [--ids] [--progress] [--filter q] [--limit n] [--offset n]` | `--archived` defaults to `active` (archived hidden); `archived` = only archived, `all` = both (`--all` is a deprecated alias for `all`). |
-| `create` | `loctt sprint create <name> --start <date> --end <date> [--state <active\|completed\|future>] [--goal <text>]` | `--state` defaults to `future`. |
-| `edit` | `loctt sprint edit <name\|id> [--name] [--start] [--end] [--state] [--goal <text\|->] [--force]` | `--goal -` clears the goal. |
+| `create` | `loctt sprint create <name> --start <date> --end <date> [--state <active\|completed\|future>] [--goal <text>]` | `--state` defaults to `future`. Dates are `YYYY-MM-DD`. An end before the start is refused: `End date is before the start date.` (on `edit` too). |
+| `edit` | `loctt sprint edit <name\|id> [--name] [--start] [--end] [--state] [--goal <text\|->]` | `--goal -` clears the goal. `--state` moves a sprint from any state to any state, including reopening a completed one. |
 | `archive` / `unarchive` | `loctt sprint archive <name\|id>` | |
 | `delete` | `loctt sprint delete <name\|id> [--remap-to <other>] [--yes]` | Clears or remaps the sprint field. Prompts. |
 | `burndown` | `loctt sprint burndown <name\|id> [--format <table\|json>]` | `--format` defaults to `table`. |
@@ -631,7 +660,8 @@ Created project "Mobile App" (slug mobile-app, prefix MOB, id 01J…)
 | `create` | `loctt user create <name> [--email] [--timezone] [--avatar <path>] [--switch]` | `--switch` makes the new user current. |
 | `edit` | `loctt user edit <id-or-name> [--name] [--email] [--timezone] [--avatar <path> \| --remove-avatar]` | |
 | `settings` | `loctt user settings [--sweep-pins]` | Print per-user settings. `--sweep-pins` drops pins for deleted views. |
-| `sidebar-groups` | `loctt user sidebar-groups [--order <ids> \| --hidden <ids> \| --reset]` | Read or set the sidebar layout. |
+| `sidebar-groups` | `loctt user sidebar-groups [--order <ids> \| --hidden <ids> \| --reset]` | Read or set the sidebar layout. Prints each id with `visible` or `hidden`, in the order the sidebar shows them: the built-in filters follow `filters`, and read `hidden` while `filters` is hidden. |
+| `shortcuts` | `loctt user shortcuts [--single-key on\|off] [--off <id>...] [--on <id>...] [--reset]` | Read or set the single-key shortcut switches (the web Settings → Keyboard). Prints `single-key on\|off`, then one line per shortcut: id, keys, `on` or `off`, and what it does. `--off` and `--on` repeat or take comma-separated ids (`new-task`, `focus-search`, `goto`, `toggle-sidebar`, `cycle-theme`, `shortcut-help`); an unknown id is refused, and so is `--single-key`, `--off` or `--on` given without a value (exit 2). `--single-key off` turns them all off and keeps each one's own switch. `--reset` turns everything back on. Keys are fixed. |
 | `archive` / `unarchive` | `loctt user archive <id-or-name>` | |
 | `references` | `loctt user references <id-or-name>` | Count where the user is assignee or reporter. |
 | `delete` | `loctt user delete <id-or-name> [--remap-to <id-or-name> \| --unassign] [--yes]` | Reassigns or clears the user's references. Prompts. |

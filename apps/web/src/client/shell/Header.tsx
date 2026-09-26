@@ -46,6 +46,7 @@ export function Header({
   canToggleSidebar = true,
   sidebarCollapsed = false,
   createBlocked,
+  onOpenShortcutHelp,
 }: {
   /** Null when the current-user read failed (SHL-40). */
   readonly currentUser: UserProfile | null;
@@ -68,6 +69,12 @@ export function Header({
    * close, and unable to tell what pressing it just did.
    */
   readonly sidebarCollapsed?: boolean;
+  /**
+   * Opens the `?` shortcut dialog from the user menu (K133). The menu is
+   * the way in when `?` itself is switched off. Absent in isolated
+   * renders, where the item is left out rather than shown dead.
+   */
+  readonly onOpenShortcutHelp?: () => void;
   /**
    * NEW-41: a create started under a mismatched schema cannot land —
    * every `/api/` route 409s. The shell deliberately stays up in that
@@ -166,7 +173,11 @@ export function Header({
         <SrOnly id={NEW_TASK_REASON_ID}>{createBlocked}</SrOnly>
       )}
 
-      <UserMenu currentUser={currentUser} identityUnknown={identityUnknown} />
+      <UserMenu
+        currentUser={currentUser}
+        identityUnknown={identityUnknown}
+        {...(onOpenShortcutHelp !== undefined ? { onOpenShortcutHelp } : {})}
+      />
     </header>
   );
 }
@@ -376,9 +387,11 @@ function ThemeToggle() {
 function UserMenu({
   currentUser,
   identityUnknown,
+  onOpenShortcutHelp,
 }: {
   readonly currentUser: UserProfile | null;
   readonly identityUnknown: boolean;
+  readonly onOpenShortcutHelp?: () => void;
 }) {
   const users = useUsers();
   const switchUser = useSwitchUser();
@@ -406,20 +419,20 @@ function UserMenu({
           data-testid="user-menu-trigger"
           aria-label={
             identityUnknown
-              ? "User menu — signed-in user unknown"
+              ? "User menu, signed-in user unknown"
               : currentArchived
-                ? `User menu — ${currentUser.name} is archived`
+                ? `User menu, ${currentUser.name} is archived`
                 : "User menu"
           }
           title={
             identityUnknown
               ? UNKNOWN_IDENTITY_REASON
               : currentArchived
-                ? `${currentUser.name} is archived — switch to an active user`
+                ? `${currentUser.name} is archived. Switch to an active user.`
                 : undefined
           }
           className={[
-            "grid h-[22px] w-[22px] place-items-center rounded-full text-[0.7857rem] font-semibold",
+            "grid h-[24px] w-[24px] place-items-center rounded-full text-[0.7857rem] font-semibold",
             // An explicit unknown mark, not a blank circle and not a
             // palette slot borrowed from an id we do not have. An
             // archived actor keeps their palette colour but gains a
@@ -481,23 +494,6 @@ function UserMenu({
               </div>
             </div>
           )}
-
-          {currentArchived ? (
-            // PRU-24: the actor is archived. Say so and point at the
-            // fix — switching to an active user — rather than leaving
-            // the writes to fail (or land under an archived actor)
-            // without explanation. The switch list below is the action.
-            <div
-              role="alert"
-              data-testid="user-menu-archived-prompt"
-              className="border-b border-border-subtle px-3 py-2.5 text-[0.8571rem] text-text-secondary"
-            >
-              <div className="font-medium text-warn-fg">You are acting as an archived user</div>
-              <div className="mt-0.5">
-                Switch to an active user below to keep your changes attributed to a current user.
-              </div>
-            </div>
-          ) : null}
 
           {others.length > 0 ? (
             <div className="py-1">
@@ -565,8 +561,19 @@ function UserMenu({
               data-testid="user-menu-sidebar"
               className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[0.9286rem] text-text-secondary no-underline hover:bg-bg-muted hover:text-text-primary"
             >
-              Customize sidebar…
+              Customize sidebar
             </Link>
+            {onOpenShortcutHelp !== undefined ? (
+              <MenuItem
+                testId="user-menu-shortcuts"
+                onSelect={() => {
+                  close();
+                  onOpenShortcutHelp();
+                }}
+              >
+                Keyboard shortcuts
+              </MenuItem>
+            ) : null}
             <Link
               to="/settings/$section"
               params={{ section: "users" }}

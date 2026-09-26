@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createWebApp } from "./server.js";
 
 /**
- * @verifies UI-9
+ * @verifies QRY-C2
  *
  * A saved view's advanced filter can be SHAPE-valid (`{kind: "advanced",
  * query: <any string>}` satisfies `FilterSchema`) while its DSL does not
@@ -84,7 +84,7 @@ describe("GET /api/tasks?view=<id> — a shape-valid but unparseable advanced fi
     expect(body.queries.some(q => q.id === VIEW_ID)).toBe(false);
     const broken = (body.broken ?? []).find(b => b.id === VIEW_ID);
     expect(broken?.error).toBe(
-      "advanced filter does not parse: expected value but got \"=\" at position 9",
+      "Advanced filter does not parse: expected value but got \"=\" at position 9.",
     );
     expect(broken?.position).toBe(9);
   });
@@ -108,7 +108,7 @@ describe("GET /api/tasks?view=<id> — a shape-valid but unparseable advanced fi
     };
     expect(body.broken_view?.id).toBe(VIEW_ID);
     expect(body.broken_view?.error).toBe(
-      "advanced filter does not parse: expected value but got \"=\" at position 9",
+      "Advanced filter does not parse: expected value but got \"=\" at position 9.",
     );
     expect(body.broken_view?.position).toBe(9);
   });

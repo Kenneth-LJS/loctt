@@ -18,7 +18,11 @@ the list view's own empty/loading behaviour beyond first load is
 - `GET /api/info` returns `exists: false` and the app lands on `/init`, whatever path was requested.
 - The screen's heading names the situation in the user's terms — a tracker has not been set up in this directory — rather than reporting a task count.
 - The screen does **not** render the list table, an empty-list illustration, "No tasks found", or "0 tasks". An uninitialized directory and an empty tracker are visibly different screens.
-- The sidebar's task-bearing groups (Saved filters, Milestones, Sprints, Labels, Recently viewed) are either absent or visibly inert; no count badge renders a `0` that implies a tracker exists.
+- The sidebar's task-bearing groups (Filters, Saved views, Milestones,
+  Sprints, Labels, Recently viewed — K125, amended Ken 2026-09-24: the
+  built-ins and saved views used to share one "Saved filters"/"Views"
+  section, now split in two) are either absent or visibly inert; no
+  count badge renders a `0` that implies a tracker exists.
 
 ### ONB-2 · M4 · blocker · P4 P6
 **The init screen shows which directory it is about to initialize.** Continue from ONB-1.
@@ -37,8 +41,14 @@ the list view's own empty/loading behaviour beyond first load is
 ### ONB-4 · M4 · major · P6
 **The skip-starter-docs toggle is present and explains what it skips.** On `/init`.
 
+> **Amended (K129, Ken 2026-09-24).** Ken: *"rest of the 'needs your
+> call' looks okay"* (he approved cutting the explainer paragraph,
+> B-69). The checkbox label itself now names what the docs are
+> ("Skip the starter docs in `.loctt/docs/`"); no separate helper text
+> is required.
+
 - A toggle controls whether `.loctt/docs/` helper docs are generated.
-- Its label or helper text says what the docs are, not just "skip starter docs" — a user who has never seen them can decide.
+- Its label names what the docs are, not just "skip starter docs" — a user who has never seen them can decide.
 - The default state matches the CLI's default behaviour for `loctt init`.
 
 ### ONB-5 · M4 · major · P4 P10
@@ -66,14 +76,17 @@ the list view's own empty/loading behaviour beyond first load is
 ### ONB-8 · M1 · blocker · P6
 **A freshly initialized, empty tracker shows a designed empty list, not a blank pane.** Load `/list` on a tracker with zero tasks.
 
-- The main pane shows an explicit empty state naming the state ("No tasks yet") and offering the next action (create a task), not an empty table body and not a spinner.
+- The main pane shows an explicit empty state naming the state ("No tasks found.", amended K129) and offering the next action (create a task), not an empty table body and not a spinner.
 - The empty state is distinguishable from "your filter matched nothing" — no filter chips are active and the copy does not suggest clearing filters.
 - The table header row either renders with the configured columns or is absent by design; it does not render half-formed with misaligned widths.
 
 ### ONB-9 · M1 · blocker · P6 P7
 **On an empty tracker the sidebar groups render with zero counts, not absent.** Same state as ONB-8.
 
-- Views (List / Board / Timeline), Projects, Saved filters, Milestones, Sprints, Labels, and Recently viewed all render as groups.
+- Views (List / Board / Timeline), Projects, Filters, Saved views,
+  Milestones, Sprints, Labels, and Recently viewed all render as groups
+  (K125, amended Ken 2026-09-24: Filters and Saved views were one
+  combined "Saved filters"/"Views" section before this split).
 - Groups whose underlying config is empty show an explicit empty affordance inside the group (e.g. "No labels yet") rather than the group vanishing.
 - The five live built-in saved filters render with a count badge of `0` — a real zero, not a blank, not a dash, not the badge omitted.
 - A user cannot mistake "this tracker has nothing in it" for "this feature is missing".
@@ -125,9 +138,17 @@ the list view's own empty/loading behaviour beyond first load is
 ### ONB-16 · M4 · major · P6 P7
 **A directory where `.loctt/` exists but is empty is treated as uninitialized, not as a broken tracker.** Create an empty `.loctt/` directory and load the UI.
 
-- The app routes to `/init` and the copy accounts for the directory already existing — it does not promise to "create `.loctt/`" when the folder is already there.
-- The user is told what will happen to the existing empty directory (it will be populated), so submitting doesn't feel like it might clobber something.
+- The app routes to `/init`, which reads exactly as it does with no `.loctt/`: no message, warning or extra confirmation about the folder already being there.
+- One submit sets the tracker up in that folder: the same files a fresh setup writes (config, state, starter docs unless skipped, `.gitignore`, the default user), keeping anything the folder already held.
+- `loctt init` and MCP `init` do the same over an empty `.loctt/`: no refusal, no `--repair`.
 - The app does not render a generic crash, a schema banner, or a zero-task list.
+
+> **Amended (K129, Ken 2026-09-24).** Ken: *"why is there even an error
+> then? just ignore, proceed with steps. dont even show this to the
+> user, dont show the messages, dont show warning, dont even stop with
+> this extra confirmation step because that causes friction."* The first
+> two bullets previously required copy that accounted for the folder
+> already existing and told the user it would be populated.
 
 ### ONB-17 · M4 · major · P4 P5
 **Init run concurrently in two tabs does not produce a half-initialized tracker.** Open `/init` in two tabs, submit both within a second of each other.

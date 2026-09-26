@@ -29,6 +29,7 @@ import type { EditorMode } from "../editor/MarkdownField.tsx";
 import { MarkdownField } from "../editor/MarkdownField.tsx";
 import type { MentionCandidate } from "../editor/MentionMenu.tsx";
 import { Button } from "../ui/Button.tsx";
+import { SrOnly } from "../ui/Tooltip.tsx";
 
 export interface CommentComposerProps {
   /** Markdown to open with. `""` for a fresh composer. */
@@ -325,11 +326,12 @@ export function CommentComposer({
             Cancel
           </Button>
         )}
-        {reason !== undefined && (
-          <span id={reasonId} data-testid={`${testId}-reason`} className="text-[0.8571rem] text-text-tertiary">
-            {reason}
-          </span>
-        )}
+        {/* A description, not a notice (Ken: "i dont need the notice").
+            The disabled button already says it cannot be used; the reason
+            is for a screen reader and a hover, which is all CMT-2's
+            "reason available" asks — the same `SrOnly` pattern A298 gave
+            every other disabled reason in the app. */}
+        {reason !== undefined && <SrOnly id={reasonId}>{reason}</SrOnly>}
       </div>
     </div>
   );

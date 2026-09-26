@@ -6,8 +6,6 @@
  * flag bypasses the version check.
  */
 
-import { access } from "node:fs/promises";
-
 import { getTrackerInfo, initLoctt, migrateToCurrent, planMigration, resolveLocttDir, runDoctor } from "@loctt/core";
 import { z } from "zod";
 
@@ -98,7 +96,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "init",
-    description: "Bootstraps a new loctt tracker at the server's working directory if .loctt/ doesn't exist yet. Only call when explicitly asked to set up a new tracker — this is a one-time operation, not a routine task action.",
+    description: "Bootstraps a new loctt tracker at the server's working directory if .loctt/ doesn't exist yet or is an empty folder (it is filled in). Only call when explicitly asked to set up a new tracker — this is a one-time operation, not a routine task action.",
     inputSchema: {
       prefix: z.string().optional().describe("Key prefix for tasks (default 'T-')."),
       project_label: z.string().optional().describe("Name of the starting project (default 'Tasks')."),
@@ -116,11 +114,12 @@ export const TOOLS: readonly ToolDef[] = [
     exemptFromSchemaGuard: true,
     handler: async ({ root }, args) => {
       const locttDir = resolveLocttDir(root);
-      try {
-        await access(locttDir);
+      // B22 (K129): an empty `.loctt/` is set up like a missing one,
+      // as `loctt init` and the web wizard do. Anything else already
+      // there is refused.
+      const info = await getTrackerInfo(root);
+      if (info.exists && info.initState !== "empty") {
         return errorResult(`.loctt directory already exists at ${locttDir}`);
-      } catch {
-        // doesn't exist — proceed
       }
       const prefix = args["prefix"] as string | undefined;
       const projectLabel = args["project_label"] as string | undefined;

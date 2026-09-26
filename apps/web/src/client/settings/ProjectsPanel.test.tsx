@@ -1,13 +1,5 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  createMemoryHistory,
-  createRootRoute,
-  createRoute,
-  createRouter,
-  Outlet,
-  RouterProvider,
-} from "@tanstack/react-router";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +23,7 @@ async function openProjectMenu(projectId: string): Promise<void> {
 /**
  * K100: the row's edit affordances (name, prefix, Make default, Archive)
  * now live inside the shared `ProjectEditDialog`, which the sidebar also
- * renders — not inline in the row. Open the row kebab, click Edit…, and
+ * renders — not inline in the row. Open the row kebab, click Edit, and
  * the dialog with those controls is mounted. The tests below that used to
  * find `project-set-default-*` / `project-archive-*` / `project-name-*` as
  * row-kebab items or inline row markup now find them in the dialog; the
@@ -59,13 +51,6 @@ async function openProjectEdit(projectId: string): Promise<void> {
  * round-trip (server tests cover that against a real tracker).
  */
 
-/**
- * The panel now renders a TanStack `<Link>` (the CONFIG-5 cross-link to
- * My preferences), so a bare render throws in `useLinkProps` — the panel
- * always lives under a router in the app. The wrapper therefore mounts a
- * memory router at `/settings/projects` whose route renders `children`,
- * in addition to the QueryClient the panel's fetches need.
- */
 function wrapper() {
   const qc = new QueryClient({
     defaultOptions: {
@@ -73,23 +58,9 @@ function wrapper() {
       mutations: { retry: false },
     },
   });
-  return ({ children }: { children: ReactNode }) => {
-    const rootRoute = createRootRoute({ component: Outlet });
-    const settingsRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: "/settings/$section",
-      component: () => <>{children}</>,
-    });
-    const router = createRouter({
-      routeTree: rootRoute.addChildren([settingsRoute]),
-      history: createMemoryHistory({ initialEntries: ["/settings/projects"] }),
-    });
-    return (
-      <QueryClientProvider client={qc}>
-        <RouterProvider router={router as never} />
-      </QueryClientProvider>
-    );
-  };
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  );
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -405,7 +376,10 @@ describe("ProjectsPanel editable prefix (PRU-44/PRU-45)", () => {
 
     const dialog = await screen.findByTestId("project-prefix-confirm-p-web");
     expect(dialog.textContent).toMatch(/3 tasks/);
-    expect(dialog.textContent).toMatch(/old keys will keep resolving/i);
+    // Wording trimmed under K116 (row 136): "their old keys will keep
+    // resolving" became "Their old keys still work" — same PRU-44
+    // old-key-resolves claim.
+    expect(dialog.textContent).toMatch(/old keys still work/i);
     expect(prefixPutBodies()).toHaveLength(0);
 
     fireEvent.click(screen.getByTestId("project-prefix-confirm-btn-p-web"));
@@ -438,26 +412,10 @@ describe("ProjectsPanel editable prefix (PRU-44/PRU-45)", () => {
     expect(screen.queryByTestId("project-prefix-error-p-web")).toBeNull();
   });
 
-  /**
-   * @verifies CONFIG-5
-   *
-   * P4: the row-level "Make default" here sets the *workspace* default;
-   * each user can also set a *personal* default. This panel cross-links to
-   * My preferences so the two "default project" concepts are not conflated.
-   */
-  it("cross-links the workspace default to the personal default in My preferences", async () => {
-    stubHappyPath();
-    render(<ProjectsPanel />, { wrapper: wrapper() });
-
-    const link = (await screen.findByTestId("projects-personal-default-link"))
-      .closest("a") as HTMLAnchorElement;
-    expect(link).not.toBeNull();
-    expect(link.getAttribute("href")).toContain("/settings/preferences");
-  });
 });
 
 /**
- * @verifies N-4 / UI-10
+ * @verifies SET-55
  *
  * ProjectsPanel was one of the two panels missing `settings-panel-title`
  * (no testid, no `text-text-primary`) and one of the two whose create

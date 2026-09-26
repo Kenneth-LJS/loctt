@@ -119,11 +119,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
 
   return (
     <div data-testid="calendar-panel">
-      <h1 className="mb-1 text-lg font-semibold text-text-primary">Calendar</h1>
-      <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Working days, holidays and the workspace timezone. Date pickers
-        and the timeline read this.
-      </p>
+      <h1 className="mb-2 text-lg font-semibold text-text-primary">Calendar</h1>
 
       <div className="grid max-w-2xl gap-4 text-[0.9286rem]">
         {/* K76: `/settings/calendar#field-timezone` scrolls here — the
@@ -164,14 +160,11 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
               className="text-[0.7857rem] text-danger-fg"
             >
               <p>
-                <code>{draft.timezone}</code> is the
-                value stored in .loctt/config/calendar.yaml, and this
-                browser cannot resolve it — it may have been renamed or
-                removed from the IANA database.
+                Unable to resolve timezone &quot;{draft.timezone}&quot; from
+                .loctt/config/calendar.yaml.
               </p>
               <p data-testid="calendar-timezone-fallback">
-                Dates are being rendered in UTC until a valid zone is
-                picked. It is not offered in the list above.
+                Dates are shown in UTC until you pick a valid timezone.
               </p>
             </div>
           )}
@@ -218,10 +211,7 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
               data-testid="calendar-no-working-days"
               className="mt-1 text-[0.7857rem] text-danger-fg"
             >
-              No working days are left. Working-day computations —
-              &quot;due this week&quot;, &quot;N working days from
-              today&quot; — cannot resolve against an empty week, and
-              calendar.yaml will not accept one. Pick at least one day.
+              Select at least one working day.
             </p>
           )}
         </fieldset>
@@ -329,32 +319,17 @@ function CalendarEditor({ stored }: { readonly stored: CalendarConfig }) {
           </Button>
         </div>
 
-        {/* SET-25: the panel states which fields move with the zone. */}
-        <p data-testid="calendar-timezone-note" className="text-[0.8571rem] text-text-tertiary">
-          Changing the timezone rewrites nothing already stored. Task{" "}
-          <code>due_date</code> and{" "}
-          <code>start_date</code> are date-only and
-          are unaffected; only datetimes such as{" "}
-          <code>created_at</code> and{" "}
-          <code>updated_at</code> change how they
-          are displayed. Reverting the zone restores the previous display
-          exactly.
-        </p>
-
         {invalid.length > 0 && (
           <p role="alert" data-testid="calendar-blocked" className="text-[0.8571rem] text-danger-fg">
-            {invalid.length === 1 ? "One holiday row is" : `${String(invalid.length)} holiday rows are`}{" "}
-            not a valid date. Fix or remove{" "}
-            {invalid.length === 1 ? "it" : "them"} — the other{" "}
-            {String(draft.holidays.length - invalid.length)} entries are
-            kept and nothing is saved until then.
+            {invalid.length === 1 ? "1 holiday has" : `${String(invalid.length)} holidays have`}{" "}
+            an invalid date. Fix or remove them to save.
           </p>
         )}
 
         {save.isError && (
           <p role="alert" data-testid="calendar-save-error" className="text-[0.8571rem] text-danger-fg">
             {tooLarge
-              ? `The calendar was too large to send: ${String(draft.holidays.length)} holidays exceeded the request size limit. Your existing calendar is still in effect — trim the list and save again.`
+              ? "Too many holidays to save. Remove some and try again."
               : `Your change wasn’t saved: ${saveError ?? "unknown error"}`}
           </p>
         )}

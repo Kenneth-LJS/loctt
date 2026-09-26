@@ -92,12 +92,6 @@ it from a query that legitimately matches nothing (P4).
 - The disabled control explains *why*: which construct (e.g. nested disjunction) basic mode cannot represent.
 - A query that *is* expressible re-enables the toggle and round-trips per VUE-10.
 
-### VUE-12 · M4 · major · P3 P10
-**Editing a built-in opens the editor with the built-in's DSL pre-populated.**
-- Choosing "edit" on "High priority" opens the editor showing the actual DSL behind it, not an empty box.
-- The pre-populated DSL, run as-is, returns the same rows the built-in returned.
-- Saving it creates a **new** user view rather than mutating the built-in, or, if built-ins are overridable, states clearly which is happening.
-
 ### VUE-13 · M1 · major · P1 P10
 **A saved view's sort persists as `field` + `direction` and applies.**
 - Saving a view with sort `priority desc` writes a `field: priority` /
@@ -160,11 +154,20 @@ ships; do not fold the multi-sort bullets back here.*
 > bullet — *stating* the resolved date and zone in the UI.
 
 ### VUE-20 · M4 · major · P1 P7
-**A saved view whose name collides with an existing one is handled explicitly.**
-- Saving a second view named `overdue` warns before writing, since CLI `--view` resolution is by name.
-- The user can rename or explicitly confirm; if confirmed, the UI states how `loctt list --view overdue` will resolve the ambiguity.
-- The written entries retain distinct `id`s regardless.
-- Collision with a **built-in** name is likewise flagged rather than shadowing it silently.
+**A saved view whose name collides with an existing one is refused.**
+- Saving a second view named `overdue` (or ` Overdue `: names compare trimmed and case-insensitively) shows "Another view with that name already exists." and writes nothing. No request is sent; core refuses the same write, so the CLI and MCP refuse it too.
+- Renaming a view to another view's name is refused the same way. Keeping a view's own name, or changing only its case, is not a clash.
+- Views that already share a name on disk (from before this rule, or a hand edit) still load, list and render, and each can be edited without renaming it. `loctt list --view <name>` refuses the ambiguous name and asks for the id.
+
+> **Amended (K129, Ken 2026-09-24).** Ken: *"if you save a view, and the
+> name already matches, then we should just error. 'Another view with
+> that name already exists.' do not allow merging, do not allow keeping,
+> just clash and say CANNOT."* This case previously required a warning
+> the user could confirm past, keeping both views. The built-in-name
+> bullet ("collision with a built-in name is likewise flagged") is
+> dropped: built-in filters are not saved views and sit in their own
+> sidebar section (K125), so a view with a built-in filter's label does
+> not shadow it (A344).
 
 ### VUE-21 · M4 · major · P7
 **A saved view referencing a deleted custom field degrades visibly.** Delete a custom field from `workflow.yaml` that a saved view filters on.
@@ -194,7 +197,7 @@ ships; do not fold the multi-sort bullets back here.*
 ### VUE-42 · M4 · major · P7
 **Replacing a broken saved view cannot happen by accident.** From a broken
 view's row in the sidebar or the Saved-views panel:
-- The action is labelled "Replace…", not "Edit…", because replacement is
+- The action is labelled "Replace", not "Edit", because replacement is
   what it does.
 - The dialog shows the parse error and the on-disk YAML read-only, above
   the (empty) filter picker.

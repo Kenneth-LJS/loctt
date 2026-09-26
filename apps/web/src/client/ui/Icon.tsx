@@ -30,6 +30,7 @@ export type IconName =
   | "moreVertical"
   | "arrowUp"
   | "arrowDown"
+  | "arrowLeft"
   | "link"
   | "copy"
   | "edit"
@@ -40,8 +41,10 @@ export type IconName =
   | "download"
   | "refresh"
   | "check"
+  | "minus"
   | "search"
   | "star"
+  | "bookmarkPlus"
   | "dot"
   | "settings"
   | "drag"
@@ -60,6 +63,7 @@ export type IconName =
   | "bold"
   | "italic"
   | "strikethrough"
+  | "textStyle"
   | "underline"
   | "highlight"
   | "code"
@@ -89,6 +93,12 @@ const PATHS: Record<IconName, ReactElement> = {
   moreVertical: <><circle cx="8" cy="4" r="1" /><circle cx="8" cy="8" r="1" /><circle cx="8" cy="12" r="1" /></>,
   arrowUp: <path d="M8 13V3M4 7l4-4 4 4" />,
   arrowDown: <path d="M8 3v10M4 9l4 4 4-4" />,
+  // Back/up navigation on a detail page (Ken 2026-09-23). A shafted
+  // arrow, matching arrowUp/arrowDown, rather than a bare chevron:
+  // in this set the chevrons are disclosure markers (collapse toggles,
+  // menus), so `chevronLeft` beside a link label would read as
+  // "expand", not "go back".
+  arrowLeft: <path d="M13 8H3M7 4L3 8l4 4" />,
   link: <><path d="M6.5 9.5l3-3" /><path d="M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1" /><path d="M9 11.5l-1 1a2.5 2.5 0 01-3.5-3.5l1-1" /></>,
   copy: <><rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1" /><path d="M10.5 5.5V4a1 1 0 00-1-1H4a1 1 0 00-1 1v5.5a1 1 0 001 1h1.5" /></>,
   edit: <><path d="M8.5 3.5l4 4L6 14H2v-4z" /><path d="M11 5l-1.5-1.5" /></>,
@@ -99,6 +109,11 @@ const PATHS: Record<IconName, ReactElement> = {
   download: <><path d="M8 3v7M5 7.5l3 3 3-3" /><path d="M3.5 12.5h9" /></>,
   refresh: <><path d="M12.5 8a4.5 4.5 0 10-1.3 3.2" /><path d="M12.5 4.5V8H9" /></>,
   check: <path d="M3.5 8.5l3 3 6-6.5" />,
+  // "Save as view" (Ken, 2026-09-23): keep-for-later + create-new. Was a
+  // `star`, which reads as "favourite" — not what the button does.
+  bookmarkPlus: <><path d="M4.5 2.5h7v11L8 11l-3.5 2.5z" /><path d="M8 4.75v3.5M6.25 6.5h3.5" /></>,
+  // The indeterminate checkbox mark (a partial selection).
+  minus: <path d="M4 8h8" />,
   search: <><circle cx="7" cy="7" r="3.5" /><path d="M10 10l3 3" /></>,
   star: <path d="M8 2.5l1.7 3.5 3.8.5-2.8 2.7.7 3.8L8 11.6 4.6 13.5l.7-3.8L2.5 7l3.8-.5z" />,
   // Default/selected marker (Ken 2026-09-22: "default should just be a
@@ -148,8 +163,15 @@ const PATHS: Record<IconName, ReactElement> = {
   quote: <><path d="M6.5 4.5H3.5A0.5 0.5 0 003 5v3a0.5 0.5 0 00.5.5H5.5c0 1.2-.7 2-1.8 2.3" /><path d="M13 4.5h-3a.5.5 0 00-.5.5v3a.5.5 0 00.5.5H12c0 1.2-.7 2-1.8 2.3" /></>,
   superscript: <><path d="M3 5l5 6M8 5l-5 6" /><path d="M11 3.5c1.5-.8 2.5 0 2.5.8 0 .9-1.2 1.2-2.5 2.2h2.7" /></>,
   subscript: <><path d="M3 4l5 6M8 4l-5 6" /><path d="M11 10.5c1.5-.8 2.5 0 2.5.8 0 .9-1.2 1.2-2.5 2.2h2.7" /></>,
-  undo: <><path d="M4 8h6.5a3 3 0 010 6H7" /><path d="M6 5.5L3.5 8 6 10.5" /></>,
-  redo: <><path d="M12 8H5.5a3 3 0 000 6H9" /><path d="M10 5.5L12.5 8 10 10.5" /></>,
+  // UI-23d: the collapsed "Text style" group's trigger — a plain T, the
+  // conventional mark for "character formatting" (Ken's proposal named it).
+  textStyle: <path d="M3.5 3.5h9M8 3.5v9" />,
+  // UI-23c: both were drawn at y 5.5–14 (ink centre 9.75) — the only
+  // glyphs in the formatting row off the 16-unit box's centre line, so
+  // they sat visibly out of line with their neighbours. Shifted up 1.75
+  // to centre the ink; the shapes are unchanged.
+  undo: <><path d="M4 6.25h6.5a3 3 0 010 6H7" /><path d="M6 3.75L3.5 6.25 6 8.75" /></>,
+  redo: <><path d="M12 6.25H5.5a3 3 0 000 6H9" /><path d="M10 3.75L12.5 6.25 10 8.75" /></>,
   sourceCode: <path d="M6 4L2.5 8 6 12M10 4l3.5 4L10 12" />,
   paperclip: <path d="M12.5 7.5l-5 5a2.5 2.5 0 0 1-3.5-3.5l5.5-5.5a1.75 1.75 0 0 1 2.5 2.5L6.5 11.5a1 1 0 0 1-1.5-1.5l4.5-4.5" />,
 };

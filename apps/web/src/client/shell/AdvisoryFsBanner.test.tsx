@@ -23,22 +23,28 @@ afterEach(() => {
 /**
  * XS-50: the boot-time filesystem advisory surface.
  *
+ * Wording amended under K130 (Ken, 2026-09-24): "This tracker is in a
+ * network folder, which may lead to data corruption if multiple
+ * machines edit the files at the same time. Keep it on a local disk to
+ * be safe." This states the risk in plain terms rather than naming
+ * "POSIX advisory locks" (internal mechanism, messaging.md §1). The
+ * best-effort caveat is not repeated here — it already lives in the UI
+ * guide (`docs/user/ui/guide.md` § Diagnostics) per Ken's 2026-09-23
+ * ruling recorded in XS-50 (the panel shows results, not caveats about
+ * a warning the user is not seeing).
+ *
  * @verifies XS-50
  */
 describe("AdvisoryFsBanner", () => {
-  it("names the class and the path, and states the concurrency risk", () => {
+  it("states the concurrency-corruption risk and names the path", () => {
     render(<AdvisoryFsBanner advisory={advisory} cwd="~/Dropbox/tracker" />);
     const banner = screen.getByRole("status");
-    // Names the specific class...
-    expect(banner.textContent).toMatch(/Dropbox/);
-    // ...the risk (advisory locks unsafe → concurrent writes corrupt)...
-    expect(banner.textContent).toMatch(/advisory locks are not reliable/i);
-    expect(banner.textContent).toMatch(/corrupt/i);
+    // States the risk in K130's own wording.
+    expect(banner.textContent).toMatch(/network folder/i);
+    expect(banner.textContent).toMatch(/data corruption/i);
+    expect(banner.textContent).toMatch(/local disk/i);
     // ...and the detected path, so the user can confirm which directory.
     expect(screen.getByTestId("fs-advisory-path").textContent).toBe("~/Dropbox/tracker");
-    // Points at Diagnostics for the best-effort caveat.
-    expect(banner.textContent).toMatch(/best-effort/i);
-    expect(banner.textContent).toMatch(/Diagnostics/i);
   });
 
   it("is informational (role=status), not an alert", () => {
@@ -60,5 +66,21 @@ describe("AdvisoryFsBanner", () => {
     unmount();
     render(<AdvisoryFsBanner advisory={advisory} cwd="~/Dropbox/tracker" />);
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  /**
+   * @verifies A311
+   *
+   * "Dismiss" moved onto `ui/Button`'s `variant="current"`, which
+   * inherits this banner's `text-warn-fg` via `currentColor` instead of
+   * carrying a fixed tone. A regression to `secondary` (neutral
+   * border/surface) would sit wrong on the warn banner without failing
+   * any of the other assertions here.
+   */
+  it("renders Dismiss on the current-tone Button variant, not a fixed tone", () => {
+    render(<AdvisoryFsBanner advisory={advisory} cwd="~/Dropbox/tracker" />);
+    const cls = screen.getByRole("button", { name: "Dismiss" }).className;
+    expect(cls).toContain("border-current");
+    expect(cls).not.toMatch(/border-border-default|bg-bg-surface/);
   });
 });

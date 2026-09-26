@@ -96,14 +96,12 @@ export function validateEstimation(cfg: EstimationConfig): EstimationProblems {
   const problems: { unit_label?: string; preset_values?: string } = {};
   if (cfg.unit === "custom_numeric" || cfg.unit === "custom_enum") {
     if (cfg.unit_label === undefined || cfg.unit_label.trim().length === 0) {
-      problems.unit_label = `A unit label is required for any custom_* mode (this is ${cfg.unit}).`;
+      problems.unit_label = "A unit label is required.";
     }
   }
   if (cfg.unit === "custom_enum") {
     if (cfg.preset_values === undefined || cfg.preset_values.length === 0) {
-      problems.preset_values =
-        "custom_enum requires preset values — the categories an estimate can take. "
-        + "A unit label is required too.";
+      problems.preset_values = "custom_enum requires preset values and a unit label.";
     }
   }
   return problems;

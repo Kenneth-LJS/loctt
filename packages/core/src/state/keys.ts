@@ -17,7 +17,7 @@ export function allocateKey(state: LocttState, entityType: string): string {
   const entry = state.keys[entityType];
   if (!entry) {
     throw new KeyAllocationError(
-      `no key allocation state for entity type "${entityType}"`
+      `No key allocation state for entity type "${entityType}".`
     );
   }
 
@@ -46,7 +46,7 @@ export function initKeyAllocation(
 ): void {
   if (state.keys[entityType]) {
     throw new KeyAllocationError(
-      `key allocation state already exists for entity type "${entityType}"`
+      `Key allocation state already exists for entity type "${entityType}".`
     );
   }
   state.keys[entityType] = {

@@ -28,10 +28,16 @@ import { TextField } from "./TextField.tsx";
 export interface ConfirmDialogProps {
   /** Dialog heading (also the accessible name). */
   readonly title: string;
-  /** The explanatory body — a string, or richer nodes for emphasis. */
-  readonly body: ReactNode;
+  /**
+   * The explanatory body — a string, or richer nodes for emphasis.
+   * Omitted when the title and the two actions already say everything
+   * (messaging.md §1: "Discard changes?" / Discard / Keep editing).
+   */
+  readonly body?: ReactNode;
   /** Confirm button label, e.g. "Delete view". */
   readonly confirmLabel: string;
+  /** Cancel button label. Defaults to "Cancel". */
+  readonly cancelLabel?: string;
   /** Confirm button tone. Defaults to "danger" (the common case). */
   readonly variant?: "danger" | "primary";
   /** Disable confirm (e.g. a typed-word not yet matched). */
@@ -77,6 +83,7 @@ export function ConfirmDialog({
   title,
   body,
   confirmLabel,
+  cancelLabel = "Cancel",
   variant = "danger",
   confirmDisabled = false,
   confirmLoading = false,
@@ -103,7 +110,7 @@ export function ConfirmDialog({
             onClick={onCancel}
             {...(cancelTestId !== undefined ? { testId: cancelTestId } : {})}
           >
-            Cancel
+            {cancelLabel}
           </Button>
           <Button
             type="button"
@@ -119,7 +126,9 @@ export function ConfirmDialog({
         </DialogActions>
       }
     >
-      <div className="text-body text-text-secondary">{body}</div>
+      {body !== undefined && body !== null && (
+        <div className="text-body text-text-secondary">{body}</div>
+      )}
       {children}
       {error !== undefined && error !== null && (
         <Callout tone="danger" role="alert" testId="confirm-dialog-error" className="mt-3">

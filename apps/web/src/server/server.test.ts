@@ -689,7 +689,7 @@ describe("web server security", () => {
       const res = await fetch(`${base}/api/sprints/01HXNOSUCH/burndown`);
       expect(res.status).toBe(404);
       const body = await res.json() as { error: string };
-      expect(body.error).toMatch(/unknown sprint/);
+      expect(body.error).toBe("Unknown sprint: 01HXNOSUCH");
     });
 
     it("PUT /api/list-view returns 400 for visible/hidden overlap", async () => {

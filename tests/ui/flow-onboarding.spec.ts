@@ -155,7 +155,12 @@ test("an uninitialized directory routes to the wizard on every route, never to a
       // ONB-1: the sidebar's task-bearing groups are absent — no count
       // badge renders a `0` implying a tracker exists.
       await expect(page.getByLabel("Toggle sidebar")).toHaveCount(0);
-      await expect(page.getByText("Saved filters")).toHaveCount(0);
+      // "Saved filters" was already stale (the sidebar has said "Views"
+      // there since K102); K125 (amended, Ken 2026-09-24) split that
+      // section into "Filters" (built-ins) and "Saved views" (saved
+      // views) — checking both real current headings' absence.
+      await expect(page.getByText("Filters")).toHaveCount(0);
+      await expect(page.getByText("Saved views")).toHaveCount(0);
       await expect(page.getByText("Recently viewed")).toHaveCount(0);
     }
 
@@ -205,9 +210,9 @@ test("the form collects name and prefix, previews the first key, and names the d
     await page.getByLabel("Project name").fill("Customer Portal v2");
     await expect(prefix).toHaveValue("WEB");
 
-    // ONB-4: the toggle explains what it skips — the docs are named
-    // and described, not just referred to.
-    const docs = page.getByLabel("Skip the starter docs");
+    // ONB-4 (amended K129): the label itself names what the docs are —
+    // no separate helper-text paragraph is required.
+    const docs = page.getByLabel("Skip the starter docs in .loctt/docs/");
     await expect(docs).toBeVisible();
     // Default matches `loctt init`, whose docs default is on: the
     // *skip* toggle is therefore off.
@@ -293,15 +298,20 @@ test("the submit control enters a busy state and is not double-submittable", asy
 
     await page.goto(`${t.baseURL}/list`);
     await fillWizard(page, "Website", "WEB");
-    // Located by role+type, not by its label: the label is *part of*
-    // the busy state ("Set up tracker" → "Setting up…"), so a
-    // name-matched locator stops resolving the moment the assertion
-    // becomes meaningful.
+    // Located by role+type rather than by name. The name is now stable
+    // across the busy state (A307: `loading` hides the visible label and
+    // an explicit `aria-label` carries it), but role+type stays the
+    // clearest anchor for "the wizard's submit", independent of wording.
     const submit = page.locator('button[type="submit"]');
     await submit.click();
 
     await expect(submit).toBeDisabled();
-    await expect(submit).toHaveText(/setting up/i);
+    // The busy state is the spinner + aria-busy, not a re-spelled label:
+    // the label must NOT change (that is the width-stability point), and
+    // the accessible name must survive it.
+    await expect(submit).toHaveAttribute("aria-busy", "true");
+    await expect(submit).toHaveAccessibleName("Set up tracker");
+    await expect(submit.getByTestId("logo-spinner")).toBeVisible();
     // Clicking again while busy must not queue a second init.
     await submit.click({ force: true, timeout: 2000 }).catch(() => undefined);
 
@@ -340,7 +350,7 @@ test("a deep link into an uninitialized tracker shows the wizard, not a task-not
 });
 
 // @verifies ONB-16
-test("an empty .loctt/ is treated as uninitialized, with copy that accounts for the folder", async ({ page }) => {
+test("an empty .loctt/ is set up like a missing one, with no message and no extra step", async ({ page }) => {
   const t = await bootUninitialized({ emptyLocttDir: true });
   try {
     await page.goto(`${t.baseURL}/list`);
@@ -356,16 +366,15 @@ test("an empty .loctt/ is treated as uninitialized, with copy that accounts for 
     await expect(page.getByRole("table")).toHaveCount(0);
     await expect(page.getByText(/\b0 tasks\b/i)).toHaveCount(0);
 
-    // The copy does not promise to *create* a folder that is already
-    // there, and says what will happen to it instead.
-    await expect(page.getByText(/already\s+exists/i)).toBeVisible();
-    await expect(page.getByText(/nothing in it to overwrite/i)).toBeVisible();
-    await expect(page.getByText(/will create its/i)).toHaveCount(0);
+    // B22 (K129): Ken, "dont even show this to the user, dont show the
+    // messages, dont show warning, dont even stop with this extra
+    // confirmation step". No sentence about the folder already being
+    // there. This test used to require that sentence, which is the
+    // superseded behaviour.
+    await expect(page.getByText(/already\s+exists/i)).toHaveCount(0);
+    await expect(page.getByText(/is empty|fill it in/i)).toHaveCount(0);
 
-    // And it still initializes *into* that directory — the button the
-    // wizard offers has to actually work. Before this ticket core
-    // refused an existing `.loctt/` outright, so this screen rendered
-    // and then failed with "exists but is incomplete".
+    // One submit goes straight through into that directory.
     await fillWizard(page, "Website", "WEB");
     await page.getByRole("button", { name: /set up tracker/i }).click();
     await page.waitForURL(/\/list$/, { timeout: 15_000 });
@@ -379,6 +388,10 @@ test("an empty .loctt/ is treated as uninitialized, with copy that accounts for 
     expect(projects).toContain("WEB");
     expect(projects).toContain("Website");
     expect(await readFile(path.join(locttDir, "state.yaml"), "utf8")).toContain("WEB");
+    // The full fresh set, not the repair subset: .gitignore and the
+    // default user are there too.
+    await expect(stat(path.join(locttDir, ".gitignore"))).resolves.toBeTruthy();
+    await expect(stat(path.join(locttDir, "users"))).resolves.toBeTruthy();
   } finally {
     await t.stop();
   }
@@ -624,8 +637,13 @@ test("a slow init keeps the form disabled and explains what is happening", async
     await fillWizard(page, "Website", "WEB");
     await page.getByRole("button", { name: /set up tracker/i }).click();
 
-    // The busy state persists and the form stays visibly disabled.
-    await expect(page.getByRole("button", { name: /setting up/i })).toBeDisabled();
+    // The busy state persists and the form stays visibly disabled. The
+    // button's accessible name stays fixed at "Set up tracker" while
+    // loading (Button's documented `loading` contract: the name only
+    // changes if the caller passes a different `aria-label`, and
+    // InitWizard does not) — progress is communicated by SlowInitNote
+    // below, not by relabelling the button.
+    await expect(page.getByRole("button", { name: /set up tracker/i })).toBeDisabled();
     await expect(page.getByLabel("Project name")).toBeDisabled();
     await expect(page.getByLabel("Key prefix")).toBeDisabled();
 

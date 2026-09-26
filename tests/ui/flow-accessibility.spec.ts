@@ -189,12 +189,12 @@ test.describe("A11Y — global shortcuts", () => {
     // The registry is the single source both sides read, so this
     // asserts every registered id has a rendered row — including the
     // chords, which the first bullet names explicitly.
+    // K133 made the three `g` sequences one "Go to" shortcut (one row,
+    // one switch), so they are one row id here rather than three.
     for (const id of [
       "new-task",
       "focus-search",
-      "goto-list",
-      "goto-board",
-      "goto-timeline",
+      "goto",
       "toggle-sidebar",
       "cycle-theme",
       "shortcut-help",
@@ -203,8 +203,11 @@ test.describe("A11Y — global shortcuts", () => {
     }
     // The chords render both keys, so the reference teaches `g` then
     // `l` rather than a bare `g`.
-    await expect(dialog.getByTestId("shortcut-keys-goto-board")).toContainText("g");
-    await expect(dialog.getByTestId("shortcut-keys-goto-board")).toContainText("b");
+    await expect(dialog.getByTestId("shortcut-keys-goto")).toContainText("g");
+    await expect(dialog.getByTestId("shortcut-keys-goto")).toContainText("then");
+    for (const k of ["l", "b", "t"]) {
+      await expect(dialog.getByTestId("shortcut-keys-goto").locator("kbd", { hasText: new RegExp(`^${k}$`) })).toHaveCount(1);
+    }
 
     // Third bullet: keyboard-operable and closes on Esc.
     await expect(dialog.getByTestId("shortcut-help-close")).toBeFocused();
@@ -978,9 +981,11 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
     await expect(page.getByText("Bulk victim 1")).toBeVisible();
 
     // Second bullet: the dialog's accessible name states the count and
-    // the description states the irreversibility.
+    // the description states the irreversibility. K129 (Ken,
+    // 2026-09-24) changed the wording from "cannot be undone" to
+    // "is irreversible. Continue?" with no archive suggestion.
     await expect(dialog).toHaveAccessibleName(/4 tasks/);
-    await expect(dialog).toContainText(/cannot be undone/i);
+    await expect(dialog).toContainText(/is irreversible\. continue\?/i);
 
     // Third bullet: the typed-confirmation requirement is announced,
     // "including exactly what string must be typed". The input's own
@@ -1104,11 +1109,17 @@ test.describe("A11Y — dialogs, layers and form semantics", () => {
       await tracker.run(["project", "create", `Project ${n}`, "--prefix", prefix]);
     }
     await page.goto(`${tracker.baseURL}/list`);
-    await expect(page.getByTestId("project-all")).toBeVisible();
+    // K125 removed the sidebar's "All projects" row; List is the real,
+    // keyboard-reachable entry for "all tasks" now.
+    const listLink = page.locator("aside").getByRole("link", { name: "List", exact: true });
+    await expect(listLink).toBeVisible();
 
-    // Group entries are reachable by keyboard: the "All projects" entry
+    // Group entries are reachable by keyboard: the sidebar's List entry
     // and a project link can hold focus (they are real links in tab
     // order, not click-only divs).
+    await listLink.focus();
+    await expect(listLink).toBeFocused();
+
     const firstProject = page.getByRole("link", { name: /Project 01/ });
     await firstProject.focus();
     await expect(firstProject).toBeFocused();
@@ -1372,34 +1383,6 @@ test.describe("A11Y — state exposure", () => {
     await expect(collapse).toHaveAttribute("aria-expanded", "false");
     await collapse.click();
     await expect(collapse).toHaveAttribute("aria-expanded", "true");
-
-    // The archived-scope control (K107 replaced the "Show archived"
-    // checkbox with a tri-state control; 2026-09-22 made that control a
-    // segmented radiogroup instead of a native `<select>`). Second
-    // bullet: it "announces its current state, so a user cannot be
-    // unknowingly filtered" — the case's point is that a user must be
-    // able to tell whether archived rows are being hidden from them.
-    //
-    // Third bullet: "a toggle rendered as a checkbox announces
-    // checked" — for a radiogroup the literal equivalent applies:
-    // `aria-checked` on the selected radio is what a screen reader
-    // reads. The group itself must carry an accessible name, which the
-    // `<select>` got implicitly and this control supplies through
-    // `aria-labelledby` on its visible label.
-    const archived = page.getByRole("radiogroup", { name: "Archived" });
-    await expect(archived).toBeVisible();
-    await expect(archived.getByRole("radio", { name: "Active" }))
-      .toHaveAttribute("aria-checked", "true");
-    await archived.getByRole("radio", { name: "All" }).click();
-    await expect(archived.getByRole("radio", { name: "All" }))
-      .toHaveAttribute("aria-checked", "true");
-    await expect(archived.getByRole("radio", { name: "Active" }))
-      .toHaveAttribute("aria-checked", "false");
-
-    // And the state is real, not decorative: changing it changed the
-    // query. Without this the test would pass against a control that
-    // announces correctly and filters nothing.
-    await expect(page).toHaveURL(/archived=all/);
   });
 
   // @verifies A11Y-31
@@ -1461,10 +1444,17 @@ test.describe("A11Y — state exposure", () => {
     // when no other description source exists, which is why this
     // assertion holds — but `title` is the weakest form the bullet
     // permits, and the case says "not only in a pointer-hover tooltip".
-    await expect(del).toHaveAttribute(
-      "title",
-      /at least one project/i,
-    );
+    // A298 moved disabled reasons from `title` to `aria-describedby`
+    // pointing at a permanent `sr-only` node. That is the STRONGER form
+    // this very bullet asks for — the comment above already called
+    // `title` "the weakest form the bullet permits", and the case says
+    // the reason must reach the user "not only in a pointer-hover
+    // tooltip". A hover-only reason is unreachable to a screen-reader
+    // user, who never hovers.
+    const describedBy = await del.getAttribute("aria-describedby");
+    expect(describedBy, "disabled control must carry a description").toBeTruthy();
+    await expect(page.locator(`#${describedBy as string}`))
+      .toHaveText(/at least one project/i);
   });
 });
 
@@ -1527,7 +1517,7 @@ test.describe("ERR — error surfaces across routes and layers", () => {
     // Layer 1: the ⋯ menu. Its trigger's accessible name is "More" —
     // the `Actions for <KEY>` label sits on the menu it opens, not on
     // the button, so selecting by that name finds nothing.
-    const menuTrigger = page.getByRole("button", { name: "More", exact: true });
+    const menuTrigger = page.getByRole("button", { name: "Task actions" });
     await menuTrigger.focus();
     await page.keyboard.press("Enter");
     const menu = page.getByRole("menu");
@@ -2819,7 +2809,7 @@ test.describe("A11Y — colour and focus visibility", () => {
   }
 
   // @verifies A11Y-30
-  test("A11Y-30: status, priority, archived rows and the active route all carry a non-colour signal", async ({
+  test("A11Y-30: status, priority, an archived task and the active route all carry a non-colour signal", async ({
     page,
     tracker,
   }) => {
@@ -2836,7 +2826,7 @@ test.describe("A11Y — colour and focus visibility", () => {
       { title: "Archived task", fields: { status: "backlog", priority: "low" } },
     ]);
     await tracker.run(["archive", String(archived)]);
-    await page.goto(`${tracker.baseURL}/list?archived=all`);
+    await page.goto(`${tracker.baseURL}/list`);
     await expect(page.getByText("Live task")).toBeVisible();
 
     const liveRow = page.locator("tbody tr").filter({ hasText: String(live) });
@@ -2847,12 +2837,6 @@ test.describe("A11Y — colour and focus visibility", () => {
     // label is exactly the failure this case names.
     await expect(liveRow).toContainText("Backlog");
     await expect(liveRow).toContainText("High");
-
-    // Third bullet: archived tasks are marked with a badge, not only
-    // dimmed. Opacity is the colour-only signal that must not be the
-    // whole story.
-    const archivedRow = page.locator("tbody tr").filter({ hasText: String(archived) });
-    await expect(archivedRow).toContainText("Archived");
 
     // Fifth bullet: a label pill always renders its text name, because
     // its colour is user-chosen and carries nothing reliable.
@@ -2891,6 +2875,12 @@ test.describe("A11Y — colour and focus visibility", () => {
         .evaluate(el => getComputedStyle(el).fontWeight),
     );
     expect(activeWeight).toBeGreaterThan(inactiveWeight);
+
+    // Third bullet (amended, K121 #1): the list no longer shows archived
+    // tasks, so the badge is read where one is still shown — its own
+    // page, by direct link. A word, not only a dimmed header.
+    await page.goto(`${tracker.baseURL}/tasks/${String(archived)}`);
+    await expect(page.getByTestId("archived-badge")).toHaveText(/archived/i);
   });
 
   // @verifies A11Y-30
@@ -3561,5 +3551,65 @@ test.describe("A11Y — zoom and blocking screens", () => {
     await expect(alert.getByRole("list").getByRole("listitem").first()).toBeVisible();
 
     expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  });
+});
+
+test.describe("A11Y-55 — pointer targets are at least 24px (WCAG 2.5.8)", () => {
+  // @verifies A11Y-55
+  test("A11Y-55: the avatar button and a filtering label pill are at least 24px", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.run(["label", "create", "infra"]);
+    await tracker.run(["create", "Tagged", "--label", "infra"]);
+    await page.goto(`${tracker.baseURL}/list`);
+    await expect(page.getByText("Showing 1–1 of 1")).toBeVisible();
+
+    // Measured, not read off a class: the header avatar was 22×22 and a
+    // list label pill 21.2px tall on padding alone (B4, K121).
+    const avatar = await page.getByTestId("user-menu-trigger").boundingBox();
+    expect(avatar?.width ?? 0).toBeGreaterThanOrEqual(24);
+    expect(avatar?.height ?? 0).toBeGreaterThanOrEqual(24);
+
+    // In the list the pill is a <button> that filters by its label
+    // (LST-5), so it is a pointer target.
+    const pill = page.locator("tbody tr").first().getByTitle("infra", { exact: true });
+    await expect(pill).toBeVisible();
+    expect(await pill.evaluate(el => el.tagName)).toBe("BUTTON");
+    const box = await pill.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(24);
+  });
+
+  // @verifies A11Y-55
+  test("A11Y-55: every pointer target on every Settings page is at least 24px", async ({
+    page,
+    tracker,
+  }) => {
+    // Enough content that the reorder handles, pin rows and toggles render.
+    await tracker.run(["label", "create", "infra"]);
+    await tracker.run(["create", "Tagged", "--label", "infra"]);
+    await page.goto(`${tracker.baseURL}/settings/projects`);
+    const sections = await page.locator('a[href^="/settings/"]').evaluateAll(
+      els => [...new Set(els.map(e => e.getAttribute("href") ?? ""))],
+    );
+    const small: string[] = [];
+    for (const href of sections) {
+      await page.goto(`${tracker.baseURL}${href}`);
+      await expect(page.getByTestId("settings-panel-title").or(page.locator("main h1")).first()).toBeVisible();
+      const found = await page.evaluate(() => {
+        const main = document.querySelector("main");
+        const panel = main === null ? null : main.lastElementChild;
+        if (panel === null) return [];
+        return [...panel.querySelectorAll("button,a[href],[role=button],input[type=checkbox]")]
+          .filter(e => (e as HTMLElement).offsetParent !== null)
+          .map(e => ({ e, r: e.getBoundingClientRect() }))
+          .filter(({ r }) => r.width < 24 || r.height < 24)
+          .map(({ e, r }) => `${(e.getAttribute("aria-label") ?? e.textContent ?? "").trim().slice(0, 30)} ${r.width.toFixed(1)}x${r.height.toFixed(1)}`);
+      });
+      for (const f of found) small.push(`${href}: ${f}`);
+    }
+    // Before B4 this listed the drag handles (15x17), Pin, Hide/Show,
+    // Reset and Delete view (17px tall) and the card-layout toggles (21px).
+    expect(small).toEqual([]);
   });
 });

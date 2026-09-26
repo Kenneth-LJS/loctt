@@ -185,7 +185,7 @@ export function LabelsField({
                   style={pillStyle(resolveForMode(def?.color, mode))}
                 >
                   <span className="truncate">
-                    {def?.name ?? "unresolved — not in the current config"}
+                    {def?.name ?? "unresolved, not in the current config"}
                   </span>
                   <button
                     type="button"

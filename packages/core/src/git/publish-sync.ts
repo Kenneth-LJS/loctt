@@ -16,7 +16,7 @@ import { appendKeyHistory } from "../state/keys.js";
 import { clearReconcileState, readReconcileState, saveReconcileState } from "../state/reconcile.js";
 import { loadState, saveState } from "../state/state.js";
 import { loadSyncState, saveSyncState } from "../state/sync.js";
-import { parseFrontmatter, splitTaskFile } from "../task/frontmatter.js";
+import { parseFrontmatter, splitTaskFile, TaskParseError } from "../task/frontmatter.js";
 import { readTask, writeTask } from "../task/io.js";
 import { loadAllTasks } from "../task/load-all.js";
 import { previewRekey, rekeyCollisions } from "./reconcile.js";
@@ -65,8 +65,8 @@ export class GitConflictError extends GitSyncError {
     const list = paths.slice(0, 10).map(p => `  - ${p}`).join("\n");
     const more = paths.length > 10 ? `\n  …and ${paths.length - 10} more` : "";
     super(
-      `sync aborted: ${paths.length} file(s) changed both locally and on the branch since the last sync:\n${list}${more}\n\n` +
-        "Nothing was written — your local files are untouched. Resolve by making one side match the other " +
+      `Sync aborted: ${paths.length} file(s) changed both locally and on the branch since the last sync:\n${list}${more}\n\n` +
+        "Nothing was written. Your local files are untouched. Resolve by making one side match the other " +
         "(edit locally, or check out the branch and edit there), then re-run 'loctt git sync'.",
     );
     this.name = "GitConflictError";
@@ -89,12 +89,12 @@ export class GitReconcileInterruptedError extends GitSyncError {
   readonly state: ReconcileState;
   constructor(state: ReconcileState) {
     super(
-      `a previous '${state.mode}' reconciliation was interrupted `
+      `A previous '${state.mode}' reconciliation was interrupted `
       + `(started ${state.started_at}, syncing ${state.base_commit.slice(0, 8)} `
-      + `→ ${state.remote_commit.slice(0, 8)}).\n\n`
+      + `to ${state.remote_commit.slice(0, 8)}).\n\n`
       + "Your workspace may hold a partly-applied sync. Compare it against "
       + "the branch and make it whole, then delete "
-      + ".loctt/local/reconcile.yaml to clear this record — the next "
+      + ".loctt/local/reconcile.yaml to clear this record. The next "
       + "'loctt git sync' will re-plan from scratch. Sync will not run "
       + "while the record is present, because the commit it would plan "
       + "against no longer describes your files.",
@@ -124,9 +124,9 @@ export class GitReconcileNeededError extends GitSyncError {
   constructor(plan: ReconcilePlan) {
     const n = plan.conflicts.length;
     super(
-      `reconciliation needed: ${n} field conflict(s) across `
+      `Reconciliation needed: ${n} field conflict(s) across `
       + `${new Set(plan.conflicts.map(c => c.taskKey)).size} task(s) changed on `
-      + `both sides since the last sync. Nothing was written — resolve them in `
+      + `both sides since the last sync. Nothing was written. Resolve them in `
       + `Settings → Sync, then the ${plan.mode} completes.`,
     );
     this.name = "GitReconcileNeededError";
@@ -154,8 +154,8 @@ export class GitRekeyNeededError extends GitSyncError {
   constructor(plan: RekeyPlan) {
     const n = plan.losers.length;
     super(
-      `rekey needed: ${n} task(s) share a key with another after the merge `
-      + `and must be renumbered. Nothing has been renumbered yet — review the `
+      `Rekey needed: ${n} task(s) share a key with another after the merge `
+      + `and must be renumbered. Nothing has been renumbered yet. Review the `
       + `rekey in Settings → Sync and confirm, then the operation completes.`,
     );
     this.name = "GitRekeyNeededError";
@@ -187,7 +187,7 @@ export class GitSyncFirstError extends GitSyncError {
   constructor(incomingPaths: readonly string[]) {
     const n = incomingPaths.length;
     super(
-      `the sync branch has ${n} change(s) you have not synced `
+      `The sync branch has ${n} change(s) you have not synced `
       + `(work published from another clone). Publishing now would overwrite `
       + `them. Run 'loctt git sync' first to merge the branch's changes into `
       + `your workspace, then publish. Nothing was written.`,
@@ -235,20 +235,19 @@ export class GitHistoryRewrittenError extends GitSyncError {
       ? `${opts.remote}/${opts.branch}`
       : `the ${opts.branch} branch`;
     super(
-      `sync aborted: the history of ${where} was rewritten. The last commit `
-      + `LocTT synced against (${opts.missingCommit.slice(0, 8)}) is no longer part `
+      `Sync aborted: the history of ${where} was rewritten. The last commit `
+      + `synced against (${opts.missingCommit.slice(0, 8)}) is no longer part `
       + `of the branch (its head is now ${opts.remoteHead.slice(0, 8)}), so there is `
-      + `no shared base to merge against. This is not an ordinary conflict — a force-push `
-      + `or history rewrite happened on the remote.\n\n`
+      + `no shared base to merge against. A force-push or history rewrite happened `
+      + `on the remote.\n\n`
       + `Nothing was written. Your local files are untouched, and last_synced_commit `
-      + `was NOT changed. LocTT will not silently re-base onto the new head, because `
-      + `that would discard local changes made since ${opts.missingCommit.slice(0, 8)}.\n\n`
-      + `Recover in git (LocTT will not do this for you):\n`
+      + `was not changed.\n\n`
+      + `Recover in git:\n`
       + `  - Inspect the rewritten branch: 'git log ${opts.branch}' and compare with your `
       + `local .loctt/, so you can see what the rewrite dropped.\n`
       + `  - Re-establish a base explicitly in git once you have reviewed and merged the two by hand `
       + `(for example 'git branch -f ${opts.branch} <commit>' to a commit you have inspected), `
-      + `then sync again. Doing this by hand is what keeps your local changes yours to keep or discard.`,
+      + `then sync again.`,
     );
     this.name = "GitHistoryRewrittenError";
     this.missingCommit = opts.missingCommit;
@@ -289,14 +288,12 @@ export class GitRemoteSchemaNewerError extends GitSyncError {
     branch: string;
   }) {
     super(
-      `sync aborted: the ${opts.branch} branch was written by a newer version of `
+      `Sync aborted: the ${opts.branch} branch was written by a newer version of `
       + `LocTT (schema v${opts.remoteVersion}), but this installation only understands `
       + `up to schema v${opts.localVersion}. Applying it could corrupt or drop data, so `
-      + `nothing was written — your local files are untouched.\n\n`
+      + `nothing was written. Your local files are untouched.\n\n`
       + `Upgrade LocTT to a version that supports schema v${opts.remoteVersion} or newer, `
-      + `then sync again. (This is not a migration: the branch is already ahead of what `
-      + `this build can read, so there is nothing for 'loctt migrate' to do here — the fix `
-      + `is a newer LocTT.)`,
+      + `then sync again.`,
     );
     this.name = "GitRemoteSchemaNewerError";
     this.remoteVersion = opts.remoteVersion;
@@ -351,21 +348,20 @@ export class GitWorktreeMissingError extends GitSyncError {
   }) {
     const op = opts.operation === "publish" ? "Publish" : "Sync";
     super(
-      `${op} could not start: LocTT's temporary git worktree at `
+      `${op} could not start: the temporary git worktree at `
       + `'${opts.worktreeDir}' is missing, but git still has it registered `
       + `(most likely it was deleted by hand while git had it locked), so it `
-      + `cannot be re-created. This is not an ordinary git failure — the `
-      + `worktree named above is the specific thing that is wrong.\n\n`
+      + `cannot be re-created.\n\n`
       + `Your local task files were not touched: the ${opts.operation} never `
       + `reached the point of writing to .loctt/, so nothing was applied.\n\n`
       + `Repair with either:\n`
       + `  - Re-establish the worktree: run 'git worktree prune' (or, if git `
       + `reports it locked, 'git worktree remove --force ${opts.worktreeDir}' `
       + `or 'git worktree unlock ${opts.worktreeDir}'), then ${opts.operation} `
-      + `again. This clears git's stale bookkeeping only — your .loctt/ task `
-      + `files are left exactly as they are.\n`
+      + `again. This clears git's stale bookkeeping only, leaving your .loctt/ `
+      + `task files as they are.\n`
       + `  - Disable and re-enable git sync: 'loctt git disable' then `
-      + `'loctt git enable'. This rebuilds LocTT's git setup from scratch and `
+      + `'loctt git enable'. This rebuilds the git setup from scratch and `
       + `also leaves your .loctt/ task files exactly as they are on disk.`,
     );
     this.name = "GitWorktreeMissingError";
@@ -404,10 +400,10 @@ export class GitBranchAdoptNeededError extends GitSyncError {
   readonly branchHead: string;
   constructor(opts: { branch: string; branchHead: string }) {
     super(
-      `branch '${opts.branch}' already exists from a previous setup and was `
+      `Branch '${opts.branch}' already exists from a previous setup and was `
       + `written by LocTT (head ${opts.branchHead.slice(0, 8)}). Enabling git `
-      + `sync can adopt it, but adopting is a choice — LocTT will not do it `
-      + `silently, because it decides whether that branch's state or your `
+      + `sync can adopt it, but adopting is a choice. LocTT will not do it `
+      + `silently: it decides whether that branch's state or your `
       + `current local state becomes the sync baseline.\n\n`
       + `Nothing was written. Re-run enable with adopt confirmed to adopt the `
       + `existing branch (this sets last_synced_commit to ${opts.branchHead.slice(0, 8)} `
@@ -892,7 +888,7 @@ async function malformedAppliedTasks(
       out.push({
         id,
         path: getTaskFilePath(localDir, id),
-        reason: err instanceof Error ? err.message : String(err),
+        reason: TaskParseError.reasonOf(err),
       });
     }
   }
@@ -970,7 +966,7 @@ export function branchHasForeignContent(root: string, branch: string): string[] 
   // caller's next move is to mirror over it.
   if (!ok) {
     throw new GitSyncError(
-      `could not read branch '${branch}' to check for existing content. `
+      `Could not read branch '${branch}' to check for existing content. `
       + `Refusing to continue: publishing would mirror over whatever is `
       + `there. Check that the branch exists and the repository is readable.`,
     );
@@ -1389,7 +1385,7 @@ export async function commitToLocttBranch(
     const foreign = branchHasForeignContent(root, branch);
     if (foreign.length > 0) {
       throw new GitSyncError(
-        `refusing to publish: branch '${branch}' already exists and holds content LocTT did not write ` +
+        `Refusing to publish: branch '${branch}' already exists and holds content this tracker did not write ` +
           `(${foreign.slice(0, 5).join(", ")}${foreign.length > 5 ? ", …" : ""}). ` +
           `Publishing would delete it. Choose a different branch with ` +
           `'loctt config set git.branch <name>', or delete '${branch}' if it is no longer needed.`,
@@ -1555,7 +1551,7 @@ export class PreflightError extends Error {
 
   constructor(findings: ReadonlyArray<IntegrityFinding>) {
     super(
-      `pre-flight found ${String(findings.length)} problem(s) that must be fixed before publishing:\n`
+      `Pre-flight found ${String(findings.length)} problem(s) that must be fixed before publishing:\n`
       + findings.map(f => `  ${f.path}: ${f.message}`).join("\n"),
     );
     this.findings = findings;

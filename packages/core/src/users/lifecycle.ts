@@ -34,7 +34,7 @@ function assertValidEmail(email: string | null | undefined): void {
     // Anchor on `email` (ERR-14) so a surface that renders field-level
     // rejections at the input places it correctly without re-deriving
     // which field failed — the web route reads `envelope.field`.
-    throw new UserError(`invalid email: ${JSON.stringify(email)}`, { field: "email" });
+    throw new UserError(`Invalid email: ${email}`, { field: "email" });
   }
 }
 
@@ -79,7 +79,7 @@ export async function createUser(
   options: CreateUserOptions,
 ): Promise<UserProfile> {
   if (options.name.trim().length === 0) {
-    throw new UserError("name must be non-empty");
+    throw new UserError("Name must not be empty.");
   }
   assertValidEmail(options.email);
 
@@ -247,11 +247,11 @@ export async function deleteUser(
   options: DeleteUserOptions = {},
 ): Promise<{ remappedAssigneeCount: number; remappedReporterCount: number }> {
   if (options.remapTo !== undefined && options.unassign === true) {
-    throw new UserError("--remap-to and --unassign are mutually exclusive");
+    throw new UserError("Pass either --remap-to or --unassign, not both.");
   }
   await assertNotActiveUser(locttDir, userId, "delete");
   if (!(await userExists(locttDir, userId))) {
-    throw new UserError(`unknown user: ${userId}`);
+    throw new UserError(`Unknown user: ${userId}`);
   }
 
   return withStateLock(locttDir, async () => {
@@ -268,21 +268,21 @@ export async function deleteUser(
         // by name, and a raw id is not vocabulary they can act on.
         const profile = await loadUserProfile(locttDir, userId).catch(() => undefined);
         throw new UserError(
-          `user '${profile?.name ?? userId}' has ${affected.length} task reference(s); ` +
-          `pass remapTo or unassign to proceed`,
+          `User '${profile?.name ?? userId}' has ${affected.length} task reference(s). ` +
+          `Pass remapTo or unassign to proceed.`,
         );
       }
       if (options.remapTo !== undefined) {
         if (!(await userExists(locttDir, options.remapTo))) {
-          throw new UserError(`unknown remap target user: ${options.remapTo}`);
+          throw new UserError(`Unknown remap target user: ${options.remapTo}`);
         }
         if (options.remapTo === userId) {
-          throw new UserError(`remap target must differ from the user being deleted`);
+          throw new UserError(`Remap target must differ from the user being deleted.`);
         }
         const target = await loadUserProfile(locttDir, options.remapTo);
         if (target.archived === true) {
           throw new UserError(
-            `remap target user "${options.remapTo}" is archived; unarchive them first or pick an active user`,
+            `Remap target user "${options.remapTo}" is archived. Unarchive them first, or pick an active user.`,
           );
         }
       }
@@ -330,7 +330,7 @@ async function assertNotActiveUser(
   const current = await readCurrentUserId(locttDir);
   if (current === userId) {
     throw new UserError(
-      `cannot ${verb} the active user; switch to another user first`,
+      `Cannot ${verb} the active user. Switch to another user first.`,
     );
   }
 }

@@ -54,11 +54,8 @@ export function ConfigErrorState({
         </p>
 
         <p className="mt-3 text-[0.9286rem] text-text-secondary">
-          Every column on a board must claim a status no other column
-          claims, so a card has exactly one place to be. While{" "}
-          <code>.loctt/config/workflow.yaml</code>{" "}
-          says otherwise, nothing can be read from it — the board, the
-          list and the CLI all refuse it alike.
+          <code>.loctt/config/workflow.yaml</code> has a duplicate
+          status. The board, the list and the CLI all refuse it alike.
         </p>
 
         <div className="mt-3 text-[0.9286rem] text-text-secondary">

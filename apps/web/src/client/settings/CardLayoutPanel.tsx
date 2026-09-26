@@ -4,6 +4,7 @@ import { CARD_LAYOUT_FIELDS } from "@loctt/contracts";
 import { useUserSettingsMutation } from "../api/hooks/useUserSettingsMutation.ts";
 import { useUserSettings } from "../api/hooks/useWorkflow.ts";
 import { DEFAULT_CARD_LAYOUT, resolveCardLayout } from "../board/cardLayout.ts";
+import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
 import { ReorderableRows } from "./ReorderableRows.tsx";
@@ -118,12 +119,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
 
   return (
     <div data-testid="card-layout-panel">
-      <h1 className="mb-1 text-lg font-semibold text-text-primary">Card layout</h1>
-      <p className="mb-6 max-w-prose text-[0.8571rem] text-text-secondary">
-        Which fields board cards show, and in what order. Saved against your
-        user — other people&rsquo;s boards are unaffected. The task title is
-        always shown and cannot be hidden, so a card is never blank.
-      </p>
+      <h1 className="mb-2 text-lg font-semibold text-text-primary">Card layout</h1>
 
       <div className="flex flex-wrap gap-8">
         <div className="min-w-[18rem] flex-1">
@@ -147,7 +143,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
                     aria-pressed={isVisible}
                     onClick={() => { toggle(field); }}
                     className={
-                      "rounded px-2 py-0.5 text-[0.8571rem] "
+                      "inline-flex min-h-[24px] items-center rounded px-2 py-0.5 text-[0.8571rem] "
                       + (isVisible
                         ? "bg-accent-muted text-accent"
                         : "bg-bg-muted text-text-tertiary")
@@ -160,14 +156,15 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
             }}
           </ReorderableRows>
 
-          <button
-            type="button"
-            data-testid="card-layout-reset"
+          <Button
+            variant="ghost"
+            size="sm"
+            testId="card-layout-reset"
+            className="mt-3"
             onClick={() => { write(DEFAULT_CARD_LAYOUT); }}
-            className="mt-3 text-[0.8571rem] text-accent hover:underline"
           >
             Reset to the default layout
-          </button>
+          </Button>
         </div>
 
         {/* SET-12's last bullet, and SET-26's first: the outcome is
@@ -187,7 +184,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
                 data-testid="card-layout-preview-empty"
                 className="text-[0.7857rem] italic text-text-tertiary"
               >
-                Title only — every field is hidden. Cards stay clickable.
+                Title only. Every field is hidden.
               </p>
             ) : (
               <div className="flex flex-wrap gap-1">
@@ -214,7 +211,7 @@ function CardLayoutEditor({ stored }: { readonly stored: UserSettings }) {
         <div className="mt-4" data-testid="card-layout-save-error">
           <ErrorState
             error={save.error}
-            context="The layout was not saved — the list shows your last saved layout"
+            context="The layout wasn't saved. Showing your last saved layout."
             {...(save.variables !== undefined
               ? { onRetry: () => { save.mutate(save.variables); } }
               : {})}

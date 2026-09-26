@@ -302,7 +302,7 @@ export async function reorderBoardRank(
           `cannot rank ${label} '${ref}': it is in status `
           + `'${t.frontmatter.status ?? "(none)"}', a different board column from `
           + `${opts.taskRef} in '${moved.frontmatter.status ?? "(none)"}'. Board rank `
-          + `is per-column — pick an anchor from the same column, or move the task `
+          + `is per-column. Pick an anchor from the same column, or move the task `
           + `to that column first.`,
         );
       }

@@ -184,11 +184,12 @@ minority of these.
 - A control whose meaning depends on context includes that context ("Remove attachment: design.png").
 
 ### A11Y-21 · M4 · blocker · P8
-**Toggle controls expose their state, not just their label.** Inspect the sidebar collapse, the "Show archived" toggle, the skip-starter-docs toggle, and the board status chips.
+**Toggle controls expose their state, not just their label.** Inspect the sidebar collapse, the skip-starter-docs toggle, and the board status chips.
 
 - Each announces pressed/expanded/checked state and updates the announcement when toggled.
-- "Show archived" announces its current state, so a user cannot be unknowingly filtered.
 - A toggle rendered as a button announces its pressed state; a toggle rendered as a checkbox announces checked.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Dropped the "Show archived" toggle and its bullet: there is no archived toggle anywhere in the web UI.
 
 ### A11Y-22 · M4 · blocker · P8
 **Every form field has a programmatically associated label.** Inspect the init wizard, the create-task modal, the task meta panel's inline editors, and every settings form.
@@ -268,13 +269,15 @@ minority of these.
 - Neither feature is pointer-only. A drag-only affordance with no alternative is a blocker, not a polish item.
 
 ### A11Y-30 · M4 · blocker · P3 P8
-**Colour is never the sole carrier of meaning.** Inspect status chips, priority indicators, WIP-over-cap columns, archived rows, and the sidebar's active-route highlight in greyscale.
+**Colour is never the sole carrier of meaning.** Inspect status chips, priority indicators, WIP-over-cap columns, an archived task's detail page, and the sidebar's active-route highlight in greyscale.
 
 - Status and priority carry a text label or a distinct shape/icon in addition to colour; a greyscale screenshot remains readable.
 - A WIP-over-cap column is identifiable without colour (a count like "6 / 4" and a warning glyph with an accessible name), not by a red header alone.
-- Archived tasks are marked with an "Archived" badge, not only by being dimmed.
+- An archived task, opened by a direct link, is marked with an "Archived" badge, not only by being dimmed.
 - The active sidebar route is marked by more than a colour change — a persistent indicator bar, bolder weight, or the current-page state exposed to assistive tech.
 - Label pills, whose colour is user-chosen and arbitrary, always render their text name.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Archived rows no longer appear in the list, so the badge bullet now applies where an archived task is still shown: its own detail page.
 
 ### A11Y-31 · M4 · major · P4 P8
 **Unavailable controls are announced as unavailable, with a reason.** Inspect the M1 "Mentions me" filter and any control disabled by state (archive on an already-archived task, migrate on a `future` schema, the Delete button on a tracker's sole project in Settings → Projects).
@@ -366,9 +369,23 @@ minority of these.
 ### A11Y-43 · M4 · minor · P8
 **Keyboard shortcuts do not collide with browser or screen-reader shortcuts.** With a screen reader running in browse mode, exercise the shortcut set.
 
+> **Amended (K129, Ken 2026-09-24).** Ken: *"rest of the 'needs your
+> call' looks okay"* (he approved cutting the `?` dialog's footnote,
+> A-110, that documented single-key shortcuts as suppressed while
+> typing). The underlying behaviour — shortcuts are ignored while a
+> text field, editor, or dialog has focus — is unchanged and still
+> covered by its own tests; only the third bullet's "documented in the
+> reference" option is dropped, since nothing currently satisfies it.
+
 - App shortcuts do not shadow the screen reader's own single-key browse commands in a way that makes the page unnavigable, or the app documents the required mode switch.
+> **Amended (K133, Ken 2026-09-26).** Shown the fixed-keys-plus-off-switch
+> model beside free remapping, Ken asked *"maybe just dont allow rebinding
+> and just allow disabling?"* and chose off switches only. The third
+> bullet no longer offers remapping: a master switch and one switch per
+> shortcut satisfy WCAG 2.1.4 (A11Y-56 to A11Y-60 cover the controls).
+
 - No shortcut overrides a browser-reserved combination.
-- Single-key shortcuts can be turned off or remapped, or are documented in the `?` reference as suppressible.
+- Single-key shortcuts can be turned off, all at once or one by one (K133).
 
 ### A11Y-44 · M4 · minor · P8
 **A skip link reaches the main content.** Press `Tab` as the very first interaction after load.
@@ -450,3 +467,48 @@ minority of these.
 - The fallback's heading is announced and its recovery actions (reload, back to list) are focusable and activatable by keyboard.
 - Focus is moved into the fallback rather than being lost with the unmounted subtree.
 - A raw stack trace, if shown at all, is behind a collapsed disclosure that is not the first thing announced.
+
+### A11Y-55 · M4 · minor · P8
+**Every pointer target is at least 24×24px (WCAG 2.5.8 AA).** Measured in a real browser, not read off class names. *(B4, K121: "24px is enough")*
+
+- The header user-menu (avatar) button is at least 24px in both dimensions.
+- A label pill that filters when clicked (list, LST-5) is at least 24px tall.
+- Checkboxes and the ✕ remove buttons keep the 24px they already meet (K31, A250).
+- A control that is only visible on keyboard focus (the skip link) is measured in its visible state.
+- On every Settings page, every visible button, link and checkbox is at least 24×24px (drag handles, Pin / Hide / Show / Reset / Delete view, the card-layout visibility toggles).
+
+### A11Y-56 · M4 · major · P8 P10
+**The master switch turns every single-key shortcut off.** In Settings → Keyboard, turn "Single-key shortcuts" off, then press `n`, `/`, `[`, `t`, `?` and `g` then `b` with nothing focused. *(K133)*
+
+- None of them does anything: no create modal, no focus move, no sidebar or theme change, no dialog, no navigation.
+- Shortcuts that carry a modifier or need their control focused keep working: Cmd/Ctrl+Enter and Cmd/Ctrl+S save the description being edited, Esc closes a dialog, Ctrl+arrows move a focused board card.
+- The choice is written to the acting user's `settings.yaml` as `keyboard_shortcuts.single_key: false` and survives a reload. `loctt user shortcuts` and MCP `get_keyboard_shortcuts` report it off.
+- Turning it back on restores every shortcut, including any the user had switched off one by one staying off.
+
+### A11Y-57 · M4 · major · P8
+**One shortcut can be turned off on its own.** In Settings → Keyboard (or the `?` dialog's Customize view), switch off "Create a task". *(K133)*
+
+- `n` no longer opens the create modal; every other shortcut still fires.
+- The three Go-to sequences (`g` then `l`, `b` or `t`) are one shortcut with one switch. With it off, `g` does not wait for a second key, so the next key typed is not swallowed.
+- While the master switch is off, the per-shortcut switches are disabled but keep their state.
+- Each switch is a native switch with the shortcut's action as its accessible name, operable by keyboard, at least 24px.
+
+### A11Y-58 · M4 · major · P4 P8
+**The `?` dialog shows the switches' state and offers the way back.** Open the dialog with the master switch off, then with it on and one shortcut off. *(K133)*
+
+- With the master off, every shortcut is listed, each row disabled (`aria-disabled`), and a notice at the top reads "Single-key shortcuts are off." with a "Turn on" button that turns the master back on in place.
+- With the master on, a shortcut switched off on its own is marked "Off" and its row is disabled; the others are not.
+- A "Customize" button swaps the dialog body to the same switches Settings → Keyboard shows, and "Done" returns to the list. Focus stays inside the dialog throughout.
+
+### A11Y-59 · M4 · minor · P4
+**Reset to default asks first.** Turn the master off and one shortcut off, then press "Reset to default". *(K133)*
+
+- A confirmation asks "Reset all shortcuts to their defaults?" with "Reset" and "Cancel", and focus starts on Cancel.
+- Cancel changes nothing. Reset turns the master and every shortcut back on and removes `keyboard_shortcuts` from `settings.yaml`, leaving the user's other settings intact.
+- Esc on the confirmation closes only the confirmation, not a `?` dialog it was opened from.
+
+### A11Y-60 · M4 · major · P8
+**The shortcuts dialog is reachable with `?` switched off.** Turn the master switch off, then open the user menu. *(K133)*
+
+- The user menu has a "Keyboard shortcuts" item that opens the `?` dialog, by mouse or keyboard.
+- Closing the dialog returns focus to the page rather than to `document.body`.

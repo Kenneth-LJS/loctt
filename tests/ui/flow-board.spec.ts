@@ -874,6 +874,49 @@ test.describe("BRD — board view", () => {
     await expect(page.getByTestId("board-count-backlog")).toHaveText("2");
   });
 
+  // @verifies BRD-39 / K115 (A314)
+  //
+  // Retargeted per K115 (A314): the board's own `useStalledLoad` timer
+  // (`__LOCTT_STALLED_LOAD_MS__`) was retired as a redundant SECOND
+  // mechanism for the same symptom — `apiRequest` now has its own
+  // default read deadline (20s on a GET, overridable via
+  // `__LOCTT_READ_TIMEOUT_MS__`, the same convention
+  // `flow-task-failure.spec.ts` uses for
+  // `__LOCTT_SET_FIELD_TIMEOUT_MS__`), so a hung `/api/tasks` now times
+  // out on its own and reaches the board's ordinary `tasks.isError`
+  // branch without any board-specific escalation code.
+  test("BRD-39: a request stuck past its read deadline escalates to a message with retry", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "One" }]);
+
+    // Shortened so the test does not sit out the real 20s default.
+    await page.addInitScript(() => {
+      (globalThis as { __LOCTT_READ_TIMEOUT_MS__?: number })
+        .__LOCTT_READ_TIMEOUT_MS__ = 1_500;
+    });
+
+    // The request leaves and nothing ever comes back — no response, no
+    // error — so only `apiRequest`'s own deadline can end the wait.
+    await page.route("**/api/tasks?**", async () => {
+      await new Promise(() => { /* hangs */ });
+    });
+
+    await page.goto(`${tracker.baseURL}/board`, { waitUntil: "commit" });
+    await expect(page.getByTestId("board-skeleton").first()).toBeVisible();
+
+    // Past the deadline: skeleton gone, a placed alert with Retry instead.
+    await expect(page.getByTestId("board-skeleton").first()).toHaveCount(0, { timeout: 5_000 });
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible();
+    // ERR-5: the message names what was waited for.
+    await expect(alert).toContainText(/loading the board/i);
+    await expect(alert).toContainText(/tasks/i);
+    await expect(alert).toContainText(/did not respond/i);
+    await expect(alert.getByRole("button", { name: /retry/i })).toBeVisible();
+  });
+
   // @verifies BRD-40
   test("BRD-40: an empty tracker shows one board-level empty state, columns intact", async ({
     page,
@@ -884,7 +927,7 @@ test.describe("BRD — board view", () => {
     // One board-level empty state offering "+ Add task".
     const empty = page.getByTestId("board-empty");
     await expect(empty).toBeVisible();
-    await expect(empty).toContainText("No tasks yet");
+    await expect(empty).toContainText("No tasks found");
     // UI-13 relabelled this "+ Add task" → "+ New task" ("New" is the
     // house term — the sidebar already says "+ New project" / "+ New
     // view"). The empty state keeps its button: on a board with no
@@ -1192,7 +1235,7 @@ test.describe("BRD — board view", () => {
     // message is the failure this case names. An explanation appears…
     const alert = page.getByTestId("board-chip-error");
     await expect(alert).toBeVisible();
-    await expect(alert).toContainText("not saved");
+    await expect(alert).toContainText("wasn't saved");
 
     // …and the optimistic hide is rolled back, so the board and the
     // file agree rather than the browser presenting its own state as
@@ -1565,7 +1608,7 @@ test.describe("BRD — board view", () => {
     const err = page.getByTestId("board-move-error");
     await expect(err).toBeVisible();
     await expect(err).toContainText(mover);
-    await expect(err).toContainText("not saved");
+    await expect(err).toContainText("wasn't saved");
     await expect(page.getByTestId("board-move-retry")).toBeVisible();
 
     // The card is back in its original column, and disk shows the
@@ -1630,7 +1673,7 @@ test.describe("BRD — board view", () => {
     const err = page.getByTestId("board-move-error");
     await expect(err).toBeVisible();
     await expect(err).toContainText(mover);
-    await expect(err).toContainText("not saved");
+    await expect(err).toContainText("wasn't saved");
 
     // The card is not left rendered in the destination while the file
     // says otherwise.
@@ -1650,6 +1693,39 @@ test.describe("BRD — board view", () => {
     await expect(
       page.getByTestId("board-column-in_progress").getByTestId(`board-card-${mover}`),
     ).toHaveCount(0);
+  });
+
+  // A348: a move the server never answered may have landed, so the
+  // banner must not say it "wasn't saved" and then quote the timeout
+  // envelope saying the outcome is unknown. K127's wording instead.
+  // @verifies BRD-43
+  test("BRD-43: a drop that times out says the move may not have happened", async ({
+    page,
+    tracker,
+  }) => {
+    const keys = await tracker.seed([{ title: "Mover" }]);
+    const [mover] = keys as [string];
+
+    await page.addInitScript(() => {
+      (globalThis as { __LOCTT_BOARD_MOVE_TIMEOUT_MS__?: number })
+        .__LOCTT_BOARD_MOVE_TIMEOUT_MS__ = 1_000;
+    });
+    await page.goto(`${tracker.baseURL}/board`);
+    await expect(page.getByTestId(`board-card-${mover}`)).toBeVisible();
+
+    // The request leaves and nothing comes back.
+    await page.route("**/board-move", async () => {
+      await new Promise(() => { /* hangs */ });
+    });
+
+    await dragCard(page, mover, await columnPoint(page, "in_progress"));
+
+    const err = page.getByTestId("board-move-error");
+    await expect(err).toBeVisible({ timeout: 10_000 });
+    await expect(err.locator("span").first()).toHaveText(
+      "Your changes may not have been saved. Please try again.",
+    );
+    await expect(err).not.toContainText("wasn't saved");
   });
 
   // @verifies BRD-44

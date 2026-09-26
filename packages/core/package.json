@@ -18,6 +18,10 @@
       "types": "./dist/users/pins.d.ts",
       "import": "./dist/users/pins.js"
     },
+    "./users/shortcuts.js": {
+      "types": "./dist/users/shortcuts.d.ts",
+      "import": "./dist/users/shortcuts.js"
+    },
     "./users/sidebarGroups.js": {
       "types": "./dist/users/sidebarGroups.d.ts",
       "import": "./dist/users/sidebarGroups.js"

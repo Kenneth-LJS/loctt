@@ -44,9 +44,6 @@ describe("tasksParamsFromSearch", () => {
       sort: "priority",
       dir: "desc",
       page: 2,
-      // K107: was `archived: true`; the search field is now the tri-state
-      // scope. A non-default scope is carried through.
-      archived: "all",
     });
     expect(params).toEqual({
       query: "text ~ bug",
@@ -56,15 +53,16 @@ describe("tasksParamsFromSearch", () => {
       sort: "priority",
       dir: "desc",
       page: 2,
-      archived: "all",
     });
   });
 
-  it("drops the default `active` scope (no archived param)", () => {
-    // K107: `active` is the server default, so it is never carried into the
-    // request params (nor the URL). Was implicitly true of the old boolean
-    // (`false`/absent), and is now explicit for the tri-state default.
-    expect(tasksParamsFromSearch({ status: ["x"], archived: "active" })).toEqual({ status: ["x"] });
+  // @verifies SET-52
+  it("never carries an `archived` URL param into the request (K121 #1)", () => {
+    // The list's search schema passes unknown params through, so a held
+    // `?archived=all` bookmark still arrives here. It must not reach the
+    // tasks request: no URL parameter reveals archived tasks.
+    const search = { status: ["x"], archived: "all" } as Parameters<typeof tasksParamsFromSearch>[0];
+    expect(tasksParamsFromSearch(search)).toEqual({ status: ["x"] });
   });
 
   it("drops empty filter arrays", () => {
@@ -99,18 +97,17 @@ describe("useTasks", () => {
     expect(url).toContain("offset=0");
   });
 
-  it("sends structured filters as comma-joined params plus archived", async () => {
+  it("sends structured filters as comma-joined params and no archived scope", async () => {
     const { result } = renderHook(
-      () => useTasks({ status: ["a", "b"], project: ["p1"], archived: "all" }),
+      () => useTasks({ status: ["a", "b"], project: ["p1"] }),
       { wrapper: wrapper() },
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     const url = calledUrl();
     expect(url).toContain("status=a%2Cb"); // a,b
     expect(url).toContain("project=p1");
-    // K107: the tri-state scope is sent as `archived=<scope>` (was
-    // `archived=true`); `active` would be omitted as the default.
-    expect(url).toContain("archived=all");
+    // K121 #1: the list never asks for archived tasks.
+    expect(url).not.toContain("archived");
   });
 
   it("url-encodes the query param", async () => {

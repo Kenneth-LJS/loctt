@@ -78,12 +78,12 @@ export async function readSchemaVersion(locttDir: string): Promise<number | null
     + `positive integer), or re-initialize with 'loctt init --repair'. `
     + `'loctt migrate' cannot help: there is no readable version to migrate from.`;
   if (raw === "") {
-    throw new SchemaUnmigratableError(`${SCHEMA_VERSION_FILENAME} is empty`, REPAIR);
+    throw new SchemaUnmigratableError(`${SCHEMA_VERSION_FILENAME} is empty.`, REPAIR);
   }
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) {
     throw new SchemaUnmigratableError(
-      `${SCHEMA_VERSION_FILENAME} must be a positive integer, got: ${raw}`,
+      `${SCHEMA_VERSION_FILENAME} must be a positive integer. Got: ${raw}.`,
       REPAIR,
     );
   }
@@ -98,7 +98,7 @@ export async function writeSchemaVersion(
   version: number,
 ): Promise<void> {
   if (!Number.isInteger(version) || version < 1) {
-    throw new SchemaVersionError(`schema version must be a positive integer, got: ${version}`);
+    throw new SchemaVersionError(`Schema version must be a positive integer. Got: ${version}.`);
   }
   await writeFileAtomically(getSchemaVersionPath(locttDir), `${version}\n`);
 }

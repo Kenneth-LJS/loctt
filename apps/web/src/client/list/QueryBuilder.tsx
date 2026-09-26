@@ -79,7 +79,7 @@ import { builderTreeToQuery } from "./builderTree.ts";
  *                 substring (`~`) allowed.
  *  - `date`     — *_date / *_at fields: ordering + `today`.
  *  - `number`   — estimate/board_rank + number custom fields: ordering.
- *  - `boolean`  — archived + boolean custom fields.
+ *  - `boolean`  — boolean custom fields.
  *  - `user`     — assignee/reporter specifically: entity-like, but also
  *                 offers a `currentUser()` affordance.
  */
@@ -171,10 +171,10 @@ const BUILTIN_FIELDS: readonly Omit<BuilderField, "options">[] = [
   { field: "start_date", label: "Start date", kind: "date" },
   { field: "due_date", label: "Due date", kind: "date" },
   { field: "completed_date", label: "Completed", kind: "date" },
-  { field: "archived_at", label: "Archived at", kind: "date" },
   { field: "estimate", label: "Estimate", kind: "number" },
   { field: "board_rank", label: "Board rank", kind: "number" },
-  { field: "archived", label: "Archived", kind: "boolean" },
+  // No `archived` / `archived_at` (K121 #1): archived tasks are not
+  // browsable from the list or a saved view, only from Settings → Archived.
 ];
 
 /**
@@ -549,7 +549,7 @@ function GroupNode({
 
       <div className="flex flex-col gap-1.5 pl-3">
         {node.children.length === 0 ? (
-          <p className="text-[0.8571rem] text-text-tertiary">No conditions yet.</p>
+          <p className="text-[0.8571rem] text-text-tertiary">No conditions found.</p>
         ) : (
           node.children.map((child, i) => (
             // A leaf's remove button centers with its single row of h-7

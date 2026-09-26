@@ -515,7 +515,7 @@ describe("resolveProjectIdForUser (PRU-15)", () => {
     // guessing. (The sole-project rung is checked below; with three
     // projects present it must NOT silently pick one.)
     await clearDefaultProject();
-    await expect(resolveProjectIdForUser(locttDir)).rejects.toThrow(/no default project/);
+    await expect(resolveProjectIdForUser(locttDir)).rejects.toThrow(/no default project/i);
   });
 
   // @verifies PRU-15
@@ -630,7 +630,7 @@ describe("resolveProjectIdFromInput", () => {
 
   it("throws on unknown input", async () => {
     const cfg = await loadProjectsConfig(locttDir);
-    expect(() => resolveProjectIdFromInput(cfg, "Nope")).toThrow(/unknown/);
+    expect(() => resolveProjectIdFromInput(cfg, "Nope")).toThrow(/unknown/i);
   });
 });
 
@@ -674,6 +674,6 @@ describe("resolveProjectId", () => {
     await createProject(locttDir, { name: "Extra", prefix: "X" });
     await setDefaultProject(locttDir, null);
     const cfg = await loadProjectsConfig(locttDir);
-    expect(() => resolveProjectId(cfg)).toThrow(/no default project/);
+    expect(() => resolveProjectId(cfg)).toThrow(/no default project/i);
   });
 });

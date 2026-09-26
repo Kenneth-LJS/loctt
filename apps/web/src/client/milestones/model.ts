@@ -149,33 +149,6 @@ export function progressState(progress: Progress | undefined): Readout {
 }
 
 /**
- * Whether a milestone is overdue.
- *
- * MSL-17: driven by **incomplete tasks existing**, not by the date
- * alone. A 100%-complete milestone with a past target date reads
- * completed, never overdue — the date has passed but there is nothing
- * left that the passing of it endangers.
- *
- * "Incomplete" is `total - done`: `total` already excludes discarded,
- * so abandoned work does not hold a milestone overdue forever. That is
- * the same exclusion MSL-3 states, applied once.
- *
- * A milestone whose progress is *unavailable* is not flagged: the flag
- * would be asserting something about counts we do not have.
- */
-export function isOverdue(
-  milestone: MilestoneDef,
-  readout: Readout,
-  today: string,
-): boolean {
-  const target = milestone.target_date;
-  if (target === undefined) return false;
-  if (readout.kind !== "counted") return false;
-  if (target.slice(0, 10) >= today.slice(0, 10)) return false;
-  return readout.done < readout.total;
-}
-
-/**
  * Sort order for the Milestones view.
  *
  * MSL-1 and MSL-16: stable across reloads, by target date, with

@@ -34,10 +34,16 @@ This case previously asserted the panels were read-only. That was an early draft
 
 - All six statuses render in file order, each showing its `label`, its `key`, and its `category` (`pending` / `active` / `completed` / `discarded`).
 - Exactly one status is marked as the default, and the marker is visible — it decides where new tasks land.
-- The panel shows the absolute path of the file it reflects (`.loctt/config/workflow.yaml`), so a user editing YAML directly knows where to look.
 - Editing the file in a terminal and refreshing the panel shows the new set — the panel is a lens, not a cache.
 - Edits made in the panel are written back through `PUT /api/workflow`; see SET-16/SET-19 for the remap flow when a key in use is removed.
 
+
+> **Amended (K116, Ken 2026-09-23).** Dropped "the panel shows the
+> absolute path of the file it reflects". Ken ruled the always-visible
+> "Stored in <path>" line removed: *"why do you have stupid info that you
+> dont need everywhere?"*, then, shown this case, *"just remove all
+> these"*. A file that fails to parse is still named in its error
+> (the workflow parse/save-failure cases).
 ### SET-4 · M4 · major · P3
 **Priorities, task types, and relationships each mirror their config faithfully.**
 
@@ -192,10 +198,16 @@ This case previously asserted the panels were read-only. That was an early draft
 ### SET-22 · M4 · major · P6 P7
 **A calendar with every day marked non-working.**
 
-- The panel accepts it but warns explicitly that no working days remain and that working-day computations will not resolve.
+- The panel does not save an empty week and asks for at least one working day ("Select at least one working day.").
 - Date pickers render every day marked non-working rather than rendering an all-blank month.
 - Any "N working days from today" computation returns a designed state — an explanation naming the calendar as the cause — rather than hanging, looping, or returning today.
 - Diagnostics flags the empty working-day set as a warning.
+
+> **Amended (K116 trims, approved by Ken 2026-09-23; A322).** The
+> message was trimmed under `docs/dev/design/messaging.md`: it states
+> what happened, the data outcome and the next action, not the
+> reasoning. This case now requires that substance, not the old
+> sentences.
 
 ### SET-23 · M4 · minor · P9
 **A holiday list of 500 entries.**
@@ -216,9 +228,14 @@ This case previously asserted the panels were read-only. That was an early draft
 **Changing the workspace timezone shifts nothing already stored.**
 
 - Switching from `UTC` to `Asia/Singapore` does not rewrite any task's `due_date` in frontmatter.
-- Dates displayed shift only where the app renders a datetime, and the panel states which fields are date-only (unaffected) and which are datetimes.
+- Dates displayed shift only where the app renders a datetime; date-only fields are unaffected.
 - Reverting the timezone restores the previous display exactly.
 
+
+> **Amended (K116, Ken 2026-09-23).** Dropped "the panel states which
+> fields are date-only and which are datetimes". Ken: *"just remove all
+> these. some things like the calendar note, can go into user docs"* —
+> the explanation now lives in the user docs, not the panel.
 ### B3. Personal, pins, diagnostics
 
 ### SET-26 · M4 · minor · P1 P7
@@ -337,9 +354,14 @@ This case previously asserted the panels were read-only. That was an early draft
 ### SET-41 · M4 · major · P4
 **An avatar-sized settings payload is rejected as too large.** A card-layout config or holiday list that exceeds a request limit.
 
-- The rejection names the limit and what exceeded it, rather than surfacing a raw 413.
-- The prior config remains in effect and the panel says so.
-- The user is told what to trim, with the current count against the limit.
+- The rejection says there is too much to save and what to do ("Too many holidays to save. Remove some and try again."), rather than surfacing a raw 413.
+- The prior config remains in effect (verified: the saved calendar is unchanged).
+
+> **Amended (K116 trims, approved by Ken 2026-09-23; A322).** The
+> message was trimmed under `docs/dev/design/messaging.md`: it states
+> what happened, the data outcome and the next action, not the
+> reasoning. This case now requires that substance, not the old
+> sentences. The limit is the server's request size, not a count, so no count against it can be stated truthfully.
 
 ### SET-42 · M4 · minor · P4 P6
 **The settings shell loads while the API is unreachable.**
@@ -367,7 +389,11 @@ This case previously asserted the panels were read-only. That was an early draft
 ### SET-46 · M4 · major · P3 P4
 **A status can be created from the panel.** Statuses panel, Create dialog.
 
-- The Create dialog takes key + label + category + default; the key is validated for uniqueness and the "key is permanent" copy is shown.
+- The Create dialog takes key + label + category + default; the key is validated for uniqueness.
+
+> **Amended (K116, Ken 2026-09-23).** Dropped "the 'key is permanent' copy
+> is shown": Ken ruled the settings explainer text removed as
+> self-explanatory. The key is still not renameable after creation.
 - On Save the new status is written to `workflow.yaml` and renders in file order.
 - Creating a duplicate key is rejected before `PUT` with a message naming the collision (the same duplicate-key guard SET-47 and SET-48 assert for priorities/task-types and relationship types).
 
@@ -400,3 +426,48 @@ This case previously asserted the panels were read-only. That was an early draft
 - **Cancel still closes cleanly**, discarding the un-committed edit.
 
 > Additive, not a reversal. SET-34's drag-reorder-failure behaviour is unchanged (reorder stays inline per open decision #3); this ID covers the Edit-dialog Save-failure path SET-34 never described.
+
+## D. Settings → Archived (K121 #1, backlog B1)
+
+Ken, 2026-09-23: *"not allow viewing archived stuff. thats the point of
+archiving"* … *"archived section in settings, can select entity to view
+(e.g. milestones, sprints, tasks, etc). then you can restore one by one,
+or mass-select and restore selected, or restore all. or delete all, or
+select some to delete, or delete one at a time"*. Archived items are not
+browsable anywhere else in the web UI; there is no debug switch, no
+search, and no saved views over archived items.
+
+### SET-52 · M4 · major · P5 P10
+**Archived items are reachable only from Settings → Archived.** A tracker with archived tasks, projects, milestones, sprints, labels and saved views.
+
+- The task list, board, timeline, Sprints and Milestones views, and the Settings entity panels offer no way to show archived items (no toggle, no Active / Archived / All control, no URL parameter that reveals them).
+- Settings has an **Archived** section. It lists the entity types that can be archived and shows each type's archived count.
+- Choosing a type shows that type's archived items as a plain list (name, and when it was archived if known). There is no search box and no filter.
+
+### SET-53 · M4 · major · P5
+**Archived items can be restored one at a time, by selection, or all at once.** Settings → Archived → Tasks, with five archived tasks.
+
+- Each row has a Restore action; restoring one removes it from the list and it reappears in the normal views.
+- Rows can be selected; "Restore selected" restores exactly the selected rows.
+- "Restore all" restores every archived item of that type.
+- A partial failure reports which items were restored and which were not, and leaves the failed ones in the list (P5, ERR-4 for an unknown outcome).
+
+### SET-54 · M4 · blocker · P5
+**Archived items can be deleted one at a time, by selection, or all at once, and deletion is confirmed.** Settings → Archived → any type.
+
+- Each row has a Delete action; "Delete selected" and "Delete all" act on the selection and the whole type.
+- Every delete asks for confirmation naming what will be deleted and how many; "Delete all" is a typed confirmation (P5). Deleting is permanent and the confirmation says so.
+- Deleting an item still referenced elsewhere follows the same remap-or-clear rules as deleting it from its own panel (e.g. deleting an archived milestone that tasks still reference).
+- A failure is reported per item as in SET-53; nothing is shown as deleted that was not.
+
+### SET-55 · M4 · minor · P6
+**Every settings entity panel renders its title and create action through the shared `SettingsPanelHeader`, at one canonical position, style and height.** Labels, Milestones, Projects, Saved views, Sprints, Users panels.
+
+- Each panel's title is an `<h1>` carrying `settings-panel-title` and the shared title colour token, not a panel-local heading.
+- Each panel's create action sits in the header row next to the title (not below the description, not below the list, not in its own row), using the shared component's primary-variant, default-size button — not a bespoke secondary variant or an off-size (`sm`) override.
+
+> Added (2026-09-23) to cover behaviour six panel test files already
+> asserted under an invented `N-4` tag (`LabelsPanel.test.tsx`,
+> `MilestonesPanel.test.tsx`, `ProjectsPanel.test.tsx`,
+> `SavedViewsPanel.test.tsx`, `SprintsPanel.test.tsx`,
+> `UsersPanel.test.tsx`) — see `docs/dev/backlog.md` B9.

@@ -70,64 +70,11 @@ export interface SprintColumn {
  *
  * SPR-2 and SPR-20 together: this keys off `state` **only**. LocTT
  * performs no automatic transitions, so a sprint whose window has
- * passed while its state still says `active` is active — the dates are
- * surfaced as a hint (see `windowDisagrees`), never as a correction.
+ * passed while its state still says `active` is active, and nothing
+ * remarks on it (K130, P11: their files, their process).
  */
 export function isActive(sprint: SprintDef): boolean {
   return sprint.state === "active";
-}
-
-/**
- * True when the sprint's date window disagrees with its state.
- *
- * SPR-20's second bullet: an `active` sprint whose `end_date` has
- * passed, or (symmetrically) one whose window has not started yet, is
- * an informational hint. Not an error, and nothing rewrites `state`.
- *
- * `today` is the workspace's date from `/api/info`, not the browser's,
- * so this view and the list agree on what "passed" means.
- */
-export function windowDisagrees(sprint: SprintDef, today: string): boolean {
-  if (sprint.state !== "active") return false;
-  return sprint.end_date < today || sprint.start_date > today;
-}
-
-/**
- * The human countdown to (or past) a sprint's `end_date` (SPR-39).
- *
- * SPR-39 asks each overview card for "days-remaining (or overdue)". Both
- * operands are `YYYY-MM-DD` calendar days in the workspace's frame —
- * `today` is the tracker's day from `/api/info`, not the browser's — so
- * the diff is a whole-day count from the date parts alone. Parsing at UTC
- * noon dodges the midnight-rolls-back-a-day trap; since both operands get
- * the same treatment the offset cancels and the day delta is exact.
- *
- * Keyed on `end_date` (the deadline), not `state`: a sprint the user
- * still marks `active` past its window is exactly the case SPR-20
- * surfaces as a hint, and "overdue" here is the same fact read as a
- * countdown. Returns `undefined` for an unparseable date — the header
- * still shows the date window, there is just no countdown to compute.
- *
- * The wording mirrors the milestone countdown ("in 5 days" / "3 days
- * overdue"), so the two surfaces read alike; it is re-implemented here
- * rather than imported because that lives in the milestones lane's view
- * file, and a countdown is four lines, not a dependency worth crossing a
- * lane boundary for.
- */
-export function sprintCountdown(
-  endDate: string,
-  today: string,
-): string | undefined {
-  const t = Date.parse(`${endDate.slice(0, 10)}T12:00:00Z`);
-  const n = Date.parse(`${today.slice(0, 10)}T12:00:00Z`);
-  if (Number.isNaN(t) || Number.isNaN(n)) return undefined;
-
-  const days = Math.round((t - n) / 86_400_000);
-  if (days === 0) return "Ends today";
-  if (days === 1) return "1 day left";
-  if (days === -1) return "1 day overdue";
-  if (days > 1) return `${String(days)} days left`;
-  return `${String(-days)} days overdue`;
 }
 
 /**
@@ -169,12 +116,9 @@ export function defaultExpanded(column: SprintColumn): boolean {
 export function deriveSprintColumns(
   sprints: readonly SprintDef[],
   tasks: readonly SprintTask[],
-  options: { readonly showArchived?: boolean } = {},
 ): readonly SprintColumn[] {
-  // SPR-1: archived sprints are omitted unless explicitly asked for.
-  const visible = options.showArchived === true
-    ? [...sprints]
-    : sprints.filter(s => s.archived !== true);
+  // SPR-1 / K121 #1: archived sprints are never columns.
+  const visible = sprints.filter(s => s.archived !== true);
 
   visible.sort((a, b) => (a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0));
 
@@ -191,7 +135,7 @@ export function deriveSprintColumns(
   // from every sprint surface. Derived from the tasks, so the column
   // exists only when something actually dangles.
   //
-  // Archived sprints count as "known" even when hidden: a task in an
+  // Archived sprints count as "known" though never shown: a task in an
   // archived sprint is filed, not dangling, and showing it as a
   // missing reference would name a sprint that is right there in the
   // file.
@@ -243,7 +187,7 @@ export function bucketBySprint<T extends SprintTask>(
       continue;
     }
     // A dangling reference has its own column (SPR-27). A task in an
-    // *archived* sprint while "show archived" is off has neither —
+    // *archived* sprint has neither —
     // and must not be swept into "unknown", which would name a sprint
     // that is present in the file and merely hidden. It is out of
     // scope for this rendering, which is what hiding archived means.

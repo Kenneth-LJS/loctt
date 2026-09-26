@@ -17,7 +17,7 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
           target: "T-2",
         });
         expect(result.isError).toBe(true);
-        expect(result.content[0]?.text ?? "").toContain("unknown relationship type");
+        expect(result.content[0]?.text ?? "").toMatch(/unknown relationship type/i);
       } finally {
         await client.close();
       }
@@ -53,7 +53,7 @@ describe("MCP link_tasks relationship edge cases (stdio)", () => {
           target: "T-1",
         });
         expect(result.isError).toBe(true);
-        expect(result.content[0]?.text ?? "").toContain("cannot link a task to itself");
+        expect(result.content[0]?.text ?? "").toContain("A task can't link to itself");
       } finally {
         await client.close();
       }

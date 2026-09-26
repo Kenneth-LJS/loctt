@@ -49,7 +49,7 @@ describe("E2E journey: MCP-only full lifecycle", () => {
         expect(fetchedText).toContain("high");
 
         const link = await client.callTool("link_tasks", {
-          ref: "T-1", type: "blocks", target: "T-2",
+          refs: ["T-1"], type: "blocks", target: "T-2",
         });
         expect(link.isError).toBeFalsy();
 
@@ -58,16 +58,16 @@ describe("E2E journey: MCP-only full lifecycle", () => {
         });
         expect(unlink.isError).toBeFalsy();
 
-        const archive = await client.callTool("archive_task", { ref: "T-1" });
+        const archive = await client.callTool("archive_task", { refs: ["T-1"] });
         expect(archive.isError).toBeFalsy();
 
-        const unarchive = await client.callTool("unarchive_task", { ref: "T-1" });
+        const unarchive = await client.callTool("unarchive_task", { refs: ["T-1"] });
         expect(unarchive.isError).toBeFalsy();
 
         const unset = await client.callTool("unset_field", { ref: "T-1", field: "priority" });
         expect(unset.isError).toBeFalsy();
 
-        const del = await client.callTool("delete_task", { ref: "T-1", confirm: true });
+        const del = await client.callTool("delete_task", { refs: ["T-1"], confirm: true });
         expect(del.isError).toBeFalsy();
       } finally {
         await client.close();

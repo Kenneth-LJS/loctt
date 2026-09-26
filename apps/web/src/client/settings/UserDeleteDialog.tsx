@@ -43,8 +43,12 @@ export function UserDeleteDialog({
   /** Live users this one's references could be remapped onto. */
   readonly others: readonly UserProfile[];
   readonly mutation: UseMutationResult<DeleteUserResult, Error, DeleteUserVars>;
-  /** Switch to the reversible path — archive instead of delete. */
-  readonly onArchive: () => void;
+  /**
+   * Switch to the reversible path — archive instead of delete. Omitted
+   * where the user is already archived (Settings → Archived, K121 #1),
+   * so the dialog does not offer an archive that has already happened.
+   */
+  readonly onArchive?: (() => void) | undefined;
   readonly onClose: () => void;
 }) {
   const usage = useUserReferences(user.id);
@@ -71,10 +75,16 @@ export function UserDeleteDialog({
 
   // Block until the count has loaded (so we never delete a referenced
   // user while still believing they have none), until a resolution is
-  // chosen for a referenced user, and until the word is typed.
+  // chosen for a referenced user, and until the word is typed. B8: a
+  // FAILED count used to fall through neither `isLoading` nor
+  // `referenced` (0 + 0 reads as unreferenced), so Delete quietly became
+  // available while the count was actually unknown. `usage.isError` now
+  // blocks it the same as `isLoading` does — the count must be known
+  // either way.
   const blocked =
     mutation.isPending ||
     usage.isLoading ||
+    usage.isError ||
     (referenced && resolution === null) ||
     // "Reassign" selected but no target user picked yet — nothing to
     // remap onto, so the delete stays blocked.
@@ -100,7 +110,20 @@ export function UserDeleteDialog({
           {usage.isLoading ? (
             "Counting task references…"
           ) : usage.isError ? (
-            "Could not count task references."
+            <>
+              Could not count task references.{" "}
+              {/* B8: there was no way to recover from this short of
+                  closing and reopening the dialog. Delete stays disabled
+                  (see `blocked` above) until a count is known either way. */}
+              <button
+                type="button"
+                data-testid="user-delete-refcount-retry"
+                onClick={() => { void usage.refetch(); }}
+                className="underline"
+              >
+                Try again
+              </button>
+            </>
           ) : referenced ? (
             <>
               <strong className="font-medium text-text-primary">{user.name}</strong> is
@@ -186,16 +209,21 @@ export function UserDeleteDialog({
             in the same dialog (PRU-42). */}
         <p className="text-[0.8571rem] text-text-tertiary">
           Deleting a user is <strong className="font-medium text-text-secondary">permanent</strong> and
-          removes their profile from disk.{" "}
-          <button
-            type="button"
-            data-testid="user-delete-archive-instead"
-            onClick={onArchive}
-            className="underline underline-offset-2 hover:text-text-secondary"
-          >
-            Archive instead
-          </button>{" "}
-          to hide them reversibly while keeping their task references intact.
+          removes their profile from disk.
+          {onArchive !== undefined && (
+            <>
+              {" "}
+              <button
+                type="button"
+                data-testid="user-delete-archive-instead"
+                onClick={onArchive}
+                className="underline underline-offset-2 hover:text-text-secondary"
+              >
+                Archive instead
+              </button>{" "}
+              to hide them reversibly while keeping their task references intact.
+            </>
+          )}
         </p>
 
         <label className="grid gap-1 text-[0.8571rem] font-medium text-text-secondary">

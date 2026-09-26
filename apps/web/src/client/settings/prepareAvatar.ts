@@ -46,8 +46,7 @@ export class AvatarRejected extends Error {
 export function checkAcceptedType(file: { type: string; name: string }): void {
   if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name)) {
     throw new AvatarRejected(
-      `${file.name} is an SVG. Avatars must be a raster image — `
-      + `JPEG, PNG, WebP, or GIF.`,
+      `${file.name} is an SVG. Use a JPEG, PNG, WebP or GIF.`,
       "type",
     );
   }
@@ -136,7 +135,7 @@ export interface DecodedImage {
   readonly img: HTMLImageElement;
   readonly width: number;
   readonly height: number;
-  /** True for a multi-frame GIF — PRU-29's "stored as a single frame". */
+  /** True for a multi-frame GIF — PRU-29's "saved as a single frame". */
   readonly animated: boolean;
   /** Revokes the object URL backing `img.src`. Call when done. */
   revoke(): void;
@@ -172,8 +171,7 @@ export async function decodeImageFile(file: File): Promise<DecodedImage> {
         // the DOM, so the message says what was attempted and that
         // nothing was saved rather than inventing a cause.
         reject(new AvatarRejected(
-          `${file.name} could not be decoded — the file may be corrupt or `
-          + `incomplete. Your avatar was not changed; try a different file.`,
+          `${file.name} couldn't be read. It may be corrupt. Your avatar wasn't changed.`,
           "decode",
         ));
       };

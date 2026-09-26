@@ -7,6 +7,7 @@ import { useWorkflowUsage } from "../api/hooks/useWorkflowMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
+import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
 
 /**
  * The shell every Workflow panel sits in (SET-3, SET-33, SET-42).
@@ -15,7 +16,6 @@ import { LoadingState } from "../ui/LoadingState.tsx";
  * are about what happens when the config *cannot* be read, and that
  * answer has to be identical in every panel:
  *
- *  - SET-3: the panel names the absolute path of the file it reflects.
  *  - SET-33: an invalid `workflow.yaml` shows the validation error
  *    naming the file and the offending entry — not an empty list,
  *    which would read as "you have no statuses configured", and not a
@@ -26,30 +26,30 @@ import { LoadingState } from "../ui/LoadingState.tsx";
 
 export function WorkflowPanelFrame({
   title,
-  description,
+  actions,
   children,
 }: {
   readonly title: string;
-  readonly description?: ReactNode;
+  /**
+   * A329 (B7): the panel's create control, rendered through
+   * `SettingsPanelHeader`'s actions slot so title+actions match every
+   * other Settings panel. Omitted by panels with no single create action
+   * (Board columns keeps its own below-list "Add" — a different action,
+   * per A329).
+   */
+  readonly actions?: ReactNode;
   readonly children: (args: {
     readonly workflow: WorkflowConfig;
-    readonly path: string;
     readonly usage: ReturnType<typeof useWorkflowUsage>["data"];
   }) => ReactNode;
 }) {
   const workflow = useWorkflow();
   const usage = useWorkflowUsage();
 
-  const header = (
-    <>
-      <h1 data-testid="settings-panel-title" className="mb-1 text-lg font-semibold text-text-primary">
-        {title}
-      </h1>
-      {description !== undefined && (
-        <p className="mb-3 text-[0.9286rem] text-text-secondary">{description}</p>
-      )}
-    </>
-  );
+  // A329: was a bare `<h1>`; switched to `SettingsPanelHeader` so
+  // title+actions align with the rest of Settings while keeping the same
+  // `data-testid="settings-panel-title"` every consumer already queries.
+  const header = <SettingsPanelHeader title={title} {...(actions !== undefined ? { actions } : {})} />;
 
   // SET-33 vs SET-42: a config that will not parse and a server that is
   // not answering are different failures and must not render the same.
@@ -129,9 +129,7 @@ export function WorkflowPanelFrame({
               {brokenPath} has an entry that does not parse.
             </p>
             <p className="mt-1 text-text-secondary">
-              The rest of the file loaded, but these entries were skipped —
-              this is not an empty configuration. Fix them in the file, then
-              reload.
+              These entries were skipped. Fix them in the file, then reload.
             </p>
             <ul className="mt-2 list-none space-y-1 p-0" data-testid="workflow-broken-list">
               {brokenEntries.map(e => (
@@ -167,20 +165,8 @@ export function WorkflowPanelFrame({
       {header}
       {children({
         workflow: workflow.data,
-        // Usage carries the path (SET-3). When usage itself failed the
-        // panel still renders the config; it falls back to the
-        // relative path rather than claiming an absolute one it does
-        // not have.
-        path: usage.data?.path ?? ".loctt/config/workflow.yaml",
         usage: usage.data,
       })}
-      {/* SET-3: name the file this panel reflects. This had regressed to a
-          vague "changes appear after you refresh" line (Ken's "useless
-          copywriting") that also dropped the path SET-3 requires — restored
-          to the actual config path. */}
-      <p data-testid="workflow-config-path" className="mt-6 text-[0.7857rem] text-text-tertiary">
-        Stored in <code className="text-text-secondary">{usage.data?.path ?? ".loctt/config/workflow.yaml"}</code>
-      </p>
     </div>
   );
 }

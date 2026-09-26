@@ -48,7 +48,12 @@ project counters during git sync is in
 ### PRU-5 · M4 · blocker · P1 P10
 **Creating a project from Settings → Projects.** Settings → Projects panel, no project named "Docs" exists.
 
-- The create form asks for a name and a prefix. The prefix is marked as *changeable only by renaming every task in the project* — not as permanent, which is no longer true, and not silently, which would understate the cost.
+- The create form asks for a name and a prefix. The cost of changing a prefix is stated where it is paid — the edit dialog names how many tasks a prefix change renames — not as a standing hint on the create form.
+
+> **Amended (K116, Ken 2026-09-23).** Previously required the create form
+> to mark the prefix "changeable only by renaming every task". Ken ruled
+> the create-form hints removed as explanation, not format. The cost is
+> not hidden: the edit dialog's prefix-change warning names the task count.
 - A prefix already used by another project is rejected at entry, naming the project holding it. Prefixes are unique tracker-wide.
 - Saving writes the project into `.loctt/config/projects.yaml`; `loctt project list` in a terminal shows it immediately.
 - The new project appears in the top-bar switcher without a page reload.
@@ -68,7 +73,9 @@ project counters during git sync is in
 - Archive is a single click with no typed confirmation — it is reversible, so the ceremony stays proportionate.
 - The archived project drops out of the top-bar switcher and out of the create form's project picker.
 - Its tasks still open by key and still render "Backend Services" as their project, with an "(archived)" marker rather than a blank cell.
-- The panel offers **Unarchive**, which restores it to the switcher in the same position.
+- Settings → Archived → Projects offers **Restore**, which restores it to the switcher in the same position.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "The panel offers Unarchive". Settings → Projects lists active projects only.
 
 ### PRU-8 · M4 · major · P8 P10
 **Switching the current user from the top-right menu.** Users Alice and Bob both exist.
@@ -182,8 +189,12 @@ project counters during git sync is in
 ### PRU-21 · M4 · minor · P9
 **A tracker with 30 projects keeps the switcher usable.**
 
+> **Amended (K125, Ken 2026-09-24).** The sidebar's "All projects" row was
+> removed (Ken: *"take out the 'All projects' then? if its duplicate"*);
+> List shows all tasks.
+
 - The switcher becomes searchable (type-to-filter on label and key) rather than an unbounded scrolling list.
-- "All projects" remains pinned and reachable without scrolling.
+- The sidebar's List link remains reachable without scrolling.
 - The sidebar project group truncates with a count ("+22 more") rather than pushing the rest of the sidebar off-screen.
 
 ### PRU-22 · M4 · minor · P9
@@ -205,10 +216,17 @@ project counters during git sync is in
 ### PRU-24 · M4 · major · P1 P7
 **The current user is archived from the CLI mid-session.** UI is open as Carol; `loctt user archive carol-id` runs in a terminal.
 
+> **Amended (K130, Ken 2026-09-24).** The user menu's archived-user
+> prompt was removed (A-100). Ken: *"no need then? users should know
+> their settings change if they switch user."* The header still marks
+> Carol "(archived)" and the avatar's tooltip names the state; the menu
+> shows no separate prompt, and switching happens from its ordinary
+> Switch user list.
+
 - The next data fetch surfaces the change rather than continuing to present Carol as a normal active user.
-- The header shows Carol with an "(archived)" marker and prompts the user to switch to an active user.
+- The header shows Carol with an "(archived)" marker.
 - Writes attempted while archived either succeed with Carol as actor (if that is the core's behaviour) or fail with a message naming Carol and saying she is archived — but the UI does not fail silently or attribute the write to some other user.
-- Switching to an active user from the prompt clears the state without a reload.
+- Switching to an active user from the user menu clears the state without a reload.
 
 ### PRU-25 · M4 · major · P7
 **A hard-deleted user is still referenced as reporter on old tasks.** Dave was deleted with `loctt user delete`; five tasks still carry his ULID as `reporter`.
@@ -243,7 +261,7 @@ project counters during git sync is in
 ### PRU-29 · M4 · minor · P4
 **An animated GIF avatar is accepted as a still or rejected explicitly.**
 
-- Whichever the app does, it says so: either "Animated images are stored as a single frame" shown before/with the upload, or a rejection naming the format.
+- Whichever the app does, it says so: either "Animated images are saved as a single frame." shown before/with the upload, or a rejection naming the format.
 - What it must not do is store the full animated file untouched where a 500px static image is expected, nor silently drop the upload with no feedback.
 - If flattened, the preview shows the exact frame that will be stored.
 

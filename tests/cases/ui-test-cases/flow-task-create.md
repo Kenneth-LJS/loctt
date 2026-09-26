@@ -151,7 +151,7 @@ editor (as opposed to the compact one here) is
 
 - The project field opens **empty** and is marked required for this session.
 - The task is not created with an arbitrarily picked project — picking "the first one" here is the failure this case exists to catch.
-- Submitting without choosing shows an inline message on the project field naming what's needed and why ("Pick a project — this workspace has no default"), not a generic form error.
+- Submitting without choosing shows an inline message on the project field naming what's needed and why ("Pick a project. This workspace has no default"), not a generic form error.
 - Once a project is chosen, submission succeeds.
 
 ### NEW-20 · M3 · major · P3 P7
@@ -291,7 +291,7 @@ editor (as opposed to the compact one here) is
 ### NEW-38 · M3 · major · P4
 **A response that succeeds but returns an unparseable body still tells the user what state their data is in.** Truncate the create response.
 
-- Per P4's rare exception, the message may not know the cause — but it must state what was attempted (creating the task), that the task's state is uncertain, and what to do (reload the list to check before retrying).
+- Per P4's rare exception, the message may not know the cause — but it must state what was attempted (creating the task), that the task's state is uncertain, and what to do (check the list before retrying: "The task may not have been created. Check the list before trying again.", K134).
 - The modal does not close silently as if it succeeded, and it does not report a clean failure it can't actually vouch for.
 - See [flow-error-handling.md](flow-error-handling.md) § F.
 

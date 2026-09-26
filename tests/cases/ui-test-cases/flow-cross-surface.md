@@ -32,11 +32,15 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - No view is configured with an infinite `staleTime` such that a value can be wrong for the lifetime of the tab.
 
 ### XS-3 · M1 · major · P1 P8
-**A manual refresh control exists and is discoverable.** Find the refresh affordance on `/list` and on `/tasks/$key`.
+**Reloading the page is the refresh: it shows fresh data in the same view.** On `/list` with filters and a sort applied, and on `/tasks/$key`, change a task from the CLI, then press F5.
 
-- The user can force a refetch without a full page reload, and the control is reachable without opening a menu three levels deep.
-- Triggering it shows a busy indication and settles into either fresh data or an error — never silently no-ops.
-- Browser reload (F5) is also safe: it produces the same state as the manual refresh, since no view state lives only in React.
+- The reloaded page shows the CLI's change.
+- The view is unchanged: the same filters, sort and page on `/list`, the same task on `/tasks/$key`, because no view state lives only in React.
+
+> **Amended (K122, Ken 2026-09-23).** This case asked for a manual
+> refresh control, which Q4 deliberately does not build (data refetches on
+> tab focus and within the staleness window). Asked, Ken: *"user can
+> refresh the page for this, no?"* — so the reload guarantee is the case.
 
 ### XS-4 · M2 · blocker · P1
 **An open task detail picks up a CLI edit to a field the user is not editing.** Open `/tasks/T-12`, then run `loctt set T-12 status done` in a terminal.
@@ -92,20 +96,24 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 ### Body editing
 
 ### XS-11 · M2 · blocker · P1
-**The body editor fetches the latest body before writing.** Open `/tasks/T-12`, switch to edit mode, wait, then run `loctt body T-12 --append $'\n\nNote from CLI'` before triggering the auto-save.
+**The body editor fetches the latest body before writing.** Open `/tasks/T-12`, switch to edit mode, wait, then run `loctt body T-12 --append $'\n\nNote from CLI'` before pressing Save.
 
 - The save request is preceded by a read of the current body — observable as a GET (or a conditional write carrying a base version) immediately before the write.
 - The CLI's appended paragraph is not lost.
 - If the two edits do not overlap, the result contains both the user's text and the CLI's paragraph; the user is told a merge happened rather than it being silent.
 
+> **Amended (K124, Ken 2026-09-24).** "Before triggering the auto-save" became "before pressing Save": the description saves only on Save (TSK-15). An edit can now stay open for minutes, across a window refocus that refetches the task, so the base version the write carries must survive that refetch.
+
 ### XS-12 · M2 · blocker · P1 P4
-**A genuine body conflict shows both versions and asks which to keep.** Open the body editor, edit the same region the CLI is about to rewrite, then run `loctt body T-12 --set "Completely different text"` and let the auto-save fire.
+**A genuine body conflict shows both versions and asks which to keep.** Open the body editor, edit the same region the CLI is about to rewrite, then run `loctt body T-12 --set "Completely different text"` and press Save.
 
 - The UI does not write. It presents a conflict resolution surface naming both sides — the version now on disk and the version in the editor.
 - Both texts are shown in full (or scrollable in full), not summarized, not diff-only-with-no-way-to-see-the-original.
 - The user is offered explicit choices: keep mine, keep theirs, or keep both — with the outcome of each stated before clicking.
 - Whichever choice is made, the resulting file matches exactly what the choice promised, verified with `loctt body T-12`.
 - Dismissing the conflict without choosing does **not** write. The editor content is retained so nothing the user typed is lost.
+
+> **Amended (K124, Ken 2026-09-24).** "Let the auto-save fire" became "press Save" (TSK-15).
 
 ### XS-13 · M2 · blocker · P1 P4
 **A conflict that arrives between the pre-fetch and the write is caught, not lost.** Arrange the CLI write to land in the window after the UI's pre-fetch and before its PUT.
@@ -116,11 +124,13 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - If the design accepts a residual race window, it is documented with its size and the failure mode is last-writer-wins-with-notification, never last-writer-wins-silently.
 
 ### XS-14 · M2 · major · P1
-**Body auto-save does not resurrect deleted content after a refetch.** Type into the body editor, let auto-save fire, then run `loctt body T-12 --set ""` in the CLI and let the next auto-save cycle run with no further typing.
+**A body save does not resurrect deleted content after a refetch.** Type into the body editor and Save, then run `loctt body T-12 --set ""` in the CLI and wait with no further typing.
 
 - An idle editor with no new keystrokes does not re-write its stale buffer over the CLI's change.
-- Auto-save is dirty-flag driven — no user input since the last save means no write.
+- Saving is dirty-flag driven — no change since the last save means no write, even when Save is pressed.
 - The editor either adopts the CLI's empty body or raises the conflict surface; it does not silently restore the old text.
+
+> **Amended (K124, Ken 2026-09-24).** There is no auto-save cycle any more (TSK-15); the case now waits with no typing, and "dirty-flag driven" applies to Save.
 
 ### Query and view parity
 
@@ -137,6 +147,18 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - Every one parses in the UI and returns the same result set as `loctt list --query` with the same string.
 - No construct produces a UI parse error that the CLI accepts, and none silently returns zero results where the CLI returns rows.
 - Custom-field predicates declared in `workflow.yaml` work identically on both surfaces.
+
+> **Amended (K121 #1, Ken 2026-09-23).** A query naming the `archived`
+> field (e.g. `archived = false`) is exempted from the UI half of this
+> case. Ken's ruling on archived visibility: *"not allow viewing
+> archived stuff. thats the point of archiving"* (K121 #1) made the web
+> list refuse any query naming `archived` with a 400 pointing at
+> Settings → Archived (A331; `queryNamesArchivedField`,
+> `ARCHIVED_QUERY_MESSAGE`). For this one construct, "accepted by the
+> UI" is replaced by "refused by the UI with the Settings → Archived
+> pointer" — the CLI is untouched and still accepts and runs it
+> (K30-web precedent: the ruling scopes to the web surface only). Every
+> other documented construct keeps the original parity requirement.
 
 ### XS-17 · M1 · blocker · P10 P1
 **A saved view created in the UI is immediately usable from the CLI and MCP.** Use "Save as view" on `/list` to save a filtered view, then run `loctt views` and the MCP `list_views` tool.
@@ -160,7 +182,9 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 - UI "Archive" sets the `archived` flag and is reversible by `loctt unarchive`; the task still exists on disk under `tasks/<id>/`.
 - UI "Delete" removes the task directory permanently, exactly as `loctt delete --yes` and MCP `delete_task` with `confirm: true` do.
 - The UI exposes no third verb, no "soft delete", and no `--hard`-style modifier — there is no such flag anywhere in LocTT.
-- A task archived in the CLI shows the archived badge in the UI and is hidden from default views there too.
+- A task archived in the CLI is hidden from every browsing view in the UI too, is listed in Settings → Archived, and shows the archived badge on its detail page when opened by direct link.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "shows the archived badge in the UI and is hidden from default views there too". The badge used to be read off a revealed list row.
 
 ### XS-20 · M1 · major · P3 P10
 **The UI's filter chips correspond to real config values, not invented buckets.** Open the Status filter dropdown.
@@ -403,17 +427,23 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 ### XS-50 · M4 · major · P4 P7
 **The UI warns when the tracker sits on a filesystem where advisory locks are unsafe.** Run `loctt ui` against a `.loctt/` inside Dropbox, iCloud Drive, OneDrive, or an NFS/SMB mount.
 
-- A warning surface names the specific risk: LocTT's locks are POSIX advisory and are not safe on network or sync-service filesystems, so concurrent writes from two machines can corrupt state.
+- A warning surface names the specific risk in plain terms: the tracker is in a network folder, which may lead to data corruption if multiple machines edit the files at the same time (K130, Ken 2026-09-24 — exact wording: "This tracker is in a network folder, which may lead to data corruption if multiple machines edit the files at the same time. Keep it on a local disk to be safe."). This states the outcome without naming the internal mechanism ("POSIX advisory locks"), which the case previously required naming.
 - The warning names the detected path so the user can confirm which directory triggered it.
 - It is informational, not blocking — the app still works, since the risk is concurrency-dependent.
 - It is dismissible and does not re-nag every refetch within a session.
-- If detection is best-effort and can miss cases, the Diagnostics panel states that so the absence of a warning is not read as a guarantee.
+- If detection is best-effort and can miss cases, that is stated in the UI guide (`docs/user/ui/guide.md` § Diagnostics) so the absence of a warning is not read as a guarantee. It is NOT standing text in the Diagnostics panel: Ken (2026-09-23) ruled the panel shows results, not caveats about a warning the user is not seeing. The boot warning itself is unchanged and still fires when detection catches a risky location.
 
 ### XS-51 · M2 · major · P1 P6
 **A malformed file the UI reads is a genuine hand-edit, never a torn write.** Corrupt a `task.md` mid-YAML and load the list; separately, hammer the UI with writes while reading.
 
+> **Amended (K129, Ken 2026-09-24).** Ken: *"rest of the 'needs your
+> call' looks okay"* (he approved cutting "A hand-edit is the usual
+> cause." from the banner, A-7). The claim that a parse error can only
+> be a hand-edit (not a torn write) still holds and is not restated in
+> the UI; the per-file path and reason remain the visible surface.
+
 - Atomic writes (temp file + rename) mean readers see either the old file or the new one — repeated concurrent read/write cycles never produce a parse error attributable to LocTT's own writing.
-- Therefore the parse-error surface can and does say the file appears to have been edited by hand or by another tool, naming the path — it does not hedge with "the file may have been written incompletely".
+- Therefore the parse-error surface does not hedge with "the file may have been written incompletely" — it states the path and the parse error plainly, without a general cause sentence.
 - The rest of the list still loads; one bad file does not take down the view. (Full treatment in [flow-error-handling.md](flow-error-handling.md) § B.)
 
 ### XS-52 · M4 · minor · P1
@@ -528,4 +558,7 @@ error message here must clear is [flow-error-handling.md](flow-error-handling.md
 
 - The UI does not show the view as present-in-UI-only; a view that is not in the file is not shown as saved.
 - The error names `queries.yaml` and the parse or schema failure.
-- The sidebar's Views group degrades to an explicit error affordance, not to silence — a user must not conclude their saved views were deleted.
+- The sidebar's Saved views section (K125, amended Ken 2026-09-24 — was
+  "Views", then "Saved filters" before that) degrades to an explicit
+  error affordance, not to silence — a user must not conclude their
+  saved views were deleted.

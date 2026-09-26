@@ -20,7 +20,7 @@ import { panelStyle, usePortalPlacement } from "./usePortalPlacement.ts";
  *
  * `title` has a browser-controlled delay of roughly a second that cannot
  * be tuned, and it never appears on keyboard focus at all. Once
- * "Save as view" became an icon-only star (K30-web / A297), the button's
+ * "Save as view" became an icon-only button (K30-web / A297), the button's
  * name lived only in `aria-label` (screen readers) and `title` (a
  * one-second wait). A sighted mouse user had to hover and wait; a
  * sighted keyboard user could not see the name at all.

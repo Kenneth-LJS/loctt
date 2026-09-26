@@ -58,8 +58,8 @@ export function DeleteProjectDialog({
         <p data-testid="project-delete-result" className="text-[0.9286rem] text-text-secondary">
           {result.remappedTaskCount > 0
             ? disposition === "clear"
-              ? `Deleted "${project.name}". Cleared the project field on ${String(result.remappedTaskCount)} task${result.remappedTaskCount === 1 ? "" : "s"}; their existing keys are unchanged.`
-              : `Deleted "${project.name}". ${String(result.remappedTaskCount)} task${result.remappedTaskCount === 1 ? "" : "s"} moved to the project you chose; their existing keys are unchanged.`
+              ? `Deleted "${project.name}". Cleared the project on ${String(result.remappedTaskCount)} task${result.remappedTaskCount === 1 ? "" : "s"}.`
+              : `Deleted "${project.name}". Moved ${String(result.remappedTaskCount)} task${result.remappedTaskCount === 1 ? "" : "s"} to the project you chose.`
             : `Deleted "${project.name}".`}
         </p>
         <div className="mt-4 flex justify-end">
@@ -76,7 +76,7 @@ export function DeleteProjectDialog({
       <div className="grid gap-3" data-testid="project-delete-dialog">
         <p className="text-[0.9286rem] text-text-secondary">
           {needsRemap
-            ? `${String(taskCount)} task${taskCount === 1 ? "" : "s"} reference this project. Choose where they should go — their existing keys will not change.`
+            ? `${String(taskCount)} task${taskCount === 1 ? "" : "s"} reference this project. Choose where they should go. Their existing keys will not change.`
             : `No tasks reference this project.`}
         </p>
 
@@ -137,8 +137,10 @@ export function DeleteProjectDialog({
         )}
 
         <p className="text-[0.8571rem] text-text-tertiary">
-          Deleting is permanent. Archiving hides the project instead and can
-          be undone.
+          Deleting is permanent.
+          {/* An archived project (Settings → Archived, K121 #1) has
+              already taken the reversible path; don't offer it again. */}
+          {project.archived !== true && " Archiving hides the project instead and can be undone."}
         </p>
 
         {mutation.isError && (

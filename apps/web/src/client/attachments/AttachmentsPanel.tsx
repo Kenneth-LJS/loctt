@@ -10,6 +10,7 @@ import {
   useUploadAttachment,
 } from "../api/hooks/useAttachments.ts";
 import { Button } from "../ui/Button.tsx";
+import { FilePicker } from "../ui/FilePicker.tsx";
 import { displayMime, familyForMime, glyphFor } from "./icon.ts";
 
 /**
@@ -80,7 +81,6 @@ export function AttachmentsPanel({
   const [dragOver, setDragOver] = useState(false);
   /** Per-attachment removal failure, keyed by name (P4: at the tile). */
   const [removeError, setRemoveError] = useState<Record<string, string>>({});
-  const inputRef = useRef<HTMLInputElement>(null);
   /**
    * Monotonic row ids. Two files in one drop can share a name (from
    * different directories), so the name is not a key.
@@ -136,7 +136,7 @@ export function AttachmentsPanel({
         // show, a 400 does and must keep it.
         const droppedMidUpload = err instanceof ApiError && err.status === 0;
         const message = droppedMidUpload
-          ? `${file.name} did not finish uploading — it was not attached. You can retry.`
+          ? `${file.name} did not finish uploading. It was not attached. You can retry.`
           : err instanceof Error ? err.message : String(err);
         patch(id, { state: "failed", message, file });
       }
@@ -211,7 +211,7 @@ export function AttachmentsPanel({
         {attachmentsError !== undefined ? (
           <div data-testid="attachments-error" className="mb-2 text-[0.9286rem]">
             <p className="text-danger-fg">
-              Attachments could not be read — {attachmentsError}
+              Attachments could not be read. {attachmentsError}
             </p>
             {onRetry !== undefined && (
               <Button
@@ -227,7 +227,7 @@ export function AttachmentsPanel({
           </div>
         ) : attachments.length === 0 ? (
           <p data-testid="attachments-empty" className="mb-2 text-[0.9286rem] text-text-secondary">
-            No attachments on this task yet.
+            No attachments found.
           </p>
         ) : null}
         <p className="text-[0.8571rem] text-text-tertiary">
@@ -240,30 +240,28 @@ export function AttachmentsPanel({
               as inline underlined text matching the sentence, the same
               inline-action shape `GroupError`'s Retry link already uses
               (`underline hover:text-text-primary`) rather than a new
-              primitive. */}
-          <button
-            type="button"
-            data-testid="attachment-upload"
-            onClick={() => { inputRef.current?.click(); }}
-            className="underline hover:text-text-primary"
-          >
-            Upload
-          </button>
+              primitive.
+
+              The hidden-input + click-proxy is now `ui/FilePicker.tsx`
+              (Ken's file-upload-button ticket) — this panel's own inline
+              text trigger is the render-function form, since the
+              default plain-child form renders a `Button`, which this
+              spot never wanted. `FilePicker` still owns the input, the
+              ref, and the "same file can be re-picked" value clear. */}
+          <FilePicker multiple onFiles={onFiles} testId="attachment-input">
+            {({ open }) => (
+              <button
+                type="button"
+                data-testid="attachment-upload"
+                onClick={open}
+                className="underline hover:text-text-primary"
+              >
+                Upload
+              </button>
+            )}
+          </FilePicker>
           . Up to {formatBytes(MAX_ATTACHMENT_BYTES)} per file.
         </p>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          data-testid="attachment-input"
-          className="hidden"
-          onChange={e => {
-            onFiles(e.target.files);
-            // Clearing lets the same file be chosen twice in a row —
-            // which is how a user retries after a refusal.
-            e.target.value = "";
-          }}
-        />
       </div>
 
       {attachments.length > 0 && (
@@ -366,7 +364,7 @@ export function AttachmentsPanel({
                 )}
                 {item.state === "done" && (
                   <span className="text-text-tertiary">
-                    Uploaded{item.message === undefined ? "" : ` — ${item.message}`}
+                    Uploaded{item.message === undefined ? "" : `: ${item.message}`}
                   </span>
                 )}
                 {item.state === "failed" && (

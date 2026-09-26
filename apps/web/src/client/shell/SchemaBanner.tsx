@@ -1,8 +1,9 @@
 import type { MigrateResponse, SchemaStatusResponse } from "@loctt/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { apiClient,ApiError } from "../api/client.ts";
+import { Button } from "../ui/Button.tsx";
 
 /**
  * Schema-mismatch banner (CW-18). Surfaces above the app shell when
@@ -76,8 +77,13 @@ export function SchemaBanner({ status }: { status: SchemaStatusResponse }) {
 function MigrateNow({ from, to }: { readonly from: number; readonly to: number }) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  // NEW-29's guard, which this button never got: `isPending` only turns
+  // true after React commits, so two clicks in the same tick both read
+  // false and both POST /api/migrate. A ref flips synchronously.
+  const inFlight = useRef(false);
   const migrate = useMutation<MigrateResponse, Error, void>({
     mutationFn: () => apiClient.post<MigrateResponse>("/api/migrate", {}),
+    onSettled: () => { inFlight.current = false; },
     onSuccess: () => {
       // The banner reads `/api/info`; dropping it is what clears the
       // banner without a page reload, and re-enables the rest of the
@@ -120,14 +126,15 @@ function MigrateNow({ from, to }: { readonly from: number; readonly to: number }
 
   if (!confirming) {
     return (
-      <button
-        type="button"
-        data-testid="schema-migrate-now"
+      <Button
+        variant="current"
+        size="sm"
+        testId="schema-migrate-now"
         onClick={() => { setConfirming(true); }}
-        className="rounded border border-current/30 px-2 py-0.5 text-[0.8571rem] font-medium"
+        className="text-[0.8571rem]"
       >
         Migrate now
-      </button>
+      </Button>
     );
   }
 
@@ -137,22 +144,38 @@ function MigrateNow({ from, to }: { readonly from: number; readonly to: number }
         This will copy `.loctt/` to a sibling backup directory, then step the
         schema from v{String(from)} to v{String(to)}.
       </span>
-      <button
-        type="button"
-        data-testid="schema-migrate-confirm-button"
-        disabled={migrate.isPending}
-        onClick={() => { migrate.mutate(); }}
-        className="rounded border border-current/30 px-2 py-0.5 text-[0.8571rem] font-medium disabled:opacity-50"
+      {/*
+        A311: the matched set (Migrate now / Run migration / Cancel)
+        moved onto `ui/Button`'s `variant="current"` — the banner-toned
+        outline variant added for exactly this case (a container whose
+        warn/danger tone is decided at render time). `loading` replaces
+        the hand-rolled invisible-label + centred-spinner mechanism;
+        `aria-label` stays explicit because "Run migration" is this
+        button's only accessible name and `loading` hides it from AT.
+      */}
+      <Button
+        variant="current"
+        size="sm"
+        testId="schema-migrate-confirm-button"
+        loading={migrate.isPending}
+        aria-label="Run migration"
+        onClick={() => {
+          if (inFlight.current) return;
+          inFlight.current = true;
+          migrate.mutate();
+        }}
+        className="text-[0.8571rem]"
       >
-        {migrate.isPending ? "Migrating…" : "Run migration"}
-      </button>
-      <button
-        type="button"
+        Run migration
+      </Button>
+      <Button
+        variant="current"
+        size="sm"
         onClick={() => { setConfirming(false); }}
-        className="rounded border border-current/30 px-2 py-0.5 text-[0.8571rem]"
+        className="text-[0.8571rem]"
       >
         Cancel
-      </button>
+      </Button>
     </span>
   );
 }
@@ -172,7 +195,7 @@ function describe(status: SchemaStatusResponse): {
         // user to take an irreversible-looking step on trust.
         detail:
           `The data directory is at schema v${status.on_disk}, but this build expects ` +
-          `v${status.current}. Use Migrate now below to update it — it takes a backup ` +
+          `v${status.current}. Use Migrate now below to update it. It takes a backup ` +
           "before changing anything. Writes are blocked until then.",
       };
     case "future":
@@ -185,7 +208,7 @@ function describe(status: SchemaStatusResponse): {
         detail:
           `The data directory is at schema v${status.on_disk}, ahead of this build ` +
           `(v${status.current}). Update LocTT to continue (\`npm install -g ` +
-          "@loctt/cli@latest\`) — a newer schema can't be downgraded.",
+          "@loctt/cli@latest\`). A newer schema can't be downgraded.",
       };
     case "unknown":
       return {
@@ -197,7 +220,7 @@ function describe(status: SchemaStatusResponse): {
         // whether anything had been touched.
         detail:
           `Reading the tracker's schema version did not produce a result that could ` +
-          `be interpreted: ${status.message} Your data is untouched — nothing has ` +
+          `be interpreted: ${status.message} Your data is untouched. Nothing has ` +
           "been changed. Open Settings → Diagnostics to run the health checks; if the " +
           "schema file itself is corrupt, inspect `.loctt/.schema-version` by hand.",
       };
@@ -208,7 +231,7 @@ function describe(status: SchemaStatusResponse): {
         detail:
           "The data directory has no `.schema-version`, so its layout can't be "
           + "confirmed. Run `loctt migrate` to stamp and upgrade it. Do not "
-          + "reinitialize — a directory holding tasks is a damaged tracker, not "
+          + "reinitialize. A directory holding tasks is a damaged tracker, not "
           + "an empty one, and reinitializing would risk the data.",
       };
     case "interrupted":

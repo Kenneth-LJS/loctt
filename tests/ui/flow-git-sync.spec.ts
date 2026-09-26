@@ -64,29 +64,19 @@ test("GIT-1: enable discloses what it does, then writes git.enabled/branch to sy
   const errors = guardPageErrors(page);
   await gotoSync(page, gitTracker.baseURL);
 
-  // Initial state: off, and says LocTT works without it.
+  // Initial state: off, offering a single Enable action. K116 (Ken,
+  // 2026-09-23): the "LocTT works fine without it" copy and the
+  // enable-time explainer were both ruled removed — the button is
+  // relabelled instead, and what is never published is verified on the
+  // branch below rather than asserted as on-screen text.
   const disabled = page.getByTestId("git-disabled");
   await expect(disabled).toBeVisible();
-  await expect(disabled).toContainText("LocTT works fully without it");
+  const enableButton = page.getByTestId("git-enable");
+  await expect(enableButton).toHaveText("Enable git tracking");
 
-  // Enable states — before running — the dedicated branch, the safety
-  // guarantee the temporary worktree provides, and the gitignore
-  // guarantee.
-  //
-  // `5cdb0349` ("friendly labels") rewrote this copy in plain language:
-  // it no longer names the "temporary worktree" mechanism, it states the
-  // property that mechanism exists to give — that your own working files
-  // and the branch you have checked out are never touched or switched.
-  // That is the user-facing half of the case's bullet, so it is what is
-  // asserted; naming the implementation was never the point.
-  await page.getByTestId("git-enable").click();
+  await enableButton.click();
   const confirm = page.getByTestId("git-enable-confirm");
-  await expect(confirm).toContainText("loctt");
-  await expect(confirm).toContainText(/never touched or switched/i);
-  await expect(confirm).toContainText("local/");
-  await expect(confirm).toContainText(".current-user");
-  await expect(confirm).toContainText("users/<id>/settings.yaml");
-  await expect(confirm).toContainText("never published");
+  await expect(confirm).toBeVisible();
 
   // sync.yaml must not exist until the user actually confirms — the
   // disclosure is before the write, not after it.
@@ -106,6 +96,20 @@ test("GIT-1: enable discloses what it does, then writes git.enabled/branch to sy
   expect(yaml).toMatch(/branch:\s*loctt/);
   const cliStatus = await gitTracker.run(["git", "status"]);
   expect(cliStatus.toLowerCase()).toContain("loctt");
+
+  // GIT-1's surviving guarantee is asserted as behaviour on the published
+  // branch, not as on-screen copy: `local/`, `.current-user` and
+  // `users/<id>/settings.yaml` never reach it. The `loctt` branch does
+  // not exist until the first publish (`enableGit` only writes
+  // sync.yaml), so publish once before inspecting it.
+  await page.getByTestId("git-publish").click();
+  await expect(page.getByTestId("git-publish-result")).toBeVisible();
+  const published = (await gitTracker.git(["ls-tree", "-r", "--name-only", "loctt"]))
+    .split("\n")
+    .filter(Boolean);
+  expect(published.some(f => f.startsWith("local/"))).toBe(false);
+  expect(published).not.toContain(".current-user");
+  expect(published.some(f => /^users\/[^/]+\/settings\.yaml$/.test(f))).toBe(false);
 
   expect(errors).toEqual([]);
 });
@@ -211,8 +215,9 @@ test("GIT-3: sync writes the remote's new tasks to disk and advances last_synced
   // Without a page reload: navigate to the list through the app's own
   // client-side router (a <Link> click, not page.reload()) and the
   // pulled rows are there because the sync invalidated the tasks query.
-  // `project-all` is the sidebar's "All projects" → /list link.
-  await page.getByTestId("project-all").click();
+  // K125 removed the sidebar's "All projects" row; the sidebar's List
+  // link is the real unscoped-/list entry now.
+  await page.locator("aside").getByRole("link", { name: "List", exact: true }).click();
   await expect(page).toHaveURL(/\/list/);
   await expect(page.getByRole("row").filter({ hasText: "remote alpha" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "remote beta" })).toBeVisible();
@@ -259,17 +264,18 @@ test("GIT-21: a force-pushed rewrite is refused, names the missing commit, and o
   const refusal = page.getByTestId("git-sync-history-rewritten");
   await expect(refusal).toBeVisible();
   await expect(refusal).toHaveAttribute("data-git-refusal", "history-rewritten");
-  // It names the branch history was rewritten and is not an ordinary conflict.
+  // It names the branch history was rewritten. That it is not an ordinary
+  // conflict is the dedicated refusal itself (the data attribute above);
+  // the copy no longer argues the point (A322).
   await expect(refusal).toContainText("rewritten");
-  await expect(refusal).toContainText("not an ordinary conflict");
   // Names the remote and the (short) missing commit.
   await expect(refusal).toContainText("origin");
   await expect(refusal).toContainText((base as string).slice(0, 8));
-  // States local state is untouched and the base was not changed.
-  await expect(refusal).toContainText("Nothing was written");
+  // States local state is untouched.
+  await expect(refusal).toContainText("Nothing was changed locally");
   // The two concrete next actions, both user-does-in-git.
-  await expect(page.getByTestId("git-sync-history-rewritten-inspect")).toContainText("Inspect the branch in git");
-  await expect(page.getByTestId("git-sync-history-rewritten-rebase")).toContainText("Re-establish a base explicitly in git");
+  await expect(page.getByTestId("git-sync-history-rewritten-inspect")).toContainText("git log");
+  await expect(page.getByTestId("git-sync-history-rewritten-rebase")).toContainText("git branch -f");
   // No LocTT-automated recovery control (no Retry button in this refusal).
   await expect(refusal.getByRole("button")).toHaveCount(0);
 
@@ -442,7 +448,7 @@ test("GIT-27: with no remote, enable warns local-only and status shows no remote
   // names the command to add a remote — it does not hard-block.
   const warn = page.getByTestId("git-no-remote");
   await expect(warn).toBeVisible();
-  await expect(warn).toContainText("local-only");
+  await expect(warn).toContainText("Git tracking stays local");
   await expect(warn).toContainText("git remote add origin");
   await expect(page.getByTestId("git-enable")).toBeEnabled();
 
@@ -451,7 +457,7 @@ test("GIT-27: with no remote, enable warns local-only and status shows no remote
   await page.getByTestId("git-enable-confirm-button").click();
   await expect(page.getByTestId("git-enabled")).toBeVisible();
   const remoteRow = page.getByTestId("git-remote");
-  await expect(remoteRow).toContainText("none configured");
+  await expect(remoteRow).toContainText("None (local only)");
   await expect(remoteRow).not.toContainText("origin");
 
   // Publish states up front there is nowhere to push, rather than
@@ -480,7 +486,7 @@ test("GIT-28: outside a git repo, enable is disabled with a reason and names git
 
   const notRepo = page.getByTestId("git-not-a-repo");
   await expect(notRepo).toBeVisible();
-  await expect(notRepo).toContainText("not a git repository");
+  await expect(notRepo).toContainText("isn't a git repository");
   await expect(notRepo).toContainText("git init");
   // The enable control is present but disabled — the reason is stated,
   // not just the button greyed with no explanation.
@@ -527,10 +533,10 @@ test("GIT-29: a push that cannot reach the remote is a safe partial success — 
   // The commit is still reported as committed — not an error state.
   await expect(result).toHaveAttribute("data-git-publish", "committed");
   await expect(result).toHaveAttribute("data-push-failure", "unreachable");
-  // Names the remote, says the commit is safe locally.
+  // Names the remote, says the commit landed locally.
   await expect(result).toContainText("origin");
-  await expect(result).toContainText("could not be reached");
-  await expect(result).toContainText("safe locally");
+  await expect(result).toContainText("couldn't be reached");
+  await expect(result).toContainText("locally, but");
   // Retry is offered; the hard-error block is NOT shown.
   await expect(page.getByTestId("git-publish-retry")).toBeVisible();
   await expect(page.getByTestId("git-publish-error")).toHaveCount(0);
@@ -583,7 +589,7 @@ test("GIT-30: sync against an unreachable remote names it, keeps local untouched
   const warning = page.getByTestId("git-sync-fetch-warning");
   await expect(warning).toContainText("origin");
   await expect(warning).toContainText("could not be reached");
-  await expect(warning).toContainText("not modified");
+  await expect(warning).toContainText("weren't changed");
 
   // Retry is offered inline.
   await expect(page.getByTestId("git-sync-retry")).toBeVisible();
@@ -652,8 +658,10 @@ test("GIT-23: a many-task sync summarises with counts + expand, and the list ref
 
   // Bullet 3: navigate to the list through the app's own router (no
   // reload) — all eight pulled tasks are there because the sync
-  // invalidated the list feed query.
-  await page.getByTestId("project-all").click();
+  // invalidated the list feed query. K125 removed the sidebar's "All
+  // projects" row; the sidebar's List link is the real unscoped-/list
+  // entry now.
+  await page.locator("aside").getByRole("link", { name: "List", exact: true }).click();
   await expect(page).toHaveURL(/\/list/);
   for (const t of titles) {
     await expect(page.getByRole("row").filter({ hasText: t })).toBeVisible();
@@ -701,7 +709,7 @@ test("GIT-25: an existing loctt branch is surfaced with its head and adopted onl
   const adopt = page.getByTestId("git-adopt-branch");
   await expect(adopt).toBeVisible();
   await expect(adopt).toContainText("loctt");
-  await expect(adopt).toContainText("previous setup");
+  await expect(adopt).toContainText("already exists");
   await expect(page.getByTestId("git-adopt-head")).toContainText(branchHead!.slice(0, 12));
 
   // Nothing was written yet — the panel is still not enabled.
@@ -720,7 +728,7 @@ test("GIT-25: an existing loctt branch is surfaced with its head and adopted onl
   const report = page.getByTestId("git-adopt-report");
   await expect(report).toBeVisible();
   await expect(report).toHaveAttribute("data-in-agreement", "true");
-  await expect(report).toContainText("no sync needed");
+  await expect(report).toContainText("Local state agrees with it. No sync needed.");
 
   expect(errors).toEqual([]);
 });

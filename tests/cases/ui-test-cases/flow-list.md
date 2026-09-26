@@ -1,7 +1,7 @@
 # List view flow
 
 The sortable, filterable task table at `/list` — columns, sort, the
-filter bar, URL state, the archived toggle, pagination, and the
+filter bar, URL state, pagination, and the
 free-text DSL search box. Row selection and the bulk bar live
 in [flow-bulk.md](flow-bulk.md); saving and applying named views lives
 in [flow-saved-views.md](flow-saved-views.md); the board and timeline
@@ -167,18 +167,19 @@ then assignee, then a sort.
   cold load.
 
 ### LST-12 · M1 · major · P10
-**The "Show archived" toggle includes archived tasks and marks them.**
-Tracker has archived and unarchived tasks.
+**The list never shows archived tasks.** Tracker has archived and
+unarchived tasks.
 
-- Default (toggle off) shows no archived tasks; the URL has no
-  `archived` param.
-- Toggling on sets `archived=true` in the URL and archived rows appear
-  with a visible archived badge distinguishing them from live rows.
-- Archived tasks are *present and restorable*, matching the CLI's
-  archive semantics — the toggle never surfaces deleted tasks, which
-  are gone from disk entirely.
-- Toggling off removes the param entirely rather than writing
-  `archived=false`.
+- The list shows no archived tasks, and offers no toggle, scope control
+  or other way to show them.
+- A pasted `?archived=` param (any value) changes nothing: no archived
+  row appears.
+- A query naming the `archived` field is refused with a message saying
+  where archived tasks are (Settings → Archived), not run.
+- Archived tasks are still *present and restorable*: they are listed and
+  restored in Settings → Archived ([SET-52](flow-settings.md)).
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* This case required a "Show archived" toggle that revealed archived rows in the list, with a badge. Archived tasks now leave every browsing surface; Settings → Archived is the only place to see them.
 
 ### LST-13 · M1 · blocker · P9
 **Pagination reports an honest count and loads more in place.** 128
@@ -417,14 +418,14 @@ obeyed.** Paste `?page=0`, `?page=-3`, `?limit=99999`, `?limit=abc`.
 > UI-side criterion.
 
 ### LST-31 · M1 · major · P2
-**A truthy-looking `archived` param does not accidentally enable the
-toggle.** Paste `?archived=false` and `?archived=0`.
+**No `archived` param value shows archived tasks.** Paste
+`?archived=false`, `?archived=0`, `?archived=true` and `?archived=all`.
 
-- `archived=false` shows only non-archived tasks and leaves the toggle
-  off — a coerced-boolean parse that turns the string `"false"` into
-  `true` is a defect this case exists to catch.
-- The toggle's visual state and the actual result set always agree: the
-  user is never shown archived rows while the toggle reads off.
+- Each shows only non-archived tasks. The list reads no `archived`
+  param at all, so no parse of it (coerced boolean or otherwise) can
+  reveal archived rows.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* This case guarded the old toggle's URL parse. The toggle and the param are gone; what stays is that no URL shows archived tasks.
 
 ### LST-32 · M1 · minor · P2
 **Unknown search params are preserved, not stripped.** Paste
@@ -750,3 +751,10 @@ click.**
 
 - Empty checkboxes (using the B1 Checkbox) or a hover state — so
   multi-select is discoverable. (UX-4.)
+
+### LST-57 · M1 · minor · P4 P6
+**A custom-field filter survives a workflow config that cannot be loaded.** A view (or the URL) shows a custom-field filter with a value selected; `/api/workflow` fails or is still loading. *(B2, K121)*
+
+- The custom-field filter stays in the toolbar, with its selected value, instead of disappearing.
+- When the workflow request has failed, the filter is marked unavailable, the same way a built-in filter is when its options cannot load.
+- Once the workflow loads, a custom field that genuinely no longer exists is dropped as before.

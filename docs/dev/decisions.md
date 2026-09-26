@@ -2438,6 +2438,77 @@ logic in `list/buildConditions.ts`. SprintsView was deliberately left on
 its boolean `showArchived` (a board of columns has no meaningful
 "archived-only" state) — see known-gaps.
 
+### A302 · Web split-backup restore: N `file` parts, core untouched, every refusal surfaced
+
+**Ticket:** Ken's ruling K108 · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**The situation.** K108 requires the web to restore a split backup.
+Investigation first, because the obvious framing ("implement split
+restore for the web") is wrong: core already does the whole job.
+`restoreBackup(locttDir, paths: readonly string[], …)` has always taken
+an array; `resolveBackupSet` orders the parts, refuses an incomplete
+set, and refuses a part whose `backup_id` belongs to a different export
+(BAK-C8); every part header carries `part`/`parts`/`backup_id`. The CLI
+passes several paths and MCP's `restore` tool already takes
+`files: string[]`. Only the web ever passed a one-element array. So
+this is a web-layer change and nothing else — no core change, no format
+change.
+
+**What had to be decided.** (1) How do several files reach the server,
+given `multipart.ts` captures the first matching part and drains the
+rest? (2) What does the client show about a selection before upload?
+(3) How does a duplicate part behave?
+
+**Options considered.**
+- Parser: a second `parseMultipartFiles` entry point vs. changing
+  `parseMultipartFile` to return an array (which would touch the attach
+  and avatar endpoints for no reason).
+- Pre-upload labelling: show only a file count vs. read each file's
+  first line in the browser and name the part. The header is line 1 by
+  construction (BAK-C21), so a 64 KiB slice is enough — reading it does
+  not mean reading a gigabyte part.
+- Duplicate part: let core catch it vs. refuse it in the parser. Two
+  parts with one basename resolve to one temp path and the second write
+  clobbers the first, so core would receive N-1 distinct files while
+  believing it had N — it cannot catch what never reached disk.
+
+**Decided.** (1) `parseMultipartFiles` added beside `parseMultipartFile`,
+which becomes a thin wrapper delegating with `keepAll = false`; the
+single-file behaviour and its error text are unchanged, so attach and
+avatar are untouched. (2) The panel reads each selected file's header
+locally and shows "N of M parts selected", labelling each file as
+"part i of M", "a complete backup" or "not recognised as a backup"; this
+LABELS a selection and never gates one — the server and core stay the
+authority. (3) The parser refuses two parts sharing a basename, naming
+the file.
+
+The handler writes each upload under one `mkdtemp` dir and removes that
+dir in a `finally`, so a failed restore leaks nothing. Core's
+`BackupFormatError` message is passed through verbatim as the 400 body,
+never replaced with a generic string.
+
+**Why.** The last point is the one with history. `resolveBackupSet`
+composes the reason — which part is missing, which file is foreign —
+and the surface's only real job is not to discard it. UI-9 is the
+recorded case of exactly this failure (`FilterError` exported and
+consumed by no surface), so three of the new tests assert the *message*,
+not just the status; replacing `err.message` with "restore failed"
+reddens all three.
+
+**To revert.** `apps/web/src/server/multipart.ts` — delete
+`parseMultipartFiles` and `formatCap`, restore `parseMultipartFile` to
+its own busboy implementation. `apps/web/src/server/server.ts` —
+`handleRestoreBackup` back to `parseMultipartFile` and
+`[parsed.tempPath]`, and its docstrings.
+`apps/web/src/client/settings/BackupPanel.tsx` — `selected` back to a
+single `file`, drop `readPartHeader`/`PartHeader`/`SelectedPart`, the
+selection list and `multiple`. `apps/web/src/client/api/client.ts` —
+`postFile` back to a single `File`. Tests: the
+"web restore of a SPLIT backup" describe in `server.backup.test.ts` and
+the "split backup (several parts)" describe in `BackupPanel.test.tsx`.
+Docs: the split paragraph in `docs/user/ui/guide.md`. Note that
+reverting reinstates the limitation K108 removed, so it needs Ken.
+
 ## 9. Ken's rulings, 2026-08-29
 
 **These are Ken's, not an agent's.** Unlike § 8, they carry the
@@ -19449,3 +19520,5123 @@ cell beside a white one in a light-mode app.
 `apps/web/src/client/styles/index.css`, and delete
 `apps/web/src/client/styles/themeIsland.test.ts`. Note that reverting
 re-breaks any nested theme island, including `ThemePreview`.
+
+### A305 · The `ICON` affordance entries are deleted, and a lint rule enforces the glyph ban
+
+**Ticket:** ui/ux-polish-and-timeline-panel (UI-27) · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**The situation.** Third recurrence. Ken, on a screenshot of the error
+page showing `▸ Show details`: *"what did i say about using unicode
+instead of icons? this should be part of a code review step too"*.
+
+A208 (2026-09-19) had already ruled glyph affordances out and built
+`ui/Icon.tsx`. It migrated the call sites and **left the source
+standing**: `ui/icons.ts` still exported `close: "✕"`, `caretDown: "▾"`,
+`caretRight: "▸"`, `caretUp: "▴"`, `more: "⋯"` and `check: "✓"` as
+sanctioned API — while its own docstring said those affordances "are
+drawn by the SVG `<Icon>` component ... not typed as glyphs". The doc
+and the code disagreed for four days.
+
+Worse, `ui/controls.test.tsx` **pinned** them: `expect(ICON.close).toBe("✕")`
+and three more. Per the repo's own rule — *if a fix requires editing a
+green test, that test was asserting the bug* — those four assertions
+were asserting the very thing A208 forbade, and they were green.
+
+**What had to be decided.** A208 settled the policy; it did not settle
+the mechanism that keeps the policy true. That mechanism is this entry.
+
+**Decided.**
+
+1. **The six affordance entries are deleted from `ICON`**, not
+   deprecated. `star` (⭑) and `warning` (⚠) survive: Ken ruled the star
+   stays as text, and the warning is a status marker inside a sentence,
+   not a control. The docstring is rewritten to describe the two-entry
+   map that now exists, with no trace of the removed six — per Ken's
+   standing removal rule ("dont comment it out ... not even with a
+   'removed' label").
+2. **`eslint.config.js` gains a `no-restricted-syntax` glyph rule** over
+   `apps/web/src/client/**`, using selectors ESLint supports natively —
+   no new dependency. `▸▾▴▼►✕✖⋯⋮✔●○◆■□` are banned in `JSXText`,
+   `Literal` and `TemplateElement`; `✓★☆⭑` in `JSXText` only. The
+   message names the fix (`<Icon>` from `ui/Icon.tsx`) rather than only
+   the offence.
+3. **`.claude/skills/review/SKILL.md` gains a "UI Glyphs" section**, so
+   the reviewed path is covered as well as the automated one — which is
+   what Ken asked for. It carries the two cases lint provably cannot
+   reach: a prose-vs-control arrow judgement, and a native
+   `<details>` marker that is not in our source at all.
+
+**Scope held to A208.** Only the affordances A208 named. The star stays
+text; prose arrows and keyboard-key labels stay literal.
+
+**Why the rule is AST-based.** Selectors match AST nodes, so comments
+and docstrings are structurally out of reach — which matters, because
+`Icon.tsx`, `icons.ts` and a dozen call-site comments legitimately
+*discuss* these characters ("was `▾` vs `▼`"). A textual grep flags
+every one; this rule flags none. Proven: a `▸` injected as JSX text
+directly beneath a JSX comment errored on the text node and not on the
+comment.
+
+**The arrows are deliberately NOT banned, and this is the load-bearing
+narrowing.** A first cut banning `→←↑↓` and `×` produced **19 errors on
+the current tree, every one of them a false positive** — `{start} →
+{end}`, `{oldKey} → {newKey}`, "Settings → Users", `×{n} duplicate`. A208
+expressly kept prose arrows literal, so banning them would have widened
+Ken's ruling. A "standalone in a text node" narrowing was tried and
+**does not work**: `{a} → {b}` yields a text node that IS just the arrow
+and whitespace, indistinguishable from an arrow used as a control. There
+is no false-positive-free selector for these characters, so they are
+unbanned and handed to the review checklist instead. Shipping nine
+inline suppressions would have been shipping a rule that gets deleted.
+
+**Narrow allowances, each with a reason in the config:** `ui/icons.ts`
+(the sanctioned home for the two text glyphs), `ui/iconCatalog.ts` (the
+K104 emoji picker's data — `✔️` and `☑️` ARE the feature),
+`activity/describe.ts` (KIND_ICONS, `aria-hidden` status markers in a
+text stream), and `*.test.ts(x)` (a test proving a glyph is ABSENT has
+to name it; production files under the same tree stay covered).
+
+**One genuine violation found and fixed.** `settings/CustomFieldEditDialog.tsx:397`
+rendered a bare `✕` inside an `IconButton`; now `<Icon name="close" />`,
+matching `BoardColumnsPanel.tsx`. Nothing asserted the old text.
+
+**Verified.** `npx eslint .` reports zero glyph violations across the
+tree. The rule was red-proved by injecting `▸` into a JSX text node and
+watching it error with the new message, then reverted.
+
+**Found, not fixed (reported to the orchestrator).** Three back-link
+sites render an arrow as what is arguably an affordance: `← All
+milestones` (`MilestoneDetail.tsx:190`), `← All sprints`
+(`SprintDetail.tsx:151`), `← {origin.label}` (`TaskDetail.tsx:488`), plus
+`Open sprint →` (`SprintsView.tsx:855`). Converting them is a visual
+change across four pages and the family must move together (TaskDetail's
+own comment says it deliberately matches MilestoneDetail), so it is a
+recommendation, not a unilateral edit.
+
+**To revert.** Delete the four glyph config objects from
+`eslint.config.js` (the rule block plus the three allowance blocks) and
+the `LITERAL_GLYPHS` / `JSX_TEXT_GLYPHS` / `GLYPH_MESSAGE` consts and the
+"DELIBERATELY NOT BANNED" note; restore `close`/`caretDown`/`caretRight`/
+`caretUp`/`more`/`check` to `ui/icons.ts` and its former docstring (git
+history has both); restore the `describe("icons")` block and the
+`ICON.more` leadingIcon fixtures in `ui/controls.test.tsx`; revert
+`CustomFieldEditDialog.tsx:397` to the `✕` glyph and drop its `Icon`
+import; delete the "UI Glyphs" section from
+`.claude/skills/review/SKILL.md` and renumber its sections back. Note
+that reverting re-opens the reservoir A208 left standing — which is what
+produced this third recurrence.
+
+### K108 · The web restores a split backup; the CLI is not the answer to a web question
+
+**Date:** 2026-09-23 · **Ken's, not an agent's.**
+
+The Restore panel carried the sentence: "A split backup (one taken with
+parts) must be restored with the `loctt restore` CLI, which takes every
+part at once."
+
+Ken: *"why are we revealing the CLI command here? cant the user just
+load from backup file and have it work?"*
+
+Offered the choice between documenting the limitation in the user docs
+and supporting it, Ken chose **support it**. The sentence is deleted
+rather than reworded: the web restores a split backup by taking every
+part.
+
+This supersedes A142's third decision ("single file only — a split
+backup is restored with `loctt restore <part...>`"). A142's other two
+decisions (query-string `mode`/`confirm`/`dry_run`, and temp-file
+streaming for export) stand.
+
+**Not revertible on an agent's judgment.** The implementation choices
+underneath it — how the parts are uploaded and how each refusal is
+surfaced — are an agent's, and are recorded in § 8 (A302).
+
+### K109 · Render-error fallback: route-level gets Reload + Back to the list; a region only ever gets ONE recovery pairing
+
+**Date:** 2026-09-23 · **Ken's, not an agent's.**
+
+The PM's error-boundary review had flagged the action-row shape for the
+render-crash fallback as needing a call: whether a route-level crash and
+a region-scoped crash (a sidebar group, a single panel) should offer the
+same buttons or different ones, and whether a region-scoped fallback
+should ever carry three actions at once.
+
+Ken: *"i think i want a reload + back, or just reload. do not keep
+both."*
+
+Offered the split the PM proposed — route-level: **Reload** + **Back to
+the task list**; region-scoped: **Try {region} again** + **Reload** —
+Ken accepted it.
+
+**Decided.** Two pairings, never three buttons on one fallback:
+- Route-level (the whole main pane): **Reload** + **Back to the task
+  list**.
+- Region-scoped (a sidebar group, a single panel): **Try {region}
+  again** + **Reload**.
+
+**Ken separately delegated the wording of ERR-36's narrow-retry bullet**
+back to the PM — the case text needed to make this split explicit rather
+than leaving "where possible" to carry it implicitly, and Ken's answer to
+who decides the exact phrasing was verbatim: *"PM can make the call."*
+The wording itself is recorded as the PM's, in § 8 (A303).
+
+**Not revertible on an agent's judgment.** The implementation of the two
+action rows is being built now against this ruling; the case-text
+wording it produced is a separate, agent-revertible call (§ 8, A303).
+
+### A303 · ERR-36's narrow-retry bullet now names the route/region split explicitly, under Ken's delegation (K109)
+
+**Ticket:** render-error fallback review · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**Situation.** ERR-36 (`tests/cases/ui-test-cases/flow-error-handling.md`)
+asserted a narrower recovery "where possible" alongside Reload, without
+saying what that recovery was or when it applied. Ken ruled the actual
+action-row shape (K109, § 9) and then delegated the wording of this
+specific bullet back to the PM: *"PM can make the call."*
+
+**What had to be decided.** How to phrase the bullet so the route/region
+split is explicit in the case text itself, rather than resting on
+"where possible" to imply it.
+
+**Options considered.**
+1. *Leave "where possible" and add a parenthetical example.* Cheapest,
+   but still makes the reader infer the rule from an example rather than
+   stating it — exactly the ambiguity that caused the escalation.
+2. *State the two pairings directly, by name, in the bullet.* Costs a
+   longer bullet, but the case is then unambiguous to whoever builds or
+   tests it — no inference required, and nothing left for "where
+   possible" to carry silently.
+
+**Decided.** Option 2. The bullet now reads:
+
+> A route-level boundary (the whole main pane) pairs **Reload** with
+> **Back to the task list**. A region-scoped boundary (a sidebar group, a
+> single panel) pairs **Reload** with **Try {region} again** — naming the
+> region, not a generic "Try again" — so a fault contained to one part of
+> the page does not cost the user their whole page state.
+
+This replaces (not appends to) the old bullet ("Where possible, a
+narrower recovery is offered too — retry just this panel — so the user
+is not forced to lose their whole page state.") — removed entirely, no
+"(was: ...)" note left behind, per the standing removal rule.
+
+**Why.** P4 (errors name the thing, the reason, and the next action) —
+the case itself is the thing being named here; a spec that relies on a
+reader inferring the split from "where possible" fails its own bar for
+the UI it's specifying. K109 fixed the two concrete pairings; this only
+makes the case text state them instead of gesturing at them.
+
+**Verification.** Re-checked SHL-42 and A11Y-54, the two other cases
+touching this fallback, against the new wording: both already describe
+only the route-level pairing (SHL-42: "offers reload plus a way back to
+the list"; A11Y-54: "recovery actions (reload, back to list)"), which
+matches K109's route-level half exactly — neither edited. Grepped
+`tests/cases/` for the button copy ("Try again", "Back to the task
+list", "Reload"); the only other hits are unrelated Reload actions
+(config-reparse in flow-projects-users.md, flow-settings.md; a plain
+browser reload in flow-onboarding.md; a generic "reload button" mention
+elsewhere in flow-error-handling.md) — none asserts the three-button
+shape, none needed a change. `npm run cases:check` passes against the
+regenerated index with no changes required (case IDs/titles/tags
+untouched, only body prose).
+
+**To revert.** In `tests/cases/ui-test-cases/flow-error-handling.md`,
+replace the third bullet of ERR-36 with: "Where possible, a narrower
+recovery is offered too — retry just this panel — so the user is not
+forced to lose their whole page state."
+
+### K110 · Native `<summary>` is allowed, but only through one shared component
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+**Situation.** Ken hit a render-error page reading a literal
+`▸ Show details`. Nothing in this repo types that glyph: it is the
+browser's own `<details>` marker, drawn because none of the three
+`<details>` call sites suppressed it. The same three sites had each
+styled their `<summary>` differently (`text-text-tertiary` twice,
+`text-accent` once; `select-none` twice, absent once) — three spellings
+of one control.
+
+**Ken's ruling, verbatim.**
+
+> "we can use summary HTML elements BUT we should use it through a common
+> summary component that uses the native elements. this allows us to
+> restyle with a consistent aesthetic across the board"
+
+**What this settles.** Two things, and the pairing is the point:
+ 1. The native `<details>`/`<summary>` elements STAY. They are not to be
+    reimplemented as a `<button>` plus React state — the native element
+    brings keyboard operation, find-in-page expansion, and the `open`
+    attribute as a single source of truth.
+ 2. No component may render a bare `<details>` again. Every disclosure
+    goes through the one shared component, which is where the marker is
+    suppressed and the aesthetic is decided.
+
+**Where it landed.** `apps/web/src/client/ui/Disclosure.tsx`, plus the
+`.loctt-disclosure` rules in `apps/web/src/client/styles/index.css`. All
+three prior sites migrated.
+
+### A304 · `Disclosure`: the canonical summary is tertiary (not accent), and the caret rotates in CSS rather than swapping icons
+
+**Ticket:** K110 · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**Situation.** K110 (§ 9) ruled that one shared component wraps the
+native `<details>`, but left three contained calls to the implementer.
+
+**What had to be decided, and the call made.**
+
+1. **Which of the three live summary styles is canonical.** They were
+   `text-[0.8571rem] text-text-tertiary` (RegionErrorBoundary),
+   `text-text-tertiary` with inherited size (ReconcilePanel), and
+   `text-[0.8571rem] text-accent` (GitSyncPanel). *Chosen:* the first —
+   the majority spelling and the neutral one. `text-accent` is the app's
+   interactive-link colour; a disclosure summary expands in place and is
+   not a navigation, so one of three reading as a link was itself the
+   inconsistency. **GitSyncPanel visibly loses its accent colour.**
+   `select-none` is applied universally: a summary is a click target and
+   double-clicking it must not leave a selection highlight.
+
+2. **No `tone` prop.** Once the accent outlier is resolved no migrated
+   site needs a variant axis. Adding one speculatively is how the
+   three-way drift began.
+
+3. **The caret rotates via CSS on `[open]`, rather than the component
+   swapping `chevronRight`→`chevronDown`.** A swap needs to know `open`,
+   which needs React state, which would make the component controlled and
+   leave it out of sync with native toggles the component never sees
+   (find-in-page expands a `<details>` with no click). CSS reads `[open]`
+   straight off the DOM, so the native element stays the source of truth.
+
+4. **The marker-kill rules live in `index.css`, not as Tailwind
+   utilities.** Two rules are required — `list-style: none` for
+   Chrome/Firefox and `::-webkit-details-marker { display: none }` for
+   Safari, which is the browser Ken's `▸` came from. Tailwind's `marker:`
+   variant compiles to `::marker` only and **cannot** express the
+   `-webkit-` pseudo-element, so this is not expressible at the call site.
+
+**How it is held.** `styles/disclosureMarker.test.ts` parses the
+stylesheet source (the `spinnerKeyframes.test.ts` precedent) because
+jsdom never loads the compiled CSS and `::-webkit-details-marker` is not
+observable from script in *any* environment; `ui/Disclosure.test.tsx`
+holds the render-side half. Deleting either marker rule alone goes red.
+
+**To revert.** Delete `apps/web/src/client/ui/Disclosure.tsx`,
+`ui/Disclosure.test.tsx` and `styles/disclosureMarker.test.ts`; remove
+the `.loctt-disclosure*` block at the end of `styles/index.css`; and
+restore the three `<details>` literals in
+`error/RegionErrorBoundary.tsx`, `settings/ReconcilePanel.tsx` and
+`settings/GitSyncPanel.tsx` (the last regaining
+`text-[0.8571rem] text-accent` on its summary). Note this reinstates the
+`▸` marker on Safari, which is the reported defect.
+
+### K111 · The three detail-page back-links get a drawn arrow, not a typed `←`
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+**Situation.** A208 (reaffirmed twice since) is that a UI affordance is
+drawn as SVG through `<Icon>`, never typed as a Unicode character. A305's
+lint rule now enforces that for most glyphs, but `←`/`→` were
+deliberately left unbanned: `{a} → {b}` date ranges are indistinguishable
+from controls by any AST selector, so a rule that banned the arrows would
+fire on data. That left the remaining arrow sites as a judgement the lint
+rule cannot make, and three of them are back-links on detail pages —
+`← All milestones`, `← All sprints`, `← {origin.label}` — one family,
+same styling, same job.
+
+Ken was shown the option set and told that converting requires a new
+left-pointing icon path, since `Icon.tsx` had `arrowUp` and `arrowDown`
+but no left arrow.
+
+**Ken's position.** He chose **"Convert all three."**
+
+**What this settles.** The three detail-page back-links draw their arrow
+through `<Icon>`. It does not settle `SprintsView`'s `Open sprint →`,
+which is a forward link in accent colour doing a different job; Ken is
+ruling on that separately and it was left untouched.
+
+**Where it landed.** `apps/web/src/client/milestones/MilestoneDetail.tsx`,
+`apps/web/src/client/sprints/SprintDetail.tsx`,
+`apps/web/src/client/task/TaskDetail.tsx`, and the new `arrowLeft` entry
+in `apps/web/src/client/ui/Icon.tsx`. The implementation calls (which
+icon shape, what size, what spacing) are the agent's and are recorded
+separately in § 8 (A306).
+
+### A306 · The back-link arrow is `arrowLeft` (a shaft, not a chevron), at `size={12}`, in the existing `inline-flex items-center gap-1` row
+
+**Ticket:** K111 · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**Situation.** K111 (§ 9) ruled that the three detail-page back-links
+draw their arrow instead of typing it, but left three contained calls to
+the implementer.
+
+**What had to be decided, and the call made.**
+
+1. **`arrowLeft` (a shafted arrow) rather than `chevronLeft` (a bare
+   angle).** Both would have matched an existing family in `Icon.tsx`.
+   The chevrons in this file are *disclosure* markers — `chevronRight`/
+   `chevronDown` are the collapse toggle in `ReconcilePanel` and the
+   menu markers in `Dropdown` — so a bare angle beside a link label would
+   read as "expand this", not "go back". The shafted arrow matches
+   `arrowUp`/`arrowDown`, which are directional-movement controls, and it
+   preserves the visual weight of the `←` it replaces. Path:
+   `M13 8H3M7 4L3 8l4 4`, in the file's 16-unit viewBox on a 1.5 stroke,
+   stroked in `currentColor` like the rest of the non-filled set.
+
+2. **`size={12}`, not the `size` default of 16.** The root font is
+   87.5%, so Tailwind rem utilities render at 0.875×, and the link text
+   is `text-[0.8571rem]` — **12px**, not 14. A default-size icon would be
+   a third taller than its own label. 12 is also what the codebase
+   already pairs with this text size (`ReconcilePanel`'s `⚠ corrupt`
+   marker, the sidebar's default-project star).
+
+3. **`inline-flex items-center gap-1` on the `<Link>` itself**, rather
+   than a new wrapper or a margin utility on the icon. This is the
+   established icon-plus-text row in this codebase at this text size
+   (`list/cells.tsx`, `list/FilterBar.tsx`'s chips, `board/BoardCard`) —
+   `items-center` is what keeps the arrow optically centred on 12px text,
+   which a baseline-aligned inline glyph was not doing. No new spacing
+   idiom was introduced. The existing positional classes on each link
+   (`self-start`, and TaskDetail's `px-6 pt-4`) are preserved.
+
+4. **No `aria-label` on the icon.** `<Icon>` is `aria-hidden="true"` by
+   default and the link text already names the destination, so the arrow
+   must not be announced. The tests assert the rendered `aria-hidden`
+   rather than trusting the default.
+
+**How it is held.** A `describe` block in each of
+`milestones/MilestoneDetail.test.tsx`, `sprints/SprintDetail.test.tsx`
+and `task/TaskDetail.backAffordance.test.tsx`, each asserting the svg
+exists, carries `aria-hidden="true"`, and leaves the link's text as the
+label alone with no `←`. All three go red both when the site is reverted
+to a typed glyph and when `Icon`'s `aria-hidden` is removed — the two
+halves are proven independently. `SprintDetail`'s finds the link by role
+and accessible name, so a leaked arrow fails the lookup itself.
+
+**Note on pre-existing coverage.** Only `TaskDetail.backAffordance.test`
+actually covered its site: its two `textContent` assertions included the
+`←` and had to be updated. Those tests were asserting the *old intended*
+behaviour, not a bug — the arrow was the then-correct implementation and
+was incidental to their real subject (which label and destination the
+back-link gets); the new spelling is the stronger assertion. The
+milestone and sprint sites had **no** real coverage: with the change
+deleted at both, their existing files stayed green (9 passed).
+
+**To revert.** Remove the `arrowLeft` entry from the `IconName` union and
+`PATHS` in `apps/web/src/client/ui/Icon.tsx`; restore the literal `←` and
+the pre-existing `className` on the three `<Link>`s in
+`milestones/MilestoneDetail.tsx`, `sprints/SprintDetail.tsx` and
+`task/TaskDetail.tsx` (dropping the now-unused `Icon` import from
+`SprintDetail.tsx`); restore the `"← Back to list"` / `"← Back to board"`
+assertions in `task/TaskDetail.backAffordance.test.tsx`; and delete the
+three `A208 / K111` describe blocks. Note this reverts K111, which is
+Ken's — so it needs Ken.
+
+### K112 · Action labels drop the trailing `…`
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+**Situation.** Ken saw an `Edit…` menu item and asked: "why is there an
+'Edit...' do we need the '...'? if no, should we audit the '...' (both
+the triple dot form and typographic form) and remove all."
+
+He was shown the audit and the two options, with the desktop convention
+stated as the case for keeping it (a trailing ellipsis means "opens a
+dialog, needs more input before anything happens"), and the measured cost
+of keeping it stated alongside: the codebase was not applying it
+consistently, and honouring the convention would mean adding dots to
+roughly ten labels, not removing them. `Edit…` appeared 17 times and
+`Edit` 4 times; `Delete…` once and `Delete` nine times — and all nine
+undotted `Delete` labels open a confirm dialog, which by the convention
+should have carried the dots. The split tracked nothing.
+
+**Ken's position.** He chose **remove `…` from all action labels**, and
+confirmed the scope: **action labels only.**
+
+**What this settles.** Menu item labels, button labels and link labels
+that name an action carry no trailing ellipsis. Ken agreed that the other
+uses are correct standard usage and keep theirs:
+
+- **In-progress states** — `Saving…`, `Loading tasks…`, `Refreshing…`,
+  `Applying…`, `Migrating…`, `Uploading…`, `Searching…`.
+- **Input placeholders** — `Search…`, `Search users…`,
+  `Choose a project…`, `Pick a value…`, `Describe this task…`,
+  `Select a timezone…`.
+- **Literal sequences** — `Linear — 1, 2, 3, …`,
+  `Fibonacci — 1, 2, 3, 5, 8, …`.
+
+The ASCII triple-dot form Ken asked about was audited too: no action
+label used it. The only `...` occurrences in the web app are prose in
+comments and JS spread syntax, both out of scope.
+
+**Where it landed.** 27 labels across
+`settings/UsersPanel.tsx`, `settings/SprintsPanel.tsx`,
+`settings/ProjectsPanel.tsx`, `settings/LabelsPanel.tsx`,
+`settings/MilestonesPanel.tsx`, `settings/SavedViewsPanel.tsx`,
+`board/BoardView.tsx`, `shell/Header.tsx`, `shell/Sidebar.tsx`,
+`list/FilterBar.tsx` and `task/TaskDetail.tsx`. No `data-testid` changed;
+only the human-visible text. The tests that named the old labels were
+updated to the new ones — they were asserting the label Ken has now
+overruled, not a bug.
+
+---
+
+### A307 · The last 10 progress-label swaps converted to `Button`'s `loading`; the diagnostics pending row's typed `•••` replaced by the real spinner
+
+**Ticket:** Ken, on seeing `Saving…`-style labels still in place after
+A294: *"didnt we introduce a spinner? shouldnt we show that instead?"*
+Extended mid-sweep, verbatim: *"and not just loading buttons.
+pages/components with loading states should switch to the spinner
+too."* · **Date:** 2026-09-23 · **Commit:** (uncommitted) · **Scope:**
+web UI only. **This entry records the SWEEP, not the prop** — Ken's
+original `loading`-prop design is A294 and is not re-recorded here.
+
+**Situation.** A294 built `Button.loading` to Ken's own spec (content
+invisible but still in flow so the button cannot resize, `aria-hidden`
+on the stale label, spinner centred, `aria-label` left to the caller)
+and migrated ~25 call sites. Ten were missed. Each still swapped its
+label text — `Rename 12 tasks` → `Renaming…`, `Confirm rekey` →
+`Renumbering…` — which changes the button's WIDTH mid-action, the exact
+resize the invisible-content design exists to prevent, and showed no
+spinner at all, only `disabled`. A294's own audit note ("every call site
+migrated was audited") was true of the sites it touched and silently
+untrue of these ten.
+
+**What had to be decided, and the call made.**
+
+1. **Eight buttons converted mechanically**: stable label stays as the
+   button's children, `loading={<pending condition>}`, the now-redundant
+   `disabled={…isPending}` dropped (`Button` ORs `loading` into
+   `disabled` itself — verified in `Button.tsx` and by its existing
+   test), and an explicit `aria-label` carrying the stable label added
+   to every one. Every one of the eight had its text content as its
+   **only** accessible name, so without the `aria-label` each would have
+   gone nameless while busy — the trap `Button.tsx`'s docstring
+   documents. Sites: `InitWizard` (Set up tracker), `DiagnosticsPanel`
+   ×3 (Refresh, Rebuild key index, Restore missing files),
+   `ReconcilePanel` ×2 (Confirm rekey, Apply), `ProjectEditDialog`
+   (Rename N tasks), `SchemaBanner` (Run migration, see 4).
+
+2. **`DiagnosticsPanel`'s restore `ConfirmDialog` uses the
+   `confirmLoading` prop that already exists** — A294 added it and this
+   call site never adopted it. `confirmLabel` is now the static
+   `"Restore"`, with `confirmLoading={repairing === "restore-missing"}`.
+   `confirmDisabled={repairing !== undefined}` was **kept**, not dropped:
+   `loading` disables only for the restore-missing repair, and the
+   orthogonal case of any *other* repair being in flight is not covered
+   by it. No new prop was added to `ConfirmDialog` — none was needed.
+
+3. **The dynamic label `Rename ${taskCount} tasks` is still worth
+   converting.** The width-stability argument survives a label that can
+   change length for other reasons: `taskCount` is fixed for the life of
+   the open dialog (it is a prop, and the dialog is unmounted on close),
+   so the label cannot change *while the action runs*. The resize this
+   prevents is the one caused by the action itself, which is the only one
+   the user experiences as a jump under their cursor.
+
+4. **`SchemaBanner`'s migrate button stays a raw `<button>`; the
+   `loading` MECHANISM is reproduced inline instead of migrating it to
+   `ui/Button`.** Migrating is the consistent answer and was rejected on
+   appearance: the button is one of *three* in that banner
+   (`Migrate now`, `Run migration`, `Cancel`) that inherit the banner's
+   warn-or-danger tone through `border-current/30` at `text-[0.8571rem]`.
+   `Button`'s `secondary` variant re-spells that as a neutral
+   `border-border-default` + `bg-bg-surface` chip, which would sit wrong
+   on a coloured banner — and converting one of three would break the
+   set. So the button gained `relative`, an `invisible`+`aria-hidden`
+   label span, an absolutely-centred `LogoSpinner size="1rem"`,
+   `aria-busy`, and `aria-label="Run migration"`. **Recommendation, not
+   done:** give `Button` a banner-toned variant (or a `tone="current"`
+   that keeps `border-current`) and move all three together. Left out of
+   this sweep because it is a new `Button` variant — shared-primitive
+   surface — not a call-site fix.
+
+5. **`DiagnosticsPanel`'s prose status line left alone.**
+   `{isRunning ? " · running…" : phase === "failed" ? " · run did not
+   finish" : ""}` is a clause inside the summary sentence
+   (`3 passed · 1 warning · 0 failed · running…`), not a button label and
+   not a loading placeholder. Its parallel clause — `· run did not
+   finish` — is prose too; a spinner dropped mid-sentence between them
+   would be inconsistent with the clause it alternates with. Ken's "find
+   all loading state, replace with spinner" is about loading *text
+   standing in for* a spinner; this is a count qualifier.
+
+6. **The pending check row (Ken's mid-sweep extension).** It stacked
+   three spellings of one state: the word `Running` in the status
+   column, an animated `•••` in the name column, and visible
+   `Running checks…` in the detail column. The `•••` is a typed Unicode
+   glyph doing a spinner's job — the pattern A208 bans (affordances are
+   drawn, not typed); the lint rule misses it because `•` is not in the
+   banned set. Replaced with a bare `LogoSpinner size="1.125rem"`, in the
+   **name column** so the row keeps the three-column alignment
+   (`w-12` | `w-48` | flex-1) it shares with the completed rows above it.
+   **Bare `LogoSpinner`, not `LoadingState`**: `LoadingState` carries its
+   own `role="status"` wrapper and this row already has one on the detail
+   column — nesting them would put two live regions in one row for one
+   state. The `Running checks…` text was made `sr-only`, **not deleted** —
+   per `LoadingState`'s docstring, a spinner with no accessible name
+   announces nothing, which was the original silent-panel bug. The word
+   `Running` in the `w-12` column was **kept**: it is the status column
+   mirroring `OK`/`WARN`/`FAIL` on the completed rows, a label rather
+   than a progress animation.
+
+**Tests.** Nine new, every one red-proven (broken, watched fail,
+restored and diffed byte-exact against the pre-break file):
+
+- `settings/ReconcilePanel.loading.test.tsx` (new file, 4 tests) — the
+  rekey confirm button. `RekeyPreview` takes its mutation object as a
+  prop, so both states are reachable without mocking a hook. Red-proof
+  A (reverted to the `isPending ? "Renumbering…" : …` ternary): 3 of 4
+  red — `AssertionError: expected 'Renumbering…' to contain 'Confirm
+  rekey'`; `TestingLibraryElementError: Unable to find an accessible
+  element with the role "button" and name "Confirm rekey"`;
+  `AssertionError: expected null to be 'true'`. Red-proof B
+  (`loading={true}` hardcoded, for the idle-state test the first break
+  could not reach): `AssertionError: expected 'true' to be null`.
+- `shell/SchemaBanner.test.tsx` (4 tests appended) — the hand-rolled
+  mechanism of call 4. `Button.test.tsx`'s coverage does **not** reach
+  this button, since it is not a `Button`; without these, nothing would
+  catch it regressing to a label swap. Red-proof A (reverted to the
+  ternary): 3 red, all at the `aria-busy` gate —
+  `AssertionError: expected null to be 'true'`. Red-proof B
+  (`aria-busy={true}` + spinner unconditional):
+  `AssertionError: expected 'true' to be null`.
+- `settings/dataPanels.test.tsx` (1 test appended) — the pending row.
+  Both halves proven separately, deliberately: restoring the `•••` gave
+  `AssertionError: expected null to be truthy` (spinner absent);
+  deleting the `sr-only` text gave `AssertionError: expected '' to
+  contain 'Running checks…'` (the silent-panel bug).
+
+**Existing tests that named the removed strings.** Grepped every
+`*.test.tsx`/`*.spec.ts` for all nine progress strings. **One** hit:
+`tests/ui/flow-onboarding.spec.ts:297`, `await expect(submit)
+.toHaveText(/setting up/i)`. Classified as **asserting the old intended
+behaviour, not a bug** — the label swap was a deliberate busy-state
+design when it was written (its own comment explains it located the
+button by role+type precisely *because* the name changed mid-action),
+and Ken has now overruled that design, not that test's reading of it.
+Updated to assert the new contract, which is strictly stronger: the
+label must NOT change, `aria-busy` is set, the accessible name survives
+(`toHaveAccessibleName("Set up tracker")`), and the spinner is visible.
+No test asserted the label swap as *correct in itself*, so none of the
+fourteen-bug-encoding class was found here.
+
+**Gates.** `npx tsc --build` 0 errors; `npm run lint` 0 errors, 70
+warnings (all pre-existing `no-non-null-assertion` in spec files);
+`npm run test -w apps/web` 2543 passed / 2543, three consecutive clean
+runs.
+
+**To revert.** In `InitWizard.tsx`, `DiagnosticsPanel.tsx` (×3),
+`ReconcilePanel.tsx` (×2) and `ProjectEditDialog.tsx`, replace each
+`loading={X}` + `aria-label="L"` + bare `L` children with
+`disabled={X}` + `{X ? "Verb…" : "L"}` (git history has each exact
+prior string), restoring `disabled={undecided > 0 || apply.isPending}`
+on `git-reconcile-apply` and `disabled={setPrefix.isPending}` on the
+rename button. In `DiagnosticsPanel.tsx`'s `ConfirmDialog`, restore
+`confirmLabel={repairing === "restore-missing" ? "Restoring…" :
+"Restore"}` and drop `confirmLoading`. In `SchemaBanner.tsx`, drop the
+`LogoSpinner` import, the `relative` class, the label span, the spinner
+span, `aria-busy` and `aria-label`, restoring the single
+`{migrate.isPending ? "Migrating…" : "Run migration"}` child. In
+`DiagnosticsPanel.tsx`'s pending row, restore the `•••` span and unwrap
+`Running checks…` from its `sr-only` span, and drop the `LogoSpinner`
+import. Delete `settings/ReconcilePanel.loading.test.tsx`, the
+`A307` describe block at the end of `shell/SchemaBanner.test.tsx` (and
+revert its import line to `render as rtlRender, screen` /
+`afterEach, describe, expect, it`), and the "draws the pending row's
+progress with the spinner" test in `settings/dataPanels.test.tsx`. In
+`tests/ui/flow-onboarding.spec.ts`, restore the
+`toHaveText(/setting up/i)` assertion and its original comment.
+
+### K113 · No star for the default-project marker
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+**Situation.** The default project's sidebar row carried a `star`
+`<Icon>` marker (`shell/Sidebar.tsx`, the `ProjectsGroup` row). Ken was
+asked about it alongside the saved-view icon fallback, which used the
+same glyph for an unrelated meaning (UI-26d).
+
+**Ken's position.** He said, verbatim: *"saved view are always created
+with icons, no? and no star for default project, take it out."*
+
+**What this settles.** No project row carries a default-project marker
+of any kind — not the star, not a replacement glyph, and not an empty
+reserved slot (Ken separately ruled "missing gap is ugly" against a
+blank space where the star had been). Which project is default is
+stated in Settings → My preferences and the project's own edit dialog
+instead.
+
+**Where it landed.** `apps/web/src/client/shell/Sidebar.tsx`
+(`ProjectsGroup`'s row rendering); the removal is asserted by the
+rewritten `Sidebar.test.tsx` (SHL-5 / UI-26d tests), which now check the
+marker's *absence*.
+
+### K114 · Saved-view icon fallback = the circle, and grey
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+**Situation.** `ViewIcon` (`shell/Sidebar.tsx`) fell back to the same
+`star` glyph K113 just removed from the default-project marker when a
+saved view had no icon of its own — one glyph carrying two unrelated
+meanings in the sidebar (UI-26d). Ken was asked what the fallback should
+be instead.
+
+**Ken's position.** First, verbatim: *"fallback icon = the circle (same
+as how we do for labels)."* Then, verbatim: *"fallback icon = circle,
+and grey."*
+
+**What this settles.** A saved view with no icon renders the same
+`ColorDot` a label row's fallback uses, and that dot is grey
+(`var(--text-tertiary)`, `ColorDot`'s own no-colour default) — never the
+view's own tint. Passing the view's colour to the fallback dot was
+explicitly rejected: it would make an absent icon read as a deliberate,
+configured mark instead of "nothing was picked."
+
+**Where it landed.** `apps/web/src/client/shell/Sidebar.tsx`'s
+`ViewIcon` (renders `<ColorDot />` with no `color` prop when `icon` is
+`undefined`, instead of resolving and passing the view's tint). Asserted
+by the rewritten `Sidebar.test.tsx` saved-view-fallback test, which now
+checks for a grey `ColorDot` rather than a star.
+
+**Note — the stated premise does not hold.** Ken's opening premise,
+"saved view are always created with icons," is false: `icon` is
+`IconStringSchema.optional()` in `packages/contracts/src/query.ts`, the
+web `ViewFormDialog` seeds a new view's icon as `undefined` and offers a
+Clear affordance, and MCP's `create_view` takes `icon` as
+`iconInputSchema.optional()` with nothing substituted when it is
+omitted. So this fallback is reachable in ordinary use (an MCP-created
+view with no icon, or a web-created one left blank or cleared), not
+dead code — the ruling above still stands on its own terms, but not on
+the stated premise.
+
+### A308 · Sprint-column "Open" links get a per-column `aria-label`
+
+**Ticket:** (Ken, 2026-09-23 — bare "Open" label) · **Date:** 2026-09-23
+· **Commit:** (this one)
+
+**Situation.** Ken shortened the sprints-overview column-header link's
+visible text from `Open sprint →` to `Open` (the noun repeated the
+column header directly above it, and the accent colour plus hover
+underline already say "link" without the arrow). A board of several
+sprint columns would then carry several links whose visible text and
+default accessible name are all identically "Open," indistinguishable
+to a screen-reader user moving between columns.
+
+**The call made.** Added `aria-label={\`Open ${column.label}\`}` to the
+`<Link>` in `apps/web/src/client/sprints/SprintsView.tsx`'s `Column`,
+matching the `aria-label` the enclosing at-a-glance card already carries
+one level up. The visible label stays the bare "Open" Ken specified; only
+the accessible name is disambiguated. `data-testid={\`sprint-open-${column.id}\`}`
+is unchanged, so no locator needed updating.
+
+**Where it landed.** `apps/web/src/client/sprints/SprintsView.tsx`
+(`Column`'s `<Link>`).
+
+**To revert.** Remove the `aria-label` prop from that `<Link>`, leaving
+the bare "Open" text as both the visible label and the accessible name.
+
+### A309 · Editor toolbar folds groups into menus by its own width (UI-23c/UI-23d)
+
+**Ticket:** UI-23c, UI-23d (Ken, 2026-09-22) · **Date:** 2026-09-23
+· **Commit:** (this one)
+
+**Situation.** The formatting toolbar wrapped to two rows in the comment
+composer and the description editor at ordinary window sizes. Measured:
+the flat row needs ~860px of bar; the composer is 855px wide at a 1440
+window and 680px at 1280. Its only collapse was a `sm:` (640px VIEWPORT)
+breakpoint, which never fires while the window is wide, however narrow
+the bar is. The flat order also split Underline from Bold/Italic/Strike.
+Ken's direction: *"if it can fit in one line, we leave as is. if it goes
+into 2 lines, then ... bold/italic/underline/strikethrough are put
+together into a 'T' button, and some others can combine too"*.
+Separately (23c), undo/redo looked out of line: their glyphs were drawn
+at y 5.5–14 (ink centre 9.75) in a 16-unit box, the only off-centre
+glyphs in the row.
+
+**The call made.** Three semantic groups, each with a flat form and a
+one-button menu form:
+- **Text style** (T): bold, italic, underline, strikethrough, highlight
+  — Ken's example, plus highlight as the other character style.
+- **Lists and blocks**: bulleted, numbered, quote, code block.
+- **More formatting** (⋯): inline code, superscript, subscript.
+Link stays flat (it prompts for a URL); undo/redo and the right cluster
+stay flat. Which form shows is a CSS container query on the toolbar
+itself (`@container`), not the viewport. Groups fold rarest-first — More
+below 860px of bar, Blocks below 745px, Text style below 620px — so Bold
+and Italic are the last to go behind a menu. Thresholds are the measured
+one-row minimums (840 / 729 / 604) plus a 16px margin for the block-type
+picker's label width. A folded group's trigger takes the active look
+when any member applies; each menu row is a `menuitemcheckbox` with
+`aria-checked` (new `checked` prop on `MenuItem`). The viewport-based
+"More" overflow is removed. The undo/redo paths moved up 1.75 units.
+
+Found while building: `Menu`'s portalled panel carried no ownership
+marker, so the editors' leave-on-blur read focus moving into a toolbar
+menu as leaving — picking Bold from the folded menu exited the
+description's edit mode. The marker is now `data-portal-panel` on both
+`Menu` and `Dropdown`, and both editor guards ask for it (known-gaps.md,
+"A fourth").
+
+**Rejected.** A JS priority-plus overflow (measure, move trailing items
+to a menu): always optimal but flickers on resize, needs a
+ResizeObserver, and is harder to test than fixed container thresholds.
+One accumulating "More" menu: simpler, but loses Ken's semantic
+grouping.
+
+**Known limit.** Below ~460px of bar (a phone), even the fully folded row
+wraps to two lines. No worse than before (the old phone row also
+wrapped); not folded further because the remaining controls — block
+type, link, undo/redo, attach, mode — have no natural group.
+
+**Where it landed.** `editor/Toolbar.tsx` (groups, `GroupMenu`),
+`ui/Menu.tsx` (`checked`, `data-portal-panel`), `ui/Dropdown.tsx`
+(marker rename), `editor/BodyEditor.tsx` + `editor/RichEditor.tsx`
+(guards), `ui/Icon.tsx` (`textStyle`, undo/redo recentred). Case TSK-72.
+
+**To revert.** Restore the single flat row with the `sm:`-gated "More"
+menu in `Toolbar.tsx` (git history), drop `checked` from `MenuItem`, and
+move the undo/redo paths back down 1.75. Keep the `data-portal-panel`
+marker on `Menu` regardless — any menu opened from inside an editor
+needs it.
+
+### A312 · A `no-restricted-syntax` selector bans animated-glyph fake spinners; no current-code hits found
+
+**Ticket:** ad hoc — add a lint rule that catches hand-rolled "animated
+glyph" spinners in the web client, following A307's fix of the
+diagnostics pending row's typed `•••`. · **Date:** 2026-09-23 ·
+**Commit:** (uncommitted)
+
+**Situation.** A307 fixed one instance of this shape by hand (the
+diagnostics panel's `•••` swapped for `LogoSpinner`), but nothing stops
+the same shape recurring elsewhere: a text glyph (`•`, `...`, `⋯`, `●`)
+given `animate-pulse`/`animate-spin` as a cheap stand-in for the real
+spinner (`LogoSpinner`, reached via `Button`'s `loading` prop or
+`LoadingState`). A bare character ban (like the existing A305 glyph
+rule) would be wrong here: `•` is legitimate prose punctuation
+elsewhere in the app (e.g. `DiagnosticsPanel.tsx`'s
+`{ok} passed · {warn} warning`), and `animate-pulse` alone is the
+legitimate skeleton-bar pattern (a `div`/`span` with no text content,
+used in `BoardView.tsx`, `SprintsView.tsx`, `ListView.tsx`,
+`TimelineView.tsx`). The rule has to be context-sensitive: both the
+animation class AND a short glyph-only text child, together.
+
+**Decided.**
+
+1. **New `no-restricted-syntax` entry in `eslint.config.js`**, alongside
+   the A305 glyph rule, scoped to the same
+   `apps/web/src/client/**/*.{ts,tsx}` file set:
+   ```
+   JSXElement:has(JSXOpeningElement JSXAttribute[name.name="className"] Literal[value=/(^|\s)animate-(pulse|spin)(\s|$)/]) > JSXText[value=/^\s*[^\p{L}\p{N}\s]{1,3}\s*$/u]
+   ```
+   Plain esquery on the native AST — no new dependency, matching A305's
+   own precedent of not building a bespoke plugin rule when a selector
+   suffices. Message: `FAKE_SPINNER_MESSAGE`, naming `LogoSpinner`, the
+   `Button.loading` prop, `LoadingState`, and the accessible-name
+   requirement (A294/A307's rule: a busy region needs an
+   `aria-label`/`role="status"` announcement, not just a suppressed
+   label).
+
+2. **What it catches.** A JSX element whose `className` is a plain
+   string literal (`className="…"`, or one string-literal argument
+   inside a `cn(...)` call — `cn("animate-pulse", …)` — since esquery
+   matches the `Literal` node regardless of its parent) containing
+   `animate-pulse` or `animate-spin` as a whole class token (word-
+   boundary anchored, so `animate-pulse-slow` does NOT match), whose
+   *only* child is a JSXText that is 1-3 characters, entirely
+   non-letter/non-digit (allowing surrounding whitespace) — e.g. `•`,
+   `...`, `⋯`, `●`, but not `Loading` or `Some prose`.
+
+3. **What it cannot see, by design (stated in a comment above the
+   selector and in `.claude/skills/review/SKILL.md`).** A `className`
+   built from string concatenation, a template literal
+   (`` `animate-pulse ${x}` ``), or a variable/expression is invisible
+   to this selector — esquery matches AST node shapes, not evaluated
+   values, and a `TemplateLiteral`/`Identifier` is not a `Literal`. One
+   existing template-literal case (`BoardView.tsx`'s skeleton,
+   `` className={`h-16 animate-pulse rounded ... ${className}`} ``) is
+   consequently outside this rule's reach — it is a skeleton bar with no
+   text child regardless, so it is not a false negative in practice
+   today, but a *future* fake spinner written with a template-literal
+   className would slip past. Left to code review (SKILL.md bullet
+   added) rather than solved, matching A305's own precedent for the
+   unbanned arrows: a selector reaching every case here produced no
+   viable narrowing.
+
+4. **Survey result: zero current-code hits.** `grep -rn
+   "animate-pulse\|animate-spin" apps/web/src/client` returned 6 lines,
+   all in `BoardView.tsx`, `SprintsView.tsx`, `ListView.tsx` (×3), and
+   `TimelineView.tsx` — every one a skeleton `div`/`span`/`li` with
+   `aria-hidden`/`data-testid` and no text children. `npx eslint
+   apps/web/src/client` after adding the rule: 0 errors, 14 warnings
+   (pre-existing `exhaustive-deps` warnings, unrelated). No fix was
+   needed at any site; none was made.
+
+5. **Red-proof.** Temporarily added to `ListView.tsx`'s
+   `SkeletonCards` (immediately reverted, file restored byte-for-byte at
+   those lines):
+   ```
+   <span className="animate-spin">•</span>
+   <span className="animate-pulse">Some prose</span>
+   ```
+   `npx eslint apps/web/src/client/list/ListView.tsx` before revert:
+   ```
+   1609:42  error  Hand-rolled spinner: an animated glyph is not the loading
+   spinner. Use LogoSpinner (apps/web/src/client/ui/brand/LogoSpinner.tsx),
+   or Button's `loading` prop / LoadingState for a busy region, and give
+   the busy region an accessible name. See decisions.md A312  no-restricted-syntax
+
+   ✖ 1 problem (1 error, 0 warnings)
+   ```
+   Exactly one error, on the fake-spinner line; the lettered `Some
+   prose` span and the three genuine skeleton-bar siblings above it did
+   not fire. A separate isolated probe (`__lint_probe*.tsx`, deleted
+   after use, never committed) additionally proved: a bare prose `•`
+   with no `animate-*` class does not fire; `animate-pulse-slow` (a
+   different, non-existent-in-repo class) does not fire after the
+   word-boundary anchoring was added; a `cn("animate-pulse", "h-4")`
+   call-expression className still fires (Literal node reached
+   regardless of parent).
+
+6. **`.claude/skills/review/SKILL.md`** gains a bullet under "UI Glyphs
+   (web client)" stating what the rule catches and what it cannot
+   (concatenation/template-literal/variable classNames), so the reviewed
+   path covers the gap the automated one leaves, per the same pattern
+   A305 used for prose arrows.
+
+**Gates.** `npm run lint`: 0 errors, 70 warnings (matches stated
+baseline exactly). `npx tsc --build`: clean, no output. No `.tsx`
+component was edited (only `eslint.config.js` and
+`.claude/skills/review/SKILL.md`), so `npm run test -w apps/web` was not
+run per the stated conditional ("if you changed any component").
+
+**To revert.** Delete the one `no-restricted-syntax` object entry (and
+the `FAKE_SPINNER_MESSAGE` constant) from `eslint.config.js`, and the
+added bullet from `.claude/skills/review/SKILL.md`'s "UI Glyphs" section.
+No code, test, or other doc depends on either addition.
+
+### K115 · Every request is bounded: default limits, no auto-retry of a timeout, git times out on silence
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+**Situation.** Ken asked, of BRD-39's hanging board skeleton: *"do we
+need timeouts on everything else? can you audit?"* The audit (verified
+against source) found `apiClient` has NO default deadline: `timeoutMs` is
+opt-in (`api/client.ts:199`) and only 7 hooks pass it (task list 20s,
+bulk 30s, set-field / comments / task-dates / board-move / builtin-counts
+15s). Everything else — task detail, the `/api/info` bootstrap gate,
+every settings read and write, create-task, init, git
+publish/sync/reconcile, diagnostics run/repair — can wait forever, which
+ERR-5 and LST-52 forbid. Ken was asked three questions, each with the
+options' costs stated.
+
+**Ken's position** (his selections, verbatim option labels):
+1. Default limit for a request that sets none: *"Loads 20s, saves 15s"* —
+   the values the existing call sites already use.
+2. The one automatic retry of a timed-out load (which doubled the wait to
+   ~40s): *"Don't auto-retry timeouts"* — the message and Retry appear at
+   the limit; quick failures (dropped connection, 503) keep their one
+   automatic retry.
+3. Git publish/sync/reconcile: *"Time out only on silence"* — sync, which
+   streams progress, times out after 60s with no progress rather than a
+   fixed total; publish/reconcile (no progress stream) get a 2-minute
+   limit; on expiry the outcome is reported as unknown with how to check,
+   never as failed.
+
+**Backup restore, asked separately.** Restore (incl. the destructive
+`overwrite` mode) goes through `postFile`, unbounded by the documented
+design at `api/client.ts:277-280`. Ken was asked whether that should
+change — options were a 10-minute limit then "unknown", keep unbounded,
+or a Cancel button, with the cost of each (a hung restore spins forever
+with no guidance). Ken chose *"Keep unbounded"*. Attachment upload stays
+unbounded under the same design note (stated to Ken, not asked).
+
+**Where it lands.** See the implementing § 8 entry (A314).
+
+### A311 · `Button` gets a `variant="current"` (banner-toned outline); the three schema-banner buttons plus `ServerUnreachableBanner`'s "Try now" and `AdvisoryFsBanner`'s "Dismiss" move onto it
+
+**Ticket:** A307's own recommendation ("give `Button` a banner-toned
+variant … and move all three together. Left out of this sweep because
+it is a new `Button` variant — shared-primitive surface — not a
+call-site fix.") · **Date:** 2026-09-23 · **Commit:** (uncommitted) ·
+**Scope:** web UI only.
+
+**Situation.** `SchemaBanner.tsx` has three buttons (`Migrate now`, `Run
+migration`, `Cancel`) that inherit the banner's warn-or-danger tone
+(picked at render time by `describe()`, per `status.kind`) through
+hand-written `border-current/30` classes. A307 reproduced `Button`'s
+`loading` mechanism inline for one of them rather than migrating any of
+the three onto `ui/Button`, because `Button`'s `secondary` variant
+re-spells that as a neutral `border-border-default` + `bg-bg-surface`
+chip — wrong on a coloured banner — and converting one of three would
+break the matched set. Grepping for the same pattern found two more
+sites doing an equivalent thing with a *fixed* (not render-time-chosen)
+tone: `ServerUnreachableBanner`'s "Try now" (`border-danger-fg/40`) and
+`AdvisoryFsBanner`'s "Dismiss" (`border-warn-fg/40`) — both already
+covered by `Button`'s existing `danger-outline`/`warn-outline` variants
+in shape, but neither had been migrated either.
+
+**What had to be decided, and the call made.**
+
+1. **Shape: a new named variant (`current`), not a `tone` prop.**
+   `danger-outline`/`warn-outline` are already named variants rather
+   than a `tone`-prop×variant matrix (per their own docstring, "stay one
+   lookup, not a variant×tone matrix"). `current` follows the same
+   shape for consistency, and because it is exactly one more entry in
+   the existing `Record<ButtonVariant, string>` map — no new prop, no
+   new branch in `Button`'s render.
+
+2. **`current` borrows `currentColor` rather than taking a tone
+   argument.** `border-current/30 hover:bg-current/10
+   active:bg-current/20`, no `text-*`/`bg-*`-at-rest utility of its own.
+   This is the only shape that serves `SchemaBanner`, where the tone
+   isn't fixed at the call site — it's `warn` or `danger` depending on
+   which of four kinds is rendering — so a `danger-outline` vs.
+   `warn-outline` fork would have to be threaded through as a prop
+   anyway, one lookup table removed from just doing `currentColor`
+   directly. Emitting no fixed text/bg colour is also what keeps it from
+   ever fighting the container's `text-warn-fg`/`text-danger-fg` — `cn`
+   concatenates rather than resolving Tailwind conflicts (`cn.ts`'s own
+   docstring), so a variant that set its own at-rest colour would race
+   whatever the parent or a caller's `className` set, with the winner
+   decided by CSS source order rather than intent.
+
+3. **All three `SchemaBanner` buttons converted together**, closing
+   A307's deferred recommendation. `Migrate now`/`Cancel` are plain
+   `Button variant="current" size="sm"`; `Run migration` additionally
+   moved onto `loading={migrate.isPending}` — replacing the hand-rolled
+   invisible-label-plus-centred-spinner block A307 wrote inline — with
+   `aria-label="Run migration"` kept explicit, since that text is the
+   button's only accessible name and `loading` hides it from AT.
+
+4. **`ServerUnreachableBanner` and `AdvisoryFsBanner` converted too.**
+   Same hand-rolled-tone-outline-on-a-role-status/alert-banner pattern,
+   found by grepping `apps/web/src/client` for other `border-current`-
+   style banner buttons per the task's instruction to look. Both moved
+   to `variant="current"` rather than `danger-outline`/`warn-outline`
+   even though their tone is fixed, so all banner-toned buttons in the
+   codebase read the same variant name — one thing to grep for, not
+   three ways to spell "match my container's colour."
+
+5. **Visual size kept via `className="text-[0.9286rem]"` /
+   `"text-[0.8571rem]"` override, not a new `Button` size.** The three
+   converted banners each have their own base text size
+   (`text-[0.9286rem]` for the two single-button banners,
+   `text-[0.8571rem]` for `SchemaBanner`'s trio, matching its pre-
+   existing inline size). `size="sm"` gives the right height/padding
+   pairing; the text-size override is the documented "layout/spacing
+   overrides only" use of the `className` escape hatch, not a re-spelled
+   colour or state.
+
+6. **No visual verification performed.** Class composition was asserted
+   in tests (`toContain("border-current")`, `not.toMatch(/border-
+   border-default|bg-bg-surface/)`) as directed; nobody looked at the
+   rendered banner in a browser this round.
+
+**Where it landed.**
+- `apps/web/src/client/ui/Button.tsx` — new `"current"` `ButtonVariant`
+  and its `BUTTON_VARIANT` entry.
+- `apps/web/src/client/shell/SchemaBanner.tsx` — `Migrate now`, `Run
+  migration`, `Cancel` moved to `Button variant="current"`; `Run
+  migration` additionally uses `loading` in place of the A307 inline
+  mechanism.
+- `apps/web/src/client/shell/ServerUnreachableBanner.tsx` — `Try now`
+  moved to `Button variant="current"`.
+- `apps/web/src/client/shell/AdvisoryFsBanner.tsx` — `Dismiss` moved to
+  `Button variant="current"`.
+- Tests: `Button.test.tsx` (2 new), `SchemaBanner.test.tsx` (2 new, plus
+  the A307 describe block's docstring updated to say the mechanism now
+  lives in the primitive), `ServerUnreachableBanner.test.tsx` (1 new),
+  `AdvisoryFsBanner.test.tsx` (1 new) — each asserts `border-current` is
+  present and that no fixed-tone variant's `border-border-default`/
+  `bg-bg-surface` leaked in, so a regression to `secondary` fails a test
+  even though it wouldn't fail any pre-existing text-content assertion.
+
+**Not done / left open.** Nothing else hand-rolling this exact pattern
+was found elsewhere in `apps/web/src/client` (checked via grep for
+`border-current`, `border-danger-fg/40`, `border-warn-fg/40` outside
+`Button.tsx` itself and `board/BoardView.tsx`, which uses
+`danger-outline` already). `tests/ui/flow-accessibility.spec.ts` and
+`tests/ui/flow-app-shell.spec.ts` locate "Try now" by
+`getByRole("button", { name: "Try now" })` — role and accessible name
+are unchanged, so these should be unaffected, but they were not run
+(Playwright was out of scope for this change).
+
+**To revert.** Remove the `"current"` entry from `ButtonVariant` and
+`BUTTON_VARIANT` in `Button.tsx`. In each of the three banner files,
+replace the `Button variant="current" …` elements with the
+hand-rolled `<button className="rounded border border-current/30 …">`
+(or the equivalent `border-{tone}-fg/40` for the two fixed-tone
+banners) they replaced; `SchemaBanner`'s `Run migration` button would
+also need A307's inline `invisible`/`aria-hidden`/`LogoSpinner` block
+restored in place of `loading`. Delete the six new tests named above
+(or leave them — they'd start failing against the reverted markup,
+which is itself a correct signal that the revert is incomplete).
+
+### K116 · Settings carries no explanatory prose; format hints stay; errors get trimmed
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+**Situation.** Every settings page opened with a description paragraph
+(e.g. Projects: "Each project has its own key prefix and counter. Set the
+workspace default … from a project row's actions. Your personal default
+is in Settings → My preferences."), the nine workflow pages each printed
+"Stored in <absolute path to workflow.yaml>", and many fields carried
+explanatory hints. An AST inventory of `apps/web/src/client/settings/`
+found ~230 prose strings.
+
+**Ken's position**, verbatim, in order:
+- *"im feeling a lot of these can be deleted. audit for me. i want to
+  remove all. if there's some you think is justified there, you may ask.
+  but it needs to be a damn strong requirement"*
+- On the path: *"why do you have stupid info that you dont need
+  everywhere? really audit each page on settings and tell me what can be
+  removed"*, then *"audit all the text while you're at it"*.
+- On the case-backed and hint strings: *"if its a format hint, we likely
+  want to keep. everything else looks self-explanatory that i'd like to
+  scrape. but again, if you think its important to keep, you tell me and i
+  make the call."*
+- Project prefix hint "Starts every task key, like WEB-1":
+  *"Explanation — remove"*.
+- Git enable explainer: *"i think we can make the button say 'Publish to
+  git' or 'Enable git tracking', then we can take out the explainer"*;
+  the label was referred to the PM voice, which chose "Enable git
+  tracking" (no promise of a push that a remote-less repo cannot make; no
+  collision with the post-enable Publish button). Offered one surviving
+  line about what is never published (the PM's objection, and Claude's
+  counter that the files are gitignored regardless of the copy):
+  *"Remove it too"*.
+- Error / failure / result text (~150 strings shown only when something
+  happens): *"Trim each to the essentials"* — a before/after list goes
+  to Ken for approval before anything changes.
+
+**Consequences.** Cases amended, each carrying an "Amended (K116)" note:
+GIT-1 (no pre-enable explainer; label + the exclusion asserted as
+behaviour), SET-46 (no "key is permanent" copy), PRU-5 (prefix cost stated
+in the edit dialog's count warning, not a create-form hint). Kept: format
+hints (label colour hex, estimation "comma separated").
+
+**Where it lands.** A315 (the removal); the error-text trim pending
+approval.
+
+### A317 · The brand spinner pivots about its box centre
+
+**Ticket:** (Ken, 2026-09-23 — "the spinner svg is misaligned. it seems
+like you're laying 2 animations?") · **Date:** 2026-09-23 · **Commit:**
+(this one)
+
+**Situation.** `.loctt-spin` (on `LogoSpinner`'s OUTER `<svg>`) set
+`transform-origin: 32px 32px`, copied from the source SVG. On an outer
+`<svg>` that value is CSS pixels of the rendered box, not viewBox units,
+so it was the centre only at the source's native 64px. At the 21–24px the
+app renders (Button `loading`, `LoadingState`), the pivot sat past the
+bottom-right corner and the mark orbited. Not two animations: Button
+renders one spinner; the L/O parts only translate. Measured with the
+animation paused at -800ms: box-centre drift (13.4px, 50.8px) before,
+(0, 0) after, at 21/24/64px.
+
+**The call made.** `transform-origin: 50% 50%`. The padded viewBox
+(`-19.255 … 102.510`) is centred on the mark's (32, 32), so the box
+centre is the mark centre at every size.
+
+**Where it landed.** `apps/web/src/client/styles/index.css` (`.loctt-spin`).
+
+**To revert.** Restore `transform-origin: 32px 32px` — only correct if
+every caller renders the spinner at exactly 64px.
+
+### A313 · A broken saved view suppresses rows client-side (list/timeline); CLI gets the MCP-style read-path refusal
+
+**Ticket:** UI-24 open defect (live report) · **Date:** 2026-09-23 · **Commit:** (uncommitted)
+
+**The situation.** VUE-22's decision (the `broken_view` entry, point (c))
+chose a distinct broken state over the XS-28 `missing_view` fallback
+specifically because "a widened list would read as a legitimate result".
+`handleListTasks` (`apps/web/src/server/server.ts`) implements exactly
+that: it returns a non-fatal `broken_view` diagnostic AND every task in
+the tracker, unfiltered (`view` is dropped before reaching core, so no
+filter runs at all) — `total`/`items` describe the unfiltered set on
+purpose, so the client can still page it if it ever wanted to.
+
+Verified live: `GET /api/tasks?view=<broken id>` returned `broken_view`
+plus `total: 14` (all tasks in the dev tracker). `ListView.tsx` rendered
+the banner and then all 14 rows beneath it, because its table/card/
+pagination logic only ever branched on `items.length === 0`, which a
+`broken_view` response is never. VUE-22's own case text — "shows the
+parse error … rather than an empty list" — was satisfied for the banner
+and violated for everything under it. `TimelineView.tsx` had no consumer
+for `broken_view` at all: no banner, and it drew a Gantt bar for each of
+the 14 unfiltered tasks.
+
+Separately, `loctt list --view <broken>` hits core's bare `resolveView`
+(a broken view is excluded from `queriesConfig.queries`, since A296) and
+reports `Error: unknown view "<id>"` — true in the narrowest sense and
+misleading, sending the user hunting for a different id instead of
+fixing the DSL. MCP's `list_tasks` (`apps/mcp/src/tools/task-crud.ts`)
+already fixed this for itself by checking `queriesConfig.broken` before
+calling `listTasks` and returning `saved view "<name>" cannot run:
+<error>`; the CLI never got the same fix, so CLI and MCP disagreed on
+the read path for the same defect.
+
+**What had to be decided.** Two independent shape questions:
+
+(a) **Server vs. client for list/timeline rows.** Should
+`handleListTasks` change to return zero rows (`total: 0`) whenever
+`broken_view` is present, or should the client suppress rendering while
+the server keeps sending the unfiltered set?
+
+(b) **CLI's `--view <broken>` message.** Reuse MCP's exact check
+(`queriesConfig.broken`, checked before `listTasks` runs), or invent a
+CLI-specific wording?
+
+**Options considered.**
+
+(a)
+1. **Server returns `total: 0` / empty `items` under `broken_view`.**
+   Every surface gets the suppressed shape for free from one change.
+   Cost: changes an established, tested response contract
+   (`server.view-unparseable-dsl.test.ts` and the wider `handleListTasks`
+   contract don't currently assert `total`/`items` are altered by
+   `broken_view`, but nothing rules out a caller relying on the
+   unfiltered count being genuinely unfiltered — e.g. a future "N tasks
+   exist, only the view is broken" affordance). Also does nothing for
+   CLI/MCP, which read `listTasks`/`resolveView` directly and never see
+   this HTTP response shape at all — the read-path bug there is
+   independent of what the web server sends.
+2. **Client suppresses rows/total wherever `broken_view` is truthy,
+   server keeps sending the honest unfiltered set.** Cost: two render
+   sites (list, timeline) each need the guard, rather than one server
+   change; the `total`/`items` the client discards are still shipped
+   over the wire (bytes, not correctness).
+
+(b)
+1. **Reuse MCP's check verbatim** (`queriesConfig.broken?.find(id or
+   name)`, thrown/returned before `listTasks`). Cost: none found — it is
+   the same core objects (`queriesConfig.broken`) already loaded by
+   `loadOptionalConfigs` in the CLI's `list` command.
+2. **Leave CLI on the generic `Error: unknown view` path** and treat this
+   as MCP-only. Rejected outright — CLAUDE.md's core/CLI/MCP parity rule
+   ("a capability in core is not done until CLI and MCP have it") and the
+   task's own instruction to keep CLI/MCP parity.
+
+**Decided.** (a) Option 2 — client-side suppression. `ListView.tsx` and
+`TimelineView.tsx` each derive a `brokenView`/`brokenViewActive` flag
+from the last page's `broken_view` field and use it to force `items` to
+`[]` (and, in `ListView`, `total` to `0`) before any other derived state
+(`hasFilters`-driven empty copy, the settled-count a11y announcement, the
+pagination footer) sees them; the row/card table body short-circuits to
+`null` ahead of the ordinary `items.length === 0` empty-state branch, so
+neither "No tasks match these filters"/"No tasks match this view" nor
+the empty-state CTA can render under the alert. `TimelineView.tsx`
+additionally gained its own `role="alert"` banner (`data-testid=
+"timeline-broken-view"`), matching `ListView`'s existing one, since it
+had none. (b) Option 1 — `apps/cli/src/commands/task-crud.ts`'s `list`
+command now checks `queriesConfig.broken` (by id or name) before calling
+`listTasks`, throwing `ViewError` (already a recognized CLI domain error
+via `KNOWN_DOMAIN_ERRORS`, `apps/cli/src/runtime/errors.ts`) with the
+same `saved view "<name>" cannot run: <error>` message MCP already uses.
+
+**Why.** Client-side suppression was chosen over widening the server
+contract because the server's `broken_view` response is *already* the
+form the VUE-22 decision asked for — a non-fatal diagnostic riding
+alongside the true (unfiltered) result, the same convention `missing_view`
+and `warnings` use elsewhere in the same response. Changing what `total`/
+`items` mean under `broken_view` would be a second, unreviewed change to
+that established contract's semantics, for a problem that is entirely a
+rendering-layer bug: nothing about the defect requires the wire format to
+lie about what matched. Suppressing in the client also generalizes better
+to a third consumer (there is now one: `TimelineView`) without touching
+the server route each time. The CLI fix reuses MCP's exact wording and
+mechanism per CLAUDE.md's "a capability in core is not done until CLI and
+MCP have it" — the underlying fault (core's `resolveView` cannot see
+`broken` views) is identical on both surfaces, so the fix and its message
+should be too, and `ViewError` was already the CLI's own domain-error
+class for this family of write-path errors (`views/manage.ts`), making it
+the natural fit for the analogous read-path one.
+
+**Out of scope / flagged, not fixed:** `apps/web/src/client/board/
+BoardView.tsx` consumes the same `useTasksFeed`/`broken_view` shape (it
+already receives the field on every page, per `useTasks.ts`) and has the
+identical defect — no banner, unfiltered cards rendered under no
+explanation — but is excluded from this change because another agent is
+actively editing that file. It needs the same `brokenView`/suppression
+treatment `TimelineView.tsx` got here.
+
+**To revert.**
+- `apps/web/src/client/list/ListView.tsx`: remove the `brokenViewActive`
+  const and its three call sites (the `items` useMemo guard, the `total`
+  guard, the settled-count announcement's early return, and the two
+  `brokenViewActive ? null : …` ternary branches in the desktop table
+  and mobile card list). Restores `items`/`total` to their prior
+  unconditional derivation from `pages`.
+- `apps/web/src/client/timeline/TimelineView.tsx`: remove the `brokenView`
+  const, the `items` useMemo's guard, the new `role="alert"` banner block
+  (`data-testid="timeline-broken-view"`), and the `brokenView !==
+  undefined ? null : …` branch ahead of `noRows`.
+- `apps/cli/src/commands/task-crud.ts`: remove the `ViewError` import and
+  the `if (view !== undefined) { const broken = … }` block in `list()`,
+  restoring the fall-through to core's `listTasks`/`resolveView` (which
+  reverts the message back to `Error: unknown view "<id>"`).
+- Tests to remove/revert if this is reverted: `apps/web/src/client/list/
+  ListView.broken-view.test.tsx` (new file), `apps/web/src/client/
+  timeline/TimelineView.broken-view.test.tsx` (new file), the "CLI list —
+  broken saved view (A313)" `describe` block appended to
+  `apps/cli/src/cli.test.ts`.
+- Docs to revert: the "Running a broken view" paragraph added to
+  `docs/user/cli/reference.md` under "Repairing a broken view (`--force`)".
+
+### A318 · Checkbox hover no longer greys a filled box; marks are drawn
+
+**Ticket:** (Ken, 2026-09-23 — "the checkbox on hover looks terrible",
+screenshots of the Calendar working-days row) · **Date:** 2026-09-23
+· **Commit:** (this one)
+
+**Situation.** `ui/Checkbox.tsx` put `hover:bg-bg-muted-hover` and
+`checked:bg-accent` on the same input. They are same-specificity
+utilities, so CSS source order picks the winner — it was hover. A CHECKED
+box under the pointer went grey while its tick stayed accent-contrast: a
+washed-out ghost tick in both themes. Indeterminate (a class-toggled
+`bg-accent`) had the same conflict. Separately, the tick and dash were the
+typed literals `"✓"`/`"–"` — A208 violations the glyph lint rule missed,
+because it bans `✓` only as bare JSX text, not inside a string literal.
+
+**The call made.** Hover split by state: unchecked, enabled boxes take the
+grey wash; checked and indeterminate boxes darken to `--accent-hover`, the
+primary button's hover; disabled boxes get none. Indeterminate's fill moved
+into the base classes via `data-[indeterminate]:`. Marks are `<Icon>` paths
+(`check`, and a new `minus`). Verified live: a hovered checked box computes
+to `--accent-hover` (#4FC3AB dark), not grey.
+
+**Tests.** The existing "shows a tick … and a dash …" test asserted the
+typed glyphs — it was asserting the A208 violation; rewritten to assert the
+drawn paths. New: hover-scoping test. Both red-proven.
+
+**To revert.** Restore the single `hover:bg-bg-muted-hover` and the
+conditional `bg-accent border-accent` class; restore the text glyphs.
+
+### A319 · The comment composer's disabled reason is a description, not a notice
+
+**Ticket:** (Ken, 2026-09-23 — "this notice message is bullshit? i dont
+need the notice", on "A comment needs some text before it can be posted.")
+· **Date:** 2026-09-23 · **Commit:** (this one)
+
+**Situation.** CMT-2 requires the disabled Comment button to have "the
+reason available". The composer's own comment said the reason should reach
+a pointer and a screen reader "without occupying a line of the composer
+permanently" — yet it rendered as a visible `<span>` beside the button.
+
+**The call made.** The reason is now `SrOnly` (the A298 pattern every other
+disabled reason in the app uses), still the button's `aria-describedby`
+and `title`. CMT-2 stays satisfied: the reason is available, not printed.
+New unit test (red-proven against the visible span); the CMT-2 e2e now
+asserts the accessible description and that the text is not visible.
+
+**To revert.** Render `reason` in a visible span again in
+`comments/CommentComposer.tsx`.
+
+### A316 · The `Dropdown` pending row moves below the (already-first) selected option, and its text becomes "Loading…"
+
+**Ticket:** Ken, verbatim: *"when i do a searchable select (e.g.
+milestone), my selected option should be at the top while the
+'Searching...' is below. and can we change 'Searching...' to
+'Loading...'?"* · **Date:** 2026-09-23 · **Commit:** (uncommitted)
+· **Scope:** `ui/Dropdown` only (the shared primitive behind every
+searchable single/multi/menu picker — `ui/Combobox` is its alias
+layer).
+
+**Situation.** In server-search mode (`search.onQuery`, K90 — the
+milestone/sprint/user/project pickers), `Dropdown`'s `visible` list
+already put the current single-select value FIRST while a query is in
+flight: `options` (which `OptionPicker` always populates with the
+selected value's own option) is unshifted onto `results ?? []` when the
+value isn't already in the result set. That part was correct. The bug
+was purely in JSX order: the `!loaded` "Searching…" `<p>` was rendered
+**before** `visible.map(...)`, so the selected option — first in
+`visible` — still painted BELOW the pending text. The user's own
+current pick read as buried under a status line about it.
+
+**The call made.**
+
+1. Moved the `!loaded` pending row to render AFTER `visible.map(...)`
+   inside the listbox container, so DOM order now matches the already-
+   correct data order: selected option (if any) first, pending text
+   below it. No change to the `visible` computation itself — the
+   dedupe-on-arrival behaviour (selected option merged in only when the
+   server results don't already include it; otherwise no duplicate) was
+   already right and needed no change, only to stop being visually
+   contradicted.
+2. Text changed from "Searching…" to "Loading…" (single-character
+   ellipsis per K112). The row is a bare `<p>`, not a live region and
+   not `aria-label`led — there was no accessible name to update
+   alongside the visible text. Left it as a bare text row: it already
+   matches the sibling "no matches" row's pattern, and there is no
+   existing shared inline-loading-row primitive to move it onto
+   (`LoadingState`/`LogoSpinner` are full-panel, not inline listbox
+   rows) — inventing one was out of scope for a copy + order fix.
+3. The pending row stays a plain `<p>`, never a `button`/`role="option"`
+   — unreachable by roving focus, never `activeKey`, so keyboard
+   navigation and `aria-activedescendant` are unaffected by the reorder.
+
+**Where it landed.** `apps/web/src/client/ui/Dropdown.tsx` (the listbox
+render block); `apps/web/src/client/ui/Dropdown.test.tsx` (K90
+server-search test renamed and extended with an explicit DOM-order
+assertion between the selected option and the pending row; its
+"Searching…" text assertions became "Loading…" — a deliberate label
+change per this ticket, not a test that was encoding a bug).
+
+**Not touched.** `relationships/LinkPicker.tsx` has its own, unrelated
+"Searching…" text (`role="status"`, red-proven in
+`LinkPicker.test.tsx`) for its free-text "search any task to link"
+flow, which has no pre-selected value to reorder around — out of scope
+for this ticket and left as-is.
+
+**To revert.** Move the `!loaded` `<p>` back above `{visible.map(...)}`
+and rename its text back to "Searching…"; revert the two test changes
+in `Dropdown.test.tsx` to match.
+
+### A315 · Removed the always-visible explanatory copy across Settings; kept every string a real test or case still requires
+
+**Ticket:** Ken, verbatim: *"i want to remove all"*, *"why do you have
+stupid info that you dont need everywhere?"* (plus follow-up rulings the
+same session amending scope — see Situation) · **Date:** 2026-09-23 ·
+**Commit:** (uncommitted)
+
+**Situation.** Every settings panel under `apps/web/src/client/settings/`
+had grown an always-visible intro paragraph, cross-link paragraph, or
+inline field hint restating what the control above or below it already
+made obvious (e.g. LabelsPanel's "Task counts exclude archived tasks.",
+BoardColumnsPanel's "optional — a passive counter, not enforced", the
+`description=` prop threaded through `WorkflowPanelFrame` and six of its
+panels). Ken ruled all of it out, panel by panel, then in two follow-up
+messages during the same session: (a) reversed course on
+`LabelEditDialog`'s colour-hex hint ("if its a format hint, we likely
+want to keep") and folded in four more removals backed by cases SET-46 /
+PRU-5 that he said he would amend himself; (b) ruled `CreateProjectDialog`'s
+prefix hint out too ("explanation, not a format hint") and ordered the
+entire GIT-1 enable-time explainer list removed with the enable button(s)
+relabelled "Enable git tracking" — which he then codified himself as the
+GIT-1 case amendment (K116, 2026-09-23), read during this work and found
+to already match what had been built.
+
+**The call made.** Removed every string on the list once grepped against
+`apps/web/src/client/settings/*.test.tsx` and `tests/ui/*.spec.ts` and
+found to have no assertion depending on it. Where a grep found a real,
+non-amended test or case requiring the exact text, the string was kept
+and flagged instead of deleted — this happened four times:
+  1. **Four cross-link paragraphs** (ProjectsPanel → My preferences,
+     PreferencesPanel → Projects, SidebarGroupsPanel → Sidebar pins,
+     SidebarPinsPanel → Sidebar groups) carry a `<Link>` that
+     `@verifies CONFIG-5` / `@verifies A244` tests resolve by testid and
+     assert `href` + visible text against. Only the redundant lead-in
+     sentence before each link (where one existed) was removed; the link
+     paragraph itself stays.
+  2. **CalendarPanel's `calendar-timezone-note`** (SET-25, blocker) is
+     asserted verbatim by `flow-settings-workflow.spec.ts` for
+     "due_date" / "date-only" / "updated_at" — kept in full.
+  3. **`WorkflowPanelFrame`'s "Stored in {path}" footer** (SET-3,
+     blocker) is asserted by both a unit test and an e2e spec for the
+     absolute config path, and is the exact fix for a prior regression
+     Ken called "useless copywriting" — kept in full; only the unused
+     `description` prop/rendering was removed from the frame.
+  4. **`CustomFieldEditDialog`'s disabled-reason text** (SET-16,
+     blocker) is asserted verbatim by a unit test and an e2e spec against
+     `custom-field-dialog-type-lock`, and is the `aria-describedby`
+     target for the disabled Type/Multi controls. Converted from a
+     visible `<p>` to a permanent `sr-only` `<span>` with the same
+     id/testid/text (the A298 pattern) rather than deleted, so the
+     control keeps an accessible reason and no id dangles.
+  5. **BoardColumnsPanel's implicit-columns note** keeps its testid
+     (`board-implicit-note`, required by a unit test) but the sentence
+     was shortened to "One column per status, in order:" since the test
+     only checks presence, not wording; the `<ol>` chip list beside it
+     is the real per-status UI, not illustrative filler, and was kept
+     untouched.
+  6. **`GitSyncPanel`'s "off" copy and enable-time explainer** were
+     removed per Ken's explicit ruling even though the *pre-amendment*
+     GIT-1 case and two specs required them — `GitSyncPanel.confirm.test.tsx`
+     (single test, sole subject was the removed bullet copy) was deleted
+     entirely per the retire rule; `flow-git-sync.spec.ts`'s GIT-1 test
+     was rewritten to assert the new button label ("Enable git tracking")
+     and to verify the gitignore guarantee as behaviour on the published
+     `loctt` branch (`git ls-tree`) instead of on-screen text, matching
+     the GIT-1 amendment's own words ("The exclusion is still asserted —
+     as behaviour on the branch rather than as text").
+  7. **`custom-field-dialog-scope-hint`, "A key is permanent" spans in
+     EntryEditDialog/RelationshipEditDialog/CustomFieldEditDialog, the
+     CreateProjectDialog slug/prefix hints, SprintEditDialog's goal hint,
+     ProjectEditDialog's prefix subtitle, and ViewFormDialog's filter
+     subtitle** had no test or case dependency and were removed outright.
+  Every header whose sole description paragraph was removed had its
+  `<h1>`/`<h2>` margin bumped from `mb-1` to `mb-2` to match the
+  established "title with no description" spacing already used by every
+  panel's own error/loading state (verified against CalendarPanel,
+  CardLayoutPanel, PreferencesPanel, SidebarGroupsPanel, SidebarPinsPanel,
+  SettingsShell before adopting it).
+
+**Where it landed.** `apps/web/src/client/settings/ProjectsPanel.tsx`,
+`UsersPanel.tsx`, `SprintsPanel.tsx`, `CalendarPanel.tsx`,
+`CardLayoutPanel.tsx`, `KeyboardPanel.tsx`, `PreferencesPanel.tsx`,
+`SidebarGroupsPanel.tsx`, `SidebarPinsPanel.tsx`, `LabelsPanel.tsx`,
+`SavedViewsPanel.tsx`, `MilestonesPanel.tsx`, `GitSyncPanel.tsx`,
+`BackupPanel.tsx`, `BoardColumnsPanel.tsx`, `CustomFieldsPanel.tsx`,
+`EstimationPanel.tsx`, `EnumCollectionPanel.tsx`,
+`RelationshipsSettingsPanel.tsx`, `TimelinePanel.tsx`,
+`WorkflowPanelFrame.tsx`, `CustomFieldEditDialog.tsx`,
+`EntryEditDialog.tsx`, `RelationshipEditDialog.tsx`,
+`CreateProjectDialog.tsx`, `SprintEditDialog.tsx`,
+`ProjectEditDialog.tsx`, `ViewFormDialog.tsx`; deleted
+`GitSyncPanel.confirm.test.tsx`; rewrote the GIT-1 test in
+`tests/ui/flow-git-sync.spec.ts`.
+
+**To revert.** `git diff` the files above and reapply the removed
+`<p>`/`<span>` elements, the `description` prop on `WorkflowPanelFrame`
+and its six callers, and the old GitSyncPanel enable copy/labels;
+restore `GitSyncPanel.confirm.test.tsx` from git history and revert the
+GIT-1 spec rewrite in `flow-git-sync.spec.ts`. No data model, schema, or
+API surface changed — this is presentation-only, so a revert is a pure
+UI diff with no migration.
+
+**Follow-up (2026-09-23, same day).** Ken reviewed the three items the
+previous pass kept and flagged instead of deleted (SET-3's "Stored in
+{path}" footer, SET-25's `calendar-timezone-note`, and the CONFIG-5/A244
+cross-link paragraphs), and ruled, verbatim: *"just remove all these.
+some things like the calendar note, can go into user docs."*
+
+- **`WorkflowPanelFrame.tsx`**: removed the always-visible "Stored in
+  {usage.data?.path ?? …}" footer (`workflow-config-path`) from all nine
+  workflow pages (the six caller files, with `EnumCollectionPanel` used
+  three times for Statuses/Priorities/Task types). The `path` field was
+  removed from the frame's `children` callback signature and from the
+  object it passes down — grepped every consumer first and confirmed
+  none of them read `path` (only the deleted footer did). `usage` itself
+  is kept: `CustomFieldsPanel.tsx`, `EnumCollectionPanel.tsx`, and
+  `RelationshipsSettingsPanel.tsx` all read `usage` for per-key reference
+  counts, unrelated to the path line. The `usage.data?.path` fallback
+  used to name the file in the SET-33 broken-config error state
+  (`brokenPath`) is a different, legitimate surface (naming the file when
+  it fails to parse, not an always-visible line) and was left untouched.
+- **`CalendarPanel.tsx`**: removed the `calendar-timezone-note` paragraph
+  entirely. Its substance (which fields move with a timezone change and
+  which don't) was moved into user docs — see below — rather than
+  dropped, per Ken's "can go into user docs" instruction.
+- **Cross-link paragraphs**: removed from `ProjectsPanel.tsx` (→ My
+  preferences), `PreferencesPanel.tsx` (→ Projects),
+  `SidebarGroupsPanel.tsx` (→ Sidebar pins), and `SidebarPinsPanel.tsx`
+  (→ Sidebar groups). Each panel's now-unused `Link` import (from
+  `@tanstack/react-router`) was removed too. `SidebarPinsPanel.tsx`'s
+  title-relabel ("Pinned views", not "Sidebar pins") is unrelated A244
+  content and was left in place.
+
+**User docs.** Added a paragraph to
+`docs/user/common/configuration.md`, in the existing "## Calendar"
+section (no new doc created): *"Changing `timezone` rewrites nothing
+already stored. Task `due_date` and `start_date` are date-only fields
+and are unaffected by a timezone change; only datetimes such as
+`created_at` and `updated_at` change how they are displayed. Reverting
+to the previous zone restores the previous display exactly."*
+
+**Tests removed entirely** (no skip, no comment-out, per Ken's standing
+rule):
+- `apps/web/src/client/settings/workflowPanels.test.tsx` — deleted the
+  whole `describe("WorkflowPanelFrame — config path (SET-3)")` block
+  (its one test asserted only the removed footer).
+- `apps/web/src/client/settings/PreferencesPanel.test.tsx` — deleted
+  `"cross-links the personal default to the workspace default in
+  Projects"` (`@verifies CONFIG-5`); simplified `renderPanel()` to drop
+  the memory-router harness that existed solely for the removed `<Link>`
+  (`createMemoryHistory`/`createRootRoute`/`createRoute`/`createRouter`/
+  `RouterProvider`/`Outlet` imports removed).
+- `apps/web/src/client/settings/ProjectsPanel.test.tsx` — deleted
+  `"cross-links the workspace default to the personal default in My
+  preferences"` (`@verifies CONFIG-5`); same router-harness
+  simplification in the `wrapper()` helper.
+- `apps/web/src/client/settings/SidebarGroupsPanel.test.tsx` — deleted
+  `"cross-links to the Pinned views section"` (`@verifies A244`);
+  simplified the (now unused for this purpose) `renderPanel()` router
+  wrapper — the file's second, independent router setup for the
+  "embedded" test was untouched since it does not depend on `Link`.
+- `apps/web/src/client/settings/SidebarPinsPanel.test.tsx` — deleted
+  `"cross-links to the Sidebar groups section"` (`@verifies A244`);
+  same `renderPanel()` simplification.
+- `tests/ui/flow-settings-workflow.spec.ts` — removed only the two
+  path-footer assertions inside SET-3's first test (renamed
+  from "...and the file path" since the rest of that test's coverage —
+  file order, key/category rendering, the default marker — stands
+  unchanged); removed only the `calendar-timezone-note` assertions
+  inside the SET-25/XS-31 test (renamed the test to "XS-31: changing the
+  timezone rewrites no stored date" since XS-31's working-days-in-the-
+  same-save coverage and the stored-date-unchanged assertion both
+  survive and are the real remaining subject).
+
+**CONFIG-5.** Grepped `tests/cases/` (`case-index.json` and every
+`.md` under `ui-test-cases/`/`surface-test-cases/`) for a case literally
+named `CONFIG-5` — none exists. The four cross-link tests referenced
+`@verifies CONFIG-5` in their own doc-comments with no backing case
+entry anywhere in the case files; there is nothing for Ken to amend
+under that id.
+
+**Gates.** `npx tsc --build`: one pre-existing failure, unrelated to
+this pass — `apps/web/src/client/router/RouteError.test.tsx` (untracked
+file from other in-flight work) importing a `RouteError` that
+`router/index.tsx` doesn't (yet) export; `board/BoardView.test.tsx`
+mentioned as pre-existing was not reproduced as a *type* error, but its
+test does fail below. `npm run test -w apps/web`: 17 failures across 7
+files, none in a file this pass touched — `board/BoardView.test.tsx`,
+`comments/CommentComposer.reason.test.tsx`,
+`list/ListView.broken-view.test.tsx`, `router/RouteError.test.tsx`,
+`settings/ReconcilePanel.loading.test.tsx`,
+`settings/dataPanels.test.tsx`, `styles/disclosureMarker.test.ts`,
+`styles/spinnerKeyframes.test.ts`, `timeline/TimelineView.broken-
+view.test.tsx` — all pre-existing/other-agent work in progress, not
+touched by this pass. `npx eslint` clean on every file this pass edited.
+
+**To revert.** Restore the removed `<p data-testid="workflow-config-
+path">…` block and the `path` field in `WorkflowPanelFrame.tsx`'s
+`children` callback (nine call sites don't need code changes since none
+read `path`, but the type signature would need it back to satisfy any
+new reader); restore the four `<p>` cross-link blocks and their `Link`
+imports in `ProjectsPanel.tsx`/`PreferencesPanel.tsx`/
+`SidebarGroupsPanel.tsx`/`SidebarPinsPanel.tsx`; restore
+`calendar-timezone-note` in `CalendarPanel.tsx`; remove the added
+paragraph from `docs/user/common/configuration.md`'s Calendar section;
+restore the five deleted test blocks/files from git history and revert
+the two trimmed assertions in `flow-settings-workflow.spec.ts`. No data
+model, schema, or API surface changed.
+
+### K117 · Nothing is "deferred": known-gaps holds only open items, and Ken moves them to a backlog
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+**Situation.** `docs/dev/known-gaps.md` had grown to 30 entries mixing
+fixed items kept "for history", items accepted by an agent, process
+lessons, and genuinely open defects, several described as deferred.
+
+**Ken's position**, verbatim: *"`known-gaps.md` -> if fixed/accepted,
+remove. what's 'deferred' because i dont want to defer things. let me
+make the call and we can move them to backlog"*.
+
+**Consequences.** Fixed and Ken-accepted entries are removed from
+known-gaps (their record stays in decisions.md and git history).
+Process lessons move to the process docs. Every open item goes to Ken
+for a call; the ones he takes on move to a backlog. An agent does not
+mark anything "deferred" — if it is found and not fixed, it is open and
+goes to Ken.
+
+### K118 · The sidebar has exactly one selection
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+**Situation.** Ken: *"highlighting is broken. how come multiple
+projects/views are enabled? and i can click a project -> click a view,
+and the project stays selected?"* and *"clicking milestones, labels,
+recently viewed on the other hand, dont have a state at all"*. Projects
+worked as a scope that persisted while a view was picked (so "Open bugs
+within Web Client" was a sidebar combination), rendered with the same
+highlight as a selection; saved-view and label links kept the previous
+`q`, so a built-in and a saved view could both match; milestone, label,
+sprint and recent rows computed no active state at all.
+
+**Ken's position.** Offered "one selection, always" vs "project is a
+scope, marked differently" (with previews), Ken chose *"One selection,
+always"*: the sidebar is navigation, exactly one row is lit, and
+clicking any row replaces the whole sidebar-driven state (a view click
+drops the project scope and vice versa). Combining a project with a
+filter remains possible through the toolbar, not by clicking two rows.
+
+### K119 · "Save as view" uses a bookmark-with-plus icon
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+Ken, on the star `IconButton` A297 introduced: *"this is not the proper
+save iconography?! why is this the 'save as view' button?"*. The star
+was an agent's pick (A297 recorded Ken's ask for "an icon button with
+tooltip", not the glyph), reads as "favourite", and was the mark K113
+removed for carrying two meanings. Offered bookmark-with-plus, floppy
+disk, or a text button, Ken chose *"Bookmark with a plus"*. Built:
+`bookmarkPlus` in `ui/Icon.tsx`; both "Save as view" sites in
+`list/FilterBar.tsx`. Asked whether the "Save these as my default" menu
+item's star should change too, Ken said *"yes"*: it uses the same icon.
+
+### A314 · Every web-client request is bounded (K115): default deadlines, no auto-retry of a timeout, git/diagnostics time out on silence, BRD-39's `useStalledLoad` retired, board gets UI-24's broken-view gating
+
+**Ticket:** K115 (Ken's ruling — `docs/dev/decisions.md`) · **Date:** 2026-09-23 · **Commit:** (uncommitted) · **Scope:** `apps/web/src/client` only.
+
+**Situation.** K115 recorded Ken's rulings on the timeout audit: (1) a
+request with no explicit `timeoutMs` gets a default (20s read / 15s
+write) rather than running unbounded, (2) a timed-out read does not get
+TanStack Query's one automatic retry — the message and Retry control
+appear at the limit instead, (3) git publish/enable/disable/reconcile
+writes get a fixed 2-minute ceiling and `streamSync` times out only on
+60s of silence (never on total elapsed time), reporting the outcome as
+unknown rather than failed. This entry is the implementation.
+
+**What was built.**
+
+1. **Default timeouts** (`apps/web/src/client/api/client.ts`).
+   `apiRequest` now computes `timeoutMs = options.timeoutMs ??
+   (method === "GET" ? DEFAULT_READ_TIMEOUT_MS : DEFAULT_WRITE_TIMEOUT_MS)`
+   — an explicit value always wins. `DEFAULT_READ_TIMEOUT_MS` (20_000)
+   and `DEFAULT_WRITE_TIMEOUT_MS` (15_000) are exported consts, each
+   overridable via a `globalThis.__LOCTT_DEFAULT_READ_TIMEOUT_MS__` /
+   `__LOCTT_DEFAULT_WRITE_TIMEOUT_MS__` hook, matching the existing
+   per-hook override convention (`__LOCTT_READ_TIMEOUT_MS__` etc.). The
+   seven call sites that already passed their own `timeoutMs` (task
+   list 20s, bulk 30s, set-field/comments/task-dates/board-move/
+   builtin-counts 15s) are unaffected — bulk's 30s is untouched, not
+   folded into the write default. `postFile` (upload/restore) takes no
+   `timeoutMs` parameter at all and was not touched — K115 explicitly
+   keeps it unbounded (documented in its own docstring, unchanged).
+
+2. **Timeout discriminator** (`ApiError.isTimeout`, `client.ts`). A new
+   `readonly isTimeout: boolean` field on `ApiError`, defaulting `false`,
+   set `true` only at the two deadline-triggered throw sites (`apiRequest`'s
+   own timeout branch, and `useGit.ts`'s `syncSilenceError`). NOT added to
+   the shared `ErrorResponse`/`code` wire type (`@loctt/contracts`) — a
+   timeout and a dropped connection both legitimately use `code:
+   "unknown"`, and `code` is a shared contract type not meant to grow a
+   client-local timing fact. `queryClient.ts`'s new `isTimedOut(error)`
+   checks this field, checked ahead of and separately from the existing
+   `isSettledAnswer`.
+
+3. **No auto-retry of a timeout** (`apps/web/src/client/api/queryClient.ts`).
+   The `retry` callback now checks `isTimedOut(error)` first and returns
+   `false` immediately — never folded into `isSettledAnswer` itself,
+   because that function also gates the background recovery poll
+   (`refetchInterval`), and a timed-out query is exactly the kind of
+   transient failure the poll exists to recover from. Only the automatic
+   *retry* is suppressed; the 5s recovery poll still runs on a timed-out
+   query like any other error.
+
+4. **Deadline helper** (`createDeadline(ms)`, exported from `client.ts`).
+   One `AbortController` + timer; `bump()` re-arms it (for an inactivity
+   deadline that starts armed before the first byte — covers a hang
+   before the request even gets a response header); `didExpire()` lets a
+   caller tell "our deadline fired" apart from "the caller's own abort
+   fired" after a caught rejection, mirroring `apiRequest`'s own
+   `timedOut` flag; `clear()` cancels the timer. Reused by all three
+   raw-`fetch` call sites (previously three near-duplicate hand-rolled
+   `setTimeout`/`AbortController` copies) and by the fixed-limit git
+   mutations.
+
+5. **Git timeouts** (`apps/web/src/client/api/hooks/useGit.ts`).
+   `GIT_FIXED_TIMEOUT_MS` (120_000, override
+   `__LOCTT_GIT_FIXED_TIMEOUT_MS__`) applied to `useGitMutation`
+   (publish/enable/disable) and to save-decisions/apply/abandon/
+   confirm-rekey, each via an explicit `{ timeoutMs: GIT_FIXED_TIMEOUT_MS }`
+   on the `apiClient.post` call. `streamSync` rewritten to use
+   `createDeadline(STREAM_INACTIVITY_TIMEOUT_MS)` (60_000, override
+   `__LOCTT_STREAM_INACTIVITY_TIMEOUT_MS__`): armed before the initial
+   `fetch`, bumped on the header arriving and on every chunk read; on
+   expiry throws a new `syncSilenceError()` — `isTimeout: true`,
+   `data_state: "unknown"`, `recovery: "reload"`, message tells the user
+   to check `git log`/`git status` rather than offering a bare Retry
+   (re-sending a write that may have already landed is how one archive
+   becomes two, same reasoning as the existing `apiRequest` write-timeout
+   envelope).
+
+6. **Diagnostics timeouts** (`apps/web/src/client/settings/DiagnosticsPanel.tsx`).
+   `streamDoctor` rewritten the same way, sharing `STREAM_INACTIVITY_TIMEOUT_MS`
+   from `useGit.ts` rather than a third copy of the literal `60_000` —
+   combines the caller's own unmount-abort signal with the deadline's via
+   `AbortSignal.any`, so only the deadline firing is a timeout (an
+   unmount is a cancellation, matching `apiRequest`'s own distinction).
+   `runRepair`'s POST previously had NO abort signal at all — an unmount
+   mid-repair left it running with nothing to cancel. It now gets a
+   `repairAbortRef` (aborted on unmount, mirroring the existing stream's
+   `abortRef`) combined with `createDeadline(DEFAULT_WRITE_TIMEOUT_MS)`;
+   on an unmount/supersede it silently returns (matches `run`'s own abort
+   check), on a genuine timeout it sets `repairError` to an
+   unknown-outcome message ("LocTT cannot tell whether the repair
+   completed … Refresh diagnostics to check"), never "did not complete".
+
+7. **BRD-39 / `useStalledLoad` retirement.** `useStalledLoad.ts` and its
+   test were DELETED — the mechanism it existed for (a hung `/api/tasks`
+   never setting `isError`) no longer exists once `apiRequest` has its
+   own default read deadline: the request now genuinely fails at 20s and
+   reaches the board's pre-existing `tasks.isError` branch on its own.
+   `BoardView.tsx` lost the `stalled`/`useStalledLoad` call and its
+   separate `if (loading && stalled)` branch entirely; `queryFailed`'s
+   `ErrorState` `context` was reworded to `"Loading the board — tasks"`
+   so the escalation still names what was waited for (ERR-5), matching
+   what the retired branch used to say. `stalledLoadError()` (the
+   hand-built `ApiError` the retired branch constructed) was deleted —
+   the real timeout `ApiError` from `apiRequest` carries the message now.
+   `BoardView.test.tsx`'s BRD-39 escalation test was retargeted from
+   driving `STALLED_LOAD_MS` to driving `useTasks.ts`'s real
+   `READ_TIMEOUT_MS` (20s, via fake timers — the `__LOCTT_READ_TIMEOUT_MS__`
+   override only takes effect on a fresh module load, which a Vitest unit
+   test doesn't get, so the test advances the real 20s instead); its
+   `stubBoardTasks` mock fetch was changed to actually honour the abort
+   signal (reject on abort) since the escalation now depends on a real
+   fetch rejection, not an independent timer. `tests/ui/flow-board.spec.ts`'s
+   equivalent e2e test was retargeted the same way, using
+   `__LOCTT_READ_TIMEOUT_MS__` (Playwright gets a fresh page load, so the
+   override works there). `docs/dev/known-gaps.md`'s "SprintsView's
+   skeleton has no BRD-39/ERR-5 escalation window" entry was DELETED —
+   SprintsView's own `useTasksFeed`/`useSprints` reads now get the same
+   20s default deadline for free, closing that gap without any
+   SprintsView-specific code.
+
+   **Defect found while red-proving the retargeted test, and fixed as
+   part of this change:** `client.ts`'s `isAbort(err)` checked `err
+   instanceof Error && (err.name === "TimeoutError" || err.name ===
+   "AbortError")`. A real `fetch` abort rejects with a `DOMException`,
+   and `DOMException` is not reliably `instanceof Error` (confirmed:
+   jsdom's own `DOMException` fails that check under Vitest's fake
+   timers, even though it carries the same `.name`/`.message` shape).
+   This meant the ENTIRE K115 deadline mechanism — every call site, not
+   just the board — could silently fail to convert a real timeout into
+   an `ApiError`, instead leaking the raw `DOMException` up through
+   `apiRequest`'s `catch` and never reaching `tasks.isError`. Fixed by
+   checking `err?.name === "TimeoutError" || err?.name === "AbortError"`
+   directly, with no `instanceof Error` gate. This was a genuine
+   pre-existing latent bug, not something this change introduced — it
+   predates K115 and was only exposed because this is the first place a
+   default (always-on) deadline needed the mechanism to actually fire
+   under a fake-timer unit test with a hand-constructed `DOMException`.
+
+8. **UI-24 (A313 follow-up): BoardView gets the broken-saved-view
+   gating** `ListView.tsx`/`TimelineView.tsx` already had (A313
+   explicitly flagged BoardView as out of scope, "another agent is
+   actively editing that file"). `BoardView.tsx` now derives `const
+   brokenView = pages[pages.length - 1]?.broken_view` and suppresses
+   `items` to `[]` when it is set (so `columns`/`buckets` inherit the
+   empty state), renders a `role="alert"` banner (`data-testid=
+   "board-broken-view"`, `board-broken-view-error`,
+   `board-broken-view-position`, `board-broken-view-manage`) matching
+   ListView's/TimelineView's copy and link-to-Saved-views pattern
+   exactly, and gates BRD-40's "No tasks yet" empty state on `brokenView
+   === undefined` too (matching TimelineView's `noRows` guard) — `total`
+   itself is left honest/unsuppressed (TimelineView's approach, not
+   ListView's `total`-zeroing one), since nothing in BoardView reads
+   `total` except that one empty-state check. New test file
+   `apps/web/src/client/board/BoardView.broken-view.test.tsx` (3 cases,
+   modeled on `TimelineView.broken-view.test.tsx`), all red-proven.
+   `known-gaps.md`'s UI-24 entry was DELETED (fixed).
+
+**Consumer audit (item 5 of the brief): error-rendering fixed.**
+- `ReconcilePanel.tsx`: `if (session.isLoading) return null;` had NO
+  `isError` branch at all — a failed/timed-out `GET /api/git/reconcile`
+  fell through straight to `reconcile === null` and rendered nothing,
+  forever, indistinguishable from "no reconciliation in progress." Added
+  a `session.isError` branch rendering `ErrorState` with Retry
+  (`context: "Checking for an in-progress reconciliation"`), ahead of
+  the `reconcile === null` check.
+- `GitSyncPanel.tsx`'s `useGitStatus`/`useGitEnable` already rendered
+  `isError`/`ErrorState` correctly (verified, not touched).
+- `InitWizard.tsx`, `SavedViewsPanel.tsx`, `ProjectsPanel.tsx`,
+  `LabelsPanel.tsx`, `MilestonesPanel.tsx`, `SidebarPinsPanel.tsx`'s
+  `useDeleteView` call site: verified already rendering
+  errors/`ErrorState` correctly via an audit subagent. Not touched.
+
+**Consumers still swallowing an error, reported but NOT fixed (out of
+this change's file scope — not touched per the task's edit
+restrictions, or found too late to safely fit in this pass):**
+- `GitSyncPanel.tsx`'s `useGitDisable`: no `disable.isError` render
+  anywhere in the disable-confirm block — a failed/timed-out disable
+  silently stops loading with zero user-visible feedback. Should get the
+  same `ErrorState` treatment `useGitEnable` already has.
+- `apps/web/src/client/shell/Sidebar.tsx`'s own inline `useDeleteView`
+  call site (`del.mutate(...)`, the sidebar's saved-view row delete
+  action): no `del.isError` check anywhere in the file — a failed delete
+  leaves the row in place with no visible message.
+- `SprintsPanel.tsx`: the archive/unarchive toggle mutation has no
+  `.isError` render, unlike the equivalent already fixed in
+  Labels/Milestones panels ("bug-3 fix") — Sprints was missed by that
+  earlier sweep.
+
+**Gates run:** `npx tsc --build` (clean), `npm run test -w apps/web`
+(250 files / 2558 tests, all passing — 2555 pre-existing + 3 new
+`BoardView.broken-view.test.tsx`), `npx eslint` on every touched file
+(0 errors; only pre-existing unrelated warnings).
+
+**Red-proofs performed** (break → red → restore, each confirmed):
+- `BoardView.broken-view.test.tsx` case 1 (banner + no cards): reverted
+  the `items` suppression → red (cards rendered) → restored.
+- `BoardView.broken-view.test.tsx` case 2 (board-empty gating): reverted
+  the `brokenView === undefined` guard on BRD-40's empty state → red
+  ("No tasks yet" rendered under the banner) → restored.
+- `BoardView.test.tsx`'s retargeted BRD-39 test: this IS the red-proof
+  for the `isAbort` fix — before fixing `isAbort`, the test hung/failed
+  because the real timeout never converted to an `ApiError`; after the
+  fix it passes.
+- `useGit.ts`/`DiagnosticsPanel.tsx`'s deadline paths were exercised by
+  the existing `apiRequest deadlines` describe block in `client.test.ts`
+  (pre-existing tests, unmodified, still green) plus manual reasoning —
+  no new unit test was added specifically for `streamSync`'s/
+  `streamDoctor`'s inactivity deadline in this pass (flagged below as a
+  gap, not claimed as covered).
+
+**A green test that had to change, and whether it asserted a bug:**
+`client.test.ts`'s "forwards an AbortSignal to fetch" asserted `init
+signal === ctrl.signal` (identity) for a GET with a caller-supplied
+signal and no `timeoutMs`. This was NOT asserting a bug — it was pinning
+the exact "no default deadline" behaviour K115 was asked to change. Once
+GET gets a default deadline unconditionally, the signal actually passed
+to `fetch` is legitimately `AbortSignal.any([caller, deadline])`, never
+the caller's raw signal. Retitled and rewritten to assert what still
+matters instead: the caller's own abort still reaches the combined
+signal.
+
+**Not done / explicitly out of scope for this pass:**
+- No dedicated new unit tests for `streamSync`'s or `streamDoctor`'s
+  60s-inactivity deadline specifically (distinct from the existing
+  generic `apiRequest deadlines` coverage) — the mechanism is exercised
+  by inspection and by the shared `createDeadline` helper's use in the
+  already-covered `apiRequest` path, but a bump-on-chunk / silence-timeout
+  specific test was not written. Should be added.
+- The three consumer gaps listed above (GitSyncPanel disable, Sidebar
+  delete, SprintsPanel archive toggle) are recorded here, not fixed.
+- `apps/web/src/client/list/ListView.tsx`, `apps/web/src/server/*`,
+  `shell/SchemaBanner.tsx`, `ui/Button.tsx`, `editor/*`, `ui/Menu.tsx`,
+  `ui/Icon.tsx`, `ui/Dropdown.tsx` were correctly left untouched per the
+  task's edit restrictions (other agents' concurrent work).
+
+**To revert.**
+- `apps/web/src/client/api/client.ts`: remove `DEFAULT_READ_TIMEOUT_MS`/
+  `DEFAULT_WRITE_TIMEOUT_MS`, the `timeoutMs` default computation in
+  `apiRequest` (restore `options.timeoutMs === undefined ? undefined :
+  setTimeout(...)`), the `isTimeout` field on `ApiError`, the exported
+  `createDeadline` helper, and revert `isAbort` to its prior
+  `instanceof Error` form (NOT recommended — see the latent-bug note in
+  item 7 above; reverting this specifically would silently break the
+  deadline mechanism again).
+- `apps/web/src/client/api/queryClient.ts`: remove `isTimedOut` and its
+  call in the `retry` callback.
+- `apps/web/src/client/api/hooks/useGit.ts`: remove `GIT_FIXED_TIMEOUT_MS`/
+  `STREAM_INACTIVITY_TIMEOUT_MS`, the `{ timeoutMs: GIT_FIXED_TIMEOUT_MS }`
+  args on the six mutation call sites, and revert `streamSync` to its
+  prior plain-`fetch`-with-no-deadline form.
+- `apps/web/src/client/settings/DiagnosticsPanel.tsx`: revert
+  `streamDoctor` to plain `fetch` with only the caller's signal, remove
+  `repairAbortRef`/the deadline+combined-signal in `runRepair`.
+- `apps/web/src/client/settings/ReconcilePanel.tsx`: remove the
+  `session.isError` branch.
+- `apps/web/src/client/board/BoardView.tsx`: restore `useStalledLoad`
+  import/call/branch and `stalledLoadError()`; remove `brokenView`, the
+  `items`/`total`-empty-state guards, and the broken-view banner JSX.
+- Restore `apps/web/src/client/api/hooks/useStalledLoad.ts` and its test
+  from git history if reverting item 7.
+- Delete `apps/web/src/client/board/BoardView.broken-view.test.tsx` if
+  reverting item 8.
+- Revert the `client.test.ts` "forwards an AbortSignal" test to its
+  original identity-equality assertion if reverting the default-timeout
+  change (item 1).
+
+### K120 · The error screen says "Your tasks weren't affected." and nothing more
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+The full-page and region error screens (`error/RegionErrorBoundary.tsx`)
+read: *"Something in the app failed to draw — a bug on our side, not a
+problem with your data. Your tasks are files in .loctt/ and a rendering
+fault cannot change them."* ERR-35 (blocker) required naming `.loctt/`
+and SHL-42 required saying "the failure is a bug". Offered that wording,
+a path-keeping trim, or *"Your tasks weren't affected."*, Ken chose the
+last. The in-flight-write line became "A change was being saved, so it
+may not have been. Reload to check before trying it again." ERR-35 and
+SHL-42 amended; their unit and e2e assertions moved to the new wording.
+
+### A320 · Full-page render-error screen: a bounded, centered card; the root route's `errorComponent` catches a throw escaping the shell itself
+
+**Ticket:** Ken, verbatim: *"ugly error screen, please get a ui agent to
+design. full page error screen should have a content box (not full
+span), vertically and horizontally aligned on page."* Screenshot showed
+TanStack Router's own **default** error component ("Something went
+wrong!" / "Hide Error" / the raw error, unstyled, full-span, top-left) —
+this app's own fallback never rendered. **Date:** 2026-09-23 · **Commit:**
+(uncommitted) · **Scope:** web UI only.
+
+**Situation.** The trigger was a throw from `shell/Header.tsx` — inside
+the app shell (`AppBootstrap` → `AppShell` → `Header`), which renders
+*above* the routed `<Outlet />` as the root route's own `component`. Every
+child route (`/list`, `/board`, …) already had an `errorComponent`
+(`RouteError`, wired to `RegionErrorFallback`), but the **root** route
+had none — deliberately, per its own comment, because putting one there
+had previously replaced the whole shell (header + sidebar) with the
+fallback, which is the white-page shape SHL-42/ERR-34 rule out. That
+reasoning covered a throw from a *child* route (already caught below
+root) but not a throw from the shell itself, which has no boundary above
+it at all — so it fell through to the router's built-in default.
+
+**What had to be decided, and the call made.**
+
+1. **Give the root route an `errorComponent`.** The prior "deliberately
+   no errorComponent" comment was right about child-route throws and
+   silent about shell throws. Since the shell is what may be broken when
+   this fires, the new root fallback (`RootError`) must not depend on
+   anything the shell's own providers or hooks supply — no
+   `useCreateTask`/`useAnnouncer`/`useTheme`/`useSidebarCollapse`, none of
+   `AppShell`'s `CreateTaskProvider`/`ToastProvider`/`AnnouncerProvider`.
+   It sits below `QueryClientProvider` and `RouterProvider` (both mount
+   above the router in `App.tsx`), so `Link` and query hooks would
+   resolve if needed, but `RootError` uses neither — only `Link`'s absence
+   was actually needed (dropped in favour of Reload-only, see #3) and
+   `window.location.reload()`, exactly the primitives available at the
+   point a throw from `Header.tsx` escapes today.
+2. **Also set `defaultErrorComponent` on the router** (`createRouter`'s
+   own option) to the same `RootError`, as a second, router-wide
+   fallback for any future route that ships without its own
+   `errorComponent`. Belt-and-suspenders: TanStack's own default must
+   never be what a user sees on any path this router owns, not only the
+   ones a human remembered to wire.
+3. **One full-page visual shape, reused, not duplicated.** Rather than a
+   second hand-rolled screen, `RegionErrorFallback` (the existing
+   fallback `RouteError` already called) gained a `fullPage` boolean
+   prop. `false` (the default) keeps the exact prior inline shape
+   unchanged — `grid h-full place-items-center p-8`, `max-w-lg`, no
+   card chrome — which is what `Sidebar.tsx`'s region-scoped
+   `RegionErrorBoundary` usage still gets, untouched. `true` renders:
+   - outer: `grid h-screen place-items-center bg-bg-canvas p-4` — fills
+     and centers in the *viewport* (matching `AppBootstrap`'s own
+     `LoadingState` boot-gate wrapper, so every full-screen state in the
+     app centers the same way), with the same 16px mobile gutter (`p-4`)
+     every other full-bleed view uses.
+   - card: `w-full max-w-md rounded-lg border border-border-default
+     bg-bg-surface-raised p-6 shadow-overlay` — the same width and same
+     card chrome `Modal.tsx` uses for its dialog panel, so the app's two
+     "one centered card" surfaces agree on a size rather than each
+     picking its own. `data-testid="error-fallback-card"` added for the
+     structural test.
+   - `RouteError` (route-level, one main-pane's worth of crash) now
+     passes `fullPage`. `RootError` (root-level, the whole page's worth)
+     also passes `fullPage`, plus `offerListLink={false}` (there may be
+     no sidebar/shell left to trust a "back to the list" link inside)
+     and `offerRetry={false}` (same K109 reasoning `RouteError` already
+     uses: a remount of the *shell* with the same throwing code
+     overwhelmingly reproduces the same crash).
+4. **Copy, hierarchy, actions — unchanged**, per messaging.md and K109:
+   headline names what broke ("the app" for the root fallback, since
+   there is no narrower named region to blame — the shell itself is
+   gone); body says what happened (a display fault, not a data fault)
+   and where the data lives; Reload is the sole primary action at this
+   scope (no Back, no narrow retry); the raw error/stack sits behind the
+   existing `<Disclosure>` ("Show details"), collapsed by default, never
+   the headline.
+
+**Not revertible on an agent's judgment: none of the above** — this is a
+UI/behaviour design filled in against Ken's literal request and the
+already-recorded K109 action-row rule; nothing here overrides a prior
+Ken ruling.
+
+**Where it landed.**
+- `apps/web/src/client/error/RegionErrorBoundary.tsx` — added the
+  `fullPage` prop to both `RegionErrorBoundary`'s `Props` and
+  `RegionErrorFallback`'s parameters; branched the outer wrapper and the
+  inner content-box classes on it; added `data-testid="error-fallback-card"`
+  to the full-page card only.
+- `apps/web/src/client/router/index.tsx` — `rootRoute` gained
+  `errorComponent: RootError`; `RootError` added (exported, reuses
+  `RegionErrorFallback` with `fullPage`, `offerListLink={false}`,
+  `offerRetry={false}`); `RouteError` now passes `fullPage`; `createRouter(...)`
+  gained `defaultErrorComponent: RootError`.
+- `apps/web/src/client/router/RouteError.test.tsx` — three new tests
+  (below); no existing test in this file changed.
+- `apps/web/src/client/shell/Sidebar.tsx` — **not touched** (owned by
+  another agent per this session's instructions); its
+  `RegionErrorBoundary` usage is unaffected because `fullPage` defaults
+  to `false`.
+- `docs/dev/decisions.md` — **not edited** by this agent (per this
+  session's instructions); this record is written to the scratchpad path
+  given instead, for Ken or a later agent to fold into § 8.
+
+**Tests + red-proof.**
+1. *"renders our screen, not TanStack's default fallback"* — mounts a
+   router whose root route's `component` throws and whose
+   `errorComponent` is `RootError`; asserts `role="alert"` with our
+   headline text, and asserts TanStack's own literal controls ("Hide
+   Error", "Something went wrong!") are absent. **Red-proved:** temporarily
+   removed `errorComponent` from the test's root route → failed at
+   `screen.findByRole("alert")` timing out, with the captured DOM
+   showing TanStack's actual default fallback including the literal
+   "Hide Error" button — i.e. the test genuinely distinguishes the two
+   screens, not just "some error text exists." Restored; green again.
+2. *"offers Reload and Back, with details collapsed"* — same throwing-shell
+   render; asserts a "Reload" button, asserts **no** button matching
+   `/try/i` (no narrow retry at this scope), asserts a closed `<details>`
+   with "Show details" visible. **Red-proved:** temporarily flipped
+   `RootError`'s `offerRetry` to `true` in `router/index.tsx` → failed at
+   the "no retry button" assertion (found a live "Try the app again"
+   button). Reverted; green again.
+3. *"is bounded (max-w) and centered on both axes, with a card surface"* —
+   asserts the outer alert region carries `h-screen`/`place-items-center`,
+   and the `data-testid="error-fallback-card"` element carries `max-w-md`,
+   `w-full`, `rounded-lg`, `border`, `bg-bg-surface-raised`. **Red-proved:**
+   temporarily reverted the full-page branch's class string to the old
+   `"w-full"` (no bound, no card) in `RegionErrorBoundary.tsx` → failed
+   with `expected 'w-full' to contain 'max-w-md'`. Reverted; green again.
+
+No existing test's markup changed in a way that required editing it —
+`RegionErrorBoundary.test.tsx`'s region-scoped assertions are unaffected
+because the inline shape (`fullPage` default `false`) is byte-for-byte
+what it was; `RouteError.test.tsx`'s two pre-existing tests
+(`offers reload and a way out…`, `suppresses the back link…`) still
+pass unmodified against the now-restyled card, since they assert
+role/text/button-name, not layout classes.
+
+**Gates run.**
+- `npx tsc --build` — zero errors in any file this agent touched. Two
+  pre-existing `TS6133` errors remain in `apps/web/src/client/shell/Sidebar.tsx`
+  (`sameRow`, `deriveActiveRow` unused) — confirmed pre-existing and
+  unrelated: that file is mid-edit by another agent this session
+  (`git diff --stat` shows +150/-0 uncommitted lines there before this
+  agent touched anything), and is explicitly off-limits for this task.
+- `npm run test -w apps/web` — **250 test files passed, 2572 tests
+  passed**, exit 0. (A narrower run of just the two touched test files
+  — `RouteError.test.tsx` + `RegionErrorBoundary.test.tsx` — also passed,
+  18/18, run separately to isolate the red-proofs above from the full
+  suite's runtime.)
+- `npx eslint` on the three touched source/test files — clean, no output.
+
+**Visual verification (dev server at `http://localhost:5173`, manual,
+no Playwright).** Triggered the two cases with a temporary `throw new
+Error(...)` — one in `shell/Header.tsx` (top of `Header()`, reproducing
+Ken's original trigger) for the root-level case, one in
+`list/ListView.tsx` (top of `ListView()`) for the route-level case — then
+removed both before finishing (confirmed via `git diff | grep -i temp`
+returning nothing).
+- **Root-level** (`Header.tsx` throw, navigated to `/list`): the shell
+  is gone entirely (no header, no sidebar — correct, since the shell
+  itself is what threw) and a single bounded, centered card fills the
+  viewport: headline "Something went wrong displaying the app", body
+  copy, a Reload button, and a collapsed "Show details". Confirmed in
+  both dark and light (toggled by removing the `.dark` class via
+  devtools, since the crash happens before the shell's own theme
+  toggle would be reachable) and at 375×812 (card fills to the 16px
+  gutter, no horizontal scroll, text wraps, Reload stays tappable).
+- **Route-level** (`ListView.tsx` throw, on `/list`): the shell survives
+  (header, sidebar, nav all present and functional) and the same
+  bounded, centered card renders inside the main pane: "Something went
+  wrong displaying the task list", Reload only (no Back — correctly
+  suppressed on `/list` itself per the pre-existing SHL-42 rule, unchanged
+  by this work), no narrow retry.
+- After removing both temporary throws, reloaded `/list` and confirmed
+  the app renders normally (header, sidebar, task table all present) —
+  no regression from the `errorComponent`/`defaultErrorComponent`
+  additions.
+
+**To revert.** In `apps/web/src/client/router/index.tsx`: delete
+`errorComponent: RootError` from `rootRoute`'s options, delete
+`defaultErrorComponent: RootError` from `createRouter(...)`, delete the
+`RootError` function, and remove `fullPage` from `RouteError`'s call to
+`RegionErrorFallback`. In `apps/web/src/client/error/RegionErrorBoundary.tsx`:
+remove the `fullPage` prop from `Props` and from `RegionErrorFallback`'s
+parameters, and collapse the two wrapper/content branches back to the
+single prior `grid h-full place-items-center p-8` / `max-w-lg` shape.
+Delete the three new tests and the `ThrowingShell`/`renderThrowingRootAt`
+helpers from `apps/web/src/client/router/RouteError.test.tsx`. This
+restores the exact prior behaviour, including the prior bug (a shell
+throw reaches TanStack's own default fallback).
+
+### A321 · One derived selection for the whole sidebar (K118): a single `deriveActiveRow`, every group compares against it, carry-over links now clear filters
+
+**Ticket:** K118 (Ken's ruling — `docs/dev/decisions.md`) · **Date:** 2026-09-23 · **Commit:** (uncommitted) · **Scope:** `apps/web/src/client/shell/Sidebar.tsx`, `apps/web/src/client/shell/Sidebar.test.tsx` only.
+
+**Situation.** K118 recorded Ken's ruling that the sidebar has exactly
+one selection at a time. Before this, each of the sidebar's seven groups
+computed its own "am I active" flag from whatever slice of the route it
+happened to read: Projects lit "All projects" whenever `search.project`
+was empty and the route was list/board/timeline, independently of
+whether a view/filter row was ALSO selected; the Views group (built-ins
++ saved views) matched `search.q`/`search.view` directly, and a
+saved-view link only ever ADDED `view` to the existing search — it never
+cleared a prior built-in's `q` — so applying a saved view over an active
+built-in left both lit; the sprint and label links had the identical
+carry-over bug (`{ ...clearSort(prev), sprint: [s.id] }` / `labels:
+[l.id]`, no `clearFilters`); and Milestones, Sprints, Labels and
+Recently-viewed computed no active state at all — four groups' rows
+never lit no matter what was selected.
+
+**What was built.** A single pure function, `deriveActiveRow(pathname,
+search, resolvedBuiltins) => ActiveRow | null`, plus a `useActiveRow`
+hook that supplies it the live route and the built-ins resolved against
+the current user/today/priorities. `ActiveRow` is a small tagged union
+(`view` / `project` / `builtin` / `saved-view` / `milestones` /
+`milestone` / `sprints` / `sprint` / `label` / `recent`) and `sameRow`
+is the one equality check every group's `ItemShell active={…}` now
+calls — no group inspects `search` itself for highlighting purposes
+anymore. This makes "two rows lit" structurally harder to reintroduce:
+a new group has to ask the shared derivation for its identity rather
+than invent its own flag.
+
+**The selection rule** (stated in the code as the `ActiveRow` doc
+comment in `Sidebar.tsx`, ~line 786):
+- On `/list`, `/board`, `/timeline`: exactly one of {a saved view, a
+  built-in filter, a sprint, a label, a project} is selected, checked
+  in that priority order (saved view first, since a saved view can only
+  be reached by its own `view` param and nothing else should out-rank
+  an explicit view pick; built-in next by `q` exact match; then sprint,
+  then label, then project). In normal use these params are mutually
+  exclusive — every sidebar link now clears the others before setting
+  its own (see below) — so the order only matters for a hand-edited or
+  bookmarked URL that combines params two clicks would never produce
+  together.
+- **Tie-break for "All projects" vs. the view switcher.** Both describe
+  the same underlying state — "this view, nothing else scoped" — but
+  they are two separate DOM rows in two separate groups, so "exactly
+  one row lit" needs a decision about which one wins when nothing is
+  scoped. Chosen: the view switcher (List/Board/Timeline) wins.
+  `deriveActiveRow` resolves the nothing-scoped state to `{kind:
+  "view", to: pathname}`; the view switcher lights directly from it;
+  `ProjectsGroup`'s `allActive` is hardcoded `false` — "All projects" is
+  now always a plain, clickable, never-highlighted row. This is a
+  visible behavior change from before (where "All projects" was always
+  highlighted on a bare `/list`), made to satisfy the literal "exactly
+  one row" requirement rather than "one row, possibly represented
+  twice." Not re-confirmed with Ken as a separate question — it follows
+  directly from "exactly one" plus the given hint that List/Board/
+  Timeline is "a separate nav axis" — but it is the one place this fix
+  changes what a user sees beyond removing double-highlights, so it is
+  called out here rather than folded silently into the general fix.
+- `/milestones` and `/milestones/$id`, `/sprints` (the overview link),
+  and `/tasks/$key` each resolve to their own single row, matched
+  directly off `pathname` (checked before the list/board/timeline
+  branch, so they short-circuit cleanly).
+
+**Carry-over fix (the other half of the bug).** Three links only ever
+ADDED their own param instead of replacing the sidebar-driven URL
+state:
+- Saved view (`:1790`, `:1863` post-fix): `search={prev => ({
+  ...clearSort(clearFilters(prev)), view: v.id })}` — was `{
+  ...clearSort(prev), view: v.id }`. Applies to both the healthy and
+  the broken-view row (a broken view is stored under the same `view`
+  param).
+- Sprint row: same `clearFilters` addition.
+- Label row: same `clearFilters` addition.
+
+Without this, `deriveActiveRow`'s priority order (saved-view over `q`)
+hid the symptom for reads going through this file, but the URL itself
+still carried the stale `q`/`project`/etc. — a fresh load of that exact
+href, or a bookmark of it, would have resolved differently. The link
+fix is the actual correctness fix; the derivation's priority order is a
+second line of defense, not a substitute for it.
+
+**Preserved, not touched:** the cross-view scope fix (Ken, 2026-09-20)
+— a project click on `/board`/`/timeline` still targets that view via
+`viewTo`, not `/list`. Verified by an explicit K118-suite test
+("a project click made from /board stays on /board"). No contradiction
+found between that behavior and "exactly one selection" — they answer
+different questions (which view does the click land on vs. which row
+is lit).
+
+**Files changed:**
+- `apps/web/src/client/shell/Sidebar.tsx` — added `ActiveRow`,
+  `sameRow`, `deriveActiveRow`, `firstValue`/`soleValue` (defensive
+  string-vs-array normalization for `project`/`sprint`/`labels`
+  params — a real bug caught mid-work: a bare string indexed as an
+  array read its first CHARACTER, not the value), `useActiveRow`; wired
+  every group (`ViewSwitcher`, `ProjectsGroup`, `SavedFiltersGroup`,
+  `MilestonesGroup`, `SprintsGroup`, `LabelsGroup`, `RecentsGroup`)
+  through it; added `clearFilters` to the saved-view/broken-view/
+  sprint/label links; `ProjectsGroup`'s `allActive` is now `false`.
+- `apps/web/src/client/shell/Sidebar.test.tsx` — rewrote 0 tests as
+  wrong (none of the two remaining old single-signal tests —
+  "highlights the active List view", "marks the active project from
+  the URL search params" — asserted the bug; they remained valid
+  single-row checks under the new derivation and needed no edit) and
+  added a new suite, `describe("Sidebar exactly-one-selection
+  (K118)")`, covering: project→view (only view lit, no `project` in
+  URL), view→project (only project lit), built-in→saved-view (only
+  saved view lit even with a stale `q` in the simulated URL), the
+  saved-view link's own href no longer carrying `q`, Milestones/
+  milestone-detail/sprint/label/recent-task each lighting their own
+  row, the /board project-click preservation check, and a table-driven
+  "never more than one `[data-active]` across the whole sidebar" test
+  over 11 URLs.
+
+**Red-proof performed** (reverted the fix locally, confirmed the
+specific new test failed, restored):
+1. `allActive = false` reverted to `sameRow(activeRow, {kind:"view",
+   to:viewTo})` → "project then view" and the table-driven test both
+   failed (2 marks instead of 1 on bare `/list`).
+2. Saved-view link's `clearFilters` removed → "a saved-view click's own
+   href clears a prior built-in's q" failed.
+3. Milestone-detail row's `active` prop removed → "lights the specific
+   milestone row on /milestones/$id" failed.
+
+**Gates run:** `npx tsc --build --force apps/web/tsconfig.json` clean;
+`npx eslint apps/web/src/client/shell/Sidebar.tsx
+apps/web/src/client/shell/Sidebar.test.tsx` clean (0 errors, 0
+warnings); full `apps/web` workspace vitest run: 250 files / 2572 tests
+passed, including all 116 in `Sidebar.test.tsx`.
+
+**Live verification:** performed against the running Vite dev server
+(http://localhost:5173) after a hard reload — clicked project → view →
+label → milestone → recent task in sequence and confirmed exactly one
+sidebar row was highlighted at each step, matching the derivation
+above.
+
+**Not done / left open:**
+- The "All projects vs. List" tie-break (above) is a judgment call
+  inferred from the ticket's own hint, not a separately confirmed
+  answer from Ken. If he'd rather "All projects" won that tie instead
+  of the view switcher, that's a one-line flip (`allActive =
+  sameRow(activeRow, {kind:"view", to:viewTo})`) with no other
+  structural change — flagging it here rather than re-asking mid-fix,
+  per housekeeping's "don't stop for things you can decide."
+- No change to `router/index.tsx`, `error/*`, or `docs/dev/
+  decisions.md` — out of scope per the assignment (another agent owns
+  decisions.md).
+
+**To revert:** revert the two files above to their pre-A321 state
+(`git diff` / `git checkout -- apps/web/src/client/shell/Sidebar.tsx
+apps/web/src/client/shell/Sidebar.test.tsx` against the commit before
+this change). No other files, config, or data are touched.
+
+### K121 · Rulings on the known-gaps open list (2026-09-23)
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+Ken ruled on the open items left after K117's known-gaps cleanup. Each
+is now in `docs/dev/backlog.md`. Verbatim where it matters:
+
+1. **Archived items are not browsable** (reverses K107's web rollout).
+   Asked whether the Sprints checkbox should become the tri-state
+   control: *"i think i want to not allow viewing archived stuff. thats
+   the point of archiving."* Asked "everywhere, with a debug switch /
+   browsing views only / just Sprints": *"remove everywhere. i dont even
+   want a debug switch. at most, we can go to an 'Archived' section in
+   settings to view deleted items, and we likely dont want to do complex
+   searches, and we dont want views on them either. so archived section
+   in settings, can select entity to view (e.g. milestones, sprints,
+   tasks, etc). then you can restore one by one, or mass-select and
+   restore selected, or restore all. or delete all, or select some to
+   delete, or delete one at a time"*. Scope assumed: the web UI (CLI and
+   MCP keep their archived flags, the K30-web precedent) — flagged to Ken.
+2. Custom-field filters vanishing on a failed workflow load: *"Fix it"*.
+3. Blocked badge colour: *"get UI agent to make the call"*.
+4. Tap targets under 24px: *"fix"*; 44px: *"24px is enough"*.
+5. Adjacent underlines merging on save: *"fix. go with what naturally
+   happens? it usually merges, right?"* — it does (word processors keep
+   one run for adjacent identical formatting), so the current merge is
+   the accepted behaviour and the known-gaps entry is closed.
+6. Toolbar on phones: *"make it responsive so we have an intentional
+   2-row format and not bad warping"*.
+7. Actions silent on timeout: *"get PM to decide on what to do, then we
+   fix"*.
+8. Settings create/row-action patterns: *"get PM/UI agent to decide
+   after you audit"*.
+9. Bad `@verifies` tags + uncovered cases: *"fix"*.
+10. The three uninvestigated "flakes": *"fix"*.
+11. Playwright workers: *"we can pin to 2 with allowing overrides"*.
+12–16. Stream-deadline tests, load-sensitive diagnostics test, picker
+    assertion pairing, label-colour list test, `FilterDropdown` alias:
+    *"fix"*.
+17. Reconcile raw error + delete-user missing Retry: *"fix"*.
+
+### A324 · A custom-field filter survives a workflow that has not loaded (B2)
+
+**Ticket:** B2 (K121 #2) · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**Situation.** `resolveVisibleFilters` walked the filter catalog, and the
+catalog has no custom-field entries until `/api/workflow` loads. So while
+the workflow was loading or had failed, every `field.*` filter was
+dropped as "removed" and vanished from the toolbar, with its selection.
+Built-in facets already degraded to "unavailable" in the same situation.
+
+**The call made.** `resolveVisibleFilters` takes `customFieldsKnown`
+(`workflow.isSuccess`). While false, stored `field.*` ids missing from the
+catalog are kept, after the catalog entries in stored order. `FilterBar`
+renders such an id as a `FilterFacet` labelled with the field's KEY (its
+label is unknown until the workflow loads), with its selection, and marked
+`unavailable` when the workflow request failed. Once the workflow loads, a
+field that truly no longer exists is dropped exactly as before. Case LST-57.
+
+**Where it landed.** `list/visibleFilters.ts`, `list/FilterBar.tsx`;
+tests in `visibleFilters.test.ts` and `FilterBar.test.tsx` (red-proven).
+
+**To revert.** Drop the `customFieldsKnown` input and the unknown-field
+branch in `renderFilterControl`.
+
+### A325 · The editor toolbar is an intentional two-row layout on a phone (B5)
+
+**Ticket:** B5 (K121 #6: *"make it responsive so we have an intentional
+2-row format and not bad warping"*) · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**Situation.** A309 folded the toolbar's groups into menus, keeping one
+row down to 462px of bar; below that the fully folded row wrapped
+wherever it overflowed (A309's "known limit").
+
+**The call made.** Below 460px of bar content (a phone), a zero-height,
+full-width break item (`fmt-row-break`) splits the bar into two rows on
+purpose: formatting on the first (block type, Text style, Lists and
+blocks, link, More), then undo/redo on the left and attach/mode on the
+right (the existing `ml-auto` cluster). The separator before undo is
+hidden on that layout so it cannot dangle at a row edge. Verified live at
+320/375/440px (two rows, history second) and 480/600px (one row). TSK-72
+amended with the two-row bullet; its e2e asserts both layouts.
+
+**To revert.** Remove the `fmt-row-break` span and the separator wrapper
+in `editor/Toolbar.tsx`; the bar falls back to free wrapping.
+
+### A322 · Error/failure/result/confirm text trim across `apps/web/src/client/settings/` (K116)
+
+**Ticket:** Ken's approved trim spec, `error-text-trim.md` (K116), applying
+every row marked "trimmed" (including "trimmed · your wording") against
+`docs/dev/design/messaging.md`'s rules. **Date:** 2026-09-23 · **Commit:**
+(uncommitted) · **Scope:** `apps/web/src/client/settings/*.tsx`,
+`apps/web/src/client/settings/{workflowEdits,prepareAvatar}.ts`,
+`apps/web/src/client/ui/ErrorState.tsx`, and the tests that pinned the old
+wording of any of these strings (including one outside `settings/`,
+`apps/web/src/client/list/ListView.error.test.tsx`, which exercises the
+shared `ErrorState` "unknown data_state" string).
+
+**Situation.** Ken reviewed a full page-by-page inventory of every
+error/failure/result/destructive-confirm string in the settings UI (156
+rows) against `messaging.md`'s "a message has to earn its place" rule and
+approved 60 rows for trimming — cutting restated rules, mechanism asides,
+internal-policy explanations, and duplicated safety claims down to: what
+happened, what it did to the data, what to do next, a file path only when
+hand-editing it is the fix.
+
+**What was decided.** All 60 "trimmed" rows applied verbatim from the
+approved AFTER column, including the two special-cased rows:
+
+- **Row 28** (calendar holiday payload too large): `Too many holidays to
+  save. Remove some and try again.` — no numeric limit stated, because
+  the note attached to that row explains there isn't a fixed count to
+  state (the cap is the server's ~1MB request-size limit, not a holiday
+  count).
+- **Row 49** (git rekey collision, ULID tiebreak): the
+  same-instant/ULID-tiebreak explanation paragraph is removed entirely,
+  the created-at lines are dropped, and each collision row in
+  `ReconcilePanel.tsx`'s `RekeyPreview` now reads `{key} stays with task
+  {keeperId}. Task {loserId} becomes {newKey}.` using `RekeyLoser`'s
+  existing `keeperId`/`loserId`/`newKey` fields. The unused `fmt` helper
+  and the now-dead `created_at`-formatting code were removed with it. The
+  ULID pair is still reachable in the existing collapsed disclosure for
+  the `ulid` tiebreak branch — only the explanatory sentence is gone.
+
+Two rows marked "unchanged"/"Needs your call" were explicitly left alone
+per the brief: **#51** (`ReconcilePanel.tsx`'s raw `confirm.error.message`
+passthrough) and **#112** (`UserDeleteDialog.tsx`'s reference-count fetch
+failure, no visible Retry). Both are flagged as possible pre-existing
+defects in the trim doc, not wording issues; not touched here.
+
+**Tests.** 2575/2575 unit tests pass after the trim (`npm run test -w
+apps/web`, run twice for stability). Edited
+test files, each with the wording change called out as a deliberate copy
+change, not a bug-encoding fix:
+
+- `apps/web/src/client/list/ListView.error.test.tsx` — the ERR-18
+  "unknown data_state" assertion now matches "may not have been saved" /
+  "reload to check" instead of "not known". Red-proved: reverting
+  `ErrorState.tsx`'s `unknown` string to the old text turns this red.
+- `apps/web/src/client/settings/BackupPanel.test.tsx` — the
+  multi-part-selection shortfall assertion now matches "select every part
+  of the backup" instead of "every part is needed". Red-proved.
+- `apps/web/src/client/settings/GitSyncPanel.test.tsx` —
+  `publishFailureLine`'s four branch tests rewritten: the old shared
+  "safe locally" phrase is gone (folded into "Committed to {branch}
+  locally, but ..."), so assertions now check for "committed" + "locally"
+  together, plus the non-ff/auth/unreachable cause words and the
+  Sync-vs-no-Sync distinction GIT-29 requires. Red-proved per branch.
+- `apps/web/src/client/settings/MilestonesPanel.test.tsx` and
+  `SprintsPanel.test.tsx` — the broken-entry "couldn't be read" substring
+  check is now case-insensitive, since the sentence moved from a mid-line
+  clause ("{name} — couldn't be read") to a sentence-initial one
+  ("Couldn't be read (...)"). Red-proved.
+- `apps/web/src/client/settings/ProjectsPanel.test.tsx` — the prefix-change
+  confirm assertion now matches "old keys still work" instead of "old
+  keys will keep resolving". Red-proved.
+- `apps/web/src/client/settings/ReconcilePanel.test.tsx` — the
+  `describe("RekeyPreview — GIT-9's ULID tiebreak")` block's two tests
+  that asserted the now-removed tiebreak-explanation prose ("names the
+  ULID as the decider... every clone", "a created_at decision says so")
+  were **removed entirely** (no phrase of that shape exists post-trim) and
+  replaced with one test asserting the new one-line collision-row wording
+  (`stays with task` / `becomes` / both ids / new key). The third test in
+  that block ("shows both ULIDs in the disclosure") was already valid and
+  is kept unchanged. Net: 3 tests in the block before, 3 after — same
+  count, one swapped for new-wording coverage, one deleted outright with
+  no replacement (the created_at-branch test asserted only the removed
+  prose and had nothing else to check once that prose was gone). The
+  file's total is unchanged at 9 tests. Red-proved: reverting
+  `ReconcilePanel.tsx`'s row to the old three-line format turns the new
+  test red.
+- `apps/web/src/client/settings/UsersPanel.test.tsx` — the disabled-archive
+  accessible-description assertion now matches `/can't archive/i` instead
+  of `/cannot archive/i`. Red-proved.
+- `apps/web/src/client/settings/dataPanels.test.tsx` — both
+  `DiagnosticsPanel` run-failed assertions now match "stopped early"
+  instead of "did not complete". Red-proved.
+
+**Gates.** `npx tsc --build` — 0 errors. `npm run test -w apps/web` —
+2575/2575 passing. `npx eslint <every touched file>` — 0 errors, exit 0.
+
+**Cases needing Ken's amendment (current case text no longer matches the
+trimmed copy — not edited here per instruction):**
+
+- **SET-22** ("states explicitly that no working days remain and that
+  working-day computations will not resolve") — the trimmed calendar
+  no-working-days message is now `Select at least one working day.`,
+  which states neither fact explicitly.
+- **SET-41** ("names the limit and what exceeded it... told what to trim,
+  with the current count against the limit") — the trimmed too-large
+  message is `Too many holidays to save. Remove some and try again.`,
+  which names neither the limit nor a count (pre-existing gap per the
+  trim doc's own flag; also worth a `known-gaps.md` entry, not recorded
+  here per the brief's "do not edit decisions.md/known-gaps.md" scope —
+  flagging for Ken to route).
+- **GIT-9** ("summary states that timestamps tied and that the ULID
+  decided, and shows both ULIDs") — the trimmed collision row states
+  neither "timestamps tied" nor "the ULID decided" in prose; the ULIDs
+  are still shown, but only in the collapsed disclosure, with no
+  explanatory sentence.
+- **GIT-21** ("both state what would happen to local changes", i.e. per
+  recovery bullet) — the trimmed refusal states the nothing-changed claim
+  once, before the two bullets, not once per bullet.
+- **GIT-22** ("stating that POSIX advisory locks are not reliable there")
+  — the trimmed warning says "file locking is unreliable", not the
+  literal term "POSIX advisory locks".
+- **GIT-28** ("No `loctt` branch or `local/sync.yaml` is created by the
+  failed attempt") — the trimmed not-a-repo message drops "Nothing has
+  been created by this check" entirely; the case's data-state claim about
+  the failed check has no wording carrying it now.
+- **GIT-32** ("the panel says the operation is incomplete") — the trimmed
+  partial-apply banner is Ken's own approved wording, `Applied {ok} of
+  {total} tasks. These {failed} failed and can be retried:`, which states
+  resumable but not incomplete.
+- **PRU-44** ("that their old keys will keep resolving") — borderline:
+  the trimmed confirm says "Their old keys still work", same claim,
+  different words; flagging since the case phrasing reads close to a
+  literal quote.
+
+None of the above were edited — per the brief, case text amendments are
+Ken's call, not something this trim should make unilaterally.
+
+**To revert.** Each file above has one commit's worth of string literal
+changes; reverting is `git checkout <commit>^ -- <file>` per file, or
+reverting the whole commit if it lands as one. `ReconcilePanel.tsx`'s
+`RekeyPreview` also removed the `fmt` helper and the two `keeperCreatedAt`
+/`loserCreatedAt` render lines — reverting needs those restored alongside
+the text if the tiebreak explanation is reinstated, not just the string.
+
+### A326 · Messaging rules applied to the settings copy the trim table missed; B17 case amendments
+
+**Ticket:** B17, K116, `docs/dev/design/messaging.md` · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**Situation.** After A322 applied Ken's approved trim table, an AST scan
+of `apps/web/src/client/settings/` still found visible strings breaking
+the messaging rules (em dashes, label-plus-explanation): the avatar
+animated-image note, the card-layout empty preview, the custom-field
+Multi / Searchable checkbox labels and type-lock description, the
+default-entry checkbox, the estimation preset hint, the git "no remote"
+row, the reconcile rekey intro, the symmetric-relationship checkbox, the
+Statuses default marker ("default — new tasks land here"), and the
+publish-without-remote result ("Not pushed — no remote is configured").
+
+**The call made.** Rewritten per messaging.md (Ken's standing rule, and
+his instruction to "fix the others that may have similar issues"):
+e.g. "Allow multiple values", "Include in search", "Default for new
+tasks", "Same in both directions (e.g. relates to)", "Preset values
+(comma separated)" (format hint kept), "None (local only)", "Default",
+"Committed to {branch} locally. Not pushed: no remote is set up."
+
+**Cases amended (B17):** SET-22, SET-41, GIT-8, GIT-9, GIT-21, GIT-22,
+GIT-28, GIT-32 (each with an "Amended (K116 trims …; A322)" note: the
+case keeps the guarantee, not the old sentence; claims the copy no
+longer makes are verified on disk instead). PRU-29's quoted example
+updated. PRU-44 needed no change (same claim, new words).
+
+**Tests.** E2e assertions moved to the new copy in
+`flow-git-sync.spec.ts`, `flow-git-rekey.spec.ts` (GIT-9 now asserts the
+lower ULID is the keeper, the outcome, instead of the word "ULID"),
+`flow-settings-workflow.spec.ts`; unit in `workflowPanels.test.tsx`.
+
+**To revert.** Restore the listed strings from git history; the cases
+carry their pre-amendment text in history too.
+
+### A327 · The Blocked badge is neutral, not danger-red (B3, PM call)
+
+**Ticket:** B3 (K121 #3: *"get UI agent to make the call"*) · **Date:** 2026-09-23 · **Commit:** (this one)
+
+**Situation.** `board/BoardCard.tsx`'s Blocked badge was `text-danger-fg`,
+numerically the same hue as `--priority-critical` in both themes, so
+"blocked" and "critical" read as one signal. `danger-fg` is otherwise
+reserved for data/error conditions; blocked is a normal relationship state.
+
+**The call (PM voice).** Drop the colour override so the badge inherits
+the neutral chip's `text-text-secondary`, exactly like the Subtask badge
+beside it; the `ban` icon remains the distinguishing mark. Rejected:
+`warn-fg` (3.42:1 light on `bg-bg-muted` at the chip's 11px text, fails
+AA), `status-active-fg` (passes, but is the workflow-status colour and
+would create a new confusion). Test: BRD-50's unit test asserts no
+`.text-danger-fg` inside the marker (red-proven).
+
+**To revert.** Restore `text-danger-fg` on the badge's inner span.
+
+### A328 · Timeout-silent actions get an inline failure notice (B6, PM call)
+
+**Ticket:** B6 (K121 #7: *"get PM to decide on what to do, then we fix"*) · **Date:** 2026-09-23
+
+**Situation.** Git sync's Disable, the sidebar's saved-view delete, and
+the Sprints archive toggle never read their mutation's `error`, so a
+failure (including a K115 timeout, `data_state: "unknown"`) did nothing
+visible. The sidebar delete was worse: `confirmDelete` closed its dialog
+and told `useVanishedViews` the view was gone BEFORE the delete settled,
+so every failure was invisible and the app believed an unconfirmed delete.
+
+**The call (PM voice; copy adjusted to messaging.md — the PM's draft used
+em dashes).** An inline notice at each control, in `FieldFailureNotice`'s
+shape (`role="alert"`, what happened, data state, "Try again"), never the
+page-level `ErrorState` and never a toast:
+- Disable, unknown: "Couldn't confirm git sync was turned off. Refresh to
+  check." Not saved: "Git sync wasn't turned off. Try again." The confirm
+  box stays open on error.
+- Saved-view delete, unknown: "Couldn't confirm the view was deleted.
+  Reload to check before deleting it again." Not saved: "The view wasn't
+  deleted. Try again." Shown inside `DeleteViewDialog`; the dialog closes,
+  and `dismiss`/pin removal run, only on success.
+- Sprint archive, unknown: "Couldn't confirm {name} was archived. Reload
+  to check." (or "unarchived"). Not saved: "{name} wasn't archived. Try
+  again." On the sprint's row. Survives B1 (B1 moves browsing of archived
+  items, not the archive action).
+
+**To revert.** Remove the three notices and restore `confirmDelete`'s
+original eager ordering.
+
+### A329 · One Settings create pattern: "New X" in the header (B7, PM call)
+
+**Ticket:** B7 (K121 #8: *"get PM/UI agent to decide after you audit"*) · **Date:** 2026-09-23
+
+**Situation.** The audit found three create patterns (header primary "New
+X"; body-top secondary "+ Add X"; below-list "+ Add row") and literal "+"
+text prefixes, an A208 violation.
+
+**The call (PM voice).** Anything that opens a create dialog uses the
+panel header's actions slot, `variant="primary" size="sm"`, label "New
+{noun}", no "+": Custom fields, Relationships and Statuses/Priorities/Task
+types move there (`WorkflowPanelFrame` gains an `actions` prop to reach
+`SettingsPanelHeader`), and Saved views drops its "+ ". Pattern C (Board
+columns, Calendar holidays) stays below the list with the verb "Add",
+because it appends a draft row saved later, a genuinely different action;
+its "+" text becomes `<Icon name="plus">`. Row actions stay the
+`RowActions` kebab everywhere; Board columns keeps inline reorder/remove,
+extending the EnumCollection reorder-inline precedent.
+
+**To revert.** Move the three buttons back to the body, restore the old
+labels and variants.
+
+### A323 · Playwright worker-count override mechanism (B11) and the picker value/options assertion helper (B14)
+
+**Ticket:** Backlog B11 + B14 (`docs/dev/backlog.md`, K121 #11 and #14) · **Date:** 2026-09-23 · **Commit:** (uncommitted)
+
+**The situation.** Two independent, small mechanism choices came up
+while working the backlog session's tests/tooling items, neither of
+which the docs settled:
+
+1. `tests/ui/playwright.config.ts` set no `workers`, so a run picked up
+   Playwright's own default (a fraction of CPU cores) rather than the
+   2 `build-loop.md` already documents as the only load level measured
+   reliable (0 failures at 2 workers vs. 56 at 5, 23-then-5 at 3). B11
+   asks for a default of 2, "overridable (e.g. an env var)" — the exact
+   mechanism was left to the implementer.
+2. B14 asks for one helper that pairs a picker's read value with an
+   assertion that the value is still among its offered options, to
+   close the gap where `comboValue` (`ui/selectComboboxTestUtils.ts`)
+   reads a trigger's stale `data-value` without checking the dropdown
+   panel still offers it. Where exactly to add it, and how it should
+   fail, was left open.
+
+**What had to be decided.**
+1. What overrides the Playwright worker count, and in what precedence
+   order relative to Playwright's own `--workers` CLI flag?
+2. Should the new helper replace `comboValue` everywhere, or only at
+   call sites where the read value is relied on as still-selectable —
+   and how should it report a mismatch?
+
+**Options considered.**
+
+For (1): (a) a new named env var read directly in the config file, with
+`--workers` still able to override it because Playwright resolves CLI
+overrides after reading the config's returned value; (b) hardcode 2
+with no override, contradicting B11's explicit "overridable"; (c) read
+an existing generic env var (none exists for this purpose — every other
+per-surface override in this repo, e.g. `LOCTT_DEFAULT_READ_TIMEOUT_MS`-style
+globals, is a distinct, purpose-named identifier, not a shared one).
+
+For (2): (a) migrate every `comboValue` call site to the new helper
+unconditionally; (b) add the helper and migrate only sites where the
+test's own comment/intent already claims "this value is what the user
+would keep/reselect" (the sites that assert a *reopened, prefilled*
+picker or a *reflected current selection*), leaving sites that assert
+an *empty* selection (no value should be offered) on plain `comboValue`,
+since "no options" and "wrong/stale option" are different failure
+modes and forcing the empty-state assertion through a "must be
+selectable" helper would be a false claim about what that test checks.
+
+**Decided.**
+1. `LOCTT_E2E_WORKERS` (option a): `workers: process.env.LOCTT_E2E_WORKERS
+   ? Number(process.env.LOCTT_E2E_WORKERS) : 2` in
+   `tests/ui/playwright.config.ts`. Verified against Playwright's own
+   source (`node_modules/playwright/lib/common/index.js:579`,
+   `resolveWorkers(takeFirst(..., configCLIOverrides.workers,
+   userConfig.workers, "50%"))`) that `--workers` on the CLI always
+   wins over the config file's returned `workers` value, so the
+   precedence B11 asked for ("`--workers` on the CLI must still win")
+   holds without extra plumbing.
+2. Option (b): added `expectComboValueSelectable(testId, expected)` to
+   `apps/web/src/client/ui/selectComboboxTestUtils.ts`. It asserts the
+   trigger's `data-value` equals `expected` AND that `expected` is
+   present in `comboValuesOf(trigger)`, throwing a message naming both
+   the expected value and what was actually offered on either
+   mismatch. Switched 4 call sites to it (`Sidebar.test.tsx`,
+   `FilterBar.test.tsx`, `Toolbar.test.tsx` ×3, counting the caret test)
+   where the assertion's own comment or surrounding test already treats
+   the value as "what the reopened/current picker should let the user
+   keep." Left `Sidebar.test.tsx:1412` (`comboValue(...) === ""`, the
+   broken-saved-view empty-picker case) on plain `comboValue`, since
+   `""` is never a real offered option and forcing it through the new
+   helper would fail for a reason unrelated to what that test checks.
+   4 further call sites (`SavedViewsPanel.test.tsx`,
+   `TimelinePanel.test.tsx`, `ViewFormDialog.test.tsx`,
+   `EstimationPanel.test.tsx`) were left untouched because they live
+   under `apps/web/src/client/settings/`, out of scope for this pass
+   (a concurrent session was editing that directory).
+
+**Why.** (1) An env var read inside the config file itself, rather than
+a wrapper script or a second config, keeps `npm run test:ui` and a
+direct `npx playwright test` both honouring the same override with no
+extra indirection — and Playwright's own CLI-overrides-config
+precedence (confirmed by reading its source, not assumed) means the
+override composes correctly with `--workers` for free. (2) Migrating
+every site risked breaking tests whose actual subject is "nothing valid
+is currently selected" by demanding a match against an empty options
+list; scoping to sites that already assert a legitimate, re-pickable
+value keeps the helper's claim ("this display is trustworthy") true
+only where the test means it.
+
+**To revert.** (1) Remove the `workers:` line (and its comment) from
+`tests/ui/playwright.config.ts`, and revert the two doc mentions in
+`tests/ui/README.md` and `docs/dev/process/build-loop.md`'s Playwright
+bullet. (2) Delete `expectComboValueSelectable` from
+`apps/web/src/client/ui/selectComboboxTestUtils.ts` and revert the 4
+call sites (`Sidebar.test.tsx`, `FilterBar.test.tsx`,
+`Toolbar.test.tsx`) back to `comboValue`, restoring their original
+imports.
+
+### A330 · Shared inline-failure primitive, and header-action wiring for B6/B7 beyond A328/A329
+
+**Ticket:** B6/B7 (A328/A329) · **Date:** 2026-09-23 · **Commit:** (uncommitted)
+
+**Situation.** A328 specifies the copy and shape ("`FieldFailureNotice`'s
+shape ... never the page-level `ErrorState` and never a toast") for three
+call sites, and names `ui/InlineFailureNotice.tsx` as the suggested
+extraction. A329 specifies the header pattern and per-panel labels. Neither
+decision commits to the shared primitive's exact API, nor to how three of
+the four panels (`CustomFieldsPanel`, `RelationshipsSettingsPanel`,
+`EnumCollectionPanel`) should thread their existing local dialog state
+through a header button that now lives one component up (in
+`WorkflowPanelFrame`'s new `actions` slot). Both were left to the builder.
+
+**What had to be decided.**
+
+1. `InlineFailureNotice`'s prop shape.
+2. How a `data_state` is read off a mutation's `error` for a component that
+   isn't the field-write path `FieldFailureNotice`/`fieldFailure.ts` was
+   built for.
+3. How to lift each Workflow panel's "create" dialog open-state to the new
+   header button without duplicating the dialog-mode state machine.
+
+**Decided.**
+
+1. `InlineFailureNotice({ message, dataState, onRetry?, testId? })` —
+   `role="alert"`, the message as a `<p>`, an optional "Try again" button.
+   Deliberately narrower than `FieldFailureNotice`: no `taskKey`, no
+   `field`, no Dismiss, no reload/back links — none of A328's three call
+   sites need them, and adding them speculatively is the kind of thing
+   `messaging.md` and the corruption-handling guide both warn against.
+   Callers compose the exact wording themselves (per-surface helper
+   functions: `disableFailureMessage`, `archiveFailureMessage`, the inline
+   ternaries in `DeleteViewDialog`/`ReconcilePanel`), because A328's three
+   messages are structurally different enough (verb tense, whether a name
+   is interpolated) that a single templated formatter would be more
+   indirection than the three call sites are worth.
+
+2. `dataStateOf(error)`: an `ApiError` with an envelope returns
+   `envelope.data_state`; an `ApiError` with no envelope (never reached the
+   API) returns `undefined` (unknown data state, but not a data-state
+   *claim* — matches `ErrorState`'s treatment); anything else (transport
+   failure, a plain `Error`) returns `"not_saved"`, since nothing was
+   written. Exported alongside `InlineFailureNotice` from the same file
+   rather than added to `task/fieldFailure.ts`, because that module's
+   whole shape (`FieldFailure`, `toFieldFailure`) is keyed to a task-field
+   write and adding a second, unrelated export to it for these three
+   surfaces would be the "core export no surface calls is unfinished"
+   problem in miniature, run backwards.
+
+3. Each of the three Workflow-collection panels keeps its own `editing`/
+   `deleting` state local (unchanged), but lifts a single `dialogOpen`
+   boolean (plus `setDialogOpen`) to the top-level `*Panel` component,
+   which owns the header button and passes both down. The child derives
+   its actual dialog union (`{mode:"create"} | {mode:"edit", ...} | null`)
+   from `editing ?? (dialogOpen ? create : null)`, and a small
+   `useEffect` on `dialogOpen`'s rising edge calls `save.reset()` — since
+   the header button that opens it now lives outside the component that
+   owns the mutation, and A329 does not relieve the panel of behaving
+   the way it did before (a stale save error must not appear inside a
+   freshly-opened create dialog). No `dialogOpen` prop on
+   `RelationshipsSettingsPanel`'s or `EnumCollectionPanel`'s public API —
+   this is internal plumbing between each panel's own two functions, not
+   a capability added to `WorkflowPanelFrame`.
+
+**Not done:** the header "New {noun}" button in the three Workflow panels
+does not carry `disabled={save.isPending}` the way the old inline button
+did — the header lives one component above the one holding `save`, and
+threading `save.isPending` up alongside `dialogOpen` for a race that is
+already impossible in practice (the dialog captures its own pending state
+once open) did not seem worth the added prop. Flagging this rather than
+silently dropping it: if it turns out to matter, the fix is to also lift
+`save.isPending` (or a narrower `disableCreate` boolean) next to
+`dialogOpen`.
+
+**To revert.** Delete `apps/web/src/client/ui/InlineFailureNotice.tsx`;
+revert the four B6 call sites (`GitSyncPanel.tsx`'s Disable block,
+`DeleteViewDialog.tsx` + `Sidebar.tsx`'s `confirmDelete`,
+`SprintsPanel.tsx`'s `SprintRow`) to reading no mutation error; revert
+`WorkflowPanelFrame.tsx`'s `actions` prop and the three panels' lifted
+`dialogOpen` state, restoring each panel's own below-title "+ Add {noun}"
+button and its own fully-local `dialog` state.
+
+### A332 · Workflow panels' header "New" button waits for a running save
+
+**Ticket:** follow-up to A329/A330 · **Date:** 2026-09-23 · **Commit:** (this one)
+
+Moving the create button into the panel header (A329) put it above the
+component that owns `useSaveWorkflowCollection`, so it lost
+`disabled={save.isPending}`. `useSaveWorkflowCollection` now carries
+`mutationKey: WORKFLOW_SAVE_KEY`, and Custom fields, Relationships and
+Statuses/Priorities/Task types disable their header button while
+`useIsMutating({ mutationKey: WORKFLOW_SAVE_KEY }) > 0`. Any workflow save
+counts, which matches the old per-panel guard (saves do not overlap in
+practice). Test in `workflowPanels.test.tsx`, red-proven. **To revert:**
+drop the key and the `disabled={saving}` props.
+
+### K122 · Four unsatisfiable cases: three retired, XS-3 becomes the reload guarantee
+
+**Date:** 2026-09-23 · **Ken's ruling — not revertible by an agent.**
+
+Covering B9's uncovered cases found four that describe behaviour the app
+does not have. Ken, asked with options and context:
+- **VUE-12** (edit a built-in view, save as new): *"retire it. you can
+  already add filters then click 'save'"*.
+- **ERR-23** (a create-task flow chaining a second write): retire — the
+  create is one request; links are added later from the task page.
+- **ERR-32** (a manual audit via a flaggable "generic handler" that does
+  not exist): retire — ERR-1..31 cover each surface.
+- **XS-3** (a manual refresh control), which contradicts **Q4** (no refresh
+  button; data refetches on tab focus and within the 60s staleness
+  window). After the screen, behaviour and user story were laid out
+  (an agent editing via MCP while you watch the list: up to 60s stale),
+  Ken: *"user can refresh the page for this, no?"*. XS-3 is now "reloading
+  the page shows fresh data in the same view" (filters, sort, task), with
+  an e2e test; Q4 stands.
+
+Retired cases were removed entirely (Ken's retire rule): the case blocks,
+their known-gaps entries, and code/case comments citing them.
+
+### A333 · "Run migration" cannot POST twice from a same-tick double click
+
+**Ticket:** defect found covering XS-36 (B9) · **Date:** 2026-09-23 · **Commit:** (this one)
+
+`MigrateNow` (`shell/SchemaBanner.tsx`) disabled its confirm button via
+`isPending`, which only turns true after React commits, so two clicks in
+one tick both POSTed `/api/migrate`. Added the NEW-29 guard
+`CreateTaskModal` already uses: an `inFlight` ref set synchronously in the
+click handler, cleared `onSettled`. New XS-36 test clicks twice with no
+await between and asserts one POST (red-proven). **To revert:** drop the
+ref and its check.
+
+### A331 · Settings → Archived: the one web surface for archived items; every other surface loses its archived reveal (B1)
+
+**Ticket:** B1 (K121 #1: *"not allow viewing archived stuff. thats the point of archiving"* … *"remove everywhere. i dont even want a debug switch"* … *"archived section in settings, can select entity to view … restore one by one, or mass-select and restore selected, or restore all. or delete all, or select some to delete, or delete one at a time"*) · **Date:** 2026-09-23 · **Commit:** (uncommitted)
+
+**Situation.** K107 gave every archivable list a tri-state archived scope, and the 2026-09-22 ruling ("archiving is a one-way door") left it only in the six Settings entity panels, demoted behind an icon (`ArchivedScopeReveal`). The web task list still honoured `?archived=`, the Sprints overview kept a "Show archived (n)" checkbox, the DSL `archived` term (K107 term-wins rule) could reveal archived tasks through `?query=`, the query builder offered `archived`/`archived_at` fields, and "Save as view" could carry an archived scope. K121 #1 removes all of it from the web and adds one Settings section. The acceptance cases are SET-52..SET-54.
+
+**Calls made (the docs did not settle these):**
+
+1. **Scope: web only.** CLI `--archived` and the MCP `archived` param are untouched (K30-web precedent; K121 records the assumption). The HTTP API keeps its `?archived=` scope params, because Settings → Archived reads them; no browsing surface sends them. No core change, so no CLI/MCP/reference-doc change was needed.
+2. **The DSL term is refused on the web list, not run.** `GET /api/tasks?query=…` naming the `archived` FIELD (tokenizer check, so a string literal does not match) answers 400 `validation_failed`, field `query`, "Archived tasks aren't listed here. Find them in Settings, under Archived." Options: (a) remove only the builder fields and leave typed DSL working (a URL still reveals archived tasks, which SET-52 forbids); (b) AND `archived != true` into the query (the term-wins rule makes that a silent empty result plus a confusing warning); (c) refuse with a pointer. Chose (c). The K107 `onArchivedConflict` warning on this route became unreachable and was removed. `archived` and `archived_at` were removed from the query builder's field palette (it also feeds the saved-view editor).
+3. **Nav placement:** System group, after Sync, before Backup & restore (`/settings/archived`, label "Archived"). Both it and Backup are recovery surfaces; Diagnostics stays last (A64).
+4. **Types:** K107's seven — tasks, projects, saved views, labels, milestones, sprints, users — verified against contracts (each has `archived`; only tasks carry `archived_at`, so only tasks show "Archived <date>"). The type picker is a row of toggle buttons with counts; the list is plain (no search, filter or sort control). All seven lists are fetched at once because the picker shows every count.
+5. **Delete flows.** A single row's Delete opens that entity's existing dialog: `RemapDeleteDialog` (labels, milestones, sprints), `DeleteProjectDialog`, `UserDeleteDialog`. Task and saved-view rows (which have no remap step) and every multi-item delete (selected or all) use one typed confirmation (`TypedConfirmDialog`, word from `deleteConfirmWord`: "DELETE", or the count above 10), naming up to 10 items plus "and N more", saying deleting is permanent. A batch has no single remap target, so it takes each entity's existing **clear** branch (labels/milestones/sprints: DELETE without `remap_to`; projects: `clear_project_field=true`; users: `unassign=true`) and the confirmation says so with the reference count ("N tasks still use them. Deleting removes them from those tasks." / "Those tasks will have no project."). No new delete path was invented; each request is the one the entity panel already sends.
+6. **Typed confirmation for every multi-item delete, not only "Delete all".** SET-54 requires typing for Delete all; tasks and users already require it for any delete, so "Delete selected" is typed for every type too, rather than varying friction by type.
+7. **Per-item reporting.** Tasks use the bulk routes (`/api/tasks/bulk/archive` with `archive:false` for restore, `/api/tasks/bulk/delete`), which already return `{succeeded, failed}`. Config entities have no bulk route, so each item is its own sequential request and outcomes are gathered per item (one failure never stops the rest). The result line says the numbers ("Restored 3 of 5 tasks. 2 tasks weren't restored.") and lists each failure with its reason. When every failure is unknown-outcome (`data_state: unknown`), it says "Couldn't confirm … Reload to check." and offers no retry (ERR-4). Failed items stay selected, so Try again acts on exactly them.
+8. **No new backend route.** The brief expected a missing milestone archive/unarchive route; `PUT /api/milestones/:id` already threads `archived` to `editMilestone` (the panel's `useArchiveMilestone` uses it), so restore uses that. Bulk task unarchive already exists (`archive: false`).
+9. **Entity panels:** active only. The deep-link hash widening (K100, `deepLinkHash.ts`) existed only to reach archived rows and was deleted. Row actions read "Archive" only (the Unarchive branch had no reachable row). The panel scope type narrowed to `PanelScope = "active" | "archived"` so no caller can ask for `all`.
+10. **Dialog copy.** `RemapDeleteDialog` gained a "Deleting is permanent." line (SET-54 wants every delete confirmation to say so; it affects every caller of that dialog). `UserDeleteDialog`'s `onArchive` became optional, and `DeleteProjectDialog` drops its "Archiving hides the project instead" sentence for an archived project: offering archive for something already archived is wrong.
+11. **View switcher** no longer carries `archived` (TML-57 amended), and a stray `?archived=` in a held URL is ignored by the list (the search schema passes unknown params through; nothing reads it).
+
+**Removed entirely:** `ui/ArchivedScopeControl.tsx` + its test, `settings/ArchivedScopeReveal.tsx`, `settings/deepLinkHash.ts`, the Sprints overview checkbox, `deriveSprintColumns`' `showArchived` option, `listSearch`'s `archived` field, `TasksQueryParams.archived`, `archivedScopeFromSearch`, the SaveViewDialog scope line, the list rows' archived badge/dimming, the archived sub-lists in the Sprints and Saved-views panels, `SavedViewsPanel`'s `useUnarchiveView`.
+
+**Where it landed.** `apps/web/src/client/settings/ArchivedPanel.tsx`, `apps/web/src/client/api/hooks/useArchived.ts`, `settings/sections.ts`, `settings/SettingsShell.tsx`, `server/server.ts` (`queryNamesArchivedField`, `ARCHIVED_QUERY_MESSAGE`), the six entity panels, `sprints/SprintsView.tsx` + `columns.ts`, `list/*`, `router/listSearch.ts`, `api/hooks/useTasks.ts`, `shell/Sidebar.tsx` (`CARRY_FILTER_KEYS`), `docs/user/ui/guide.md`, `docs/user/common/recovery.md`.
+
+**To revert.** Delete `ArchivedPanel.tsx`, `ArchivedPanel.test.tsx`, `useArchived.ts`, `tests/ui/flow-settings-archived.spec.ts`, the `archived` row in `sections.ts` and its `SettingsShell` branch; restore `ArchivedScopeControl.tsx`, `ArchivedScopeReveal.tsx`, `deepLinkHash.ts`, the SprintsView checkbox, `listSearch`'s `archived` field and the panel scope state from git history (this commit's parent); remove the `queryNamesArchivedField` guard in `handleListTasks` and restore its `onArchivedConflict` callback; put `archived`/`archived_at` back in `QueryBuilder`'s `FIELDS`; revert the case amendments marked "Amended (K121 #1, Ken 2026-09-23)". Ken's ruling (K121 #1) itself is not revertible by an agent; only this shape of it is.
+
+### A334 · Settings pointer targets are at least 24px (B4)
+
+**Ticket:** B4 (K121 #4: "fix"; "24px is enough") · **Date:** 2026-09-23 · **Commit:** (this one)
+
+A live sweep of every Settings page found interactive elements under
+WCAG 2.5.8's 24px: the shared reorder drag handle (15×17px, and a typed
+braille "⠿", an A208 violation the glyph lint list misses), the Pinned
+views "Pin" / "Delete view", Sidebar groups "Hide" / "Show", both "Reset"
+buttons (17px tall) and the Card layout visibility toggles (21px). The
+text buttons now use the shared `Button` (`ghost`, `ghost-danger` for
+Delete view, `size="sm"`, 24.5px); the handle draws `<Icon name="drag">`
+in a `min-h/min-w-[24px]` box; the toggles keep their pressed look with
+`min-h-[24px]`. Earlier in B4: header avatar 22→24px, label pills
+`min-h-[24px]`. The skip link's "16px" was its hidden state; visible it is
+well over. A11Y-55 gained a bullet and an e2e sweep of every Settings page.
+**To revert:** restore the hand-rolled buttons and handle glyph.
+
+### A335 · The three "flakes" do not reproduce at the pinned worker count (B10)
+
+**Ticket:** B10 (K121 #10: "fix") · **Date:** 2026-09-23
+
+BLK-24, BRD-4 and GIT-12 had been written off as "pre-existing flake,
+passes on re-run" when the suite ran at 5 workers. Investigated per
+build-loop.md ("flake is a hypothesis"): against a fresh build, each ran
+5× alone at `--workers=1` (15/15 passed) and all three ran 4× together at
+`--workers=2` (12/12 passed). No defect reproduces. Their failures match
+the documented contention above 2 workers (build-loop.md, measured 56
+failures at 5), which B11 closed by pinning Playwright to 2. If any of the
+three fails again at 2 workers, it is a real defect and goes to
+known-gaps with the run's evidence. **To revert:** nothing to revert; no
+code changed.
+
+### A336 · B18 triage — e2e failures fixed: stale specs corrected, one app defect (SET-24 timezone alert) fixed with a red-proven unit test
+
+**Ticket:** Backlog B18 · **Date:** 2026-09-23 · **Commit:** (uncommitted)
+
+**Situation.** The full e2e suite at 2 workers on a clean build gave
+812 passed / 29 failed. Each failure was triaged as either a stale
+spec (asserting wording/locators the app no longer has, per an
+approved decision) or an app defect.
+
+**Per-failure disposition.**
+
+1. **TSK-3/19/20(×2)/21(×2)/22/23/44/50/51/52** (`tests/ui/flow-tasks.spec.ts`,
+   22 occurrences) — STALE TEST. `getByRole('button', { name: 'More' })`
+   substring-matches both the task header's "More" button and the
+   editor toolbar's folded "More formatting" group (A309, intentional).
+   Fixed by adding `exact: true` to every occurrence in the file.
+
+2. **GIT-10** (`flow-git-reconcile.spec.ts`) — STALE TEST. Asserted
+   `"left intact"`; current copy (post A322/K116 trim) is "The loctt
+   branch and its history are kept". Assertion updated to match; the
+   substance (branch survives, named) is unchanged.
+
+3. **GIT-1** (`flow-git-sync.spec.ts`) — STALE TEST / test bug. It ran
+   `git ls-tree -r --name-only loctt` right after Enable, before any
+   Publish. `enableGit` (packages/core/src/git/git-mode.ts) only writes
+   `sync.yaml` — it never creates the `loctt` branch; the branch is
+   created on first Publish. Fixed by clicking Publish (already visible
+   after enable) before inspecting the branch's tree.
+
+4. **GIT-27** — STALE TEST. Asserted `"local-only"`; current copy is
+   "Git tracking stays local until you add one with…". Assertion
+   updated.
+
+5. **GIT-28** — STALE TEST. Asserted `"not a git repository"`; current
+   copy is "This folder isn't a git repository." (curly apostrophe).
+   Assertion updated to `"isn't a git repository"`.
+
+6. **GIT-30** — STALE TEST. Asserted `"not modified"`; current copy is
+   "Your task files weren't changed." Assertion updated to
+   `"weren't changed"`.
+
+7. **GIT-25** — STALE TEST. Asserted `"previous setup"`; current copy
+   is "A loctt branch already exists…". Assertion updated to
+   `"already exists"`.
+
+8. **CMT-2** (`flow-comments.spec.ts`) — STALE TEST (A319). Asserted
+   `getByText("needs some text")).toBeHidden()`, but the reason is now
+   an `sr-only` span (A319) — present in the DOM/AT tree, visually
+   clipped, which Playwright's `toBeHidden` (a rendering-visibility
+   check) does not treat as hidden. Rewrote the assertion to check the
+   `sr-only` class plus its clipping CSS (`width:1px`, `height:1px`,
+   `overflow:hidden` — Tailwind's `.sr-only` uses `clip-path:inset(50%)`,
+   not the legacy `clip: rect(...)`), matching what A319 actually means:
+   available to assistive tech, not visible on screen.
+
+9. **SET-16** (`flow-settings-workflow.spec.ts`) — STALE TEST (A315).
+   Asserted the type-lock reason contains "stored under this type" and
+   "new field"; current sr-only reason (per A315's Settings copy trim)
+   is only "Type and multiple values can't be changed after creation."
+   The "create a new field and migrate" alternative text was removed as
+   part of the same trim pass. Assertion narrowed to the reason that
+   still exists; the substantive check (control disabled + reason
+   stated) is unchanged.
+
+10. **SET-36** — STALE TEST. Asserted `calendar-blocked` contains "12"
+    (count of *valid* remaining holidays); actual behavior states the
+    count of *invalid* ones ("1 holiday has an invalid date. Fix or
+    remove them to save.") — this matches the case text's own example
+    verbatim. Assertion corrected to the actual (and case-documented)
+    message.
+
+11. **SET-24** — **APP DEFECT.** The `calendar-timezone-unresolvable`
+    alert dropped its file-provenance line
+    (`.loctt/config/calendar.yaml`) somewhere in the Settings copy-trim
+    passes (A315/A322/K116), even though SET-24's case text ("names the
+    file it came from") was never amended and a prior decision
+    (A-SET24-TZ's follow-up note in decisions.md ~L12455) explicitly
+    records that the alert *should* name the file. This is a real
+    regression, not a stale assertion. **Fixed** in
+    `apps/web/src/client/settings/CalendarPanel.tsx`: the unresolvable-
+    timezone message now reads `Unable to resolve timezone "<value>"
+    from .loctt/config/calendar.yaml.` Added a new unit test file
+    `apps/web/src/client/settings/CalendarPanel.test.tsx`
+    (`@verifies SET-24`) asserting both the value and the file name
+    appear; red-proven by reverting the file-name text, confirmed
+    failing, then restored. The e2e spec needed no change — it was
+    already asserting the correct (case-required) content and caught
+    the regression correctly.
+
+12. **SET-22** — STALE TEST. Asserted `/working-day computations/i` and
+    `/cannot resolve/i`; current copy is "Select at least one working
+    day." Assertion updated; unchanged substance (refused, reason
+    named, save disabled, file untouched — those parts of the test were
+    already fine).
+
+13. **SET-41** — STALE TEST. Asserted `/too large/i` and a literal "1"
+    count; current copy is "Too many holidays to save. Remove some and
+    try again." — no count, because (per the case's own amendment note)
+    the limit is the server's request size, not a holiday count, so no
+    count can be stated truthfully. Assertion updated to match.
+
+14. **PRU-17** (`flow-settings-projects-users.spec.ts`, "clear the
+    project field" test) — STALE TEST. Asserted `/cleared the project
+    field/i`; current copy is `Deleted "Tasks". Cleared the project on
+    1 task.` Assertion updated to the actual phrasing.
+
+15. **SET-53, SET-54** (`flow-settings-archived.spec.ts`) — STALE TEST
+    (test bug, not an app defect). The shared `rowMenu` helper opened a
+    row's actions menu, then clicked
+    `page.locator('[data-testid^="archived-<action>-"]')` — a prefix
+    selector that also matches the panel's bulk `archived-<action>-all`
+    button (strict-mode violation, 2 matches). Fixed by scoping the
+    click to the open menu's own item via
+    `page.getByRole("menuitem", { name: /^restore$/i })` (or delete),
+    which cannot resolve to the bulk button.
+
+16. **XS-16** (`flow-list.spec.ts`) — case amendment + spec change,
+    per K121 #1 (Ken's ruling, not revertible by an agent). The `archived`
+    DSL field is a documented construct XS-16 requires to parse
+    identically on UI and CLI, but B1/A331 made the web list refuse any
+    query naming `archived` with a 400 (`queryNamesArchivedField`,
+    `ARCHIVED_QUERY_MESSAGE`) — Settings → Archived is the one web
+    surface for archived items. Amended
+    `tests/cases/ui-test-cases/flow-cross-surface.md` XS-16 with an
+    "Amended (K121 #1, Ken 2026-09-23)" note quoting the ruling
+    ("not allow viewing archived stuff. thats the point of archiving")
+    and exempting `archived = ...` from the UI parity requirement.
+    Rewrote the spec: `archived = false` is pulled out of the parity
+    loop into its own assertion — UI returns 400 naming Settings →
+    Archived, CLI still runs it successfully. Ran `npm run cases:index`
+    (1053 cases indexed: 953 UI, 100 surface).
+
+17. **"a slow init keeps the form disabled…"** (`flow-onboarding.spec.ts`)
+    — STALE TEST. Asserted `getByRole('button', { name: /setting
+    up/i})`, but `Button`'s documented `loading` contract (see its
+    JSDoc "Trap: this can make the button nameless") keeps the
+    accessible name fixed unless the caller passes a different
+    `aria-label` while loading — `InitWizard.tsx` passes the same
+    `aria-label="Set up tracker"` whether or not `submitting` is true,
+    and there is no "Setting up…" text anywhere (progress is
+    communicated by the separate `SlowInitNote`, which the test already
+    checks via "creating directories"). Assertion changed to the
+    button's actual, stable name.
+
+**Where this lands.** All spec fixes above are in
+`tests/ui/flow-tasks.spec.ts`, `flow-git-reconcile.spec.ts`,
+`flow-git-sync.spec.ts`, `flow-comments.spec.ts`,
+`flow-settings-workflow.spec.ts`, `flow-settings-projects-users.spec.ts`,
+`flow-settings-archived.spec.ts`, `flow-list.spec.ts`,
+`flow-onboarding.spec.ts`. The one app fix is
+`apps/web/src/client/settings/CalendarPanel.tsx` plus its new unit
+test `apps/web/src/client/settings/CalendarPanel.test.tsx`. The one
+case amendment is `tests/cases/ui-test-cases/flow-cross-surface.md`
+XS-16.
+
+**To revert.** Each spec-assertion fix can be reverted independently
+(they are pure locator/copy corrections, listed above with old vs.
+new text) but reverting them re-introduces the stale-copy failures
+against the current, approved app text — not recommended. To revert
+the SET-24 app fix: remove the added ".loctt/config/calendar.yaml"
+clause from `CalendarPanel.tsx`'s unresolvable-timezone message and
+delete `CalendarPanel.test.tsx`. To revert the XS-16 case amendment:
+remove the "Amended (K121 #1…)" block from flow-cross-surface.md,
+re-add `archived = false` to the main `constructs` array in
+flow-list.spec.ts, delete the standalone archived-query assertion, and
+re-run `npm run cases:index`. Ken's underlying K121 #1 ruling itself is
+not revertible by an agent.
+
+### K123 · Messages state the outcome and do not editorialise; audit every message
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+On the link picker's empty result — *"No task matches 'sdf'. Former keys
+resolve too, so a retired key would have been found — check the
+spelling."* — Ken: *"yea this is a bad message. should just be 'No matches
+found.'. dont editorialise. audit all error messages"*.
+
+Built: the link picker says "No matches found." and its self-link branch
+"{key} is this task. A task can't link to itself."; REL-43 amended. The
+app-wide audit (every error, empty, result and confirm message outside
+Settings, which A322/A326 already covered) goes to Ken as a before/after
+list before anything changes, as the Settings trims did (K116).
+
+### K124 · The description editor saves only on Save; click-away keeps editing; Escape cancels
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+Ken, on the description editor: *"once in editing mode, i think there
+should be a save button to save, and cancel. in which case, things dont
+get saved and history isnt updated. because right now, a lot of
+accidental click-outs are happening which saves unintentionally."*
+Today it autosaves 1.5s after typing stops (TSK-15), saves on click-away
+(TSK-71), and Escape exits keeping the text (K96). Asked, with each
+option's cost:
+- Click-away with unsaved changes: *"Stay in edit mode"* — nothing saves
+  or discards; the editor stays open until Save or Cancel.
+- Leaving the page: *"Warn before leaving"* — the unsaved-changes guard.
+- Escape: *"Same as Cancel"* — discard and close, asking first when there
+  are changes. Replaces K96's "Escape keeps the text".
+- Whether anything still saves automatically: *"we save in session
+  storage? how would that work, get a PM"* — referred to the PM voice;
+  the answer is recorded as its own decision before this is built.
+
+Supersedes TSK-15's autosave and TSK-71's blur-save for the description;
+those cases get amended when this is built.
+
+### K125 · Task page scrolls as one; ⋯ task menu; sidebar and customiser changes
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+- **Task page scroll.** *"why is the ticket view INSIDE the header thing?
+  no, the header + ticket details should be part of the page scroll, not
+  some inner window"*. Built: `task/TaskDetail.tsx` no longer nests its
+  own scroller; the shell's `<main>` scrolls the whole page.
+- **Task actions menu.** *"this button should NOT be 'More'. and we dont
+  need 'Copy key, copy link'"*, then *"in this case, i think '...' is
+  warranted"*. Built: a ⋯ `IconButton` ("Task actions"); Copy key and
+  Copy link removed. TSK-19 (which existed only for those two items) is
+  retired and removed entirely.
+- **Sidebar "All projects".** *"we dont need the dot on the 'all
+  projects'"*; then, told it and "List" describe the same state: *"take
+  out the 'All projects' then? if its duplicate"*. Told that List/Board/
+  Timeline currently carry the project scope (the 2026-09-20 cross-view
+  ruling), so "All projects" was the only sidebar reset, and asked how to
+  get back to all tasks: *"click 'list'?"*. So: "All projects" is removed,
+  and the view links (List/Board/Timeline) clear the sidebar-driven scope
+  (project, saved view, label, sprint, built-in filter) like every other
+  sidebar row (K118). This supersedes the 2026-09-20 carry-across for
+  those params.
+- **Customize sidebar.** Built-in filters nest under one "Filters" group
+  (*"Nest under 'Filters'"*), movable as a unit, each still hideable and
+  reorderable inside it. Show/Hide becomes the Switch (`ui/Toggle`,
+  role="switch"): *"yes use switch. and when an item is switched off,
+  disable switching/reordering its child items too"*.
+- **Save as view.** *"Keep bookmark, grow to 28px"* — the toolbar's
+  control height (h-8), up from 24.5px.
+- **Editor drafts** (K124's open question): decided by the PM voice
+  (A338): sessionStorage, restored silently, conflict dialog if the disk
+  version moved. Reported to Ken with the option of a restore prompt.
+
+
+### K126 · The error screen drops "Your tasks weren't affected."
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+Supersedes K120's wording.
+
+On a screenshot of the full-page error card ("Something went wrong
+displaying the app" / "Your tasks weren't affected." / Reload / Show
+details), Ken: *"i dont think the 'your tasks werent affected' message
+is needed."* The line is removed from `error/RegionErrorBoundary.tsx`;
+the card is now the heading, the conditional in-flight-write warning,
+the actions and the details disclosure. ERR-35 is retitled to "makes no
+claim about the data it cannot back" and keeps only the in-flight
+requirement; SHL-42 drops "the user's tasks were not affected". Unit
+and e2e assertions now require the line to be absent.
+
+### K127 · The error screen's in-flight warning wording
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+Supersedes K120's in-flight line.
+
+The warning the error card shows when a write was in flight read *"A
+change was being saved, so it may not have been. Reload to check before
+trying it again."* Ken: *"we can change it to 'Your changes may not have
+been saved. Please check and try again.'"* Applied verbatim in
+`error/RegionErrorBoundary.tsx`; the ERR-35 unit test asserts the exact
+string.
+
+### K128 · One history entry per description save; the 15-minute merge is removed
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+Supersedes invariants.md Q18/D4's coalescing rule.
+
+`body_edited` history entries by the same actor merged within a rolling
+15-minute window (capped at 60 minutes), a rule made for the 1.5s
+autosave. Under K124 each write is a deliberate Save, so the merge folded
+two Saves minutes apart into one entry. Asked "one entry per Save
+(remove the 15-minute merge)" or "keep the 15-minute merge", Ken chose
+**one entry per Save**. The merge is removed in core, so every body write
+(web Save, CLI, MCP) records its own entry.
+
+### K134 · Timed-out saves: "Please try again", except create
+
+**Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
+
+A write whose outcome is unknown (the client's deadline passed):
+description save, board move and sprint move read *"Your changes may
+not have been saved. Please try again."* Ken asked whether "reload the
+page" would lose the user's work. Told that a retry of those three is
+safe (the description retry is caught as a conflict if the first write
+landed, and the moves are idempotent) but a retried create can make a
+duplicate task, he chose for Create task: *"The task may not have been
+created. Check the list before trying again."* (the form stays open).
+ERR-4 is amended to match.
+
+### K133 · Single-key shortcuts: off switches, no rebinding (A11Y-43)
+
+**Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
+
+A11Y-43 requires "Single-key shortcuts can be turned off or remapped"
+(WCAG 2.1.4). Nothing implemented it once the shortcut dialog's footnote
+was cut (K129). Ken first answered "Retire the requirement", asked for
+the question again and chose "Build remapping too", then worked through
+the design:
+- *"where's the setting, which category, what's the UI/UX? is there a
+  'shortcuts help' dialog, and if so, can there be a button that opens
+  an in-dialog settings? (so you can set it from the hotkey dialog and
+  the settings page)"*
+- *"a button for Reset to default (with a warning) and maybe a switch to
+  turn off hotkeys altogether (and then what's the hotkey dialog show
+  then? should show all the shortcuts but disabled and a message that
+  says about re-enabling it)"*
+- Shown how GitHub, Linear and Jira (fixed keys, an off switch) differ
+  from Gmail and VS Code (free remapping), he asked *"maybe just dont
+  allow rebinding and just allow disabling?"*, then chose **"Off
+  switches only, no rebinding"**.
+
+So: a master "Single-key shortcuts" switch plus one switch per shortcut,
+in Settings → Personal → Keyboard and in the `?` dialog's in-dialog
+settings view; "Reset to default" (with a warning) turns them all back
+on; when the master switch is off the `?` dialog lists every shortcut
+disabled with a message and a way to turn them back on; a "Keyboard
+shortcuts" item in the user menu opens the dialog, since `?` itself can
+be off. Stored per user; CLI and MCP read and write it. Built before
+`ui/polish-wave-3` merges (B26). The remapping answers (ignore case,
+per-row reset) lapse with rebinding.
+
+### K132 · Milestones carry no countdown and no Overdue badge
+
+**Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
+
+Following K131, told milestones show the same countdown ("in 5 days" /
+red "3 days overdue", MSL-40), Ken: *"yes remove too"*. Asked about the
+separate "Overdue" badge beside the milestone name on the Milestones page
+and the milestone page (MSL-17: target date passed, open tasks remain),
+he chose **"Remove the badge too"**. Both go; MSL-17 and MSL-40 are
+amended. Task due dates turning red in the list and board are a
+different indicator and are unchanged.
+
+### K131 · Sprint cards carry no countdown to the end date
+
+**Date:** 2026-09-26 · **Ken's ruling — not revertible by an agent.**
+
+Each Sprints-board card showed "N days left", turning red "N days
+overdue" once the end date passed (SPR-39). Asked what it should do past
+the end date, Ken: *"why is there a countdown even?"* Told it came from
+SPR-39 and duplicates the date range already on the card: *"remove the
+countdown"*. Removed (`sprints/SprintsView.tsx`, `sprintCountdown` in
+`sprints/columns.ts` and its tests deleted); SPR-39 amended. Web only:
+the CLI and MCP never showed one.
+
+### K130 · Sprints: no process policing; product principle P11; last message rulings
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+**Sprints.** Ken: *"for sprints, i dont need date checks. users can
+specify, and the can make active or inactive or close or whatever, i
+dont care. we're not babysitting policy, we're being a better task
+tracker, not here to lock behaviour. because end of the day, its their
+files, i let them track however they want. add this to our product
+principles. then, take out the message, the warning, and the stopping.
+just let users update state however they want."* So:
+- The Sprints board's "still marked active, but its dates … do not
+  include today" hint (SPR-20) is removed.
+- Sprint state moves freely between future, active and completed on
+  every surface. The completed → other block and its `force` override
+  (CLI `--force`, MCP `force`) are removed.
+- Asked whether end-date-before-start-date should stay refused (the
+  dates cannot be drawn: burndown has no days, the timeline bar
+  inverts), Ken chose **keep refusing**, with a plain message. Date
+  format validation (YYYY-MM-DD) stays: it is storage, not policy.
+- New product principle **P11 — Their files, their process**
+  (`tests/cases/ui-test-cases/README.md`).
+
+**Archived-user banner (A-100):** Ken: *"no need then? users should
+know their settings change if they switch user."* Both lines are
+removed from the user menu.
+
+**Unreliable-filesystem banner (A-102):** *"This tracker is in a
+network folder, which may lead to data corruption if multiple machines
+edit the files at the same time. Keep it on a local disk to be safe."*
+
+**Attachment over the size limit (B-57):** *"File size limit is 50 MB."*
+
+**Also:** Ken: *"please track the implementation in our backlog,
+be sure to implement everything, including the messages and the
+behaviour changes."* The K129 delete-confirmation ruling supersedes
+BLK-11/TSK-22/TSK-23's "offer archive as the reversible alternative";
+those cases are amended.
+
+### K129 · Message-audit rulings (batches A–C), with two behaviour changes
+
+**Date:** 2026-09-24 · **Ken's ruling — not revertible by an agent.**
+
+Ken's answers on the "needs your call" rows of the app-message audit
+(K123), verbatim where quoted:
+
+- **Delete confirmations** (bulk delete, task delete): the archive
+  suggestion goes. *"Deleting is irreversible. Continue? im sure the
+  archive is somewhere the user can see first, so they should know."*
+- **Saved-view name clash — behaviour change:** *"if you save a view,
+  and the name already matches, then we should just error. 'Another
+  view with that name already exists.' do not allow merging, do not
+  allow keeping, just clash and say CANNOT."*
+- **Empty states:** "No tasks yet. Create your first one…" → *"No tasks
+  found."*; "No milestones yet." → *"No milestones found."*
+- **Duplicate board status:** *"`.loctt/config/workflow.yaml` has a
+  duplicate status "[status]". Please fix it and refresh the page." or
+  something like that.*
+- **Interrupted migration:** drop "Nothing here can be opened or changed
+  until this is resolved." *"its not required because the user can see
+  it themselves."*
+- **Server unreachable:** *"The terminal running loctt ui may have
+  stopped. Restart it to continue."*
+- **Body-conflict button:** "Cancel (saves nothing)" → *"just 'Cancel'"*.
+- **Description save failed:** *"Description not saved. i think just
+  leave it concise."*
+- **Empty `.loctt` folder at setup — behaviour change:** *"why is there
+  even an error then? just ignore, proceed with steps. dont even show
+  this to the user, dont show the messages, dont show warning, dont even
+  stop with this extra confirmation step because that causes friction."*
+- **Invalid config file:** the file and the field to fix, no further
+  context (*"the 'the same shape...' is nonsense"*).
+- The remaining "needs your call" rows: *"looks okay"*.
+- *"i think you may need to review the other messages and see if my
+  fixes apply to them too?"*: the patterns above are applied across
+  every audited message before anything lands.
+
+Still open with Ken: the sprint-dates warning (A-60/A-67), the
+archived-user banner (A-100), the unreliable-filesystem banner (A-102),
+and the attachment-size message (B-57).
+
+### A350 · Fix the third review's findings (K133/K134 follow-ups, path-once)
+
+Agent-made implementation choices, § 8 format.
+
+#### 1. Attributed progress reason carries `path: reason`
+
+- **Decision:** `milestoneProgressDetailed`/`sprintProgressDetailed` store `${u.path}: ${u.reason}` as the per-row `{unavailable, reason}` for an attributed unreadable task (`packages/core/src/task/progress.ts`).
+- **Why:** A348 made `UnreadableTask.reason` path-free. An attributed task is kept out of the tracker-level `unreadable[]`, so the per-row reason is the only place the file is named. Without the prefix, MCP `list_milestones`/`list_sprints` (and CLI `--json`) no longer said which file was broken.
+- **Alternatives:** add a `path` field to `ProgressUnavailable` (contract change across three surfaces, wider than the finding).
+- **Other consumers checked:** CLI `list` (prints `path: reason`), MCP `list_tasks` (separate `path`/`reason` fields), web List/Board/Timeline banners (`{u.path}: {u.reason}`), git sync `malformed` (CLI/MCP `id: path: reason`, web shows path + reason), `export` (prints path only), doctor user rows (`path` beside message), `UnreadableTaskError` (headline names the path). Only progress lost the path.
+- **Web:** the per-row reason is not sent by `/api/milestones?progress=true` (the item just omits `progress`), so nothing changes there.
+- **To revert:** set `attributedFailures.set(recovered, u.reason)` again, and drop the two assertions in `progress-batch.test.ts` "marks a milestone unavailable…" and the `badFile` assertion in `tests/integration/mcp/list-sprints-progress.test.ts`.
+
+#### 5. Errno reasons drop Node's embedded path; id-mismatch carries `{ path }`
+
+- **Decision:** new `errnoReasonWithoutPath(err)` in `packages/core/src/utils/fs-errors.ts` turns `EACCES: permission denied, open '<path>'` into `EACCES: permission denied` (code + Node's short description). `TaskParseError.reasonOf` and `UserProfileError.reasonOf` use it, so `loadAllTasksDetailed`, `loadAllUsersDetailed`, the git-sync malformed readback and `UnreadableTaskError` all get a path-free reason. `loadUserProfile`'s id mismatch is now `new UserProfileError("has id 'x', expected 'y'", { path })`, so its message reads `<path> is not valid: has id 'x', expected 'y'`.
+- **Why:** those lists print `path: reason`; Node's message and the old id-mismatch text each named the path a second time.
+- **Alternatives:** store `code` as a separate field on `UnreadableTask`/`UnreadableUser` (contract growth for every surface); rewrite the errno into a sentence (would duplicate `FsAccessError`'s write-side wording for reads).
+- **To revert:** delete the `errnoReasonWithoutPath` branch from both `reasonOf`s and the helper, and restore the id-mismatch throw's old text without `{ path }`.
+
+#### 2–3. `?` dialog "Turn on": failure callout, focus, persistent live region
+
+- **Decision:** the off notice renders `shortcutSaveFailure(save.error)` in a `Callout role="alert"` when the save failed (the optimistic write rolls back, which brings the notice back). "Turn on" moves focus to the dialog's close button (as `switchView` does). The notice no longer carries `role="status"`; a persistent `sr-only` `role="status"` region (`shortcut-help-status`) outside it says "Single-key shortcuts are on." after Turn on succeeds, and is empty otherwise (it speaks only for the change; the visible notice is read in place, so the off state is not duplicated for screen-reader users).
+- **Why:** the button and the old `role="status"` element unmounted together, so focus fell to `body` and the region was removed at the moment it had something to say.
+- **Alternatives:** keep `role="status"` on the notice and add a second region (two regions, one of them still removed on change); announce through the app `useAnnouncer` (would work but couples the dialog to the shell provider, which the unit tests do not mount).
+- **To revert:** restore the notice's `role="status"`, delete the status region, the `turnedOn` state, the `closeRef.current?.focus()` call and the callout.
+
+#### 4. Editor failure line branches on `isUnknownOutcome`
+
+- **Decision:** `shortcutSaveFailure(err)` (exported from `ShortcutSettingsEditor.tsx`, shared with the dialog): timed-out write → K134's "Your changes may not have been saved. Please try again."; any other failure → "Couldn't save your shortcut settings. Try again."
+- **Why:** a timed-out write may have landed (K134). Retrying a switch write is idempotent, so K134's "Please try again" line applies, not create's "check the list".
+- **To revert:** return the fixed "Couldn't save…" string.
+
+#### 7. A11Y-60 e2e asserts focus returns to the user-menu trigger (test only)
+
+- **Decision:** no product change. `useInertBackground` (`ui/Modal.tsx`) already restores focus to the last surviving chrome focus, the trigger, after the dialog's own restore lands on a detached menu item. An interim `Header.tsx` change that focused the trigger in `onSelect` was measured redundant (the spec passed without it) and removed.
+- **Red-proof:** with the `queueMicrotask` recovery in `useInertBackground` disabled, the new `toBeFocused()` on `user-menu-trigger` fails.
+- **To revert:** delete the assertion in `tests/ui/flow-shortcuts-settings.spec.ts`.
+
+#### 11. e2e journey 04 uses the current MCP tool schemas
+
+- **Decision:** `archive_task`, `unarchive_task` and `delete_task` take `refs: [...]` (the bulk shape), so the journey's calls now pass `refs: ["T-1"]`; assertions unchanged. (`link_tasks` was already fixed by the coordinator; `unlink_tasks`, `update_task`, `unset_field`, body tools still take `ref`.)
+- **To revert:** n/a (the old args are rejected by the current schemas).
+
+#### 8. `loctt user shortcuts` refuses a valueless flag
+
+- **Decision:** `--single-key` with no value, or `--off`/`--on` with no id (bare, followed by another flag, `--on=`, or one of several occurrences valueless) throws `UsageError` (exit 2) naming the flag; `--off`/`--on` list the valid ids.
+- **Why:** they read as absent, so the command printed the state and exited 0 having changed nothing.
+- **Deviation from the review's wording:** presence is counted with a local `occurrences()` check, not `hasFlag`: `hasFlag("--off")` throws "Expected one of: true, false…" on `--off=new-task`, a valid use.
+- **To revert:** delete the `occurrences` block in `apps/cli/src/commands/user.ts`.
+
+#### 9. Editor heading level is a prop
+
+- **Decision:** `ShortcutSettingsEditor` takes `headingLevel?: 2 | 3` (default 3, for the dialog under its h2 title); Settings → Keyboard passes 2, so the page reads h1 → h2 (editor groups) → h2 (reference groups).
+- **To revert:** drop the prop and the `headingLevel={2}` in `KeyboardPanel.tsx`.
+
+#### 6, 10. Test and comment fixes
+
+- `useShortcuts.test.tsx` "reads the switches per keystroke" now `rerender`s with a new filter function (the real caller's shape) and was shown red with `isOn` captured once at install.
+- Stale K127 quotes in `api/client.ts` (`isUnknownOutcome` doc), `CreateTaskModal.tsx` (`describeFailure` doc), `describeFailure.test.ts` and `useBodyAutosave.test.ts` now quote K134. `ListView.error.test.tsx` and `RegionErrorBoundary.test.tsx` still cite K127 correctly (the error screen's wording).
+
+### A349 · B26 implementation choices (K133 single-key shortcut switches)
+
+**Date:** 2026-09-26 · agent-made, revertible.
+
+Ken's ruling (K133) fixed the shape: a master "Single-key shortcuts"
+switch plus one switch per shortcut, no rebinding, an in-dialog settings
+view, Reset to default with a warning, a disabled `?` dialog with a Turn
+on button, and a user-menu entry. These are the calls the ruling left
+open.
+
+## 1. Which shortcuts count as single-key
+
+**Context.** The master switch must turn "every single-key shortcut"
+off; the brief asked to verify which ones count.
+**Decided.** Exactly the global registry (`GLOBAL_SHORTCUTS`): `n`, `/`,
+`g` then `l`/`b`/`t`, `[`, `t`, `?`. None take Ctrl, Cmd or Alt. Not
+covered, and still working when the switch is off: Cmd/Ctrl+Enter and
+Cmd/Ctrl+S in the description editor, Ctrl+Enter in the advanced query
+editor, Ctrl+arrows on a focused board card, Esc anywhere, Enter in a
+single-field dialog, ↑/↓ on a focused reorder handle, and the rich
+editor's own Cmd+B/I/U/E marks. They carry a modifier or act only while
+their control has focus, which WCAG 2.1.4 exempts.
+**Why.** That is the WCAG 2.1.4 boundary, and the registry is already
+defined as "the keys that fire with nothing in particular focused".
+**To revert.** Add an entry to `GLOBAL_SHORTCUTS` in
+`packages/contracts/src/shortcuts.ts` for any key that should also be
+switchable. Removing one from the table unbinds it.
+
+## 2. The catalog moved to contracts; the unit is a shortcut, not a key
+
+**Context.** K133 says a Go-to sequence is one shortcut with one switch,
+and core, CLI, MCP and web all need the ids.
+**Decided.** `packages/contracts/src/shortcuts.ts` holds `SHORTCUT_IDS`
+(`new-task`, `focus-search`, `goto`, `toggle-sidebar`, `cycle-theme`,
+`shortcut-help`) and `GLOBAL_SHORTCUTS`, each shortcut carrying one or
+more `bindings` (`{command, keys, action}`). The web dispatcher keys its
+handlers by `command` (`goto-list` etc.), and the switches by shortcut
+`id`. The `?` dialog and the settings editor show Go to as one row,
+`g then l / b / t`, labelled "Go to List, Board or Timeline".
+`flow-accessibility.spec.ts` A11Y-4 was updated from three
+`shortcut-row-goto-*` ids to one `shortcut-row-goto`. That test was not
+asserting a bug; the model changed under it.
+**Why.** One table means a shortcut is bound, listed and switchable
+everywhere at once (A11Y-4's invariant carried to three surfaces).
+**To revert.** Split `goto` into three ids in `SHORTCUT_IDS` and
+`GLOBAL_SHORTCUTS`. The stored `disabled` ids for `goto` would then
+degrade as unknown (doctor names them).
+
+## 3. Stored shape and normalization
+
+**Decided.** `keyboard_shortcuts: { single_key?: boolean, disabled?:
+ShortcutId[] }` in the user's `settings.yaml`. `single_key` is stored
+only when `false` (absent means on). `disabled` is kept in catalog
+order, omitted when empty, and **kept while the master is off**, so
+turning the master back on restores the user's per-shortcut choices.
+When the value equals the default (everything on) the whole key is
+removed, so Reset and "Turn on" with nothing else off leave no trace in
+the file. The stored schema is strict (unknown or repeated id rejected
+on save).
+**To revert.** `applyShortcutChanges` / `withKeyboardShortcuts` in
+`packages/core/src/users/shortcuts.ts`.
+
+## 4. Degrade rules (corruption-handling guide)
+
+**Decided.** Field-local, never throwing (`salvageKeyboardShortcuts`,
+wired into `parseSettingsTolerant` beside `sidebar_groups`): an unknown,
+duplicate or non-string id in `disabled` drops that id only; a
+non-boolean `single_key` falls back to on without losing `disabled`; a
+stray key (`disable:`) is dropped and named; a value that is not an
+object falls back to all on. Every drop is a `malformed`, non-blocking
+doctor finding (`collectKeyboardShortcutsDrops`, in `integrity.ts` next
+to `sidebar_groups`). **Fail-open (shortcuts on)** because it is the
+state of a user who never touched the setting; doctor makes the drop
+visible.
+**To revert.** Remove the `keyboard_shortcuts` branch from
+`parseSettingsTolerant` and the block in `checkDataIntegrity`.
+
+## 5. While settings are loading or unreadable, shortcuts are on
+
+**Decided.** The web dispatcher treats a pending or failed settings read
+as the default (all on).
+**Why.** A failed read must not silently disable the keyboard. The
+window is one request long on load.
+**To revert.** In `useKeyboardShortcutSettings`, make `isOn` return
+false until `settingsQuery.data` is defined.
+
+## 6. The dialog and editor details
+
+- The `?` list view with the master off: every row `aria-disabled` and
+  dimmed, a `role="status"` notice "Single-key shortcuts are off." with
+  a primary "Turn on" button. With the master on, a shortcut switched
+  off on its own shows a muted "Off" after its action and its row is
+  `aria-disabled`.
+- Customize/Done swap the dialog body; focus lands on the dialog's
+  close button after each swap (the pressed button unmounts).
+- The Reset confirm renders inside the `?` dialog. The dialog ignores
+  Esc while a nested dialog is open, so Esc closes only the confirm.
+  Confirm tone is `danger` (it discards the user's choices); focus
+  starts on Cancel.
+- A failed save shows "Couldn't save your shortcut settings. Try
+  again." (the mutation already rolls the switch back).
+- The footer link to Settings → Keyboard (SHL-48) stays in the list
+  view.
+- Settings → Keyboard keeps its read-only reference for the
+  context-scoped keys, and the global group there is replaced by the
+  editor.
+- User menu: a "Keyboard shortcuts" `MenuItem` in the bottom group,
+  before "Settings". Header takes an optional `onOpenShortcutHelp`;
+  without it (isolated renders) the item is omitted.
+**To revert.** `shell/ShortcutHelpDialog.tsx`,
+`shell/ShortcutSettingsEditor.tsx`, `shell/Header.tsx`.
+
+## 7. CLI and MCP shape
+
+**Decided.** `loctt user shortcuts [--single-key on|off] [--off
+<id>...] [--on <id>...] [--reset]`. `--off`/`--on` repeat or take
+comma lists. `--reset` cannot be combined. It always prints the state
+read back from disk: `single-key\ton|off`, then `id\tkeys\ton|off\taction`
+per shortcut. MCP `get_keyboard_shortcuts` / `set_keyboard_shortcuts`
+(`single_key`, `off`, `on`, `reset`) return `stored`, `single_key` and
+each shortcut's `keys`, `on`, `active`. An unknown id is refused on both
+and nothing is written. An id in both `off` and `on` ends up on.
+`get_user_settings` also shows the raw value.
+**To revert.** `apps/cli/src/commands/user.ts` `case "shortcuts"`,
+`apps/mcp/src/tools/user.ts` the two tools.
+
+## 8. Brief discrepancy
+
+The first brief named `c` as New task's key. It is `n`, and A11Y-1
+forbids a `c` alias. The e2e uses `n`.
+
+## 9. Case ids
+
+UI cases A11Y-56 to A11Y-60 (flow-accessibility.md); surface cases
+PRU-C13 (CLI) and PRU-C14 (MCP) in surface flow-projects-users.md,
+since user settings live there. A11Y-43's third bullet amended per
+K133.
+
+### A348 · Branch review follow-ups: path said once, doctor/restore punctuation, unknown-outcome copy, A11Y-43 gap
+
+**Ticket:** independent review of ui/polish-wave-3 (items 1-8 + tone nits) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 (uncommitted at write time) · **Scope:** core, CLI, MCP, web.
+
+**Situation.** A345 made `readTask`/`loadUserProfile` throw `{path} is not valid: {reason}`, but every aggregator already printed `path: reason` with `reason = err.message`, so the web banners (List/Board/Timeline, GitSyncPanel), the CLI (`list`, sprint, milestone, git) and MCP git printed the path twice. `UnreadableTaskError` and doctor's task finding did the same. Separately, a timed-out description save read "...cannot tell whether this was saved Your text has not been saved." (no period, and the two halves contradict each other).
+
+**What to decide.** (1) How to carry the path so each surface names it once. (2) The wording for a write whose outcome is unknown, and which surfaces get it.
+
+**Options.** (1a) `path` + `reason` on `TaskParseError`/`UserProfileError`; `.message` keeps the path for a direct throw, and aggregators read `reason` (chosen). (1b) Strip the path back out of the message with string surgery (rejected: fragile). (1c) Drop the path from the thrown message (rejected: a direct throw would name no file, which undoes C110). (2a) K127's "... may not have been saved. Please check and try again.", named for the object as K129 names the description (chosen). (2b) Keep "cannot tell whether this was saved" and only fix the period (rejected: still contradicts "Your text has not been saved.").
+
+**Decided.**
+- `TaskParseError`/`UserProfileError` take `(message, { path?, cause? })`. With `path`, `.message` is `{path} is not valid: {message}` and `.reason` is the bare message. `cause` is the inner error. A static `reasonOf(err)` returns `reason` for that class and `message` otherwise. Used by `loadAllTasksDetailed`, `malformedAppliedTasks` (publish-sync), `loadAllUsersDetailed` (which feeds archived-guard's `path: reason` and doctor's user finding) and doctor's task finding (`task.md could not be parsed: {reason}`).
+- `splitTaskFile` now runs inside `readTask`'s wrap, so "must start with YAML frontmatter" names the file.
+- `UnreadableTaskError`, one path: the reason is the unwrapped parse error. **Several paths (indeterminate only):** the reason keeps its own path, because it came from one of the listed files and the path is what says which. That path appears twice there (once in the list, once attributing the reason); judged the lesser evil. Close call.
+- `UnreadableTaskError` no longer says "The file appears to have been edited by hand or by another tool, not a half-written write." (XS-51 as amended by K129: no general cause sentence). `lookup-unreadable.test.ts` had asserted `toContain("by hand")`, a green test asserting the pre-K129 wording; it now asserts absence.
+- Unknown-outcome copy, via a new `isUnknownOutcome(err)` in `api/client.ts` (`isTimeout && data_state === "unknown"`: the client's own write deadline only; an answered unattributed 500 also carries `data_state: "unknown"` but keeps its reason verbatim, which NEW-32 requires. A first version keyed on `data_state` alone and broke NEW-32):
+  - description save: "Description may not have been saved. Please check and try again."
+  - task create (`CreateTaskModal.describeFailure`): "The task may not have been created. Please check and try again." (after the NEW-39 "N tasks already created." prefix)
+  - board move banner: "{key} may not have been moved. Please check and try again."
+  - sprint move banner: "{key} may not have been moved to {sprint}. Please check and try again."
+  These are the four places that framed the timeout envelope with their own "not saved"/"Couldn't ..." sentence. Surfaces that show the envelope on its own (ErrorState, fieldFailure, ArchivedPanel rows, List bulk) were left alone.
+- `failureCopy` adds a period when a server message has none before "Your text has not been saved."
+- Doctor: the schema-version message strips the reader's trailing period before ". Expected N"; "your workspace may hold..." starts with a capital.
+- Comma splices from the em-dash sweep split into two sentences: doctor queries.yaml ("Kept as-is. Fix the filters to restore them"), CLI and MCP reconcile ("Some tasks failed. Rerun after fixing them." / "Some tasks failed. Fix them and re-call ..."), Header archived-user title ("{name} is archived. Switch to an active user."), Sidebar retry title ("Could not load. Click to retry."). `RestoreRefusedError`'s four "Refusing the restore" messages end with a period.
+- `UnreadableTaskError` wording, second stale test: `apps/web/src/server/server.unreadable-task.test.ts` also asserted `toContain("by hand")` (green, encoding pre-K129 wording). Now asserts absence and the path once.
+- Specs pinning pre-sweep text, fixed (all three failed the e576fd4e Playwright run): `flow-git-sync.spec.ts` GIT-25 now expects "Local state agrees with it. No sync needed."; `flow-task-failure.spec.ts` ERR-4 pins the whole data-state line "Cannot tell whether this was saved. Reload the page, or run `loctt show` in a terminal to see what the file holds." (copy unchanged: it names how to find out, which ERR-4 bullet 2 requires); `flow-projects-users-switcher.spec.ts` PRU-24 asserts the switch prompt is absent (K130/A-100), keeps the "(archived)" marker, checks the avatar title, and switching from the Switch user list. PRU-24's case text is amended with a K130 note: the "prompts the user to switch" clause is dropped and "from the prompt" becomes "from the user menu". A scan of `tests/ui` for other literals whose case or punctuation no longer matches the source (positive and `not.` assertions) found only seed/mock data.
+- A11Y-43 bullet 3 is unchanged: Ken ruled the off switch and remapping are to be built (another agent). No known-gaps entry; known-gaps.md still reads "Nothing is open."
+- `errors.test.ts` asserted `/did you mean "status"/`, but `validate.ts` already says ". Did you mean ...?" (capitalised). The test was red at HEAD; now matches the real sentence.
+
+**Why.** One path per line is what the review asked for, and `reason` keeps the direct-throw message C110 wanted. The unknown-outcome wording is Ken's (K127), with the subject named the way K129 names the description.
+
+**To revert.** Spec/case fixes: restore the old assertions and the PRU-24 bullets (only if K130's A-100 ruling is reversed). Path: drop `path`/`reason`/`reasonOf` from the two error classes, restore `new TaskParseError(`${filePath} is not valid: ${err.message}`)` / the profile equivalent, move `splitTaskFile` back above the `try`, and switch the five aggregators, doctor's task finding and `UnreadableTaskError` back to `err.message`. Cause sentence: re-add it in `lookup.ts` (only if K129 is reversed). Unknown outcome: delete `isUnknownOutcome` and its four branches (`useBodyAutosave.failureCopy`, `CreateTaskModal.describeFailure`, `BoardView`/`SprintsView` `unknown` flag), and un-export `describeFailure`. Punctuation and splices: restore the strings.
+
+### A347 · B25 close-out: stale delete-confirm specs, A11Y-55 Toggle fix, InterruptedMigration sentence, em-dash sweep
+
+**Ticket:** B25 (backlog.md) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 (e576fd4e)
+
+**Decision.**
+
+- **TSK-22 / A11Y-50 stale specs.** `tests/ui/flow-tasks.spec.ts` (TSK-22)
+  and `tests/ui/flow-accessibility.spec.ts` (A11Y-50) asserted
+  `/cannot be undone/i` and, in TSK-22's case, also `/archive/i` and
+  named archive as one of "the three things that keep it from reading
+  like an archive prompt". Both are pre-K129. Updated both specs to
+  assert the exact current copy `/is irreversible\. continue\?/i` and
+  dropped the `/archive/i` assertion from TSK-22 (K129 removed the
+  archive suggestion from both `DeleteConfirmDialog.tsx` and
+  `DeleteTaskDialog.tsx` on purpose). Grepped the whole tree for
+  "cannot be undone", "archive instead", and "reversible": no other
+  spec or unit test asserts pre-K129 delete/confirm wording. The
+  "archive is the reversible alternative" hits that remain (CLI usage
+  text, MCP tool descriptions, `UserDeleteDialog`/`DeleteProjectDialog`,
+  PRU-42 specs) are a *different* flow K129 did not touch — those
+  dialogs still legitimately offer archive as an alternative to a
+  *different* delete (user/project), which K129's ruling was scoped to
+  "delete confirmations (bulk delete, task delete)" only.
+
+- **A11Y-55: `ui/Toggle` grown to a 24px hit target.** The primitive's
+  track was `h-4 w-7` (16px tall) — under the WCAG 2.5.8 minimum on the
+  short axis. Grepped every `<Toggle` use in `apps/web/src/client`:
+  only `SidebarGroupsPanel.tsx`'s `GroupRow` uses it, so fixing the
+  primitive covers every site by construction (no other Toggle use to
+  audit separately). First attempt used Tailwind's `h-6 w-11` scale
+  classes — this measured 21×38.5px in the browser, not 24×44, because
+  this app's `html` sets `font-size: 87.5%` (14px root), so `rem`-based
+  utilities (`--spacing: .25rem` × 6 = 1.5rem = 21px at 14px root, not
+  24px at the assumed 16px root) measure short. Re-did it with pixel
+  arbitrary values (`h-[24px] w-[44px]` track, `h-[16px] w-[16px]`
+  thumb, `translate-x-[20px]`), which is the same pattern the codebase
+  already uses elsewhere for this exact reason (`labelPillStyle.ts`,
+  `ReorderableRows.tsx`, `CardLayoutPanel.tsx` all use `min-h-[24px]`
+  rather than `h-6`). Confirmed 24×44px in the browser after rebuilding.
+  Also grew `SidebarGroupsPanel.tsx`'s "Reset to default" text-link
+  button (17px tall) to `min-h-[24px]` with `inline-flex items-center`,
+  matching A334's treatment of the Pinned-views text buttons — the
+  known-gaps entry for A11Y-55 named this control specifically (17.2px).
+  Per K31's "grow the visible control, not an invisible overlay"
+  pattern (the A334 drag-handle fix), this is the control itself
+  growing, not a padded/invisible hit-area wrapper.
+  Red-proved: reverted `Toggle.tsx`'s track/thumb back to the original
+  `h-4 w-7`/`h-3 w-3` classes, rebuilt, ran
+  `flow-accessibility.spec.ts -g "A11Y-55"`, confirmed it failed with
+  the exact original measurement (24.5×14.0px, matching known-gaps'
+  own numbers), restored the fix, rebuilt, reran and confirmed green.
+  Removed the A11Y-50 and A11Y-55 entries from `docs/dev/known-gaps.md`.
+
+- **InterruptedMigration.tsx sentence removed.** Deleted "Nothing here
+  can be opened or changed until this is resolved." from the intro
+  paragraph per K129 (Ken: *"take out the last sentence, its not
+  required because the user can see it themselves"*). Updated
+  `AppBootstrap.test.tsx`'s `SET-31` test, which pinned the sentence
+  verbatim, to assert the intro sentence that remains and assert the
+  removed sentence's absence instead.
+
+- **Em-dash sweep.** Ran a custom string-literal scanner (stateful,
+  comment-aware — plain grep over-matched doc-comment prose and
+  backtick-quoted code inside `/** */` blocks) over
+  `apps/web/src/client`, `apps/web/src/server`, `packages/core/src`,
+  `apps/cli/src`. Before: roughly 140 em-dashes inside real string
+  literals across those four trees (16 in client after subtracting
+  placeholder glyphs, ~3 server, ~40 core, ~30 CLI — see below for the
+  exact split). After: 0 in server/core/cli; 16 remain in
+  `apps/web/src/client`, all of them the single-character `"—"` used as
+  the empty/no-value placeholder glyph (e.g. `Dropdown.tsx`'s
+  `placeholder = "—"`, table-cell fallbacks in `MetaPanel.tsx`,
+  `CustomFields.tsx`, `EstimationPanel.tsx`, `activity/describe.ts`'s
+  `EMPTY_VALUE`, `health/fieldHealth.ts`'s corrupt-value UI-string) —
+  confirmed each by reading its call site; none is prose with a dash in
+  it, all render as a standalone dash meaning "no value". These are the
+  "separator inside a label that isn't prose" carve-out messaging.md's
+  own checklist names, applied to the empty-value convention rather
+  than a "Label — Subtitle" select option (no genuine "Label — Subtitle"
+  case existed after the EstimationPanel/TimelinePanel fixes below).
+
+  Every other hit was rewritten per messaging.md §2: usually split into
+  two sentences (capitalizing the following clause), a small number
+  became a colon (where the second half is explicitly introducing a
+  correction/detail, e.g. `"invalid offset ... : expected ..."`,
+  `"${key}: no such view"`) or a comma (short parenthetical inside an
+  aria-label/title, e.g. `"${label}, open Diagnostics"`). One
+  inconsistency found in passing: `useRouteAnnouncement.ts`'s
+  `documentTitleFor` mixed `—` and an existing `·` separator for the
+  *same* title shape in the same function — aligned all three branches
+  on `·` (the pre-existing convention) rather than introducing a third
+  separator style. Updated every test/spec that pinned an exact string
+  that changed: `Header.test.tsx`, `useRouteAnnouncement.test.tsx`,
+  `flow-app-shell.spec.ts`, `TimelinePanel.test.tsx`, `Dropdown.test.tsx`,
+  `flow-task-meta.spec.ts` (comment only), `projectChoice.test.ts`
+  (case fix: "This workspace" now capitalized after the sentence
+  split), `tests/cases/ui-test-cases/flow-task-create.md` (NEW-19's
+  quoted example wording).
+
+  `flow-timeline.spec.ts` needed a real fix, found only by running the
+  gate (TML-43 asserted the lowercase substring "neither the start
+  date..." which the sentence-split capitalized to "Neither..." —
+  updated the assertion's case to match). Also found and fixed a
+  second, unrelated stale assertion in the same file while gating:
+  TML-47 asserted `.toContainText("Check the file")` against
+  `TimelineView.tsx`'s `timeline-unreadable` notice, but that exact
+  phrase was removed from the notice's copy back in commit `19f7d3ec`
+  (the earlier message-audit pass on this branch) and the test was
+  never updated — confirmed via `git log -p` on the file, the trailing
+  "Check the file." clause is gone from every revision since that
+  commit. This is a stale spec of the same *kind* as TSK-22/A11Y-50
+  (a message-audit wording change whose test assertion was missed), so
+  fixed it here rather than leaving the required gate run red for an
+  unrelated pre-existing defect: changed the assertion to
+  `toContainText("Missing from this timeline")`, which is present in
+  the current copy.
+
+  **Intentionally NOT swept:** `apps/mcp/src/tools/*.ts` tool
+  *descriptions* (the long strings passed as `description:` in tool
+  definitions, ~70 remaining em-dashes) — these are agent-facing tool
+  documentation read by an LLM caller, not UI text a human end user
+  reads on screen; messaging.md's stated scope is "the web client" /
+  what the UI shows. MCP *runtime* error and result strings (the ones
+  actually returned from a tool call to describe what happened) were
+  swept and fixed alongside the CLI/core sweep — e.g. `git.ts`'s
+  `FAILED —`, `cannot rekey —`, `Reconciliation incomplete —`, etc.,
+  and `workflow-entities.ts`'s two `errorResult(...)` messages. If this
+  boundary is wrong, the MCP description sweep is a follow-up of the
+  same shape as this one (scan with the same script, same fix
+  patterns) and was left out only for time/scope, not because it
+  couldn't be done.
+
+  Also left as-is: `packages/core/src/init/init.ts`'s `.gitignore`
+  comment line 289 (`# Per-checkout pointers ... — do not commit.`) —
+  this is a comment written into a git-ignored config file on disk, not
+  UI copy; and `packages/core/src/state/journal.ts`'s `console.error`
+  diagnostic (developer-only log per the task's own carve-out).
+
+**Why.** K129 and messaging.md are specific about the *shape* users
+should see (short declarative sentences, no em dash, no semicolon); the
+sweep's job was to bring every reachable surface into that shape without
+changing meaning or adding words. Where a case document
+(`tests/cases/ui-test-cases/flow-task-create.md`) quoted the old exact
+wording, it was updated to match — messaging.md's own checklist says a
+case that pins wording failing the guide gets amended, not the guide,
+and NEW-19's spec assertion was already loose (`/no default/i`) so no
+behavior changed, only the doc's illustrative quote.
+
+**Options considered.** A11Y-55: (a) grow the primitive's real track to
+24px (chosen, matches K31's "grow the visible control" precedent); (b)
+wrap the existing 16px track in an invisible padded hit-area — rejected,
+that is exactly the anti-pattern K31's fix supersedes. Em-dash
+replacement character: colon vs. comma vs. period chosen per clause
+shape (colon when introducing a specific correction/value, comma for a
+short trailing qualifier inside an aria-label/title, period whenever the
+two halves are separately readable sentences) rather than one blanket
+substitution, to avoid producing awkward comma-spliced sentences.
+
+**Tests.** `tests/ui/flow-tasks.spec.ts` (TSK-22), `tests/ui/flow-accessibility.spec.ts`
+(A11Y-50, A11Y-55 — red-proven by reverting Toggle.tsx, rebuilding, and
+rerunning), `tests/ui/flow-timeline.spec.ts` (TML-43 case fix, TML-47
+stale "Check the file" fix), `AppBootstrap.test.tsx` (SET-31,
+InterruptedMigration sentence), `Header.test.tsx`,
+`useRouteAnnouncement.test.tsx`, `flow-app-shell.spec.ts`,
+`TimelinePanel.test.tsx`, `Dropdown.test.tsx`, `projectChoice.test.ts`
+(case fix). All required gates green: `tsc --build`, `tsc -p tests/ui`,
+`npm run test` (2691/2691), `npm run test:integration` (611/611),
+`npm run lint` (0 errors, 65 pre-existing warnings unrelated to this
+change), `cases:index`/`cases:check`/`cases:coverage` (1053/1053),
+and `npm run test:ui` on all six touched/named spec files (276/276,
+2 workers).
+
+**To revert.**
+- TSK-22/A11Y-50: restore `/cannot be undone/i` (and TSK-22's `/archive/i`)
+  assertions; no source change to revert (the dialogs' copy is
+  unchanged from before this session — only the specs were stale).
+- A11Y-55: in `Toggle.tsx`, restore `TRACK_BASE`'s `h-4 w-7` and
+  `THUMB`'s `h-3 w-3 left-0.5 peer-checked:translate-x-3`; in
+  `SidebarGroupsPanel.tsx`, drop `inline-flex min-h-[24px] items-center`
+  from the reset button's className.
+- InterruptedMigration: restore the removed sentence to the `<p>` in
+  `InterruptedMigration.tsx` and revert `AppBootstrap.test.tsx`'s
+  SET-31 assertion.
+- Em-dash sweep: each file's diff is a mechanical `—` → (`.`/`,`/`:`)
+  substitution with a capitalization fix on the following word where a
+  period was used; `git diff` on each listed file shows the exact
+  before/after per line, there is no structural change to revert
+  beyond restoring the em dash and re-lowercasing the following word.
+
+### A346 · Review fixes on ui/polish-wave-3 (Save in flight, sidebar read-back, init over an empty `.loctt`, wording)
+
+**Ticket:** review findings M1, M2, M3, m1-m7 (m8 owned by another agent) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 · **Scope:** core, CLI, MCP, web.
+
+**Decision.**
+
+- **M1: Cancel and Escape are unavailable while a Save is in flight.** The Cancel button is `disabled` while the indicator reads "saving", Escape does nothing then, and the hook's `cancel()` refuses (returns `false`) while a write is in flight (`inFlightRef`). That covers the microtask before the state reaches "saving". `cancel()` now returns whether it discarded, and the editor closes only when it did.
+- **M3:** the edit surface's refetch guard skips while saving as well as while there is unsaved work. A refetch that lands mid-save no longer replaces the text on screen.
+- **M2:** new core export `resolveRenderedSidebarItems(groups)` (`packages/core/src/users/sidebarGroups.ts`). It flattens `resolveGroupedSidebarOrder`: each group row, with the `filters` row followed by its six children in their resolved order, and a child `hidden` when its own flag or the `filters` group is hidden. CLI `loctt user sidebar-groups` and MCP `get_sidebar_groups`/`set_sidebar_groups` read back through it. The output shape (`id` + visible/hidden, 14 entries) is unchanged. Order and hidden now match the web sidebar.
+- **m1:** init over an empty `.loctt` deletes an existing `.schema-version` before moving the staged files in. `created` lists only the files actually written. `moveEntriesInto` returns the paths it left alone, and those, with everything under them, are filtered out.
+- **m4:** the board's error context is "Loading the board's tasks" (the ERR-5 test needs "loading the board" and "tasks"). Backup restore rows show the file's status as a separate label: "Part N of M", "Complete backup" or "Not a backup". Empty-filter copy: "No filters. This view shows every task." (SaveViewDialog) and "No filters. This view shows every task in its scope." (ViewFormDialog, the same sentence).
+- **m5:** archived-guard refusals are joined with a space, not "; ".
+- **m6:** removed "This is not an ordinary conflict." (GitHistoryRewrittenError), "This is not an ordinary git failure. The worktree named above is the specific thing that is wrong." (GitWorktreeMissingError; the second sentence is also a justification), and "This is not a migration: …" (GitRemoteSchemaNewerError). A description save with no server envelope now reads "Description not saved." (K129).
+- **m7:** removed `ListOptions.onArchivedConflict`, its branch and its two tests. The user's `archived` term still wins, and the existing "respects an explicit archived filter" test covers that.
+
+**Why.** M1: the write cannot be recalled once sent. The other fix, suppressing the post-save draft flush after a cancel, would let Cancel close the editor while the "cancelled" text landed on disk anyway, which misreports what happened. Disabling Cancel is the honest version. M2: SHL-45 says CLI and MCP report "what the sidebar renders". The flat resolver had skipped the K125 migration and the group-hides-children rule. One core function keeps the two surfaces from drifting.
+
+**Options considered.** M1: (a) disable Cancel/Escape while saving (chosen); (b) keep Cancel live and skip the post-save `flushDraft` after a cancel. M2: flatten in each surface or in core. Core was chosen so CLI and MCP share one rule.
+
+**Tests.** `useBodyAutosave.test.ts` (cancel mid-save leaves no draft; exact "Description not saved."), `BodyEditor.leave-race.test.tsx` (Cancel disabled/Escape inert while saving; refetch mid-save keeps the displayed text through a 409), `sidebarGroups.test.ts`, `tests/integration/{cli/user-sidebar-groups,mcp/sidebar-groups}.test.ts` (pre-K125 order, hidden `filters`), `init/init.test.ts` (stale `.schema-version`, `created`), `archived-guard.test.ts` (join), `git/{history-rewritten,schema-remote-newer,git-worktree-missing}.test.ts` (exact messages). All red-proven.
+
+**To revert.** M1: drop `disabled={saving}` and the `saving` early return in `BodyEditor.tsx`, and the `inFlightRef` check in `cancel` (restore its `void` return). M3: drop `|| state.kind === "saving"` from the refetch guard. M2: switch CLI/MCP back to `resolveSidebarOrder(x, [...SIDEBAR_ITEM_IDS])` and delete `resolveRenderedSidebarItems`. m1: remove the `rm(getSchemaVersionPath…)` and the `kept` filter in `initLoctt`. m4-m7: restore the strings, the `"; "` join and the callback from git history.
+
+### A345 · B20 close-out: C110 file-naming, three approved cuts, dead-code removal, tightened tests
+
+**Ticket:** B20 (backlog.md), remaining items · **Date:** 2026-09-26 ·
+**Commit:** ui/polish-wave-3 (ebec8274)
+
+---
+
+## 1. C110 — object-fatal schema failures now name their file (5 sites)
+
+**Table/known-gaps said:** two options — thread a path/id parameter
+into `parseUserProfile` and `parseFrontmatter` (and every caller), or
+have the callers that already know the path catch and re-wrap
+(cheaper, no signature change).
+
+**Found:** `parseFrontmatter` has 8+ call sites across 5 files
+(`task/io.ts`, `git/resolve-conflicts.ts`, `backup/restore.ts`,
+`git/publish-sync.ts`, `git/reconcile-plan.ts`), most of them mid-git-
+merge/backup-restore contexts that already catch and re-wrap their own
+errors generically (e.g. `task ${id}: ${err.message}` in
+`backup/restore.ts`) rather than having one single "the broken file".
+Threading a path parameter into the parse functions themselves would
+ripple through all of them for no benefit to the sites that already
+handle it. `parseUserProfile`'s own unit tests (`profile.test.ts`) and
+`parseFrontmatter`'s (`frontmatter.test.ts`) call the functions with no
+path context at all, confirming they're meant to stay path-unaware.
+
+**Decided.** Went with catch-and-rewrap, but only at the two callers
+that own "the read of an entity's own file" and are the sites the
+known-gaps repro names (hand-edit the file, trigger a *read*):
+- `packages/core/src/task/io.ts`'s `readTask` now catches
+  `TaskParseError` from `parseFrontmatter` and re-throws
+  `` `${filePath} is not valid: ${err.message}` `` (`filePath` from
+  `getTaskFilePath`). This also incidentally covers the YAML-syntax-
+  error throw at the top of `parseFrontmatter` (not one of the 5 named
+  sites, but the same `TaskParseError` type flows through the same
+  catch) — strictly better, not scope creep, since it is the same
+  read-time wrap.
+- `packages/core/src/users/profile.ts`'s `loadUserProfile` now catches
+  `UserProfileError` from `parseUserProfile` the same way, wrapping
+  with `getUserProfilePath`'s path.
+- Left `saveUserProfile`'s and `assertWriteSafe`'s internal
+  `parseUserProfile`/`parseFrontmatter` re-parses (the write-time
+  round-trip self-check on just-serialized in-memory data) unwrapped —
+  wrapping those would misleadingly claim a file "is not valid" before
+  anything is written to it, and they're not in the known-gaps 5-site
+  list.
+- Other `parseFrontmatter` callers (git merge, backup restore, publish-
+  sync, reconcile-plan) were left as-is: they already have their own
+  wrapping conventions for their context (a task id inside a batch, not
+  a single file read), and none of the 5 known-gaps sites live there.
+
+**Path form.** Used the absolute path from `getTaskFilePath`/
+`getUserProfilePath` (whatever `locttDir` resolves to at runtime),
+matching the existing convention `UnreadableTaskError`/`UnreadableUser`
+already use for naming task/profile files in errors — not a
+`.loctt/...`-relative rewrite. The task brief's `.loctt/users/<id>/
+profile.yaml` example was illustrative, not a literal format
+requirement; following the codebase's own established convention (full
+resolved path) keeps this consistent with `UnreadableTaskError.paths`
+and `UnreadableUser.path`, which already print the same way.
+
+**Tests.** One per site family, red-proven by temporarily reverting the
+wrap and confirming the new assertion fails with the un-prefixed
+message, then restoring:
+- `packages/core/src/task/io.test.ts` — "names the task.md path in an
+  object-fatal frontmatter error" (missing `id`).
+- `packages/core/src/users/profile.test.ts` — "names the profile.yaml
+  path in an object-fatal profile error" (missing `id`).
+
+**To revert.** Remove the `try/catch` wraps in `readTask` and
+`loadUserProfile`, delete the two new tests, and restore
+`docs/dev/known-gaps.md`'s "Schema-failure messages missing the file
+name" entry (its text is preserved in git history at HEAD).
+
+---
+
+## 2. init/InitWizard.tsx skip-docs explainer — cut applied (B-69, amends ONB-4)
+
+Ken approved the cut ("rest of the 'needs your call' looks okay").
+Removed the explainer `<p>` ("LocTT normally writes a few short
+markdown files into .loctt/docs/ explaining...") and its ONB-4 comment
+block; changed the checkbox label itself from "Skip the starter docs"
+to "Skip the starter docs in `.loctt/docs/`" so the label carries what
+the docs are, per the task's instruction that "the checkbox label
+carries it."
+
+**Files:** `apps/web/src/client/init/InitWizard.tsx`.
+
+**Tests:** `tests/ui/flow-onboarding.spec.ts` — updated the
+`getByLabel("Skip the starter docs")` locator to the new label text.
+
+**Case:** `tests/cases/ui-test-cases/flow-onboarding.md` ONB-4 amended
+with `> **Amended (K129, Ken 2026-09-24).**` quoting "rest of the
+'needs your call' looks okay", dropping the "helper text" requirement
+in favor of the label alone.
+
+**To revert.** Restore the explainer `<p>` block and the original
+checkbox label text; revert the Playwright locator and the ONB-4
+amendment block.
+
+---
+
+## 3. shell/ShortcutHelpDialog.tsx footnote — cut applied (A-110, amends A11Y-43)
+
+Ken approved the cut. Removed the footnote `<p>` ("Single-key shortcuts
+are ignored while a text field, editor, or dialog has focus...") and
+its A11Y-43 comment. The underlying behaviour (shortcuts suppressed
+while typing) is unchanged and still covered by its own tests (e.g.
+`flow-task-create.spec.ts`'s NEW-31), which don't assert the footnote's
+wording and needed no change.
+
+**Files:** `apps/web/src/client/shell/ShortcutHelpDialog.tsx`.
+
+**Case:** `tests/cases/ui-test-cases/flow-accessibility.md` A11Y-43
+amended with `> **Amended (K129, Ken 2026-09-24).**`, dropping the
+third bullet's "or are documented in the `?` reference as suppressible"
+option, since the footnote was the only thing satisfying it and nothing
+else does (no remap/off switch exists, confirmed in A343 item 3, still
+true).
+
+**To revert.** Restore the footnote `<p>` block, and restore the third
+bullet's "or are documented in the `?` reference as suppressible" wording
+in A11Y-43 — but only once shortcuts are actually remappable/toggleable,
+per A343's original caveat.
+
+---
+
+## 4. list/ListView.tsx unreadable-files banner — cut applied (A-7, amends ERR-9, XS-51)
+
+Ken approved cutting "A hand-edit is the usual cause." (this had
+previously been reverted/kept per A343 item 1's neighbor entry — this
+session's task explicitly said Ken has now approved the cut). Removed
+the trailing sentence from the banner; the per-file `{path}: {reason}`
+list stays unchanged.
+
+**Files:** `apps/web/src/client/list/ListView.tsx`. Searched for a
+board/timeline sibling with the same sentence — none exists; only
+ListView had it.
+
+**Cases:** `tests/cases/ui-test-cases/flow-error-handling.md` ERR-9 and
+`tests/cases/ui-test-cases/flow-cross-surface.md` XS-51 both amended
+with `> **Amended (K129, Ken 2026-09-24).**`, dropping the requirement
+that the surface state a general cause; the per-file path and specific
+parse-error reason remain required.
+
+No test file asserted the literal "hand-edit is the usual cause" text,
+so nothing else needed updating.
+
+**To revert.** Restore the trailing sentence in `ListView.tsx`'s
+unreadable-files banner and revert the ERR-9/XS-51 amendments.
+
+---
+
+## 5. Dead `updated_at` validation branches deleted from `task/update.ts`
+
+Traced (per known-gaps) that `field === "updated_at"` can never reach
+either `setFieldLocked`'s `if (field === "updated_at") { ... }` branch
+or `setFieldsLocked`'s equivalent in its per-change loop: `setField`
+throws `UPDATED_AT_REFUSAL` up front for `opts.field === "updated_at"`,
+and `assertChangesWritable` (shared by `setFields` and `bulkSetFields`)
+throws the same refusal before either write loop ever sees the field.
+Deleted both dead branches entirely (not converted to an "unreachable"
+assertion — plain deletion was simpler and the guard upstream already
+documents why in its own comments).
+
+**Files:** `packages/core/src/task/update.ts` (two branches removed,
+one in `setFieldLocked`, one in `setFieldsLocked`'s loop).
+
+**Tests (red-proven).** Added coverage that `updated_at` writes are
+refused through all three public entry points, for both a string and a
+non-string value (to prove the *upstream* guard, not the deleted dead
+code, is what refuses it):
+- `packages/core/src/task/update.test.ts` — two new tests under
+  `describe("setField")` and two under `describe("setFields")`.
+- `packages/core/src/task/bulk.test.ts` — two new tests under
+  `describe("bulkSetFields")`.
+
+Red-proofed by temporarily removing the *upstream* early-refusal checks
+(the ones in `setField` and `assertChangesWritable`, not the dead code)
+and confirming all 6 new tests fail with the wrong message (they fell
+through to the generic `USER_IMMUTABLE_FIELDS` guard, which throws a
+different string — `Cannot set immutable field "updated_at".` instead
+of `Cannot set "updated_at" directly. It is stamped on every write.` —
+proving the tests actually pin the specific refusal message, not just
+"it throws something"), then restored.
+
+**To revert.** Restore the two deleted `else if (field === "updated_at")`
+branches from git history; the new tests can stay (they pass either
+way, since the upstream guard still fires first).
+
+---
+
+## 6. Tightened tests loosened during the B20 pass
+
+Could not use any `git` command (hard rule for this session), so found
+sites by searching test files for `/i)`-flagged regexes and `|`
+alternations near message assertions, cross-referencing comments left
+by the previous pass (several are explicitly tagged `// K129 pass:
+"..." trimmed to "..."` or `// K129: "..." trimmed to "..."`), then
+verifying the exact current source string for each and replacing the
+loose match with it.
+
+**11 sites tightened:**
+
+1. `packages/core/src/projects/slug.test.ts` — `/unknown project/i` →
+   `"Unknown project: no-such-slug"` (exact, from
+   `projects/manage.ts`'s `Unknown project: ${input}`).
+2. `packages/core/src/labels/manage.test.ts` — `/unknown label/i` →
+   exact `"Unknown label(s): 01HX0NOTHERE. Register first via the label
+   CRUD."` (from `labels/manage.ts`'s `assertLabelIdsRegistered`).
+3. `packages/core/src/users/manage.test.ts` — `/unknown user/i` →
+   `"Unknown user: NotHere"` (from `users/manage.ts`'s
+   `resolveUserRef`).
+4. `packages/core/src/task/entity-resolution-parity.test.ts` (×3) —
+   `/unknown user/i` → `"Unknown user: nobody"`; two `/unknown label/i`
+   → `"Unknown label: 01M0NOSUCHLABEL000000000"` (one on `setFields`,
+   one on `createTask`).
+5. `apps/web/src/server/server.data-delete.test.ts` (×2) — `/unknown
+   label/i` → `"Unknown label: NOPE"`; `/unknown sprint/i` → `"Unknown
+   sprint: NOPE"` (both exact `message` equality, verified the routes
+   pass `err.message` through unprefixed).
+6. `apps/web/src/server/server.test.ts` — `/unknown sprint/i` →
+   `"Unknown sprint: 01HXNOSUCH"` (exact `error` equality — the
+   burndown route passes `BurndownError.message` through unprefixed).
+7. `apps/mcp/src/mcp.test.ts` — `/unknown sprint/i` → exact `"Error:
+   Unknown sprint: 01HXNOSUCH"` (MCP's `errorResult` prefixes with
+   `"Error: "`).
+8. `apps/cli/src/cli.test.ts` — `/unknown sprint/i` → `toContain("Error:
+   Unknown sprint: Nonexistent")` (CLI's `runCommand` also prefixes
+   `"Error: "`; kept `toContain` rather than exact-stderr-equality since
+   `SprintError extends LocttError` and a `detail` line could follow,
+   which I did not fully trace — but the case-insensitive/alternation
+   looseness is gone).
+9. `packages/core/src/task/attachments.test.ts` — `/rename the file/i`
+   → `toContain("Rename the file and attach it again.")` (exact, from
+   `attachments.ts`'s over-long-name refusal).
+10. `apps/web/src/client/shell/AppBootstrap.test.tsx` —
+    `/nothing here can be opened or changed until this is resolved/i`
+    → exact `toContain(...)` (source text unchanged — confirmed
+    `InterruptedMigration.tsx` still has this sentence verbatim, so this
+    was pure `/i`-looseness, not a stale assertion of removed text; K129
+    asked for this line's removal but it evidently was not applied to
+    this specific banner — flagging that gap separately below).
+11. `apps/web/src/client/list/ListView.test.tsx` — `/no longer exists/i`
+    → `toContain("no longer exists")` (source already lowercase, so
+    `/i` was superfluous, not hiding a wording change).
+12. `tests/ui/flow-list.spec.ts` — `/could not|did not|didn't/i` →
+    exact `"The operation didn't run."` (from `ListView.tsx`'s bulk-
+    archive network-failure branch).
+13. `tests/ui/flow-board.spec.ts` (×3) — `/wasn't saved|not saved/i` →
+    exact `"wasn't saved"` (source: `BoardView.tsx`'s move-error and
+    chip-error banners both say "wasn't saved", confirmed by reading
+    the component).
+14. `tests/ui/flow-sprints.spec.ts` (one of two `not saved` sites) —
+    `/wasn't saved|not saved/i` → exact `"wasn't saved"` (source:
+    `SprintsView.tsx`'s move-error banner: "The assignment wasn't
+    saved.").
+
+**Left alone (checked, not loosened by this pass or not provably so):**
+`flow-onboarding.spec.ts:703` (`/was not saved/i` — could not find the
+matching source string near the init-screen network-failure banner to
+confirm a wording change happened here; no "K129 pass" comment marks
+it); `flow-settings-projects-users.spec.ts:1325` (`/prepared but not
+saved/i` — source `UsersPanel.tsx` still says "prepared but not saved"
+verbatim, unmarked, likely pre-existing style rather than this pass);
+`flow-sprints.spec.ts:1265` (`/not saved/i` on `sprint-meta-error` —
+source `SprintMetaHeader.tsx` still says "was not saved" verbatim, not
+"wasn't saved", so no wording drift to tighten against — the `/i` here
+predates or is unrelated to the trim); `MilestonesView.test.tsx` and
+`TimelineChart.test.tsx`'s K129-tagged assertions were already exact
+(`toContain`/element-absence checks, no `/i` or alternation) — nothing
+to tighten there despite the comment.
+
+**Gap noticed in passing, not fixed here (out of this ticket's scope):**
+K129 says the interrupted-migration banner should drop "Nothing here
+can be opened or changed until this is resolved." — but
+`apps/web/src/client/shell/InterruptedMigration.tsx:39-40` still has
+that sentence verbatim. This may be an unapplied K129 item rather than
+a loosened test; flagging for a separate look rather than changing
+banner copy under a "tighten the test" item.
+
+**To revert.** Each of the 14 tightened assertions can be reverted
+independently by restoring its original `/pattern/i` or alternation
+regex — see the list above for exact before/after per site. This is a
+correctness fix to the test gate itself (A343 item 5's framing), not a
+design choice, so there's no product reason to revert any of it.
+
+---
+
+## 7. known-gaps.md — both closed entries removed
+
+Deleted "Schema-failure messages missing the file name" (closed by
+item 1 above) and "Dead validation branches in `task/update.ts`..."
+(closed by item 5 above). The file now reads "Nothing is open." per its
+own stated convention for an empty list.
+
+### A344 · B21–B23 implementation choices (unique view names, init over an empty `.loctt`, sprint guards removed)
+
+**Ticket:** B21, B22, B23 (K129, K130) · **Date:** 2026-09-26 · **Commit:** ui/polish-wave-3 · **Scope:** core, CLI, MCP, web. *(Reconstructed from the implementing agent's report; its scratchpad draft was lost in a session restart.)*
+
+**B21 — what "the same name" means.** Names compare trimmed and case-insensitively, over every view including archived and broken ones (they still answer to their name). Only an edit that changes the name is checked, so keeping a name, or changing only its case, always saves: that is what lets two views that already share a name on disk still be edited. The comparison and the message ("Another view with that name already exists.") live in `packages/contracts/src/query.ts`; core (`views/manage.ts`) applies them on create, rename and broken-view repair; the server points the 400 at the name field; `SaveViewDialog` and `ViewFormDialog` check on Save and send nothing. `list/viewNameCollision.ts` (never wired into a dialog) and its test are deleted. Existing duplicates load and run by id; `loctt list --view <dup>` still refuses the ambiguous name. VUE-20's built-in-filter-name bullet was dropped: a view may share a built-in filter's label, which lives in a separate namespace and does not shadow it.
+
+**B22 — one path for empty and missing.** Core `initLoctt` sets up an empty `.loctt/` exactly like a missing one, keeping anything already there; a tracker that still has tasks is still refused. The web server's call to repair for this case is removed (repair skipped `.gitignore`, the starter docs and the default user). CLI `loctt init` no longer sends you to `--repair`; MCP `init` lets an empty folder through.
+
+**B23 — what stays refused.** The state-transition guard and `force` (core, CLI `--force`, MCP `force`) are gone. End before start stays refused with "End date is before the start date." (the dates cannot be drawn otherwise, K130); YYYY-MM-DD validation stays. `overrun`/`windowDisagrees` and the SPR-20 hint are deleted. SPR-33 amended: the plain message no longer names both dates; they are in the fields beside it.
+
+**To revert.** B21: remove the name check from `views/manage.ts` and the two dialogs, restore `viewNameCollision.ts` from git. B22: restore the empty-folder refusal in `initLoctt`, the server's repair call and the CLI/MCP checks. B23: restore `SPRINT_STATE_TRANSITIONS`, the `force` option and flags, the old end-before-start message, and the SPR-20 hint, from git history. Each has tests pinning the new behaviour (`views/manage.test.ts`, `init/init.test.ts`, `sprints/manage.test.ts`, `tests/integration/cli/{views-manage,init,sprint-state}.test.ts`, `tests/integration/mcp/view-name-unique.test.ts`).
+
+### A343 · B20 implementation choices (message-audit apply pass)
+
+**Ticket:** B20 (backlog.md) — apply the approved message audit
+(K123, K126, K127, K129, K130) · **Date:** 2026-09-24/26 · **Commit:**
+ui/polish-wave-3
+
+**Situation.** The audit tables (app-message-trim-A/B/C.md,
+error-text-trim.md) were written against a snapshot of the code that
+had since moved in places, and a few rows' proposed AFTER text
+conflicted with case requirements the tables' own authors had not
+re-checked. This entry records every place I applied intent over
+literal table text, and why. The session also spanned a restart; some
+scratchpad artifacts from the first half were lost, and this file is
+reconstructed from the final code state plus what remained in context.
+
+## 1. AdvisoryFsBanner (A-102) — case XS-50 required the internal
+mechanism name
+
+**Table said:** apply K130's exact wording verbatim (no options given
+— it's Ken's own wording, not a proposal).
+
+**Found:** `AdvisoryFsBanner.test.tsx` and `flow-cross-surface.md`
+XS-50 both required the banner to name "POSIX advisory locks" and
+"concurrent writes... corrupt state" specifically, plus a best-effort/
+Diagnostics caveat inline.
+
+**Decided.** Applied K130's exact wording ("This tracker is in a
+network folder, which may lead to data corruption if multiple machines
+edit the files at the same time. Keep it on a local disk to be safe.")
+since it is Ken's own ruling, not a proposal — it supersedes the
+mechanism-naming requirement as a plain-language description of the
+same risk. Amended XS-50's first bullet and rewrote the component test
+to assert the new wording instead of "POSIX advisory locks"/"best-effort"/
+"Diagnostics". The best-effort caveat was already relocated to the UI
+guide doc by a prior (2026-09-23) ruling recorded in XS-50, so nothing
+needed to move for that part.
+
+**To revert.** Restore AdvisoryFsBanner.tsx's original two-span text
+(POSIX advisory locks / Diagnostics), restore the test's original
+assertions, and revert the XS-50 bullet-one edit in
+`tests/cases/ui-test-cases/flow-cross-surface.md`.
+
+## 2. init/InitWizard.tsx skip-docs explainer — batch B row 69's
+removal would break ONB-4
+
+**Table said:** remove the whole explainer paragraph ("LocTT normally
+writes a few short markdown files...") as a page-intro/explainer-before-
+action pattern (K129 applied generally).
+
+**Found:** `flow-onboarding.md` ONB-4 explicitly requires "Its label or
+helper text says what the docs are, not just 'skip starter docs' — a
+user who has never seen them can decide."
+
+**Decided.** Left the explainer paragraph in place, unedited. This is
+a case conflict of the same shape as BLK-11/TSK-22/23 (K129 pattern vs.
+an explicit case requirement), but ONB-4 is not in K129's own list of
+conflicts Ken already resolved, so I did not touch it rather than
+resolve it unilaterally. (Note: this section of InitWizard.tsx was
+independently rewritten by the concurrent B22 agent during this session
+for the empty-`.loctt` behavior change — the explainer paragraph itself
+survived that rewrite untouched.)
+
+**To revert (if Ken confirms removal).** Delete the explainer `<p>`
+block at `apps/web/src/client/init/InitWizard.tsx` and amend ONB-4 to
+drop its helper-text requirement.
+
+## 3. shell/ShortcutHelpDialog.tsx footnote — batch B row 110's removal
+risked leaving A11Y-43 unsatisfiable
+
+**Table said:** remove "Single-key shortcuts are ignored while a text
+field, editor, or dialog has focus..." as a justification-for-design-
+choice pattern (K129 applied generally).
+
+**Found:** `flow-accessibility.md` A11Y-43 requires shortcuts to either
+not shadow screen-reader browse commands, or be turned off/remapped, or
+be "documented in the `?` reference as suppressible." No remap/off
+switch exists in the codebase (grepped), so this footnote is the only
+thing currently satisfying that third option.
+
+**Decided.** Left the footnote in place, unedited, for the same
+case-conflict reason as item 2.
+
+**To revert (if Ken confirms removal).** Delete the `<p>` block at
+`apps/web/src/client/shell/ShortcutHelpDialog.tsx` only once shortcuts
+are actually remappable/toggleable, or after amending A11Y-43 to drop
+the third option.
+
+## 4. state/staged-swap.ts `SwapRollbackError` — direct instruction
+text would have dropped the journal-entry id a test requires
+
+**Table said (C112):** trim mechanically, keep the journal entry id
+("both needed for by-hand recovery").
+
+**Task instructions said:** use the exact text "A change to several
+files failed and could not be undone. The next command will try the
+undo again. If it fails again, copy the files in ${backupDir} back by
+hand. Cause: ${cause}" — which drops the journal entry id from the
+rendered message.
+
+**Found:** `state/staged-swap.test.ts`'s own test ("carries the backup
+directory and journal id for manual recovery") asserts
+`err.message.toContain("01ABC")` — the id must appear in the rendered
+message, with the test's own comment stating why: "it has to name
+where the originals are, because nothing else will."
+
+**Decided.** Kept the instruction's new lead sentences ("A change to
+several files failed... the next command will try the undo again")
+since that claim is true (verified: `state/journal.ts`'s
+`recoveryHandlers`/replay-on-`withStateLock` mechanism does retry on
+the next command), but folded the journal entry id back in as
+`(journal entry ${journalEntryId})` rather than dropping it. This is
+the one place I did not follow the direct instruction text verbatim,
+because doing so would have silently broken an existing, load-bearing
+test rather than just changing wording.
+
+**To revert.** Drop the `(journal entry ${journalEntryId})` parenthetical
+to match the instruction text exactly, and delete or rewrite the
+staged-swap.test.ts assertion that requires the id in the message.
+
+## 5. Test-regex case-sensitivity — a table claim was wrong
+
+The table (app-message-trim-C.md, row C130) asserted the
+`config/router.test.ts` regex `/not inside a Git repository/` (no `/i`
+flag) was safe against the new capitalized "Not inside a Git
+repository." — verified this is false (JS regex without `/i` is
+case-sensitive), and the test would have failed. Fixed by adding `/i`
+to that regex and every other case-sensitive regex/string assertion
+found broken by capitalization or wording changes across this pass
+(see the final report's "tests updated" list — several dozen sites
+across core, CLI, MCP, web unit tests, integration tests, and e2e
+specs, mostly `was not saved`→`wasn't saved`, `did not respond`→
+`didn't respond`, and lowercase-vs-capitalized leading words).
+
+**To revert.** N/A — these are correctness fixes to the gate itself,
+not a design choice to revert.
+
+## 6. Additional call sites found beyond the tables' line numbers
+
+Several family groups (projects.ts's `unknown project:`, labels.ts's
+`unknown label(s):` plural-ids guard) had more call sites in the
+current code than the tables listed, because the code moved since the
+audit was written. Applied the same mechanical trim to every site
+found by grep, not just the ones named, per the task's "apply to every
+site" instruction for grouped families.
+
+**To revert.** Not applicable — same trim as named siblings, at sites
+the table's line numbers had drifted past.
+
+## 7. MilestonesView.tsx subhead — removed the element, not just the text
+
+**Table said (batch A row 81):** flagged as "the page's own progress
+bars and task counts already show what it is for," recommending removal
+but flagging it as a visible change someone might be attached to.
+
+**Decided.** Removed the `<p data-testid="milestones-subhead">` element
+entirely rather than emptying it (messaging.md's page-intro rule: "would
+the page work without it? Then don't add it"). Rewrote
+`MilestonesView.test.tsx`'s MSL-42-adjacent test and
+`tests/ui/flow-milestones.spec.ts`'s MSL-42 test, both of which had
+asserted the subhead's presence/text. Confirmed no case (MSL-42 or
+otherwise) actually requires a subhead on this page — MSL-42 is about
+Settings → Milestones' own copy pointing at the reachable /milestones
+view, a separate, still-open concern this pass did not build.
+
+Note: this removal turned out to align with a later, broader ruling
+(K131/K132, "no countdown, no Overdue badge," built by a concurrent
+agent during this session) that removed the milestone card's
+countdown/breakdown/subhead entirely for other reasons. No conflict —
+my earlier, narrower removal was a strict subset of the later one.
+
+**To revert.** Restore the `<p>` block in `MilestonesView.tsx` (now
+moot given K131/K132 also removed the surrounding card content) and
+the two test files' original assertions.
+
+## 8. sprints.yaml end/start-date validation message (leftover from B23)
+
+**Instruction (coordinator, after B23 finished):** the hand-edited
+`sprints.yaml` path in `packages/contracts/src/sprints.ts` still said
+"end_date (…) must not be before start_date (…)" — make it "End date
+is before the start date." with the file named, per K129's
+invalid-config pattern, and update SPR-31's spec and tests.
+
+**Decided.** Changed the zod `superRefine` custom-issue message in
+`SprintDefSchema` (packages/contracts/src/sprints.ts) from
+`` `end_date (${s.end_date}) must not be before start_date (${s.start_date})` ``
+to `` `End date is before the start date.` ``. This issue is consumed by
+`formatZodIssues` in `config/sprints.ts:63`'s existing
+`` `sprints.yaml is not valid: ${formatZodIssues(...)}` `` wrapper (one
+of the 9 sites that already names the file), so the file name and field
+path (`sprints[N].end_date`) both still appear ahead of the plain
+message — matching K129's "the file and the field to fix" shape without
+any further wrapper changes needed.
+
+Updated: `packages/core/src/config/sprints.test.ts` (two assertions),
+`apps/web/src/client/sprints/SprintsView.test.tsx` (mock fixture +
+assertion), `tests/cases/ui-test-cases/flow-sprints.md` SPR-31's first
+bullet, and `tests/ui/flow-sprints.spec.ts`'s SPR-31 test (dropped the
+now-removed "will not repair the file for you" assertion the same test
+was still checking, and asserts the new plain-English rule instead of
+the raw field-name phrasing).
+
+Did NOT touch `packages/core/src/sprints/manage.ts`'s own, separate
+`SPRINT_END_BEFORE_START_MESSAGE` ("End date is before the start
+date.") — that's the field-level metadata-edit message (SPR-33's own,
+pre-existing, already-correct wording), a different code path from the
+whole-file schema validator this item was about. Also left
+`packages/core/src/sprints/burndown.ts`'s
+`` `end_date (${endDate}) is before start_date (${startDate})` `` alone —
+confirmed unchanged per the C-family table (format-hint shape), a third
+distinct code path.
+
+**To revert.** Restore the original template-literal message in
+`packages/contracts/src/sprints.ts`, and revert the four touched test/
+case files listed above.
+
+## 9. Concurrent-session interactions (informational, not a choice)
+
+Across this session two other agents worked in the same tree on B21
+(saved-view uniqueness — deleted `list/viewNameCollision.ts` entirely,
+superseding my earlier wording trim to that file, which is now moot),
+B22 (empty-`.loctt` setup — rewrote `InitWizard.tsx`'s init-branch logic;
+my unrelated wording edits in that file survived), and B23/K130/K131
+(sprint state-guard removal, SPR-20 hint removal, sprint+milestone
+countdown removal). None of their behavior changes were reverted or
+reworded by me. Where their edits and mine touched the same file
+(`InitWizard.tsx`, `SprintsView.tsx`, `MilestonesView.tsx`,
+`flow-sprints.spec.ts`, `flow-onboarding.spec.ts`), I re-read the file
+immediately before each edit during the second half of the session, per
+the coordinator's explicit instruction, and confirmed no wording edit of
+mine was overwritten (one exception: a `MilestonesView.tsx` red-proof
+scaffold from the concurrent agent transiently broke `npm run test`;
+it resolved itself within seconds when they finished their own
+red-proof, no action needed from me).
+
+### A342 · Git sync parses its own error reply instead of POSTing sync a second time
+
+**Decision.** `streamSync` (`apps/web/src/client/api/hooks/useGit.ts`), on
+receiving a plain-JSON (non-NDJSON) reply from `POST /api/git/sync`, used
+to re-derive the `ApiError` by issuing a **second** `POST /api/git/sync`
+via `apiClient.post`, instead of parsing the `Response` it already had
+from the first request. `sync` is not idempotent: when the first call
+failed in its planning phase (e.g. `reconcile_needed`, which writes a
+reconcile sentinel before throwing), the second call landed on that
+sentinel and misreported itself as `reconcile_in_progress` ("a previous
+sync was interrupted... partly-applied") — a different, wrong, and much
+scarier error than the clean refusal the first response actually carried.
+The reconciliation panel (`git-reconcile-panel`) never rendered; the user
+saw a false "interrupted sync" alert. Fixed by adding an exported
+`resolveResponse<T>(res, endpoint)` helper to `apps/web/src/client/api/
+client.ts` (factored out of `apiRequest`'s own tail) and having
+`streamSync` call it on the `Response` already in hand, instead of
+re-POSTing.
+
+**Why:** this was diagnosed as the real cause of the "GIT-14/GIT-12 panel
+never visible" flakiness flagged in the task — the failure moved to a
+different test on each run (GIT-14, then GIT-7/31/12/38, then GIT-13,
+then GIT-12) but always the same signature: two POSTs to `/api/git/sync`
+in the trace, the second returning `reconcile_in_progress` instead of the
+panel opening. Confirmed via `test-results/*/trace.zip` network log
+(`0-trace.network`) showing the double POST and the two distinct 409
+bodies, then reproduced deterministically by running GIT-12 alone
+repeatedly (3/3 failures) before the fix and 3/3 passes after.
+
+**Scope:** client-only. No server/core change — `handleGitSync` /
+`sync()` already behaved correctly; the bug was the client re-issuing a
+non-idempotent write to interpret its own already-received answer.
+
+**Evidence:** new unit test `apps/web/src/client/api/hooks/useGit.test.tsx`
+→ `"a plain-JSON planning-phase failure is read off the one response, not
+re-fetched"` — asserts `fetch` called exactly once and the surfaced
+`ApiError` carries the original `reconcile_needed` envelope. Shown red
+against the pre-fix code (`fetch` called 2 times), green after.
+`npm run test:ui -- tests/ui/flow-accessibility.spec.ts tests/ui/flow-git-sync.spec.ts tests/ui/flow-projects-users-switcher.spec.ts tests/ui/flow-git-reconcile.spec.ts --reporter=line`
+→ 107 passed, 0 failed (previously 6 failed across these files, plus a
+since-resolved additional flake instance each run).
+
+**To revert:** revert `apps/web/src/client/api/client.ts` (remove the
+exported `resolveResponse` function, restore the inline body directly
+under `apiRequest`) and `apps/web/src/client/api/hooks/useGit.ts`
+(`streamSync`'s non-NDJSON branch back to `return apiClient.post
+<SyncResult>(endpoint, {})`, drop the `resolveResponse` import). Remove
+the new test case in `useGit.test.tsx` ("a plain-JSON planning-phase
+failure is read off the one response, not re-fetched"). No config,
+schema, or on-disk format changes to revert.
+
+---
+
+## § 8 agent-made — A342 (spec amendments for K125)
+
+**Decision.** Four Playwright specs still referenced the sidebar's "All
+projects" row (`getByTestId("project-all")`), which K125 (Ken,
+2026-09-24) removed — "take out the 'All projects' then? if its
+duplicate" — in favour of List clearing sidebar/toolbar scope (A339).
+Amended each to use the sidebar's List link instead:
+
+- `tests/ui/flow-accessibility.spec.ts` A11Y-12: added a focus check on
+  the sidebar's List link as the keyboard-reachable "all tasks" entry,
+  kept the rest of the test (project truncation/expand) unchanged.
+- `tests/ui/flow-git-sync.spec.ts` GIT-3 (:219) and GIT-23 (:661): replaced
+  the `project-all` click with
+  `page.locator("aside").getByRole("link", { name: "List", exact: true }).click()`
+  to reach the unscoped `/list` after a sync, matching the pattern
+  already used in `flow-app-shell.spec.ts` / `flow-sidebar-k125.spec.ts`.
+- `tests/ui/flow-projects-users-switcher.spec.ts` PRU-21 (:155): retitled
+  the test ("All projects is pinned" → "List stays reachable") and
+  replaced the `project-all` visibility assertion with the same List-link
+  check.
+
+Case docs amended in `tests/cases/ui-test-cases/` (grepped every "All
+projects" mention across the tree): `flow-board.md`, `flow-bulk.md`,
+`flow-projects-users.md` — each given the note:
+> **Amended (K125, Ken 2026-09-24).** The sidebar's "All projects" row was
+> removed (Ken: *"take out the 'All projects' then? if its duplicate"*);
+> List shows all tasks.
+
+`npm run cases:index` and `npm run cases:check` run after the doc edits
+(clean).
+
+**Why:** these specs asserted the row K125 superseded; they were stale,
+not wrong about product behaviour at the time they were written.
+
+**To revert:** restore `getByTestId("project-all")` usages in the four
+spec files and drop the added amendment notes from the three case docs;
+re-run `cases:index`/`cases:check` after. (Reverting only makes sense
+together with reverting K125 itself, which this decision does not touch.)
+
+### A341 · CLI `--set` and MCP `replace_task_body` store one trailing newline, not two
+
+**Ticket:** found by the K124 e2e run: `loctt body T-1 --set $'Original.\n'` stored `Original.\n\n`. · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3 · **Scope:** core `withTrailingNewline`, CLI `body --set`, MCP `replace_task_body`.
+
+**Situation.** Both surfaces appended `"\n"` unconditionally, so text that already ended in a newline (a heredoc, a file piped in, an agent's string) gained a blank line on every replace. The web Save writes the editor's serialised body as-is.
+
+**Options.** (a) Add the newline only when missing, in one core helper both surfaces call; (b) normalise to exactly one trailing newline, stripping any extra: would silently drop trailing blank lines a caller deliberately sent; (c) leave it and document it.
+
+**Decided.** (a): `withTrailingNewline` in `packages/core/src/task/io.ts`; CLI and MCP call it. Both reference docs state the rule. Tests: `apps/cli/src/cli.test.ts` "stores --set text that already ends in a newline…", `apps/mcp/src/tools/task-body.test.ts`; both red with the unconditional append restored.
+
+**To revert.** Replace the two `withTrailingNewline(...)` calls with `... + "\n"`, delete the helper and its exports, the two tests, and the two doc sentences.
+
+### A340 · Description editor Save/Cancel: implementation calls under K124 and A338
+
+**Ticket:** K124 (Ken) + A338 (PM) — the description editor saves only on Save · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3
+
+**The situation.** K124 fixed the model: explicit Save and Cancel, click-away
+keeps editing, leaving warns, Escape = Cancel (asking first when there are
+changes). A338 fixed the drafts: `sessionStorage` under
+`loctt:draft:${taskId}:${field}`, restored silently, conflict dialog if the
+file moved. Neither settled where the buttons go, what the prompt says, what
+the indicator's states mean, or several mechanics the old autosave hid
+(`apps/web/src/client/editor/BodyEditor.tsx`, `useBodyAutosave.ts`,
+`bodyDraft.ts`, `router/useUnsavedGuard.ts`, `ui/ConfirmDialog.tsx`).
+
+**What had to be decided.**
+1. Where do Save and Cancel sit, and what does Save do after writing?
+2. What does the discard prompt say?
+3. What does the indicator show now?
+4. Which keys save, and where are they heard?
+5. What does the in-app navigation guard do, and on which navigations?
+6. On a refetch while the editor has unsaved text, which token does Save carry?
+7. Does a draft whose token moved always open the conflict dialog?
+8. What does "Keep theirs" write?
+
+**Options considered.**
+1. (a) A footer row under the framed editor, primary Save then secondary
+   Cancel, left-aligned — the comment composer's Comment/Cancel layout;
+   (b) the toolbar's right cluster beside the indicator — crowds a row whose
+   width already had to be reserved for the indicator (TSK-18) and differs
+   from the composer. After a landed write: (a) close to the rendered view,
+   like saving a comment edit; (b) stay open showing "Saved" — the user then
+   has to Cancel out of an editor with nothing in it.
+2. (a) Title "Discard changes?", actions "Discard" (danger) / "Keep editing",
+   no body text; (b) add an explanation line — messaging.md §1 says the page
+   works without it.
+3. (a) Keep four kinds — unsaved changes / saving / saved / failed with Retry
+   — with "Saved" meaning "the editor matches disk"; (b) hide the indicator
+   when clean — changes the TSK-18 width-reservation grid for no gain.
+4. (a) Save on the button, Cmd/Ctrl+Enter and Cmd/Ctrl+S, heard only inside
+   the editor's subtree, in the capture phase; (b) window-level as before —
+   with click-away no longer closing the editor, an Escape or Cmd+Enter meant
+   for another control (the status picker, the comment composer) would act on
+   the description. Capture phase because TipTap binds Mod-Enter to a hard
+   break, which would otherwise be inserted into the text being saved.
+5. (a) The guard shows the same "Discard changes?" prompt (Discard lets the
+   navigation through and drops the draft; Keep editing blocks it), and only
+   intercepts a change of pathname; (b) intercept every navigation — the task
+   page records its activity tab and a scroll-to anchor in the search/hash,
+   so switching Comments/Activity would ask to discard an editor that is not
+   going anywhere.
+6. (a) Keep the base token unless the refetched body still equals the base
+   body (only frontmatter moved, e.g. a status change bumped `updated_at`), in
+   which case adopt it; (b) adopt unconditionally, the pre-K124 rule — under
+   explicit Save an edit stays open across window refocuses, and adopting a
+   token for a body the CLI rewrote lets Save silently overwrite it (XS-11);
+   (c) never adopt — every status change made during an edit becomes a false
+   conflict.
+7. (a) Restore silently when the token matches OR the draft's base body equals
+   the body on disk (the draft stores both); conflict dialog otherwise;
+   (b) A338's literal "token differs → conflict" — the token covers
+   `updated_at`, so a status change in another tab would put a conflict
+   dialog with two identical "theirs"/"base" bodies in front of the user.
+8. (a) Nothing: the disk already holds theirs; adopt it, clear the draft,
+   close; (b) write theirs back — adds a `body_edited` history entry for a
+   change nobody made, which K124 names as the harm.
+
+**Decided.** 1a (footer row; a landed write closes the editor; Save disabled
+with no changes, `loading` while writing; Retry and a conflict's Apply count
+as saves). 2a. 3a. 4a. 5a. 6a. 7a. 8a. The hook file keeps its name
+(`useBodyAutosave.ts`) with the module doc saying it no longer autosaves, to
+keep the diff readable; `ConfirmDialog` gained an optional `cancelLabel` and
+an optional `body`.
+
+**Why.** 1–3 follow the app's own patterns (the composer's footer,
+`ui/Button` `loading`, `ui/ConfirmDialog`) and messaging.md. 4–5 exist
+because K124 removed the one thing that used to end an edit on its own
+(click-away): the editor can now sit open while the user works elsewhere on
+the page, so its keys and its guard must not fire for things outside it.
+6–8 hold XS-11/XS-12's "never a silent overwrite" and K124's "history isn't
+updated" at the points explicit Save newly exposes. A live check also found
+that ProseMirror calls `preventDefault` on every Escape keydown
+(prosemirror-view `captureKeyDown`), so the Escape handler is not gated on
+`defaultPrevented`; overlays that own Escape stop propagation or are
+detected (`[data-portal-panel]`, the mention menu, the conflict dialog).
+
+**To revert.**
+1. `BodyEditor.tsx`: move the `body-save`/`body-cancel` row into
+   `MarkdownField`'s `toolbarTrailing`; drop the `awaitingWrite` effect to
+   stay open after a write.
+2. `BodyEditor.tsx` `ConfirmDialog` props (`title`, `confirmLabel`,
+   `cancelLabel`, add `body`).
+3. `SaveIndicator.tsx` `ORDINARY_KINDS`/labels.
+4. `BodyEditor.tsx` keyboard effect: `onSaveKey` capture listener and
+   `onEscape` on `wrapperRef` → a `window` listener.
+5. `router/useUnsavedGuard.ts`: remove the `current.pathname ===
+   next.pathname` early return; `confirmNavigation` in `BodyEditor.tsx`.
+6. `useBodyAutosave.ts` refetch effect: the `loadedBody === savedRef.current`
+   condition.
+7. `useBodyAutosave.ts` `seedFrom`: drop `|| initialDraft.baseBody ===
+   loadedBody`; `bodyDraft.ts` `baseBody` field.
+8. `useBodyAutosave.ts` `resolve`: remove the `text === open.theirs` branch.
+Tests pinning each: `BodyEditor.test.tsx`, `BodyEditor.leave-race.test.tsx`,
+`useBodyAutosave.test.ts`, `bodyDraft.test.ts`, `useUnsavedGuard.test.tsx`.
+
+**Open for Ken (not decided here).** invariants.md Q18/D4: `body_edited`
+entries still coalesce within a 15-minute same-actor window. Under explicit
+Save that merges two deliberate Saves minutes apart into one history entry —
+the case that row's own rationale warned about. K124 did not rule on it and
+this entry does not change it.
+
+### A339 · K125 build: sidebar "All projects" removed, view-link carry-across dropped, Filters nested as one group
+
+**Ticket:** K125 (Ken's ruling — `docs/dev/decisions.md`) · **Date:** 2026-09-24 · **Commit:** ui/polish-wave-3 · **Scope:** `apps/web/src/client/shell/Sidebar.tsx` (+ test), `apps/web/src/client/settings/SidebarGroupsPanel.tsx` (+ test), `apps/web/src/client/settings/sidebarGroups.ts`, `apps/web/src/client/list/FilterBar.tsx` (+ test), `packages/core/src/users/sidebarGroups.ts` (+ test), `packages/core/src/users/index.ts`, `packages/contracts/src/users.ts`, `tests/cases/ui-test-cases/flow-app-shell.md`, `flow-timeline.md`.
+
+**Situation.** K125 recorded five rulings: remove the sidebar's "All
+projects" row (a plain duplicate of the view switcher's own
+"nothing-scoped" identity, per K118/A321's own tie-break note); make a
+view-link click (List/Board/Timeline) clear the sidebar-driven scope
+instead of carrying it (superseding the 2026-09-20 cross-view carry
+fix, TML-57, for those links specifically); nest the six built-in
+filters under one "Filters" group in the Customize-sidebar panel,
+movable/hideable as a unit, each still individually
+reorderable/hideable inside it; replace Show/Hide buttons with a
+Switch, disabling a child's switch+handle while its parent group is
+off; and grow "Save as view" to 28px (h-8).
+
+**What was built.**
+
+1. **"All projects" removed.** The `<Link data-testid="project-all">`
+   row and its `allActive` tie-break logic are deleted from
+   `ProjectsGroup`; the `ActiveRow` doc comment's tie-break prose is
+   rewritten to describe the CURRENT state (no second row to reconcile
+   against) rather than the now-obsolete arbitration. `deriveActiveRow`
+   itself is untouched — it already resolved "nothing scoped" to
+   `{kind: "view"}` before this ticket; only the duplicate row is gone.
+
+2. **View-link carry-across dropped.** `ViewSwitcher`'s `search={carryFilters}`
+   is replaced with `search={prev => clearSort(clearFilters(prev))}` —
+   the exact same pair every other sidebar row already uses. `carryFilters`
+   and its `CARRY_FILTER_KEYS` allow-list are deleted entirely (dead code
+   once `ViewSwitcher` was their only caller). **The carry rule chosen:**
+   nothing sidebar-driven OR toolbar-set carries across a view-link click —
+   `clearFilters` drops every `FILTER_KEYS` entry, which is deliberately
+   BOTH the sidebar-driven params (project/view/labels/sprint/q) AND the
+   toolbar facets (status/priority/type/assignee/reporter/milestone).
+   Reasoning: K125's own framing — "click List" is how you get back to
+   ALL tasks — means the destination must be unscoped, full stop; carrying
+   just the toolbar facets would leave List still filtered by whatever the
+   toolbar had set, contradicting that. Params `clearFilters`/`clearSort`
+   do NOT touch (page, zoom, grouping, arrows, and any other param outside
+   `FILTER_KEYS`/`SORT_KEYS`) are left alone — same as every other sidebar
+   row already behaved, so this is not a new carve-out.
+   `viewTo`'s "a PROJECT click stays on the current view" (2026-09-20) is
+   untouched — a different mechanism, on a different link.
+
+3. **"Filters" nested group.** Added `filters` to `SIDEBAR_GROUP_IDS`
+   (`packages/contracts/src/users.ts`) as a real, stored top-level group
+   id — NOT a presentation-only synthetic id — because K125 asks for it
+   to be "movable as a unit" (reordering it must move the whole block)
+   and independently hideable (hiding it must drop every built-in from
+   the live sidebar regardless of each filter's own `hidden` flag), both
+   of which need a real stored identity, not just a panel-rendering
+   trick. The six `SIDEBAR_FILTER_IDS` are unchanged and still
+   individually stored/ordered/hidden. New core function
+   `resolveGroupedSidebarOrder(groups, groupCatalog)`
+   (`packages/core/src/users/sidebarGroups.ts`) resolves the flat
+   `order`/`hidden` storage into the nested `GroupedSidebarRow[]` shape
+   the panel renders (`{kind:"item"}` | `{kind:"filters-group", hidden,
+   children}`), re-exported through `packages/core/src/users/index.ts`
+   and `apps/web/src/client/settings/sidebarGroups.ts`.
+   `SidebarGroupsPanel.tsx` was rewritten around it: one outer
+   `ReorderableRows` for top-level rows (with "filters" rendering an
+   inner `ReorderableRows` for its children, `enabled={!groupHidden}`),
+   Show/Hide buttons replaced by `ui/Toggle` (`role="switch"`, labelled
+   "Show {label} in the sidebar"), a child's switch getting `disabled=
+   {groupHidden}` directly. The live sidebar (`Sidebar.tsx`,
+   `SavedFiltersGroup`) now reads the `filters` group's own `hidden` flag
+   and empties `orderedFilters` entirely when it is set, on top of the
+   existing per-filter `hidden` filtering — this is the one live-sidebar
+   change beyond the panel; the built-ins' own visual position (inside
+   the "Views" section, alongside saved views) is UNCHANGED — K125's
+   scope heading names "Customize sidebar (...) and the sidebar-order
+   model in the sidebar's settings", not a new visual grouping in the
+   live sidebar itself, and splitting built-ins into their own visible
+   section would be new scope this ticket did not ask for.
+
+4. **Migration (the specific call this entry exists to record).** An
+   existing flat stored `order` from before this ticket can only ever
+   have placed a filter id as a top-level entry (there was no `filters`
+   id to place). `resolveGroupedSidebarOrder` detects this (`filters`
+   absent from `groups.order`) and splices the group in at the position
+   of the FIRST individual filter id found in that stored order, leaving
+   every filter's own inner order/hidden flag untouched (read via the
+   existing `resolveSidebarOrder(groups, SIDEBAR_FILTER_IDS)`, which the
+   migration does not alter). A user who never touched a filter's
+   position (no filter id anywhere in `order`) gets the group at its
+   plain default catalog slot instead — no special-casing. A user who
+   HAS already saved a post-migration order (an explicit `filters` entry)
+   is honored exactly as stored; the fallback only fires when `filters`
+   is absent. Every write from the panel from now on always emits the
+   full flattened `order`/`hidden` in the post-migration shape (`filters`
+   present, no bare filter id at the top level), so the migration path
+   only ever fires against OLD files, never files this ticket's own
+   panel wrote.
+
+5. **Switch + disabled children.** `ui/Toggle` (already existed,
+   previously unused) replaces the Show/Hide `Button`; strikethrough on
+   a hidden row is removed (the switch carries the state). A child row's
+   switch AND its `ReorderableRows` drag handle are both disabled while
+   the parent "Filters" group's own switch is off — `ReorderableRows`
+   needed no structural change for this: its existing `enabled` prop
+   (which already disabled the handle) is passed `!groupHidden` for the
+   inner instance, and `GroupRow`'s own new `disabled` prop covers the
+   switch. No nesting concept was added to `ReorderableRows` itself —
+   the nesting is two `ReorderableRows` instances composed by the panel
+   (an outer one for top-level rows, an inner one rendered inside the
+   "Filters" row for its children), which was simpler and lower-risk
+   than teaching the shared component a new nested-row shape it has
+   exactly one caller for.
+
+6. **"Save as view" → 28px.** `apps/web/src/client/list/FilterBar.tsx`'s
+   single icon-only `IconButton` (`aria-label="Save as view"`,
+   `testId="view-actions-save-view"`) changed `size="sm"` (h-7/24.5px) →
+   `size="md"` (h-8/28px) — this is the ONE call site; list, board and
+   timeline all render it through the shared `FilterBar`, so one change
+   covers all three toolbars. The ⋯ (`view-actions-menu`) beside it was
+   deliberately left at `sm` — Ken did not ask for it to grow, and
+   matching heights across a `secondary`/ghost pair is a separate call
+   this ticket does not make.
+
+**CLI/MCP parity.** Checked `apps/cli/src/commands/user.ts` and
+`apps/mcp/src/tools/user.ts`: both already operate generically over
+`SIDEBAR_ITEM_IDS`/`SIDEBAR_GROUP_IDS` (no hardcoded id lists), so the
+new `filters` group id flows through `loctt user sidebar-groups`,
+`get_sidebar_groups` and `set_sidebar_groups` with NO code change —
+verified by reading both files end to end. `docs/user/cli/reference.md`
+and `docs/user/mcp/reference.md` describe the surface generically
+("Read or set the sidebar layout" / a tool table) without enumerating
+ids, so neither needed a text change either.
+
+**Rejected.**
+- A synthetic, non-stored `"filters"` presentation id for the panel
+  only (no schema/CLI/MCP change) — rejected because K125 explicitly
+  wants the group "movable as a unit" and independently hideable in the
+  LIVE sidebar too, which needs a real stored position/hidden flag, not
+  just a panel rendering trick.
+- Visually re-grouping the built-ins into their own top-level live-
+  sidebar section (matching the panel's nesting one-for-one) — rejected
+  as scope beyond what K125's heading asks ("Customize sidebar ... and
+  the sidebar-order model in the sidebar's settings"); the built-ins
+  already render together, contiguously, in their existing inner order,
+  inside "Views" — that status quo is preserved, only its hide-as-a-unit
+  behavior is new.
+- Carrying toolbar facets (status/priority/etc.) across a view-link
+  click while dropping only the sidebar-driven params — rejected because
+  it would contradict K125's own "click List gets you back to all
+  tasks" framing; the ticket's text anticipated and pre-empted this
+  option explicitly.
+
+**Why.** Matches K125 literally on all five points; the migration rule
+was the one genuinely new design decision K125 did not spell out to the
+byte, and is recorded here rather than inferred silently, per
+housekeeping's "a call the docs did not settle" rule.
+
+**To revert.** `git diff`/`git checkout --` the file list above against
+the commit before this change. The `filters` id addition to
+`SIDEBAR_GROUP_IDS` is additive to the schema (an old stored file with
+no `filters` id anywhere in it round-trips unchanged); reverting the
+contracts change would need any user who saved a POST-migration order
+(one that already names `filters`) to re-run Reset — a real but narrow
+loss, since this ticket has not shipped yet in any release.
+
+---
+
+### Addendum (same date) · Gap fix: "Filters" now has its OWN live-sidebar section
+
+**Wrong call, caught before commit.** Point 3 above and the "Rejected"
+list's second bullet were WRONG. They read K125's scope heading
+("Customize sidebar ... and the sidebar-order model in the sidebar's
+settings") as meaning the live sidebar's own visual grouping was out of
+scope, and left the built-ins rendering inside the saved-views section
+regardless of where `filters` sat in the stored order. That is exactly
+the disconnect Ken's ORIGINAL complaint named — a customiser that lets
+built-ins "move around, so its not connected" to the sidebar — and Ken
+caught it: *"As built, the customiser shows a movable 'Filters' row, but
+`Sidebar.tsx` returns null for `case "filters"` and still renders the
+six built-ins inside the `saved-filters` section (heading 'Views') above
+the saved views. So moving 'Filters' in the customiser changes nothing
+visible, which is the disconnect Ken complained about. Your A339 note
+calls a separate section 'new scope'; the chosen option says otherwise."*
+The option Ken actually picked, verbatim: *"Nest under 'Filters' — One
+'Filters' section you can move as a unit; inside it, each built-in
+filter can be hidden and reordered. They stay together in the sidebar."*
+"They stay together in the sidebar" is the live sidebar, not only the
+panel — my original reading missed that.
+
+**Fixed.** `Sidebar.tsx`: the six built-ins now render in a NEW,
+dedicated `FiltersGroup` component, its own `SectionShell id="filters"
+label="Filters"`, at the `filters` group's resolved position in the
+top-level `SIDEBAR_GROUP_IDS` order (via `resolveSidebarOrder`, the same
+mechanism every other section already uses) — wired into `SidebarGroups`'
+`render()` switch at `case "filters"` (previously `return null`).
+Hiding the group now removes the section entirely (an early `return
+null` in `FiltersGroup` plus the pre-existing outer `item.hidden` skip
+in `SidebarGroups` — both independently correct, verified by disabling
+each separately and confirming the other still holds the behavior).
+What was `SavedFiltersGroup` is renamed `SavedViewsGroup` and now
+renders ONLY saved views (+ "New view"); its stored group id
+(`saved-filters`) is UNCHANGED — only the human label and the built-ins'
+half of its old rendering moved out.
+
+**Label parity (Ken's point 2).** The saved-views section's heading was
+"Views" in the sidebar but "Saved filters" in the Customize-sidebar
+panel — two different labels for the one section, itself a smaller
+instance of the same "can't map a customiser row to a sidebar section"
+problem. Both are now "Saved views" (`Sidebar.tsx`'s
+`SectionShell`, and `SidebarGroupsPanel.tsx`'s `LABELS["saved-filters"]`)
+— matches the Settings "Saved views" page and the "Save as view" button.
+The STORED id (`saved-filters`) is unchanged, so no data migration is
+needed for this rename; it is purely a display-string change.
+
+**Active-row / keyboard nav (Ken's point 3), checked, not changed.**
+`deriveActiveRow` derives `{kind:"builtin"|"saved-view", id}` purely
+from `pathname`/`search` — it has no notion of which DOM section a row
+renders in, so splitting the built-ins into their own section changes
+nothing about the derivation or the "exactly one row lit" invariant
+(K118/A321). Searched the whole file for a keyboard-roving mechanism
+(arrow-key navigation across sidebar rows): none exists — the only
+`onKeyDown` handler in `Sidebar.tsx` is the resize-handle's, unrelated.
+Each section's collapse toggle (`SectionShell`) is independently keyed
+by its own `id` string, so `"filters"` and `"saved-filters"` now being
+two different ids simply means two independently collapsible sections,
+which needs no special-casing — standard browser Tab order threads
+through the new section like any other.
+
+**Cases amended:** `flow-app-shell.md` (SHL-8, SHL-32; SHL-45's
+amendment gained a second "Amended again" block recording this fix —
+SHL-33's own case text is unaffected, only its e2e spec's group-label
+allowlist changed), `flow-cross-surface.md` (XS-66), `flow-onboarding.md`
+(ONB-1, ONB-9). e2e: `flow-app-shell.spec.ts`'s `KNOWN_GROUPS` allowlist
+(SHL-33's shell-stability test), `flow-onboarding.spec.ts`'s absence
+check, and `flow-sidebar-k125.spec.ts` gained K125-8 (moves the group via
+the panel's keyboard reorder, reloads, and asserts the live section
+order actually changed — the literal regression this fix closes) plus
+corrected "Views"/"Filters" text in K125-4/5/6.
+
+**Red-proof performed:**
+1. Reverted `case "filters"` to `return null` → the new
+   `Sidebar.test.tsx` test ("moving 'filters' in the stored order moves
+   the rendered Filters section") failed (section never appears to
+   move, because it never appears at all as its own thing).
+2. Reverted `SidebarGroups`' outer `item.hidden` skip alone (kept
+   `FiltersGroup`'s inner `return null` guard) → the "removes the whole
+   Filters section" test still passed, because the inner guard alone
+   is sufficient. Reverted the inner guard alone (kept the outer skip)
+   → also still passed, for the same reason from the other direction.
+   Both guards are independently sufficient — confirmed defense-in-
+   depth, not one dead line.
+3. All six pre-existing `Sidebar.test.tsx` failures from the section
+   split (stale "Views"/"Saved filters" text assertions) were run RED
+   before being fixed, confirming each was a real fallout of the
+   split and not a pre-existing failure.
+
+**To revert (this addendum only).** Re-inline `FiltersGroup`'s JSX back
+into `SavedViewsGroup` (revert to the shape point 3 above originally
+described: built-ins + saved views under one section, `case "filters":
+return null`), rename `SavedViewsGroup` back to `SavedFiltersGroup`, and
+revert the "Saved views"/"Views" label changes in both `Sidebar.tsx` and
+`SidebarGroupsPanel.tsx`. No schema or stored-data change to undo — the
+`saved-filters`/`filters` ids themselves are unchanged by this addendum,
+only which component renders under them and what they are labelled.
+
+---
+
+### Second addendum (same date) · Live verification caught a second gap: the migration only ran in the panel, not the live sidebar
+
+**Found live, at http://localhost:7700, on the tracker's real stored
+settings** (`GET /api/user-settings` returned `sidebar_groups.order:
+["views","overdue","projects","saved-filters","milestones","labels",
+"recents","reported-by-me","assigned-to-me","sprints","mentions-me",
+"due-this-week","high-priority"]`, hidden: `["sprints"]` — a genuine
+pre-K125 flat order with `overdue` at the top level and no `filters`
+entry anywhere). Describing the rendered sidebar order:
+
+- **Before (bug):** `Projects, Saved views, Milestones, Labels,
+  Recently viewed, Filters` — Filters landed LAST, matching neither the
+  stored order (where `overdue` led, right after `views`) nor the
+  Customize-sidebar panel's own read of the same data (which correctly
+  showed Filters SECOND, right after Views, in the Customize sidebar
+  screenshot taken at the same moment).
+- **Root cause:** `SidebarGroups` (the live sidebar's own top-level
+  renderer, `Sidebar.tsx`) called the plain `resolveSidebarOrder(groups,
+  SIDEBAR_GROUP_IDS)` directly — the exact call the first addendum's fix
+  was supposed to route through the migration-aware
+  `resolveGroupedSidebarOrder`, but the first addendum only fixed WHICH
+  component rendered under `case "filters"`, not WHICH RESOLVER computed
+  the top-level order feeding that switch. The panel
+  (`SidebarGroupsPanel.tsx`) already called `resolveGroupedSidebarOrder`
+  and so already migrated correctly — the panel and the live sidebar
+  disagreed with each other on this tracker's data, which is the same
+  "customiser and sidebar don't agree" shape as Ken's original complaint,
+  just relocated to a second spot the first addendum missed.
+- **Fixed:** `SidebarGroups` now calls `resolveGroupedSidebarOrder`
+  (imported from `../settings/sidebarGroups.ts`, already exported for
+  the panel) and maps its `GroupedSidebarRow[]` back to the flat
+  `{id, hidden}[]` shape the existing render loop expects — one `.map()`,
+  no change to the loop or the `render()` switch itself.
+- **After (live-verified via the SAME running :7700 server, before a
+  rebuild):** opened Customize sidebar, focused the Filters row's drag
+  handle (`sidebar-group-handle-filters`), pressed ArrowDown three times
+  (`Overdue`-second → past Projects/Saved-views/Milestones), closed the
+  panel. The live sidebar order became `Projects, Saved views,
+  Milestones, Filters, Labels, Recently viewed` — Filters now sits
+  exactly where the panel put it. This proves the CORE mechanism (the
+  `case "filters"` render + position wiring from the first addendum) is
+  correct and live-verified end to end: once `filters` is EXPLICITLY in
+  `order` — which is what the panel writes on every edit, including this
+  one — the live sidebar honors it precisely.
+- **What is NOT live-verified:** the migration-on-read fix itself (the
+  `resolveSidebarOrder` → `resolveGroupedSidebarOrder` swap in
+  `SidebarGroups`) needs a rebuilt `apps/cli/dist` to demo against the
+  ORIGINAL pre-migration stored order (the one with `overdue` at the top
+  level) — the running :7700 server is still serving the pre-fix build,
+  and I was told not to rebuild it (another agent owns
+  `npm run build`/Playwright on this branch). The fix is instead
+  red-proven in `Sidebar.test.tsx` ("K125 gap fix: a pre-migration flat
+  stored order... still places the live Filters section at the migrated
+  position") against the LITERAL stored order this tracker had live —
+  reverting the `resolveGroupedSidebarOrder` call back to
+  `resolveSidebarOrder` reproduces the exact live-observed bug (Filters
+  fails to lead when `overdue` led the stored order) and fails that
+  test; restoring the fix passes it.
+
+**To revert (this second addendum only).** In `SidebarGroups`
+(`Sidebar.tsx`), replace `resolveGroupedSidebarOrder(groups,
+[...SIDEBAR_GROUP_IDS]).map(...)` back with
+`resolveSidebarOrder(groups, [...SIDEBAR_GROUP_IDS])` directly. This
+reintroduces the migration gap for any user whose stored order predates
+`filters` — a real regression, so only revert this if the whole
+`filters`-as-its-own-section design (both addenda) is being reverted
+together.
+
+---
+
+### Third addendum (same date) · Playwright pass after a fresh build: 4 failures, all triaged
+
+Coordinator ran `npx playwright test tests/ui/flow-sidebar-k125.spec.ts
+tests/ui/flow-app-shell.spec.ts tests/ui/flow-onboarding.spec.ts
+tests/ui/flow-timeline.spec.ts --workers=2` after `npm run build`: 4
+failed, 110 passed. Triaged each; final run of all four files together:
+**114 passed, 0 failed, exit code 0.**
+
+1. **`flow-app-shell.spec.ts:85` SHL-15 (back/forward).** SPEC bug, not
+   product — asserted the superseded carry. The test clicked "Timeline"
+   after setting `?status=in_progress` on `/list` and expected the URL
+   to keep `status=in_progress` on `/timeline` (the 2026-09-20
+   cross-view carry, TML-57) — exactly the behavior K125 replaces for
+   the view switcher's own links. Fixed: now expects `/timeline$` (no
+   param), amended the surrounding comment to cite K125 instead of the
+   old carry-fix reasoning, and adjusted the subsequent `goBack()`
+   sequence (one fewer "carried" URL to walk back through since
+   `/timeline` has no query string of its own now).
+
+2. **`flow-sidebar-k125.spec.ts:27` K125-1.** SPEC bug — my own. Fresh
+   locator collision: `page.getByText("Projects")` strict-mode-matched
+   BOTH the sidebar's own "Projects" section toggle AND the FilterBar
+   toolbar's wrapping `<div>`, whose concatenated text content
+   ("ProjectStatusPriorityAssigneeAdd filter") contains "Project" as a
+   substring of that combined string — Playwright's `getByText` matches
+   on any element's full text content, and an ancestor's concatenated
+   text can spuriously match even when no single descendant's own text
+   does. Fixed: scoped to `page.locator("aside")` and switched to the
+   `sidebar-section-toggle-projects` testid instead of a text match.
+
+3. **`flow-sidebar-k125.spec.ts:131` (now `:137`) K125-8.** SPEC bug —
+   my own, a genuine race, reproduced 3/3 without `--trace`, disappeared
+   with `--trace on` (the extra CDP overhead papered over it — a strong
+   flakiness signal, which is why the coordinator's rule to always
+   re-run without assuming a trace run is representative caught it).
+   `sectionOrder()` read the sidebar's section headings immediately
+   after `page.goto()`, racing the async user-settings query that
+   sidebar rendering depends on — an early read returned `[]`. Fixed:
+   added `await expect(page.getByTestId("sidebar-section-toggle-projects")).toBeVisible()`
+   before each of the two `sectionOrder()` reads (before the move, and
+   after the reload), anchoring the read to "the sidebar has actually
+   finished its first render". Re-ran 5/5 green after the fix.
+
+4. **`flow-timeline.spec.ts:1093` TML-12 ("drags snap to whole
+   days").** SPEC bug, NOT mine, NOT related to K125/sidebar work at
+   all (zero diff in `apps/web/src/client/timeline/` from this branch).
+   Ran 3x alone per instruction: consistently red at normal speed,
+   passed once under `--trace on` — same "trace overhead masks a race"
+   pattern as #3. Instrumented with `console.log` to confirm: the drag
+   correctly armed, the label correctly showed the candidate date, and
+   `page.mouse.up()` correctly triggered `setDates.mutate()` — but
+   `expect(seen.calls).toHaveLength(1)` immediately after `mouse.up()`
+   (no wait at all) checked before the resulting `fetch()` had actually
+   reached the network layer the `page.on("request", ...)` listener
+   observes. Confirmed by inserting `page.waitForTimeout(300)`: passed.
+   Every OTHER drag-write test in the same file that checks
+   `seen.calls` right after `mouse.up()` (TML-38, TML-39, the sibling
+   "releasing without crossing a snap boundary" TML-12 test) already
+   has this wait; this one specific test was the one missing it — an
+   omission in the spec, not a behavior change anywhere in the app.
+   Fixed with `await expect.poll(() => seen.calls.length).toBe(1)`
+   (matches the file's existing `expect.poll` idiom two lines below,
+   used for the on-disk write) rather than a bare timeout. Re-ran 5/5
+   green after the fix, ~3s each (no fixed-wait tax).
+
+**Files touched this pass:** `tests/ui/flow-app-shell.spec.ts`,
+`tests/ui/flow-sidebar-k125.spec.ts`, `tests/ui/flow-timeline.spec.ts`.
+No product code changed in this pass — all four were spec-side fixes
+(one superseded-behavior assertion, two of my own races, one
+pre-existing race unrelated to this ticket).
+
+**Gates:** `npx tsc --build` clean; `npx tsc -p tests/ui --noEmit`
+clean; `eslint` on the three touched spec files: 0 errors (9
+pre-existing non-null-assertion warnings in `flow-timeline.spec.ts`,
+none on touched lines). Final combined run: `npx playwright test
+tests/ui/flow-sidebar-k125.spec.ts tests/ui/flow-app-shell.spec.ts
+tests/ui/flow-onboarding.spec.ts tests/ui/flow-timeline.spec.ts
+--workers=2` → **114 passed, exit code 0**.
+
+**To revert.** `git checkout --` the three spec files above against the
+commit before this pass. No product code, schema, or stored data is
+touched by this addendum.
+
+### A338 · Description-editor drafts persist to sessionStorage (PM call for K124)
+
+**Ticket:** K124's open question (Ken: *"we save in session storage? how
+would that work, get a PM"*) · **Date:** 2026-09-24
+
+**Decided (PM voice).** Unsaved description edits are kept in
+`sessionStorage` under `loctt:draft:${taskId}:${field}`, written on the
+existing 1.5s idle cadence (`BODY_IDLE_MS`) and flushed on blur, Escape,
+Cmd/Ctrl+Enter and `beforeunload`; cleared on Save, Cancel and a confirmed
+discard, never on unmount alone. Reopening the task with a draft whose
+base token matches the file restores it silently into edit mode (the
+unsaved indicator shows); if the file changed on disk since, the existing
+`BodyConflictDialog` opens (mine = draft, theirs = disk) instead. Storage
+failure (private mode, quota) degrades silently to no draft, mirroring
+`shell/storage.ts`. Per-tab by nature: two tabs keep independent drafts.
+Comment composer out of scope.
+
+**Rejected.** No persistence (a refresh loses a long edit); localStorage
+(a closed tab's draft resurfaces days later with no natural clear point).
+
+**Why.** Never silently lose data (refresh/crash covered) without a
+"keep forever" store; the stale-draft path reuses TSK-35's conflict rule;
+no banner, per messaging.md ("would the page work without it").
+
+**To revert.** Remove the draft hook and its `readSession`/`writeSession`
+helpers; no schema, API or on-disk change.
+
+### A337 · "Save as view" filter preview: resolved names + chips replace the DSL-shaped text dump
+
+**Ticket:** Ken, verbatim, on a screenshot of the dialog's Filters box
+(`project in "01M33FN47B9B55YP89X786V1VB"` / `milestone in
+"01M33FN6NWKG9TEJ2MAW23A6WE", "01M33FN6C78FDY98FG37TRJM30"`): *"why is
+the filter preview just text?! that's bad UX. get the UI designer to
+design a better preview, not just an ugly text dump."* · **Date:**
+2026-09-24 · **Commit:** (uncommitted; Ken integrates) · **Scope:** web
+UI only (`apps/web/src/client/list/SaveViewDialog.tsx` and a new
+`list/filterPreview.tsx`).
+
+**Situation.** `SaveViewDialog`'s Filters box rendered each stored
+`Filter` through core's `filterToSummary` — `field op values` in a
+monospace `<code>` line, one per filter. Two faults: (1) it read as
+query text (a DSL rendering) rather than as the filters the user built
+via dropdowns, which is exactly the K102 complaint Ken had already ruled
+on for this same dialog ("QUERY IS ADVANCED SHIT... average people dont
+need to see the fucking DSL QUERY") — this was a second-generation
+regression of it; (2) `filterToSummary` prints the filter's stored
+`values` verbatim, which for project/milestone/label/assignee/etc. are
+ULIDs — a direct P-4 violation (`tests/cases/ui-test-cases/README.md`:
+no raw ids in UI content).
+
+**The call made.** Built `list/filterPreview.tsx`, a pure resolver:
+`Filter[]` + the SAME `FacetOptions` (`buildFacetOptions`) and workflow
+custom-field config the filter bar and `ViewFormDialog` already resolve
+against → `ResolvedFilterRow[]`. `SaveViewDialog` renders one row per
+resolved filter:
+
+- **Simple filter:** field label (from the same `FACET_TO_FIELD`/
+  `viewFilterFields.ts` vocabulary, e.g. "Milestone", "Status") +
+  operator in plain words (reusing `viewFilterFields.ts`'s `OP_LABEL` —
+  "is any of", "is not", "is empty") + each value as its own `ui/Chip`
+  (`variant="accent"`, the same pill primitive the rest of the app uses
+  for filter chips) carrying the resolved NAME, never the id.
+- **Multi-value:** every value gets its own chip — a set, not a
+  comma-joined string — so "Label: bug, urgent" reads as two chips, not
+  one blob.
+- **Dangling reference** (an id that resolves to nothing in the loaded
+  options — a deleted milestone/label/user/etc.): a warn-toned degraded
+  chip reading "Deleted milestone" (etc.), mirroring `FilterBar`'s
+  LST-33 "no longer exists" dangling-chip treatment. The raw id never
+  appears in the label under any circumstance — confirmed by a
+  dedicated unit test asserting the id string is absent from the
+  resolved label.
+- **Advanced filter:** still shown as its own DSL text under an
+  "Advanced query" heading — legitimate here, since it IS what the user
+  typed (unchanged call from K102/the docstring's original wording).
+- **Sort:** when `search.sort` is set, a separate "Sort" row in the same
+  vocabulary ("Priority · descending"), using the same field-label
+  lookup.
+- **Empty state:** unchanged wording ("No filters — this view will show
+  every task."), now gated on BOTH no filters and no sort (a
+  sort-with-no-filter search no longer shows the empty state next to a
+  sort row).
+- **Accessibility:** each row carries an `aria-label` stating field +
+  operator + resolved values as one sentence ("Milestone: is any of Beta
+  launch"), so a screen reader gets one coherent announcement per row
+  rather than reading chip-by-chip; the chip row itself is
+  `aria-hidden` to avoid double announcement.
+
+**Where it landed.** New file `apps/web/src/client/list/filterPreview.tsx`
+(pure resolver + types, no React state, no query client — unit-testable
+standalone). `apps/web/src/client/list/SaveViewDialog.tsx` rewired to
+fetch the same `useProjects/useUsers/useLabels/useMilestones/useSprints/
+useWorkflow` hooks `FilterBar`/`ViewFormDialog` already use, build
+`FacetOptions` via the shared `buildFacetOptions`, and render
+`resolveFilterRows(...)` instead of calling `filterToSummary`.
+`filterToSummary`/`@loctt/core/query/filters.js` import removed from this
+file — no other change to core.
+
+**Tests.** `filterPreview.test.ts` (new, 10 tests) unit-tests the
+resolver directly — id→name resolution, multi-value-as-set, dangling
+degradation with the raw id asserted ABSENT, custom-enum-field
+resolution, operator wording, valueless ops, free-text fields (never
+dangling), advanced-filter passthrough, and `sortFieldLabel`.
+`SaveViewDialog.test.tsx` rewritten (8 tests) with a realistic
+`routeFetch` fixture (mirroring `FilterBar.test.tsx`'s pattern) covering
+the resolved-name assertion, the milestone-ULID-absence assertion, the
+multi-value-chips assertion, the dangling-degraded assertion, the
+messaging.md empty state, and the sort row. Every new/changed assertion
+was red-proven (see below) before this entry was written.
+
+**Red-proofs (mutate → watch fail → restore).**
+1. *Names not ULIDs*: in `filterPreview.ts`'s `resolveSimpleValues`,
+   changed the resolved-hit branch to return the raw id as the label
+   instead of `hit.label`. 4 tests went red across both files
+   (`filterPreview.test.ts`'s milestone/multi-value cases,
+   `SaveViewDialog.test.tsx`'s milestone-name test) with diffs showing
+   `"label": "m_live"` where `"Beta launch"` was expected.
+2. *Dangling degraded*: changed the no-hit branch to return
+   `{ label: v, dangling: false }` (the raw id, undangled) instead of
+   `"Deleted <field>"` / `dangling: true`. 2 tests went red — the
+   resolver unit test's exact-shape assertion and the dialog's
+   dangling-chip test, both showing the raw id (`m_deleted`,
+   `m_deleted_but_gone`) leaking into the rendered text.
+3. *DSL shown for advanced filter*: in `SaveViewDialog.tsx`, deleted the
+   `<code>{r.query}</code>` line from the advanced-row branch. The
+   "carries a free-text q verbatim" test went red:
+   `expected 'Advanced query' to contain 'has_link(...)'`.
+4. *Empty state*: replaced the empty-state condition with a hardcoded
+   `false`. The empty-state test went red (`save-view-no-filters` not
+   found).
+5. *Multi-value collapsed to a string*: replaced the per-value `Chip`
+   map with `r.values.map(v => v.label).join(", ")`. The multi-value
+   test (after being tightened — see below) went red.
+
+**A test that needed tightening before it caught its own mutation.**
+The first draft of the multi-value test asserted
+`row.querySelectorAll("span").length > 1`, which passed even against
+the collapsed-string mutation (the row already has ≥2 `<span>`s from the
+field-label and operator spans, independent of how values render). That
+assertion would have shipped **asserting nothing about the multi-value
+behaviour it claimed to cover** — exactly the trap this repo's testing
+philosophy calls out ("a test that still passes with the behaviour
+deleted asserts nothing"). Tightened to require ≥2 elements matching
+`[data-testid], .inline-flex` (the chip-specific class) AND that no
+single text node joins both values with `", "`; confirmed this version
+fails against mutation 5 above, then confirmed it passes on the restored
+code.
+
+**Cases.** Grepped `tests/cases/` for "Save as view" / "SaveViewDialog" /
+`VUE-`. No case in `tests/cases/ui-test-cases/flow-saved-views.md` (VUE-1
+through VUE-42) pins the preview's LOOK — VUE-6 ("Save as view in basic
+mode writes to queries.yaml...") is about the write path and does not
+mention rendering. No case needed amending or adding: the preview's
+visual form was never asserted at the case layer, only at the component-
+test layer (`SaveViewDialog.test.tsx`, now updated in place per Ken's
+words above — the prior "shows a human-readable filter summary, not the
+DSL" test asserted the OLD design's absence of `"archived !="`/`"AND"`,
+which is superseded, not wrong; it is replaced rather than kept
+alongside the new assertions to avoid two tests pinning two different
+"human-readable" bars).
+
+**E2e.** Grepped `tests/e2e` and every `*.spec.ts` in the repo for
+`save-view-filter-summary`/`save-view-no-filters`/`filterToSummary` —
+zero hits. No e2e spec locates the old preview by its markup, so none
+needed updating.
+
+**Gates.** `npx tsc --build`: 0 errors from this change (3 pre-existing
+errors remain in `apps/web/src/client/task/TaskDetail.tsx`, from a
+change this session did not make — an `IconButton` import apparently
+dropped and an unused `Button` import — not touched here). `npm run
+test -w apps/web`: 2643/2643 passed across 258 files (one pre-existing
+unhandled-rejection warning from `ActivityPanel.test.tsx`'s ProseMirror
+teardown timing, untouched by this change, not a new failure). `npx
+eslint` on the four touched/added files: 0 errors, 0 warnings. `npm run
+cases:check`: up to date (1053 cases, no drift).
+
+**To revert.** Delete `apps/web/src/client/list/filterPreview.tsx` and
+`filterPreview.test.ts`. In `SaveViewDialog.tsx`, restore the
+`filterToSummary` import from `@loctt/core/query/filters.js`, drop the
+`useProjects/useUsers/useLabels/useMilestones/useSprints/useWorkflow`
+hooks and the `options`/`customFields`/`resolvedRows` memos, and replace
+the `<ul data-testid="save-view-filter-summary">` block's row rendering
+with the original `f.kind === "advanced" ? <code>{f.query}</code> :
+filterToSummary(f)` ternary over `filters` directly (drop the `sortEntry`
+row and restore the empty-state condition to `filters.length === 0`
+alone). Restore `SaveViewDialog.test.tsx` to the two-test version that
+asserted `summary.textContent` against `"status in backlog"` and the
+absence of `"AND"`/`"archived !="`.

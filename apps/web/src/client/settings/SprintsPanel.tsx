@@ -1,13 +1,13 @@
-import type { ArchivedScope, BrokenEntry, SprintDef } from "@loctt/contracts";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import type { BrokenEntry, SprintDef } from "@loctt/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { useArchiveSprint, useCountedSprints, useDeleteSprint } from "../api/hooks/useDataMutations.ts";
 import { Button } from "../ui/Button.tsx";
 import { ErrorState } from "../ui/ErrorState.tsx";
+import { dataStateOf, InlineFailureNotice } from "../ui/InlineFailureNotice.tsx";
 import { LoadingState } from "../ui/LoadingState.tsx";
-import { ArchivedScopeReveal } from "./ArchivedScopeReveal.tsx";
 import { RemapDeleteDialog } from "./RemapDeleteDialog.tsx";
 import { RowActions } from "./RowActions.tsx";
 import { SettingsPanelHeader } from "./SettingsPanelHeader.tsx";
@@ -18,7 +18,7 @@ import { SprintEditDialog } from "./SprintEditDialog.tsx";
  *
  * Full management: **create** and **edit** (both via the shared
  * {@link SprintEditDialog} — K105), **delete** (with remap of referencing
- * tasks), the burndown link, and the archived split. The panel was
+ * tasks), the burndown link, and archive. The panel was
  * read-and-navigate before; SPR-40 brought it to CLI parity for the
  * lifecycle operations, and K105 folds the create form and the per-row
  * edit into the one dialog the sidebar can also render, so the sprint form
@@ -40,6 +40,19 @@ const STATE_LABEL: Record<string, string> = {
   future: "Future",
 };
 
+/**
+ * A328 (B6): the archive-toggle row notice, verbatim from the decision.
+ * `attemptedArchive` is the state the click was trying to reach (the
+ * mutation's `archived` var), since a failure leaves the row's own
+ * `archived` unchanged from before the click.
+ */
+export function archiveFailureMessage(name: string, attemptedArchive: boolean, error: unknown): string {
+  const verb = attemptedArchive ? "archived" : "unarchived";
+  return dataStateOf(error) === "unknown"
+    ? `Couldn't confirm ${name} was ${verb}. Reload to check.`
+    : `${name} wasn't ${verb}. Try again.`;
+}
+
 /** A sprint the list returns, with its reference count from `?counts=true`. */
 type CountedSprint = SprintDef & { readonly taskCount?: number };
 
@@ -53,27 +66,18 @@ function SprintRow({ sprint, all }: {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editing, setEditing] = useState(false);
   const count = sprint.taskCount ?? 0;
-  const archived = sprint.archived === true;
 
   return (
     <li
       // K100 deep-link anchor (`/settings/sprints#row-<id>`) — see
-      // useScrollToHash. An archived sprint's row only mounts once the
-      // "Show archived" toggle is on, which the panel auto-enables when the
-      // hash names an archived sprint (see SprintsPanel below).
+      // useScrollToHash.
       id={`row-${sprint.id}`}
       data-testid={`sprint-row-${sprint.id}`}
       data-sprint-state={sprint.state}
-      data-sprint-archived={archived ? "true" : "false"}
       className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-subtle py-2 last:border-0"
     >
       <span className="min-w-0 flex-1 truncate text-[0.9286rem] text-text-primary">
         {sprint.name}
-        {archived && (
-          <span data-testid="sprint-archived-marker" className="ml-2 text-text-tertiary">
-            (archived)
-          </span>
-        )}
       </span>
       <span className="shrink-0 text-[0.8571rem] text-text-secondary">
         {STATE_LABEL[sprint.state] ?? sprint.state}
@@ -92,18 +96,19 @@ function SprintRow({ sprint, all }: {
       {/* Row lifecycle actions collapse into a kebab so they never
           overflow the row on a narrow pane (responsive GROUP A). Edit
           (name/dates/goal/state, via the shared dialog — K105), Burndown
-          (navigation), Archive/Unarchive, and Delete. */}
+          (navigation), Archive, and Delete. Restoring an archived sprint is
+          Settings → Archived (K121 #1). */}
       <div className="shrink-0">
         <RowActions
           label={`Actions for sprint ${sprint.name}`}
           actions={[
-            { label: "Edit…", testId: "sprint-edit", onSelect: () => { setEditing(true); } },
+            { label: "Edit", testId: "sprint-edit", onSelect: () => { setEditing(true); } },
             { label: "Open burndown", testId: "sprint-burndown-link", onSelect: () => { void navigate({ to: "/sprints/$key", params: { key: sprint.id } }); } },
             {
-              label: archived ? "Unarchive" : "Archive",
+              label: "Archive",
               testId: "sprint-archive-toggle",
               disabled: archive.isPending,
-              onSelect: () => { archive.mutate({ id: sprint.id, archived: !archived }); },
+              onSelect: () => { archive.mutate({ id: sprint.id, archived: true }); },
             },
             { label: "Delete", testId: "sprint-delete", danger: true, onSelect: () => { setConfirmingDelete(true); } },
           ]}
@@ -120,6 +125,22 @@ function SprintRow({ sprint, all }: {
         />
       )}
 
+      {/* A328 (B6): archive never read `archive.error` before —
+          a timed-out or rejected toggle did nothing visible and the row
+          looked unchanged. Named per the sprint (messaging.md wants the
+          number/name where there is one), with Try again re-firing the
+          same toggle. */}
+      {archive.isError && (
+        <div className="basis-full">
+          <InlineFailureNotice
+            testId="sprint-archive-error"
+            message={archiveFailureMessage(sprint.name, true, archive.error)}
+            dataState={dataStateOf(archive.error)}
+            onRetry={() => { archive.mutate({ id: sprint.id, archived: true }); }}
+          />
+        </div>
+      )}
+
       {confirmingDelete && (
         // SPR-40 / parity with `sprint delete`: a referenced sprint
         // offers a remap target (the tasks' `sprint` field is rewritten);
@@ -131,7 +152,7 @@ function SprintRow({ sprint, all }: {
           itemKey={sprint.name}
           count={count}
           alternatives={all
-            .filter(s => s.id !== sprint.id && s.archived !== true)
+            .filter(s => s.id !== sprint.id)
             .map(s => ({ key: s.id, label: s.name }))}
           pending={del.isPending}
           error={del.isError
@@ -180,16 +201,12 @@ function BrokenSprintRow({ entry, onRepair, repairing }: {
       <span aria-hidden="true" className="shrink-0 pt-0.5">⚠</span>
       <div className="min-w-0 flex-1">
         <span className="text-[0.9286rem] font-medium">{name}</span>
-        <span className="text-text-tertiary"> — couldn't be read</span>
-        <span className="ml-1 text-[0.8571rem] text-danger-fg/90">
-          ({entry.error})
-        </span>
         <p className="mt-0.5 text-[0.8571rem] text-text-secondary">
-          Fix this entry in{" "}
+          Couldn&apos;t be read ({entry.error}). Fix it in{" "}
           <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.7857rem]">
             .loctt/config/sprints.yaml
           </code>{" "}
-          and reload — LocTT will not rewrite it for you.
+          and reload.
         </p>
       </div>
       <Button
@@ -208,21 +225,9 @@ function BrokenSprintRow({ entry, onRepair, repairing }: {
 
 export function SprintsPanel() {
   const [creating, setCreating] = useState(false);
-  // K107: the tri-state archived scope replaces the old `showArchived`
-  // boolean. Default `active` (hide archived); the control reveals
-  // `archived`/`all`, and the server does the filtering.
-  const [scope, setScope] = useState<ArchivedScope>("active");
-
-  // K100 archived-row anchor. A deep link to an archived sprint
-  // (`#row-<id>`) targets a row the default `active` scope does not fetch,
-  // so `useScrollToHash` would find nothing. When a hash is present we
-  // widen the fetch to `all` so the anchor can resolve. Additive: only
-  // ever widens, and only while a hash is in play, so it never fights the
-  // user's own scope choice during ordinary browsing.
-  const hash = useRouterState({ select: s => s.location.hash });
-  const hashPresent = hash !== undefined && hash !== "" && hash.replace(/^#/, "") !== "";
-  const effectiveScope: ArchivedScope = hashPresent ? "all" : scope;
-  const sprints = useCountedSprints(effectiveScope);
+  // K121 #1: active sprints only. Archived ones are listed, restored and
+  // deleted in Settings → Archived, nowhere else.
+  const sprints = useCountedSprints();
 
   if (sprints.isError) {
     return (
@@ -247,8 +252,6 @@ export function SprintsPanel() {
   }
 
   const items = sprints.data.items as readonly CountedSprint[];
-  const activeItems = items.filter(s => s.archived !== true);
-  const archivedItems = items.filter(s => s.archived === true);
   // DEG-30 / A138: sprints present in sprints.yaml whose stored fields no
   // longer validate. Rendered in their own marked block rather than
   // hidden, so a hand edit that breaks one does not read as "deleted".
@@ -262,30 +265,15 @@ export function SprintsPanel() {
       <SettingsPanelHeader
         title="Sprints"
         actions={(
-          <>
-            {/* Ken's ruling, 2026-09-22 (decisions.md § 9): demoted behind
-                an icon reveal, not a permanently visible segmented
-                control — see ArchivedScopeReveal. */}
-            <ArchivedScopeReveal
-              testId="sprints-archived-scope"
-              panelLabel="sprints"
-              value={scope}
-              onChange={setScope}
-            />
-            <Button
-              variant="primary"
-              testId="sprint-create-open"
-              onClick={() => { setCreating(true); }}
-            >
-              New sprint
-            </Button>
-          </>
+          <Button
+            variant="primary"
+            testId="sprint-create-open"
+            onClick={() => { setCreating(true); }}
+          >
+            New sprint
+          </Button>
         )}
       />
-      <p className="mb-4 text-[0.9286rem] text-text-secondary">
-        Create, edit and delete sprints here, or open one for its burndown.
-      </p>
-
       {creating && (
         <SprintEditDialog
           mode="create"
@@ -298,22 +286,14 @@ export function SprintsPanel() {
             // A lone broken entry is NOT an empty list (DEG-30 / A138) —
             // its block renders below.
             <p data-testid="sprints-empty" data-sprints-state="empty" className="text-[0.9286rem] text-text-tertiary">
-              {scope === "archived" ? "No archived sprints." : "No sprints yet."}
+              No sprints yet.
             </p>
           )
-        : activeItems.length > 0 && (
+        : items.length > 0 && (
             <ul className="m-0 list-none p-0" data-testid="sprints-list">
-              {activeItems.map(s => <SprintRow key={s.id} sprint={s} all={items} />)}
+              {items.map(s => <SprintRow key={s.id} sprint={s} all={items} />)}
             </ul>
           )}
-
-      {archivedItems.length > 0 && (
-        <div className="mt-5">
-          <ul className="m-0 list-none p-0" data-testid="sprints-archived-list">
-            {archivedItems.map(s => <SprintRow key={s.id} sprint={s} all={items} />)}
-          </ul>
-        </div>
-      )}
 
       {broken.length > 0 && (
         <div className="mt-5">
@@ -321,8 +301,7 @@ export function SprintsPanel() {
             Broken
           </h2>
           <p className="mb-2 text-[0.8571rem] text-text-secondary">
-            These sprints are still in the file, but their stored fields no
-            longer validate. Fix them by hand in{" "}
+            These sprints have invalid fields. Fix them in{" "}
             <code className="rounded bg-bg-muted px-1 py-0.5 text-[0.8571rem]">
               .loctt/config/sprints.yaml
             </code>{" "}

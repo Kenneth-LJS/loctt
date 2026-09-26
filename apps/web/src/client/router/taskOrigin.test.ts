@@ -15,13 +15,13 @@ afterEach(() => {
 });
 
 describe("taskOrigin", () => {
-  // @verifies UI-12 (cold load — direct link, refresh, shared URL — has
+  // @verifies LST-5 (cold load — direct link, refresh, shared URL — has
   // no origin at all, not a guessed or default one)
   it("returns undefined when nothing was recorded (the cold-load case)", () => {
     expect(takeTaskOrigin()).toBeUndefined();
   });
 
-  // @verifies UI-12 (the back target carries the origin's search params,
+  // @verifies LST-5 (the back target carries the origin's search params,
   // not just its bare path)
   it("splits a recorded href into pathname, search and label", () => {
     recordTaskOrigin("/list?status=in_progress&page=2");
@@ -55,7 +55,7 @@ describe("taskOrigin", () => {
     expect(takeTaskOrigin()?.label).toBe("Back");
   });
 
-  // @verifies UI-12 (consumed once — a second, unrelated mount must not
+  // @verifies LST-5 (consumed once — a second, unrelated mount must not
   // inherit a stale origin from a previous navigation)
   it("clears the recorded origin once taken", () => {
     recordTaskOrigin("/list?status=done");

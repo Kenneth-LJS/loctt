@@ -13,8 +13,8 @@ import { createWebApp } from "./server.js";
  * `PUT /api/views/:ref` and `DELETE /api/views/:ref` are the only write
  * paths the web client has. Until this change both resolved a ref only
  * against the healthy catalog, so a broken entry answered
- * `400 unknown view: <ulid>` — which is why the dialog's "Replace…"
- * button, its confirmation checkbox and the broken row's "Delete…" were
+ * `400 unknown view: <ulid>` — which is why the dialog's "Replace"
+ * button, its confirmation checkbox and the broken row's "Delete" were
  * dead controls.
  *
  * Every assertion below lands on the FILE. VUE-42 shipped believing this

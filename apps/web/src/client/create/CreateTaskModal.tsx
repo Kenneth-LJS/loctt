@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-import { apiClient,ApiError, UnparseableBodyError } from "../api/client.ts";
+import { apiClient,ApiError, isUnknownOutcome, UnparseableBodyError } from "../api/client.ts";
 import {
   searchLabels,
   searchMilestones,
@@ -391,7 +391,7 @@ export function CreateTaskModal({
       // NEW-12: the toast names the key and title and offers "Open".
       // NEW-13: this is the confirmation for a task that does not match
       // the active filter, and the link is its escape hatch.
-      toasts.show(`Created ${created.key} — ${created.title}`, {
+      toasts.show(`Created ${created.key}: ${created.title}`, {
         label: "Open",
         onAct: () => { void navigate({ to: "/tasks/$key", params: { key: created.key } }); },
       });
@@ -805,9 +805,14 @@ interface CreateFailure {
  *  - **An envelope** (NEW-32/34/35/40): the server explained itself.
  *    Its message is used verbatim rather than reworded, because it
  *    names the milestone, the project or the field, and a generic
- *    rewrite would discard exactly that.
+ *    rewrite would discard exactly that. The exception is a timed-out
+ *    write (`data_state: "unknown"`): it may have landed, so it gets
+ *    K134's create line, "The task may not have been created. Check
+ *    the list before trying again.", not "Couldn't create the task".
+ *
+ * Exported for its unit test.
  */
-function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
+export function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
   // NEW-39: when a "Create another" sequence fails part-way, the user
   // must not re-enter work that already exists.
   const prefix = createdSoFar > 0
@@ -818,11 +823,18 @@ function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
     if (err.envelope === undefined) {
       if (err.status === 0) {
         return {
-          message: `${prefix}The task was not created — the server could not be reached. Your entries are kept; retry when it is back.`,
+          message: `${prefix}The task was not created. The server could not be reached. Your entries are kept. Retry when it is back.`,
         };
       }
       return {
-        message: `${prefix}The task may or may not have been created — the server's reply could not be read. Reload the list to check before retrying.`,
+        message: `${prefix}The task may not have been created. Check the list before trying again.`,
+      };
+    }
+    // A timed-out create may have landed. Retrying blind can make a
+    // duplicate, so the user checks the list first (K134).
+    if (isUnknownOutcome(err)) {
+      return {
+        message: `${prefix}The task may not have been created. Check the list before trying again.`,
       };
     }
     return {
@@ -842,9 +854,7 @@ function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
   // becomes two.
   if (err instanceof UnparseableBodyError) {
     return {
-      message: `${prefix}The task may or may not have been created — `
-        + `the server replied, but the reply could not be read. Reload `
-        + `the list to check before retrying.`,
+      message: `${prefix}The task may not have been created. Check the list before trying again.`,
     };
   }
   // A `fetch` that never reached the server rejects with a bare
@@ -858,7 +868,7 @@ function describeFailure(err: unknown, createdSoFar: number): CreateFailure {
   // claim is safe: a request that never left cannot have been applied.
   if (err instanceof TypeError) {
     return {
-      message: `${prefix}The task was not created — the server could not be reached. Your entries are kept; retry when it is back.`,
+      message: `${prefix}The task was not created. The server could not be reached. Your entries are kept. Retry when it is back.`,
     };
   }
   return {

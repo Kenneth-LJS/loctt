@@ -1819,7 +1819,7 @@ test.describe("TSK-43 / TSK-55 — immutable key, and a failed inline label", ()
     // Nothing in the More menu edits key or key_history. Copy key is
     // a read, Move rekeys via a project change (TSK-21) — neither is a
     // direct key edit.
-    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByRole("button", { name: "Task actions" }).click();
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
     const itemText = (await menu.getByRole("menuitem").allInnerTexts())
@@ -1888,7 +1888,7 @@ test.describe("TSK-43 / TSK-55 — immutable key, and a failed inline label", ()
     // labels and the create failed, so there must be *zero* pills —
     // not merely no pill whose text reads "phantomlabel". An
     // optimistically attached phantom renders as an unresolved pill
-    // ("unresolved — not in the current config") rather than the typed
+    // ("unresolved, not in the current config") rather than the typed
     // name, so a name-filtered count would miss it; the total count
     // will not.
     await expect(page.getByTestId("label-pill")).toHaveCount(0);

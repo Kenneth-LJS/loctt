@@ -145,7 +145,7 @@ function stableMessage(issue: z.ZodIssue): string {
       const hints = rawKeys
         .map(k => (typeof k === "string" ? REMOVED_FIELD_HINTS[k] : undefined))
         .filter((h): h is string => h !== undefined);
-      const hint = hints.length > 0 ? ` — ${hints.join(" ")}` : "";
+      const hint = hints.length > 0 ? `. ${hints.join(" ")}` : "";
       return keys.length > 0
         ? `has unrecognized key(s): ${keys}${hint}`
         : `has unrecognized keys`;

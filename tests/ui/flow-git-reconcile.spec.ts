@@ -581,8 +581,8 @@ test("GIT-10: disable states the branch survives, modifies no task files, and re
   await page.getByTestId("git-disable").click();
   const confirm = page.getByTestId("git-disable-confirm");
   await expect(confirm).toBeVisible();
-  // It states the branch and its history are left intact — not a delete.
-  await expect(confirm).toContainText("left intact");
+  // It states the branch and its history are kept — not a delete.
+  await expect(confirm).toContainText("branch and its history are kept");
   await expect(confirm).toContainText(/branch/i);
   await page.getByTestId("git-disable-confirm-button").click();
 

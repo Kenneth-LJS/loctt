@@ -32,6 +32,30 @@ function isSettledAnswer(error: unknown): boolean {
 }
 
 /**
+ * K115 item 2 (Ken's ruling): a timed-out read gets the message and
+ * Retry control the instant its own deadline expires, never a silent
+ * automatic second attempt. The one automatic retry doubled the wait —
+ * a 20s deadline plus a full second attempt reads to the user as ~40s
+ * of nothing before anything is shown — so this is checked ahead of,
+ * and separately from, `isSettledAnswer` in the `retry` callback below.
+ *
+ * Deliberately NOT folded into `isSettledAnswer` itself: that function
+ * also gates the background recovery poll (`refetchInterval`), and a
+ * timed-out query is exactly the kind of transient failure recovery
+ * polling exists for — the server may simply have been slow once. Only
+ * the automatic *retry* is what K115 asked to suppress; the poll is
+ * unaffected, so it keeps re-checking every 5s the way any other error
+ * does.
+ *
+ * A quick failure (a dropped connection, a 503) is untouched: `isTimeout`
+ * is only ever true when OUR deadline fired, never for a fast rejection,
+ * so those keep the one retry.
+ */
+function isTimedOut(error: unknown): boolean {
+  return error instanceof ApiError && error.isTimeout;
+}
+
+/**
  * The longest a displayed value may be wrong, in milliseconds.
  *
  * Exported so the surface can *state* the number rather than describe
@@ -142,6 +166,13 @@ export function createQueryClient(): QueryClient {
         // Retrying a permanent answer manufactured a perpetual
         // in-flight state out of a settled one.
         retry: (failureCount, error) => {
+          // K115 item 2: checked ahead of `isSettledAnswer` — a timeout
+          // is not a settled server answer, but it must not get the
+          // automatic retry either. See `isTimedOut`'s own docstring for
+          // why this is a separate check rather than folded into
+          // `isSettledAnswer` (that function also gates the recovery
+          // poll, which a timeout should NOT disable).
+          if (isTimedOut(error)) return false;
           if (isSettledAnswer(error)) return false;
           return failureCount < 1;
         },

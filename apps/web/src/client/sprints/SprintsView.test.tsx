@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SprintsView } from "./SprintsView.tsx";
@@ -149,7 +149,7 @@ describe("SprintsView — titled header (Ken 2026-09-20)", () => {
 describe("SprintsView — corrupt sprint-config entry (A138)", () => {
   it("surfaces a broken sprint entry, named and marked, alongside the healthy ones", async () => {
     BROKEN_SPRINTS = [
-      { id: "sp_bad", index: 1, rawText: "id: sp_bad\nend_date: 2026-01-01\nstart_date: 2026-06-01", error: "end_date must not be before start_date" },
+      { id: "sp_bad", index: 1, rawText: "id: sp_bad\nend_date: 2026-01-01\nstart_date: 2026-06-01", error: "End date is before the start date." },
     ];
     await renderView();
 
@@ -158,7 +158,7 @@ describe("SprintsView — corrupt sprint-config entry (A138)", () => {
     expect(notice.textContent).toContain("sp_bad");
     // Marked broken, and the validator's message shown.
     expect(notice.textContent).toContain("(broken)");
-    expect(notice.textContent).toContain("end_date must not be before start_date");
+    expect(notice.textContent).toContain("End date is before the start date.");
     // The healthy sprint still renders its column — one bad entry never
     // blanks the surface.
     expect(await screen.findByTestId("sprint-column-sp_12")).toBeTruthy();
@@ -243,8 +243,10 @@ describe("SprintsView — SPR-39 at-a-glance data on the overview card", () => {
     expect(readout.textContent).not.toContain("NaN");
   });
 
+  // K131 (Ken: "remove the countdown"). The card carries no countdown
+  // to the end date, open or past: the date range is already on it.
   // @verifies SPR-39
-  it("shows days-remaining while the window is open and overdue once its end has passed", async () => {
+  it("shows no countdown on a sprint card, whether its end date is ahead or past", async () => {
     // info.today is stubbed to 2026-06-08 in routeFetch.
     SPRINTS = [
       { id: "sp_open", name: "Open", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
@@ -252,12 +254,30 @@ describe("SprintsView — SPR-39 at-a-glance data on the overview card", () => {
     ];
     await renderView();
 
-    // 2026-06-08 → 2026-06-14 is 6 days out.
-    const open = await screen.findByTestId("sprint-countdown-sp_open");
-    expect(open.textContent).toMatch(/6 days/);
-    // 2026-05-14 is in the past → overdue wording.
-    const past = await screen.findByTestId("sprint-countdown-sp_past");
-    expect(past.textContent).toMatch(/overdue/i);
+    for (const id of ["sp_open", "sp_past"]) {
+      const card = await screen.findByTestId(`sprint-card-${id}`);
+      // Expanded, so the at-a-glance data would render if it were there.
+      expect(screen.getByTestId(`sprint-toggle-${id}`).getAttribute("aria-expanded")).toBe("true");
+      expect(card.textContent).not.toMatch(/days? left|overdue|ends today/i);
+    }
+  });
+
+  // B23 (K130, P11): Ken, "we're not babysitting policy". An active
+  // sprint whose dates do not include today is shown like any other
+  // active sprint: no hint about its state.
+  // @verifies SPR-20
+  it("shows no state hint on an active sprint whose dates have passed", async () => {
+    SPRINTS = [
+      { id: "sp_past", name: "Past", start_date: "2026-05-01", end_date: "2026-05-14", state: "active" },
+    ];
+    await renderView();
+    const column = await screen.findByTestId("sprint-column-sp_past");
+    // Expanded, so a hint would render if there were one.
+    await screen.findByTestId("sprint-card-sp_past");
+    expect(screen.getByTestId("sprint-toggle-sp_past").getAttribute("aria-expanded")).toBe("true");
+    expect(column.getAttribute("data-active")).toBe("true");
+    expect(screen.queryByTestId("sprint-window-hint-sp_past")).toBeNull();
+    expect(column.textContent).not.toMatch(/still marked|do not include today|does not change sprint state/i);
   });
 
   // @verifies SPR-39
@@ -274,29 +294,19 @@ describe("SprintsView — SPR-39 at-a-glance data on the overview card", () => {
   });
 });
 
-describe("SprintsView — SPR-40 overview affordances (show archived + create in place)", () => {
-  // @verifies SPR-40
-  it("hides archived sprints by default and reveals them behind a show-archived toggle", async () => {
+describe("SprintsView — SPR-40 overview affordances (create in place, no archived reveal)", () => {
+  // @verifies SPR-1 SET-52
+  it("never shows an archived sprint and offers no way to reveal one (K121 #1)", async () => {
     SPRINTS = [
       { id: "sp_live", name: "Live", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
       { id: "sp_old", name: "Old", start_date: "2025-01-01", end_date: "2025-01-14", state: "completed", archived: true },
     ];
     await renderView();
-
-    // The archived one is absent until the toggle is enabled.
     expect(await screen.findByTestId("sprint-column-sp_live")).toBeTruthy();
-    await waitFor(() => {
-      expect(screen.queryByTestId("sprint-column-sp_old")).toBeNull();
-    });
-
-    const toggle = await screen.findByTestId("sprints-show-archived");
-    // The label names the affordance and its count.
-    expect(toggle.closest("label")?.textContent).toContain("Show archived");
-    (toggle as HTMLInputElement).click();
-
-    await waitFor(() => {
-      expect(screen.queryByTestId("sprint-column-sp_old")).not.toBeNull();
-    });
+    expect(screen.queryByTestId("sprint-column-sp_old")).toBeNull();
+    // No toggle, no checkbox, nothing that says "archived" on the page.
+    expect(screen.queryByTestId("sprints-show-archived")).toBeNull();
+    expect(screen.getByTestId("sprints-header").textContent ?? "").not.toMatch(/archived/i);
   });
 
   // @verifies SPR-40
@@ -316,16 +326,6 @@ describe("SprintsView — SPR-40 overview affordances (show archived + create in
     expect(await screen.findByTestId("sprint-create-dialog")).toBeTruthy();
     // No manage-in-settings affordance on this page anymore:
     expect(screen.queryByTestId("sprints-manage-link")).toBeNull();
-  });
-
-  // @verifies SPR-40
-  it("shows no show-archived toggle when nothing is archived", async () => {
-    SPRINTS = [
-      { id: "sp_live", name: "Live", start_date: "2026-06-01", end_date: "2026-06-14", state: "active" },
-    ];
-    await renderView();
-    await screen.findByTestId("sprint-column-sp_live");
-    expect(screen.queryByTestId("sprints-show-archived")).toBeNull();
   });
 });
 
@@ -357,5 +357,117 @@ describe("SprintsView — corrupt task on a sprint card", () => {
     // vanished, and the view did not crash.
     expect(await screen.findByTestId("board-card-WEB-1")).toBeTruthy();
     expect(await screen.findByTestId("board-card-WEB-2")).toBeTruthy();
+  });
+});
+
+/**
+ * The sprints view's loading state (coverage gap, 2026-09-23).
+ *
+ * `sprint-skeleton` shipped with ZERO assertions. Proven by the
+ * coverage-rot check: deleting the whole `loading ?` branch in
+ * SprintsView left this file green.
+ *
+ * Same class of defect as BRD-39 on the board and ONB-12 on the list —
+ * during the initial load a column that really has cards briefly renders
+ * its SPR-15 empty placeholder ("No tasks in Sprint 12"), which reads as
+ * a sprint that lost its work. The load-bearing assertion is therefore
+ * the ABSENCE of `sprint-placeholder-*` while the fetch is in flight,
+ * not the presence of a skeleton element.
+ *
+ * Driven the way ListView.test.tsx:879 drives its ONB-12 sibling: a
+ * never-settling `/api/tasks`, every other route resolving normally.
+ */
+describe("SprintsView — loading state (BRD-39 sibling, SPR-15)", () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  function stubSprintTasks(tasksResult: () => Promise<Response>) {
+    const current = globalThis.fetch as typeof globalThis.fetch & { mockRestore?: () => void };
+    current.mockRestore?.();
+    vi.spyOn(globalThis, "fetch").mockImplementation(((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      if (path.startsWith("/api/tasks")) return tasksResult();
+      return Promise.resolve(
+        new Response(JSON.stringify(routeFetch(path)), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }) as typeof fetch);
+  }
+
+  /** Scoped to its own container: a never-settling query cannot be awaited to quiescence. */
+  function mountRaw() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const rootRoute = createRootRoute();
+    const sprintsRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/sprints",
+      component: () => <SprintsView />,
+    });
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([sprintsRoute]),
+      history: createMemoryHistory({ initialEntries: ["/sprints"] }),
+    });
+    return render(
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("renders sprint-column skeletons while the initial task fetch is in flight", async () => {
+    stubSprintTasks(() => new Promise<Response>(() => { /* never settles */ }));
+    const { container } = mountRaw();
+    const view = within(container);
+
+    expect((await view.findAllByTestId("sprint-skeleton")).length).toBeGreaterThan(0);
+  });
+
+  it("does not show the SPR-15 empty placeholder while the initial fetch is in flight", async () => {
+    // The tracker really has an unassigned task; it just has not arrived
+    // yet. Falling through to the empty branch would read "No unassigned
+    // tasks" on a column that has one.
+    //
+    // Note on WHICH column this asserts: while `/api/tasks` is in flight
+    // `/api/sprints` has not landed either, so the only column mounted is
+    // the always-present `__no_sprint__` one (probed: the rendered
+    // `data-column-id` list is exactly `["__no_sprint__"]`). A `sp_12`
+    // assertion here would be VACUOUS — that column does not exist yet,
+    // so it could never fail. Assert against the column that is really
+    // on screen, which is what the user actually sees flash.
+    TASKS = [{ id: "t_1", key: "WEB-1", title: "Real task" }];
+    stubSprintTasks(() => new Promise<Response>(() => { /* never settles */ }));
+    const { container } = mountRaw();
+    const view = within(container);
+
+    await view.findAllByTestId("sprint-skeleton");
+    // Guard the precondition explicitly: if the loading column ever stops
+    // being `__no_sprint__`, this test must fail loudly rather than
+    // silently assert about an element that cannot exist.
+    expect(
+      Array.from(container.querySelectorAll("[data-column-id]"))
+        .map(e => e.getAttribute("data-column-id")),
+    ).toContain("__no_sprint__");
+    expect(view.queryByTestId("sprint-placeholder-__no_sprint__")).toBeNull();
+    expect(view.queryByText(/No unassigned tasks/i)).toBeNull();
+    expect(view.queryByText(/No tasks in/i)).toBeNull();
+  });
+
+  it("replaces the skeletons with real cards once the tasks arrive", async () => {
+    TASKS = [{ id: "t_1", key: "WEB-1", title: "Real task", sprint: "sp_12" }];
+    let release!: (r: Response) => void;
+    stubSprintTasks(() => new Promise<Response>(resolve => { release = resolve; }));
+    const { container } = mountRaw();
+    const view = within(container);
+
+    await view.findAllByTestId("sprint-skeleton");
+    release(new Response(JSON.stringify(routeFetch("/api/tasks")), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    expect(await view.findByTestId("board-card-WEB-1")).toBeTruthy();
+    await waitFor(() => { expect(view.queryAllByTestId("sprint-skeleton")).toHaveLength(0); });
   });
 });

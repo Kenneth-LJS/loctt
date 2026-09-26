@@ -1,5 +1,7 @@
 import { type ReactNode, useState } from "react";
 
+import { Icon } from "../ui/Icon.tsx";
+
 /**
  * A drag-reorderable list of rows (SET-6, SET-21, SET-34).
  *
@@ -117,9 +119,11 @@ export function ReorderableRows<T>({
                 if (e.key === "ArrowUp") { e.preventDefault(); move(i, i - 1, "keyboard"); }
                 if (e.key === "ArrowDown") { e.preventDefault(); move(i, i + 1, "keyboard"); }
               }}
-              className="shrink-0 cursor-grab px-1 text-[0.8571rem] text-text-tertiary disabled:cursor-not-allowed"
+              // B4: a 24px pointer target (WCAG 2.5.8); it measured 15×17px.
+              // A208: the handle is a drawn icon, not the braille "⠿".
+              className="inline-flex min-h-[24px] min-w-[24px] shrink-0 cursor-grab items-center justify-center rounded text-text-tertiary disabled:cursor-not-allowed"
             >
-              ⠿
+              <Icon name="drag" size={14} />
             </button>
             <div className="min-w-0 flex-1">{children(item, i)}</div>
           </li>

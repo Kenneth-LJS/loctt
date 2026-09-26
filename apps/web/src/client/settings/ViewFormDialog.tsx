@@ -1,4 +1,12 @@
-import type { ComparisonOp, EntityColor, Filter, SavedQuery } from "@loctt/contracts";
+import {
+  type ComparisonOp,
+  type EntityColor,
+  type Filter,
+  isViewNameTaken,
+  type SavedQuery,
+  VIEW_NAME_TAKEN_MESSAGE,
+  viewNameKey,
+} from "@loctt/contracts";
 import { useMemo, useState } from "react";
 
 import {
@@ -7,13 +15,14 @@ import {
   useProjects,
   useSprints,
   useUsers,
+  useViews,
 } from "../api/hooks/sidebarData.ts";
 import { useCreateView } from "../api/hooks/useCreateView.ts";
 import { useEditView } from "../api/hooks/useEditView.ts";
 import { useValidateQuery } from "../api/hooks/useValidateQuery.ts";
 import { useWorkflow } from "../api/hooks/useWorkflow.ts";
 import { buildFacetOptions } from "../list/facetOptions.ts";
-import { FilterDropdown } from "../list/FilterDropdown.tsx";
+import { FilterFacet } from "../list/FilterFacet.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Callout } from "../ui/Callout.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
@@ -23,10 +32,10 @@ import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { IconColorFields } from "../ui/IconColorFields.tsx";
 import { IconGlyph } from "../ui/IconEmojiPicker.tsx";
-import { ThemePreview } from "../ui/ThemePreview.tsx";
 import { ResponsiveDialog } from "../ui/ResponsiveDialog.tsx";
 import { TextArea } from "../ui/TextArea.tsx";
 import { TextField } from "../ui/TextField.tsx";
+import { ThemePreview } from "../ui/ThemePreview.tsx";
 import {
   buildViewFilterFields,
   findField,
@@ -81,9 +90,9 @@ import {
  * Ken's ruling, 2026-09-22 ("archiving is a one-way door, not a filter",
  * decisions.md § 9): "a view filtering on archived encodes the wrong
  * model." This dialog used to expose the view's `archivedScope` field
- * through the shared `ArchivedScopeControl` as an "Include
- * [Active|Archived|All]" row (K107 + K102) — Ken screenshotted exactly
- * this control and ruled it out.
+ * as an "Include [Active|Archived|All]" row (K107 + K102) — Ken
+ * screenshotted exactly this control and ruled it out, and K121 #1 later
+ * removed archived items from every browsing surface.
  *
  * The dialog now never reads or writes `archivedScope`: `submit()` omits
  * the field entirely from every request. Core's merge (`editView`) keeps
@@ -216,6 +225,10 @@ export function ViewFormDialog({
     return seed.length > 0 ? seed.map(f => row(f)) : [emptySimpleRow()];
   });
 
+  // B21 (K129): a name another view has is refused before any request.
+  // Core refuses it too, for when this list is stale.
+  const [nameTaken, setNameTaken] = useState(false);
+  const views = useViews();
   const create = useCreateView();
   const edit = useEditView();
   const pending = create.isPending || edit.isPending;
@@ -290,6 +303,15 @@ export function ViewFormDialog({
 
   const submit = (): void => {
     if (disabled) return;
+    // Same rule as core's: keeping the view's own name (or changing only
+    // its case or spacing) is not a clash, so an edit to one of two views
+    // that already share a name still saves.
+    const renamed = existing === undefined || viewNameKey(name) !== viewNameKey(existing.name);
+    const onDisk = [...(views.data?.queries ?? []), ...(views.data?.broken ?? [])];
+    if (renamed && isViewNameTaken(name, onDisk, existing?.id)) {
+      setNameTaken(true);
+      return;
+    }
     // Ken's ruling, 2026-09-22: `archivedScope` is deliberately NOT sent.
     // On create, core applies its own default (`active`). On edit,
     // omitting it makes `editView` keep whatever the view already has —
@@ -398,7 +420,7 @@ export function ViewFormDialog({
             data-testid="view-form-name"
             autoFocus
             value={name}
-            onChange={e => { setName(e.target.value); }}
+            onChange={e => { setName(e.target.value); setNameTaken(false); }}
             placeholder="e.g. My open bugs"
           />
         </label>
@@ -455,13 +477,10 @@ export function ViewFormDialog({
           <span className="text-[0.9286rem] font-medium text-text-secondary">
             Filters
           </span>
-          <p className="m-0 text-[0.8571rem] text-text-tertiary">
-            A task must match every filter below.
-          </p>
 
           {rows.length === 0 ? (
             <p data-testid="view-no-filters" className="m-0 text-[0.8571rem] text-text-tertiary">
-              No filters — this view will show every task in its scope.
+              No filters. This view shows every task in its scope.
             </p>
           ) : (
             rows.map((r, i) => (
@@ -533,14 +552,19 @@ export function ViewFormDialog({
               onChange={e => { setConfirmReplace(e.target.checked); }}
             />
             <span>
-              Replace the original text above with the filters I have built
-              here. The text on disk will be discarded and cannot be
-              recovered by LocTT.
+              Replace the text above with these filters. This can&apos;t be
+              undone.
             </span>
           </label>
         )}
 
-        {failure !== undefined && failure !== null && (
+        {nameTaken && (
+          <Callout tone="danger" role="alert" testId="view-form-name-taken">
+            {VIEW_NAME_TAKEN_MESSAGE}
+          </Callout>
+        )}
+
+        {!nameTaken && failure !== undefined && failure !== null && (
           <Callout tone="danger" role="alert" testId="view-form-error">
             <span>
               {failure instanceof Error ? failure.message : "The view could not be saved."}
@@ -574,7 +598,7 @@ function isComplete(f: Filter): boolean {
 /**
  * One `{kind:"simple"}` filter as three controls: field, operator, value.
  *
- * The value control is the SAME `FilterDropdown` the top filter bar
+ * The value control is the SAME `FilterFacet` the top filter bar
  * renders, fed the same options — Ken's *"the dumb filters will go back
  * to rendering with the dumb filters in the UI"*. A field with no closed
  * value set (title, free text) falls back to a text input, since there
@@ -656,7 +680,7 @@ function SimpleRow({
 
       {needsValue && (
         def?.options !== undefined ? (
-          <FilterDropdown
+          <FilterFacet
             label={valueLabel}
             options={def.options}
             selected={filter.values}

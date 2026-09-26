@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import type { WorkflowConfig } from "@loctt/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { WORKFLOW_SAVE_KEY } from "../api/hooks/useWorkflowMutations.ts";
 import { pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { CustomFieldsPanel } from "./CustomFieldsPanel.tsx";
 import { EnumCollectionPanel } from "./EnumCollectionPanel.tsx";
@@ -140,20 +141,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   document.body.innerHTML = "";
-});
-
-describe("WorkflowPanelFrame — config path (SET-3)", () => {
-  /** @verifies SET-3 — the panel names the file it reflects. This had
-   * regressed to a vague "changes appear after you refresh" line that
-   * dropped the path entirely; the frame now shows the usage path. */
-  it("shows the config file path the panel reflects", async () => {
-    mockWorkflow();
-    render(<EnumCollectionPanel collection="statuses" />, { wrapper: wrapper() });
-    const foot = await screen.findByTestId("workflow-config-path");
-    expect(foot.textContent).toContain("/abs/.loctt/config/workflow.yaml");
-    // The old vague copy is gone.
-    expect(foot.textContent).not.toMatch(/after you refresh/i);
-  });
 });
 
 describe("EnumCollectionPanel — statuses (SET-46)", () => {
@@ -504,7 +491,7 @@ describe("CustomFieldsPanel — CRUD (SET-49, SET-16)", () => {
     expect(within(dialog).getByTestId("custom-field-dialog-multi")).toHaveProperty("disabled", true);
     // …and it states why.
     const lock = within(dialog).getByTestId("custom-field-dialog-type-lock");
-    expect(lock.textContent).toMatch(/stored under this type|fixed after creation/i);
+    expect(lock.textContent).toMatch(/can.t be changed after creation/i);
     // Label stays editable — the lock reads as targeted.
     expect(within(dialog).getByTestId("custom-field-dialog-label")).not.toHaveProperty("disabled", true);
   });
@@ -758,5 +745,110 @@ describe("Part C1 — custom-field task_types scope (create + edit)", () => {
     const put = putBodies[0] as { workflow: WorkflowConfig };
     const edited = put.workflow.custom_fields.find(f => f.key === "story_points");
     expect(edited?.task_types).toEqual(["task"]);
+  });
+});
+
+/**
+ * @verifies A329 (B7)
+ *
+ * The audit found three create patterns across Settings: header primary
+ * "New X", body-top secondary "+ Add X", and below-list "+ Add row". This
+ * turns on the chosen pattern for the three Workflow panels sharing
+ * `WorkflowPanelFrame`: the create control now lives in the panel HEADER
+ * (via `SettingsPanelHeader`'s actions slot), reads "New {noun}" with no
+ * "+" prefix, and is `variant="primary" size="sm"` — not the old
+ * below-title "+ Add {noun}" secondary button.
+ *
+ * Red-proof: revert `WorkflowPanelFrame` to a bare `<h1>` with no
+ * `actions` prop (or drop the `actions` prop from any of the three
+ * panels) and "puts the create button in the header row next to the
+ * title" goes red — the button is no longer inside the `<header>`
+ * `SettingsPanelHeader` renders. Reverting a panel's own button back to
+ * `variant="secondary"` with a "+ Add …" label makes the label/variant
+ * assertions in the same test go red.
+ */
+describe("Workflow panels — one create pattern, in the header (A329/B7)", () => {
+  it.each([
+    { name: "CustomFieldsPanel", Panel: CustomFieldsPanel, testId: "custom-fields-create", label: "New custom field" },
+    { name: "RelationshipsSettingsPanel", Panel: RelationshipsSettingsPanel, testId: "relationships-create", label: "New relationship" },
+  ])("$name: the create button sits in the header, reads \"$label\", primary/sm, no +", async ({ Panel, testId, label }) => {
+    mockWorkflow();
+    render(<Panel />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    const createBtn = await screen.findByTestId(testId);
+    const header = title.closest("header");
+    expect(header).not.toBeNull();
+    expect(header?.contains(createBtn)).toBe(true);
+
+    expect(createBtn.textContent?.trim()).toBe(label);
+    expect(createBtn.textContent).not.toContain("+");
+    // primary + sm classes, per BUTTON_VARIANT/BUTTON_SIZE.
+    expect(createBtn.className).toContain("bg-accent");
+    expect(createBtn.className).toContain("h-7");
+  });
+
+  it.each([
+    { collection: "statuses" as const, testId: "statuses-create", label: "New status" },
+    { collection: "priorities" as const, testId: "priorities-create", label: "New priority" },
+    { collection: "task_types" as const, testId: "task_types-create", label: "New task type" },
+  ])("EnumCollectionPanel ($collection): the create button sits in the header, reads \"$label\"", async ({ collection, testId, label }) => {
+    mockWorkflow();
+    render(<EnumCollectionPanel collection={collection} />, { wrapper: wrapper() });
+
+    const title = await screen.findByTestId("settings-panel-title");
+    const createBtn = await screen.findByTestId(testId);
+    const header = title.closest("header");
+    expect(header).not.toBeNull();
+    expect(header?.contains(createBtn)).toBe(true);
+    expect(createBtn.textContent?.trim()).toBe(label);
+    expect(createBtn.textContent).not.toContain("+");
+  });
+
+  it("CustomFieldsPanel: the empty-state sentence names the new header button, not the old \"+ Add custom field\"", async () => {
+    mockWorkflow({ workflow: { ...WORKFLOW, custom_fields: [] } });
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+
+    const empty = await screen.findByTestId("custom-fields-empty");
+    expect(empty.textContent).toContain("New custom field");
+    expect(empty.textContent).not.toContain("+ Add custom field");
+  });
+
+  it("CustomFieldsPanel: the header button still opens the create dialog and PUTs on submit", async () => {
+    const { putBodies } = mockWorkflow();
+    render(<CustomFieldsPanel />, { wrapper: wrapper() });
+    await screen.findByTestId("custom-fields-list");
+
+    fireEvent.click(screen.getByTestId("custom-fields-create"));
+    const dialog = await screen.findByTestId("custom-field-dialog");
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-key"), { target: { value: "eta" } });
+    fireEvent.change(within(dialog).getByTestId("custom-field-dialog-label"), { target: { value: "ETA" } });
+    fireEvent.click(within(dialog).getByTestId("custom-field-save"));
+
+    await waitFor(() => { expect(putBodies.length).toBe(1); });
+  });
+});
+
+describe("Workflow panels — the header's New button waits for a running save (A329)", () => {
+  // The create button moved into the header, above the component that owns
+  // the save mutation, so it lost `disabled={save.isPending}`. It now reads
+  // "a workflow save is in flight" through the mutation key.
+  it.each([
+    { name: "CustomFieldsPanel", render: () => <CustomFieldsPanel />, testId: "custom-fields-create" },
+    { name: "RelationshipsSettingsPanel", render: () => <RelationshipsSettingsPanel />, testId: "relationships-create" },
+    { name: "EnumCollectionPanel", render: () => <EnumCollectionPanel collection="statuses" />, testId: "statuses-create" },
+  ])("$name: disabled while a workflow save is pending", async ({ render: panel, testId }) => {
+    mockWorkflow();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={qc}>{panel()}</QueryClientProvider>);
+    const btn = await screen.findByTestId<HTMLButtonElement>(testId);
+    expect(btn.disabled).toBe(false);
+
+    act(() => {
+      void qc.getMutationCache()
+        .build(qc, { mutationKey: WORKFLOW_SAVE_KEY, mutationFn: () => new Promise<never>(() => {}) })
+        .execute(undefined);
+    });
+    await waitFor(() => { expect(btn.disabled).toBe(true); });
   });
 });

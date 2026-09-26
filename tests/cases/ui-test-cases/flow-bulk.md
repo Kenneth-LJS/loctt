@@ -134,20 +134,25 @@ confirm.** Select 6 tasks and choose Archive.
   the pagination total drops by 6.
 - An Undo affordance is offered in the success message and restores all
   6 when used.
-- Toggling "Show archived" reveals the 6 with an archived badge.
+- The 6 are listed in Settings → Archived → Tasks.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "Toggling Show archived reveals the 6 with an archived badge". There is no such toggle; archived tasks are seen only in Settings → Archived.
 
 ### BLK-11 · M1 · blocker · P5
 **Bulk Delete demands a typed confirmation scaled to the blast radius.**
 Select 12 tasks and choose Delete.
 - A modal opens naming the count and the irreversibility in plain words
-  ("Permanently delete 12 tasks. This cannot be undone.").
+  ("Deleting 12 tasks is irreversible. Continue?").
 - The modal requires typing an exact confirmation string; the delete
   button stays disabled until it matches.
 - Initial focus is on the text input or Cancel — never on the delete
   button.
 - `Esc` and Cancel both close the modal with nothing deleted.
-- The modal states that delete is distinct from archive and offers
-  archive as the reversible alternative.
+
+Amended (K129, Ken 2026-09-24): the modal no longer states that delete
+is distinct from archive or offers archive as the reversible
+alternative. Ken: *"Deleting is irreversible. Continue? im sure the
+archive is somewhere the user can see first, so they should know."*
 
 ### BLK-12 · M1 · blocker · P5 P9
 **Confirmed bulk delete removes the tasks and reports honestly.**
@@ -275,13 +280,15 @@ move all to `OPS`.
 
 ### BLK-27 · M1 · major · P9
 **Bulk archive of tasks that are already archived is a no-op, reported
-as such.** With "Show archived" on, select 3 archived and 3 active
-tasks, choose Archive.
+as such.** Select 6 tasks, archive 3 of them from the CLI while they
+stay selected, then choose Archive.
 - The 3 active tasks are archived.
 - The 3 already-archived tasks are reported as unchanged, not as errors
   and not as newly archived.
 - The message distinguishes the two groups ("3 archived · 3 already
   archived").
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* The setup was "With Show archived on, select 3 archived and 3 active tasks". The list no longer shows archived tasks, so the already-archived ones reach the selection by being archived elsewhere after they were selected.
 
 ### BLK-28 · M1 · major · P7
 **Bulk assigning an archived user is refused before the write.** Reach

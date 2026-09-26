@@ -158,12 +158,23 @@ function mergeIconColor(
  */
 const ENTITY_KEY_RE = /^[a-z][a-z0-9_-]*$/;
 
+/**
+ * Capitalizes a sentence-leading entity noun ("status", "priority",
+ * "task_type", "relationship", "custom_field") for a message. Every
+ * call site passes one of these five literal words, never user input,
+ * so this is a formatting fix to a small fixed set, not a risk of
+ * mangling arbitrary text.
+ */
+function capitalizeEntity(entity: string): string {
+  return entity.charAt(0).toUpperCase() + entity.slice(1);
+}
+
 /** Refuses a malformed entity key (charset). Create-time only. */
 function assertValidEntityKey(key: string, entity: string): void {
   if (!ENTITY_KEY_RE.test(key)) {
     throw new WorkflowEntityError(
-      `${entity} key '${key}' is not valid; use lowercase letters, digits, `
-      + `'_' or '-', starting with a letter`,
+      `${capitalizeEntity(entity)} key '${key}' is not valid. Use lowercase letters, digits, `
+      + `'_' or '-', starting with a letter.`,
       { field: "key" },
     );
   }
@@ -182,7 +193,7 @@ function assertKeyFree(
 ): void {
   assertValidEntityKey(key, entity);
   if (existing.some(e => e.key === key)) {
-    throw new WorkflowEntityError(`${entity} key '${key}' already exists`);
+    throw new WorkflowEntityError(`${capitalizeEntity(entity)} key '${key}' already exists.`);
   }
 }
 
@@ -193,7 +204,7 @@ function requireByKey<T extends { key: string }>(
   entity: string,
 ): T {
   const found = list.find(e => e.key === key);
-  if (!found) throw new WorkflowEntityError(`unknown ${entity}: ${key}`);
+  if (!found) throw new WorkflowEntityError(`Unknown ${entity}: ${key}`);
   return found;
 }
 
@@ -211,18 +222,18 @@ function reorderByKeys<T extends { key: string }>(
   const byKey = new Map(list.map(e => [e.key, e]));
   if (orderedKeys.length !== list.length) {
     throw new WorkflowEntityError(
-      `${entity} reorder must list every key exactly once (expected ${list.length}, got ${orderedKeys.length})`,
+      `${capitalizeEntity(entity)} reorder must list every key exactly once (expected ${list.length}, got ${orderedKeys.length}).`,
     );
   }
   const seen = new Set<string>();
   const out: T[] = [];
   for (const key of orderedKeys) {
     if (seen.has(key)) {
-      throw new WorkflowEntityError(`${entity} reorder repeats key '${key}'`);
+      throw new WorkflowEntityError(`${capitalizeEntity(entity)} reorder repeats key '${key}'.`);
     }
     const entry = byKey.get(key);
     if (!entry) {
-      throw new WorkflowEntityError(`${entity} reorder names unknown key '${key}'`);
+      throw new WorkflowEntityError(`${capitalizeEntity(entity)} reorder names unknown key '${key}'.`);
     }
     seen.add(key);
     out.push(entry);
@@ -250,17 +261,17 @@ function resolveDeleteRemap(
   if (remapTo === undefined) {
     if (inUse.has(key)) {
       throw new WorkflowEntityError(
-        `${entity} '${key}' is in use; provide a remap target (or clear) to delete it`,
+        `${capitalizeEntity(entity)} '${key}' is in use. Provide a remap target (or clear) to delete it.`,
       );
     }
     return undefined; // unused — no remap needed
   }
   if (remapTo === key) {
-    throw new WorkflowEntityError(`${entity} remap target must differ from '${key}'`);
+    throw new WorkflowEntityError(`${capitalizeEntity(entity)} remap target must differ from '${key}'.`);
   }
   if (remapTo !== null && !survivingKeys.has(remapTo)) {
     throw new WorkflowEntityError(
-      `${entity} remap target '${remapTo}' is not a surviving ${entity} key`,
+      `${capitalizeEntity(entity)} remap target '${remapTo}' is not a surviving ${entity} key.`,
     );
   }
   return { [key]: remapTo };
@@ -747,7 +758,7 @@ export interface AddFieldValueInput extends IconColorInput {
 function requireEnumField(prev: WorkflowConfig, fieldKey: string): CustomFieldDef {
   const field = requireByKey(prev.custom_fields, fieldKey, "custom_field");
   if (field.type !== "enum") {
-    throw new WorkflowEntityError(`custom_field '${fieldKey}' is not an enum; it has no values`);
+    throw new WorkflowEntityError(`The custom field '${fieldKey}' is not an enum. It has no values.`);
   }
   return field;
 }
@@ -986,7 +997,7 @@ export async function editEstimationConfig(
     const unit = changes.unit ?? existing?.unit;
     if (enabled === undefined || unit === undefined) {
       throw new WorkflowEntityError(
-        `estimation is not configured; an edit must set at least 'enabled' and 'unit'`,
+        `Estimation is not configured. An edit must set at least 'enabled' and 'unit'.`,
       );
     }
     const clearOrKeep = <T>(change: T | null | undefined, current: T | undefined): T | undefined =>

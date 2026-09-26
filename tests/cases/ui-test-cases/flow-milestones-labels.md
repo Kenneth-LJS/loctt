@@ -156,16 +156,22 @@ is testing the wrong thing.
 - The milestone still shows a working progress bar.
 - It sorts into a defined position (e.g. after all dated milestones) rather than randomly among them.
 
-### MSL-17 · M4 · major · P6 P3
-**A milestone whose target date has passed with tasks incomplete is flagged.**
-- The row carries an overdue indication that does not rely on colour alone.
-- The indication is driven by incomplete tasks existing (category not `completed`/`discarded`), not by the date alone — a fully-completed past milestone is not flagged as overdue.
-- The progress numbers are unchanged by the overdue state; the flag is additive information.
+### MSL-17 · M4 · major · P6 P3 P11
+**No overdue indication.**
+
+> **Amended (K132, Ken 2026-09-26).** Milestones show no countdown and no
+> Overdue badge. Ken, on the countdown: *"yes remove too"*; on the badge
+> he chose "Remove the badge too". This case's whole original claim — a
+> milestone whose target date has passed with tasks incomplete is
+> flagged — is gone: there is no overdue indication.
+- A milestone whose target date has passed with tasks still incomplete carries no overdue indication of any kind — no badge, no colour cue, no attribute.
+- This holds regardless of how incomplete the milestone is, or whether the date has passed by a little or a lot.
+- The progress numbers themselves are unaffected — there was never anything for their display to change here.
 
 ### MSL-18 · M4 · minor · P6
 **A milestone at 100% shows a full bar and a completion state.**
 - The bar reads full and the readout shows `n / n`.
-- A past target date on a 100% milestone is presented as completed, not overdue (see MSL-17).
+- A past target date on a 100% milestone is presented as completed. (MSL-17's overdue concept no longer exists at all, per K132 — see MSL-17.)
 
 ### MSL-19 · M1 · major · P9
 **A tracker with 40 labels keeps the label picker and filter usable.**
@@ -207,7 +213,9 @@ is testing the wrong thing.
 **An archived milestone still resolves on tasks and by URL.**
 - Its detail route remains reachable and its task list still renders.
 - It is excluded from the default Milestones view and from pickers.
-- A "show archived" affordance reveals it in the view without unarchiving it.
+- The Milestones view offers no way to reveal it. It is listed in Settings → Archived → Milestones.
+
+> **Amended (K121 #1, Ken 2026-09-23).** Ken: *"i think i want to not allow viewing archived stuff. thats the point of archiving."* … *"remove everywhere. i dont even want a debug switch."* Was "A show archived affordance reveals it in the view without unarchiving it".
 
 ### MSL-26 · M1 · minor · P9 P3
 **A very long label name does not break the pill.**
@@ -287,9 +295,16 @@ is testing the wrong thing.
 **A milestone card is fully clickable → detail.**
 - The whole card (not only a sub-target) opens the milestone. (K-9(a).)
 
-### MSL-40 · M4 · minor · P8
-**Each milestone card shows target date + countdown/overdue.**
-- A dated milestone shows days-remaining or an overdue marker; an undated one degrades cleanly. (K-9(b).)
+### MSL-40 · M4 · minor · P8 P11
+**No countdown.**
+
+> **Amended (K132, Ken 2026-09-26).** Milestones show no countdown and no
+> Overdue badge. Ken, on the countdown: *"yes remove too"*; on the badge
+> he chose "Remove the badge too". This case's whole original claim — a
+> dated milestone shows days-remaining or an overdue marker — is gone:
+> there is no countdown or overdue indication of any kind.
+- No milestone card shows a countdown or overdue marker beside its target date — dated in the future, dated in the past, or undated.
+- The target date itself is still shown as-is (see MSL-1/MSL-16); only the countdown/overdue marker beside it is retired.
 
 ### MSL-41 · M4 · minor · P8
 **Each milestone card shows a task-count breakdown by status.**

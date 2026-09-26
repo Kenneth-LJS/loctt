@@ -8,9 +8,7 @@ import {
   deriveSprintColumns,
   isActive,
   NO_SPRINT_COLUMN_ID,
-  sprintCountdown,
   unknownColumnId,
-  windowDisagrees,
 } from "./columns.ts";
 
 function sprint(over: Partial<SprintDef> & { id: string; name: string }): SprintDef {
@@ -68,17 +66,13 @@ describe("deriveSprintColumns", () => {
   });
 
   // @verifies SPR-1
-  it("omits archived sprints unless explicitly asked for", () => {
+  it("never makes a column for an archived sprint (K121 #1)", () => {
     const sprints = [
       sprint({ id: "live", name: "Live" }),
       sprint({ id: "old", name: "Old", archived: true }),
     ];
     const hidden = deriveSprintColumns(sprints, []).filter(c => c.kind === "sprint");
     expect(hidden.map(c => c.id)).toEqual(["live"]);
-
-    const shown = deriveSprintColumns(sprints, [], { showArchived: true })
-      .filter(c => c.kind === "sprint");
-    expect(shown.map(c => c.id)).toEqual(["live", "old"]);
   });
 
   // @verifies SPR-24
@@ -184,7 +178,7 @@ describe("bucketBySprint", () => {
   });
 });
 
-describe("isActive / windowDisagrees / defaultExpanded", () => {
+describe("isActive / defaultExpanded", () => {
   // @verifies SPR-2 SPR-20
   it("keys active off state, not off whether today falls in the window", () => {
     // SPR-20: the two can disagree, and `state` wins. LocTT performs
@@ -203,29 +197,6 @@ describe("isActive / windowDisagrees / defaultExpanded", () => {
       start_date: "2026-01-01", end_date: "2026-12-31",
     });
     expect(isActive(inWindow)).toBe(false);
-  });
-
-  // @verifies SPR-20
-  it("flags the state/window disagreement as a hint, only for active sprints", () => {
-    const overrun = sprint({
-      id: "s1", name: "Overrun", state: "active",
-      start_date: "2025-01-01", end_date: "2025-01-14",
-    });
-    expect(windowDisagrees(overrun, "2026-06-01")).toBe(true);
-
-    const current = sprint({
-      id: "s2", name: "Current", state: "active",
-      start_date: "2026-05-01", end_date: "2026-07-01",
-    });
-    expect(windowDisagrees(current, "2026-06-01")).toBe(false);
-
-    // A completed sprint whose window has passed is not a discrepancy
-    // — that is simply what a finished sprint looks like.
-    const done = sprint({
-      id: "s3", name: "Done", state: "completed",
-      start_date: "2025-01-01", end_date: "2025-01-14",
-    });
-    expect(windowDisagrees(done, "2026-06-01")).toBe(false);
   });
 
   // @verifies SPR-2
@@ -247,27 +218,5 @@ describe("isActive / windowDisagrees / defaultExpanded", () => {
     expect(defaultExpanded({
       id: unknownColumnId("gone"), kind: "unknown", label: "Unknown sprint", missingId: "gone",
     })).toBe(true);
-  });
-});
-
-describe("sprintCountdown (SPR-39)", () => {
-  // @verifies SPR-39
-  it("counts whole days remaining to the end_date", () => {
-    expect(sprintCountdown("2026-06-14", "2026-06-08")).toBe("6 days left");
-    expect(sprintCountdown("2026-06-09", "2026-06-08")).toBe("1 day left");
-    expect(sprintCountdown("2026-06-08", "2026-06-08")).toBe("Ends today");
-  });
-
-  // @verifies SPR-39
-  it("reads a passed end_date as overdue, in whole days", () => {
-    expect(sprintCountdown("2026-06-07", "2026-06-08")).toBe("1 day overdue");
-    expect(sprintCountdown("2026-05-14", "2026-06-08")).toBe("25 days overdue");
-  });
-
-  // @verifies SPR-39
-  it("returns undefined for an unparseable date rather than NaN", () => {
-    expect(sprintCountdown("not-a-date", "2026-06-08")).toBeUndefined();
-    // The offset cancels: a DST-crossing month is still an exact day count.
-    expect(sprintCountdown("2026-03-30", "2026-03-27")).toBe("3 days left");
   });
 });

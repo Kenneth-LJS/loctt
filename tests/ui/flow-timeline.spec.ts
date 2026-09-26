@@ -1112,9 +1112,21 @@ test.describe("TML — timeline drag writes (M3.3b)", () => {
 
     await page.mouse.up();
 
+    // `mouse.up()` resolves once the synthetic pointerup dispatch
+    // completes; the resulting `setDates.mutate()` fetch is a
+    // subsequent tick, so checking `seen.calls` synchronously right
+    // after raced the network layer and failed intermittently (found
+    // while investigating a run that was consistently red — the
+    // request DOES fire, `expect.poll` below over the on-disk dates
+    // already tolerated this for the write's effect, but the request
+    // list itself had no such tolerance). Every other drag test in
+    // this file that checks `seen.calls` right after `mouse.up()`
+    // already waits (`page.waitForTimeout(300)`, e.g. TML-38/TML-39
+    // below); this one was missing it.
+    await expect.poll(() => seen.calls.length).toBe(1);
+
     // Whole days, with no time component, and the value written is the
     // one the label showed.
-    expect(seen.calls).toHaveLength(1);
     const body = seen.calls[0] as { start_date: string; due_date: string };
     expect(body.start_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(body.start_date).toBe(shown);
@@ -1740,7 +1752,7 @@ test.describe("TML — timeline error cases (section C)", () => {
     const err = page.getByTestId("timeline-drag-error");
     await expect(err).toBeVisible();
     // The specific claim: both dates unchanged, not "a date failed".
-    await expect(err).toContainText("neither the start date nor the due date was changed");
+    await expect(err).toContainText("Neither the start date nor the due date was changed");
 
     // The half-applied shift this case exists to catch: a duration
     // that silently changed. Neither field moved on disk.
@@ -1895,7 +1907,7 @@ test.describe("TML — timeline error cases (section C)", () => {
     const notice = page.getByTestId("timeline-unreadable");
     await expect(notice).toBeVisible();
     await expect(notice).toContainText("could not be read");
-    await expect(notice).toContainText("Check the file");
+    await expect(notice).toContainText("Missing from this timeline");
 
     // The counts are honest about the unreadable task.
     await expect(page.getByTestId("timeline-total-unreadable")).toContainText("1 unreadable");

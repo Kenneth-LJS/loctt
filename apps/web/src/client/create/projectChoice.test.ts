@@ -52,7 +52,7 @@ describe("resolveProjectChoice", () => {
   // @verifies PRU-16
   it("PRU-16: the no-project message names Settings → Projects as the fix", () => {
     // Still leads with what and why (NEW-19's quoted sentence)...
-    expect(NO_PROJECT_MESSAGE).toContain("this workspace has no default");
+    expect(NO_PROJECT_MESSAGE).toContain("This workspace has no default");
     // ...and now also says where to go so it stops happening.
     expect(NO_PROJECT_MESSAGE).toContain("Settings");
     expect(NO_PROJECT_MESSAGE).toContain("Projects");

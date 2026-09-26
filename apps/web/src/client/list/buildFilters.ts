@@ -1,4 +1,4 @@
-import type { ArchivedScope, Filter } from "@loctt/contracts";
+import type { Filter } from "@loctt/contracts";
 
 import type { ListSearch } from "../router/listSearch.ts";
 
@@ -29,12 +29,12 @@ import type { ListSearch } from "../router/listSearch.ts";
  * the picker (K102: the DSL is advanced shit; average people never see
  * it).
  *
- * ## Archived is a SCOPE, not a filter
+ * ## No archived term, no archived scope
  *
  * The old builder appended an `archived != true` leaf to the conditions.
- * K107 + K102 make it a field on the view instead, so it never appears as
- * a filter row the user has to look at and cannot safely delete. See
- * {@link archivedScopeFromSearch}.
+ * K107 made archived a scope instead, and K121 #1 took archived items
+ * out of every browsing surface: a view saved from the list never
+ * carries an archived scope (archived items live in Settings → Archived).
  */
 
 /** The multi-select facets and the queryable field each maps to. */
@@ -62,22 +62,6 @@ function membershipFilter(field: string, values: readonly string[]): Filter | nu
 }
 
 /**
- * The archived SCOPE a view should carry for the current filter state.
- *
- * Returns `undefined` for the default (`active`) so the stored view omits
- * the field entirely rather than writing the default out — "absent" and
- * "explicitly active" mean the same thing, and omitting keeps the file
- * minimal.
- */
-export function archivedScopeFromSearch(
-  search: Partial<ListSearch>,
-): ArchivedScope | undefined {
-  if (search.archived === "archived") return "archived";
-  if (search.archived === "all") return "all";
-  return undefined;
-}
-
-/**
  * Build the ordered filter list from the active list filters.
  *
  * Order: the free-text `q` (as one advanced filter) first, then each
@@ -86,7 +70,7 @@ export function archivedScopeFromSearch(
  * filter bar, and it is the order they will be stored and redisplayed in.
  *
  * An empty result is legitimate: a view with no filters matches
- * everything within its archived scope. The old builder had to fall back
+ * every active task. The old builder had to fall back
  * to an `archived != true` leaf because its serializer refused an empty
  * group; a filter LIST has no such problem.
  */

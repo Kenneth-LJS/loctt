@@ -157,3 +157,77 @@ describe("UserDeleteDialog — remap target is a searchable Combobox (A211)", ()
     expect(radios).toHaveLength(2);
   });
 });
+
+/**
+ * @verifies B8
+ *
+ * Before this, a failed reference count (`useUserReferences`) had no
+ * retry — the dialog showed "Could not count task references." and left
+ * the user stuck, and worse, Delete could become ENABLED despite the
+ * count being unknown (0 assignee + 0 reporter reads as "not
+ * referenced", the same as a successful zero-count read). This adds a
+ * Try again that refetches, and blocks Delete on `usage.isError` the
+ * same way it already blocks on `usage.isLoading`.
+ *
+ * Red-proof: drop the `usage.isError` term from the `blocked` expression
+ * in `UserDeleteDialog.tsx` and "keeps Delete disabled while the
+ * reference count failed to load" goes red (Delete becomes clickable);
+ * remove the Try again button and "offers a working Try again" goes red.
+ */
+describe("UserDeleteDialog — a failed reference count offers Try again (B8)", () => {
+  it("keeps Delete disabled while the reference count failed to load, even once the confirm word is typed", async () => {
+    fetchMock.mockImplementation((url) => {
+      const u = String(url);
+      if (u.includes("/usage")) {
+        return Promise.resolve(jsonResponse({ code: "unknown", message: "boom" }, 500));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    const calls: DeleteUserVars[] = [];
+    renderDialog(calls);
+
+    await screen.findByTestId("user-delete-refcount-retry");
+    expect(screen.getByTestId("user-delete-refcount").textContent).toContain("Could not count task references.");
+
+    fireEvent.change(screen.getByTestId("user-delete-confirm-input"), {
+      target: { value: DELETE_CONFIRM_WORD },
+    });
+    const confirm = screen.getByTestId<HTMLButtonElement>("user-delete-confirm");
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("offers a working Try again that refetches the count", async () => {
+    let attempts = 0;
+    fetchMock.mockImplementation((url) => {
+      const u = String(url);
+      if (u.includes("/usage")) {
+        attempts += 1;
+        if (attempts === 1) {
+          return Promise.resolve(jsonResponse({ code: "unknown", message: "boom" }, 500));
+        }
+        return Promise.resolve(jsonResponse({ assignee: 0, reporter: 0 }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    const calls: DeleteUserVars[] = [];
+    renderDialog(calls);
+
+    const retry = await screen.findByTestId("user-delete-refcount-retry");
+    fireEvent.click(retry);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("user-delete-refcount").textContent).toContain("not referenced on any task");
+    });
+    expect(attempts).toBe(2);
+
+    // Now that the count is known (unreferenced), Delete unblocks on the
+    // confirm word alone.
+    fireEvent.change(screen.getByTestId("user-delete-confirm-input"), {
+      target: { value: DELETE_CONFIRM_WORD },
+    });
+    fireEvent.click(screen.getByTestId("user-delete-confirm"));
+    expect(calls).toHaveLength(1);
+  });
+});

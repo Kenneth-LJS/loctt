@@ -87,7 +87,19 @@ export function TimelineView() {
   const createTask = useCreateTask();
 
   const pages = tasks.data?.pages ?? [];
-  const items = useMemo(() => pages.flatMap(p => p.items), [pages]);
+  // A313: parity with the list (ListView.tsx). `?view=<broken id>`
+  // returns a non-fatal `broken_view` diagnostic alongside every task,
+  // unfiltered — the same server behaviour the list guards against.
+  // Without this the timeline drew a bar for every task in the tracker
+  // underneath no explanation at all (the list at least renders a
+  // banner; the timeline had none of its own). Suppressing `items` here
+  // means `model`/`layout`/`noRows` below all inherit the empty state
+  // rather than needing their own guard.
+  const brokenView = pages[pages.length - 1]?.broken_view;
+  const items = useMemo(
+    () => (brokenView !== undefined ? [] : pages.flatMap(p => p.items)),
+    [pages, brokenView],
+  );
 
   // Same reasoning as the board (A27): a chart is not a page of a
   // chart, and a truncated feed would make the band counts lie.
@@ -362,7 +374,7 @@ export function TimelineView() {
                   : (req.start_date ?? req.due_date ?? ""),
               message:
                 gone
-                  ? "It no longer exists — it was deleted somewhere else."
+                  ? "It no longer exists. It was deleted somewhere else."
                   : envelope?.message
                     ?? (err instanceof Error ? err.message : "The server could not be reached."),
               gone,
@@ -568,7 +580,7 @@ export function TimelineView() {
         >
           Group by{" "}
           <code data-testid="timeline-grouping-dangling-key">{groupingResolved.dangling}</code>
-          {" "}is no longer a single-value enum field — showing{" "}
+          {" "}is no longer a single-value enum field. Showing{" "}
           {grouping === "none" ? "flat" : "the next available grouping"}.
         </div>
       )}
@@ -586,8 +598,8 @@ export function TimelineView() {
         >
           <strong>workflow.yaml</strong>: <code>timeline.dependency_relationship</code>
           {" "}names <code data-testid="timeline-dependency-missing-key">{depStatus.key}</code>,
-          {" "}which is not defined in <code>relationships</code>. No dependency
-          {" "}arrows can be drawn until that key is corrected.{" "}
+          {" "}which <code>relationships</code> doesn't define. No dependency
+          {" "}arrows until it's corrected.{" "}
           <Link
             to="/settings/$section"
             params={{ section: "timeline" }}
@@ -607,8 +619,8 @@ export function TimelineView() {
           data-testid="timeline-calendar-error"
           className="rounded-md border border-warn-fg/40 bg-warn-bg/5 px-3 py-2 text-[0.8571rem] text-text-primary"
         >
-          <strong>calendar.yaml</strong> could not be read, so weekend and holiday
-          {" "}shading is switched off and the today-marker is placed in{" "}
+          <strong>calendar.yaml</strong> could not be read. Weekend and holiday
+          {" "}shading is off and the today-marker uses{" "}
           <strong>UTC</strong>. Fix the file to restore them.{" "}
           <span data-testid="timeline-calendar-error-detail">
             {calendarError instanceof ApiError
@@ -641,10 +653,10 @@ export function TimelineView() {
           <span className="min-w-0 flex-1">
             <strong>{dropError.key}</strong>{" "}
             {dropError.edge === "body"
-              ? "was not moved — neither the start date nor the due date was changed."
+              ? "was not moved. Neither the start date nor the due date was changed."
               : dropError.edge === "end"
-                ? "was not resized — the due date was not changed."
-                : "was not resized — the start date was not changed."}
+                ? "was not resized. The due date was not changed."
+                : "was not resized. The start date was not changed."}
             {dropError.attempted !== "" && (
               <>
                 {" "}Attempted:{" "}
@@ -677,6 +689,38 @@ export function TimelineView() {
         </div>
       )}
 
+      {/* A313: parity with the list's `broken_view` banner (ListView.tsx)
+          — the saved view's query no longer parses. Unfiltered rows are
+          not drawn (see `items` above); this is what explains why the
+          chart is empty instead of leaving that unstated. */}
+      {brokenView !== undefined && (
+        <div
+          role="alert"
+          data-testid="timeline-broken-view"
+          className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
+        >
+          <p className="font-medium">
+            The saved view <code>{brokenView.name}</code> could
+            not be run: its query no longer parses.
+          </p>
+          <p data-testid="timeline-broken-view-error" className="mt-1">
+            {brokenView.error}
+            {brokenView.position !== undefined
+              ? <> (at position <span data-testid="timeline-broken-view-position">{brokenView.position}</span>)</>
+              : null}
+          </p>
+          <Link
+            to="/settings/$section"
+            params={{ section: "saved-views" }}
+            hash={`row-${brokenView.id}`}
+            data-testid="timeline-broken-view-manage"
+            className="mt-1 inline-block underline hover:text-text-primary"
+          >
+            Fix it in the file, or replace it in Saved views
+          </Link>
+        </div>
+      )}
+
       {/* TML-47: one corrupt task.md does not blank the timeline. */}
       {unreadable.length > 0 && (
         <div
@@ -685,8 +729,7 @@ export function TimelineView() {
           className="rounded-md border border-danger-fg/30 bg-danger-fg/5 px-3 py-2 text-[0.8571rem] text-danger-fg"
         >
           {unreadable.length} task {unreadable.length === 1 ? "file" : "files"}
-          {" "}could not be read, so {unreadable.length === 1 ? "it is" : "they are"}
-          {" "}missing from this timeline and from the counts below. Check the file.
+          {" "}could not be read. Missing from this timeline and from the counts below.
           <ul className="mt-1 space-y-0.5">
             {unreadable.map(u => (
               <li key={u.id} className="text-[0.7857rem]">
@@ -707,6 +750,13 @@ export function TimelineView() {
           aria-busy="true"
           aria-label="Loading the timeline"
         />
+      ) : brokenView !== undefined ? (
+        // A313: the alert above is the content for this state. Falling
+        // through to `noRows`'s "No tasks match this view" would be
+        // false (the filter never ran) and read as a legitimate empty
+        // result — exactly what the VUE-22 decision rejected for the
+        // list, and the same reasoning applies here.
+        null
       ) : noRows ? (
         <div
           className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-md border border-border-default text-[0.8571rem] text-text-secondary"

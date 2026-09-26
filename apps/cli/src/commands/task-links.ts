@@ -118,7 +118,7 @@ export async function unlink(args: string[], root: string): Promise<void> {
       throw new UsageError(
         `"${target}" could not be resolved, and no ${relType} edge on `
         + `${task.frontmatter.key} stores it. A deleted task's key cannot be `
-        + `looked up — unlink by the id the edge stores`
+        + `looked up. Unlink by the id the edge stores`
         + (edges.length > 0
           ? `: ${edges.map(r => r.target).join(", ")}`
           : ` (this task has no ${relType} edges).`),

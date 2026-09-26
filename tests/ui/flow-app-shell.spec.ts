@@ -8,7 +8,7 @@
  * returns to where the user left it.
  */
 
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { execa } from "execa";
@@ -104,17 +104,21 @@ test.describe("SHL — routing and history", () => {
     await page.goto(`${tracker.baseURL}/list?status=in_progress`);
     await expect(page.getByText("Beta task")).toBeHidden();
 
-    // Switching views carries the filter scope across (cross-view scope
-    // fix, Ken 2026-09-20). This assertion previously expected
-    // `/timeline$` — that encoded the bug where the view switcher dropped
-    // every URL param, so a filter set on the list vanished the moment you
-    // moved to the board or timeline. Per the repo rule on editing a green
-    // test that asserted the bug: the switcher now preserves the scope, so
-    // the status filter rides along and the URL keeps `status=in_progress`.
+    // Amended (K125, Ken 2026-09-24): this assertion previously expected
+    // the view switcher to CARRY `status=in_progress` across to
+    // `/timeline` (the 2026-09-20 cross-view scope fix, TML-57) — that
+    // is the exact carry-across K125 supersedes for the view switcher's
+    // OWN links. Ken, told List/Board/Timeline carried the project/
+    // filter scope and asked how to get back to all tasks, said "click
+    // 'list'?" — so a view-link click now CLEARS the sidebar-driven and
+    // toolbar scope instead of carrying it; "click a view" is now how
+    // you reach the fully unscoped view. The status filter must NOT
+    // ride along.
     await page.getByRole("link", { name: "Timeline" }).click();
-    await expect(page).toHaveURL(/\/timeline\?status=in_progress$/);
+    await expect(page).toHaveURL(/\/timeline$/);
 
-    // Three steps back, in reverse order, one navigation each.
+    // Two steps back, in reverse order, one navigation each: the
+    // /timeline entry (unscoped) and the /list?status=in_progress entry.
     await page.goBack();
     await expect(page).toHaveURL(/\/list\?status=in_progress$/);
     await page.goBack();
@@ -450,8 +454,8 @@ test.describe("SHL — scale and isolation", () => {
         // The window title names the project, so the two windows are
         // tellable apart from the tab strip alone — no file path on
         // the page, and nothing added to the sidebar.
-        await expect(pageA).toHaveTitle("LocTT — Alpha Service — List");
-        await expect(pageB).toHaveTitle("LocTT — Beta Service — List");
+        await expect(pageA).toHaveTitle("LocTT · Alpha Service · List");
+        await expect(pageB).toHaveTitle("LocTT · Beta Service · List");
 
         // The point of the case: the labels *differ*.
         expect(await pageA.title()).not.toBe(await pageB.title());
@@ -499,10 +503,8 @@ test.describe("SHL — render failures", () => {
     // component name.
     await expect(alert).toContainText("the task list");
     await expect(alert).not.toContainText("ListView");
-    // A bug on our side, not a data problem — and the tasks on disk
-    // are explicitly said to be unaffected.
-    await expect(alert).toContainText(/bug on our side/i);
-    await expect(alert).toContainText(".loctt/");
+    // No reassurance line (K126).
+    await expect(alert).not.toContainText(/affected/i);
 
     // The header and sidebar survive, so the user can navigate away.
     await expect(page.getByLabel("Toggle sidebar")).toBeVisible();
@@ -698,12 +700,18 @@ test.describe("XS — the UI and the CLI mean the same things", () => {
     await expect(page.getByText("Still open")).toBeVisible();
     await expect(page.getByText("Archived elsewhere")).toBeHidden();
 
-    // And visible, badged, once archived rows are asked for.
-    await page.getByTestId("list-archived-scope-all").click();
-    await expect(page.getByText("Archived elsewhere")).toBeVisible();
-    await expect(
-      page.getByRole("row", { name: /Archived elsewhere/ }),
-    ).toContainText(/archived/i);
+    // K121 #1 (amended case): no URL reveals it in the list...
+    await page.goto(`${tracker.baseURL}/list?archived=all`);
+    await expect(page.getByText("Still open")).toBeVisible();
+    await expect(page.getByText("Archived elsewhere")).toBeHidden();
+
+    // ...it is listed in Settings → Archived...
+    await page.goto(`${tracker.baseURL}/settings/archived`);
+    await expect(page.getByTestId("archived-items")).toContainText("Archived elsewhere");
+
+    // ...and its own page, reached by direct link, carries the badge.
+    await page.goto(`${tracker.baseURL}/tasks/${String(key)}`);
+    await expect(page.getByTestId("archived-badge")).toBeVisible();
   });
 
   // @verifies XS-6
@@ -1319,9 +1327,14 @@ test.describe("SHL-33 — an unusual status count does not distort the shell", (
     // has no group here, so this set must not grow with status count.
     // (The labels are plain styled divs, not ARIA headings, so they
     // are matched by their exact text within the sidebar.)
+    // "Saved filters" was already stale before K125 (the sidebar has
+    // said "Views" there since K102); K125 (amended, Ken 2026-09-24)
+    // split that one section into two — "Filters" (the six built-ins)
+    // and "Saved views" (saved views only) — so both now appear here.
     const KNOWN_GROUPS = [
       "Projects",
-      "Saved filters",
+      "Filters",
+      "Saved views",
       "Milestones",
       "Sprints",
       "Labels",
@@ -1387,5 +1400,91 @@ test.describe("SHL-33 — an unusual status count does not distort the shell", (
     }
 
     expect(pageErrors, `unexpected page errors:\n${pageErrors.join("\n")}`).toEqual([]);
+  });
+});
+
+test.describe("SHL — brand spinner geometry", () => {
+  /**
+   * @verifies SHL-47
+   *
+   * Approach: injected element against the app's real stylesheet, not a
+   * rendered `LoadingState`/`Button` in-situ. A real spinner's animation
+   * runs continuously and non-deterministically relative to when the
+   * page loaded, so measuring its bounding box mid-flight would be
+   * flaky regardless of the bug. The onboarding wizard's submit button
+   * (`flow-onboarding.spec.ts`'s ONB busy-state test) is the one place a
+   * real spinner appears deterministically, but it only exercises one
+   * fixed size (`Button`'s `sm` token, 20px) — this case needs 21/24/64
+   * specifically, matching the bug report's "app's 21-24px sizes" plus
+   * the source's native 64px.
+   *
+   * So: navigate to a real page (pulling in the app's actual built
+   * `index.css`, with its real `.loctt-spin` rule — nothing here
+   * redefines the CSS under test), then inject `<svg class="loctt-spin">`
+   * elements with the component's exact viewBox at each size. Freezing
+   * the animation with `animation-play-state: paused` plus a fixed
+   * negative `animation-delay` lands on a deterministic, arbitrary
+   * mid-cycle frame (not 0%/100%, where translate/rotate are both
+   * identity and would pass whether or not the pivot bug were present).
+   */
+  test("SHL-47: the loading mark spins about its own centre at every rendered size", async ({
+    page,
+    tracker,
+  }) => {
+    await page.goto(`${tracker.baseURL}/list`);
+
+    const SIZES = [21, 24, 64] as const;
+    const VIEW_BOX = "-19.255 -19.255 102.510 102.510";
+
+    const centres = await page.evaluate(
+      ({ sizes, viewBox }) => {
+        const results: Record<number, { x: number; y: number; unrotatedX: number; unrotatedY: number }> = {};
+        for (const size of sizes) {
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.setAttribute("class", "loctt-spin");
+          svg.setAttribute("viewBox", viewBox);
+          svg.setAttribute("width", String(size));
+          svg.setAttribute("height", String(size));
+          // Frozen at an arbitrary mid-cycle point, not 0%/100% where the
+          // keyframes are identity transforms and would mask the bug.
+          svg.style.animationPlayState = "paused";
+          svg.style.animationDelay = "-800ms";
+          svg.style.position = "fixed";
+          svg.style.left = "0px";
+          svg.style.top = "0px";
+          document.body.appendChild(svg);
+          const rotated = svg.getBoundingClientRect();
+
+          // The same element with the animation removed entirely: the
+          // unrotated reference box for this size, to compare against.
+          svg.style.animation = "none";
+          svg.style.transform = "none";
+          const unrotated = svg.getBoundingClientRect();
+
+          document.body.removeChild(svg);
+          results[size] = {
+            x: rotated.x + rotated.width / 2,
+            y: rotated.y + rotated.height / 2,
+            unrotatedX: unrotated.x + unrotated.width / 2,
+            unrotatedY: unrotated.y + unrotated.height / 2,
+          };
+        }
+        return results;
+      },
+      { sizes: SIZES, viewBox: VIEW_BOX },
+    );
+
+    for (const size of SIZES) {
+      const c = centres[size];
+      if (c === undefined) throw new Error(`no measurement for size ${String(size)}px`);
+      expect(
+        Math.abs(c.x - c.unrotatedX),
+        `size ${String(size)}px: bounding-box centre drifted horizontally by ${String(Math.abs(c.x - c.unrotatedX))}px while spinning`,
+      ).toBeLessThanOrEqual(0.5);
+      expect(
+        Math.abs(c.y - c.unrotatedY),
+        `size ${String(size)}px: bounding-box centre drifted vertically by ${String(Math.abs(c.y - c.unrotatedY))}px while spinning`,
+      ).toBeLessThanOrEqual(0.5);
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -734,7 +734,7 @@ describe("CLI commands", () => {
     await main();
     expect(process.exitCode).toBe(1);
     const stderr = errSpy.mock.calls.map(c => String(c[0])).join("\n");
-    expect(stderr).toMatch(/unknown sprint/);
+    expect(stderr).toContain("Error: Unknown sprint: Nonexistent");
   });
 
   it("sprint burndown rejects an unknown --format", async () => {
@@ -775,6 +775,22 @@ describe("CLI commands", () => {
     // The body was set to empty (not "0"), so the read prints the
     // empty-body sentinel.
     expect(logged).toContain("(empty body)");
+  });
+
+  it("stores --set text that already ends in a newline with one newline, not two", async () => {
+    // `--set` added "\n" unconditionally, so "x\n" landed as "x\n\n".
+    process.argv = ["node", "loctt", "init"];
+    await main();
+    process.argv = ["node", "loctt", "create", "seeded"];
+    await main();
+    process.exitCode = undefined;
+    process.argv = ["node", "loctt", "body", "T-1", "--set", "Original.\n"];
+    await main();
+    expect(process.exitCode).toBeUndefined();
+    const locttDir = resolveLocttDir(root);
+    const task = await lookupByKey(locttDir, "T-1");
+    const file = await readFile(join(locttDir, "tasks", task.frontmatter.id, "task.md"), "utf-8");
+    expect(file.endsWith("\nOriginal.\n")).toBe(true);
   });
 
   describe("error paths on wrapped task commands", () => {
@@ -1466,6 +1482,103 @@ describe("CLI list — stale saved view warning", () => {
     process.argv = ["node", "loctt", "list", "--view", "fine"];
     await main();
     expect(errSpy).not.toHaveBeenCalledWith(expect.stringContaining("Warning:"));
+  });
+});
+
+/**
+ * @verifies VUE-22 (A313 — CLI parity for the read path).
+ *
+ * A saved view whose FILTERS do not load (a hand edit rejected by
+ * `FilterSchema`, not merely a DSL string that fails later) is classified
+ * BROKEN by `parseQueriesConfig`: it is absent from `queriesConfig.queries`
+ * and lives in `queriesConfig.broken` instead, carrying the parser's
+ * message. Before this fix, `loctt list --view <broken>` fell straight
+ * into core's `resolveView`, which cannot see `broken` and reports
+ * `unknown view "<id>"` — true only in the narrowest sense, and actively
+ * misleading: the view is not unknown, it is broken, and telling the user
+ * "unknown" sends them hunting for a different id instead of fixing the
+ * DSL. This mirrors the read-path fix already made for MCP's `list_tasks`
+ * (apps/mcp/src/tools/task-crud.ts) — the same core defect, the same fix
+ * shape, the surface CLAUDE.md requires it on.
+ */
+describe("CLI list — broken saved view (A313)", () => {
+  let root: string;
+  let originalArgv: string[];
+  let logSpy: MockInstance;
+  let errSpy: MockInstance;
+  const BROKEN_ID = "01BROKENVIEWA313000000001";
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "loctt-cli-brokenview-"));
+    originalArgv = process.argv;
+    vi.spyOn(process, "cwd").mockImplementation(() => root);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.exitCode = undefined;
+    await initLoctt(root);
+    // A shape failure `FilterSchema` rejects (a bad `op`), not merely a
+    // DSL string that fails later — the distinction views.test.ts's
+    // "K102-broken-repair" suite already documents: only a rejected
+    // FILTER shape lands the entry in `broken`.
+    await writeFile(
+      join(root, ".loctt", "config", "queries.yaml"),
+      "queries:\n"
+      + "  - id: 01KEEPVIEWA313000000000A\n"
+      + "    name: keep\n"
+      + "    filters:\n"
+      + "      - kind: simple\n"
+      + "        field: status\n"
+      + "        op: \"!=\"\n"
+      + "        values: [\"done\"]\n"
+      + `  - id: ${BROKEN_ID}\n`
+      + "    name: Busted\n"
+      + "    filters:\n"
+      + "      - kind: simple\n"
+      + "        field: status\n"
+      + "        op: \"= =\"\n"
+      + "        values:\n"
+      + "          - done\n",
+      "utf-8",
+    );
+  });
+
+  afterEach(async () => {
+    process.argv = originalArgv;
+    vi.restoreAllMocks();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("names the parse fault instead of reporting the view as unknown, and exits non-zero", async () => {
+    process.argv = ["node", "loctt", "list", "--view", "Busted"];
+    await main();
+
+    const printed = errSpy.mock.calls.flat().join(" ");
+    expect(printed).toContain("Busted");
+    expect(printed).toContain("cannot run");
+    // The defect this replaces: core's bare `resolveView` miss.
+    expect(printed).not.toContain("unknown view");
+    expect(process.exitCode).not.toBe(0);
+    // Refused before listTasks runs — no "No tasks found." success line,
+    // and no unfiltered rows printed under the error either.
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it("resolves the same way by id as by name", async () => {
+    process.argv = ["node", "loctt", "list", "--view", BROKEN_ID];
+    await main();
+
+    const printed = errSpy.mock.calls.flat().join(" ");
+    expect(printed).toContain("Busted");
+    expect(printed).toContain("cannot run");
+    expect(process.exitCode).not.toBe(0);
+  });
+
+  it("a healthy view alongside the broken one is unaffected", async () => {
+    process.argv = ["node", "loctt", "list", "--view", "keep"];
+    await main();
+
+    expect(process.exitCode).toBeUndefined();
+    expect(errSpy).not.toHaveBeenCalled();
   });
 });
 

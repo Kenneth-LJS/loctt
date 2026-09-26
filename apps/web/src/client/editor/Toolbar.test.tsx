@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Editor } from "@tiptap/core";
 import Link from "@tiptap/extension-link";
 import StarterKit from "@tiptap/starter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { comboOptions, comboValue, pickCombo } from "../ui/selectComboboxTestUtils.ts";
+import { comboOptions, expectComboValueSelectable, pickCombo } from "../ui/selectComboboxTestUtils.ts";
 import { LOCTT_EXTENSIONS } from "./extensions.ts";
 import { fromMarkdown, toMarkdown } from "./markdown.ts";
 import { Toolbar } from "./Toolbar.tsx";
@@ -83,12 +83,14 @@ describe("Toolbar level picker — TSK-59", () => {
   it("reflects the current block's level in the picker", () => {
     ed().chain().focus().setHeading({ level: 3 }).run();
     render(<Toolbar editor={ed()} />);
-    expect(comboValue("fmt-block-type")).toBe("3");
+    // B14: the picker's reflected level must be an option a user could
+    // still choose, not a trigger label the panel has stopped offering.
+    expectComboValueSelectable("fmt-block-type", "3");
 
     cleanup();
     ed().chain().focus().setParagraph().run();
     render(<Toolbar editor={ed()} />);
-    expect(comboValue("fmt-block-type")).toBe("paragraph");
+    expectComboValueSelectable("fmt-block-type", "paragraph");
   });
 });
 
@@ -105,7 +107,7 @@ describe("Toolbar block transform caret — TSK-60", () => {
     // The caret sits in the heading, so the editor reports it active and
     // the picker — reading the same state — shows Heading 2 at once.
     expect(ed().isActive("heading", { level: 2 })).toBe(true);
-    expect(comboValue("fmt-block-type")).toBe("2");
+    expectComboValueSelectable("fmt-block-type", "2");
   });
 
   // @verifies TSK-60
@@ -204,5 +206,44 @@ describe("Toolbar buttons — TSK-61 / TSK-65", () => {
 
     ed().chain().focus().selectAll().toggleMark("subscript").run();
     expect(ed().isActive("subscript")).toBe(true);
+  });
+});
+
+describe("Toolbar folded groups — TSK-72", () => {
+  // jsdom evaluates no container queries, so both the flat buttons and
+  // the folded menu triggers are in the DOM here. Which one SHOWS at a
+  // given width is covered by the e2e sweep; this covers what the menu
+  // form does once it is the one on screen.
+
+  // @verifies TSK-72
+  it("a folded mark row is a checkbox item that tracks the caret and applies the mark", () => {
+    render(<Toolbar editor={ed()} />);
+    ed().chain().focus().selectAll().run();
+
+    fireEvent.click(screen.getByTestId("fmt-group-text"));
+    const bold = screen.getByTestId("fmt-menu-bold");
+    expect(bold.getAttribute("role")).toBe("menuitemcheckbox");
+    expect(bold.getAttribute("aria-checked")).toBe("false");
+
+    fireEvent.click(bold);
+    expect(ed().isActive("bold")).toBe(true);
+
+    fireEvent.click(screen.getByTestId("fmt-group-text"));
+    expect(screen.getByTestId("fmt-menu-bold").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("fmt-menu-italic").getAttribute("aria-checked")).toBe("false");
+  });
+
+  // @verifies TSK-72
+  it("the group trigger takes the active look only while a member applies", () => {
+    render(<Toolbar editor={ed()} />);
+    const trigger = screen.getByTestId("fmt-group-blocks");
+    expect(trigger.className).not.toMatch(/border-accent/);
+
+    // In `act` so the editor-state subscription's re-render lands
+    // before the assertion — the transaction does not pass through React.
+    act(() => { ed().chain().focus().toggleOrderedList().run(); });
+    expect(screen.getByTestId("fmt-group-blocks").className).toMatch(/border-accent/);
+    // The other groups are unaffected by a list.
+    expect(screen.getByTestId("fmt-group-text").className).not.toMatch(/border-accent/);
   });
 });

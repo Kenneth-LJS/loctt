@@ -74,7 +74,10 @@ describe("MilestonesPanel — broken-entry degradation (DEG-30)", () => {
     // ...and the corrupt one is a marked, read-only row rather than gone.
     const brokenRow = screen.getByTestId("milestone-broken-ms_bad");
     expect(brokenRow.getAttribute("aria-disabled")).toBe("true");
-    expect(brokenRow.textContent).toContain("couldn't be read");
+    // Wording trimmed under K116 (row 94): the sentence now leads with
+    // "Couldn't be read (...)" rather than "<name> — couldn't be read
+    // (...)", so match case-insensitively.
+    expect(brokenRow.textContent?.toLowerCase()).toContain("couldn't be read");
     expect(brokenRow.textContent).toContain("Expected string, received number");
   });
 
@@ -105,7 +108,7 @@ describe("MilestonesPanel — broken-entry degradation (DEG-30)", () => {
 });
 
 /**
- * @verifies N-4 / UI-10
+ * @verifies SET-55
  *
  * MilestonesPanel already carried `settings-panel-title`, but its create
  * action sat in a `secondary`-variant row below the description, at a

@@ -47,7 +47,7 @@ Groups:
 - **Saved filters** — built-in filters with live counts (Assigned to me,
   Reported by me, Mentions me, Due this week, Overdue, High priority), then
   your saved views, then any view whose query no longer parses (marked,
-  still openable). "+ New filter…" opens the view builder.
+  still openable). "+ New filter" opens the view builder.
 - **Milestones**, **Sprints**, **Labels** — rows that filter the List to
   one milestone, sprint, or label.
 - **Recently viewed** — the tasks you opened most recently.
@@ -159,8 +159,10 @@ Opening a task shows everything about it on one page.
 - **Header** — a breadcrumb, the task's key, its title (editable in place),
   and a More menu: copy the key or a link, duplicate, move to another
   project, archive, or delete.
-- **Description** — a markdown editor with autosave and `@`-mentions of
-  users.
+- **Description** — a markdown editor with `@`-mentions of users. Select
+  Edit to change it, then Save (or Ctrl/Cmd+Enter). Cancel or Escape
+  discards your changes, asking first. Clicking elsewhere keeps the
+  editor open, and unsaved text survives a reload of the same tab.
 - **Related** — the task's relationships (blocks, parent/child, and any you
   configure); add and remove links here.
 - **Attachments** — files on the task; upload more.
@@ -196,13 +198,48 @@ user menu. A bare `/settings` opens Projects. The groups:
   WIP limits), Timeline defaults, Calendar (timezone, working days,
   holidays).
 - **Personal** — My preferences (theme, default project), Card layout,
-  Pinned views, Sidebar groups, Keyboard.
-- **System** — Users, Sync (git-backed mode), Backup & restore,
+  Pinned views, Sidebar groups, Keyboard (single-key shortcut switches).
+- **System** — Users, Sync (git-backed mode), Archived, Backup & restore,
   Diagnostics.
 
 Most concepts are also reachable from where you use them: a sidebar row's
 kebab, a board column's menu, or an error banner will deep-link to the exact
 Settings panel that owns it, so you rarely have to hunt.
+
+### Archived
+
+Archiving takes an item out of every list, board, timeline, picker and
+settings panel. **Settings → Archived** is the one place you can still see
+archived items. Pick a type (tasks, projects, saved views, labels,
+milestones, sprints or users) to see its archived items, then restore or
+delete one, a selection, or all of them. Restoring puts an item back where
+it was. Deleting is permanent and asks you to confirm. Deleting several
+items at once also removes them from any tasks that still use them.
+
+An archived task is still reachable by a direct link to it, and its page
+says it is archived.
+
+### Diagnostics
+
+Settings → Diagnostics checks this tracker's files, config and index for
+problems and reports what it finds. It runs the same checks as
+`loctt doctor` on the command line, so you can use whichever is closer to
+hand — the results are the same.
+
+**A note on filesystem safety.** LocTT's file locks are POSIX *advisory*
+locks, which are not safe on network or sync-service filesystems. If the
+tracker sits inside iCloud Drive, Dropbox, OneDrive, or on an NFS/SMB
+mount, two machines writing at once can corrupt state.
+
+LocTT warns you at startup when it detects one of these, and names the
+directory that triggered it. **That detection is best-effort and can miss
+cases** — so seeing no warning is not a guarantee that the filesystem is
+safe. If you keep a tracker in a synced folder, avoid editing it from two
+machines at the same time regardless of whether LocTT flagged it.
+
+(Both notes used to sit in the Diagnostics panel itself. They moved here
+so the panel shows results rather than caveats — the startup warning still
+fires when detection does catch a risky location.)
 
 <!-- [screenshot: the Settings shell — grouped nav and a panel such as Board columns] -->
 
@@ -221,13 +258,20 @@ one. A restore runs in one of three modes:
 
 A **dry run** predicts the counts and writes nothing, in any mode, and the
 restore reports per-outcome counts plus any key reallocations, renamed
-entities, or skipped lines. A backup taken in split parts must be restored
-with the `loctt restore` CLI, which takes every part at once. (The CLI's
-CSV or JSON export is a report, not a backup — it cannot restore.)
+entities, or skipped lines.
+
+A backup taken in split parts is restored here too: select every part
+together in the file picker. The panel reads each file's header and shows
+which part it is and how many the set expects, so a missing one is visible
+before you upload. An incomplete set, a part belonging to a different
+backup, the same part twice, or a file that is not a backup is refused
+with a message naming what is wrong — and nothing is written. (The CSV or
+JSON task export is a report, not a backup — it cannot restore.)
 
 ## Keyboard shortcuts
 
-Press `?` for the full list. The global shortcuts:
+Press `?`, or choose **Keyboard shortcuts** in the user menu, for the
+list. The global shortcuts:
 
 | Key | Action |
 |---|---|
@@ -238,8 +282,23 @@ Press `?` for the full list. The global shortcuts:
 | `t` | Cycle the theme |
 | `?` | Show this list |
 
+These are single-key shortcuts, and you can turn them off. In
+**Settings → Keyboard**, or with **Customize** in the shortcuts dialog:
+
+- **Single-key shortcuts** turns them all off or on at once.
+- Each shortcut has its own switch. The three `g` shortcuts share one.
+- **Reset to default** turns everything back on. It asks first.
+
+While they are off, pressing those keys does nothing. The shortcuts dialog still opens from the user menu, lists the
+shortcuts as off, and has a **Turn on** button. Shortcuts that use Ctrl
+or Cmd (saving the description with Ctrl+Enter or Ctrl+S, moving a card
+with Ctrl+arrow keys), Esc, and the arrow keys on a reorder handle are
+not affected. The keys themselves cannot be changed. The same switches
+are available as `loctt user shortcuts` and the MCP
+`get_keyboard_shortcuts` / `set_keyboard_shortcuts` tools.
+
 Within a board or a dialog, more keys apply — moving a card, closing a
-dialog, reordering — and the help dialog lists those too.
+dialog, reordering — and Settings → Keyboard lists those too.
 
 ## Theming
 

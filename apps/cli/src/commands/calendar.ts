@@ -41,7 +41,7 @@ export async function run(args: string[], root: string): Promise<void> {
     // (CFG-C5: the two must agree on *where* it is editable).
     console.error(`Usage: loctt calendar show`);
     console.error(
-      `The calendar is read-only from the CLI — it is configured in the web UI (run 'loctt ui').`,
+      `The calendar is read-only from the CLI. It is configured in the web UI (run 'loctt ui').`,
     );
     process.exitCode = EXIT.USAGE;
   }

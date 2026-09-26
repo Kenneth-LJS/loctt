@@ -5,9 +5,12 @@ import { TypedConfirmDialog } from "../ui/ConfirmDialog.tsx";
  *
  * The friction is the point: archive is one click because it is
  * reversible, and delete is not. The button stays disabled until the
- * exact word is typed, initial focus is the input rather than the
- * destructive control, and the dialog names archive as the alternative
- * so the reversible path is visible at the moment of the decision.
+ * exact word is typed, and initial focus is the input rather than the
+ * destructive control. The confirmation states only that deleting is
+ * irreversible (K129, Ken 2026-09-24): "im sure the archive is
+ * somewhere the user can see first, so they should know" — no archive
+ * suggestion here, superseding this dialog's earlier "archive instead"
+ * line (BLK-11, amended).
  *
  * K71: the overlay/panel/focus handling now come from
  * `TypedConfirmDialog` (over `Modal`) — this dialog previously
@@ -58,19 +61,11 @@ export function DeleteConfirmDialog({
       confirmLabel={`Delete ${String(count)} ${noun}`}
       onConfirm={onConfirm}
       onCancel={onCancel}
-      typeHint={required !== DELETE_CONFIRM_WORD ? "— the count, because this is a large batch" : undefined}
+      typeHint={required !== DELETE_CONFIRM_WORD ? "(the count, because this is a large batch)" : undefined}
       body={
-        <>
-          <p>
-            This cannot be undone. The {noun} and all history, comments, and
-            attachments will be removed from disk.
-          </p>
-          <p className="mt-2">
-            If you only want {count === 1 ? "it" : "them"} out of the way,
-            <strong className="font-medium text-text-primary"> archive </strong>
-            instead — archiving is reversible.
-          </p>
-        </>
+        <p>
+          Deleting {noun} is irreversible. Continue?
+        </p>
       }
     />
   );

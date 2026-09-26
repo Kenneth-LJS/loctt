@@ -1,4 +1,4 @@
-import { access,mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,6 +10,7 @@ import { parseWorkflowConfig } from "../config/workflow.js";
 import { resolveLocttDir } from "../paths/index.js";
 import { filtersToNode } from "../query/filters.js";
 import { validateQuery } from "../query/validate.js";
+import { CURRENT_SCHEMA_VERSION } from "../schema/index.js";
 import { parseState } from "../state/state.js";
 import { initLoctt } from "./init.js";
 
@@ -152,6 +153,61 @@ describe("initLoctt", () => {
   it("throws if .loctt already exists", async () => {
     await initLoctt(root);
     await expect(initLoctt(root)).rejects.toThrow("already exists");
+  });
+
+  // B22 (K129): "just ignore, proceed with steps." An empty `.loctt/`
+  // is set up like a missing one: no repair flag, no refusal, and the
+  // full fresh set of files, not the repair subset.
+  // @verifies ONB-16
+  it("sets up an empty .loctt straight through, like a missing one", async () => {
+    await mkdir(join(root, ".loctt"));
+    const result = await initLoctt(root, { prefix: "WEB", projectName: "Website" });
+    const dir = result.locttDir;
+    await expect(access(join(dir, "state.yaml"))).resolves.toBeUndefined();
+    await expect(access(join(dir, ".schema-version"))).resolves.toBeUndefined();
+    await expect(access(join(dir, ".gitignore"))).resolves.toBeUndefined();
+    await expect(access(join(dir, "docs", "README.md"))).resolves.toBeUndefined();
+    // The default user a fresh init creates.
+    expect((await readdir(join(dir, "users"))).length).toBe(1);
+    const projects = await readFile(join(dir, "config", "projects.yaml"), "utf-8");
+    expect(projects).toContain("WEB");
+    expect(projects).toContain("Website");
+    // No staging directory is left beside it.
+    expect((await readdir(root)).filter(n => n.endsWith(".tmp"))).toEqual([]);
+  });
+
+  // @verifies ONB-16
+  it("keeps what an empty .loctt already held when filling it in", async () => {
+    await mkdir(join(root, ".loctt", "tasks"), { recursive: true });
+    await writeFile(join(root, ".loctt", "notes.txt"), "left over", "utf-8");
+    const result = await initLoctt(root);
+    expect(await readFile(join(result.locttDir, "notes.txt"), "utf-8")).toBe("left over");
+    await expect(access(join(result.locttDir, "config", "workflow.yaml"))).resolves.toBeUndefined();
+  });
+
+  /**
+   * A346 (review m1): `rm -rf .loctt/*` leaves dotfiles behind, so an
+   * "empty" tracker can still hold an old `.schema-version`. It describes
+   * nothing (there is no config, state or task), and keeping it stamped
+   * the fresh tracker with a version it was not written at. `created`
+   * listed files that were never written, too.
+   */
+  // @verifies ONB-16
+  it("over an empty .loctt, overwrites a stale .schema-version and lists only what it wrote", async () => {
+    const dir = join(root, ".loctt");
+    await mkdir(dir);
+    await writeFile(join(dir, ".schema-version"), `${String(CURRENT_SCHEMA_VERSION + 6)}\n`, "utf-8");
+    await writeFile(join(dir, ".gitignore"), "# the user's own\n", "utf-8");
+
+    const result = await initLoctt(root);
+
+    expect((await readFile(join(dir, ".schema-version"), "utf-8")).trim())
+      .toBe(String(CURRENT_SCHEMA_VERSION));
+    expect(result.created).toContain(join(dir, ".schema-version"));
+    // The user's .gitignore is kept, so it is not reported as created.
+    expect(await readFile(join(dir, ".gitignore"), "utf-8")).toBe("# the user's own\n");
+    expect(result.created).not.toContain(join(dir, ".gitignore"));
+    expect(result.created).toContain(join(dir, "state.yaml"));
   });
 
   it("returns list of created files", async () => {

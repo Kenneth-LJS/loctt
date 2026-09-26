@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+import type { ErrorResponse } from "@loctt/contracts";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "../api/client.ts";
 import type { ReconcileConflict, ReconcileDeleteVsEdit, RekeyPlan } from "../api/hooks/useGit.ts";
 import { ConflictRow, DeleteVsEditRow, RekeyPreview } from "./ReconcilePanel.tsx";
 
@@ -130,15 +132,21 @@ describe("ReconcilePanel delete-vs-edit row (GIT-16)", () => {
 });
 
 /**
- * GIT-9: when the two `created_at` values tie, the ULID decides — and the
- * preview has to say so and let the user check it.
+ * GIT-9: when the two `created_at` values tie, the ULID decides.
  *
- * The copy said only "Both were created at the same time, so the tie was
- * broken automatically", which names nothing. GIT-9 is not satisfied by
- * "something decided": the case asks the preview to state that the ULID
- * decided and to show both ULIDs, because the point of the rule is that a
- * second clone reconciling the same two tasks reaches the same keeper —
- * a claim the user can only check against the two IDs.
+ * K116 (error-text-trim row 49, Ken's wording) removed the tiebreak
+ * EXPLANATION entirely -- the "same instant, so the tie was broken on the
+ * ULID... every clone reaches the same keeper" prose, and the
+ * `git-rekey-tiebreak` element it lived in, are gone. What each collision
+ * row states instead is simply which task keeps the key and what the
+ * other becomes: `{key} stays with task {keeperId}. Task {loserId}
+ * becomes {newKey}.` The two tests that asserted the removed explanation
+ * text are gone with it (no phrase of that shape exists any more, in
+ * either the `created_at` or `ulid` branch) -- this is a deliberate copy
+ * cut approved by Ken, not a behavior regression. The ULIDs themselves
+ * are still reachable in the collapsed disclosure for the `ulid` branch
+ * (GIT-9's determinism still needs to be checkable), which the remaining
+ * test below covers.
  */
 describe("RekeyPreview — GIT-9's ULID tiebreak", () => {
   const KEEPER = "01AAAAAAAAAAAAAAAAAAAAAAAA";
@@ -170,16 +178,15 @@ describe("RekeyPreview — GIT-9's ULID tiebreak", () => {
   const renderPlan = (tiebreak: "ulid" | "created_at") =>
     render(<RekeyPreview plan={plan(tiebreak)} confirm={idleConfirm} onConfirmed={() => {}} />);
 
-  // @verifies GIT-9
-  it("GIT-9: names the ULID as the decider and says the lower one keeps the key", () => {
+  // @verifies GIT-8/GIT-9
+  it("states which task keeps the key and what the loser becomes, for both tiebreak branches", () => {
     renderPlan("ulid");
-    const text = screen.getByTestId("git-rekey-tiebreak").textContent ?? "";
-    // Naming the rule, not just reporting that a rule ran.
-    expect(text).toMatch(/ULID/);
-    expect(text).toMatch(/lower ULID keeps the key/);
-    // And the determinism the case turns on — the same inputs give the
-    // same keeper on any clone.
-    expect(text).toMatch(/every clone/i);
+    const row = screen.getByTestId("git-rekey-row");
+    expect(row.textContent).toMatch(/stays with task/);
+    expect(row.textContent).toContain(KEEPER);
+    expect(row.textContent).toMatch(/becomes/);
+    expect(row.textContent).toContain(LOSER);
+    expect(row.textContent).toContain("WEB-15");
   });
 
   // @verifies GIT-9
@@ -197,13 +204,107 @@ describe("RekeyPreview — GIT-9's ULID tiebreak", () => {
   });
 
   // @verifies GIT-8
-  it("GIT-8: a created_at decision says so, and does not drag the ULIDs in", () => {
+  it("GIT-8: a created_at decision does not show the ULID disclosure", () => {
     // The complement: when the timestamps DID decide, the ULIDs explain
-    // nothing, and Ken's report removed them from the ordinary path. This
-    // pins that the GIT-9 disclosure did not put them back everywhere.
+    // nothing, and Ken's report removed them from the ordinary path.
     renderPlan("created_at");
-    expect(screen.getByTestId("git-rekey-tiebreak").textContent)
-      .toMatch(/earlier task keeps the key/);
     expect(screen.queryByTestId("git-rekey-ulids")).toBeNull();
+  });
+
+  /**
+   * @verifies B8
+   *
+   * Before this, a failed rekey confirm showed the raw
+   * `confirm.error.message` as the whole notice — no data-state claim, no
+   * next action, and the server's own words presented directly to the
+   * user (a messaging.md violation). This turns on the fixed "what
+   * happened" sentence, the data-state line, Try again gated on the
+   * envelope's own recovery, and the raw message demoted into a
+   * Disclosure.
+   *
+   * Red-proof: replace the `InlineFailureNotice`/`Disclosure` block with
+   * the old `<p>{confirm.error.message}</p>` and every assertion below
+   * goes red — there is no `git-rekey-confirm-error` node, and the raw
+   * "boom" string shows up as the notice's own text instead of inside
+   * the disclosure.
+   */
+  function confirmError(overrides: Partial<ErrorResponse> = {}) {
+    const envelope: ErrorResponse = { code: "git_failed", message: "boom", ...overrides };
+    return new ApiError("boom", { status: 500, body: envelope, endpoint: "/api/git/reconcile/confirm-rekey", envelope });
+  }
+
+  function erroredConfirm(error: unknown) {
+    return {
+      mutate: vi.fn(),
+      isPending: false,
+      isError: true,
+      error,
+    } as unknown as Parameters<typeof RekeyPreview>[0]["confirm"];
+  }
+
+  describe("RekeyPreview — confirm failure notice (B8)", () => {
+    it("shows the fixed headline and the data-state claim, never the raw message as the whole text", () => {
+      render(
+        <RekeyPreview
+          plan={plan("ulid")}
+          confirm={erroredConfirm(confirmError({ data_state: "not_saved" }))}
+          onConfirmed={() => {}}
+        />,
+      );
+
+      const notice = screen.getByTestId("git-rekey-confirm-error");
+      expect(notice.getAttribute("role")).toBe("alert");
+      expect(notice.textContent).toContain("Renumbering didn't finish.");
+      // The raw server text is NOT the notice's own text.
+      const message = screen.getByTestId("git-rekey-confirm-error-message");
+      expect(message.textContent).not.toContain("boom");
+    });
+
+    it("carries the envelope's data_state on the notice, distinguishing unknown from not_saved", () => {
+      render(
+        <RekeyPreview
+          plan={plan("ulid")}
+          confirm={erroredConfirm(confirmError({ data_state: "unknown" }))}
+          onConfirmed={() => {}}
+        />,
+      );
+      const notice = screen.getByTestId("git-rekey-confirm-error");
+      expect(notice.getAttribute("data-data-state")).toBe("unknown");
+    });
+
+    it("offers Try again only when the envelope's recovery says retry is safe", () => {
+      const { rerender } = render(
+        <RekeyPreview
+          plan={plan("ulid")}
+          confirm={erroredConfirm(confirmError({ recovery: { kind: "retry" } }))}
+          onConfirmed={() => {}}
+        />,
+      );
+      expect(screen.getByTestId("git-rekey-confirm-error-retry")).toBeTruthy();
+
+      rerender(
+        <RekeyPreview
+          plan={plan("ulid")}
+          confirm={erroredConfirm(confirmError({ recovery: { kind: "none" } }))}
+          onConfirmed={() => {}}
+        />,
+      );
+      expect(screen.queryByTestId("git-rekey-confirm-error-retry")).toBeNull();
+    });
+
+    it("keeps the raw server message available, but only inside a collapsed Disclosure", () => {
+      render(
+        <RekeyPreview
+          plan={plan("ulid")}
+          confirm={erroredConfirm(confirmError({ message: "a very specific server explanation" }))}
+          onConfirmed={() => {}}
+        />,
+      );
+
+      const detail = screen.getByTestId("git-rekey-confirm-error-detail");
+      // Collapsed by default (native <details>, no `open` attribute).
+      expect((detail as HTMLDetailsElement).open).toBe(false);
+      expect(detail.textContent).toContain("a very specific server explanation");
+    });
   });
 });

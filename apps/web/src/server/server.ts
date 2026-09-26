@@ -240,6 +240,7 @@ import {
   validateQuery,
   validHistory,
   ViewError,
+  ViewNameTakenError,
   withStateLock,
   writeTaskBody,
 } from "@loctt/core";
@@ -247,7 +248,7 @@ import { ZodError } from "zod";
 
 import { contentDispositionAttachment } from "./content-disposition.js";
 import type { ParsedFilePart } from "./multipart.js";
-import { parseMultipartFile } from "./multipart.js";
+import { parseMultipartFile, parseMultipartFiles } from "./multipart.js";
 
 const DEFAULT_PORT = 4321;
 
@@ -754,7 +755,7 @@ function checkExpectedId(
     envelope: {
       message:
         "This task's key now belongs to a different task, so your edit was "
-        + "not saved — it would have changed the wrong task. Reload the page "
+        + "not saved. It would have changed the wrong task. Reload the page "
         + "to continue on the task you were viewing.",
       code: "conflict",
       data_state: "not_saved",
@@ -1021,6 +1022,29 @@ function parseArchivedScope(url: URL): ArchivedScope {
   const parsed = ArchivedScopeSchema.safeParse(url.searchParams.get("archived"));
   return parsed.success ? parsed.data : "active";
 }
+
+/**
+ * K121 #1: whether a task-list query names the `archived` field.
+ *
+ * Core's precedence rule (K107) lets a query that mentions `archived`
+ * override the scope, so `?query=archived = true` on the list would reveal
+ * archived tasks — a URL parameter that browses them, which Ken ruled out
+ * for the web ("not allow viewing archived stuff"). The CLI and MCP keep
+ * the rule; the web list refuses the term instead. Tokenizer-based, like
+ * core's own check, so a string literal containing "archived" is not a
+ * match. A query that does not tokenize is left for the parser to report.
+ */
+export function queryNamesArchivedField(query: string): boolean {
+  try {
+    return tokenize(query).some(t => t.type === "FIELD" && t.value === "archived");
+  } catch {
+    return false;
+  }
+}
+
+/** The list's answer to a query that names `archived` (K121 #1). */
+export const ARCHIVED_QUERY_MESSAGE =
+  "Archived tasks aren't listed here. Find them in Settings, under Archived.";
 
 /**
  * Builds a paginated response envelope. Slices `items` by the
@@ -1873,7 +1897,8 @@ export function createWebApp(options: WebAppOptions) {
       // ViewError is core's own user-facing text (a bad query, a
       // duplicate name), so it is the headline verbatim per ERR-6.
       if (err instanceof ViewError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "filters" });
+        // B21: a taken name points at the name field, not the filters.
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: err instanceof ViewNameTakenError ? "name" : "filters" });
         return;
       }
       throw err;
@@ -1907,7 +1932,8 @@ export function createWebApp(options: WebAppOptions) {
       json(res, updated);
     } catch (err) {
       if (err instanceof ViewError) {
-        error(res, err.message, 400, { ...REJECTED_WRITE, field: "filters" });
+        // B21: a taken name points at the name field, not the filters.
+        error(res, err.message, 400, { ...REJECTED_WRITE, field: err instanceof ViewNameTakenError ? "name" : "filters" });
         return;
       }
       throw err;
@@ -1991,8 +2017,7 @@ export function createWebApp(options: WebAppOptions) {
       // `config_invalid` with a 400. Measured: with another process
       // holding the state lock, a settings write reported "the config
       // is invalid" and blamed the user for a file that was perfectly
-      // fine (SET-39, ERR-31, and ERR-32's "no routine failure lands
-      // in the generic handler").
+      // fine (SET-39, ERR-31).
       if (err instanceof LocttError) {
         const env = err.toEnvelope();
         error(res, env.message, statusForCode(err.code), env);
@@ -3174,7 +3199,7 @@ export function createWebApp(options: WebAppOptions) {
     const remapToRef = url.searchParams.get("remap_to") ?? undefined;
     const unassign = url.searchParams.get("unassign") === "true";
     if (remapToRef !== undefined && unassign) {
-      error(res, "Choose either a user to reassign to, or unassign — not both.", 400, {
+      error(res, "Choose either a user to reassign to, or unassign, not both.", 400, {
         ...REJECTED_WRITE,
         field: "remap_to",
       });
@@ -3354,25 +3379,16 @@ export function createWebApp(options: WebAppOptions) {
   const handleInit: RouteHandler = async ({ req, res }) => {
     const r = await parseJsonBodyWithSchema(req, res, InitRequestSchema);
     try {
-      // An **empty** `.loctt/` needs `repair`, not a plain init: core
-      // refuses an existing directory outright and only fills in
-      // missing files under that flag. Without this the wizard ONB-16
-      // requires offered a button that could not work — it rendered
-      // for the empty directory and then failed with "exists but is
-      // incomplete".
-      //
-      // Passing it only for `empty` is the whole safety argument. A
-      // `damaged` tracker — core files missing but tasks still on
-      // disk — must never reach this: repair rebuilds `state.yaml`
-      // with the key counter back at 1, which reissues keys that
-      // already exist. That tracker gets the schema banner and the
-      // CLI's `--repair`, which says so.
-      const info = await getTrackerInfo(root);
+      // An **empty** `.loctt/` is set up by core exactly like a missing
+      // one (B22, K129), so the wizard sends the same request either
+      // way. It used to pass `repair: true` for it, which skipped the
+      // starter docs, the .gitignore and the default user. A `damaged`
+      // tracker is still refused by core and never repaired from here:
+      // repair rebuilds `state.yaml` with the key counter back at 1.
       const result = await initLoctt(root, {
         ...(r.prefix !== undefined ? { prefix: r.prefix } : {}),
         ...(r.projectLabel !== undefined ? { projectName: r.projectLabel } : {}),
         ...(r.docs !== undefined ? { docs: r.docs } : {}),
-        ...(info.initState === "empty" ? { repair: true } : {}),
       });
       json(res, { locttDir: result.locttDir, created: result.created.length }, 201);
     } catch (err) {
@@ -3804,7 +3820,7 @@ export function createWebApp(options: WebAppOptions) {
       error(
         res,
         `The status "${status}" no longer exists in workflow.yaml. `
-        + `This board is showing stale configuration — reload to see the current columns.`,
+        + `This board is showing stale configuration. Reload to see the current columns.`,
         400,
         {
           ...REJECTED_WRITE_NO_RETRY,
@@ -4101,9 +4117,9 @@ export function createWebApp(options: WebAppOptions) {
     const view = viewMissing || brokenView !== undefined ? undefined : requestedView;
     // K107: the tri-state `?archived=active|archived|all` scope (default
     // `active`) replaces the old `?archived=true` boolean. Core applies it
-    // to the effective query; when the query itself mentions `archived`
-    // the user's term wins and `onArchivedConflict` fires (surfaced as a
-    // warning below), matching the CLI/MCP behaviour Ken specified.
+    // to the effective query. Only Settings → Archived sends a non-default
+    // scope (K121 #1); a query naming `archived` is refused above, so the
+    // K107 term-wins rule never applies on this route.
     const archivedScope = parseArchivedScope(url);
     // Fold the free-text `query` and the structured filter params
     // (project/status/priority/type/assignee/…, plus custom
@@ -4112,6 +4128,14 @@ export function createWebApp(options: WebAppOptions) {
     // are authored as-is) and apply `?project=` via core's dedicated
     // structured project option instead.
     const baseQuery = url.searchParams.get("query") ?? undefined;
+    if (baseQuery !== undefined && queryNamesArchivedField(baseQuery)) {
+      error(res, ARCHIVED_QUERY_MESSAGE, 400, {
+        code: "validation_failed",
+        field: "query",
+        recovery: { kind: "none" },
+      });
+      return;
+    }
     await resolveProjectSlugParam(url, locttDir);
     const effectiveQuery = view !== undefined
       ? baseQuery
@@ -4208,19 +4232,6 @@ export function createWebApp(options: WebAppOptions) {
             message: err.message,
             position: err.position,
             suggestions: [...err.suggestions],
-          });
-        },
-        // K107: the requested archived scope conflicts with an explicit
-        // `archived` term in the query — the term wins (scope resolves to
-        // `all`), but the override is surfaced rather than resolved
-        // silently, so the result set isn't mysterious.
-        onArchivedConflict: (scope: ArchivedScope) => {
-          queryWarnings.push({
-            field: "archived",
-            message:
-              `The query mentions "archived", so its term decides — the "${scope}" archived filter was not applied.`,
-            position: 0,
-            suggestions: [],
           });
         },
         ...(queriesConfig !== undefined ? { queriesConfig } : {}),
@@ -4413,13 +4424,25 @@ export function createWebApp(options: WebAppOptions) {
    * `POST /api/backup/restore` — restore a JSONL backup (K17 ruling 2,
    * F3 / K30). Web parity for `loctt restore` and MCP `restore`.
    *
-   * The backup file is uploaded as `multipart/form-data` (field `file`),
+   * The backup is uploaded as `multipart/form-data` (field `file`),
    * matching how attachments and avatars upload. `mode` and `confirm`
-   * ride on the query string, because the multipart parser captures the
-   * file part and drains the rest — a regular form field would be
-   * dropped. A single uploaded file only: a split backup needs every
-   * part, and re-assembling a multi-part upload here is deferred to the
-   * CLI (`loctt restore <part...>`), noted in the web reference.
+   * ride on the query string, because the multipart parser captures only
+   * file parts — a regular form field would be dropped.
+   *
+   * SPLIT BACKUPS (Ken, 2026-09-23 — supersedes A142's single-file
+   * decision): the body may carry SEVERAL `file` parts, one per part of
+   * a split set, and every one is written to a temp path and handed to
+   * core as an array. Core does the whole job already — `restoreBackup`
+   * has always taken `readonly string[]`, and `resolveBackupSet` orders
+   * the parts, refuses an incomplete set, and refuses a part whose
+   * `backup_id` belongs to a different export (BAK-C8). So this endpoint
+   * reassembles nothing: it lands the bytes and passes the list. Its one
+   * added job is that core's refusal REACHES the user — a
+   * `BackupFormatError` naming the missing part is the whole value of
+   * the check, and a generic "restore failed" would throw it away.
+   *
+   * A single-file restore is the same code path with a one-element
+   * array, and stays the common case.
    *
    * CRITICAL — destructive-restore confirm (K30): `overwrite` replaces
    * ids the backup carries, and `bare` into a non-empty tracker is
@@ -4484,13 +4507,18 @@ export function createWebApp(options: WebAppOptions) {
       return;
     }
 
+    // Every uploaded part lands under this one temp dir, and the
+    // `finally` below removes the dir whatever happens — success, a core
+    // refusal, or a thrown parse error. A restore that fails must not
+    // leave the user's whole tracker sitting in /tmp.
     const tmpParent = await mkdtemp(pathJoin(tmpdir(), "loctt-restore-"));
     try {
-      let parsed: ParsedFilePart;
+      let parsed: readonly ParsedFilePart[];
       try {
         // A backup is the whole tracker, so it gets the backup cap, not
-        // the 50 MB per-attachment default (K31 item 2).
-        parsed = await parseMultipartFile(req, contentType, tmpParent, "file", MAX_BACKUP_BYTES);
+        // the 50 MB per-attachment default (K31 item 2). Every `file`
+        // part is kept: a split backup arrives as N of them.
+        parsed = await parseMultipartFiles(req, contentType, tmpParent, "file", MAX_BACKUP_BYTES);
       } catch (parseErr) {
         // Parsing failed before restoreBackup ran, so nothing was
         // written into the tracker (ERR-24 shape).
@@ -4499,7 +4527,13 @@ export function createWebApp(options: WebAppOptions) {
       }
 
       try {
-        const report = await restoreBackup(locttDir, [parsed.tempPath], { mode, dryRun });
+        // The array core has always accepted. `resolveBackupSet` inside
+        // orders the parts and refuses a set that is incomplete, mixed
+        // or foreign — this passes them in upload order and lets core
+        // decide.
+        const report = await restoreBackup(
+          locttDir, parsed.map(p => p.tempPath), { mode, dryRun },
+        );
         json(res, report);
       } catch (err) {
         // A refusal is the user's or the file's situation, not a server
@@ -4940,7 +4974,7 @@ export function createWebApp(options: WebAppOptions) {
       // The CLI already rewrites it to name `loctt user switch`; the
       // equivalent route out here is the header's user menu.
       const message = /no current user/i.test((err as Error).message)
-        ? "A user must be selected before you can comment — pick one from "
+        ? "A user must be selected before you can comment. Pick one from "
           + "the user menu, then post again."
         : (err as Error).message;
       error(res, message, 400, { ...REJECTED_WRITE, field: "body" });
@@ -4982,8 +5016,8 @@ export function createWebApp(options: WebAppOptions) {
       if (/unknown comment id/i.test(raw)) {
         error(
           res,
-          "That comment is already gone — someone else deleted it. "
-            + "Your edit was not saved; refreshing will bring this list up to date.",
+          "That comment is already gone. Someone else deleted it. "
+            + "Your edit was not saved. Refreshing will bring this list up to date.",
           400,
           { ...REJECTED_WRITE_NO_RETRY, recovery: { kind: "reload" } },
         );
@@ -5020,7 +5054,7 @@ export function createWebApp(options: WebAppOptions) {
       // it names is one the user never typed and cannot act on.
       const raw = (err as Error).message;
       const message = /unknown comment id/i.test(raw)
-        ? "That comment is already gone — someone else deleted it. "
+        ? "That comment is already gone. Someone else deleted it. "
           + "Refreshing will bring this list up to date."
         : raw;
       error(res, message, 400, {

@@ -872,7 +872,7 @@ describe("publish-sync", () => {
         },
       });
 
-      await expect(publish(locttDir, root)).rejects.toThrow(/refusing to publish/);
+      await expect(publish(locttDir, root)).rejects.toThrow(/refusing to publish/i);
       expect(
         execSync("git ls-tree --name-only notes", { cwd: root, stdio: "pipe", encoding: "utf-8" }),
       ).toContain("meeting-notes.md");
@@ -906,7 +906,7 @@ describe("publish-sync", () => {
         },
       });
 
-      await expect(publish(locttDir, root)).rejects.toThrow(/refusing to publish/);
+      await expect(publish(locttDir, root)).rejects.toThrow(/refusing to publish/i);
 
       const listed = execSync("git ls-tree --name-only loctt", {
         cwd: root, stdio: "pipe", encoding: "utf-8",

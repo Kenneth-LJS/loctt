@@ -35,12 +35,29 @@ export class ApiError extends Error {
    * unreachable server, an HTML error page from something upstream.
    */
   readonly envelope: ErrorResponse | undefined;
+  /**
+   * K115 (A314): true iff this `ApiError` was thrown because OUR
+   * deadline fired (a request/inactivity timeout), never because the
+   * server answered or the connection dropped.
+   *
+   * `envelope?.code` cannot carry this distinction — a timeout and a
+   * dropped connection both use `code: "unknown"` because neither is a
+   * considered server answer, and `code` is a shared wire type
+   * (`@loctt/contracts`) not meant to grow a client-local timing fact.
+   * `queryClient`'s retry policy needs to tell them apart anyway: a
+   * quick failure (dropped connection, 503) keeps its one automatic
+   * retry, but a load that already waited out its full deadline must
+   * not silently double that wait — the message and Retry control
+   * appear at the limit instead (Ken's K115 ruling, item 2).
+   */
+  readonly isTimeout: boolean;
 
   constructor(message: string, opts: {
     status: number;
     body: unknown;
     endpoint: string;
     envelope?: ErrorResponse | undefined;
+    isTimeout?: boolean;
   }) {
     super(message);
     this.name = "ApiError";
@@ -48,12 +65,35 @@ export class ApiError extends Error {
     this.body = opts.body;
     this.endpoint = opts.endpoint;
     this.envelope = opts.envelope;
+    this.isTimeout = opts.isTimeout ?? false;
   }
 
   /** Convenience for the common `err.envelope?.code` branch. */
   get code(): ErrorResponse["code"] | undefined {
     return this.envelope?.code;
   }
+}
+
+/**
+ * True when a write left and no answer came back, so whether it landed
+ * is unknown: the client's own write deadline fired (`isTimeout`, with
+ * the write-timeout envelope's `data_state: "unknown"`).
+ *
+ * Deliberately not every `data_state: "unknown"`: a server that
+ * answered with an unattributed failure ("The server failed while
+ * handling POST /api/tasks.") did answer, and NEW-32 wants its reason
+ * quoted as reported.
+ *
+ * A surface that frames a failure with its own sentence ("wasn't
+ * saved", "Couldn't create the task:") must branch on this first:
+ * joining that frame to the timeout envelope asserts a failure and then
+ * says the outcome is unknown. The unknown-outcome wording is K134's:
+ * "Your changes may not have been saved. Please try again.", except
+ * create, where a retry can duplicate: "The task may not have been
+ * created. Check the list before trying again."
+ */
+export function isUnknownOutcome(err: unknown): boolean {
+  return err instanceof ApiError && err.isTimeout && err.envelope?.data_state === "unknown";
 }
 
 /**
@@ -90,9 +130,43 @@ interface RequestOptions {
    * saying so: the user cannot act, and reloading is exactly the thing
    * that would tell them. Reads do not need this; there is nothing at
    * stake in an unanswered GET.
+   *
+   * K115 (Ken's ruling — see `docs/dev/decisions.md`): omitting this
+   * no longer means "unbounded". A caller that passes nothing gets
+   * {@link DEFAULT_READ_TIMEOUT_MS} on a GET or
+   * {@link DEFAULT_WRITE_TIMEOUT_MS} on every other method. The seven
+   * call sites that already set their own value (task list, bulk,
+   * set-field, comments, task dates, board move, builtin counts) are
+   * unaffected — an explicit value always wins over the default.
    */
   readonly timeoutMs?: number;
 }
+
+/**
+ * Default GET deadline (K115): every request is bounded, even one no
+ * hook opted into. 20s matches the value the busiest read (the task
+ * list, `useTasks.ts`) already used before this default existed, so
+ * that hook's behaviour does not change — only the ~28 previously
+ * unbounded call sites gain a limit.
+ *
+ * Overridable the same way every per-hook timeout already is, so a
+ * spec can shorten the wait without waiting it out for real.
+ */
+export const DEFAULT_READ_TIMEOUT_MS = Number(
+  (globalThis as { __LOCTT_DEFAULT_READ_TIMEOUT_MS__?: unknown })
+    .__LOCTT_DEFAULT_READ_TIMEOUT_MS__ ?? 20_000,
+);
+
+/**
+ * Default non-GET deadline (K115), matching the 15s value the existing
+ * per-hook writes (set-field, comments, task dates, board move,
+ * builtin counts) already used. `useBulk.ts`'s 30s stays an explicit
+ * override — K115 keeps bulk at 30s, not folded into this default.
+ */
+export const DEFAULT_WRITE_TIMEOUT_MS = Number(
+  (globalThis as { __LOCTT_DEFAULT_WRITE_TIMEOUT_MS__?: unknown })
+    .__LOCTT_DEFAULT_WRITE_TIMEOUT_MS__ ?? 15_000,
+);
 
 /**
  * A 200 whose JSON body is truncated or malformed.
@@ -152,12 +226,32 @@ function errorMessage(endpoint: string, status: number, body: unknown): string {
   return `${endpoint} responded with ${status}`;
 }
 
-function isAbort(err: unknown): boolean {
-  // `AbortSignal.timeout` rejects with `TimeoutError`, not `AbortError`
-  // — and `AbortSignal.any` propagates whichever fired. Matching only
-  // AbortError silently missed every deadline.
-  return err instanceof Error
-    && (err.name === "TimeoutError" || err.name === "AbortError");
+/**
+ * Exported for the git/diagnostics deadline helper below, which throws
+ * its own `AbortController` rejections and needs the same recognition
+ * rule `apiRequest` uses.
+ *
+ * `AbortSignal.timeout` rejects with `TimeoutError`, not `AbortError`
+ * — and `AbortSignal.any` propagates whichever fired. Matching only
+ * AbortError silently missed every deadline.
+ */
+export function isAbort(err: unknown): boolean {
+  // Checked on `.name` alone, NOT `err instanceof Error`. A real
+  // `fetch` abort rejects with a `DOMException`, and `DOMException` is
+  // NOT reliably `instanceof Error` — jsdom's own `DOMException` fails
+  // that check even though it carries the same `.name`/`.message`
+  // shape (proven by this repo's fake-timer board test, which mocks
+  // `fetch`'s abort rejection with a plain `new DOMException(...,
+  // "AbortError")`: `instanceof Error` was false, silently defeating
+  // K115's whole deadline mechanism for every call site — the timeout
+  // fired, `fetch` rejected, and `apiRequest` rethrew the raw
+  // `DOMException` instead of wrapping it, so `tasks.isError` still
+  // never flipped true). `AbortSignal.timeout`'s `TimeoutError` is a
+  // real `DOMException` too, so this was never `Error`-shaped input in
+  // the first place — checking `instanceof Error` was checking the
+  // wrong thing from the start.
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === "TimeoutError" || name === "AbortError";
 }
 
 /**
@@ -175,6 +269,10 @@ function withTimeout(init: RequestInit, deadline: AbortSignal | undefined): Requ
 
 export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const method: Method = options.method ?? "GET";
+  // K115: an omitted `timeoutMs` is a default, not "unbounded" — `0` or
+  // any other explicit value the caller passed is left alone.
+  const timeoutMs = options.timeoutMs
+    ?? (method === "GET" ? DEFAULT_READ_TIMEOUT_MS : DEFAULT_WRITE_TIMEOUT_MS);
   const headers: Record<string, string> = {
     [CLIENT_HEADER]: CLIENT_NAME,
     Accept: "application/json",
@@ -196,22 +294,20 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
   // navigation.
   const deadlineCtl = new AbortController();
   let timedOut = false;
-  const timer = options.timeoutMs === undefined
-    ? undefined
-    : setTimeout(() => {
-        timedOut = true;
-        deadlineCtl.abort();
-      }, options.timeoutMs);
+  const timer = setTimeout(() => {
+    timedOut = true;
+    deadlineCtl.abort();
+  }, timeoutMs);
   // Stop the clock the instant the caller aborts. Without this the
   // deadline keeps running and can fire in the gap between fetch
   // rejecting and this function's catch block, so an unmount at 10ms
   // under a 30s deadline reports as a timeout — telling the user LocTT
   // cannot say whether their write saved, for a routine navigation.
   options.signal?.addEventListener("abort", () => {
-    if (timer !== undefined) clearTimeout(timer);
+    clearTimeout(timer);
   }, { once: true });
   try {
-    res = await fetch(endpoint, withTimeout(init, timer === undefined ? undefined : deadlineCtl.signal));
+    res = await fetch(endpoint, withTimeout(init, deadlineCtl.signal));
   } catch (err) {
     // Only *our* deadline means the outcome is unknown. A caller's own
     // abort — React Query cancelling on unmount — is a cancellation,
@@ -234,6 +330,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
         status: 0,
         body: undefined,
         endpoint,
+        isTimeout: true,
         envelope: isRead
           ? {
               code: "unknown",
@@ -250,8 +347,28 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
     }
     throw err;
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    clearTimeout(timer);
   }
+  return resolveResponse<T>(res, endpoint);
+}
+
+/**
+ * Parses a `Response` the caller already has (not one `apiRequest` fetched
+ * itself) and either returns its body or throws the same `ApiError`
+ * `apiRequest` would have thrown for it.
+ *
+ * Exists for `streamSync` (useGit.ts): a plain JSON reply on
+ * `/api/git/sync` — a no-op result or a planning-phase error — arrives on
+ * the same `Response` the streaming path already read headers from.
+ * Re-POSTing to re-derive that `ApiError` sends the request a SECOND
+ * time, and for a write that is not idempotent: the second `sync` sees
+ * whatever the first one's *failure* left behind (the reconcile sentinel
+ * a `reconcile_needed` refusal wrote) and reports THAT —
+ * "a previous sync was interrupted" — instead of the clean refusal the
+ * first response actually carried (A342). Any call site that already
+ * holds a fetched `Response` should reuse this rather than re-fetch.
+ */
+export async function resolveResponse<T>(res: Response, endpoint: string): Promise<T> {
   const body = await parseBody(res);
   if (!res.ok) {
     throw new ApiError(errorMessage(endpoint, res.status, body), {
@@ -262,6 +379,59 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
     });
   }
   return body as T;
+}
+
+/**
+ * K115 (A314): the deadline building block shared by the three raw-`fetch`
+ * call sites that `apiRequest`'s own deadline cannot cover — git's
+ * `streamSync`, diagnostics' `streamDoctor` and its repair POST
+ * (`DiagnosticsPanel.tsx`) — plus the fixed-limit git mutations
+ * (publish, enable, disable, and every reconcile write), which go
+ * through `apiClient.post` but need a longer ceiling than the 15s
+ * write default.
+ *
+ * One `AbortController` drives the fetch; `bump()` re-arms the timer
+ * (streaming callers call it on every chunk/progress line, for an
+ * *inactivity* deadline that covers the pre-first-byte wait too — the
+ * timer starts armed, before any byte has arrived). A caller that never
+ * calls `bump()` gets a plain fixed deadline instead (the publish /
+ * enable / disable / reconcile mutations, which have no progress
+ * stream to reset on).
+ *
+ * `didExpire()` after a caught abort is how a caller tells this
+ * deadline apart from the *other* reason a raw-fetch `AbortController`
+ * signal aborts — an unmounting component's own cleanup — the same
+ * distinction `apiRequest`'s `timedOut` flag makes for the ordinary
+ * path. Reusing this instead of three hand-rolled
+ * `setTimeout`/`AbortController` copies is the point: the three
+ * raw-fetch call sites had each grown a slightly different version of
+ * the same three lines.
+ */
+export function createDeadline(ms: number): {
+  readonly controller: AbortController;
+  readonly bump: () => void;
+  readonly didExpire: () => boolean;
+  readonly clear: () => void;
+} {
+  const controller = new AbortController();
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout> = setTimeout(() => {
+    expired = true;
+    controller.abort();
+  }, ms);
+  return {
+    controller,
+    bump: () => {
+      if (expired) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        expired = true;
+        controller.abort();
+      }, ms);
+    },
+    didExpire: () => expired,
+    clear: () => { clearTimeout(timer); },
+  };
 }
 
 /**
@@ -281,11 +451,21 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
  */
 async function postFile<T>(
   endpoint: string,
-  file: File,
+  /**
+   * One file, or several under the same field name. Several is what a
+   * split-backup restore sends: the server keeps every `file` part and
+   * hands the list to core, which orders and validates the set.
+   */
+  file: File | readonly File[],
   fieldName = "file",
 ): Promise<T> {
   const form = new FormData();
-  form.append(fieldName, file, file.name);
+  // `Array.isArray` widens a `readonly File[]` to `any[]`, so narrow on
+  // the one property a File has and an array does not.
+  const files: readonly File[] = file instanceof File ? [file] : file;
+  for (const f of files) {
+    form.append(fieldName, f, f.name);
+  }
   let res: Response;
   try {
     res = await fetch(endpoint, {

@@ -58,7 +58,7 @@ is reordered after `T-1`, **then** the call fails on the status mismatch —
 and where a legitimate same-column move occurs, `T-3`'s activity records it
 while `T-2`'s `updated_at` is unchanged.
 
-### SPR-C3 · major · P10 · CLI MCP
+### SPR-C3 · major · P10 P11 · CLI MCP
 **Sprint archive is reachable, and `id` survives every edit.**
 Labels and sprints have no web archive route *and no path to one* —
 `editSprint` does not accept an `archived` parameter at all. Milestones work
@@ -71,7 +71,14 @@ only because `editMilestone` uniquely does.
 - Tasks reference sprints by **id**, never by name, on every write path.
 - No automatic state transition or carryover occurs: a sprint's `state`
   and its dates may freely disagree.
+- No state change is refused either: any state can move to any state,
+  with no `--force` / `force`.
 
 **Given** a sprint holding three tasks, **when** it is renamed and then
 archived and unarchived, **then** its id never changes and all three tasks
 remain attached throughout.
+
+> **Amended (K130, Ken 2026-09-24).** Ken: *"we're not babysitting
+> policy, we're being a better task tracker, not here to lock
+> behaviour."* Added the bullet that no state change is refused: the
+> completed-sprint guard and its `--force` / `force` override are gone.

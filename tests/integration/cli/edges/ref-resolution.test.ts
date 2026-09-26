@@ -11,7 +11,7 @@ describe("CLI ref resolution edge cases (spawned binary)", () => {
     await withTmpLoctt(async ({ root }) => {
       const result = await runCli(["show", "T-99"], { cwd: root });
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain("task not found");
+      expect(result.stderr).toMatch(/task not found/i);
       expect(result.stderr).toContain("T-99");
     });
   });

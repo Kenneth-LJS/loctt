@@ -16,7 +16,9 @@ User-facing documentation lives in `docs/`. Developer documentation lives in `do
 - `docs/dev/reference/schema-reference.md` — file formats (task.md, workflow.yaml, etc.)
 - `docs/dev/reference/invariants.md` — **rules a change must not break** (project identity, key allocation, sprint state). Check against this before touching those areas
 - `docs/dev/decisions.md` — locked design decisions, incl. things deliberately NOT built
+- `docs/dev/design/messaging.md` — **when the UI shows text at all, and how it is written**. Read before adding any visible sentence
 - `docs/dev/process/build-loop.md` — **how a web-UI ticket gets built and verified**; the gates that decide "done"
+- `docs/dev/backlog.md` — **work Ken has decided to do**, each item with the ruling it rests on. Check before starting new work
 - `docs/dev/known-gaps.md` — understood defects not yet fixed (and the roster of cases that cannot be satisfied yet); check before reporting one as new
 - `docs/dev/reference/corruption-handling-guide.md` — **how to make a new field/object/surface degrade instead of crash**: the field-local-vs-object-fatal decision, the building blocks, per-thing checklists, and what to add to `doctor`. Read before adding a field or config object
 - `tests/cases/ui-test-cases/` + `tests/cases/surface-test-cases/` — acceptance criteria (997 cases). Indexed in `tests/cases/case-index.json`; see `tools/README.md`

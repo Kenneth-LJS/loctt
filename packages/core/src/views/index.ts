@@ -8,4 +8,5 @@ export {
   findViewOrBroken,
   unarchiveView,
   ViewError,
+  ViewNameTakenError,
 } from "./manage.js";
