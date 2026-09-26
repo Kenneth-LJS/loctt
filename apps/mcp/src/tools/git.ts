@@ -48,14 +48,14 @@ import type { ToolDef } from "../types.js";
 const decisionSchema = z.object({
   taskId: z.string().min(1).describe("The task's ULID (its `id`, not the `key`). Read it from get_reconcile_status, which reports `task_id` on each conflict / delete-vs-edit row."),
   field: z.string().min(1).describe("The conflicting frontmatter field, or the reserved `__delete_vs_edit__` for a whole-task keep-deletion / keep-task decision."),
-  choice: z.enum(["local", "remote", "value"]).describe("Which side to keep: `local`, `remote`, or `value` (a typed third value carried in `value`). For a delete-vs-edit row, `choice` is the side to keep — the editing side keeps the task, the deleting side keeps the deletion."),
-  value: z.unknown().optional().describe("Present only for `choice: \"value\"` — the picked/typed value (raw form)."),
+  choice: z.enum(["local", "remote", "value"]).describe("Which side to keep: `local`, `remote`, or `value` (a typed third value carried in `value`). For a delete-vs-edit row, `choice` is the side to keep: the editing side keeps the task, the deleting side keeps the deletion."),
+  value: z.unknown().optional().describe("Present only for `choice: \"value\"`: the picked/typed value (raw form)."),
 }).strict();
 
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "enable_git",
-    description: "Enables git-backed mode for this tracker: records the configuration that publish and sync use. The branch itself is created on the first publish, not here. Refuses if the configured branch already exists and holds content LocTT did not write. If the branch already exists AND was written by LocTT (from a previous setup), refuses too — reporting the branch head and asking the caller to decide — unless `adopt: true` is passed, which adopts it (sets last_synced_commit to the branch head and reports whether local state agrees with it). Only call when the user has explicitly asked to share tasks across machines or set up sync — this is one-time infrastructure setup, not a routine task operation.",
+    description: "Enables git-backed mode for this tracker: records the configuration that publish and sync use. The branch itself is created on the first publish, not here. Refuses if the configured branch already exists and holds content LocTT did not write. If the branch already exists AND was written by LocTT (from a previous setup), refuses too, reporting the branch head and asking the caller to decide, unless `adopt: true` is passed, which adopts it (sets last_synced_commit to the branch head and reports whether local state agrees with it). Only call when the user has explicitly asked to share tasks across machines or set up sync. This is one-time infrastructure setup, not a routine task operation.",
     inputSchema: {
       // GIT-25: MCP is non-interactive, so the adopt-or-stop choice is a
       // param. Default (absent/false) means "stop and report" if a
@@ -108,7 +108,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "get_git_status",
-    description: "Returns structured JSON describing git-backed mode state (enabled, branch, remote, remote_configured, auto_push, auto_fetch, in_git_repo, last_synced_commit) plus drift in both directions: local_changes (files not yet published) and remote_changes (whether the branch moved since the last sync). Both drift fields are null when they could not be determined, which is not the same as zero. Also carries fstype_advisory: non-null (with fs_class and message) when the tracker sits on a filesystem where POSIX advisory locks are unreliable (iCloud Drive, Dropbox, OneDrive, NFS, SMB), null otherwise — informational, never blocking.",
+    description: "Returns structured JSON describing git-backed mode state (enabled, branch, remote, remote_configured, auto_push, auto_fetch, in_git_repo, last_synced_commit) plus drift in both directions: local_changes (files not yet published) and remote_changes (whether the branch moved since the last sync). Both drift fields are null when they could not be determined, which is not the same as zero. Also carries fstype_advisory: non-null (with fs_class and message) when the tracker sits on a filesystem where POSIX advisory locks are unreliable (iCloud Drive, Dropbox, OneDrive, NFS, SMB), null otherwise. It is informational, never blocking.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
       const status = await getGitStatus(locttDir, root);
@@ -152,7 +152,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "publish_to_git",
-    description: "Commits the current task state to the configured loctt branch (name is user-configurable via git.branch) and (if remote+auto_push are set) pushes to remote. Call when the user has indicated they want to share or sync tasks — not speculatively after routine task edits.",
+    description: "Commits the current task state to the configured loctt branch (name is user-configurable via git.branch) and (if remote+auto_push are set) pushes to remote. Call when the user has indicated they want to share or sync tasks, not speculatively after routine task edits.",
     inputSchema: {},
     handler: async ({ locttDir, root }) => {
       let result;
@@ -352,7 +352,7 @@ export const TOOLS: readonly ToolDef[] = [
       + "and the web UI's Apply). Read the conflicts with get_reconcile_status first; "
       + "pass one decision per conflicting field (identity is `taskId` + `field`), plus "
       + "one reserved-field decision (`field: \"__delete_vs_edit__\"`) per delete-vs-edit "
-      + "row. DESTRUCTIVE — an apply that keeps one side discards the other's value, so "
+      + "row. DESTRUCTIVE: an apply that keeps one side discards the other's value, so "
       + "it requires `confirm: true`. If completing the sync then hits a key collision "
       + "that must be renumbered (a rekey), this does NOT renumber unless `confirm_rekey: "
       + "true` is also passed: without it, the tool reports the rekey preview and stops "
@@ -363,7 +363,7 @@ export const TOOLS: readonly ToolDef[] = [
     inputSchema: {
       decisions: z.array(decisionSchema).min(1)
         .describe("One decision per conflicting field / delete-vs-edit row (see get_reconcile_status). Same shape as the CLI `--decisions` file."),
-      confirm: z.boolean().optional().describe("Required: must be true — keeping one side discards the other, which is destructive."),
+      confirm: z.boolean().optional().describe("Required: must be true. Keeping one side discards the other, which is destructive."),
       confirm_rekey: z.boolean().optional()
         .describe("If the completing sync needs a rekey to resolve a key collision, must be true to renumber. Without it the tool reports the rekey preview and stops."),
     },
@@ -460,7 +460,7 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "Abandons the in-progress git reconciliation (parity with the CLI's `git "
       + "reconcile abandon` and the web UI's Abandon). Clears the reconciliation record "
-      + "and leaves local files exactly as they are — this is NOT a revert, so anything "
+      + "and leaves local files exactly as they are. This is NOT a revert, so anything "
       + "a partial resolve_reconcile already wrote stays written. The blocked publish/sync "
       + "does not complete; re-run it to re-plan from scratch. Requires `confirm: true` "
       + "because it discards the pending decisions and the record of what must be resolved.",

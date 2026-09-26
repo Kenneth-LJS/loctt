@@ -183,7 +183,7 @@ describe("SchemaBanner distinguishes the four kinds", () => {
     expect(text).toContain("v5");
     expect(text).toContain("v3");
     expect(text).toMatch(/update loctt|upgrade/i);
-    expect(text).toContain("@loctt/cli@latest");
+    expect(text).toContain("npm install -g loctt@latest");
     expect(text).not.toContain("loctt migrate");
   });
 

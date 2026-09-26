@@ -28,6 +28,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { defined } from "./fixtures/defined.ts";
 import { expect, forcePushRewriteRemote, publishFromOtherClone,test } from "./fixtures/git-tracker.ts";
 
 function syncYamlPath(root: string): string {
@@ -710,7 +711,7 @@ test("GIT-25: an existing loctt branch is surfaced with its head and adopted onl
   await expect(adopt).toBeVisible();
   await expect(adopt).toContainText("loctt");
   await expect(adopt).toContainText("already exists");
-  await expect(page.getByTestId("git-adopt-head")).toContainText(branchHead!.slice(0, 12));
+  await expect(page.getByTestId("git-adopt-head")).toContainText(defined(branchHead, "branchHead").slice(0, 12));
 
   // Nothing was written yet — the panel is still not enabled.
   await expect(page.getByTestId("git-enabled")).toBeHidden();

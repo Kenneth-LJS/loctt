@@ -149,6 +149,55 @@ describe("lookup distinguishes an unreadable task from an absent one", () => {
     expect(unreadable.message).toContain("whether the task exists is unknown");
   });
 
+  // K135 (B31): with several unreadable candidates, each file is
+  // printed once with its OWN reason. Before, the message listed every
+  // path and then only the first file's reason, which still carried
+  // that file's path, so the first path appeared twice and the second
+  // file's reason was missing.
+  it("names every unreadable candidate once, each with its own reason", async () => {
+    await writeTask(locttDir, task.frontmatter.id, task);
+    await writeTask(locttDir, neighbour.frontmatter.id, neighbour);
+    // Two different faults, so their reasons differ: an unclosed quote
+    // in one, an unclosed flow sequence in the other.
+    const quotePath = await corrupt(task.frontmatter.id);
+    const seqPath = getTaskFilePath(locttDir, neighbour.frontmatter.id);
+    const before = await readFile(seqPath, "utf-8");
+    const after = before.replace(/^title: (.*)$/m, "title: [$1");
+    expect(after).not.toBe(before);
+    await writeFile(seqPath, after, "utf-8");
+
+    const err = await lookupByKey(locttDir, "T-99").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(UnreadableTaskError);
+    const unreadable = err as UnreadableTaskError;
+    expect(unreadable.indeterminate).toBe(true);
+    expect([...unreadable.paths].sort()).toEqual([quotePath, seqPath].sort());
+
+    // Each candidate's own reason, taken from its own parse failure.
+    const byPath = new Map(unreadable.reasons.map(r => [r.path, r.reason]));
+    const quoteReason = byPath.get(quotePath) ?? "";
+    const seqReason = byPath.get(seqPath) ?? "";
+    expect(quoteReason).toMatch(/line \d+/);
+    expect(seqReason).toMatch(/line \d+/);
+    expect(quoteReason).not.toBe(seqReason);
+    // A reason never repeats its own path (it is printed beside it).
+    expect(quoteReason).not.toContain(quotePath);
+    expect(seqReason).not.toContain(seqPath);
+
+    // The message: each path exactly once, each followed by its reason.
+    const message = unreadable.message;
+    for (const [path, reason] of byPath) {
+      expect(message.split(path).length - 1, path).toBe(1);
+      expect(message).toContain(`${path}: ${reason}`);
+    }
+    expect(message).toContain("whether the task exists is unknown");
+    // `reason` (the envelope's `detail`) says the same, once per path.
+    for (const path of [quotePath, seqPath]) {
+      expect(unreadable.reason.split(path).length - 1, path).toBe(1);
+    }
+    expect(unreadable.toEnvelope().detail).toBe(unreadable.reason);
+  });
+
   it("still reports a genuinely absent key as not found when every file parses", async () => {
     await writeTask(locttDir, neighbour.frontmatter.id, neighbour);
 

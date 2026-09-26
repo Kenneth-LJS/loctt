@@ -33,7 +33,7 @@ export const COLOR_INPUT_DOC =
   + "a hex string \"#rrggbb\" (one value used in BOTH light and dark), "
   + "{\"light\": \"#rrggbb\", \"dark\": \"#rrggbb\"} for an explicit per-mode pair, "
   + "or {\"palette\": \"<id>\"} for a live reference to a built-in palette entry "
-  + "(call `list_palette_colors` for the valid ids — do not guess them). "
+  + "(call `list_palette_colors` for the valid ids, and do not guess them). "
   + "A palette reference is resolved live on every read, so it follows the palette "
   + "if the palette changes; nothing stores a resolved hex.";
 

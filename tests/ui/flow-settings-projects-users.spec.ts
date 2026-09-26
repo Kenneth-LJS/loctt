@@ -13,6 +13,7 @@ import path from "node:path";
 
 import sharp from "sharp";
 
+import { defined } from "./fixtures/defined.ts";
 import { expect, test } from "./fixtures/tracker.ts";
 
 /**
@@ -1074,13 +1075,13 @@ test.describe("PRU — avatar cropper, storage, and removal", () => {
     // recorded in profile.yaml with a matching extension.
     await expect.poll(async () => (await storedAvatar(tracker.root, id))?.width ?? 0)
       .toBeGreaterThan(0);
-    const stored = await storedAvatar(tracker.root, id);
+    const stored = defined(await storedAvatar(tracker.root, id), "stored avatar");
     expect(stored).toBeDefined();
-    expect(Math.max(stored!.width, stored!.height)).toBeLessThanOrEqual(500);
+    expect(Math.max(stored.width, stored.height)).toBeLessThanOrEqual(500);
     // Materially smaller — an order of magnitude below the source.
-    expect(stored!.bytes).toBeLessThan(source.byteLength / 10);
+    expect(stored.bytes).toBeLessThan(source.byteLength / 10);
     // copyAvatar always writes JPG; the recorded name matches the file.
-    expect(stored!.ext).toBe("jpg");
+    expect(stored.ext).toBe("jpg");
 
     // The avatar now renders in the Settings panel (img, not initials)…
     await expect(page.getByTestId(`user-avatar-${id}`)).toBeVisible();
@@ -1119,12 +1120,12 @@ test.describe("PRU — avatar cropper, storage, and removal", () => {
 
     await expect.poll(async () => (await storedAvatar(tracker.root, id))?.bytes ?? 0)
       .toBeGreaterThan(0);
-    const stored = await storedAvatar(tracker.root, id);
+    const stored = defined(await storedAvatar(tracker.root, id), "stored avatar");
     // <=500px longest edge, aspect preserved (a centred square crop of
     // a 4:3 photo is square once cropped, so the clamp is symmetric).
-    expect(Math.max(stored!.width, stored!.height)).toBeLessThanOrEqual(500);
+    expect(Math.max(stored.width, stored.height)).toBeLessThanOrEqual(500);
     // An order of magnitude smaller than the multi-MB source.
-    expect(stored!.bytes).toBeLessThan(source.byteLength / 10);
+    expect(stored.bytes).toBeLessThan(source.byteLength / 10);
     // No frozen dialog: the cropper is gone and the panel is interactive.
     await expect(page.getByTestId(`avatar-cropper-${id}`)).toHaveCount(0);
   });
@@ -1155,11 +1156,11 @@ test.describe("PRU — avatar cropper, storage, and removal", () => {
 
     await expect.poll(async () => (await storedAvatar(tracker.root, id))?.width ?? 0)
       .toBeGreaterThan(0);
-    const stored = await storedAvatar(tracker.root, id);
+    const stored = defined(await storedAvatar(tracker.root, id), "stored avatar");
     // The server does not enlarge: the stored longest edge stays <=64,
     // never blown up to 500.
-    expect(Math.max(stored!.width, stored!.height)).toBeLessThanOrEqual(64);
-    expect(Math.max(stored!.width, stored!.height)).toBeGreaterThan(1);
+    expect(Math.max(stored.width, stored.height)).toBeLessThanOrEqual(64);
+    expect(Math.max(stored.width, stored.height)).toBeGreaterThan(1);
   });
 
   // @verifies PRU-29
@@ -1189,9 +1190,9 @@ test.describe("PRU — avatar cropper, storage, and removal", () => {
 
     await expect.poll(async () => (await storedAvatar(tracker.root, id))?.bytes ?? 0)
       .toBeGreaterThan(0);
-    const stored = await storedAvatar(tracker.root, id);
+    const stored = defined(await storedAvatar(tracker.root, id), "stored avatar");
     // Stored as a single-frame JPG, not the animated GIF.
-    expect(stored!.ext).toBe("jpg");
+    expect(stored.ext).toBe("jpg");
     const meta = await sharp(await readFile(
       path.join(tracker.root, ".loctt", "users", id, "avatar.jpg"),
     )).metadata();

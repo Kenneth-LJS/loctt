@@ -23,13 +23,6 @@ export function shortDate(value: string, today?: string): string {
   });
 }
 
-/** True when a due date (YYYY-MM-DD) is strictly before `today`. */
-export function isOverdue(dueDate: string, today: string): boolean {
-  // Both are date-only; lexical compare on YYYY-MM-DD is chronological.
-  const due = dueDate.length >= 10 ? dueDate.slice(0, 10) : dueDate;
-  return due < today;
-}
-
 /**
  * Compact relative time ("just now", "5m ago", "3h ago", "2d ago",
  * "3w ago", "5mo ago", "2y ago") from an ISO timestamp. Falls back to

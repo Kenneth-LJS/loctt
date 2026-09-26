@@ -33,8 +33,13 @@ ran.
 
 ## Is any of this a publish blocker?
 
-**Ken ruled (2026-09-11): §A1 is a publish blocker — fix before
-publishing.** The rest is fast-follow.
+**Superseded by K74 (2026-09-16).** Ken ruled (2026-09-11) that §A1 alone
+was "the one true blocker"; K74 widened that to *every* WCAG AA failure
+blocking publish, which also makes §A2 (menu arrow-key nav) a blocker.
+K136 (2026-09-27) closed both §A1 and §A2 — see their sections below —
+and folded §A3 (loading states) into the release gate as a fast-follow
+that has since also closed. The text immediately below is kept for
+historical context; treat the section-level status markers as current.
 
 - **P0 — BLOCKER (Ken's ruling):** the dialog focus-trap / inert / focus-
   restore gap (§A1). It is a real keyboard/screen-reader regression, not
@@ -57,7 +62,19 @@ So: one true blocker (§A1), the rest fast-follow.
 
 ## A. Accessibility & interaction — do first (real user harm)
 
-### A1. Dialogs bypass the focus-trap / inert / focus-restore primitive — **P0, cross-confirmed — PARTIALLY FIXED (K71)**
+### A1. Dialogs bypass the focus-trap / inert / focus-restore primitive — **P0, cross-confirmed — RESOLVED (K71; lightbox A352, A11Y-62)**
+
+**Status correction:** this heading previously read "PARTIALLY FIXED"
+while the body below said "K71 COMPLETE" — the two disagreed, and both
+were stale regardless once the release-gate audit (K135) found a genuine
+modal outside K71's roster: the image lightbox
+(`apps/web/src/client/editor/BodyRenderedView.tsx`, `ImageLightbox`) had
+`role="dialog" aria-modal="true"` but no focus trap and no inert
+background. K136 named this one of the five release blockers to close.
+`BodyRenderedView.tsx`'s lightbox now has `useFocusTrap`/`useInertBackground`
+wired in, recorded as decisions.md §8 A352.1 ("DR-A1: the image lightbox
+gets the modal apparatus") and verified by case A11Y-62 and its spec in
+`flow-accessibility.spec.ts`.
 
 **Fixed 2026-09-11** via a shared `ui/ConfirmDialog.tsx`
 (`ConfirmDialog` + `TypedConfirmDialog`, over `Dialog`/`Modal`). These
@@ -96,14 +113,26 @@ the apparatus), or call `useFocusTrap` + `useInertBackground`. This
 overlaps entirely with §B1 — the `ConfirmDialog` primitive fixes the
 delete-dialog subset of this list at the same time.
 
-### A2. `Menu` claims the ARIA menu pattern but omits arrow-key nav — P1
-`ui/Menu.tsx` sets `role="menu"` (:80) / `role="menuitem"` (:120) and
-Escape (:56) but has **no ArrowUp/ArrowDown** handler. A `role="menu"`
-contract requires roving arrow-key movement. Either implement it or drop
-to plain buttons (which don't promise the pattern).
+### A2. `Menu` claims the ARIA menu pattern but omits arrow-key nav — P1, blocker via K74 — **RESOLVED (`ui/Menu`; BulkBar pickers A352, A11Y-63)**
+`ui/Menu.tsx` now implements arrow-key nav (initial focus, ArrowUp/Down
+wrap, Home/End, type-ahead — A11Y-13, A-MENU-ARROWNAV). The release-gate
+audit (K135) found one remaining hand-rolled instance,
+`list/BulkBar.tsx`'s `BulkPicker`; it has since moved onto `ui/Menu`,
+recorded as decisions.md §8 A352.2 ("DR-A2: the bulk-bar pickers move
+onto `ui/Menu`") and verified by case A11Y-63 and its spec.
 
-### A3. Loading states are ad-hoc and silent to screen readers — P1
-No shared loading/skeleton component. ~14+ features re-spell
+Original finding, kept for context: `ui/Menu.tsx` set `role="menu"` /
+`role="menuitem"` and Escape but had **no ArrowUp/ArrowDown** handler. A
+`role="menu"` contract requires roving arrow-key movement.
+
+### A3. Loading states are ad-hoc and silent to screen readers — P1 — **CLOSED (A-LOADINGSTATE; case + test added 2026-09-27, K136)**
+Previously carried no status marker despite `ui/LoadingState.tsx` (A-LOADINGSTATE)
+already existing and being adopted by every file this section names. The
+remaining gap — no case and no `@verifies` test — is closed: case A11Y-61
+(`tests/cases/ui-test-cases/flow-accessibility.md`) and
+`apps/web/src/client/ui/LoadingState.test.tsx` now carries `@verifies A11Y-61`.
+
+Original finding, kept for context: no shared loading/skeleton component. ~14+ features re-spell
 `<div class="p-8 text-[13px] text-text-tertiary">Loading…</div>` with
 **no `role="status"`/`aria-busy`/`aria-live`**, so loads aren't
 announced: `settings/{PreferencesPanel:78, CardLayoutPanel:81,
@@ -116,7 +145,13 @@ MilestonesView:146}`, `sprints/SprintDetail:72`. The pattern *exists* —
 (`role="status"`) — most features just don't use it. **Fix:** a shared
 `LoadingState` with the live-region baked in.
 
-### A4. Ad-hoc accent focus rings override the token ring — P2
+### A4. Ad-hoc accent focus rings override the token ring — P2 — **RESOLVED (A-FOCUSRING)**
+Zero `outline-accent` remains in `apps/web/src/client`; the global ring
+is the single source (`styles/index.css`). Covered by A11Y-16
+(`tests/ui/flow-accessibility.spec.ts`, both themes). Caveat: A11Y-16
+asserts a visible indicator exists, not that it is non-accent, so a
+reintroduced `focus:outline-accent` could stay green — noted, not fixed,
+in the 2026-09-26 release-gate audit.
 Global ring is `styles/index.css:143`
 `:focus-visible { outline: 2px solid var(--text-primary) }`. Several raw
 inputs override it with an **accent-colored** ring —
@@ -191,32 +226,54 @@ exactly this; only 8 files import it, none of the above. The hand-rolled
 banners use `bg-danger-fg/5`, `Callout` uses the `bg-danger-bg` token —
 so they're not even the same color.
 
-### B4. Raw form controls beside their primitives — P2
+### B4. Raw form controls beside their primitives — P2 — **partly superseded (K106/A281)**
+**Status correction:** the raw-`<select>` sub-item below is stale. K106
+generalized `ui/Combobox` (`searchable`/`multi` props) and A281 removed
+every raw JSX `<select>` outside `ui/Select.tsx` — the four call sites
+named below no longer apply as written. The raw-`<input>`/raw-radio
+findings were not re-checked this pass; the 2026-09-26 audit counted 40
+raw `<input>` (excl. checkbox/radio) and 3 raw radios remaining (down
+from 55/2 listed here) — treat the counts below as historical.
+
 - 55 raw `<input>` outside `ui/` (excl. checkbox/radio). Direct drift:
   `settings/UserDeleteDialog.tsx:170` hand-spells the typed-confirm input
   while `task/DeleteTaskDialog.tsx:103` uses `TextField` for the *same*
   field.
-- raw `<select>`: `settings/DeleteProjectDialog.tsx:79`,
+- ~~raw `<select>`: `settings/DeleteProjectDialog.tsx:79`,
   `task/MoveTaskDialog.tsx`, `task/editors/OptionPicker.tsx`,
-  `relationships/LinkPicker.tsx` (despite `ui/Select`).
+  `relationships/LinkPicker.tsx` (despite `ui/Select`).~~ Superseded —
+  no raw `<select>` remains outside `ui/Select.tsx` (K106, A281).
 - raw radios: `settings/UserDeleteDialog.tsx:125,138` while sibling
   `settings/RemapDeleteDialog.tsx:93,107` uses the `Radio` primitive for
   the identical remap-choice UI.
 
-### B5. Hand-rolled menus bypass `ui/Menu` — P2
-`list/ExportMenu.tsx`, `list/BulkBar.tsx` (:345,:369) build `role="menu"`
+### B5. Hand-rolled menus bypass `ui/Menu` — P2 — **resolved (`list/ExportMenu.tsx` deleted; `list/BulkBar.tsx` moved onto `ui/Menu`, A352.2)**
+**Status correction:** `list/ExportMenu.tsx`, cited below, no longer
+exists in the tree. `list/BulkBar.tsx`'s `BulkPicker` (same underlying
+issue as §A2) now uses `ui/Menu`/`MenuItem` — decisions.md §8 A352.2,
+verified by case A11Y-63.
+
+`list/ExportMenu.tsx`, `list/BulkBar.tsx` (:345,:369) built `role="menu"`
 dropdowns by hand instead of `ui/Menu` (used correctly by Header,
 TaskDetail, FilterFacet, RelationshipRow, KeyboardPanel).
 
-### B6. Chip + icon-glyph adoption partial — P2
+### B6. Chip + icon-glyph adoption partial — P2 — **glyph half superseded (A208, K104)**
+**Status correction:** the glyph-bypass findings below are stale. A208
+introduced `ui/Icon.tsx`, an SVG affordance set, and K104 (icon editor:
+Lucide + emoji) moved the client onto `lucide-react` as a real
+dependency; no literal `×`/`▾`/`▸` affordance remains bypassing it. The
+Chip-adoption half (below) was not re-checked this pass; the 2026-09-26
+audit found 5 importers (up from 4) and hand-rolled pills still present.
+
 Chip: 4 importers; hand-rolled pills remain in
 `sprints/SprintMetaHeader.tsx:285,390`, `milestones/MilestoneDetail.tsx:186`,
 `milestones/MilestonesView.tsx:390,398`, `task/editors/LabelsField.tsx:144,169`,
 `create/CreateTaskModal.tsx:1172`, `shell/Sidebar.tsx:353`.
-Glyphs bypassing the `ICON` map (`ui/icons.ts`): `create/CreateTaskModal.tsx:427`
+~~Glyphs bypassing the `ICON` map (`ui/icons.ts`): `create/CreateTaskModal.tsx:427`
 & `shell/ShortcutHelpDialog.tsx:80` use `"×"` (want `ICON.close` `✕`);
 `list/FilterFacet.tsx:89`, `relationships/RelationshipsPanel.tsx:241`,
-`relationships/TreeRows.tsx:75` use literal `▾`/`▸`.
+`relationships/TreeRows.tsx:75` use literal `▾`/`▸`.~~ Superseded by
+`ui/Icon.tsx` (A208) and K104 — no literal glyph affordance remains.
 
 ### Library health (verified, no redesign needed)
 - **Dialog vs Modal:** correctly layered, not redundant. Modal = base
@@ -225,15 +282,29 @@ Glyphs bypassing the `ICON` map (`ui/icons.ts`): `create/CreateTaskModal.tsx:427
   the hand-rolled overlays in §B1, which should be deleted.
 - **Button / IconButton / ToolbarButton:** clean separation, both compose
   Button and share `BUTTON_VARIANT`. No redundancy.
-- **Icons:** deliberate Unicode-glyph strategy via `ICON` map, not an
+- ~~**Icons:** deliberate Unicode-glyph strategy via `ICON` map, not an
   `<Icon>` component. Only 8 inline `<svg>`, all legitimate (charts,
-  glyphs).
+  glyphs).~~ **Superseded (A208, K104):** the client now has `ui/Icon.tsx`,
+  an `<Icon>` component over an SVG set, and `lucide-react` is a real
+  dependency (icon editor: Lucide + emoji, K104). The Unicode-glyph
+  strategy described here is no longer the current design.
 
 ---
 
 ## C. Design-token adherence — fast-follow (cosmetic)
 
-### C1. Spacing scale (`--space-*`) never adopted — B4 never ran — P2
+### C1. Spacing scale (`--space-*`) never adopted — B4 never ran — P2 — **RETIRED (K136)**
+**Retired 2026-09-27 (K136).** This item's premise now conflicts with
+A11Y-39 (WCAG 1.4.4, text-only zoom): `styles/index.css` documents that
+the rem-based `p-*`/`gap-*` Tailwind utilities are kept deliberately
+*because* they scale with text-only zoom, while `--space-*` are px
+values that would not. Migrating call sites onto `--space-*` as this
+item asks would regress text-zoom, not fix a gap. No further work is
+planned against this item; re-expressing the scale in rem and then
+migrating would be a new, differently-scoped item if ever picked up
+again — see the corruption-audit-style historical text below for the
+original finding.
+
 - `var(--space-*)` at call sites: **0**.
 - rem-based Tailwind spacing (`p-*`,`gap-*`,`m-*`,`space-y-*`): **1,818
   across 108 files**.
@@ -245,14 +316,23 @@ Glyphs bypassing the `ICON` map (`ui/icons.ts`): `create/CreateTaskModal.tsx:427
   (54), `settings/ProjectsPanel` (53), `sprints/SprintsView` (46).
 
 ### C2. Type scale never adopted — P2
+**Status correction:** the px counts below predate the A11Y-39 rem
+conversion. The comment sub-item ("Fix the comment regardless of the
+migration") is resolved — `styles/index.css` is now accurate. The counts
+themselves are stale: the values here were raw `text-[Npx]` counts;
+after A11Y-39 converted the app's pixel sizes to rem, the equivalent
+count is inline `text-[…rem]` against the named scale, which the
+2026-09-26 audit put at 809 inline vs 61 named (not the `[Npx]` figures
+below). The migration itself is unchanged — still not done.
+
 Named scale (`text-meta/label/body/heading`, `index.css:88-91`) used in
 **12 places, all in `ui/`**. **873** `text-[Npx]` remain:
 `[12px]`×352 → `text-label`, `[13px]`×334 → `text-body`, `[11px]`×139 +
 `[10px]`×21 → `text-meta`, `[15px]`×15 → `text-heading`; off-scale
 one-offs `[14px]`×8, `[9px]`×2, `[20px]`×1 (`task/TaskDetail.tsx`).
-**Also:** the `index.css:71-87` comment claims this scale "replaces the 9
+~~**Also:** the `index.css:71-87` comment claims this scale "replaces the 9
 ad-hoc `text-[Npx]` sizes" — false; ~875 remain. **Fix the comment
-regardless of the migration.**
+regardless of the migration.**~~ Done — the comment is now accurate.
 
 ### C3. Radius drift — P2
 `rounded-sm/md/lg` used 182× (good), but **204 bare `rounded`**

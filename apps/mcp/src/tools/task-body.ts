@@ -20,7 +20,7 @@ import type { ToolDef } from "../types.js";
 const EXPECTED_TOKEN_DESC
   = "The `body_token` from your `get_task` read. When given, the write is "
   + "refused if the task changed in between, and nothing is written. Pass it "
-  + "whenever you have it — omitting it overwrites concurrent edits silently.";
+  + "whenever you have it. Omitting it overwrites concurrent edits silently.";
 
 /** `{ expectedToken }` when the arg is a usable string, else `{}`. */
 function tokenOpts(args: Record<string, unknown>): { expectedToken?: string } {

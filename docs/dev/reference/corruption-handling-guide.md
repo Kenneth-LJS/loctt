@@ -216,6 +216,12 @@ mismatch when every other command refuses to run.
   settings and `checkDataIntegrity` emits a `malformed` finding naming
   each dropped id (and one for a wholly-unshaped value). Non-blocking —
   the valid ids still load.
+- **per-user `keyboard_shortcuts` salvage** (K133) — a hand-edited unknown
+  shortcut id, a duplicate, or a non-boolean `single_key` is lifted out on
+  load so single-key shortcuts fail open (on); `collectKeyboardShortcutsDrops`
+  (in `users/settings.ts`) reads the raw settings and `checkDataIntegrity`
+  emits a `malformed` finding naming each dropped part (and one for a
+  wholly-unshaped value). Non-blocking.
 - key-index drift, interrupted prefix-rename / reconciliation / migration
 
 **It does NOT currently cover (known gaps — fix when you touch them):**
@@ -231,6 +237,22 @@ blocks a publish (LocTT cannot vouch for the bytes); `malformed` and
 preserved — blocking would be destruction by another route). Any new
 finding must pick the right one: **can we safely publish this?** If yes,
 `malformed`; if the bytes are unread, `unreadable`.
+
+### Coverage check (RR-H1, light pass, 2026-09-27)
+
+This month's additions, walked against the checklists above:
+
+| Field / object | Field-local or fatal? | Reader degrades? | In doctor? | Gap found |
+|---|---|---|---|---|
+| `keyboard_shortcuts` (K133) | field-local | yes — `salvageKeyboardShortcuts`, fails open (all on) | yes — `collectKeyboardShortcutsDrops` → `checkDataIntegrity` | had zero test at the doctor/integrity layer (only unit-level `shortcuts.test.ts`); added two `integrity.test.ts` cases |
+| `sidebar_groups` incl. `filters` group id (K125) | field-local | yes — `salvageSidebarGroups`, degrades to "no customization" | yes — `collectSidebarGroupsDrops` → `checkDataIntegrity`, tested | none — the `filters` group id is just one more entry in the closed `SIDEBAR_ITEM_IDS` set the existing salvage already walks; no separate code path to miss |
+| Body draft (`sessionStorage`, A338) | field-local (per-tab, ephemeral) | yes — `readBodyDraft` drops an unparseable/wrong-shaped entry and a blocked/throwing `Storage` degrades to "no draft" everywhere it's touched | n/a — not on-disk tracker state, so outside doctor's scope by design | none — `bodyDraft.test.ts` already covers the malformed-JSON, wrong-type, and blocked-storage cases |
+| Unique view names (B21/K129) | write-time refusal (not stored corruption) | n/a — a duplicate name already on disk (pre-K129, or hand-edited) keeps loading and running by id; only a *new write* to a taken name is refused | n/a — nothing to salvage on read | none — this is a write guard, not a degrade-on-load case; `views/manage.test.ts` covers the refusal |
+
+Everything else in `known-gaps.md`'s roster and the guide's own list
+still holds; this pass only checked the fields/objects listed above plus
+their obvious siblings, not a full re-audit (Ken: "we already done one
+round of it").
 
 ---
 

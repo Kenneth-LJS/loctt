@@ -208,7 +208,7 @@ function describe(status: SchemaStatusResponse): {
         detail:
           `The data directory is at schema v${status.on_disk}, ahead of this build ` +
           `(v${status.current}). Update LocTT to continue (\`npm install -g ` +
-          "@loctt/cli@latest\`). A newer schema can't be downgraded.",
+          "loctt@latest\`). A newer schema can't be downgraded.",
       };
     case "unknown":
       return {

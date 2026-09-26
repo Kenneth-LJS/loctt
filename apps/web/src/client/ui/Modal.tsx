@@ -392,7 +392,9 @@ export function useInertBackground(panelRef?: RefObject<HTMLElement | null>): vo
         if (target !== null && target.isConnected) target.focus();
       });
     };
-  }, []);
+    // `panelRef` is a `useRef` object at every caller, so its identity
+    // is fixed for the dialog's lifetime and this still runs once.
+  }, [panelRef]);
 }
 
 installChromeFocusTracker();

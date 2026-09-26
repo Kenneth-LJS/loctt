@@ -86,7 +86,10 @@ export function BoardView() {
     [projects.data, users.data, labels.data, workflow.data],
   );
 
-  const pages = tasks.data?.pages ?? [];
+  // Memoised so the empty fallback is one array, not a fresh `[]` each
+  // render: `items` below depends on `pages`, and a new fallback every
+  // render would recompute it (and everything keyed on it) every render.
+  const pages = useMemo(() => tasks.data?.pages ?? [], [tasks.data?.pages]);
   // A313: parity with the list and timeline (ListView.tsx, TimelineView.tsx).
   // `?view=<broken id>` returns a non-fatal `broken_view` diagnostic
   // alongside every task, unfiltered — the board previously drew a card
@@ -125,7 +128,7 @@ export function BoardView() {
   const buckets = useMemo(() => bucketTasks(columns, items), [columns, items]);
 
   // The workspace's date, not the browser's — the same source the
-  // list uses, so both views agree on which cards are overdue.
+  // list uses, so both views format due dates alike.
   const today = info.data?.today ?? new Date().toISOString().slice(0, 10);
 
   const cardLayout = useMemo(

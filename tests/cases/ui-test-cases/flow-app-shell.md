@@ -289,7 +289,7 @@ a violation of P4.
 
 - The banner states that this tracker was written by a newer version of LocTT and that **this app is too old to read it safely**.
 - It shows both numbers: the on-disk version and the version this build supports.
-- The next action is to **upgrade LocTT** (e.g. `npm install -g @loctt/cli@latest`), not to migrate.
+- The next action is to **upgrade LocTT** (e.g. `npm install -g loctt@latest`), not to migrate.
 - The banner explicitly does **not** offer `loctt migrate`, and in M4 does **not** render a "Migrate now" button — migration cannot help here and offering it would invite data loss.
 - Writes are blocked or clearly marked unsafe rather than proceeding against a format the app doesn't understand.
 

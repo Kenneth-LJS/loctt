@@ -86,7 +86,10 @@ export function TimelineView() {
   // creating a task would not answer either state.
   const createTask = useCreateTask();
 
-  const pages = tasks.data?.pages ?? [];
+  // Memoised so the empty fallback is one array, not a fresh `[]` each
+  // render: `items` below depends on `pages`, and a new fallback every
+  // render would recompute it (and everything keyed on it) every render.
+  const pages = useMemo(() => tasks.data?.pages ?? [], [tasks.data?.pages]);
   // A313: parity with the list (ListView.tsx). `?view=<broken id>`
   // returns a non-fatal `broken_view` diagnostic alongside every task,
   // unfiltered — the same server behaviour the list guards against.
@@ -152,7 +155,7 @@ export function TimelineView() {
 
   // The workspace's today, not the browser's — TML-16 asks for the
   // marker "for the workspace timezone", and this is the same value
-  // the list and board use for overdue.
+  // the list and board use to format due dates.
   const today = info.data?.today ?? new Date().toISOString().slice(0, 10);
 
   const model = useMemo(

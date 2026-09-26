@@ -74,7 +74,7 @@ does not, and **which build you need depends on what you changed**:
 
 | Changed | Rebuild with | Why |
 |---|---|---|
-| `apps/web/src/client/**` | `npm run build -w @loctt/web` | The SPA is served from `apps/web/dist/client` |
+| `apps/web/src/client/**` | `npm run build` (root) | The harness serves `apps/cli/dist/client`, a copy the CLI build makes from `apps/web/dist/client` (see `apps/cli/tsup.config.ts`) — building `@loctt/web` alone updates the source but not the CLI's copy |
 | `apps/web/src/server/**` | `npm run build` (root) | The fixture runs `loctt ui` from `apps/cli/dist/index.js`, which **bundles** the server via tsup — `tsc --build` alone does not update it |
 | `packages/core/**` | `npm run build` (root) | Same bundle |
 
