@@ -22859,6 +22859,46 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A351 · Post-merge fixes: task due dates, MCP descriptions, disabled switches, per-candidate reasons (B28–B31)
+
+#### A351 · B28–B31 (K135): overdue dates, MCP em dashes, disabled toggles, unreadable candidates
+
+**Date:** 2026-09-26 · Agent-made, revertible.
+
+#### A351.1 · B28: which cases carry the "no red overdue date" requirement
+
+- **Context:** K135 "remove" (task due dates turning red when overdue). The brief said to amend every case that requires an overdue indication on a task date. None does: grepping both case trees for overdue/red/danger/highlight on a task due date finds only the built-in "Overdue" filter (VUE-5, SVW cases), milestone/sprint cases already amended under K131/K132, and TML-19's danger colour for *corrupt* dates.
+- **Decision:** Codify the absence instead, as an amended bullet on the two cases that describe how a task's due date renders: LST-2 (the list's `due` column) and BRD-5 (card fields). Both gain P11 and the note `> **Amended (K135, Ken 2026-09-26).** Ken: *"remove"* (task due dates turning red when overdue).` New tests: `ListView.test.tsx` ("renders a past due date exactly like a future one…", @verifies LST-2) and `BoardCard.test.tsx` (same name, @verifies BRD-5). They assert on the rendered class and text, not a testid.
+- **Scope kept:** the "Overdue" built-in sidebar filter is untouched (a query the user chooses). The timeline's danger-coloured anomaly marker (TML-18/19, reversed/corrupt dates) and MetaPanel's inverted-dates problem are data faults, not overdue nudges, and are untouched. `isOverdue` in `list/format.ts` had no remaining caller and was deleted with its three unit tests. `today` stays wired to the list and board because `shortDate` uses it to decide whether to print the year.
+- **Why:** a case + `@verifies` test is how this repo holds a ruling; with no case requiring the red, the nearest case describing the date's rendering is where the absence belongs.
+- **Alternatives:** a new LST/BRD case (more index churn, same content); no case (the ruling would live only in tests and K135).
+- **To revert:** remove the added bullet and amendment note from LST-2 and BRD-5 (and P11 from their tags), delete the two tests, run `npm run cases:index`.
+
+#### A351.2 · B29: rewriting em dashes in MCP descriptions
+
+- **Context:** K135 "remove" em dashes from MCP tool descriptions. Counted over the live `tools/list` output (every tool description plus every `description` in every input schema, nested ones included): **before 95 em dashes in 66 of 317 strings; after 0**. The source edits are 76 sites across 17 files (several strings are shared, e.g. `COLOR_INPUT_DOC` appears in 7 tool/param descriptions).
+- **Decision:** Each dash became a sentence break, a colon or a comma, per messaging.md. No new semicolons were introduced (the `list_palette_colors` hint reads "for the valid ids, and do not guess them"; `edit_workflow_entity.op` reads "(must be legal for the entity, as the description lists)"). Every instruction an agent relies on is kept (confirm gates, "call first", "do not guess", "pass exactly one", REPLACES-whole-list, etc.). Two doc lines in `docs/user/mcp/reference.md` that quoted the old wording were updated. A guard test was added to `tests/e2e/11-mcp-schema-contract.test.ts` that walks every tool and parameter description and fails on any em dash (the adapter's `listTools` now also returns `inputSchema`).
+- **Scope kept:** error messages thrown by MCP handlers (`views.ts` "Saved views could not be listed…", `workflow-entities.ts` FieldsError texts, `task-crud.ts` export warning) still contain em dashes. They are not tool descriptions or `.describe()` strings, which is what K135/B29 names. Not changed.
+- **Why:** messaging.md bans em dashes; the guard stops the next description from reintroducing one.
+- **Alternatives:** snapshot every description in full (the existing snapshot deliberately avoids that as too noisy).
+- **To revert:** restore the old strings in `apps/mcp/src/tools/*.ts` and `runtime/color.ts`, drop the new e2e test and the adapter's `inputSchema` field.
+
+#### A351.3 · B30: disabled switch colours
+
+- **Context:** K135 "fix": a disabled Toggle kept `bg-accent` at `opacity-50`, which read as a bright "on" in dark mode.
+- **Decision:** A disabled switch, checked or not, uses the `border-default` token for its track and `bg-surface` for its thumb, at full opacity. `disabled:checked:bg-border-default` stacks two pseudo-classes so it outranks `checked:bg-accent` regardless of emit order. The thumb's position still shows on/off. Measured live in the browser pane at Settings → Keyboard with the master off: light track `#D4DBE6` / thumb `#FFFFFF`, dark track `#2E2E34` / thumb `#141416`, versus accent `#0F766E` / `#39A88F`. A11Y-57 gains a bullet ("A disabled switch looks disabled in light and dark…") with a K135 amendment note, and a Playwright test (`flow-shortcuts-settings.spec.ts`, "A11Y-57 (K135): a disabled switch drops the accent in light and dark") compares computed colours to the tokens resolved in each theme.
+- **Why:** muted tokens read as disabled in both themes; opacity over the accent does not in dark.
+- **Alternatives:** `bg-muted` track (near-invisible on `bg-surface` in dark, `#1F1F22` on `#141416`); `text-disabled` thumb (lower contrast against the track in light).
+- **To revert:** restore `disabled:opacity-50` and drop `disabled:bg-border-default disabled:checked:bg-border-default` / `peer-disabled:bg-bg-surface` in `apps/web/src/client/ui/Toggle.tsx`; remove the A11Y-57 bullet and the spec.
+
+#### A351.4 · B31: each unreadable candidate with its own reason
+
+- **Context:** K135, Ken on A348's deliberate double path: *"feels like something that should be fixed"*. `UnreadableTaskError`'s indeterminate case listed every candidate path and then only the first file's `err.message`, which carried that file's path again.
+- **Decision:** `UnreadableTaskError.indeterminateRef(ref, candidates: {path, cause}[])` now takes each candidate's own cause. The error gains `reasons: {path, reason}[]` (reason via `TaskParseError.reasonOf`). With several paths the message is the headline, then `Repair these files and try again:` followed by one `path: reason` line per file (newline-separated), so each path appears exactly once. `reason` (the envelope's `detail`) is those same lines; with one path it is unchanged (the unwrapped parse error). The single-path messages are unchanged. CLI and MCP reference docs gained one paragraph describing the error.
+- **Why:** each path once, each with its own cause, is what "each candidate file gets its own reason" asks.
+- **Alternatives:** keep `reason` = first file's reason only (loses the others in the envelope); join lines with "; " (messaging.md bans semicolons).
+- **To revert:** restore the three-argument `indeterminateRef(ref, paths, cause)`, the old `reason` computation and message in `packages/core/src/task/lookup.ts`, and drop `reasons` and the new test in `lookup-unreadable.test.ts`.
+
 ### A350 · Fix the third review's findings (K133/K134 follow-ups, path-once)
 
 Agent-made implementation choices, § 8 format.

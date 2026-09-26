@@ -49,13 +49,16 @@ create button of its own). Column *configuration*
 - Switching to a different user and opening `/board` shows that user's own chip state (all columns visible for a user who has never toggled), not the first user's.
 - The board is not blocked on the settings write: the column disappears immediately on click, before the PATCH resolves.
 
-### BRD-5 · M3 · major · P3 P9
+### BRD-5 · M3 · major · P3 P9 P11
 **Cards render exactly the fields `UserSettings.card_layout` marks visible, in the stored order.** `card_layout` has assignee and due date on, priority and labels off.
+
+> **Amended (K135, Ken 2026-09-26).** Ken: *"remove"* (task due dates turning red when overdue).
 
 - Each card shows the title, the key, the assignee, and the due date.
 - No priority pill and no label pills appear on any card.
 - Reordering `card_layout` so due date precedes assignee reorders the corresponding rows on every card without a reload beyond the settings round-trip.
 - A user with no `card_layout` in settings gets the built-in default layout, and the board does not error on the missing key.
+- A card whose due date is before today shows it exactly like any other due date: no red, no danger colour, no extra weight, no "overdue" text.
 
 ### BRD-6 · M3 · major · P3 P9
 **A column with a `wip` limit shows a count against the cap and flags going over.** Column `In flight` has `wip: 3`.

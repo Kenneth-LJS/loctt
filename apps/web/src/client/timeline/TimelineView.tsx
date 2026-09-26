@@ -152,7 +152,7 @@ export function TimelineView() {
 
   // The workspace's today, not the browser's — TML-16 asks for the
   // marker "for the workspace timezone", and this is the same value
-  // the list and board use for overdue.
+  // the list and board use to format due dates.
   const today = info.data?.today ?? new Date().toISOString().slice(0, 10);
 
   const model = useMemo(

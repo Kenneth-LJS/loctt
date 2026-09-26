@@ -54,7 +54,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "doctor",
-    description: "Runs diagnostic checks on the tracker. Returns structured JSON {healthy, counts:{ok,warn,error}, checks:[{name,status,message,fix?}]} — branch on `healthy` or on a check's `status` rather than reading the messages. `healthy` is false when any check is in error. A check's optional `fix` names the programmatic repair for it: \"rebuild-index\" (pass rebuild_index:true) or \"restore-missing\" (pass restore_missing:true). Pass `rebuild_index: true` to rebuild the key-lookup cache (recovery for out-of-band frontmatter edits); pass `restore_missing: true` to recreate missing core config/state files with defaults (existence-guarded — never overwrites surviving data).",
+    description: "Runs diagnostic checks on the tracker. Returns structured JSON {healthy, counts:{ok,warn,error}, checks:[{name,status,message,fix?}]}. Branch on `healthy` or on a check's `status` rather than reading the messages. `healthy` is false when any check is in error. A check's optional `fix` names the programmatic repair for it: \"rebuild-index\" (pass rebuild_index:true) or \"restore-missing\" (pass restore_missing:true). Pass `rebuild_index: true` to rebuild the key-lookup cache (recovery for out-of-band frontmatter edits); pass `restore_missing: true` to recreate missing core config/state files with defaults (existence-guarded: never overwrites surviving data).",
     inputSchema: {
       rebuild_index: z.boolean().optional().describe("If true, rebuild the on-disk key index after checks. Use after manual frontmatter edits to a task's key or key_history."),
       restore_missing: z.boolean().optional().describe("If true, recreate any missing core config/state files with defaults (initLoctt repair). Existence-guarded: surviving files and tasks are untouched."),
@@ -96,7 +96,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "init",
-    description: "Bootstraps a new loctt tracker at the server's working directory if .loctt/ doesn't exist yet or is an empty folder (it is filled in). Only call when explicitly asked to set up a new tracker — this is a one-time operation, not a routine task action.",
+    description: "Bootstraps a new loctt tracker at the server's working directory if .loctt/ doesn't exist yet or is an empty folder (it is filled in). Only call when explicitly asked to set up a new tracker. This is a one-time operation, not a routine task action.",
     inputSchema: {
       prefix: z.string().optional().describe("Key prefix for tasks (default 'T-')."),
       project_label: z.string().optional().describe("Name of the starting project (default 'Tasks')."),
@@ -142,7 +142,7 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "Upgrade the tracker's on-disk schema to the version this build " +
       "understands. Call with confirm: false (or omit it) FIRST to preview " +
-      "what would change — migration rewrites task frontmatter across the " +
+      "what would change. Migration rewrites task frontmatter across the " +
       "whole tracker and some steps are marked risky. Only call with " +
       "confirm: true once the user has seen the plan and agreed. A backup " +
       "is written before any step runs and is never deleted. Unlike the " +

@@ -49,7 +49,7 @@ import {
 import { resolveColumns } from "./columns.ts";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog.tsx";
 import { clearedSearch, FilterBar } from "./FilterBar.tsx";
-import { isOverdue, relativeTime, shortDate } from "./format.ts";
+import { relativeTime, shortDate } from "./format.ts";
 import { buildLookups } from "./lookups.ts";
 import { Pagination } from "./Pagination.tsx";
 import { shouldNavigateRow } from "./rowNavigation.ts";
@@ -263,9 +263,9 @@ export function ListView() {
 
   const now = Date.now();
   // Workspace timezone, from the server — not the browser's clock, so
-  // the overdue highlight agrees with the "Overdue" sidebar filter and
-  // with the same query run through the CLI. Falls back to the UTC
-  // date only while `/api/info` is still in flight.
+  // a due date's year is judged against the tracker's calendar (the
+  // same `today` the "Overdue" sidebar filter and the CLI use). Falls
+  // back to the UTC date only while `/api/info` is still in flight.
   const today = info.data?.today ?? new Date(now).toISOString().slice(0, 10);
 
   const pages = tasks.data?.pages ?? [];
@@ -1569,12 +1569,9 @@ function Cell({
       return task.due_date === undefined ? (
         <Dash />
       ) : (
-        <span
-          className={[
-            "whitespace-nowrap",
-            isOverdue(task.due_date, today) ? "font-medium text-danger-fg" : "text-text-secondary",
-          ].join(" ")}
-        >
+        // K135: a past due date renders like any other. No red, no
+        // weight change. The date is shown, the user decides what it means.
+        <span className="whitespace-nowrap text-text-secondary">
           {shortDate(task.due_date, today)}
         </span>
       );

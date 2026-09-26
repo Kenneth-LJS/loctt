@@ -88,7 +88,7 @@ function treeChildSideKey(
 export const TOOLS: readonly ToolDef[] = [
   {
     name: "get_task",
-    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. When the body is included the result carries `body_token` — pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit. A task with direct children on the tree axis carries a `children` roll-up ({done, active, total, discarded}) — category-based, with discarded children excluded from `total`, matching milestone/sprint progress.",
+    description: "Get a task by key or ID, optionally including the markdown body. Relationship targets are returned as user-facing keys (e.g. T-2); deleted targets carry `missing: true` and retain the raw ID in `target`, and a target that is on disk but unreadable carries `targetCorrupt: true` (with `missing: true` when it could not be parsed at all, without it when it loaded but has field-level `health`) so a corrupt link is distinct from a deleted one. When the body is included the result carries `body_token`. Pass it as `expected_token` to `replace_task_body` / `append_task_body` so your write is refused rather than overwriting a concurrent edit. A task with direct children on the tree axis carries a `children` roll-up ({done, active, total, discarded}). It is category-based, with discarded children excluded from `total`, matching milestone/sprint progress.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),
       include_body: z.boolean().optional().describe("Whether to include the markdown body (default true)"),
@@ -197,7 +197,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "list_tasks",
-    description: "List tasks with optional query, view, and limit. Archived tasks are hidden by default (archived='active'); pass archived='archived' for only-archived or archived='all' for both. Saved views are respected as authored — they are not modified by this flag.",
+    description: "List tasks with optional query, view, and limit. Archived tasks are hidden by default (archived='active'); pass archived='archived' for only-archived or archived='all' for both. Saved views are respected as authored. This flag does not modify them.",
     inputSchema: {
       query: z.string().optional().describe("Ad hoc query string"),
       view: z.string().optional().describe("Named saved view"),
@@ -339,7 +339,7 @@ export const TOOLS: readonly ToolDef[] = [
       + "(query, view, project) resolve the same rows as list_tasks; the CSV "
       + "column set, formula-injection escaping and array handling come from "
       + "core, so the output matches the web download for the same rows. This "
-      + "is a report for a spreadsheet, not a backup — it cannot restore (use "
+      + "is a report for a spreadsheet, not a backup. It cannot restore (use "
       + "the `backup` tool for that). The output is raw CSV/JSON text; tasks "
       + "that cannot be read are named in a `Warning:` line prepended to that "
       + "text rather than silently dropped.",
@@ -428,7 +428,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "create_task",
-    description: "Create a new task and allocate its key under the resolved project. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the workspace default (or the only project) is used. Enum fields (status, priority, task_type) are validated against workflow.yaml before anything is written — an unknown key is rejected with the valid keys listed. Referencing an archived milestone, sprint, label, or user is refused by the archived-reference guard. Pass `parent` to pre-link the task under the tree axis in the same operation.",
+    description: "Create a new task and allocate its key under the resolved project. When the tracker has multiple projects, pass `project` to disambiguate; otherwise the workspace default (or the only project) is used. Enum fields (status, priority, task_type) are validated against workflow.yaml before anything is written. An unknown key is rejected with the valid keys listed. Referencing an archived milestone, sprint, label, or user is refused by the archived-reference guard. Pass `parent` to pre-link the task under the tree axis in the same operation.",
     inputSchema: {
       title: z.string(),
       project: z.string().optional().describe("Project slug, id, or name. Optional when a default project is configured or only one project exists."),
@@ -597,7 +597,7 @@ export const TOOLS: readonly ToolDef[] = [
       "\"(copy)\" unless overridden), status, priority, type, assignee, " +
       "reporter, dates, estimate, milestone, sprint, labels, custom fields " +
       "and body. Deliberately does NOT copy relationships, attachments, or " +
-      "archived state — the copy starts unlinked and active.",
+      "archived state. The copy starts unlinked and active.",
     inputSchema: {
       ref: z.string().describe("Task key or ID to copy"),
       title: z.string().optional().describe("Title for the copy; defaults to '<source> (copy)'"),
@@ -658,7 +658,7 @@ export const TOOLS: readonly ToolDef[] = [
       "Same field allowlist as update_task.",
     inputSchema: {
       refs: z.array(z.string()).min(1).max(500)
-        .describe("Task keys or IDs. Capped at 500 — one bulk op holds the tracker lock for its whole run."),
+        .describe("Task keys or IDs. Capped at 500, because one bulk op holds the tracker lock for its whole run."),
       field: z.string(),
       value: z.unknown().optional()
         .describe("The value to set. Omit or pass null to clear the field."),
@@ -692,11 +692,11 @@ export const TOOLS: readonly ToolDef[] = [
       "for the reversible (soft) variant. Always requires `confirm: true`. " +
       "Pass several refs to delete them as one operation (a single lock, a " +
       "shared bulk_op_id); a bad ref is reported without aborting the rest. " +
-      "This is irreversible — there is no history entry, because the file it " +
+      "This is irreversible. There is no history entry, because the file it " +
       "would live in is deleted with the task.",
     inputSchema: {
       refs: z.array(z.string()).min(1).max(500)
-        .describe("Task keys or IDs. Capped at 500 — one bulk op holds the tracker lock for its whole run."),
+        .describe("Task keys or IDs. Capped at 500, because one bulk op holds the tracker lock for its whole run."),
       confirm: z.boolean().optional().describe("Required: must be true to proceed"),
     },
     handler: async ({ locttDir }, args) => {
@@ -720,7 +720,7 @@ export const TOOLS: readonly ToolDef[] = [
       "knows how much history remains beyond the page; `offset` skips that many entries from " +
       "the newest end, so `offset` + `limit` walk a long history without gaps or repeats. " +
       "When the history file has hand-broken rows that cannot be read as entries, an " +
-      "`incomplete` count is included — the readable rows are still returned, but the log is " +
+      "`incomplete` count is included. The readable rows are still returned, but the log is " +
       "known to be partial.",
     inputSchema: {
       ref: z.string().describe("Task key (e.g. T-1) or ID"),

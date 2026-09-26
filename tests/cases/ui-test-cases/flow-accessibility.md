@@ -488,9 +488,12 @@ minority of these.
 ### A11Y-57 · M4 · major · P8
 **One shortcut can be turned off on its own.** In Settings → Keyboard (or the `?` dialog's Customize view), switch off "Create a task". *(K133)*
 
+> **Amended (K135, Ken 2026-09-26).** Added the last bullet. Told a disabled switch still looked bright in dark mode, Ken: *"fix"*.
+
 - `n` no longer opens the create modal; every other shortcut still fires.
 - The three Go-to sequences (`g` then `l`, `b` or `t`) are one shortcut with one switch. With it off, `g` does not wait for a second key, so the next key typed is not swallowed.
 - While the master switch is off, the per-shortcut switches are disabled but keep their state.
+- A disabled switch looks disabled in light and dark: its track and thumb take muted colours, and a switch that is on does not show the accent colour while disabled.
 - Each switch is a native switch with the shortcut's action as its accessible name, operable by keyboard, at least 24px.
 
 ### A11Y-58 · M4 · major · P4 P8

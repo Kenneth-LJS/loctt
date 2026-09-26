@@ -47,8 +47,8 @@ export const TOOLS: readonly ToolDef[] = [
     name: "list_comments",
     description:
       "List a task's comments in creation order. Each carries its author, " +
-      "body, timestamps, resolved mentions, and — when someone other than " +
-      "the author edited it — an `editors` provenance list.",
+      "body, timestamps and resolved mentions. A comment someone other than " +
+      "the author edited also carries an `editors` provenance list.",
     inputSchema: {
       ref: z.string().describe("Task key or ID"),
     },
@@ -83,7 +83,7 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "edit_comment",
     description:
-      "Replace a comment's body. Anyone may edit anyone's comment — this " +
+      "Replace a comment's body. Anyone may edit anyone's comment. This " +
       "is not an ownership check. The original author is preserved and the " +
       "editor is appended to the comment's `editors` list, so the change " +
       "is traceable.",

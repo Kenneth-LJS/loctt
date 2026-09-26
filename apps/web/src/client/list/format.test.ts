@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isOverdue, relativeTime, shortDate } from "./format.ts";
+import { relativeTime, shortDate } from "./format.ts";
 
 describe("shortDate", () => {
   it("formats a date-only string as 'Mon D' in UTC", () => {
@@ -13,18 +13,6 @@ describe("shortDate", () => {
 
   it("returns the raw value for an unparseable date", () => {
     expect(shortDate("not-a-date")).toBe("not-a-date");
-  });
-});
-
-describe("isOverdue", () => {
-  it("is true strictly before today", () => {
-    expect(isOverdue("2026-06-07", "2026-06-08")).toBe(true);
-  });
-  it("is false on today", () => {
-    expect(isOverdue("2026-06-08", "2026-06-08")).toBe(false);
-  });
-  it("is false in the future", () => {
-    expect(isOverdue("2026-06-09", "2026-06-08")).toBe(false);
   });
 });
 
