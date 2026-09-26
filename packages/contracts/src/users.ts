@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { IanaTimezone } from "./brands.js";
+import { KeyboardShortcutsSchema } from "./shortcuts.js";
 import type { FieldHealth } from "./task.js";
 
 /**
@@ -306,5 +307,7 @@ export const UserSettingsSchema = z.object({
   theme: ThemePreferenceSchema.optional(),
   sidebar_pins: SidebarPinsSchema.optional(),
   sidebar_groups: SidebarGroupsSchema.optional(),
+  // K133: the single-key shortcut switches. See `shortcuts.ts`.
+  keyboard_shortcuts: KeyboardShortcutsSchema.optional(),
 }).passthrough();
 export type UserSettings = z.infer<typeof UserSettingsSchema>;

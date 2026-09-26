@@ -189,12 +189,12 @@ test.describe("A11Y — global shortcuts", () => {
     // The registry is the single source both sides read, so this
     // asserts every registered id has a rendered row — including the
     // chords, which the first bullet names explicitly.
+    // K133 made the three `g` sequences one "Go to" shortcut (one row,
+    // one switch), so they are one row id here rather than three.
     for (const id of [
       "new-task",
       "focus-search",
-      "goto-list",
-      "goto-board",
-      "goto-timeline",
+      "goto",
       "toggle-sidebar",
       "cycle-theme",
       "shortcut-help",
@@ -203,8 +203,11 @@ test.describe("A11Y — global shortcuts", () => {
     }
     // The chords render both keys, so the reference teaches `g` then
     // `l` rather than a bare `g`.
-    await expect(dialog.getByTestId("shortcut-keys-goto-board")).toContainText("g");
-    await expect(dialog.getByTestId("shortcut-keys-goto-board")).toContainText("b");
+    await expect(dialog.getByTestId("shortcut-keys-goto")).toContainText("g");
+    await expect(dialog.getByTestId("shortcut-keys-goto")).toContainText("then");
+    for (const k of ["l", "b", "t"]) {
+      await expect(dialog.getByTestId("shortcut-keys-goto").locator("kbd", { hasText: new RegExp(`^${k}$`) })).toHaveCount(1);
+    }
 
     // Third bullet: keyboard-operable and closes on Esc.
     await expect(dialog.getByTestId("shortcut-help-close")).toBeFocused();

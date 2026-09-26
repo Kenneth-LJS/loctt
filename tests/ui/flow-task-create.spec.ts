@@ -1970,10 +1970,11 @@ test.describe("NEW — create task modal", () => {
     const err = page.getByTestId("create-error");
     await expect(err).toBeVisible();
     // All three things NEW-38 requires: what was attempted, that the
-    // state is uncertain, and what to do about it.
-    await expect(err).toContainText(/creat/i);
-    await expect(err).toContainText(/may or may not/i);
-    await expect(err).toContainText(/reload/i);
+    // state is uncertain, and what to do about it (check before
+    // retrying, since a retry could duplicate the task; K134).
+    await expect(err).toContainText(
+      "The task may not have been created. Check the list before trying again.",
+    );
     // No success toast.
     await expect(page.getByTestId("toast")).toHaveCount(0);
   });

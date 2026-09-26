@@ -182,6 +182,18 @@ export {
   PutWorkflowRequestSchema,
   ValidateQueryRequestSchema,
 } from "./service-schemas.js";
+export type {
+  KeyboardShortcuts,
+  ShortcutBinding,
+  ShortcutCommand,
+  ShortcutId,
+  ShortcutSpec,
+} from "./shortcuts.js";
+export {
+  GLOBAL_SHORTCUTS,
+  KeyboardShortcutsSchema,
+  SHORTCUT_IDS,
+} from "./shortcuts.js";
 export type { SprintDef, SprintsConfig, SprintState } from "./sprints.js";
 export {
   SprintDefSchema,

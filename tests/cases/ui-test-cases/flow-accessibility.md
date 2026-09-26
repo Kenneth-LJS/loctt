@@ -378,8 +378,14 @@ minority of these.
 > reference" option is dropped, since nothing currently satisfies it.
 
 - App shortcuts do not shadow the screen reader's own single-key browse commands in a way that makes the page unnavigable, or the app documents the required mode switch.
+> **Amended (K133, Ken 2026-09-26).** Shown the fixed-keys-plus-off-switch
+> model beside free remapping, Ken asked *"maybe just dont allow rebinding
+> and just allow disabling?"* and chose off switches only. The third
+> bullet no longer offers remapping: a master switch and one switch per
+> shortcut satisfy WCAG 2.1.4 (A11Y-56 to A11Y-60 cover the controls).
+
 - No shortcut overrides a browser-reserved combination.
-- Single-key shortcuts can be turned off or remapped.
+- Single-key shortcuts can be turned off, all at once or one by one (K133).
 
 ### A11Y-44 · M4 · minor · P8
 **A skip link reaches the main content.** Press `Tab` as the very first interaction after load.
@@ -470,3 +476,39 @@ minority of these.
 - Checkboxes and the ✕ remove buttons keep the 24px they already meet (K31, A250).
 - A control that is only visible on keyboard focus (the skip link) is measured in its visible state.
 - On every Settings page, every visible button, link and checkbox is at least 24×24px (drag handles, Pin / Hide / Show / Reset / Delete view, the card-layout visibility toggles).
+
+### A11Y-56 · M4 · major · P8 P10
+**The master switch turns every single-key shortcut off.** In Settings → Keyboard, turn "Single-key shortcuts" off, then press `n`, `/`, `[`, `t`, `?` and `g` then `b` with nothing focused. *(K133)*
+
+- None of them does anything: no create modal, no focus move, no sidebar or theme change, no dialog, no navigation.
+- Shortcuts that carry a modifier or need their control focused keep working: Cmd/Ctrl+Enter and Cmd/Ctrl+S save the description being edited, Esc closes a dialog, Ctrl+arrows move a focused board card.
+- The choice is written to the acting user's `settings.yaml` as `keyboard_shortcuts.single_key: false` and survives a reload. `loctt user shortcuts` and MCP `get_keyboard_shortcuts` report it off.
+- Turning it back on restores every shortcut, including any the user had switched off one by one staying off.
+
+### A11Y-57 · M4 · major · P8
+**One shortcut can be turned off on its own.** In Settings → Keyboard (or the `?` dialog's Customize view), switch off "Create a task". *(K133)*
+
+- `n` no longer opens the create modal; every other shortcut still fires.
+- The three Go-to sequences (`g` then `l`, `b` or `t`) are one shortcut with one switch. With it off, `g` does not wait for a second key, so the next key typed is not swallowed.
+- While the master switch is off, the per-shortcut switches are disabled but keep their state.
+- Each switch is a native switch with the shortcut's action as its accessible name, operable by keyboard, at least 24px.
+
+### A11Y-58 · M4 · major · P4 P8
+**The `?` dialog shows the switches' state and offers the way back.** Open the dialog with the master switch off, then with it on and one shortcut off. *(K133)*
+
+- With the master off, every shortcut is listed, each row disabled (`aria-disabled`), and a notice at the top reads "Single-key shortcuts are off." with a "Turn on" button that turns the master back on in place.
+- With the master on, a shortcut switched off on its own is marked "Off" and its row is disabled; the others are not.
+- A "Customize" button swaps the dialog body to the same switches Settings → Keyboard shows, and "Done" returns to the list. Focus stays inside the dialog throughout.
+
+### A11Y-59 · M4 · minor · P4
+**Reset to default asks first.** Turn the master off and one shortcut off, then press "Reset to default". *(K133)*
+
+- A confirmation asks "Reset all shortcuts to their defaults?" with "Reset" and "Cancel", and focus starts on Cancel.
+- Cancel changes nothing. Reset turns the master and every shortcut back on and removes `keyboard_shortcuts` from `settings.yaml`, leaving the user's other settings intact.
+- Esc on the confirmation closes only the confirmation, not a `?` dialog it was opened from.
+
+### A11Y-60 · M4 · major · P8
+**The shortcuts dialog is reachable with `?` switched off.** Turn the master switch off, then open the user menu. *(K133)*
+
+- The user menu has a "Keyboard shortcuts" item that opens the `?` dialog, by mouse or keyboard.
+- Closing the dialog returns focus to the page rather than to `document.body`.

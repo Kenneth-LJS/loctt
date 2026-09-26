@@ -53,7 +53,7 @@ import { listTaskIds } from "../task/list-ids.js";
 import { loadAllTasksDetailed } from "../task/load-all.js";
 import { validateRelationships } from "../task/traversal.js";
 import { loadAllUsersDetailed } from "../users/profile.js";
-import { collectSidebarGroupsDrops } from "../users/settings.js";
+import { collectKeyboardShortcutsDrops, collectSidebarGroupsDrops } from "../users/settings.js";
 import { isMissingFile, readFileState, UnreadableFileError } from "../utils/read-state.js";
 
 export type IntegritySeverity = "unreadable" | "malformed" | "inconsistent";
@@ -433,6 +433,44 @@ export async function checkDataIntegrity(locttDir: string): Promise<IntegrityFin
   } catch {
     // The users dir being absent is normal; a scan error here is left to
     // doctor's own users/ load check, same as the profile loop above.
+  }
+
+  // Per-user `keyboard_shortcuts` salvage (K133). A hand-edited bad part
+  // is dropped on load so the app still works (shortcuts fall back to
+  // on); doctor names what was dropped. `malformed`, never blocking.
+  try {
+    for (const report of await collectKeyboardShortcutsDrops(locttDir)) {
+      if (report.wholeValueDropped) {
+        findings.push({
+          severity: "malformed",
+          path: report.path,
+          message:
+            `setting "keyboard_shortcuts" is not a valid { single_key?, disabled? } object, `
+            + `so it was ignored and every single-key shortcut is on. `
+            + `Repair or remove it, or set the shortcuts again in the app.`,
+        });
+      }
+      for (const d of report.dropped) {
+        const message =
+          d.field === "single_key"
+            ? `setting "keyboard_shortcuts.single_key" is "${d.value}", not true or false, `
+              + `so single-key shortcuts are on.`
+            : d.field === "key"
+              ? `setting "keyboard_shortcuts" has an unknown key "${d.value}", which was ignored.`
+              : d.reason === "unknown"
+                ? `setting "keyboard_shortcuts.disabled" names an unknown shortcut "${d.value}", which was ignored.`
+                : d.reason === "duplicate"
+                  ? `setting "keyboard_shortcuts.disabled" lists "${d.value}" twice.`
+                  : `setting "keyboard_shortcuts.disabled" has a malformed part (${d.value}), which was ignored.`;
+        findings.push({
+          severity: "malformed",
+          path: report.path,
+          message: `${message} Repair it by hand, or change the shortcuts in the app, to remove this notice.`,
+        });
+      }
+    }
+  } catch {
+    // Same as the sidebar_groups scan above: left to doctor's users/ check.
   }
 
   return findings;

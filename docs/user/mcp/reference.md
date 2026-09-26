@@ -368,11 +368,22 @@ Every config-entity list (`list_labels`, `list_milestones`, `list_sprints`,
 | `count_user_references` | How many tasks reference a user, by role. | `ref` |
 | `delete_user` | Permanent delete; requires `remap_to` or `unassign`. Requires `confirm`. | `ref`, `confirm`, `remap_to`, `unassign` |
 
-Per-user settings and sidebar layout have their own read/write tools:
-`get_user_settings`, `get_sidebar_groups`, `set_sidebar_groups`,
-`sweep_sidebar_pins`. The `resolved` list the sidebar-groups tools return is
+Per-user settings, sidebar layout and keyboard shortcuts have their own
+read/write tools: `get_user_settings`, `get_sidebar_groups`,
+`set_sidebar_groups`, `sweep_sidebar_pins`, `get_keyboard_shortcuts`,
+`set_keyboard_shortcuts`. The `resolved` list the sidebar-groups tools return is
 in the order the sidebar shows it: the built-in filters follow `filters`,
 and read `hidden: true` while `filters` is hidden.
+
+The keyboard-shortcut tools read and set the single-key shortcut switches
+(the web Settings → Keyboard). `set_keyboard_shortcuts` takes
+`single_key` (the master switch), `off` and `on` (lists of shortcut ids:
+`new-task`, `focus-search`, `goto`, `toggle-sidebar`, `cycle-theme`,
+`shortcut-help`), or `reset: true` alone to turn everything back on. An
+unknown id is rejected and nothing is written. Both tools return
+`single_key` and each shortcut's `keys`, `on` (its own switch) and
+`active` (whether it fires now). Keys are fixed; they can be switched
+off, not rebound.
 
 ### Configuration and machine-local settings
 

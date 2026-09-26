@@ -1,27 +1,27 @@
 /**
- * Settings → Personal → Keyboard (C.10.22).
+ * Settings → Personal → Keyboard (C.10.22, K133).
  *
- * A reference, not a rebinding editor: nothing in the app reads a
- * user-defined keymap, and offering one that changed nothing would be
- * a control that lies (P4).
+ * Two parts:
+ *
+ * - **Single-key shortcuts**: the global keys, rendered by
+ *   `ShortcutSettingsEditor` — the same component the `?` dialog's
+ *   Customize view renders — with the master switch, one switch per
+ *   shortcut, and Reset to default. The rows come from
+ *   `GLOBAL_SHORTCUTS`, the table `useShortcuts` dispatches from, so
+ *   they cannot drift (A11Y-4).
+ * - **A read-only reference** for the context-scoped keys (board cards,
+ *   reorder handles, the body editor, dialogs). Those carry a modifier
+ *   or only act while their control has focus, so K133's switches do
+ *   not cover them. They are read off their handlers by hand, because
+ *   they are bound by whichever component owns focus and there is no
+ *   single table to derive them from. Each carries the source it was
+ *   read from; check it before editing.
  *
  * **No row here is aspirational.** A reference that documents an
- * unbuilt key is worse than no reference: the user presses it, nothing
- * happens, and they cannot tell a broken build from a wrong doc.
- *
- * The global keys come from `GLOBAL_SHORTCUTS`, the same table
- * `useShortcuts` dispatches from, so they cannot drift (A11Y-4). The
- * context-scoped groups below — board cards, reorder handles, the body
- * editor, dialogs — are still read off their handlers by hand, because
- * those keys are bound by whichever component owns focus and there is
- * no single table to derive them from. Each carries the source line it
- * was read from; check it before editing.
- *
- * `?` opens the same global list in a dialog from anywhere. This page
- * is the fuller reference, since it also covers the context keys.
+ * unbuilt key is worse than no reference.
  */
 
-import { GLOBAL_SHORTCUTS } from "../shell/shortcuts.ts";
+import { ShortcutSettingsEditor } from "../shell/ShortcutSettingsEditor.tsx";
 
 interface Shortcut {
   readonly keys: readonly string[];
@@ -30,34 +30,7 @@ interface Shortcut {
   readonly scope: string;
 }
 
-/**
- * The global keys, derived from the registry rather than re-typed.
- *
- * `[` used to be hand-listed here with a source line number in a
- * comment. When the global bindings moved into `shell/shortcuts.ts`
- * (M4.8), that entry became a hand-maintained copy of a table the app
- * actually dispatches from — and it was already incomplete, listing
- * `[` while `n`, `/`, the `g` chords, `t` and `?` were bound and
- * undocumented here.
- *
- * That is precisely A11Y-4's defect ("listed but not bound, or bound
- * but not listed"). Deriving them removes the possibility.
- *
- * The scope line is uniform because it is a property of the shortcut
- * *system*, not of any one key: `useShortcuts` applies the typing
- * guard, the dialog guard and the modifier guard to every entry.
- */
-const GLOBAL_ROWS: readonly Shortcut[] = GLOBAL_SHORTCUTS.map(s => ({
-  keys: s.keys,
-  action: s.action,
-  scope: "Anywhere outside a text field or dialog",
-}));
-
 const SHORTCUTS: readonly { group: string; items: readonly Shortcut[] }[] = [
-  {
-    group: "Global",
-    items: GLOBAL_ROWS,
-  },
   {
     group: "Board",
     items: [
@@ -133,7 +106,11 @@ export function KeyboardPanel() {
   const mod = modifierLabel();
   return (
     <div data-testid="keyboard-panel">
-      <h1 className="mb-2 text-lg font-semibold text-text-primary">Keyboard</h1>
+      <h1 className="mb-4 text-lg font-semibold text-text-primary">Keyboard</h1>
+
+      <section className="mb-8 max-w-2xl">
+        <ShortcutSettingsEditor testIdPrefix="keyboard-shortcuts" />
+      </section>
 
       {SHORTCUTS.map(group => (
         <section key={group.group} className="mb-6">

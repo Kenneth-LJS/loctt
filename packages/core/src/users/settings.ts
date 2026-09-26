@@ -6,6 +6,7 @@ import { parse as parseYaml } from "yaml";
 import { getUsersDir, getUserSettingsPath } from "../paths/index.js";
 import { writeYamlAtomically } from "../utils/atomic-yaml.js";
 import { fileExists } from "../utils/fs.js";
+import { type KeyboardShortcutsDrop, salvageKeyboardShortcuts } from "./shortcuts.js";
 import { salvageSidebarGroups, type SidebarGroupsDrop } from "./sidebarGroups.js";
 
 /**
@@ -36,6 +37,7 @@ const KNOWN_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "theme",
   "sidebar_pins",
   "sidebar_groups",
+  "keyboard_shortcuts",
 ]);
 
 /**
@@ -89,14 +91,30 @@ function parseSettingsTolerant(candidate: Record<string, unknown>): UserSettings
     }
   }
 
+  // Per-field salvage for `keyboard_shortcuts` (K133), same reasoning:
+  // a stray id in `disabled` drops that id, not every other switch, and
+  // a non-boolean master falls back to on without losing `disabled`.
+  let salvagedShortcuts: UserSettings["keyboard_shortcuts"] | undefined;
+  if (faultKeys.has("keyboard_shortcuts")) {
+    const salvaged = salvageKeyboardShortcuts(candidate["keyboard_shortcuts"]);
+    if (salvaged.value.single_key !== undefined || salvaged.value.disabled !== undefined) {
+      salvagedShortcuts = salvaged.value;
+      faultKeys.delete("keyboard_shortcuts");
+    }
+  }
+
   const cleaned: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(candidate)) {
     // Drop a known-but-corrupt key (degrade to default); keep everything
     // else, INCLUDING every unknown passthrough key, byte-for-byte.
     if (faultKeys.has(k)) continue;
-    cleaned[k] = k === "sidebar_groups" && salvagedSidebarGroups !== undefined
-      ? salvagedSidebarGroups
-      : v;
+    if (k === "sidebar_groups" && salvagedSidebarGroups !== undefined) {
+      cleaned[k] = salvagedSidebarGroups;
+    } else if (k === "keyboard_shortcuts" && salvagedShortcuts !== undefined) {
+      cleaned[k] = salvagedShortcuts;
+    } else {
+      cleaned[k] = v;
+    }
   }
 
   const reparsed = UserSettingsSchema.safeParse(cleaned);
@@ -200,6 +218,56 @@ export async function collectSidebarGroupsDrops(
     }
     if (!isPlainObject(parsed) || !("sidebar_groups" in parsed)) continue;
     const salvaged = salvageSidebarGroups(parsed["sidebar_groups"]);
+    if (salvaged.dropped.length === 0 && !salvaged.wholeValueDropped) continue;
+    reports.push({
+      userId: entry.name,
+      path,
+      dropped: salvaged.dropped,
+      wholeValueDropped: salvaged.wholeValueDropped,
+    });
+  }
+  return reports;
+}
+
+/**
+ * A user whose `keyboard_shortcuts` setting had parts dropped on load
+ * (K133). The loader degrades silently so the app still works; this is
+ * how doctor learns what was dropped (corruption-handling-guide rule 4).
+ */
+export interface KeyboardShortcutsDropReport {
+  readonly userId: string;
+  readonly path: string;
+  readonly dropped: readonly KeyboardShortcutsDrop[];
+  readonly wholeValueDropped: boolean;
+}
+
+/**
+ * Scans every user's `settings.yaml` for a corrupt `keyboard_shortcuts`
+ * value and reports what the salvage dropped. Read-only. Reads the raw
+ * YAML for the same reason `collectSidebarGroupsDrops` does: after
+ * `loadUserSettings` the dropped parts are gone.
+ */
+export async function collectKeyboardShortcutsDrops(
+  locttDir: string,
+): Promise<KeyboardShortcutsDropReport[]> {
+  const dir = getUsersDir(locttDir);
+  if (!(await fileExists(dir))) return [];
+  const entries = await readdir(dir, { withFileTypes: true });
+  const reports: KeyboardShortcutsDropReport[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const path = getUserSettingsPath(locttDir, entry.name);
+    if (!(await fileExists(path))) continue;
+    let parsed: unknown;
+    try {
+      const raw = await readFile(path, "utf-8");
+      if (raw.trim() === "") continue;
+      parsed = parseYaml(raw);
+    } catch {
+      continue;
+    }
+    if (!isPlainObject(parsed) || !("keyboard_shortcuts" in parsed)) continue;
+    const salvaged = salvageKeyboardShortcuts(parsed["keyboard_shortcuts"]);
     if (salvaged.dropped.length === 0 && !salvaged.wholeValueDropped) continue;
     reports.push({
       userId: entry.name,

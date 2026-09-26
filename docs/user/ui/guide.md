@@ -198,7 +198,7 @@ user menu. A bare `/settings` opens Projects. The groups:
   WIP limits), Timeline defaults, Calendar (timezone, working days,
   holidays).
 - **Personal** — My preferences (theme, default project), Card layout,
-  Pinned views, Sidebar groups, Keyboard.
+  Pinned views, Sidebar groups, Keyboard (single-key shortcut switches).
 - **System** — Users, Sync (git-backed mode), Archived, Backup & restore,
   Diagnostics.
 
@@ -270,7 +270,8 @@ JSON task export is a report, not a backup — it cannot restore.)
 
 ## Keyboard shortcuts
 
-Press `?` for the full list. The global shortcuts:
+Press `?`, or choose **Keyboard shortcuts** in the user menu, for the
+list. The global shortcuts:
 
 | Key | Action |
 |---|---|
@@ -281,8 +282,23 @@ Press `?` for the full list. The global shortcuts:
 | `t` | Cycle the theme |
 | `?` | Show this list |
 
+These are single-key shortcuts, and you can turn them off. In
+**Settings → Keyboard**, or with **Customize** in the shortcuts dialog:
+
+- **Single-key shortcuts** turns them all off or on at once.
+- Each shortcut has its own switch. The three `g` shortcuts share one.
+- **Reset to default** turns everything back on. It asks first.
+
+While they are off, pressing those keys does nothing. The shortcuts dialog still opens from the user menu, lists the
+shortcuts as off, and has a **Turn on** button. Shortcuts that use Ctrl
+or Cmd (saving the description with Ctrl+Enter or Ctrl+S, moving a card
+with Ctrl+arrow keys), Esc, and the arrow keys on a reorder handle are
+not affected. The keys themselves cannot be changed. The same switches
+are available as `loctt user shortcuts` and the MCP
+`get_keyboard_shortcuts` / `set_keyboard_shortcuts` tools.
+
 Within a board or a dialog, more keys apply — moving a card, closing a
-dialog, reordering — and the help dialog lists those too.
+dialog, reordering — and Settings → Keyboard lists those too.
 
 ## Theming
 

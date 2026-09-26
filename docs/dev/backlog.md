@@ -9,10 +9,5 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-## B26 · Single-key shortcuts: off switches (K133, A11Y-43) — **in progress**
-
-Master "Single-key shortcuts" switch plus a switch per shortcut, in
-Settings → Keyboard and in the `?` dialog's settings view; "Reset to
-default" with a warning; a disabled-state `?` dialog; a "Keyboard
-shortcuts" user-menu item. Per user; CLI and MCP read and write it.
-No rebinding. Lands before `ui/polish-wave-3` merges.
+Empty. B20–B27 shipped on `ui/polish-wave-3` (2026-09-26); their
+records are K129–K134 and A339–A349 in `decisions.md`.

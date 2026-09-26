@@ -5,6 +5,7 @@ import { useCreateTask } from "../create/CreateTaskProvider.tsx";
 import { type ThemePreference,useTheme } from "../theme/useTheme.ts";
 import { useAnnouncer } from "../ui/Announcer.tsx";
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog.tsx";
+import { useKeyboardShortcutSettings } from "./useKeyboardShortcutSettings.ts";
 import { useShortcuts } from "./useShortcuts.ts";
 
 /**
@@ -37,13 +38,16 @@ export function nextTheme(current: ThemePreference): ThemePreference {
 export function useGlobalShortcuts(options: {
   readonly onFocusSearch: () => void;
   readonly onToggleSidebar: () => void;
-}): { readonly helpDialog: React.ReactNode } {
+}): { readonly helpDialog: React.ReactNode; readonly openHelp: () => void } {
   const { onFocusSearch, onToggleSidebar } = options;
   const navigate = useNavigate();
   const createTask = useCreateTask();
   const { preference, setPreference } = useTheme();
   const { announce } = useAnnouncer();
   const [helpOpen, setHelpOpen] = useState(false);
+  // K133: the user's off switches decide which shortcuts fire.
+  const { isOn } = useKeyboardShortcutSettings();
+  const openHelp = useCallback(() => { setHelpOpen(true); }, []);
 
   const cycleTheme = useCallback(() => {
     const next = nextTheme(preference);
@@ -63,10 +67,13 @@ export function useGlobalShortcuts(options: {
     "goto-timeline": () => { void navigate({ to: "/timeline" }); },
     "toggle-sidebar": onToggleSidebar,
     "cycle-theme": cycleTheme,
-    "shortcut-help": () => { setHelpOpen(true); },
-  });
+    "shortcut-help": openHelp,
+  }, isOn);
 
   return {
+    // The user menu's "Keyboard shortcuts" item opens the same dialog
+    // (K133), since `?` itself can be switched off.
+    openHelp,
     helpDialog: helpOpen ? (
       <ShortcutHelpDialog onClose={() => { setHelpOpen(false); }} />
     ) : null,
