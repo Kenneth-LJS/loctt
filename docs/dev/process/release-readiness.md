@@ -160,8 +160,8 @@ production.
 - **Status correction:** this said "not started" but `SECURITY.md`
   (2026-09-11) and `CHANGELOG.md` (2026-09-19) already existed.
 - **Closed 2026-09-27 (K136):** `CONTRIBUTING.md` (build/test/case+
-  `@verifies` rule/commit rules) and `CODE_OF_CONDUCT.md` (Contributor
-  Covenant 2.1; contact line left as a TODO for Ken to fill) added.
+  `@verifies` rule/commit rules) added. A `CODE_OF_CONDUCT.md` was added
+  and then removed by Ken (K138): *"just take out code of conduct then"*.
   `.github/ISSUE_TEMPLATE/` added (bug report, feature request).
   `CHANGELOG.md` brought up to date through K136 (waves 3–4, in
   user-facing terms). No PR template was requested and none was added.
@@ -177,4 +177,4 @@ production.
 | B4 web packaging | npm | packaging | **RESOLVED (B34, A352)**: the installed CLI serves the UI, `@loctt/web` declares its runtime deps, `@loctt/mcp` has a `loctt-mcp` bin; `npm run test:packaging` packs and installs each outside the repo (ONB-C8/C9). Open with Ken: whether core stays bundled (K89) or becomes a published `@loctt/core`. |
 | H1 corruption coverage audit | both | robustness | DONE — light pass (K136, 2026-09-27). See H1 above. |
 | H2 git-sync stability/labelling | both | robustness | DONE — STABLE (2026-09-18): full engine built to K92-K95, all data-safety paths guarded + tested (incl. real-remote integration); shipped unlabeled. The one untestable edge (advisory locks on network/sync filesystems) is detected + warned in-app (GIT-22/XS-50) and documented in docs/user/common/git-sync.md. Ken's call, recorded in decisions.md § 9 (K136). |
-| H3 community files | public repo | hygiene | DONE (K136, 2026-09-27). CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue templates added; CHANGELOG.md refreshed through K136. |
+| H3 community files | public repo | hygiene | DONE (K136, 2026-09-27). CONTRIBUTING.md and issue templates added (no CODE_OF_CONDUCT.md, K138); CHANGELOG.md refreshed through K136. |

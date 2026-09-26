@@ -22685,6 +22685,17 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K138 · No CODE_OF_CONDUCT.md
+
+**Date:** 2026-09-27 · **Ken's ruling — not revertible by an agent.**
+
+B35 added a Contributor Covenant `CODE_OF_CONDUCT.md` with the
+enforcement contact left for Ken. Told it covers behaviour in the
+project's community spaces (issues, pull requests, discussions) and
+that the contact is how someone reports abuse privately, Ken: *"just
+take out code of conduct then"*. The file is removed; RR-H3 stays
+closed with CONTRIBUTING.md and the issue templates.
+
 ### K137 · Git sync ships as stable (RR-H2)
 
 **Date:** 2026-09-27 · **Ken's ruling — not revertible by an agent.**

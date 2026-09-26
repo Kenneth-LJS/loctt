@@ -20,9 +20,3 @@ Today (K89): core bundled into each of `@loctt/cli`, `@loctt/mcp`,
 `@loctt/web`. Ken asked whether core could be its own versioned package
 the three depend on, with an exact version pin. Waiting on his call:
 keep bundled, or publish `@loctt/core` with exact pins (supersedes K89).
-
-## B37 · CODE_OF_CONDUCT enforcement contact — **needs Ken**
-
-`CODE_OF_CONDUCT.md` has a placeholder for the contact people use to
-report conduct problems.
-
