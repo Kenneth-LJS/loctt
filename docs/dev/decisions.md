@@ -22950,10 +22950,10 @@ and the attachment-size message (B-57).
   - `apps/cli/package.json` `name` is `loctt`. Everything else is unchanged: bin `loctt` → `dist/index.js`, `files: ["dist"]`, `prepublishOnly: "cd ../.. && npm run build"`, `publishConfig.access: public` (harmless on an unscoped name). Its tsup config already bundled `@loctt/core`, `@loctt/contracts`, `@loctt/mcp`, `@loctt/web` and the MCP SDK from source (`noExternal` + aliases) and copied the web client in `onSuccess`, so no build change was needed. `dependencies` stay `ajv, ajv-formats, busboy, proper-lockfile, sharp, ulid, yaml`: the manifest test (declared == bare imports of the shipped bundle) passes with exactly these. `zod` is bundled (it comes in through contracts), so it is not a runtime dependency.
   - `apps/mcp` and `apps/web`: `"private": true`; `bin`, `publishConfig`, `prepublishOnly` and `files` removed (files has no meaning on a private package). `apps/mcp/src/bin.ts` deleted and the MCP tsup config is one entry (`src/index.ts`). The web tsup `server/cli` entry (the `loctt-ui` bundle) is removed; `src/server/main.ts` stays as the dev server's entry (`npm run dev` → `tsx watch src/server/main.ts`), with its header rewritten and its debug prefix `[loctt-ui]` → `[loctt dev]`. `main`/`types`/`exports` and the web server-library entry stay: they are workspaces the CLI builds from. Descriptions now say "Internal workspace: …".
   - User-visible strings: `loctt ui`'s missing-client error is "… Reinstall loctt."; the web "Schema too new" banner says `npm install -g loctt@latest`.
-  - The root `package.json` is also named `loctt` (private). npm accepts a workspace with the root's name; `npm install` linked `node_modules/loctt` → `apps/cli`. Left as is. `npm run -w apps/cli` (path form) is what the docs use, which is unambiguous.
+  - The root `package.json` is also named `loctt` (private). npm accepts a workspace with the root's name; `npm install` linked `node_modules/loctt` → `apps/cli`. Renamed to `loctt-monorepo` afterwards, so the root no longer shares the published package's name; the docs use the path form (`-w apps/cli`).
 - **Why:** K139. One install, one core version for all three surfaces.
-- **Alternatives:** rename the root to `loctt-monorepo` to avoid the duplicate name (not needed, npm resolved it; would be churn in lockfile and scripts output); keep `files` on the private manifests (dead config).
-- **To revert:** set `apps/cli` `name` back to `@loctt/cli`; in `apps/mcp`/`apps/web` drop `private` and restore `publishConfig`, `prepublishOnly`, `files` (with `dist/bin.js` / `dist/server/cli.js`), `bin` (`loctt-mcp` → `dist/bin.js`, `loctt-ui` → `dist/server/cli.js`) and the old descriptions; restore `apps/mcp/src/bin.ts` and its second tsup entry, the web `server/cli` tsup entry and main.ts header; restore the two user-visible strings; run `npm install`. That is also the A352.4 state.
+- **Alternatives:** keep the root named `loctt` (npm tolerates it, but two packages sharing the published name invites mistakes); keep `files` on the private manifests (dead config).
+- **To revert:** set `apps/cli` `name` back to `@loctt/cli`; in `apps/mcp`/`apps/web` drop `private` and restore `publishConfig`, `prepublishOnly`, `files` (with `dist/bin.js` / `dist/server/cli.js`), `bin` (`loctt-mcp` → `dist/bin.js`, `loctt-ui` → `dist/server/cli.js`) and the old descriptions; restore `apps/mcp/src/bin.ts` and its second tsup entry, the web `server/cli` tsup entry and main.ts header; restore the two user-visible strings; rename the root `package.json` back to `loctt`; run `npm install`. That is also the A352.4 state.
 
 #### A355.2 · Packaging suite covers one package and asserts nothing else is publishable
 
@@ -22975,7 +22975,6 @@ and the attachment-size message (B-57).
 - **Not changed:** `.claude/launch.json` (`-w @loctt/web` still resolves; the config name `loctt-ui-playground` is just a label), historical entries in `decisions.md`.
 - **To revert:** restore those files' previous text.
 
-Also: the private root `package.json` is renamed `loctt-monorepo` so it no longer shares the published package's name.
 
 ### A354 · Zero lint warnings without behaviour change (B32)
 
@@ -23032,14 +23031,6 @@ Also: the private root `package.json` is renamed `loctt-monorepo` so it no longe
   65 in total.
 
 ### A353 · Release fast-follows, light pass: loading states, corruption coverage, community files, stale docs (B35)
-
-#### A353 — decisions.md § 8 entries (agent-made)
-
-Do NOT paste into decisions.md verbatim without checking against the
-current file state — write these as new § 8 entries, in the repo's
-existing format, after the sections currently ending at K136/K135.
-
----
 
 #### A353-1 · DR-A3 (loading states): case + test added, no code change needed
 
@@ -23260,14 +23251,9 @@ refinements" section added to `CHANGELOG.md`.
   off-switches (Settings → Personal → Keyboard), which were previously
   undocumented there.
 
-**Flagged, not fixed (per instructions — read-only note for Ken):**
-K71's own citation in `decisions.md:10910` uses the stale path
-`docs/dev/design/design-review.md` (missing the `design/` segment); the real
-path is `docs/dev/design/design-review.md`. Not touched — decisions.md
-is off-limits for this agent.
+**K71's path** to `docs/dev/design/design-review.md` is corrected in `decisions.md`.
 
-**Why:** every one of these was either directly named by the prompt's
-item 5 list, or (Host guard/CSP, shortcut off-switches) was the same
+**Why:** every one of these was on the B35 stale-docs list, or (Host guard/CSP, shortcut off-switches) was the same
 class of omission the prompt's item 5 called out for release-readiness.md
 and is trivially fixable prose.
 
@@ -23295,21 +23281,9 @@ single added sentence).
 
 ---
 
-#### Exact H2 text for decisions.md § 9
+#### RR-H2
 
-The ruling text currently recorded in `docs/dev/process/release-readiness.md`
-(unchanged by this session, just re-pointed-to from a new "CLOSED"
-marker) is the "Quick status" table's H2 cell:
-
-> DONE — STABLE (2026-09-18): full engine built to K92-K95, all
-> data-safety paths guarded + tested (incl. real-remote integration);
-> shipped unlabeled. The one untestable edge (advisory locks on
-> network/sync filesystems) is detected + warned in-app (GIT-22/XS-50)
-> and documented in docs/user/common/git-sync.md. Ken's call.
-
-Enter this verbatim (or Ken's preferred paraphrase of it) into
-`decisions.md` § 9 as the K136-adjacent ruling that RR-H2 is closed,
-stable, unlabeled.
+Closed as stable; the ruling is recorded as K137.
 
 ### A352 · Release blockers closed: lightbox, bulk-bar menus, packaging and install test, security posture (B34)
 
