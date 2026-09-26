@@ -86,7 +86,10 @@ export function TimelineView() {
   // creating a task would not answer either state.
   const createTask = useCreateTask();
 
-  const pages = tasks.data?.pages ?? [];
+  // Memoised so the empty fallback is one array, not a fresh `[]` each
+  // render: `items` below depends on `pages`, and a new fallback every
+  // render would recompute it (and everything keyed on it) every render.
+  const pages = useMemo(() => tasks.data?.pages ?? [], [tasks.data?.pages]);
   // A313: parity with the list (ListView.tsx). `?view=<broken id>`
   // returns a non-fatal `broken_view` diagnostic alongside every task,
   // unfiltered — the same server behaviour the list guards against.

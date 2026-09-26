@@ -20,6 +20,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { defined } from "./fixtures/defined.ts";
 import { expect, test } from "./fixtures/tracker.ts";
 
 /** Replaces or appends the `timeline:` block of workflow.yaml. */
@@ -1185,7 +1186,7 @@ test.describe("TML — timeline drag writes (M3.3b)", () => {
     await page.goto(`${tracker.baseURL}/timeline?zoom=day`);
     const bar = page.getByTestId(`timeline-bar-${key}`);
     await expect(bar).toBeVisible();
-    const boxBefore = (await bar.boundingBox())!;
+    const boxBefore = defined(await bar.boundingBox(), "bar box before");
     const seen = captureSetDates(page);
 
     const p = await barPoints(page, key);
@@ -1200,7 +1201,7 @@ test.describe("TML — timeline drag writes (M3.3b)", () => {
 
     // The bar returns to its original geometry, and no request went out.
     await expect(page.getByTestId("timeline-drag-label")).toHaveCount(0);
-    const boxAfter = (await bar.boundingBox())!;
+    const boxAfter = defined(await bar.boundingBox(), "bar box after");
     expect(Math.abs(boxAfter.width - boxBefore.width)).toBeLessThan(1);
     await page.waitForTimeout(300);
     expect(seen.calls).toHaveLength(0);
@@ -1254,7 +1255,7 @@ test.describe("TML — timeline drag writes (M3.3b)", () => {
     const after = await datesOf(tracker.root, key);
     expect(after.start).toBe("2026-03-02");
     expect(after.due).toBe("2026-03-02");
-    expect(after.start! <= after.due!).toBe(true);
+    expect(defined(after.start, "after.start") <= defined(after.due, "after.due")).toBe(true);
   });
 
   // @verifies TML-37
@@ -1815,7 +1816,7 @@ test.describe("TML — timeline error cases (section C)", () => {
     await expect(page.getByTestId(`timeline-bar-${key}`))
       .toHaveAttribute("data-start", "2026-03-06");
     const after = await datesOf(tracker.root, key);
-    expect(after.start! <= after.due!).toBe(true);
+    expect(defined(after.start, "after.start") <= defined(after.due, "after.due")).toBe(true);
 
     // And the server refuses independently, so a client that lost its
     // clamp still cannot write the anomaly. This is the far end of the
@@ -2066,10 +2067,8 @@ test.describe("PRU — project scope on the timeline", () => {
     // 0 of 2, the ULID returns 1). Identity is a ULID (P-2), and the
     // switcher will pass the same thing when it lands.
     const projectList = await tracker.run(["project", "list", "--ids"]);
-    const beId = /^Backend\t\S+\t(\S+)$/m.exec(projectList)?.[1];
-    const webId = /^Web\t\S+\t(\S+)$/m.exec(projectList)?.[1];
-    expect(beId).toBeDefined();
-    expect(webId).toBeDefined();
+    const beId = defined(/^Backend\t\S+\t(\S+)$/m.exec(projectList)?.[1], "Backend project id");
+    const webId = defined(/^Web\t\S+\t(\S+)$/m.exec(projectList)?.[1], "Web project id");
 
     // Unscoped: both bars, so the scoped assertions below mean
     // something rather than passing on an empty tracker.
@@ -2077,7 +2076,7 @@ test.describe("PRU — project scope on the timeline", () => {
     await expect(page.getByTestId("timeline-total")).toHaveText("2 tasks");
 
     // Scoped to backend: only the backend bar is charted.
-    await page.goto(`${tracker.baseURL}/timeline?zoom=day&project=${beId!}`);
+    await page.goto(`${tracker.baseURL}/timeline?zoom=day&project=${beId}`);
     await expect(page.getByTestId(`timeline-bar-${beKey}`)).toBeVisible();
     await expect(page.getByTestId(`timeline-bar-${webKey}`)).toHaveCount(0);
     await expect(page.getByTestId("timeline-total")).toHaveText("1 task");
@@ -2085,14 +2084,14 @@ test.describe("PRU — project scope on the timeline", () => {
     // The *server* filtered — not the client narrowing a full
     // response. Asked directly, the API returns one item.
     const res = await page.request.get(
-      `${tracker.baseURL}/api/tasks?project=${beId!}&limit=200`,
+      `${tracker.baseURL}/api/tasks?project=${beId}&limit=200`,
     );
     const body = (await res.json()) as { items: { key: string }[]; total: number };
     expect(body.items.map(i => i.key)).toEqual([beKey]);
     expect(body.total).toBe(1);
 
     // And the other project scopes the other way.
-    await page.goto(`${tracker.baseURL}/timeline?zoom=day&project=${webId!}`);
+    await page.goto(`${tracker.baseURL}/timeline?zoom=day&project=${webId}`);
     await expect(page.getByTestId(`timeline-bar-${webKey}`)).toBeVisible();
     await expect(page.getByTestId(`timeline-bar-${beKey}`)).toHaveCount(0);
   });

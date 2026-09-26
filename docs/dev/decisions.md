@@ -22937,6 +22937,60 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A354 · Zero lint warnings without behaviour change (B32)
+
+#### A354 · B32: lint to 0 errors / 0 warnings without changing behaviour
+
+- **Context.** K135: Ken said "fix" to the 65 `npm run lint` warnings (B32).
+  Before: 0 errors, 65 warnings = 9 `react-hooks/exhaustive-deps` (product)
+  + 56 `@typescript-eslint/no-non-null-assertion` (1 in core, 55 in
+  `tests/ui/*.spec.ts`). After: 0 errors, 0 warnings. No rule was disabled,
+  downgraded, or re-scoped in `eslint.config.js`.
+- **Decision.** Fix each warning at its site:
+  - exhaustive-deps, 9 warnings: 7 fixed by adding/stabilising the
+    dependency, 1 restructured, 1 justified disable.
+
+    | Site | Choice | Why |
+    |---|---|---|
+    | `board/BoardView.tsx:89` `pages` | (a) `useMemo(() => tasks.data?.pages ?? [], [tasks.data?.pages])` | Same array when data is loaded; the empty fallback is now one array, not a fresh `[]` each render. |
+    | `timeline/TimelineView.tsx:89` `pages` | (a) same | same |
+    | `sprints/SprintsView.tsx:97` `pages` | (a) same | same |
+    | `sprints/SprintsView.tsx:112` `sprintDefs` | (a) `useMemo(() => sprints.data?.items ?? [], [sprints.data?.items])` | same |
+    | `editor/MentionMenu.tsx:90` `matches` | (a) `useMemo` on `[query, candidates]` | The keydown listener re-registered on every render; it now re-registers only when the matches can differ. Handler always sees the current matches. |
+    | `comments/CommentComposer.tsx:161` `testId` | (a) added to deps | `testId` is a string literal at both call sites (`comment-composer`, `comment-edit-composer`), so the effect still runs only on `resetToken` changes. |
+    | `ui/Modal.tsx:395` `useInertBackground` `panelRef` | (a) added to deps | All 8 callers pass a `useRef` object, whose identity is fixed for the component's life, so the effect still runs once per mount. |
+    | `shell/useVanishedViews.ts:92` `current` | (b) restructured | `current` is added as a dependency, and a `lastSignature` ref guard skips the body unless the signature changed. The body's `setVanished` therefore still runs only when the view set changes. The loop the old comment describes cannot return: mutation-checked by deleting the guard, which made `Sidebar.test.tsx` hang (the loop) and never finish. |
+    | `ui/useFocusTrap.ts:130` | (c) `eslint-disable-next-line` with reason | Mount-only by design. Any dependency would re-run the effect, which re-steals focus mid-dialog. `returnFocusTo` is deliberately the value from mount. (a) would need refs that copy mount-time values, which is the same thing done in a more roundabout way. |
+  - no-non-null-assertion in core (`packages/core/src/config/workflow.ts:165`):
+    `entries[0]!` became `const e = entries[0]; if (e !== undefined)`, which
+    is equivalent to the old `length > 0` check.
+  - no-non-null-assertion in UI specs (55): a new helper,
+    `tests/ui/fixtures/defined.ts`, provides `defined(value, what)`. It throws
+    `expected <what> to be defined` on null or undefined and otherwise
+    returns the narrowed value. Where a value is used several times
+    (`stored` avatar, `beId`/`webId`), it is narrowed once where it is
+    declared. The `page.evaluate` block in `flow-accessibility.spec.ts`
+    runs in the browser and cannot import the helper, so it throws an
+    explicit error inline.
+- **Behaviour risk.** The product hook changes remove churn and add no
+  work. The one observable difference: before data loads, `pages` and
+  `sprintDefs` keep the same empty array across renders, so the memos
+  that depend on them stop recomputing. In dev StrictMode,
+  `useVanishedViews` now runs its body once on mount instead of twice,
+  and the second run was idempotent anyway. The specs fail sooner and
+  with a named message where they used to fail obliquely; no assertion
+  was weakened.
+- **Coverage.** Sidebar.test.tsx (SHL-32, plus "Delete does not fire the
+  vanished-view notice") covers useVanishedViews. BoardView.test and
+  broken-view tests, SprintsView.test, the TimelineView.* tests,
+  CommentComposer.*.test, ResponsiveDialog.test, and the flow-comments
+  mention-menu specs cover the other components. The full UI suite
+  covers the dialogs.
+- **To revert.** Restore the 9 hook sites and `workflow.ts` to their
+  pre-A354 form. Delete `tests/ui/fixtures/defined.ts` and turn the
+  `defined(x, "...")` calls back into `x!`. The lint warnings then return,
+  65 in total.
+
 ### A353 · Release fast-follows, light pass: loading states, corruption coverage, community files, stale docs (B35)
 
 #### A353 — decisions.md § 8 entries (agent-made)

@@ -161,8 +161,8 @@ export function parseWorkflowConfig(
   // produce, so callers that matched on the message still match.
   if (!tolerant) {
     for (const [list, entries] of brokenPairs) {
-      if (entries.length > 0) {
-        const e = entries[0]!;
+      const e = entries[0];
+      if (e !== undefined) {
         const where = e.id !== undefined ? `${list}[${e.index}] (${e.id})` : `${list}[${e.index}]`;
         throw new WorkflowConfigError(`workflow.yaml is not valid: ${where} ${e.error}`);
       }
