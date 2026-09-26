@@ -18,9 +18,15 @@ The repo is an npm-workspaces monorepo:
 
 - `packages/contracts` — shared types and API shapes
 - `packages/core` — shared LocTT logic (loaders, writers, diagnostics)
-- `apps/cli` — the CLI
-- `apps/mcp` — the MCP server
-- `apps/web` — the web app (HTTP server + API + UI)
+- `apps/cli` — the CLI; this is the one published package, `loctt`
+- `apps/mcp` — the MCP server (internal; ships inside `loctt` as `loctt mcp`)
+- `apps/web` — the web app (HTTP server + API + UI; internal, ships
+  inside `loctt` as `loctt ui`)
+
+Only `apps/cli` is published. Every other workspace is `private`, and
+`apps/cli`'s build bundles them from source and copies the web client
+beside its own bundle. `npm run test:packaging` packs `loctt`, installs
+it outside the repo with only its declared dependencies, and runs it.
 
 ## Running the checks
 
@@ -30,6 +36,7 @@ npm run lint               # eslint across all workspaces
 npm run test                # unit tests (vitest) — fast, no e2e
 npm run test:integration    # CLI binary + MCP stdio against a real tracker
 npm run test:e2e            # full user-journey e2e specs
+npm run test:packaging      # pack + install `loctt` outside the repo and run it
 ```
 
 Run `npm run lint:fix` for auto-fixable lint issues. A PR should pass

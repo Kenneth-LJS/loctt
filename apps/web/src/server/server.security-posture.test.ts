@@ -93,8 +93,8 @@ describe("documented security posture (SECURITY.md, README Data & security)", ()
 
   // @verifies ONB-C10
   it("offers no way to bind elsewhere: no host option on either launcher", async () => {
-    // `loctt-ui` (main.ts) and `loctt ui` (the CLI) are the two ways to
-    // start the server. Neither reads a host/bind flag or env var, so a
+    // `loctt ui` (the CLI, the only published launcher) and main.ts (the
+    // dev server's entry, `npm run dev`) are the two ways to start it. Neither reads a host/bind flag or env var, so a
     // user cannot talk either into listening on 0.0.0.0.
     const main = await readFile(join(repoRoot, "apps/web/src/server/main.ts"), "utf8");
     const ui = await readFile(join(repoRoot, "apps/cli/src/commands/ui.ts"), "utf8");

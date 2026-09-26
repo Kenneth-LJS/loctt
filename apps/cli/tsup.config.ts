@@ -5,11 +5,10 @@ import { defineConfig } from "tsup";
 
 /**
  * `loctt ui` serves the web client, and the client ships inside this
- * package (K89 left "does `loctt ui` stay" to the implementer; A352
- * keeps it and makes the CLI self-contained). The CLI already bundles
- * `@loctt/web`'s server code, so it carries the client beside it rather
- * than depending on `@loctt/web` at runtime: one install, one version,
- * no second package to find on disk.
+ * package, the one published package `loctt` (A352, K139). It bundles
+ * the internal `@loctt/web` workspace's server code and the internal
+ * `@loctt/mcp` workspace from source, so it carries the client beside
+ * them: one install, one version, no second package to find on disk.
  *
  * Runs after every build (including `tsup --watch`, whose `clean` would
  * otherwise wipe the copy). The web client must already be built; the
@@ -23,7 +22,7 @@ async function copyWebClient(): Promise<void> {
   const found = await stat(resolve(from, "index.html")).then(() => true, () => false);
   if (!found) {
     throw new Error(
-      `@loctt/cli build: the web client is not built (${from}/index.html is missing). ` +
+      `loctt build: the web client is not built (${from}/index.html is missing). ` +
       `Run \`npm run build\` from the repository root, which builds apps/web first.`,
     );
   }

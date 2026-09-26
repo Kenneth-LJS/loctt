@@ -1,12 +1,12 @@
 /**
  * Shared machinery for the packaging suite (`npm run test:packaging`).
  *
- * RR-B1 and RR-B4 (K136, A352) are claims about what a stranger gets from
- * npm, and the monorepo is the one place those claims cannot be checked:
- * hoisting puts every workspace's dependencies in the root
- * `node_modules`, so a bundle that imports a package its own manifest
- * forgot still resolves here (that is how `@loctt/web` shipped without
- * `yaml`). So this suite works from `npm pack` tarballs, installed
+ * RR-B1 and RR-B4 (K136, K139, A352, A355) are claims about what a
+ * stranger gets from npm, and the monorepo is the one place those claims
+ * cannot be checked: hoisting puts every workspace's dependencies in the
+ * root `node_modules`, so a bundle that imports a package its own
+ * manifest forgot still resolves here (that is how `@loctt/web`, when it
+ * was published, shipped without `yaml`). So this suite works from `npm pack` tarballs, installed
  * outside the repository with nothing but the package's own declared
  * dependencies beside it.
  *
@@ -20,7 +20,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, stat, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, stat, symlink } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -33,9 +33,14 @@ const exec = promisify(execFile);
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-/** The packages this repo publishes: every non-private workspace. */
-export const PUBLISHED = ["apps/cli", "apps/mcp", "apps/web"] as const;
-export type PublishedDir = (typeof PUBLISHED)[number];
+/**
+ * The one package this repo publishes (K139): `loctt`, built from
+ * `apps/cli`. Every other workspace is private (checked by
+ * `workspaceDirs` + the manifest test).
+ */
+export const PUBLISHED_DIR = "apps/cli";
+export const PUBLISHED_NAME = "loctt";
+export type PublishedDir = typeof PUBLISHED_DIR;
 
 export interface Manifest {
   readonly name: string;
@@ -53,6 +58,27 @@ export interface Manifest {
 
 export async function readManifest(dir: string): Promise<Manifest> {
   return JSON.parse(await readFile(path.join(repoRoot, dir, "package.json"), "utf8")) as Manifest;
+}
+
+/**
+ * Every workspace directory the root `package.json` declares, expanded
+ * from its `dir/*` globs (the only form it uses; anything else is
+ * refused rather than guessed).
+ */
+export async function workspaceDirs(): Promise<string[]> {
+  const root = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8")) as { workspaces?: string[] };
+  const dirs: string[] = [];
+  for (const pattern of root.workspaces ?? []) {
+    const m = /^([\w.-]+)\/\*$/.exec(pattern);
+    if (m === null) throw new Error(`unsupported workspace pattern "${pattern}" (expected dir/*)`);
+    const parent = m[1] ?? "";
+    for (const entry of await readdir(path.join(repoRoot, parent), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dir = `${parent}/${entry.name}`;
+      if (await exists(path.join(repoRoot, dir, "package.json"))) dirs.push(dir);
+    }
+  }
+  return dirs.sort();
 }
 
 export async function exists(p: string): Promise<boolean> {
@@ -138,7 +164,7 @@ export function satisfiesCaret(version: string, range: string): boolean {
  * A copy of `dep` in the monorepo that satisfies `range`, the way npm
  * would pick one. The workspace's own `node_modules` first, then the
  * root. Version-checked because the root copy is often a different major
- * (the root `ajv` is eslint's v6; `@loctt/cli` and `@loctt/mcp` need v8),
+ * (the root `ajv` is eslint's v6; `loctt` needs v8),
  * and linking the wrong one tests an install npm would never produce.
  */
 async function monorepoCopy(dir: string, dep: string, range: string): Promise<string> {

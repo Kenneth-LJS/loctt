@@ -3,8 +3,8 @@
 What stands between the current tree and publishing LocTT. Scoped on
 2026-09-11 against `chore/repo-sweep-cleanup`.
 
-**Publish target: both** — a public GitHub source repo *and* installable
-npm packages (`npx loctt`, the MCP server). Blockers are tagged by which
+**Publish target: both** — a public GitHub source repo *and* one
+installable npm package, `loctt` (CLI, `loctt ui`, `loctt mcp`; K139). Blockers are tagged by which
 target they apply to.
 
 This doc is the **packaging / security / metadata** axis (B1–B4). The
@@ -63,6 +63,11 @@ either document currently says.
 - **Done =** every published package declares `"license": "MIT"`; the
   root declares a version (or stays `private` with a version for tagging).
   Decide the version story (see B4).
+- **Version story (K139):** one published package, `loctt`, so one
+  version. The root and every app workspace carry the same version
+  (`0.1.0` today) and the same `engines.node`, and the manifest check
+  (ONB-C9) enforces it. `packages/core` and `packages/contracts` are
+  private, bundled into `loctt`, and keep their own internal `0.0.1`.
 
 ### B2. Security posture is undocumented — **both targets**
 - The loopback-only, no-auth model is correct but invisible.
@@ -72,56 +77,31 @@ either document currently says.
   reverse proxy expecting it to be safe; note that `dev:host` exposes
   only the dev client. Highest-value hardening item and it's prose.
 
-### B4. Package each of CLI / MCP / UI as independently installable — **npm target** — **RESOLVED (B34, A352; core-packaging shape open with Ken)**
-**Status correction (2026-09-27, release-gate audit / K136):** this
-section previously read "DONE (A-B4/K89)" in the quick-status table
-below. That was false. A read-only audit installing each package outside
-the monorepo (only declared dependencies) found: `loctt ui` from an
-installed CLI serves no client (the built web client is never copied
-into `@loctt/cli`'s `dist`), `@loctt/web` crashes on start
-(`yaml`/`ulid`/`proper-lockfile`/`sharp` are used but not declared as
-dependencies), and `@loctt/mcp` has no `bin` at all — the stdio server
-only exists inside the CLI. K136 confirmed the intended shape (three
-separately installable packages, `@loctt/mcp` staying standalone per
-K89) and put fixing all three under this ticket's B34, in progress at
-time of writing.
+### B4. One package, `loctt` (K139) — **npm target** — **RESOLVED (B34, B38; A352, A355)**
 
-**Intended model (Ken, 2026-09-11):** the three are installed
-**separately** — `@loctt/cli`, `@loctt/mcp`, and the UI as their own
-packages. They are not one bundle and the CLI does **not** serve the web
-UI. They share the on-disk data model, so CLI/MCP can CRUD things
-(labels, custom fields, milestones, relationships…) that only *render* in
-the UI — that's expected, not drift. The code already anticipates this:
-`apps/web/src/server/main.ts` is written as the `loctt serve` entry, uses
-the shared `--root`/`LOCTT_ROOT` vocabulary "across CLI/ui/mcp/web," and
-serves the built client from `dist/client/` via `--client-dir` in
-production.
+**Now:** one published package, **`loctt`** (`apps/cli`), provides the
+`loctt` command with `loctt ui` (the web client ships inside it) and
+`loctt mcp` (the MCP server, bundled in). Core, contracts, the web
+server and the MCP server are bundled from source (tsup `noExternal`);
+the runtime dependencies it loads are declared in its `dependencies`.
+`@loctt/mcp` and `@loctt/web` are `private` internal workspaces; there
+is no `loctt-mcp` or `loctt-ui` command. One install means one core
+version for all three surfaces, which is Ken's reason (K139: *"lets
+combine into one surface for loctt"*). `npm run test:packaging` packs
+`loctt`, installs it outside the repo with only its declared
+dependencies, runs `--version`, `init`/`create`, `loctt ui` and
+`loctt mcp`, and checks the schema-too-new refusal (ONB-C8); the
+manifest check (ONB-C9) covers `loctt` and fails if any other workspace
+is publishable.
 
-- **CLI + MCP: already installable.** Both **bundle** `@loctt/core` and
-  `@loctt/contracts` (`noExternal` in their `tsup.config.ts`), so those
-  being `private`/unpublished does **not** break `npx loctt` / the MCP
-  server. Runtime deps are all real npm packages (yaml, ulid, sharp,
-  busboy, proper-lockfile). Verified in both tsup configs.
-- **UI: NOT installable yet — the real B4 work.**
-  - `apps/web` is `private: true` with **no `bin`** — nothing launches it
-    from an install. It needs a `bin` (the `loctt serve` / `loctt-ui`
-    entry over `main.ts`) that starts the loopback server and opens the
-    browser.
-  - **The server is never built.** `apps/web` declares
-    `"main": "dist/server/index.js"`, but `build` is just `vite build`,
-    which only emits `dist/client` (`vite.config.ts:23`
-    `outDir: "dist/client"`). There is **no** step that compiles the
-    server to `dist/server`. So a published `@loctt/web` would ship a
-    client with no server to serve it. Add a server build (tsc or a
-    second bundler pass) that also bundles/handles `@loctt/core` the way
-    CLI/MCP do — or publish `core`.
-- **Also for all three:** (a) unify versions (cli/mcp `0.1.0`,
-  core/contracts/web `0.0.1`) and pick a scheme; (b) `prepublishOnly`/
-  `prepack` so no publish ships stale `dist`; (c) `files`/`.npmignore` so
-  only `dist` + docs ship, not source/tests.
-- **Done =** each of the three installs and runs from a clean registry
-  checkout on Node ≥ 20 — `npx @loctt/cli`, the MCP server, and the UI
-  (server + client) launching on loopback — independently.
+The already-published `@loctt/cli` 0.1.0 and `@loctt/mcp` 0.1.0 are
+Ken's to unpublish or deprecate (K139).
+
+**History.** K89 (2026-09-11) ruled three separately installable
+packages. The 2026-09-27 audit (K136) found none of them worked from an
+install (no client in the CLI, `@loctt/web` missing runtime
+dependencies, `@loctt/mcp` with no `bin`); B34/A352 fixed all three and
+added the packaging suite. K139 then superseded K89: one package.
 
 ---
 
@@ -174,7 +154,7 @@ production.
 |---|---|---|---|
 | B1 license/version metadata | both | metadata | DONE |
 | B2 document security model | both | docs | DONE |
-| B4 web packaging | npm | packaging | **RESOLVED (B34, A352)**: the installed CLI serves the UI, `@loctt/web` declares its runtime deps, `@loctt/mcp` has a `loctt-mcp` bin; `npm run test:packaging` packs and installs each outside the repo (ONB-C8/C9). Open with Ken: whether core stays bundled (K89) or becomes a published `@loctt/core`. |
+| B4 packaging | npm | packaging | **RESOLVED: one package, K139 (B38, A355).** `loctt` provides `loctt`, `loctt ui` and `loctt mcp` with core bundled; `@loctt/mcp` and `@loctt/web` are private workspaces; `npm run test:packaging` packs and installs `loctt` outside the repo (ONB-C8/C9). Unpublishing the old `@loctt/cli`/`@loctt/mcp` is Ken's. |
 | H1 corruption coverage audit | both | robustness | DONE — light pass (K136, 2026-09-27). See H1 above. |
 | H2 git-sync stability/labelling | both | robustness | DONE — STABLE (2026-09-18): full engine built to K92-K95, all data-safety paths guarded + tested (incl. real-remote integration); shipped unlabeled. The one untestable edge (advisory locks on network/sync filesystems) is detected + warned in-app (GIT-22/XS-50) and documented in docs/user/common/git-sync.md. Ken's call, recorded in decisions.md § 9 (K136). |
 | H3 community files | public repo | hygiene | DONE (K136, 2026-09-27). CONTRIBUTING.md and issue templates added (no CODE_OF_CONDUCT.md, K138); CHANGELOG.md refreshed through K136. |

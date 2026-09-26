@@ -1,7 +1,8 @@
 {
   "name": "@loctt/mcp",
   "version": "0.1.0",
-  "description": "MCP server for loctt — local-first, markdown-based task tracking built to be driven by AI.",
+  "private": true,
+  "description": "Internal workspace: the LocTT MCP server, published inside the `loctt` package as `loctt mcp`.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -17,22 +18,8 @@
       "import": "./dist/index.js"
     }
   },
-  "bin": {
-    "loctt-mcp": "dist/bin.js"
-  },
-  "files": [
-    "dist/index.js",
-    "dist/index.js.map",
-    "dist/index.d.ts",
-    "dist/index.d.ts.map",
-    "dist/bin.js"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "build": "tsup",
-    "prepublishOnly": "cd ../.. && npm run build",
     "dev": "tsup --watch",
     "clean": "rm -rf dist",
     "test": "vitest run",

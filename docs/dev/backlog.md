@@ -9,16 +9,4 @@ Status: **todo** · **deciding** (a PM/UI call is pending, not Ken's) ·
 
 ---
 
-## B38 · One package, `loctt` (K139) — **in progress**
-
-- Rename `@loctt/cli` to `loctt` (bin `loctt`), with core, the web
-  client and the MCP server bundled. `@loctt/mcp` and `@loctt/web`
-  become private workspaces; remove the `loctt-mcp` bin and
-  `publishConfig`s; `prepublishOnly` only on `loctt`.
-- READMEs, `docs/user/*` install instructions, MCP setup (`loctt mcp` /
-  `npx -y loctt mcp`), release-readiness.md B4, CHANGELOG.
-- `npm run test:packaging`: pack and install the one package outside the
-  repo and run `loctt`, `loctt ui` and `loctt mcp`; the manifest check
-  covers it; nothing else is publishable.
-- Ken unpublishes `@loctt/cli` and `@loctt/mcp` himself.
-
+Empty. B28–B38 shipped on `ui/polish-wave-4` (2026-09-27); records are K135–K139 and A351–A355 in `decisions.md`. Publishing `loctt` and unpublishing `@loctt/cli` / `@loctt/mcp` are Ken's (K139).

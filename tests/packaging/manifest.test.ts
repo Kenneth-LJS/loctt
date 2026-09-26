@@ -1,16 +1,21 @@
 /**
- * RR-B1 (K136, A352): the published manifests tell the truth.
+ * RR-B1 (K136, K139, A352, A355): the published manifest tells the truth,
+ * and it is the only one.
  *
- * A static check over the three packages this repo publishes, read from
- * the built output and from what `npm pack` would actually ship:
- * - one license (MIT, with the LICENSE file in the tarball) and one
- *   version across all of them and the root;
- * - every `bin` and `main` target is in the tarball, and each bin is an
- *   executable Node script;
- * - every bare package a shipped bundle loads is a declared runtime
+ * A static check over `loctt` (`apps/cli`), the one package this repo
+ * publishes, read from the built output and from what `npm pack` would
+ * actually ship:
+ * - every other workspace, and the root, is `private` (nothing else can
+ *   be published by accident);
+ * - `loctt` is public, MIT, ships its LICENSE, and carries the root's
+ *   version and Node floor, as does every app workspace;
+ * - its one launcher is `loctt`, the `bin`/`main` targets are in the
+ *   tarball, and the bin is an executable Node script;
+ * - every bare package the shipped bundle loads is a declared runtime
  *   dependency, and every declared runtime dependency is loaded by
  *   something shipped (no install weight for nothing);
- * - `prepublishOnly` rebuilds, so a stale `dist` cannot be published.
+ * - `prepublishOnly` rebuilds, so a stale `dist` cannot be published;
+ * - the tarball carries the web client `loctt ui` serves.
  *
  * Needs a build; `npm run test:packaging` runs one first.
  *
@@ -26,104 +31,96 @@ import {
   bareImports,
   type Manifest,
   packedFiles,
-  PUBLISHED,
-  type PublishedDir,
+  PUBLISHED_DIR,
+  PUBLISHED_NAME,
   readManifest,
   repoRoot,
+  workspaceDirs,
 } from "./lib.ts";
 
-const manifests = new Map<PublishedDir, Manifest>();
-const shipped = new Map<PublishedDir, string[]>();
+let man: Manifest;
+let root: Manifest;
+let shipped: string[];
+let workspaces: string[];
 
 beforeAll(async () => {
-  for (const dir of PUBLISHED) {
-    manifests.set(dir, await readManifest(dir));
-    shipped.set(dir, await packedFiles(dir));
-  }
+  man = await readManifest(PUBLISHED_DIR);
+  root = await readManifest(".");
+  shipped = await packedFiles(PUBLISHED_DIR);
+  workspaces = await workspaceDirs();
 }, 120_000);
-
-function m(dir: PublishedDir): Manifest {
-  const found = manifests.get(dir);
-  if (found === undefined) throw new Error(`no manifest for ${dir}`);
-  return found;
-}
-
-function files(dir: PublishedDir): string[] {
-  return shipped.get(dir) ?? [];
-}
 
 /** `./dist/x.js` and `dist/x.js` name the same packed file. */
 function norm(p: string): string {
   return p.replace(/^\.\//, "");
 }
 
-describe("published package manifests (RR-B1)", () => {
+describe("the published package manifest (RR-B1)", () => {
   // @verifies ONB-C9
-  it("each published package is public, MIT, and ships its LICENSE", () => {
-    for (const dir of PUBLISHED) {
-      expect(m(dir).private, dir).not.toBe(true);
-      expect(m(dir).license, dir).toBe("MIT");
-      expect(files(dir), dir).toContain("LICENSE");
+  it("loctt is the only publishable package: every other workspace and the root are private", async () => {
+    expect(workspaces).toContain(PUBLISHED_DIR);
+    expect(workspaces.length).toBeGreaterThan(1);
+    const publishable: string[] = [];
+    for (const dir of workspaces) {
+      if ((await readManifest(dir)).private !== true) publishable.push(dir);
     }
+    expect(publishable).toEqual([PUBLISHED_DIR]);
+    expect(root.private).toBe(true);
   });
 
   // @verifies ONB-C9
-  it("every published package and the root carry one version and one Node floor", async () => {
-    const root = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8")) as Manifest;
+  it("loctt is public, MIT, and ships its LICENSE", () => {
+    expect(man.name).toBe(PUBLISHED_NAME);
+    expect(man.private).not.toBe(true);
+    expect(man.license).toBe("MIT");
+    expect(shipped).toContain("LICENSE");
+  });
+
+  // @verifies ONB-C9
+  it("loctt, every app workspace and the root carry one version and one Node floor", async () => {
     expect(root.license).toBe("MIT");
-    for (const dir of PUBLISHED) {
-      expect(m(dir).version, dir).toBe(root.version);
-      expect(m(dir).engines?.["node"], dir).toBe(root.engines?.["node"]);
+    for (const dir of workspaces.filter(d => d.startsWith("apps/"))) {
+      const m = await readManifest(dir);
+      expect(m.version, dir).toBe(root.version);
+      expect(m.engines?.["node"], dir).toBe(root.engines?.["node"]);
     }
   });
 
   // @verifies ONB-C9
-  it("every bin and main target is in the tarball, and each bin is a Node script", async () => {
-    for (const dir of PUBLISHED) {
-      const man = m(dir);
-      const targets = [...Object.values(man.bin ?? {}), ...(man.main !== undefined ? [man.main] : [])];
-      expect(targets.length, dir).toBeGreaterThan(0);
-      for (const t of targets) expect(files(dir), `${dir}: ${t}`).toContain(norm(t));
-      for (const bin of Object.values(man.bin ?? {})) {
-        const head = (await readFile(path.join(repoRoot, dir, bin), "utf8")).slice(0, 64);
-        expect(head.startsWith("#!/usr/bin/env node"), `${dir}: ${bin} shebang`).toBe(true);
-      }
+  it("its one launcher is `loctt`, and every bin and main target is in the tarball", async () => {
+    expect(man.bin).toEqual({ loctt: "dist/index.js" });
+    const targets = [...Object.values(man.bin ?? {}), ...(man.main !== undefined ? [man.main] : [])];
+    for (const t of targets) expect(shipped, t).toContain(norm(t));
+    for (const bin of Object.values(man.bin ?? {})) {
+      const head = (await readFile(path.join(repoRoot, PUBLISHED_DIR, bin), "utf8")).slice(0, 64);
+      expect(head.startsWith("#!/usr/bin/env node"), `${bin} shebang`).toBe(true);
     }
   });
 
   // @verifies ONB-C9
-  it("the three launchers exist: loctt, loctt-mcp, loctt-ui", () => {
-    expect(Object.keys(m("apps/cli").bin ?? {})).toContain("loctt");
-    expect(Object.keys(m("apps/mcp").bin ?? {})).toContain("loctt-mcp");
-    expect(Object.keys(m("apps/web").bin ?? {})).toContain("loctt-ui");
-  });
-
-  // @verifies ONB-C9
-  it("declared runtime dependencies are exactly what the shipped bundles load", async () => {
-    for (const dir of PUBLISHED) {
-      const loaded = new Set<string>();
-      for (const f of files(dir).filter(p => p.endsWith(".js"))) {
-        const src = await readFile(path.join(repoRoot, dir, f), "utf8");
-        for (const pkg of bareImports(src, f)) loaded.add(pkg);
-      }
-      const declared = new Set(Object.keys(m(dir).dependencies ?? {}));
-      const undeclared = [...loaded].filter(p => !declared.has(p)).sort();
-      const unused = [...declared].filter(p => !loaded.has(p)).sort();
-      expect(undeclared, `${dir} loads packages it does not declare`).toEqual([]);
-      expect(unused, `${dir} declares packages nothing it ships loads`).toEqual([]);
+  it("declared runtime dependencies are exactly what the shipped bundle loads", async () => {
+    const loaded = new Set<string>();
+    for (const f of shipped.filter(p => p.endsWith(".js"))) {
+      const src = await readFile(path.join(repoRoot, PUBLISHED_DIR, f), "utf8");
+      for (const pkg of bareImports(src, f)) loaded.add(pkg);
     }
+    const declared = new Set(Object.keys(man.dependencies ?? {}));
+    const undeclared = [...loaded].filter(p => !declared.has(p)).sort();
+    const unused = [...declared].filter(p => !loaded.has(p)).sort();
+    expect(undeclared, "loctt loads packages it does not declare").toEqual([]);
+    expect(unused, "loctt declares packages nothing it ships loads").toEqual([]);
+    // Nothing internal may be needed at runtime: the workspaces are
+    // bundled in, and none of them is published.
+    expect([...loaded].filter(p => p.startsWith("@loctt/")), "loads an internal workspace").toEqual([]);
   }, 120_000);
 
   // @verifies ONB-C9
   it("publishing rebuilds first (prepublishOnly)", () => {
-    for (const dir of PUBLISHED) {
-      expect(m(dir).scripts?.["prepublishOnly"], dir).toMatch(/npm run build/);
-    }
+    expect(man.scripts?.["prepublishOnly"]).toMatch(/npm run build/);
   });
 
   // @verifies ONB-C9
-  it("the CLI ships the web client that `loctt ui` serves", () => {
-    expect(files("apps/cli")).toContain("dist/client/index.html");
-    expect(files("apps/web")).toContain("dist/client/index.html");
+  it("the tarball carries the web client that `loctt ui` serves", () => {
+    expect(shipped).toContain("dist/client/index.html");
   });
 });

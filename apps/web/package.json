@@ -1,21 +1,12 @@
 {
   "name": "@loctt/web",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "main": "dist/server/index.js",
   "types": "dist/server/index.d.ts",
-  "bin": {
-    "loctt-ui": "dist/server/cli.js"
-  },
-  "files": [
-    "dist/server/index.js",
-    "dist/server/index.d.ts",
-    "dist/server/cli.js",
-    "dist/client"
-  ],
   "scripts": {
     "build": "vite build && tsc -b tsconfig.server.json && tsup",
-    "prepublishOnly": "npm run build",
     "clean": "rm -rf dist *.tsbuildinfo",
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
     "dev:host": "concurrently -k -n api,web -c blue,green \"npm:dev:server\" \"npm:dev:client -- --host\"",
@@ -70,14 +61,11 @@
     "vite": "^6.0.0"
   },
   "license": "MIT",
-  "description": "Web UI for loctt — a local-first, markdown-based task tracker that runs entirely on your machine.",
+  "description": "Internal workspace: the LocTT web UI, published inside the `loctt` package as `loctt ui`.",
   "repository": {
     "type": "git",
     "url": "https://github.com/Kenneth-LJS/loctt",
     "directory": "apps/web"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "engines": {
     "node": ">=20"

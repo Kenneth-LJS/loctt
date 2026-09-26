@@ -1,5 +1,5 @@
 {
-  "name": "@loctt/cli",
+  "name": "loctt",
   "version": "0.1.0",
   "description": "Local-first task tracking that lives in your repo. Markdown-based, fully configurable, built for devs and AI agents.",
   "type": "module",

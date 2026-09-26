@@ -22937,6 +22937,46 @@ Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
 
+### A355 · One package, `loctt` (B38)
+
+#### A355 · One package, `loctt` (B38, K139)
+
+**Date:** 2026-09-27 · Agent-made, revertible (the one-package shape itself is K139, Ken's).
+
+#### A355.1 · `apps/cli` becomes `loctt`; `@loctt/mcp` and `@loctt/web` go private
+
+- **Context:** K139 ("lets combine into one surface for loctt") supersedes K89 and K136's "`@loctt/mcp` stays standalone". A352 had built three publishable packages: `@loctt/cli` (bin `loctt`), `@loctt/mcp` (bin `loctt-mcp`, `src/bin.ts`) and `@loctt/web` (bin `loctt-ui`, tsup entry `server/cli` from `main.ts`).
+- **Decision:**
+  - `apps/cli/package.json` `name` is `loctt`. Everything else is unchanged: bin `loctt` → `dist/index.js`, `files: ["dist"]`, `prepublishOnly: "cd ../.. && npm run build"`, `publishConfig.access: public` (harmless on an unscoped name). Its tsup config already bundled `@loctt/core`, `@loctt/contracts`, `@loctt/mcp`, `@loctt/web` and the MCP SDK from source (`noExternal` + aliases) and copied the web client in `onSuccess`, so no build change was needed. `dependencies` stay `ajv, ajv-formats, busboy, proper-lockfile, sharp, ulid, yaml`: the manifest test (declared == bare imports of the shipped bundle) passes with exactly these. `zod` is bundled (it comes in through contracts), so it is not a runtime dependency.
+  - `apps/mcp` and `apps/web`: `"private": true`; `bin`, `publishConfig`, `prepublishOnly` and `files` removed (files has no meaning on a private package). `apps/mcp/src/bin.ts` deleted and the MCP tsup config is one entry (`src/index.ts`). The web tsup `server/cli` entry (the `loctt-ui` bundle) is removed; `src/server/main.ts` stays as the dev server's entry (`npm run dev` → `tsx watch src/server/main.ts`), with its header rewritten and its debug prefix `[loctt-ui]` → `[loctt dev]`. `main`/`types`/`exports` and the web server-library entry stay: they are workspaces the CLI builds from. Descriptions now say "Internal workspace: …".
+  - User-visible strings: `loctt ui`'s missing-client error is "… Reinstall loctt."; the web "Schema too new" banner says `npm install -g loctt@latest`.
+  - The root `package.json` is also named `loctt` (private). npm accepts a workspace with the root's name; `npm install` linked `node_modules/loctt` → `apps/cli`. Left as is. `npm run -w apps/cli` (path form) is what the docs use, which is unambiguous.
+- **Why:** K139. One install, one core version for all three surfaces.
+- **Alternatives:** rename the root to `loctt-monorepo` to avoid the duplicate name (not needed, npm resolved it; would be churn in lockfile and scripts output); keep `files` on the private manifests (dead config).
+- **To revert:** set `apps/cli` `name` back to `@loctt/cli`; in `apps/mcp`/`apps/web` drop `private` and restore `publishConfig`, `prepublishOnly`, `files` (with `dist/bin.js` / `dist/server/cli.js`), `bin` (`loctt-mcp` → `dist/bin.js`, `loctt-ui` → `dist/server/cli.js`) and the old descriptions; restore `apps/mcp/src/bin.ts` and its second tsup entry, the web `server/cli` tsup entry and main.ts header; restore the two user-visible strings; run `npm install`. That is also the A352.4 state.
+
+#### A355.2 · Packaging suite covers one package and asserts nothing else is publishable
+
+- **Context:** `tests/packaging` (A352.5) packed and installed all three packages.
+- **Decision:**
+  - `lib.ts`: `PUBLISHED = [...]` → `PUBLISHED_DIR = "apps/cli"`, `PUBLISHED_NAME = "loctt"`; new `workspaceDirs()` expands the root `workspaces` globs (only `dir/*` accepted, anything else throws).
+  - `install.test.ts` (ONB-C8) packs `loctt` only and runs, from the install outside the repo: `--version`; `init` + `create`; `loctt ui --no-open` (page, a script asset, `/api/info`, `/api/tasks`); `loctt mcp` (name `loctt`, the package version, the instructions, the tool list **equal to `getTools()` from `apps/mcp/src`**, which is 99 tools today, with a `>= 99` floor, and `list_tasks` returning the CLI-made task); schema 999 refused by `loctt list` (non-zero, "newer version of LocTT") and by `loctt mcp --root` (`list_tasks` `isError`). The `loctt-ui` and `loctt-mcp` cases are gone.
+  - `manifest.test.ts` (ONB-C9): every workspace except `apps/cli`, and the root, is `private`; `loctt` is named `loctt`, public, MIT, ships LICENSE; `loctt`, every `apps/*` workspace and the root share version and `engines.node`; `bin` is exactly `{ loctt: "dist/index.js" }` and targets are in the tarball with a shebang; declared deps == loaded bare imports, and nothing `@loctt/*` is loaded; `prepublishOnly` builds; the tarball has `dist/client/index.html`.
+  - ONB-C8 and ONB-C9 rewritten, each with `> **Amended (K139, Ken 2026-09-27).**` quoting *"lets combine into one surface for loctt"*. ONB-C10's `loctt-ui` mention now names the dev server's entry (main.ts); SHL-35's example command is `npm install -g loctt@latest`.
+- **Red-proofs (each restored, suite back to 11/11):** `yaml` dropped from `loctt` deps → 5 fail (manifest "loads packages it does not declare: ['yaml']", every install test `ERR_MODULE_NOT_FOUND 'yaml'`); `ajv` dropped → same 5 with `'ajv'`; `apps/cli/dist/client` removed → 2 fail ("The web UI files are missing from this install. Reinstall loctt." and the tarball check); `private` removed from `apps/web` → the privacy test fails (`['apps/cli','apps/web']`); `startMcpServer` registering `getTools().slice(1)` → the tool-list test fails (98 vs 99).
+- **Two green tests were asserting the old name** and were edited: `packages/core/src/scaffold.test.ts` (`npm ls` contains `@loctt/cli` → `loctt`) and `SchemaBanner.test.tsx` (`@loctt/cli@latest` → `npm install -g loctt@latest`).
+- **`npm pack --dry-run` does not refuse private packages** (it packs them: `@loctt/mcp` 470 kB, `@loctt/web` 2.7 MB, `@loctt/core` 1.9 MB, `@loctt/contracts` 175 kB); only `npm publish` does (EPRIVATE). `npm publish --dry-run` was not run (publish commands are Ken's). Privacy is enforced by the manifest test. `loctt`: 1.1 MB packed, 4.6 MB unpacked, 7 files.
+- **Why:** the claim is "one package, nothing else publishable"; the test checks exactly that and the install runs all three surfaces from the one tarball. Comparing against the source registry catches a tool lost in bundling, which a count floor alone would not.
+- **To revert:** restore `PUBLISHED` (three dirs) in `lib.ts` and drop `workspaceDirs`; restore the A352 versions of `install.test.ts` and `manifest.test.ts` and the ONB-C8/C9/C10 and SHL-35 text; run `npm run cases:index`.
+
+#### A355.3 · Docs
+
+- **Decision:** README (install `npm install -g loctt`, one-package line, `npx -y loctt mcp`), `apps/cli/README.md` (package `loctt`, `ui`/`mcp`, MCP config), `apps/mcp/README.md` and `apps/web/README.md` (short "internal workspace, use `loctt`" notes), `docs/user/quickstart.md`, `docs/user/common/upgrading.md` (install line plus a migration note: uninstall `@loctt/cli @loctt/mcp` first since both provide `loctt`; change `loctt-mcp`/`npx -y @loctt/mcp` configs), `docs/user/common/uninstall.md`, `docs/user/cli/reference.md` (`loctt ui` error text), `docs/user/mcp/reference.md` (the "Without the CLI" `@loctt/mcp` section replaced with `npx -y loctt mcp`), CONTRIBUTING (which workspace publishes, `test:packaging`), CHANGELOG (a "One package: `loctt`" section under 0.1.0 in user terms), release-readiness (B4 rewritten as "one package, K139", quick-status row, B1 version story, publish-target line), build-loop.md and tests/README.md (workspace-name and adapter-path references). SECURITY.md names no packages; unchanged.
+- **Not changed:** `.claude/launch.json` (`-w @loctt/web` still resolves; the config name `loctt-ui-playground` is just a label), historical entries in `decisions.md`.
+- **To revert:** restore those files' previous text.
+
+Also: the private root `package.json` is renamed `loctt-monorepo` so it no longer shares the published package's name.
+
 ### A354 · Zero lint warnings without behaviour change (B32)
 
 #### A354 · B32: lint to 0 errors / 0 warnings without changing behaviour
