@@ -22685,6 +22685,39 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K139 · One package, `loctt`, with all three surfaces (supersedes K89)
+
+**Date:** 2026-09-27 · **Ken's ruling — not revertible by an agent.**
+
+Ken's concern with separately installed surfaces: *"people using
+multiple surfaces, then one has core v1, another has core v2, and both
+have different data formats. then they will override each other in a
+way that is unrecoverable"*. Shown that the CLI package already carries
+the web UI (`loctt ui`) and the MCP server (`loctt mcp`), and that
+splitting saves about 2 MB against sharp's ~26 MB, he asked *"what if
+all 3 surfaces shipped in one package. install one and you get it
+all?"*, then: *"lets combine into one surface for loctt"* and, on the
+name, *"just name it loctt, can we just delete the old? nobody's
+downloaded them yet"*.
+
+So: one published package, **`loctt`**, providing `loctt`, `loctt ui`
+and `loctt mcp`, with core bundled. `@loctt/mcp` and `@loctt/web` become
+internal workspaces (not published); the standalone `loctt-mcp` bin is
+removed. One install means one core version, which removes the
+mixed-version risk rather than guarding against it. The already-published
+`@loctt/cli` 0.1.0 and `@loctt/mcp` 0.1.0 (~200 downloads a year each,
+Ken the only maintainer) are Ken's to unpublish (`npm unpublish <name>
+--force`, or `npm deprecate` if npm refuses); this machine is not logged
+in to npm. Supersedes K89 and the K136 "stays standalone" line. B36
+closes: core stays bundled.
+
+On a format-change test Ken asked *"but we didnt change the format,
+no?"*. Answer given: only additively (e.g. `keyboard_shortcuts`, the
+`filters` sidebar group, and earlier additions since 0.1.0). With one
+package the mixed-version risk mostly goes away; a smaller test (a
+0.1.0-made tracker opens in the new version) was suggested, **not yet
+decided**.
+
 ### K138 · No CODE_OF_CONDUCT.md
 
 **Date:** 2026-09-27 · **Ken's ruling — not revertible by an agent.**
