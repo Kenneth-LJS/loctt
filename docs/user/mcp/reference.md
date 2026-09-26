@@ -35,6 +35,23 @@ example:
 The server operates on the tracker at its working directory. Point the
 client at your project directory, or set `LOCTT_ROOT`.
 
+**Without the CLI.** The same server ships on its own as `@loctt/mcp`,
+whose command is `loctt-mcp` (it takes `--root <dir>` like the CLI):
+
+```json
+{
+  "mcpServers": {
+    "loctt": {
+      "command": "npx",
+      "args": ["-y", "@loctt/mcp"]
+    }
+  }
+}
+```
+
+`loctt mcp` and `loctt-mcp` run the same code: the same tools, the same
+instructions, and the same refusal of a tracker written by a newer LocTT.
+
 ## How an agent works with the tracker
 
 Three rules shape every correct interaction, and they are the same three

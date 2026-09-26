@@ -8,7 +8,7 @@ your data stays on your machine unless you enable optional Git Sync. There
 is no login to secure because nothing is exposed on the network.
 
 This is a deliberate trade for zero-setup simplicity — see
-[README → Security & data model](README.md#security--data-model).
+[README → Data & security](README.md#data--security).
 
 ## Using it safely
 
@@ -17,6 +17,10 @@ This is a deliberate trade for zero-setup simplicity — see
   protect it if exposed. `npm run dev:host` exposes only the Vite dev
   client (for testing on a local device); the API server stays on
   loopback.
+- **Additional hardening already in place:** the server refuses a
+  request carrying a `Host` header it doesn't recognize (guards against
+  DNS rebinding attacks reaching the loopback server from a malicious
+  page), and sets a restrictive Content-Security-Policy.
 - **Treat `.loctt/` as your data.** It is plain files (YAML + markdown);
   back it up as you would any working directory. Git Sync is opt-in and
   publishes only to the branch you configure.
