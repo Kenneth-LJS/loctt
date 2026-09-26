@@ -31,7 +31,7 @@ describe("monorepo scaffold", () => {
 
     expect(deps).toContain("@loctt/core");
     expect(deps).toContain("@loctt/contracts");
-    expect(deps).toContain("@loctt/cli");
+    expect(deps).toContain("loctt");
     expect(deps).toContain("@loctt/mcp");
     expect(deps).toContain("@loctt/web");
   });

@@ -7,7 +7,8 @@ import { resolveClientDir } from "../runtime/schema-guard.js";
  * and tries to auto-open the browser (suppressible with --no-open);
  * runs until SIGINT/SIGTERM.
  *
- * Loads @loctt/web lazily so the dep cost only applies when this
+ * Loads the web server (the internal @loctt/web workspace, bundled into
+ * the `loctt` package) lazily so the dep cost only applies when this
  * command is invoked. Browser-open failures are silenced by
  * default (the URL is already printed); LOCTT_DEBUG=1 surfaces the
  * spawn error for debugging.
@@ -50,10 +51,10 @@ export async function run(args: string[], root: string): Promise<void> {
   const clientDir = await resolveClientDir();
   // RR-B4 (A352): an install without the web client used to start
   // anyway and answer `/` with a 404, which reads as "LocTT is broken"
-  // with no hint why. The client ships inside @loctt/cli, so its
+  // with no hint why. The client ships inside the `loctt` package, so its
   // absence means a damaged install; say so and stop.
   if (clientDir === undefined) {
-    throw new Error("The web UI files are missing from this install. Reinstall @loctt/cli.");
+    throw new Error("The web UI files are missing from this install. Reinstall loctt.");
   }
   const app = createWebApp({
     root,

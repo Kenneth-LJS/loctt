@@ -297,7 +297,7 @@ Each step is shippable: tests pass, repo builds, no skipped cleanup.
 
 ### Step 2 — MCP stdio adapter + one tool
 
-- `tests/integration/adapters/mcp-stdio.ts` — spawns `node apps/mcp/dist/index.js` rooted in `root`, wraps `@modelcontextprotocol/sdk` client, exposes `callTool(name, args)`. Registers process-kill cleanup (SIGTERM → 2s → SIGKILL).
+- `tests/integration/adapters/mcp-stdio.ts` — spawns `node apps/cli/dist/index.js mcp` rooted in `root`, wraps `@modelcontextprotocol/sdk` client, exposes `callTool(name, args)`. Registers process-kill cleanup (SIGTERM → 2s → SIGKILL).
 - `tests/integration/mcp/create-task.test.ts` — init tmpdir, call `create_task`, assert `T-1` returned and `task.md` exists on disk.
 
 **Exit:** real MCP server spawned, JSON-RPC round-trip works, no stray processes after run.

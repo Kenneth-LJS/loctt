@@ -10,6 +10,20 @@ First public release of LocTT — a local-first, single-user task tracker
 that stores tasks as plain markdown + YAML files under `.loctt/`, with
 three surfaces over one shared core: a CLI, an MCP server, and a web UI.
 
+### One package: `loctt`
+
+- **Install one package and get all three surfaces.**
+  `npm install -g loctt` gives you the `loctt` command: the CLI,
+  `loctt ui` for the web UI and `loctt mcp` for the MCP server. They
+  always run the same version, so two surfaces can never disagree about
+  the on-disk format.
+- **Replaces `@loctt/cli` and `@loctt/mcp`.** Early builds were published
+  under those names, with a separate `loctt-mcp` command. If you
+  installed one, run `npm uninstall -g @loctt/cli @loctt/mcp` and then
+  `npm install -g loctt`. In MCP client configs, use the command `loctt`
+  with the argument `mcp`, or `npx -y loctt mcp`. See
+  [docs/user/common/upgrading.md](docs/user/common/upgrading.md).
+
 ### Core
 
 - **File-backed data model** — tasks are `task.md` (YAML frontmatter +

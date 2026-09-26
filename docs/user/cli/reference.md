@@ -1009,10 +1009,10 @@ see the [MCP reference](../mcp/reference.md).
 ### `loctt ui`
 
 Start the web UI. It runs in the foreground until you stop it with
-Ctrl-C. The web UI ships inside `@loctt/cli`, so nothing else needs to be
-installed. If its files are missing (a damaged install), the command
-exits `1` with "The web UI files are missing from this install.
-Reinstall @loctt/cli."
+Ctrl-C. The web UI ships inside the `loctt` package, so nothing else
+needs to be installed. If its files are missing (a damaged install), the
+command exits `1` with "The web UI files are missing from this install.
+Reinstall loctt."
 
 | Flag | Value | Default | Description |
 |---|---|---|---|

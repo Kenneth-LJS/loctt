@@ -47,7 +47,7 @@ git push origin --delete loctt   # Delete remote branch (if pushed)
 ## 6. Uninstall the CLI
 
 ```bash
-npm uninstall -g @loctt/cli
+npm uninstall -g loctt
 ```
 
 Or if you installed from source with `npm link`:

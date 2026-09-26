@@ -8940,7 +8940,7 @@
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
       "line": 150,
-      "title": "Each published package installs on its own and runs.",
+      "title": "The published package installs on its own and runs all three surfaces.",
       "severity": "blocker",
       "principles": [
         "P4",
@@ -8957,8 +8957,8 @@
       "id": "ONB-C9",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 179,
-      "title": "The published manifests tell the truth.",
+      "line": 186,
+      "title": "The published manifest tells the truth, and it is the only one.",
       "severity": "blocker",
       "principles": [
         "P10"
@@ -8974,7 +8974,7 @@
       "id": "ONB-C10",
       "tree": "surface",
       "file": "tests/cases/surface-test-cases/flow-onboarding.md",
-      "line": 200,
+      "line": 214,
       "title": "The documented security posture holds.",
       "severity": "blocker",
       "principles": [

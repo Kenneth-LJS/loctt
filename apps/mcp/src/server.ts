@@ -1,13 +1,11 @@
 /**
- * The MCP stdio server: one implementation, two launchers (K89, A352).
+ * The MCP stdio server (A352, K139).
  *
- * `@loctt/mcp`'s own `loctt-mcp` bin (`bin.ts`) and the CLI's `loctt mcp`
- * both call `startMcpServer`. Before A352 the server wiring lived in the
- * CLI (`apps/cli/src/commands/mcp.ts`) and `@loctt/mcp` was a library with
- * no way to run it, so K89's "MCP is independently installable" was not
- * true. Keeping a single function here is what keeps the two launchers
- * identical: same tools, same instructions, same schema guard (which runs
- * per tool call inside `executeTool`).
+ * `loctt mcp` (`apps/cli/src/commands/mcp.ts`) calls `startMcpServer`;
+ * the published `loctt` package bundles this module from source. The
+ * schema guard runs per tool call inside `executeTool`. There is no
+ * second launcher: K139 made `@loctt/mcp` an internal workspace and
+ * removed the standalone `loctt-mcp` command.
  *
  * The SDK and the tool registry are imported lazily, so a consumer that
  * only wants `getTools`/`executeTool` from this package does not load the
@@ -37,10 +35,9 @@ export const MCP_INSTRUCTIONS = [
  * The version of the package this code was bundled into.
  *
  * Read from `../package.json` relative to the running file, which is the
- * package root for every build: `@loctt/mcp`'s `dist/bin.js`, the CLI's
- * `dist/index.js` (which bundles this module), and `src/` under test. The
- * manifest check (`tools/packaging`) keeps the packages on one version,
- * so the CLI reporting its own version here is the same number.
+ * package root for every build: the `loctt` package's `dist/index.js`
+ * (which bundles this module) and `src/` under test. The manifest check
+ * (`tests/packaging`) keeps the workspaces and the root on one version.
  */
 export function packageVersion(): string {
   try {

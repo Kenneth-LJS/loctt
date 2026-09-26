@@ -3,9 +3,10 @@ import { resolve } from "node:path";
 import { defineConfig } from "tsup";
 
 /**
- * Two bundles (K89, A352): the library entry (`dist/index.js`, what the
- * CLI and tests import) and the `loctt-mcp` bin (`dist/bin.js`, the
- * standalone stdio server). Core is bundled into both, like the CLI.
+ * The library bundle (`dist/index.js`). `@loctt/mcp` is an internal
+ * workspace, not a published package (K139): the published `loctt`
+ * package bundles this code from source and runs it as `loctt mcp`.
+ * Core is bundled here too, like the CLI.
  */
 const shared = {
   format: "esm" as const,
@@ -37,7 +38,4 @@ const shared = {
   },
 };
 
-export default defineConfig([
-  { ...shared, entry: ["src/index.ts"] },
-  { ...shared, entry: ["src/bin.ts"], banner: { js: "#!/usr/bin/env node" } },
-]);
+export default defineConfig([{ ...shared, entry: ["src/index.ts"] }]);

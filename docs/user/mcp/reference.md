@@ -35,22 +35,21 @@ example:
 The server operates on the tracker at its working directory. Point the
 client at your project directory, or set `LOCTT_ROOT`.
 
-**Without the CLI.** The same server ships on its own as `@loctt/mcp`,
-whose command is `loctt-mcp` (it takes `--root <dir>` like the CLI):
+`loctt mcp` comes with the `loctt` package (`npm install -g loctt`),
+the same install that gives you the CLI and `loctt ui`, so all three
+always run the same version. **Without a global install**, let the
+client fetch the package with `npx`:
 
 ```json
 {
   "mcpServers": {
     "loctt": {
       "command": "npx",
-      "args": ["-y", "@loctt/mcp"]
+      "args": ["-y", "loctt", "mcp"]
     }
   }
 }
 ```
-
-`loctt mcp` and `loctt-mcp` run the same code: the same tools, the same
-instructions, and the same refusal of a tracker written by a newer LocTT.
 
 ## How an agent works with the tracker
 

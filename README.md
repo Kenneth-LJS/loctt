@@ -73,8 +73,10 @@ That's what LocTT is.
 Requires Node.js >= 20.
 
 ```bash
-npm install -g @loctt/cli
+npm install -g loctt
 ```
+
+One package, one `loctt` command: the CLI, the web UI (`loctt ui`) and the MCP server (`loctt mcp`).
 
 Initialize a tracker in any project:
 
@@ -160,6 +162,8 @@ Quick setup for Claude Desktop (`~/Library/Application Support/Claude/claude_des
   }
 }
 ```
+
+Without a global install, use `"command": "npx", "args": ["-y", "loctt", "mcp"]`.
 
 See [docs/user/mcp/reference.md](docs/user/mcp/reference.md) for the full tool list and setup for Cursor, VS Code, and other agents.
 

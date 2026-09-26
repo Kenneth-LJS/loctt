@@ -9,7 +9,7 @@ import { MCP_INSTRUCTIONS } from "./server.js";
  * content and that the server is actually constructed with it.
  *
  * Moved here from the CLI with the server itself (A352): `loctt mcp`
- * and `loctt-mcp` both run `startMcpServer`, so this covers both.
+ * runs `startMcpServer`, so this covers it.
  */
 describe("MCP server instructions", () => {
   it("MCP_INSTRUCTIONS carries the load-bearing agent guidance", () => {

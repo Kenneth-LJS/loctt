@@ -19,11 +19,12 @@ the change. Pick whichever surface fits the moment.
 ## Install
 
 ```bash
-npm install -g @loctt/cli
+npm install -g loctt
 ```
 
-This installs the `loctt` command. Requires Node.js 20 or newer. The MCP
-server is built in — `loctt mcp` runs it, with nothing extra to install.
+This installs the `loctt` command. Requires Node.js 20 or newer. The web
+UI and the MCP server are built in: `loctt ui` and `loctt mcp` run them,
+with nothing extra to install.
 
 ## Set up your tracker (once)
 

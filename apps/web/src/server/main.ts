@@ -1,17 +1,10 @@
-// The `@loctt/web` package's bin (K89): starts the LocTT web UI server on
-// loopback, serves the built client, and opens the browser. Also the dev
-// entrypoint (`npm run dev` runs it via tsx).
+// The dev server's entrypoint (`npm run dev` runs it via tsx): starts the
+// LocTT web UI server on loopback, serves the built client, and opens the
+// browser. Users start the same server with `loctt ui`; `@loctt/web` is an
+// internal workspace and ships no command of its own (K139).
 //
-// Install `@loctt/web` and run its command to launch the UI; it is
-// independent of `@loctt/cli` and `@loctt/mcp` (they share only the
-// on-disk `.loctt/` data model). `loctt ui` in the CLI does the same
-// thing for users who have the CLI.
-//
-// In production the built server bundle sits at `dist/server/index.js`
-// and the built client at `dist/client/` (a sibling) — so when no
-// `--client-dir` is given, the bundled client one directory over is
-// used automatically. `--client-dir`/`LOCTT_CLIENT_DIR` overrides it
-// (the dev server does, pointing at Vite's output).
+// When no `--client-dir` is given, `../client` relative to this file is
+// used if it exists. `--client-dir`/`LOCTT_CLIENT_DIR` overrides it.
 
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -42,9 +35,7 @@ const port = Number(getArg("--port") ?? process.env.LOCTT_API_PORT ?? "7700");
 const noOpen = args.includes("--no-open");
 
 // Explicit --client-dir/env wins (the dev server passes Vite's output);
-// otherwise fall back to the client bundled next to this server bundle
-// (`dist/server/index.js` → `../client`), so an installed package serves
-// its own UI with no flag.
+// otherwise fall back to `../client` beside this file, if present.
 const explicitClientDir = getArg("--client-dir") ?? process.env.LOCTT_CLIENT_DIR;
 let clientDir: string | undefined;
 if (explicitClientDir) {
@@ -86,7 +77,7 @@ if (!noOpen && clientDir !== undefined) {
   try {
     spawn(opener, [url], { detached: true, stdio: "ignore", shell: process.platform === "win32" }).unref();
   } catch (err) {
-    if (process.env["LOCTT_DEBUG"] === "1") console.error(`[loctt-ui] failed to auto-open browser:`, err);
+    if (process.env["LOCTT_DEBUG"] === "1") console.error(`[loctt dev] failed to auto-open browser:`, err);
   }
 }
 

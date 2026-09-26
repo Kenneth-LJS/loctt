@@ -1,22 +1,20 @@
 /**
- * RR-B4 (K89, K136, A352): each published package installs on its own
- * and runs.
+ * RR-B4 (K139, A352, A355): the one published package, `loctt`, installs
+ * on its own and runs all three surfaces.
  *
- * Every package is packed with `npm pack` and installed into its own
- * temp project outside the repository, with only its declared
- * dependencies (see `lib.ts` for how, and what that does not cover).
- * Then it is run the way a user would run it:
- * - `@loctt/cli`: `--version`, `init` + `create`, `ui --no-open` serving
- *   the page, its assets and the API, and `mcp` answering initialize and
- *   listing tools;
- * - `@loctt/mcp`: `loctt-mcp` answering initialize, listing the same
- *   tools as `loctt mcp`, reading the tracker the CLI made, and refusing
- *   a tracker from a newer LocTT (the version-skew guard);
- * - `@loctt/web`: `loctt-ui` serving the page and the API.
+ * `loctt` is packed with `npm pack` and installed into a temp project
+ * outside the repository, with only its declared dependencies (see
+ * `lib.ts` for how, and what that does not cover). Then it is run the
+ * way a user would run it:
+ * - `loctt --version`, `init` + `create`;
+ * - `loctt ui --no-open` serving the page, its assets and the API;
+ * - `loctt mcp` answering initialize, listing every tool the MCP
+ *   workspace registers, and reading the tracker the CLI made;
+ * - the version-skew guard: a tracker from a newer LocTT is refused by
+ *   the CLI and by `loctt mcp`.
  *
- * Before A352 two of these failed outright: `loctt ui` answered `/` with
- * a 404 because the CLI shipped no client, and `loctt-ui` crashed with
- * `Cannot find package 'yaml'`. Inside the monorepo both passed.
+ * Before A352, `loctt ui` from an installed CLI answered `/` with a 404
+ * because the CLI shipped no client. Inside the monorepo it passed.
  *
  * Slow (packs and spawns real processes). Run with
  * `npm run test:packaging`, which builds first.
@@ -34,29 +32,24 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { isolatedEnv, outsideTmp, packAndInstall, readManifest } from "./lib.ts";
+import { getTools } from "../../apps/mcp/src/index.ts";
+import { isolatedEnv, outsideTmp, packAndInstall, PUBLISHED_DIR, readManifest } from "./lib.ts";
 
 const exec = promisify(execFile);
 
 interface Installed { readonly pkgDir: string; readonly project: string }
 let cli: Installed;
-let mcp: Installed;
-let web: Installed;
 let tracker: string;
 let version: string;
 const cleanup: string[] = [];
 
 const cliBin = (): string => path.join(cli.pkgDir, "dist/index.js");
-const mcpBin = (): string => path.join(mcp.pkgDir, "dist/bin.js");
-const webBin = (): string => path.join(web.pkgDir, "dist/server/cli.js");
 
 beforeAll(async () => {
-  version = (await readManifest("apps/cli")).version ?? "";
-  cli = await packAndInstall("apps/cli");
-  mcp = await packAndInstall("apps/mcp");
-  web = await packAndInstall("apps/web");
+  version = (await readManifest(PUBLISHED_DIR)).version ?? "";
+  cli = await packAndInstall(PUBLISHED_DIR);
   tracker = await outsideTmp("loctt-pack-tracker-");
-  cleanup.push(cli.project, mcp.project, web.project, tracker);
+  cleanup.push(cli.project, tracker);
 }, 180_000);
 
 afterAll(async () => {
@@ -161,9 +154,9 @@ function text(result: unknown): string {
   return content.map(c => c.text ?? "").join("\n");
 }
 
-describe("each published package installs and runs on its own (RR-B4)", () => {
+describe("the published `loctt` package installs and runs on its own (RR-B4)", () => {
   // @verifies ONB-C8
-  it("@loctt/cli: --version, init and create", async () => {
+  it("loctt: --version, init and create", async () => {
     const v = await run(cliBin(), ["--version"], tracker);
     expect(v.code).toBe(0);
     expect(v.stdout.trim()).toBe(version);
@@ -176,46 +169,40 @@ describe("each published package installs and runs on its own (RR-B4)", () => {
   }, 60_000);
 
   // @verifies ONB-C8
-  it("@loctt/cli: `loctt ui` serves the web UI and the API", async () => {
+  it("loctt ui: serves the web UI and the API", async () => {
     await withServer(cliBin(), ["ui"], expectServesUi);
   }, 60_000);
 
   // @verifies ONB-C8
-  it("@loctt/web: `loctt-ui` serves the web UI and the API", async () => {
-    await withServer(webBin(), ["--root", tracker], expectServesUi);
-  }, 60_000);
-
-  // @verifies ONB-C8
-  it("@loctt/cli and @loctt/mcp: both MCP launchers serve the same tools", async () => {
-    const viaCli = await withMcp([cliBin(), "mcp"], tracker, async client => {
-      expect(client.getServerVersion()?.version).toBe(version);
-      return (await client.listTools()).tools.map(t => t.name).sort();
-    });
-    expect(viaCli.length).toBeGreaterThan(50);
-
-    const v = await run(mcpBin(), ["--version"], tracker);
-    expect(v.stdout.trim()).toBe(version);
-
-    await withMcp([mcpBin()], tracker, async client => {
+  it("loctt mcp: initializes and lists every tool the MCP server registers", async () => {
+    // The source registry is the reference: a tool lost in bundling, or a
+    // server that starts with a partial registry, shows up as a diff.
+    const expected = getTools().map(t => t.name).sort();
+    expect(expected.length).toBeGreaterThanOrEqual(99);
+    await withMcp([cliBin(), "mcp"], tracker, async client => {
       expect(client.getServerVersion()?.name).toBe("loctt");
       expect(client.getServerVersion()?.version).toBe(version);
       expect(client.getInstructions() ?? "").toContain("get_workflow_config");
-      const viaMcp = (await client.listTools()).tools.map(t => t.name).sort();
-      expect(viaMcp).toEqual(viaCli);
+      const listed = (await client.listTools()).tools.map(t => t.name).sort();
+      expect(listed).toEqual(expected);
       // A read against the tracker the installed CLI created.
-      const listed = await client.callTool({ name: "list_tasks", arguments: {} });
-      expect(listed.isError ?? false).toBe(false);
-      expect(text(listed)).toContain("Installed from a tarball");
+      const tasks = await client.callTool({ name: "list_tasks", arguments: {} });
+      expect(tasks.isError ?? false).toBe(false);
+      expect(text(tasks)).toContain("Installed from a tarball");
     });
   }, 60_000);
 
   // @verifies ONB-C8
-  it("@loctt/mcp: refuses a tracker written by a newer LocTT", async () => {
+  it("refuses a tracker written by a newer LocTT, from the CLI and from `loctt mcp`", async () => {
     const versionFile = path.join(tracker, ".loctt", ".schema-version");
     const original = await readFile(versionFile, "utf8");
     await writeFile(versionFile, "999\n", "utf8");
     try {
-      await withMcp([mcpBin(), "--root", tracker], mcp.project, async client => {
+      const list = await run(cliBin(), ["list"], tracker);
+      expect(list.code).not.toBe(0);
+      expect(list.stderr).toMatch(/newer version of LocTT/);
+
+      await withMcp([cliBin(), "mcp", "--root", tracker], cli.project, async client => {
         const res = await client.callTool({ name: "list_tasks", arguments: {} });
         expect(res.isError).toBe(true);
         expect(text(res)).toMatch(/newer version of LocTT/);

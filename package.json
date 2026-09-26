@@ -1,5 +1,5 @@
 {
-  "name": "loctt",
+  "name": "loctt-monorepo",
   "private": true,
   "type": "module",
   "workspaces": [
