@@ -23,7 +23,7 @@ export interface McpClient {
   // it is `| undefined` rather than optional: under
   // exactOptionalPropertyTypes those are different types, and the MCP
   // SDK returns the former.
-  listTools: () => Promise<Array<{ name: string; description: string | undefined }>>;
+  listTools: () => Promise<Array<{ name: string; description: string | undefined; inputSchema: unknown }>>;
   close: () => Promise<void>;
 }
 
@@ -57,7 +57,7 @@ export async function startMcpClient(cwd: string): Promise<McpClient> {
     },
     async listTools() {
       const result = await client.listTools();
-      return result.tools.map(t => ({ name: t.name, description: t.description }));
+      return result.tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
     },
     async close() {
       try {

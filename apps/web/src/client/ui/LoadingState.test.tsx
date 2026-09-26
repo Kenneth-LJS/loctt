@@ -13,6 +13,7 @@ import { LoadingState } from "./LoadingState.tsx";
 afterEach(cleanup);
 
 describe("LoadingState", () => {
+  // @verifies A11Y-61
   it("is a polite live region (role=status, aria-busy) carrying the message", () => {
     render(<LoadingState>Loading projects…</LoadingState>);
     const region = screen.getByRole("status");

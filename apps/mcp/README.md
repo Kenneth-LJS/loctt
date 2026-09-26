@@ -1,42 +1,27 @@
-# @loctt/mcp
+# @loctt/mcp (internal workspace)
 
-MCP (Model Context Protocol) server for **LocTT** — the AI-facing surface of a
-local-first task tracker whose tasks live as markdown + YAML files in a
-`.loctt/` directory. It lets an AI agent read and manage tasks with the same
-data and rules as the CLI and web UI.
-
-## Install
+This workspace holds the LocTT MCP server. It is not published on its
+own: it ships inside the [`loctt`](../cli/README.md) package, which runs
+it as `loctt mcp`.
 
 ```bash
-npm install -g @loctt/mcp
+npm install -g loctt
 ```
 
-## Usage
-
-Run the server over stdio and point your MCP client at it. Configure it in your
-agent's MCP settings, for example:
+Then point your MCP client at it:
 
 ```json
 {
   "mcpServers": {
     "loctt": {
-      "command": "loctt-mcp",
-      "args": []
+      "command": "loctt",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-The server operates on the `.loctt/` tracker in its working directory. See the
-MCP tool reference and agent guidelines at the
-[project repository](https://github.com/Kenneth-LJS/loctt).
+Or, without a global install: `"command": "npx", "args": ["-y", "loctt", "mcp"]`.
 
-## Security note
-
-The agent surface is confined: file attachments are restricted to inside the
-tracker root, backup/restore require explicit confirmation, and git refs are
-validated. Do not auto-approve destructive tools without understanding them.
-
-## License
-
-MIT — see [LICENSE](./LICENSE).
+See [`docs/user/mcp/reference.md`](../../docs/user/mcp/reference.md) for
+the tool reference and agent guidelines.

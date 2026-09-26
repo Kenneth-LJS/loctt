@@ -10,7 +10,7 @@ import {
   StatusBadge,
   TypeBadge,
 } from "../list/cells.tsx";
-import { isOverdue, shortDate } from "../list/format.ts";
+import { shortDate } from "../list/format.ts";
 import type { buildLookups } from "../list/lookups.ts";
 import { Chip } from "../ui/Chip.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -70,10 +70,9 @@ export function BoardCard({
   readonly milestones: readonly { id: string; name: string }[];
   readonly sprints: readonly { id: string; name: string }[];
   /**
-   * The *workspace's* date, from `/api/info` — not the browser's. A
-   * due date is compared against the tracker's calendar, so a user in
-   * another timezone must not see a different set of overdue cards
-   * than the CLI reports.
+   * The *workspace's* date, from `/api/info` — not the browser's.
+   * `shortDate` reads its year from it to decide whether a due date
+   * needs the year shown. No overdue styling keys off it (K135).
    */
   readonly today: string;
   readonly onOpen: (key: string) => void;
@@ -327,7 +326,8 @@ function renderField({
       const due = task.due_date;
       if (due === undefined) return null;
       return (
-        <span className={isOverdue(due, today) ? "font-medium text-danger-fg" : "text-text-secondary"}>
+        // K135: a past due date renders like any other, no red.
+        <span className="text-text-secondary">
           {shortDate(due, today)}
         </span>
       );

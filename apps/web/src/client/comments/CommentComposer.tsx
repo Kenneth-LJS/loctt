@@ -158,7 +158,9 @@ export function CommentComposer({
     containerRef.current
       ?.querySelector<HTMLElement>(`[data-testid='${testId}-rich-editor']`)
       ?.focus();
-  }, [resetToken]);
+    // `testId` is a constant string at every call site; it is listed so
+    // the selector cannot go stale, not because it is expected to change.
+  }, [resetToken, testId]);
 
   const onDocChange = useCallback((doc: import("@tiptap/core").JSONContent) => {
     bufferRef.current.applyRich(doc);

@@ -94,7 +94,10 @@ export function SprintsView() {
     void fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const pages = tasks.data?.pages ?? [];
+  // Memoised so the empty fallback is one array, not a fresh `[]` each
+  // render: `items` below depends on `pages`, and a new fallback every
+  // render would recompute it (and everything keyed on it) every render.
+  const pages = useMemo(() => tasks.data?.pages ?? [], [tasks.data?.pages]);
   const items = useMemo(() => pages.flatMap(p => p.items), [pages]);
   const unreadable = pages[pages.length - 1]?.unreadable ?? [];
 
@@ -109,7 +112,10 @@ export function SprintsView() {
     [projects.data, users.data, labels.data, workflow.data],
   );
 
-  const sprintDefs: readonly SprintDef[] = sprints.data?.items ?? [];
+  const sprintDefs: readonly SprintDef[] = useMemo(
+    () => sprints.data?.items ?? [],
+    [sprints.data?.items],
+  );
 
   // A138 wire: `GET /api/sprints` rides a `broken` list — sprint entries
   // in `sprints.yaml` whose fields no longer validate (a hand edit, most

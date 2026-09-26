@@ -32,8 +32,8 @@ repeats these tables.
   stack traces.
 - **Schema guard.** Most commands refuse to run against a tracker whose
   on-disk schema is older than this `loctt` and point you to
-  `loctt migrate`. `init`, `migrate`, `doctor`, `info`, `mcp`, `ui`, and
-  `help` are exempt.
+  `loctt migrate`. `init`, `migrate`, `doctor`, `info`, `mcp`, `ui`,
+  `help` and `--version` are exempt.
 - **Machine-readable output.** `loctt init` accepts `--json` and
   `--quiet`. Elsewhere, use `loctt export --format json` and
   `loctt sprint burndown --format json`.
@@ -163,6 +163,11 @@ Relationships:
 
 Steps to reproduce…
 ```
+
+A task file that will not parse is an error that names the file and the
+line, never "not found". When a key matches nothing and some task files
+could not be read, LocTT cannot tell whether the task exists, so the
+error says so and lists each unreadable file once, as `path: reason`.
 
 ### `loctt set <task> <field> <value>`
 
@@ -1004,7 +1009,10 @@ see the [MCP reference](../mcp/reference.md).
 ### `loctt ui`
 
 Start the web UI. It runs in the foreground until you stop it with
-Ctrl-C.
+Ctrl-C. The web UI ships inside the `loctt` package, so nothing else
+needs to be installed. If its files are missing (a damaged install), the
+command exits `1` with "The web UI files are missing from this install.
+Reinstall loctt."
 
 | Flag | Value | Default | Description |
 |---|---|---|---|
@@ -1022,6 +1030,9 @@ Press Ctrl-C to stop.
 ---
 
 ## Help
+
+`loctt --version` prints the installed version (for example `0.1.0`) and
+exits `0`. It needs no tracker.
 
 `loctt help`, `loctt --help`, `loctt -h`, and `loctt` with no command all
 print the top-level usage. An unknown command prints an error and the

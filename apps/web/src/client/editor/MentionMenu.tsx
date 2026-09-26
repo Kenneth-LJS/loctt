@@ -14,7 +14,7 @@
  */
 
 import type { Editor } from "@tiptap/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export interface MentionCandidate {
   readonly id: string;
@@ -87,11 +87,16 @@ export function useMentionState(
   const [query, setQuery] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState(0);
 
-  const matches = query === null
-    ? []
-    : candidates
-      .filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
-      .slice(0, 8);
+  // Memoised so the keydown effect below re-registers only when the
+  // match list can actually differ, not on every render.
+  const matches = useMemo(
+    () => query === null
+      ? []
+      : candidates
+        .filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
+        .slice(0, 8),
+    [query, candidates],
+  );
 
   const choose = useCallback((candidate: MentionCandidate) => {
     if (!editor || query === null) return;

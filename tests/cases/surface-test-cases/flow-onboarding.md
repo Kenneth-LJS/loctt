@@ -1,7 +1,7 @@
 # Init, schema, and diagnostics
 
-`loctt init` and its options, schema versioning and migration, doctor, and
-`info`.
+`loctt init` and its options, schema versioning and migration, doctor,
+`info`, installing each published package, and the security posture.
 
 Gaps only. See [README.md](README.md) for conventions.
 
@@ -142,3 +142,94 @@ without a prior successful `/api/info`.
 
 **Given** an agent running `doctor` to decide whether to proceed, **when** a
 check fails, **then** the failure is detectable from the result shape.
+
+---
+
+## B. Installing and running what is published
+
+### ONB-C8 · blocker · P4 P10 · CLI MCP UI
+**The published package installs on its own and runs all three
+surfaces.** Found by the release-gate audit (RR-B4, K136): outside the
+monorepo, `loctt ui` from the installed CLI answered `/` with a 404 (the
+CLI shipped no web client and `resolveClientDir` only found one inside
+the repo), and the separately published MCP and web packages could not
+run at all. K139 makes `loctt` the one published package.
+
+`loctt` is packed (`npm pack`) and installed into an empty directory
+outside the repository with only its declared dependencies:
+
+- `loctt --version` prints the package version. `loctt init` then
+  `loctt create` make a tracker with a task.
+- `loctt ui --no-open` serves `/` as HTML (200) with its script assets,
+  and `/api/info` and `/api/tasks` answer for that tracker. An install
+  without the web client refuses to start and says the install is
+  damaged, rather than serving an API with a 404 page.
+- `loctt mcp` answers `initialize` with name `loctt`, the package version
+  and the agent instructions, lists every tool the MCP server registers
+  (99 or more), and a read tool returns the task the installed CLI
+  created.
+- Pointed at a tracker whose schema is newer than it knows, a CLI
+  command and an MCP tool call are both refused with "newer version of
+  LocTT".
+  → `tests/packaging/install.test.ts` (`npm run test:packaging`)
+
+**Given** a user who installs `loctt` from npm, **when** they run
+`loctt`, `loctt ui` or `loctt mcp`, **then** each works with no other
+LocTT package present.
+
+> **Amended (K139, Ken 2026-09-27).** Ken: *"lets combine into one
+> surface for loctt"*. Was "each published package installs on its own"
+> over `@loctt/cli`, `@loctt/mcp` (`loctt-mcp`) and `@loctt/web`
+> (`loctt-ui`); now one package, `loctt`, and the `loctt-mcp`/`loctt-ui`
+> bullets are gone.
+
+### ONB-C9 · blocker · P10 · CLI MCP UI
+**The published manifest tells the truth, and it is the only one.**
+RR-B1 (K136): license and version metadata were right but nothing
+checked them, and nothing checked that a package declares what its
+bundle loads (a `yaml` crash in the old `@loctt/web` was exactly that).
+
+- `loctt` (`apps/cli`) is the only publishable package: every other
+  workspace, and the root, is `private`.
+- `loctt` is public, MIT, and ships its LICENSE. It, every app
+  workspace and the root carry one version and one Node floor.
+- Its one launcher is `loctt`. Every `bin` and `main` target is in the
+  tarball, and the bin starts with a Node shebang.
+- Its runtime `dependencies` are exactly the bare packages its shipped
+  bundle imports: nothing undeclared, nothing unused, and no internal
+  `@loctt/*` workspace.
+- `prepublishOnly` rebuilds, so a stale `dist` cannot ship.
+- The tarball contains the web client `loctt ui` serves.
+  → `tests/packaging/manifest.test.ts` (`npm run test:packaging`)
+
+**Given** a release, **when** the package is packed, **then** its
+manifest matches what it contains and loads, and nothing else is
+publishable.
+
+> **Amended (K139, Ken 2026-09-27).** Ken: *"lets combine into one
+> surface for loctt"*. Was three public packages (`@loctt/cli`,
+> `@loctt/mcp`, `@loctt/web`) with launchers `loctt`, `loctt-mcp` and
+> `loctt-ui`; now one, and the others must be private.
+
+### ONB-C10 · blocker · P1 · UI
+**The documented security posture holds.** RR-B2 (K136): SECURITY.md and
+the README's "Data & security" section make promises that no case
+required, and SECURITY.md linked to a README anchor that did not exist.
+
+- The web server listens on `127.0.0.1` only, and neither `loctt ui` nor
+  the dev server's entry (`apps/web/src/server/main.ts`) has a flag or
+  variable that binds it elsewhere. `dev:host`
+  exposes the Vite client only; its API proxy targets loopback.
+- A request with a `Host` header that is not a loopback name is refused
+  (403, DNS rebinding); `localhost` and `127.0.0.1` are served.
+- The page is served with a Content-Security-Policy that restricts
+  sources to `'self'`, forbids plugins and framing, and allows no inline
+  script beyond hashed ones.
+- The API sends no CORS headers, even to a request with a foreign
+  `Origin`.
+- SECURITY.md's link into the README resolves to an existing heading.
+  → `apps/web/src/server/server.security-posture.test.ts`
+
+**Given** the security documentation, **when** its checkable claims are
+tested against the running server, **then** each holds.
+

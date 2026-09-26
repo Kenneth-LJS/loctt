@@ -35,6 +35,22 @@ example:
 The server operates on the tracker at its working directory. Point the
 client at your project directory, or set `LOCTT_ROOT`.
 
+`loctt mcp` comes with the `loctt` package (`npm install -g loctt`),
+the same install that gives you the CLI and `loctt ui`, so all three
+always run the same version. **Without a global install**, let the
+client fetch the package with `npx`:
+
+```json
+{
+  "mcpServers": {
+    "loctt": {
+      "command": "npx",
+      "args": ["-y", "loctt", "mcp"]
+    }
+  }
+}
+```
+
 ## How an agent works with the tracker
 
 Three rules shape every correct interaction, and they are the same three
@@ -150,6 +166,11 @@ tools.
 | `archive_task` / `unarchive_task` | Reversible soft-delete and restore, one or many tasks in one operation. Tasks already in the target state are counted as unchanged; a bad ref is reported without aborting the rest. | `refs` (≤500) |
 | `delete_task` | Permanent delete of one or many tasks in one operation. Requires `confirm`. A bad ref is reported without aborting the rest. | `refs` (≤500), `confirm` |
 | `get_task_history` | Paginated activity log, newest first. | `ref`, `limit`, `offset` |
+
+A task file that will not parse is an error that names the file and the
+line, never "not found". When a key matches nothing and some task files
+could not be read, LocTT cannot tell whether the task exists, so the
+error says so and lists each unreadable file once, as `path: reason`.
 
 ### Body
 
@@ -287,7 +308,7 @@ Two emoji, or an emoji combined with other characters, are **rejected** —
 
 `color` is the standard three-shape colour: `"#rrggbb"`,
 `{"light": "#rrggbb", "dark": "#rrggbb"}`, or `{"palette": "<id>"}`
-(call `list_palette_colors` for the valid ids — do not guess them). Pass
+(call `list_palette_colors` for the valid ids, and do not guess them). Pass
 `color: null` on `edit_view` to clear it.
 
 The colour tints a **named** icon only. An emoji carries its own colour
@@ -441,7 +462,7 @@ tool plus two singleton tools:
 | `set_timeline_config` | Configure the timeline singleton (`dependency_relationship`, `default_zoom`, `show_arrows`, `default_grouping`). |
 
 `edit_workflow_entity` params: `entity` and `op` (required); `key` (the
-entity key — required for `edit`/`delete`, and the **new** key on
+entity key, required for `edit`/`delete`, and the **new** key on
 `create`; unused by `reorder`); `field` (the parent custom-field key,
 required only for `entity: "custom_field_value"`); `fields` (the
 create/edit payload, whose shape depends on the entity — `label`,

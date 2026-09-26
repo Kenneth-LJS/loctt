@@ -126,6 +126,8 @@ export function useFocusTrap(
       // another name.
       if (restore !== null && restore.isConnected) restore.focus();
     };
-    // Mount/unmount only: re-running would re-steal focus mid-dialog.
+    // Mount/unmount only: re-running would re-steal focus mid-dialog, and
+    // `returnFocusTo` is deliberately the value the trap mounted with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only by design; any dep re-steals focus
   }, []);
 }

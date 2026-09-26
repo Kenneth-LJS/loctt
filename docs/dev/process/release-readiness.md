@@ -3,8 +3,8 @@
 What stands between the current tree and publishing LocTT. Scoped on
 2026-09-11 against `chore/repo-sweep-cleanup`.
 
-**Publish target: both** — a public GitHub source repo *and* installable
-npm packages (`npx loctt`, the MCP server). Blockers are tagged by which
+**Publish target: both** — a public GitHub source repo *and* one
+installable npm package, `loctt` (CLI, `loctt ui`, `loctt mcp`; K139). Blockers are tagged by which
 target they apply to.
 
 This doc is the **packaging / security / metadata** axis (B1–B4). The
@@ -45,6 +45,13 @@ corruption/degradation axis (H1), where the project already has real
 investment (`doctor`, `corruption-handling-guide.md`, the known-gaps
 roster).
 
+Beyond loopback-only binding and no CORS headers, later hardening also
+guards against a subtler network trick: the DNS-rebinding **Host guard**
+(a foreign `Host` header is refused; `server.host-guard.test.ts`) and a
+**Content-Security-Policy** (A206/A207; `server.csp.test.ts`). Both are
+now documented in README and SECURITY.md, and covered end-to-end by case
+ONB-C10 (`server.security-posture.test.ts`).
+
 ---
 
 ## Blockers — fix before publishing
@@ -56,6 +63,11 @@ roster).
 - **Done =** every published package declares `"license": "MIT"`; the
   root declares a version (or stays `private` with a version for tagging).
   Decide the version story (see B4).
+- **Version story (K139):** one published package, `loctt`, so one
+  version. The root and every app workspace carry the same version
+  (`0.1.0` today) and the same `engines.node`, and the manifest check
+  (ONB-C9) enforces it. `packages/core` and `packages/contracts` are
+  private, bundled into `loctt`, and keep their own internal `0.0.1`.
 
 ### B2. Security posture is undocumented — **both targets**
 - The loopback-only, no-auth model is correct but invisible.
@@ -65,67 +77,74 @@ roster).
   reverse proxy expecting it to be safe; note that `dev:host` exposes
   only the dev client. Highest-value hardening item and it's prose.
 
-### B4. Package each of CLI / MCP / UI as independently installable — **npm target**
-**Intended model (Ken, 2026-09-11):** the three are installed
-**separately** — `@loctt/cli`, `@loctt/mcp`, and the UI as their own
-packages. They are not one bundle and the CLI does **not** serve the web
-UI. They share the on-disk data model, so CLI/MCP can CRUD things
-(labels, custom fields, milestones, relationships…) that only *render* in
-the UI — that's expected, not drift. The code already anticipates this:
-`apps/web/src/server/main.ts` is written as the `loctt serve` entry, uses
-the shared `--root`/`LOCTT_ROOT` vocabulary "across CLI/ui/mcp/web," and
-serves the built client from `dist/client/` via `--client-dir` in
-production.
+### B4. One package, `loctt` (K139) — **npm target** — **RESOLVED (B34, B38; A352, A355)**
 
-- **CLI + MCP: already installable.** Both **bundle** `@loctt/core` and
-  `@loctt/contracts` (`noExternal` in their `tsup.config.ts`), so those
-  being `private`/unpublished does **not** break `npx loctt` / the MCP
-  server. Runtime deps are all real npm packages (yaml, ulid, sharp,
-  busboy, proper-lockfile). Verified in both tsup configs.
-- **UI: NOT installable yet — the real B4 work.**
-  - `apps/web` is `private: true` with **no `bin`** — nothing launches it
-    from an install. It needs a `bin` (the `loctt serve` / `loctt-ui`
-    entry over `main.ts`) that starts the loopback server and opens the
-    browser.
-  - **The server is never built.** `apps/web` declares
-    `"main": "dist/server/index.js"`, but `build` is just `vite build`,
-    which only emits `dist/client` (`vite.config.ts:23`
-    `outDir: "dist/client"`). There is **no** step that compiles the
-    server to `dist/server`. So a published `@loctt/web` would ship a
-    client with no server to serve it. Add a server build (tsc or a
-    second bundler pass) that also bundles/handles `@loctt/core` the way
-    CLI/MCP do — or publish `core`.
-- **Also for all three:** (a) unify versions (cli/mcp `0.1.0`,
-  core/contracts/web `0.0.1`) and pick a scheme; (b) `prepublishOnly`/
-  `prepack` so no publish ships stale `dist`; (c) `files`/`.npmignore` so
-  only `dist` + docs ship, not source/tests.
-- **Done =** each of the three installs and runs from a clean registry
-  checkout on Node ≥ 20 — `npx @loctt/cli`, the MCP server, and the UI
-  (server + client) launching on loopback — independently.
+**Now:** one published package, **`loctt`** (`apps/cli`), provides the
+`loctt` command with `loctt ui` (the web client ships inside it) and
+`loctt mcp` (the MCP server, bundled in). Core, contracts, the web
+server and the MCP server are bundled from source (tsup `noExternal`);
+the runtime dependencies it loads are declared in its `dependencies`.
+`@loctt/mcp` and `@loctt/web` are `private` internal workspaces; there
+is no `loctt-mcp` or `loctt-ui` command. One install means one core
+version for all three surfaces, which is Ken's reason (K139: *"lets
+combine into one surface for loctt"*). `npm run test:packaging` packs
+`loctt`, installs it outside the repo with only its declared
+dependencies, runs `--version`, `init`/`create`, `loctt ui` and
+`loctt mcp`, and checks the schema-too-new refusal (ONB-C8); the
+manifest check (ONB-C9) covers `loctt` and fails if any other workspace
+is publishable.
+
+The already-published `@loctt/cli` 0.1.0 and `@loctt/mcp` 0.1.0 are
+Ken's to unpublish or deprecate (K139).
+
+**History.** K89 (2026-09-11) ruled three separately installable
+packages. The 2026-09-27 audit (K136) found none of them worked from an
+install (no client in the CLI, `@loctt/web` missing runtime
+dependencies, `@loctt/mcp` with no `bin`); B34/A352 fixed all three and
+added the packaging suite. K139 then superseded K89: one package.
 
 ---
 
 ## Hardening — should do; genuinely lowers risk
 
-### H1. Corruption / degradation coverage audit
+### H1. Corruption / degradation coverage audit — **CLOSED, light pass (K136)**
 - The store is user-edited files; malformed input is the real threat.
   Assets exist: `apps/cli/src/commands/doctor.ts`,
-  `docs/dev/reference/corruption-handling-guide.md`, ~124 known-gaps sections.
+  `docs/dev/reference/corruption-handling-guide.md`.
+- **Status correction:** the "~124 known-gaps sections" figure is stale.
+  `known-gaps.md` currently says nothing is open (K117 retired the
+  "deferred" concept — open items move to the backlog instead).
 - **Question to answer:** is coverage complete enough to trust a
   stranger's editor? Field-local degradation vs object-fatal, per the
   guide. Worth a focused audit (≈ an afternoon); not obviously a blocker.
+- **Closed 2026-09-27 (K136), light pass per Ken ("review everything
+  lightly, we already done one round of it"):** walked the guide's
+  per-thing checklists against this month's additions
+  (`keyboard_shortcuts`, `sidebar_groups`/`filters`, the body-draft
+  `sessionStorage` store, unique saved-view names). All four already
+  degrade correctly; the one real gap found — `keyboard_shortcuts`
+  salvage had no test at the doctor/integrity layer, only at the unit
+  layer — is fixed with two new `integrity.test.ts` cases. See the
+  coverage table added to `corruption-handling-guide.md` § 6.
 
-### H2. Git-sync is the sharpest edge — mark experimental or verify
+### H2. Git-sync is the sharpest edge — mark experimental or verify — **CLOSED (K136)**
 - Temp worktree + external `git` + conflict/lock handling. Optional
   feature. `apps/web/src/server/git-errors.test.ts` exists.
 - **Done =** either confirm its failure modes hold and call it stable, or
   ship it labelled experimental in the docs. A defensible launch either way.
+- **Closed 2026-09-27 (K136):** Ken's ruling that git-sync ships stable,
+  unlabeled, is recorded in `decisions.md` § 9. See the "Quick status"
+  row below for the ruling text.
 
-### H3. Community / repo hygiene files — **public-repo target**
-- Missing: `CONTRIBUTING.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`,
-  `SECURITY.md`, issue/PR templates. None are hard blockers; a public
-  repo reads as more finished with at least `SECURITY.md` (folds into B2)
-  and a `CHANGELOG.md`.
+### H3. Community / repo hygiene files — **public-repo target** — **CLOSED (K136)**
+- **Status correction:** this said "not started" but `SECURITY.md`
+  (2026-09-11) and `CHANGELOG.md` (2026-09-19) already existed.
+- **Closed 2026-09-27 (K136):** `CONTRIBUTING.md` (build/test/case+
+  `@verifies` rule/commit rules) added. A `CODE_OF_CONDUCT.md` was added
+  and then removed by Ken (K138): *"just take out code of conduct then"*.
+  `.github/ISSUE_TEMPLATE/` added (bug report, feature request).
+  `CHANGELOG.md` brought up to date through K136 (waves 3–4, in
+  user-facing terms). No PR template was requested and none was added.
 
 ---
 
@@ -135,7 +154,7 @@ production.
 |---|---|---|---|
 | B1 license/version metadata | both | metadata | DONE |
 | B2 document security model | both | docs | DONE |
-| B4 web packaging | npm | packaging | DONE (A-B4/K89) |
-| H1 corruption coverage audit | both | robustness | not started |
-| H2 git-sync stability/labelling | both | robustness | DONE — STABLE (2026-09-18): full engine built to K92-K95, all data-safety paths guarded + tested (incl. real-remote integration); shipped unlabeled. The one untestable edge (advisory locks on network/sync filesystems) is detected + warned in-app (GIT-22/XS-50) and documented in docs/user/common/git-sync.md. Ken's call. |
-| H3 community files | public repo | hygiene | not started |
+| B4 packaging | npm | packaging | **RESOLVED: one package, K139 (B38, A355).** `loctt` provides `loctt`, `loctt ui` and `loctt mcp` with core bundled; `@loctt/mcp` and `@loctt/web` are private workspaces; `npm run test:packaging` packs and installs `loctt` outside the repo (ONB-C8/C9). Unpublishing the old `@loctt/cli`/`@loctt/mcp` is Ken's. |
+| H1 corruption coverage audit | both | robustness | DONE — light pass (K136, 2026-09-27). See H1 above. |
+| H2 git-sync stability/labelling | both | robustness | DONE — STABLE (2026-09-18): full engine built to K92-K95, all data-safety paths guarded + tested (incl. real-remote integration); shipped unlabeled. The one untestable edge (advisory locks on network/sync filesystems) is detected + warned in-app (GIT-22/XS-50) and documented in docs/user/common/git-sync.md. Ken's call, recorded in decisions.md § 9 (K136). |
+| H3 community files | public repo | hygiene | DONE (K136, 2026-09-27). CONTRIBUTING.md and issue templates added (no CODE_OF_CONDUCT.md, K138); CHANGELOG.md refreshed through K136. |

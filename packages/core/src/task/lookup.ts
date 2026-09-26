@@ -72,8 +72,20 @@ export class UnreadableTaskError extends LocttError {
    * unreadable candidate has to be named.
    */
   readonly paths: readonly string[];
-  /** The parse error verbatim — it names the YAML line and column. */
+  /**
+   * The parse error — it names the YAML line and column. With one
+   * path, that file's reason without its path. With several, one
+   * `path: reason` line per candidate (see {@link reasons}), so every
+   * path appears exactly once (K135).
+   */
   readonly reason: string;
+  /**
+   * Each path in {@link paths} with its own parse error, in the same
+   * order. Before K135 the indeterminate case carried only the first
+   * file's reason, which still held that file's path, so that path was
+   * printed twice and the others had no reason at all.
+   */
+  readonly reasons: readonly { readonly path: string; readonly reason: string }[];
   /**
    * True when the ref did not resolve *and* some task file would not
    * parse, so whether the ref exists is genuinely unknown.
@@ -97,15 +109,26 @@ export class UnreadableTaskError extends LocttError {
     ref: string,
     paths: readonly string[],
     cause: unknown,
-    opts: { readonly indeterminate?: boolean } = {},
+    opts: {
+      readonly indeterminate?: boolean;
+      /**
+       * One cause per path, same order. Absent means `cause` is the
+       * cause of every path (the single-path callers).
+       */
+      readonly causes?: readonly unknown[];
+    } = {},
   ) {
     const indeterminate = opts.indeterminate ?? false;
-    // One path: the headline names it, so the reason is the unwrapped
-    // parse error. Several paths (indeterminate only): the reason came
-    // from one of them, so it keeps the path that says which (A348).
-    const reason = paths.length === 1
-      ? TaskParseError.reasonOf(cause)
-      : cause instanceof Error ? cause.message : String(cause);
+    // Each path's reason is the unwrapped parse error, so a message
+    // that already names the path does not name it again (A348). With
+    // several paths each gets its own, printed as `path: reason` (K135).
+    const reasons = paths.map((path, i) => ({
+      path,
+      reason: TaskParseError.reasonOf(opts.causes?.[i] ?? cause),
+    }));
+    const reason = reasons.length === 1
+      ? (reasons[0] as { reason: string }).reason
+      : reasons.map(r => `${r.path}: ${r.reason}`).join("\n");
     const list = paths.join(", ");
     // No `data_state`: this is a read, so nothing was at stake
     // (ERR-18 scopes that requirement to write paths).
@@ -114,31 +137,39 @@ export class UnreadableTaskError extends LocttError {
     // the same way every time, and ERR-15 wants a control the user
     // can actually press. The only fix is to edit the file, which the
     // message names.
-    super("io_failed", indeterminate
+    const head = indeterminate
       ? `No task matched "${ref}", but not every task file could be read, `
         + `so whether the task exists is unknown. `
-        + `Repair ${paths.length === 1 ? "this file" : "these files"} `
-        + `and try again: ${list}. ${reason}`
-      : `${ref} could not be read because `
-        + `${paths.length === 1
-            ? `${list} could not be parsed`
-            : `none of these could be parsed: ${list}`}. `
-        + reason,
+      : `${ref} could not be read because `;
+    super("io_failed", paths.length === 1
+      ? indeterminate
+        ? `${head}Repair this file and try again: ${list}. ${reason}`
+        : `${head}${list} could not be parsed. ${reason}`
+      // Several paths: `reason` is already one `path: reason` line per
+      // file, so the headline does not list the paths a second time.
+      : indeterminate
+        ? `${head}Repair these files and try again:\n${reason}`
+        : `${head}none of these could be parsed:\n${reason}`,
       { detail: reason, recovery: { kind: "none" }, cause });
     this.name = "UnreadableTaskError";
     this.ref = ref;
     this.paths = paths;
     this.reason = reason;
+    this.reasons = reasons;
     this.indeterminate = indeterminate;
   }
 
   /** See {@link UnreadableTaskError.indeterminate}. */
   static indeterminateRef(
     ref: string,
-    paths: readonly string[],
-    cause: unknown,
+    candidates: readonly { readonly path: string; readonly cause: unknown }[],
   ): UnreadableTaskError {
-    return new UnreadableTaskError(ref, paths, cause, { indeterminate: true });
+    return new UnreadableTaskError(
+      ref,
+      candidates.map(c => c.path),
+      candidates[0]?.cause,
+      { indeterminate: true, causes: candidates.map(c => c.cause) },
+    );
   }
 
   /** The single offending path, when there is exactly one. */
@@ -345,11 +376,9 @@ export async function lookupByKey(locttDir: string, key: string): Promise<Task> 
   // We cannot tell, because the key we would compare against is the
   // part that would not parse. So say that, and name every candidate.
   if (fold.unreadable.length > 0) {
-    const first = fold.unreadable[0] as UnreadableFold;
     throw UnreadableTaskError.indeterminateRef(
       key,
-      fold.unreadable.map(u => getTaskFilePath(locttDir, u.id)),
-      first.cause,
+      fold.unreadable.map(u => ({ path: getTaskFilePath(locttDir, u.id), cause: u.cause })),
     );
   }
 

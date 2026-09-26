@@ -1,30 +1,14 @@
-# @loctt/web
+# @loctt/web (internal workspace)
 
-Web UI for **LocTT** — a local-first task tracker that stores tasks as
-markdown + YAML files in a `.loctt/` directory alongside your code. The server
-binds to `127.0.0.1` only; nothing leaves your machine.
-
-## Install
+This workspace holds the LocTT web UI (server and client). It is not
+published on its own: it ships inside the [`loctt`](../cli/README.md)
+package, which starts it with `loctt ui`.
 
 ```bash
-npm install -g @loctt/web
+npm install -g loctt
+loctt ui
 ```
 
-This installs the `loctt-ui` command.
-
-## Usage
-
-```bash
-loctt-ui                   # start the UI for the .loctt/ tracker here
-loctt-ui --port 4000       # choose a port
-```
-
-Then open the printed `http://localhost:<port>` URL. The server serves both the
-API and the client bundle, and is reachable only from the local machine.
-
-See the full documentation at the
-[project repository](https://github.com/Kenneth-LJS/loctt).
-
-## License
-
-MIT — see [LICENSE](./LICENSE).
+For development, `npm run dev` from the repository root runs the API
+server and the Vite client with hot reload. See
+[CONTRIBUTING.md](../../CONTRIBUTING.md).

@@ -421,4 +421,47 @@ describe("E2E journey: MCP schema contract", () => {
       }
     });
   });
+
+  // K135 (B29): agent-facing text follows messaging.md, which rules out
+  // em dashes. Walks every tool description AND every `description` in
+  // each input schema (the zod `.describe()` strings, nested ones
+  // included), so a dash reintroduced anywhere an agent reads fails here.
+  it("no tool or parameter description contains an em dash", async () => {
+    await withTmpLoctt(async ({ root }) => {
+      const client = await startMcpClient(root);
+      try {
+        const tools = await client.listTools();
+        const offenders: string[] = [];
+        const walk = (tool: string, at: string, node: unknown): void => {
+          if (node === null || typeof node !== "object") return;
+          for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+            if (k === "description" && typeof v === "string") {
+              if (v.includes("\u2014")) offenders.push(`${tool}${at}: ${v}`);
+            } else {
+              walk(tool, `${at}.${k}`, v);
+            }
+          }
+        };
+        for (const t of tools) {
+          if ((t.description ?? "").includes("\u2014")) offenders.push(`${t.name}: ${t.description ?? ""}`);
+          walk(t.name, "", t.inputSchema);
+        }
+        // Sanity: the walk reaches parameter descriptions at all, so an
+        // empty `offenders` is not the walk silently finding nothing.
+        let paramDescriptions = 0;
+        const count = (node: unknown): void => {
+          if (node === null || typeof node !== "object") return;
+          for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+            if (k === "description" && typeof v === "string") paramDescriptions++;
+            else count(v);
+          }
+        };
+        for (const t of tools) count(t.inputSchema);
+        expect(paramDescriptions).toBeGreaterThan(100);
+        expect(offenders).toEqual([]);
+      } finally {
+        await client.close();
+      }
+    });
+  });
 });

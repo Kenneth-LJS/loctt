@@ -675,21 +675,21 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "edit_workflow_entity",
     description:
-      "Create, edit, delete, or reorder a workflow.yaml collection entity — a status, priority, task type, relationship, custom field, custom-field enum value, or board column. " +
+      "Create, edit, delete, or reorder a workflow.yaml collection entity: a status, priority, task type, relationship, custom field, custom-field enum value, or board column. " +
       "This is the WRITE side of the workflow config; `get_workflow_config` is the read side (call it first to see current keys). " +
       "One tool, dispatched on {entity, op}. Entity/op matrix: " + ENTITY_OP_MATRIX + " " +
-      "Args: `entity` and `op` (required); `key` (the entity key — required for edit/delete, and is the NEW key on create); " +
+      "Args: `entity` and `op` (required); `key` (the entity key, required for edit/delete, and the NEW key on create); " +
       "`field` (the parent custom-field key, required only for entity:\"custom_field_value\"); " +
-      "`fields` (the create/edit payload: label, category, icon, color, kind, inverse, type, multi, task_types, statuses, wip, etc. — per entity); " +
+      "`fields` (the create/edit payload: label, category, icon, color, kind, inverse, type, multi, task_types, statuses, wip, etc., per entity); " +
       "`remap_to` (delete-in-use target: another key, or null to clear the value from every task); " +
       "`order` (the full ordered key list, for reorder); `confirm` (must be true for delete). " +
-      "Keys are immutable — an `edit` cannot rename (there is no key change; a rename is delete+create). Priority `value` is never settable (derived from order — use reorder). " +
+      "Keys are immutable: an `edit` cannot rename (there is no key change; a rename is delete+create). Priority `value` is never settable (it is derived from order, so use reorder). " +
       "Custom-field `type`/`multi` are immutable after create. Deleting an in-use status/priority/task_type/relationship/enum-value requires `remap_to`; whole custom_field and board_column deletes take no remap. " +
       "COLOUR (`fields.color`, and `color` inside each `fields.values[]` enum seed): " + COLOR_INPUT_DOC +
       " On an edit, pass null to clear it.",
     inputSchema: {
       entity: z.enum(ENTITIES).describe("Which workflow entity: " + ENTITIES.join(" | ")),
-      op: z.enum(OPS).describe("create | edit | delete | reorder (must be legal for the entity — see description)"),
+      op: z.enum(OPS).describe("create | edit | delete | reorder (must be legal for the entity, as the description lists)"),
       key: z.string().optional().describe("Entity key. Required for edit/delete; the new key for create. Not used by reorder."),
       field: z.string().optional().describe("Parent custom-field key. Required only for entity:\"custom_field_value\"."),
       fields: z.record(z.string(), z.unknown()).optional().describe("The create/edit payload; shape depends on entity (see description)."),

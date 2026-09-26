@@ -14,6 +14,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { defined } from "./fixtures/defined.ts";
 import { expect, test } from "./fixtures/tracker.ts";
 
 /**
@@ -1378,8 +1379,8 @@ test.describe("BRD — board view", () => {
       const lowerRank = frontmatterValue(await readTaskFile(tracker.root, lower), "board_rank");
       expect(upperRank).toBeDefined();
       expect(lowerRank).toBeDefined();
-      expect(rank! > upperRank!).toBe(true);
-      expect(rank! < lowerRank!).toBe(true);
+      expect(defined(rank, "rank") > defined(upperRank, "upperRank")).toBe(true);
+      expect(defined(rank, "rank") < defined(lowerRank, "lowerRank")).toBe(true);
       // XS-9: nothing else was written.
       expect(frontmatterValue(text, "priority")).toBe("high");
     }).toPass({ timeout: 5000 });
@@ -1429,7 +1430,7 @@ test.describe("BRD — board view", () => {
       const rank = frontmatterValue(text, "board_rank");
       const firstRank = frontmatterValue(await readTaskFile(tracker.root, first), "board_rank");
       expect(rank).toBeDefined();
-      expect(rank! < firstRank!).toBe(true);
+      expect(defined(rank, "rank") < defined(firstRank, "firstRank")).toBe(true);
       expect(frontmatterValue(text, "status")).toBe("backlog");
     }).toPass({ timeout: 5000 });
   });
@@ -1952,10 +1953,10 @@ test.describe("BRD — board view", () => {
       const rank = frontmatterValue(await readTaskFile(tracker.root, mover), "board_rank");
       expect(rank).toBeDefined();
       // Strictly between MIN and the first card's rank.
-      expect(rank! < firstRank!).toBe(true);
-      expect(rank! > "0").toBe(true);
+      expect(defined(rank, "rank") < defined(firstRank, "firstRank")).toBe(true);
+      expect(defined(rank, "rank") > "0").toBe(true);
       expect(rank).not.toBe("0");
-      expect(rank!.endsWith("0")).toBe(false);
+      expect(defined(rank, "rank").endsWith("0")).toBe(false);
     }).toPass({ timeout: 5000 });
 
     // Order survives a refetch from disk.
@@ -1988,9 +1989,9 @@ test.describe("BRD — board view", () => {
     await expect(async () => {
       const rank = frontmatterValue(await readTaskFile(tracker.root, mover), "board_rank");
       expect(rank).toBeDefined();
-      expect(rank! > lastRank!).toBe(true);
+      expect(defined(rank, "rank") > defined(lastRank, "lastRank")).toBe(true);
       // Strictly before MAX, never equal to it.
-      expect(rank! < "z").toBe(true);
+      expect(defined(rank, "rank") < "z").toBe(true);
       expect(rank).not.toBe("z");
     }).toPass({ timeout: 5000 });
   });
@@ -2066,7 +2067,7 @@ test.describe("BRD — board view", () => {
     // Two reloads produce the same order — not a random swap.
     await page.reload();
     await expect(page.getByTestId("board-column-backlog").locator("[data-task-key]").first())
-      .toHaveAttribute("data-task-key", firstOrder!);
+      .toHaveAttribute("data-task-key", defined(firstOrder, "firstOrder"));
 
     // Dragging one above the other produces distinct ranks.
     const lower = firstOrder === one ? two : one;
@@ -2117,7 +2118,7 @@ test.describe("BRD — board view", () => {
       const rank = frontmatterValue(await readTaskFile(tracker.root, bad), "board_rank");
       expect(rank).toBeDefined();
       expect(rank).not.toContain("!");
-      expect(/^[0-9a-z]+$/.test(rank!)).toBe(true);
+      expect(/^[0-9a-z]+$/.test(defined(rank, "rank"))).toBe(true);
     }).toPass({ timeout: 5000 });
   });
 
@@ -2217,7 +2218,7 @@ test.describe("BRD — board view", () => {
     await expect(async () => {
       const rank = frontmatterValue(await readTaskFile(tracker.root, three), "board_rank");
       const firstRank = frontmatterValue(await readTaskFile(tracker.root, one), "board_rank");
-      expect(rank! < firstRank!).toBe(true);
+      expect(defined(rank, "rank") < defined(firstRank, "firstRank")).toBe(true);
     }).toPass({ timeout: 5000 });
   });
 
@@ -2278,9 +2279,9 @@ test.describe("BRD — board view", () => {
       // Wait for the column to actually render before reading it, or
       // the order is read off a half-painted board.
       await expect(cards).toHaveCount(3);
-      await expect(cards.nth(0)).toHaveAttribute("data-task-key", onDisk[0]!);
-      await expect(cards.nth(1)).toHaveAttribute("data-task-key", onDisk[1]!);
-      await expect(cards.nth(2)).toHaveAttribute("data-task-key", onDisk[2]!);
+      await expect(cards.nth(0)).toHaveAttribute("data-task-key", defined(onDisk[0], "onDisk[0]"));
+      await expect(cards.nth(1)).toHaveAttribute("data-task-key", defined(onDisk[1], "onDisk[1]"));
+      await expect(cards.nth(2)).toHaveAttribute("data-task-key", defined(onDisk[2], "onDisk[2]"));
     }
 
     await pageB.close();

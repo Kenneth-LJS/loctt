@@ -46,7 +46,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "reorder_board",
-    description: "Reorder a task's position on the board (its `board_rank`). Pass exactly one of `before` or `after` to position the task relative to a sibling, or neither to move it to the end of its column. The board column is implicit — the task stays in its current status; this only changes its order within that column. A column is a group of tickets, not a status: where `workflow.yaml`'s `boards` block collapses several statuses into one column, `before`/`after` accept any task in that column whatever its status. Each column is its own sequence, so \"the end\" means the end of that column.",
+    description: "Reorder a task's position on the board (its `board_rank`). Pass exactly one of `before` or `after` to position the task relative to a sibling, or neither to move it to the end of its column. The board column is implicit: the task stays in its current status; this only changes its order within that column. A column is a group of tickets, not a status: where `workflow.yaml`'s `boards` block collapses several statuses into one column, `before`/`after` accept any task in that column whatever its status. Each column is its own sequence, so \"the end\" means the end of that column.",
     inputSchema: {
       ref: z.string().describe("Task key or ID"),
       before: z.string().optional().describe("Sibling task to position before"),
@@ -69,7 +69,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: "move_board_card",
-    description: "Move a task to another board column AND position it there in a SINGLE write. Prefer this over calling `update_task` for `status` followed by `reorder_board`: those are two writes, and a failure between them leaves the task in a column its stored status contradicts. Pass `status` to cross a column boundary; omit it to reposition within the task's current column. `before` is the task the moved task lands ABOVE, `after` the one it lands BELOW; unlike `reorder_board` these are NOT mutually exclusive — passing both interpolates a rank between that pair. Passing neither appends to the end of the destination column. A column is a group of tickets, not a status: where `workflow.yaml`'s `boards` block collapses several statuses into one column, the anchors may carry any status in that column.",
+    description: "Move a task to another board column AND position it there in a SINGLE write. Prefer this over calling `update_task` for `status` followed by `reorder_board`: those are two writes, and a failure between them leaves the task in a column its stored status contradicts. Pass `status` to cross a column boundary; omit it to reposition within the task's current column. `before` is the task the moved task lands ABOVE, `after` the one it lands BELOW; unlike `reorder_board` these are NOT mutually exclusive. Passing both interpolates a rank between that pair. Passing neither appends to the end of the destination column. A column is a group of tickets, not a status: where `workflow.yaml`'s `boards` block collapses several statuses into one column, the anchors may carry any status in that column.",
     inputSchema: {
       ref: z.string().describe("Task key or ID being moved"),
       status: z.string().optional().describe("Destination status. Omit for an intra-column reposition, which writes `board_rank` only and leaves `status` untouched."),

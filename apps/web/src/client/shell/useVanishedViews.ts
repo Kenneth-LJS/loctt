@@ -59,14 +59,25 @@ export function useVanishedViews(
   // *reference* re-ran this effect every render — and each run calls
   // `setVanished(gone)` with a new array, forcing another render, an
   // endless loop that a dismiss click tipped into a hang. Depend on a
-  // stable signature of the contents instead, so the effect runs only
-  // when the set of views actually changes.
+  // stable signature of the contents instead, so the effect body runs
+  // only when the set of views actually changes.
   const signature =
     current === undefined
       ? undefined
       : current.map(v => `${v.id} ${v.name}`).join("");
 
+  // The signature this effect last acted on. `null` (never a real
+  // signature) makes the first run proceed.
+  const lastSignature = useRef<string | undefined | null>(null);
+
   useEffect(() => {
+    // `current` is a dependency so the effect never reads a stale
+    // array, but it is a new reference every render; the guard below
+    // is what keeps an unchanged view set from re-running the body
+    // (and its `setVanished`, which would loop).
+    if (lastSignature.current === signature) return;
+    lastSignature.current = signature;
+
     // `undefined` is "not loaded yet", which is not the same as "no
     // views" — treating it as the latter would report every pin as
     // vanished on the first frame of every load.
@@ -85,11 +96,7 @@ export function useVanishedViews(
       STORAGE_KEY,
       JSON.stringify([...current.map(v => ({ id: v.id, name: v.name })), ...gone]),
     );
-    // `current` is intentionally read inside but not a dependency — the
-    // stable `signature` stands in for it, so an unchanged view set does
-    // not re-run the effect on every render. (No eslint-disable needed:
-    // this project does not enable react-hooks/exhaustive-deps.)
-  }, [signature]);
+  }, [current, signature]);
 
   const dismiss = (id: string): void => {
     dismissed.current.add(id);

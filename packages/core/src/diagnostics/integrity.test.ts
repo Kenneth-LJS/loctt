@@ -438,6 +438,85 @@ describe("calendar holidays and user profiles degrade and are reported too", () 
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  // @verifies K133 — a corrupt keyboard_shortcuts is reported by doctor.
+  // collectKeyboardShortcutsDrops (settings.ts) had no test exercising it
+  // through checkDataIntegrity: the unit-level salvage (shortcuts.test.ts)
+  // was covered, but nothing proved doctor actually surfaces the drop, the
+  // way the sidebar_groups tests above do for their sibling setting.
+  it("names a dropped keyboard_shortcuts id, malformed and non-blocking", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { mkdir: mkDir } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "loctt-shortcuts-doctor-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      const userId = "01HZZZZZZZZZZZZZZZZZZZZZZZ";
+      await mkDir(join(locttDir, "users", userId), { recursive: true });
+      await writeFile(
+        join(locttDir, "users", userId, "profile.yaml"),
+        `id: ${userId}\nname: Ken\n`,
+        "utf-8",
+      );
+      // A valid id kept, an unknown id dropped — salvaged on load (shortcuts
+      // fall back to on for the unknown one), but doctor must still name it.
+      await writeFile(
+        join(locttDir, "users", userId, "settings.yaml"),
+        "theme: dark\nkeyboard_shortcuts:\n  disabled: [new-task, bogus-shortcut]\n",
+        "utf-8",
+      );
+
+      const findings = await checkDataIntegrity(locttDir);
+      const ks = findings.find(
+        f => f.path.includes(userId) && /keyboard_shortcuts/.test(f.message),
+      );
+      expect(ks).toBeDefined();
+      expect(ks?.severity).toBe("malformed");
+      expect(ks?.message).toMatch(/bogus-shortcut/);
+      expect(blockingFindings(findings)).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // @verifies K133 — a MALFORMED-shaped keyboard_shortcuts (not an object)
+  // degrades to "all on" and is still reported, mirroring the
+  // sidebar_groups malformed-shape test above.
+  it("names a scalar keyboard_shortcuts value, not silently dropped", async () => {
+    const { initLoctt } = await import("../init/init.js");
+    const { resolveLocttDir } = await import("../paths/index.js");
+    const { mkdir: mkDir } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "loctt-shortcuts-malformed-"));
+    try {
+      await initLoctt(root, { docs: false });
+      const locttDir = resolveLocttDir(root);
+      const userId = "01HWWWWWWWWWWWWWWWWWWWWWWW";
+      await mkDir(join(locttDir, "users", userId), { recursive: true });
+      await writeFile(
+        join(locttDir, "users", userId, "profile.yaml"),
+        `id: ${userId}\nname: Ken\n`,
+        "utf-8",
+      );
+      // The setting is a bare string, not `{ single_key?, disabled? }` —
+      // nothing to salvage per-field, so it degrades whole to "all on".
+      await writeFile(
+        join(locttDir, "users", userId, "settings.yaml"),
+        "keyboard_shortcuts: off\n",
+        "utf-8",
+      );
+
+      const findings = await checkDataIntegrity(locttDir);
+      const ks = findings.find(
+        f => f.path.includes(userId) && /keyboard_shortcuts/.test(f.message),
+      );
+      expect(ks).toBeDefined();
+      expect(ks?.severity).toBe("malformed");
+      expect(blockingFindings(findings)).toHaveLength(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("computeIntegritySummary — the cheap badge count (DEG-31)", () => {

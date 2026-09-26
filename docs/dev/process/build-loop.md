@@ -135,7 +135,7 @@ as "the test is vacuous" when in fact the mutation never loaded.
   which serves the *built* client. The CLI bundles `@loctt/web` /
   `@loctt/core` / `@loctt/mcp` from *source* (tsup `noExternal` + an
   alias to `../web/src/...`), and tsup's incremental cache can serve a
-  stale bundle even after `npm run build --workspace @loctt/cli`. Before
+  stale bundle even after `npm run build --workspace apps/cli`. Before
   a UI red-proof, `rm -rf apps/cli/dist`, rebuild web+cli, and confirm
   the break is actually in `apps/cli/dist/index.js` (grep it).
 - **MCP integration tests spawn `apps/cli/dist/index.js mcp`**, not

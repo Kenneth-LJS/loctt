@@ -45,6 +45,7 @@ export const SCHEMA_GUARD_EXEMPT_COMMANDS: ReadonlySet<string | undefined> = new
   "mcp",
   "ui",
   "help",
+  "--version",
   "--help",
   "-h",
   undefined,
@@ -61,23 +62,25 @@ export async function dirExists(p: string): Promise<boolean> {
 }
 
 /**
- * Locate the built client SPA directory. Tries (in order):
+ * Locate the built client SPA directory `loctt ui` serves:
  *   1. LOCTT_CLIENT_DIR env override
- *   2. <cli-bundle>/client            (production: shipped alongside CLI bundle)
- *   3. <cli-bundle>/../../web/dist/client  (workspace dev: apps/web/dist/client)
- * Returns undefined if no client build is available — server still works as API-only.
+ *   2. <cli-bundle>/client, the copy of the web client the CLI build
+ *      puts beside its bundle (tsup.config.ts `onSuccess`, A352)
+ * Returns undefined when neither exists; `loctt ui` then refuses to
+ * start rather than serving an API with a 404 at `/`.
+ *
+ * There used to be a third candidate, `<cli-bundle>/../../web/dist/client`,
+ * meant for the monorepo. It was the reason the defect RR-B4 describes
+ * went unnoticed: nothing copied the client into the published package,
+ * and inside the repo (or in a global install that also happened to
+ * have `@loctt/web` beside it) this fallback found one anyway. The build
+ * now always ships the copy, so the fallback could only ever hide its
+ * absence.
  */
 export async function resolveClientDir(): Promise<string | undefined> {
   const envDir = process.env.LOCTT_CLIENT_DIR;
   if (envDir && (await dirExists(envDir))) return envDir;
 
-  const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    resolvePath(here, "client"),
-    resolvePath(here, "../../web/dist/client"),
-  ];
-  for (const c of candidates) {
-    if (await dirExists(c)) return c;
-  }
-  return undefined;
+  const bundled = resolvePath(dirname(fileURLToPath(import.meta.url)), "client");
+  return (await dirExists(bundled)) ? bundled : undefined;
 }

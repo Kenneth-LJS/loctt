@@ -248,6 +248,34 @@ describe("ListView", () => {
     expect(chip.className).toContain("bg-bg-muted");
   });
 
+  // K135: a past due date is shown plainly. The list used to colour it
+  // `text-danger-fg` and bold it; Ken ruled "remove". Asserted by the
+  // rendered class and text, not a testid. Dates are far enough from
+  // any real clock that `today` (the browser fallback here) cannot flip
+  // which one is past.
+  // @verifies LST-2
+  it("renders a past due date exactly like a future one: no danger colour, no weight, no 'overdue'", async () => {
+    const base = { project: "p_web", status: "in_progress", created_at: "2026-06-01T00:00:00.000Z", updated_at: "2026-06-07T00:00:00.000Z" };
+    TASKS_OVERRIDE = {
+      items: [
+        { ...base, id: "01TASKPAST0000000000000000", key: "WEB-30", title: "Past due", due_date: "2020-01-15" },
+        { ...base, id: "01TASKFUTR0000000000000000", key: "WEB-31", title: "Future due", due_date: "2099-03-10" },
+      ],
+      total: 2,
+      offset: 0,
+      limit: 50,
+    };
+    await mountList("", "Past due");
+    const pastRow = (await screen.findByText("Past due")).closest("tr") as HTMLElement;
+    const futureRow = screen.getByText("Future due").closest("tr") as HTMLElement;
+    const past = within(pastRow).getByText("Jan 15, 2020");
+    const future = within(futureRow).getByText("Mar 10, 2099");
+
+    expect(past.className).not.toMatch(/danger|red|font-(medium|semibold|bold)/);
+    expect(past.className).toBe(future.className);
+    expect(pastRow.textContent).not.toMatch(/overdue/i);
+  });
+
   // @verifies K26 (untitled task title fallback)
   // @verifies DEG-8
   it("renders a task with no title by its key, not a blank cell", async () => {
