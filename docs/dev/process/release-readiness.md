@@ -45,6 +45,13 @@ corruption/degradation axis (H1), where the project already has real
 investment (`doctor`, `corruption-handling-guide.md`, the known-gaps
 roster).
 
+Beyond loopback-only binding and no CORS headers, later hardening also
+guards against a subtler network trick: the DNS-rebinding **Host guard**
+(a foreign `Host` header is refused; `server.host-guard.test.ts`) and a
+**Content-Security-Policy** (A206/A207; `server.csp.test.ts`). Neither is
+mentioned in README or SECURITY.md yet — the posture is stronger than
+either document currently says.
+
 ---
 
 ## Blockers — fix before publishing
@@ -65,7 +72,20 @@ roster).
   reverse proxy expecting it to be safe; note that `dev:host` exposes
   only the dev client. Highest-value hardening item and it's prose.
 
-### B4. Package each of CLI / MCP / UI as independently installable — **npm target**
+### B4. Package each of CLI / MCP / UI as independently installable — **npm target** — **RESOLVED (B34, A352; core-packaging shape open with Ken)**
+**Status correction (2026-09-27, release-gate audit / K136):** this
+section previously read "DONE (A-B4/K89)" in the quick-status table
+below. That was false. A read-only audit installing each package outside
+the monorepo (only declared dependencies) found: `loctt ui` from an
+installed CLI serves no client (the built web client is never copied
+into `@loctt/cli`'s `dist`), `@loctt/web` crashes on start
+(`yaml`/`ulid`/`proper-lockfile`/`sharp` are used but not declared as
+dependencies), and `@loctt/mcp` has no `bin` at all — the stdio server
+only exists inside the CLI. K136 confirmed the intended shape (three
+separately installable packages, `@loctt/mcp` staying standalone per
+K89) and put fixing all three under this ticket's B34, in progress at
+time of writing.
+
 **Intended model (Ken, 2026-09-11):** the three are installed
 **separately** — `@loctt/cli`, `@loctt/mcp`, and the UI as their own
 packages. They are not one bundle and the CLI does **not** serve the web
@@ -107,25 +127,44 @@ production.
 
 ## Hardening — should do; genuinely lowers risk
 
-### H1. Corruption / degradation coverage audit
+### H1. Corruption / degradation coverage audit — **CLOSED, light pass (K136)**
 - The store is user-edited files; malformed input is the real threat.
   Assets exist: `apps/cli/src/commands/doctor.ts`,
-  `docs/dev/reference/corruption-handling-guide.md`, ~124 known-gaps sections.
+  `docs/dev/reference/corruption-handling-guide.md`.
+- **Status correction:** the "~124 known-gaps sections" figure is stale.
+  `known-gaps.md` currently says nothing is open (K117 retired the
+  "deferred" concept — open items move to the backlog instead).
 - **Question to answer:** is coverage complete enough to trust a
   stranger's editor? Field-local degradation vs object-fatal, per the
   guide. Worth a focused audit (≈ an afternoon); not obviously a blocker.
+- **Closed 2026-09-27 (K136), light pass per Ken ("review everything
+  lightly, we already done one round of it"):** walked the guide's
+  per-thing checklists against this month's additions
+  (`keyboard_shortcuts`, `sidebar_groups`/`filters`, the body-draft
+  `sessionStorage` store, unique saved-view names). All four already
+  degrade correctly; the one real gap found — `keyboard_shortcuts`
+  salvage had no test at the doctor/integrity layer, only at the unit
+  layer — is fixed with two new `integrity.test.ts` cases. See the
+  coverage table added to `corruption-handling-guide.md` § 6.
 
-### H2. Git-sync is the sharpest edge — mark experimental or verify
+### H2. Git-sync is the sharpest edge — mark experimental or verify — **CLOSED (K136)**
 - Temp worktree + external `git` + conflict/lock handling. Optional
   feature. `apps/web/src/server/git-errors.test.ts` exists.
 - **Done =** either confirm its failure modes hold and call it stable, or
   ship it labelled experimental in the docs. A defensible launch either way.
+- **Closed 2026-09-27 (K136):** Ken's ruling that git-sync ships stable,
+  unlabeled, is recorded in `decisions.md` § 9. See the "Quick status"
+  row below for the ruling text.
 
-### H3. Community / repo hygiene files — **public-repo target**
-- Missing: `CONTRIBUTING.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`,
-  `SECURITY.md`, issue/PR templates. None are hard blockers; a public
-  repo reads as more finished with at least `SECURITY.md` (folds into B2)
-  and a `CHANGELOG.md`.
+### H3. Community / repo hygiene files — **public-repo target** — **CLOSED (K136)**
+- **Status correction:** this said "not started" but `SECURITY.md`
+  (2026-09-11) and `CHANGELOG.md` (2026-09-19) already existed.
+- **Closed 2026-09-27 (K136):** `CONTRIBUTING.md` (build/test/case+
+  `@verifies` rule/commit rules) and `CODE_OF_CONDUCT.md` (Contributor
+  Covenant 2.1; contact line left as a TODO for Ken to fill) added.
+  `.github/ISSUE_TEMPLATE/` added (bug report, feature request).
+  `CHANGELOG.md` brought up to date through K136 (waves 3–4, in
+  user-facing terms). No PR template was requested and none was added.
 
 ---
 
@@ -135,7 +174,7 @@ production.
 |---|---|---|---|
 | B1 license/version metadata | both | metadata | DONE |
 | B2 document security model | both | docs | DONE |
-| B4 web packaging | npm | packaging | DONE (A-B4/K89) |
-| H1 corruption coverage audit | both | robustness | not started |
-| H2 git-sync stability/labelling | both | robustness | DONE — STABLE (2026-09-18): full engine built to K92-K95, all data-safety paths guarded + tested (incl. real-remote integration); shipped unlabeled. The one untestable edge (advisory locks on network/sync filesystems) is detected + warned in-app (GIT-22/XS-50) and documented in docs/user/common/git-sync.md. Ken's call. |
-| H3 community files | public repo | hygiene | not started |
+| B4 web packaging | npm | packaging | **RESOLVED (B34, A352)**: the installed CLI serves the UI, `@loctt/web` declares its runtime deps, `@loctt/mcp` has a `loctt-mcp` bin; `npm run test:packaging` packs and installs each outside the repo (ONB-C8/C9). Open with Ken: whether core stays bundled (K89) or becomes a published `@loctt/core`. |
+| H1 corruption coverage audit | both | robustness | DONE — light pass (K136, 2026-09-27). See H1 above. |
+| H2 git-sync stability/labelling | both | robustness | DONE — STABLE (2026-09-18): full engine built to K92-K95, all data-safety paths guarded + tested (incl. real-remote integration); shipped unlabeled. The one untestable edge (advisory locks on network/sync filesystems) is detected + warned in-app (GIT-22/XS-50) and documented in docs/user/common/git-sync.md. Ken's call, recorded in decisions.md § 9 (K136). |
+| H3 community files | public repo | hygiene | DONE (K136, 2026-09-27). CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue templates added; CHANGELOG.md refreshed through K136. |

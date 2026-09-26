@@ -10907,7 +10907,7 @@ Escape by hand but call neither `useFocusTrap` nor `useInertBackground` —
 so keyboard focus escapes the modal into the page behind, and is not
 restored to the trigger on close. Cross-confirmed by the primitive-
 consistency and a11y audits independently. Full roster and fix:
-`docs/dev/design-review.md` §A1.
+`docs/dev/design/design-review.md` §A1.
 
 **Ruling (Ken, 2026-09-11): this blocks publishing — fix before ship.**
 Not a fast-follow. It is a real keyboard/screen-reader regression, and
@@ -22685,6 +22685,18 @@ two Saves minutes apart into one entry. Asked "one entry per Save
 **one entry per Save**. The merge is removed in core, so every body write
 (web Save, CLI, MCP) records its own entry.
 
+### K137 · Git sync ships as stable (RR-H2)
+
+**Date:** 2026-09-27 · **Ken's ruling — not revertible by an agent.**
+
+Recorded from release-readiness.md, where it stood as "Ken's call" but
+had no § 9 entry; Ken confirmed it as a release-gate item to record
+(K136, RR-H2): *"DONE — STABLE (2026-09-18): full engine built to
+K92-K95, all data-safety paths guarded + tested (incl. real-remote
+integration); shipped unlabeled. The one untestable edge (advisory locks
+on network/sync filesystems) is detected + warned in-app (GIT-22/XS-50)
+and documented in docs/user/common/git-sync.md."*
+
 ### K136 · Release gate: close the blockers now; four fast-follows join the gate; DR-C1 retired
 
 **Date:** 2026-09-27 · **Ken's ruling — not revertible by an agent.**
@@ -22880,6 +22892,375 @@ Ken's answers on the "needs your call" rows of the app-message audit
 Still open with Ken: the sprint-dates warning (A-60/A-67), the
 archived-user banner (A-100), the unreliable-filesystem banner (A-102),
 and the attachment-size message (B-57).
+
+### A353 · Release fast-follows, light pass: loading states, corruption coverage, community files, stale docs (B35)
+
+#### A353 — decisions.md § 8 entries (agent-made)
+
+Do NOT paste into decisions.md verbatim without checking against the
+current file state — write these as new § 8 entries, in the repo's
+existing format, after the sections currently ending at K136/K135.
+
+---
+
+#### A353-1 · DR-A3 (loading states): case + test added, no code change needed
+
+**What:** `ui/LoadingState.tsx` already had `role="status"` + `aria-busy`
+and 26+ adopting call sites (built under A-LOADINGSTATE), but carried no
+case and no `@verifies` test, so its contract could regress unnoticed.
+Added case **A11Y-61** to `tests/cases/ui-test-cases/flow-accessibility.md`
+("A panel-level loading region is exposed as a live status, not shown
+silently") and tagged the first test in
+`apps/web/src/client/ui/LoadingState.test.tsx` with `@verifies A11Y-61`.
+
+**Why:** the guide's bar ("done" = code + case + test + decision) was not
+met even though the code was correct; a case-less component contract can
+regress without any gate catching it.
+
+**Alternatives considered:** an e2e assertion in
+`tests/ui/flow-accessibility.spec.ts` catching a loading state live.
+Rejected for this pass — panel loads in the seeded e2e fixtures resolve
+too fast to reliably assert an in-flight `role="status"` without an
+artificial delay hook, which would be scope creep for a case this small;
+the unit test on the shared component is the correct layer (one
+component, ~26 consumers, a regression there is caught once for all of
+them).
+
+**Verification:** broke the test by stripping `role="status"` from
+`LoadingState.tsx` — 3 of 4 unit tests went red, confirming the test
+actually exercises the contract. Restored before commit-worthy state.
+
+**Blast radius:** none — no production code changed, only a case doc and
+a test-file comment tag.
+
+**To revert:** remove case A11Y-61 from `flow-accessibility.md` and the
+`@verifies A11Y-61` tag from `LoadingState.test.tsx`. No functional code
+to unwind.
+
+---
+
+#### A353-2 · RR-H1 (corruption coverage, light pass): one gap found and closed
+
+**What:** walked the corruption-handling-guide's checklists against this
+month's stored-field/config additions (`keyboard_shortcuts`,
+`sidebar_groups`/`filters` group, body-draft `sessionStorage`, unique
+saved-view names). Found: `keyboard_shortcuts` salvage
+(`salvageKeyboardShortcuts`, `collectKeyboardShortcutsDrops` in
+`packages/core/src/users/settings.ts`) was already wired into
+`checkDataIntegrity` (`packages/core/src/diagnostics/integrity.ts:442`)
+and correctly degrades field-locally (fails open — shortcuts stay on),
+but had **zero test coverage at the doctor/integrity layer** — only the
+pure-function salvage logic was unit-tested
+(`packages/core/src/users/shortcuts.test.ts`), unlike its sibling
+`sidebar_groups`, which has two doctor-level tests in
+`integrity.test.ts`. Added two tests mirroring the sidebar_groups ones:
+"names a dropped keyboard_shortcuts id, malformed and non-blocking" and
+"names a scalar keyboard_shortcuts value, not silently dropped", both in
+`packages/core/src/diagnostics/integrity.test.ts`, tagged `@verifies
+K133`. Also added a short coverage table (§ "Coverage check (RR-H1,
+light pass, 2026-09-27)") to
+`docs/dev/reference/corruption-handling-guide.md` § 6, and added
+`keyboard_shortcuts` to that section's "It covers" bullet list (it was
+covered in code but never mentioned in the doc).
+
+**Other three items checked, no gap found:**
+- `sidebar_groups` incl. the `filters` group id (K125): the `filters`
+  group id is just one more entry in the existing closed
+  `SIDEBAR_ITEM_IDS` set that `salvageSidebarGroups` already walks — no
+  separate code path was added for it, so no separate gap exists.
+- Body draft (`sessionStorage`, A338): `bodyDraft.test.ts` already covers
+  malformed-JSON, wrong-type, and blocked/throwing-storage cases with
+  silent degradation. Out of doctor's scope by design (not on-disk
+  tracker state).
+- Unique saved-view names (B21/K129): this is a write-time refusal, not
+  a load-time degrade case — a duplicate name already on disk (pre-K129,
+  or hand-edited) is explicitly tolerated and keeps loading/running by
+  id; only a *new write* to a taken name is refused. Already covered by
+  `packages/core/src/views/manage.test.ts`.
+
+**Why:** the prompt named these four explicitly as this month's
+additions to check; the guide's own bar is code + reader-degrade +
+doctor-visibility + test, and `keyboard_shortcuts` was missing the last
+one silently (it looked done because the salvage function itself was
+tested).
+
+**Alternatives considered:** none — this was a small, bounded gap with
+an obvious mirror-test to write (the sidebar_groups precedent already
+established the pattern and message-matching style).
+
+**Verification:** temporarily stubbed the `collectKeyboardShortcutsDrops`
+loop in `integrity.ts` to iterate an empty array; both new tests went red
+(`expected undefined to be defined`), confirming they exercise the
+doctor-level wiring and not just the salvage function. Restored
+`integrity.ts` before finishing (only the test file has a diff).
+
+**Blast radius:** none — no production code changed, only new tests and
+doc prose.
+
+**To revert:** remove the two new `it(...)` blocks in
+`packages/core/src/diagnostics/integrity.test.ts` (search "K133 — a
+corrupt keyboard_shortcuts" / "K133 — a MALFORMED-shaped
+keyboard_shortcuts"), and revert the "Coverage check" section plus the
+`keyboard_shortcuts` bullet added to `corruption-handling-guide.md` § 6.
+
+---
+
+#### A353-3 · RR-H3 (community files): added, one field left blank for Ken
+
+**What:** added `CONTRIBUTING.md` (build/test commands, the case +
+`@verifies` rule stated in plain language, the commit-message rules from
+CLAUDE.md), `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1, unmodified
+text except the enforcement contact line), and
+`.github/ISSUE_TEMPLATE/bug_report.md` +
+`.github/ISSUE_TEMPLATE/feature_request.md`. Brought `CHANGELOG.md` up to
+date through K136 by adding a "Polish and refinements (pre-publish waves
+3–4)" section under the existing 0.1.0 entry (no version bump — 0.1.0
+has not shipped yet, so this is still the same unreleased entry, not a
+new one), written in user-facing terms (shortcut off-switches, editor
+Save/Cancel, sprint/milestone countdown removal, message-audit clarity,
+sidebar Filters grouping, a11y fixes) rather than decision IDs.
+
+**Left undone, flagged for Ken:** `CODE_OF_CONDUCT.md`'s enforcement
+contact is a literal `**[TODO: Ken to fill in a contact address/method]**`
+placeholder — the prompt said to leave this for Ken rather than guess an
+address. No PR template was added (not requested; only issue templates
+were asked for). README has no existing "contributing" section, so
+nothing was linked to CONTRIBUTING.md — the instruction was conditional
+on one existing.
+
+**Why:** RR-H3 was the only item of the five in-scope fast-follows with
+literally nothing built yet (unlike H1/H2/DR-A3, which had real
+work behind a missing case/decision/doc-status).
+
+**Alternatives considered:** a PR template — not requested, skipped to
+avoid scope creep on an item explicitly scoped to "issue/PR templates"
+in the release-readiness doc's older wording but only "issue/PR
+templates" → the current prompt's ask was narrower ("bug report, feature
+request"), so that narrower ask is what was built.
+
+**Verification:** none needed — these are net-new prose/config files
+with no runtime behaviour to red-prove. Read back after writing to
+confirm they render as valid Markdown/YAML frontmatter.
+
+**Blast radius:** none — new files only, plus prose additions to
+`CHANGELOG.md`. `README.md` also gained a short mention of shortcut
+off-switches and the Host-guard/CSP hardening in existing sections (see
+A353-4 below), not part of this entry's file set.
+
+**To revert:** delete `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
+`.github/ISSUE_TEMPLATE/bug_report.md`,
+`.github/ISSUE_TEMPLATE/feature_request.md`; revert the "Polish and
+refinements" section added to `CHANGELOG.md`.
+
+---
+
+#### A353-4 · Stale-doc corrections in release-readiness.md, design-review.md, README.md, SECURITY.md
+
+**What (release-readiness.md):**
+- B4 quick-status corrected from "DONE (A-B4/K89)" to "IN PROGRESS (B34)",
+  citing the release-gate audit's three reproduced install defects (no
+  client in the installed CLI, `@loctt/web` missing runtime deps,
+  `@loctt/mcp` has no bin). Did not claim B34 finished — that work is
+  owned by a parallel agent and was still in flight at time of writing.
+- H1 marked closed with a short note on what the light pass found/fixed
+  (see A353-2), and the stale "~124 known-gaps sections" figure replaced
+  with a correction that `known-gaps.md` currently reports nothing open
+  (K117).
+- H3 marked closed, listing what was added (see A353-3).
+- Added a paragraph naming the DNS-rebinding Host guard
+  (`server.host-guard.test.ts`) and CSP (A206/A207,
+  `server.csp.test.ts`) to the security section, which previously
+  covered only loopback-binding and no-CORS.
+- Quick-status table updated to match all of the above; H2 row now notes
+  the ruling is recorded in decisions.md § 9 (K136) rather than only
+  living in this table.
+
+**What (design-review.md):**
+- §A1: heading corrected from "PARTIALLY FIXED" (contradicting its own
+  body's "K71 COMPLETE") to reflect that K71's roster is done but the
+  image-lightbox gap (found by the K135 audit) is still open, under the
+  parallel B34 ticket — explicitly did NOT claim this closed, since
+  `BodyRenderedView.tsx` shows an in-flight reference to a fix (`A352`)
+  with no corresponding decisions.md entry or e2e test found yet.
+- §A2: added a status marker noting `ui/Menu` itself is done (A11Y-13)
+  but `list/BulkBar.tsx`'s `BulkPicker` is the one remaining hand-rolled
+  instance, apparently being migrated under B34 (comments in the file
+  cite "DR-A2, K74") — again not claimed as finished, since not verified
+  end-to-end in this pass.
+- §A3: marked CLOSED, referencing the A11Y-61 case + test added in this
+  session (A353-1).
+- §A4: marked RESOLVED per A-FOCUSRING, with the audit's caveat about
+  A11Y-16 not asserting ring *color* kept as a noted caveat.
+- §B4: raw-`<select>` sub-list struck through as superseded by K106/A281
+  (Combobox generalization + raw-select removal); noted the raw-input/
+  radio counts here are stale versus the 2026-09-26 audit's 40/3.
+- §B5: noted `list/ExportMenu.tsx` no longer exists in the tree;
+  `list/BulkBar.tsx` remains, under B34.
+- §B6 + "Library health → Icons": glyph-bypass findings struck through
+  as superseded by `ui/Icon.tsx` (A208) and the Lucide+emoji icon editor
+  (K104); Chip-adoption half left as an open (not re-verified) count.
+- §C1: retired outright, citing K136 and the A11Y-39 rem/text-zoom
+  rationale in `styles/index.css` that now conflicts with C1's premise
+  (migrating to px `--space-*` tokens would regress text-zoom).
+- §C2: comment sub-item marked done (the `index.css` comment is now
+  accurate); px counts marked stale versus the audit's rem-based
+  809-inline/61-named figures, migration itself left open.
+- Top-of-doc "Is this a publish blocker?" section: noted K74 superseded
+  the original "one true blocker (§A1)" verdict by widening it to every
+  WCAG AA failure (making §A2 a blocker too), and that K136 closed both
+  as far as this pass could verify (with the caveat on §A1/§A2 above).
+
+**What (README.md, SECURITY.md):**
+- Fixed the dead anchor in `SECURITY.md` (`#security--data-model` →
+  `#data--security`, matching README's actual `## Data & security`
+  heading).
+- Added one sentence each to README's "Data & security" section and
+  SECURITY.md's "Using it safely" list naming the Host guard and CSP
+  hardening (previously undocumented in both places despite existing in
+  code and tests).
+- Added one clause to README's shortcuts section mentioning the K133
+  off-switches (Settings → Personal → Keyboard), which were previously
+  undocumented there.
+
+**Flagged, not fixed (per instructions — read-only note for Ken):**
+K71's own citation in `decisions.md:10910` uses the stale path
+`docs/dev/design/design-review.md` (missing the `design/` segment); the real
+path is `docs/dev/design/design-review.md`. Not touched — decisions.md
+is off-limits for this agent.
+
+**Why:** every one of these was either directly named by the prompt's
+item 5 list, or (Host guard/CSP, shortcut off-switches) was the same
+class of omission the prompt's item 5 called out for release-readiness.md
+and is trivially fixable prose.
+
+**Alternatives considered:** for §A1/§A2 in design-review.md, considered
+marking them fully CLOSED since the code in `BodyRenderedView.tsx` and
+`BulkBar.tsx` already shows the fix landing. Rejected: those files are
+explicitly owned by the parallel B34 agent, no decisions.md entry or
+test proving completion was found, and claiming something "done" that
+isn't independently verified violates the reporting-honesty rule in
+CLAUDE.md ("Decided is not done").
+
+**Verification:** none needed beyond grepping the cited files/lines to
+confirm each correction's factual basis (e.g. confirming
+`list/ExportMenu.tsx` is actually absent, confirming zero raw `<select>`
+outside `ui/Select.tsx`, confirming `ui/Icon.tsx` exists).
+
+**Blast radius:** none — doc prose only, no code or test changes in this
+entry.
+
+**To revert:** `git diff` on `docs/dev/process/release-readiness.md`,
+`docs/dev/design/design-review.md`, `README.md`, `SECURITY.md` and
+revert the relevant hunks; each edit above is self-contained (either a
+struck-through historical block plus a status-correction paragraph, or a
+single added sentence).
+
+---
+
+#### Exact H2 text for decisions.md § 9
+
+The ruling text currently recorded in `docs/dev/process/release-readiness.md`
+(unchanged by this session, just re-pointed-to from a new "CLOSED"
+marker) is the "Quick status" table's H2 cell:
+
+> DONE — STABLE (2026-09-18): full engine built to K92-K95, all
+> data-safety paths guarded + tested (incl. real-remote integration);
+> shipped unlabeled. The one untestable edge (advisory locks on
+> network/sync filesystems) is detected + warned in-app (GIT-22/XS-50)
+> and documented in docs/user/common/git-sync.md. Ken's call.
+
+Enter this verbatim (or Ken's preferred paraphrase of it) into
+`decisions.md` § 9 as the K136-adjacent ruling that RR-H2 is closed,
+stable, unlabeled.
+
+### A352 · Release blockers closed: lightbox, bulk-bar menus, packaging and install test, security posture (B34)
+
+#### A352 · Release blockers closed: lightbox trap, bulk menus, installable packages, manifest and security cases (B34, K136)
+
+**Date:** 2026-09-27 · Agent-made, revertible.
+
+> Held part: on 2026-09-27 the coordinator paused the packaging-*structure* work (how core reaches cli/mcp/web; the MCP server move) while Ken weighs publishing `@loctt/core` as its own package. That would supersede K89's "core bundled into each". A352.4 was already built and is not reverted. It stands until Ken rules, and A352.4's "To revert" is the path back if he rules otherwise.
+
+#### A352.1 · DR-A1: the image lightbox gets the modal apparatus
+
+- **Context:** K71 closed on "every genuinely-modal dialog traps focus", but the task-description image lightbox (`editor/BodyRenderedView.tsx`, TSK-70) set `role="dialog" aria-modal="true"` with no trap and no inert background. It opened only from a mouse click on a bare `<img>`. The K71 regression test ("a migrated confirm dialog traps focus…") never pressed Tab.
+- **Decision:** the image renders inside a real `<button>` (`data-testid="body-image-open"`, accessible name `View image: {alt}` or `View image`), so Enter or Space opens it. The lightbox reuses `useFocusTrap` (with `returnFocusTo` = the image button, passed explicitly because a mouse click does not focus a button in every browser) and `useInertBackground`. It is portalled to `document.body`, because `useInertBackground` refuses to inert a chrome that contains the dialog, and the description renders inside the chrome. It gains a Close `IconButton` (`Close image preview`), so the trap has a focus target and keyboard users have a visible control. A click anywhere and Escape still dismiss it. It is still not `ui/Modal`, because Modal's titled `max-w-md` panel is the wrong shape (the original TSK-70 call).
+- **Tests:** new case A11Y-62 (`flow-accessibility.md`, blocker) and the spec "A11Y-62: the image lightbox opens from the keyboard, traps focus and returns it". The K71 test now calls a shared `expectTrapWraps` helper (Tab past the last stop lands on the first; Shift+Tab from the first lands on the last) and carries `@verifies A11Y-14` as well as A11Y-15.
+- **Why:** K71 made the gap a blocker, and the brief asked to reuse the shared hooks rather than a one-off.
+- **Alternatives:** drop `aria-modal` and leave it non-modal (a full-viewport overlay that Tab walks behind is still a trap for sighted keyboard users); route through `ui/Modal` (wrong shape).
+- **To revert:** restore the bare `<img onClick>` and the un-portalled `ImageLightbox` without the hooks and the Close button in `BodyRenderedView.tsx`. Delete A11Y-62 and its spec. Drop `expectTrapWraps` and the A11Y-14 tag from the K71 test.
+
+#### A352.2 · DR-A2: the bulk-bar pickers move onto `ui/Menu`
+
+- **Context:** K74 makes every AA failure a blocker. `list/BulkBar.tsx`'s `BulkPicker` (six pickers) hand-rolled `role="menu"` with no arrow keys, no Escape, no initial focus and no focus return.
+- **Decision:** `BulkPicker` renders `ui/Menu` + `MenuItem`. That brings initial focus on the first item, Up/Down with wrap, Home/End, type-ahead, Escape, outside-click and focus return on Escape. The triggers and menus keep their names ("Set status" button, "Set status" menu), so existing specs did not change. Two additions:
+  1. The bar's own Escape handler (BLK-13, clear selection) now ignores keys from outside the bar's DOM. The Menu panel is portalled, and React bubbles portal events through the component tree, so the menu's Escape would otherwise also clear the selection.
+  2. Picking an item returns focus to the picker's trigger. Because `busy` disables every trigger while the request runs (and a focused button that becomes disabled drops focus to `body`), the picker remembers focus is owed and restores it once the trigger is enabled again, but only if focus is still on `body`.
+  Visible differences: items use `MenuItem`'s type size (0.9286rem, was 0.8571rem) and the panel is the shared portalled panel (it flips above the sticky bar when there is no room below).
+- **Tests:** new case A11Y-63 (blocker) and the spec "A11Y-63: a bulk-bar picker follows the menu keyboard pattern" (first item focused, ArrowDown/End/wrap/ArrowUp/Home, Escape keeps the selection and focuses the trigger, Enter applies and focuses the trigger). The existing BLK specs in `flow-list.spec.ts` pass unchanged.
+- **Why:** it is the same fix `ui/Menu` already carries for A11Y-13. One component, not a second implementation.
+- **Alternatives:** add arrow keys to the hand-rolled panel (a second menu implementation to keep in step); `ui/Dropdown` (a listbox with selection state, wrong for a one-shot action).
+- **To revert:** restore the previous `BulkPicker` (local `useState` open flag, inline `role="menu"` div) and the unguarded bar `onKeyDown`, and delete A11Y-63 and its spec.
+
+#### A352.3 · RR-B4 (web and CLI): `loctt ui` ships its client; `@loctt/web` declares what it loads
+
+- **Context:** outside the monorepo, `loctt ui` answered `/` with a 404 (nothing copied the web client into `@loctt/cli`, and `resolveClientDir` only found one via the monorepo path `../../web/dist/client`). `loctt-ui` crashed with `Cannot find package 'yaml'` because `@loctt/web` declared only `busboy` of its five externals. K89 left "does `loctt ui` stay" to the implementer.
+- **Decision:**
+  - `loctt ui` stays, and the CLI is self-contained. `apps/cli/tsup.config.ts` copies `apps/web/dist/client` to `apps/cli/dist/client` in `onSuccess` (so `tsup --watch` re-copies too), and fails the build loudly if the web client is not built. The root `build` now builds `apps/web` before `apps/cli`/`apps/mcp`. Rejected: the CLI depending on `@loctt/web` and resolving its client from disk. The CLI already bundles web's server code, so a runtime dependency would add a second install and a version to keep in step for the sake of static files.
+  - `resolveClientDir` drops the monorepo fallback (it is what hid the defect), leaving `LOCTT_CLIENT_DIR` then `<bundle>/client`. `loctt ui` with no client now exits 1 with "The web UI files are missing from this install. Reinstall @loctt/cli." instead of serving a 404 page.
+  - `@loctt/web` `dependencies` = `busboy, proper-lockfile, sharp, ulid, yaml, zod` (exactly what the server bundle imports). The client-only libraries (react, react-dom, tiptap, codemirror, @tanstack/*, lucide-react) moved to `devDependencies`, since Vite bundles them into `dist/client`.
+  - `prepublishOnly: "cd ../.. && npm run build"` on `@loctt/cli` and `@loctt/mcp`. It is a root build because the CLI needs the web client, and the MCP `.d.ts` comes from `tsc --build`.
+  - `loctt --version` added (prints the version from the package's own `package.json`, exempt from the schema guard, in `usage.ts` and the CLI reference). The install test needed it and it did not exist. `loctt --version` used to fail with the schema-guard error.
+  - `package-lock.json` refreshed and `npm install` run.
+- **Why:** K89 requires each package to install and run on its own. Self-containment is the smallest way to get there for `loctt ui`.
+- **Alternatives:** covered above.
+- **To revert:** drop `onSuccess`/`copyWebClient` from `apps/cli/tsup.config.ts`, restore the old root `build` order, restore the two-candidate `resolveClientDir` and the API-only fallback in `commands/ui.ts`, restore `@loctt/web`'s old dependency lists, drop the two `prepublishOnly` scripts and the `--version` case/exemption/usage line, then run `npm install`.
+
+#### A352.4 · RR-B4 (MCP): one server, two launchers (built, then held)
+
+- **Context:** `@loctt/mcp` had no `bin`, and its README told users to run `loctt-mcp`. The stdio server lived in `apps/cli/src/commands/mcp.ts`. The coordinator relayed K89 ("each independently installable, core bundled into each") as settling that `@loctt/mcp` stays standalone.
+- **Decision:** the shared server is `apps/mcp/src/server.ts`: `MCP_INSTRUCTIONS`, `packageVersion()` (reads `../package.json` beside the running bundle) and `startMcpServer(root)`. It lazily imports the SDK and `./index.js` (`getTools`/`executeTool`), so importing the library does not load the SDK, and there is no static import cycle with `index.ts`, which re-exports the three. Two launchers call it:
+  - `apps/mcp/src/bin.ts` → `dist/bin.js` = `loctt-mcp` (`--root`/`--cwd` alias, else `LOCTT_ROOT`, else cwd; `--version`, `--help`);
+  - `apps/cli/src/commands/mcp.ts`, now three lines.
+  `apps/mcp/tsup.config.ts` builds two entries with core, contracts and `@modelcontextprotocol/sdk` bundled (`noExternal`). `ajv`/`ajv-formats` are external and declared, for the same `require("ajv/dist/runtime/*")` reason the CLI records. The SDK is a devDependency. The server-instructions test moved from `apps/cli/src/commands/mcp.test.ts` to `apps/mcp/src/server.test.ts`. The MCP README and `docs/user/mcp/reference.md` document `loctt-mcp` / `npx -y @loctt/mcp` and that `loctt mcp` is the same server.
+- **Version skew guard:** core's `requireSupportedSchema` (`packages/core/src/schema/migrate.ts:253`) throws `SchemaTooNewError` for a tracker newer than the code. The CLI runs it at boot for non-exempt commands (`apps/cli/src/index.ts`, `SCHEMA_GUARD_EXEMPT_COMMANDS`). `mcp`/`ui` are exempt there because they guard per request. MCP runs it per tool call in `executeTool` (`apps/mcp/src/index.ts`, so both launchers share it). The web server runs it in its request middleware (`apps/web/src/server/server.ts` ~5839). The install test checks it for the installed standalone `loctt-mcp`: `.schema-version` = 999 makes `list_tasks` return `isError` with "newer version of LocTT".
+- **Found by the install test:** in the monorepo, `apps/mcp/dist/bin.js` resolved the root `node_modules/ajv` (eslint's v6) and crashed in `ajv-formats`. `npm install` (after the lockfile refresh) places ajv@8 in `apps/mcp/node_modules`. The install harness picks a copy that satisfies the declared range for the same reason.
+- **Why:** one implementation keeps the two launchers identical (the P10 claim). A second copy of the server wiring would drift.
+- **Alternatives (for Ken, since the shape is held):** see the report. (a) keep standalone `@loctt/mcp` (built). (b) no standalone MCP: re-`private` it, `loctt mcp` only.
+- **To revert:** move `MCP_INSTRUCTIONS` and the `startMcpServer` body back into `apps/cli/src/commands/mcp.ts` (with its test), delete `apps/mcp/src/{server,bin,server.test}.ts` and the re-export, restore the one-entry `apps/mcp/tsup.config.ts` and the old manifest (no `bin`, no ajv deps, no SDK devDep, `files` without `bin.js`), and revert the MCP README and reference paragraphs. Remove the MCP launcher assertions from the packaging tests.
+
+#### A352.5 · RR-B4 + RR-B1: the packaging suite (`npm run test:packaging`)
+
+- **Context:** no test packed or installed anything. A-B4's "bin smoke-runs" ran inside the monorepo, where hoisting hides a missing dependency (A207's lesson).
+- **Decision:** `tests/packaging/` with its own config `tests/vitest.packaging.config.ts` and root scripts `test:packaging` + `pretest:packaging` (build). It is slow and build-dependent, so it is not in `npm run test`. It is placed like `test:integration`/`test:e2e`/`test:perf`. Run: `npm run test:packaging` (~15 s after the build).
+  - `lib.ts`: `npm pack` each workspace (`--ignore-scripts`), unpack into `<os tmp>/loctt-pack-*/node_modules/<name>`, and symlink **only the packed manifest's `dependencies`** from the monorepo. Each dependency is version-checked against its caret range (non-caret ranges are refused). Spawned processes run without `NODE_PATH`/`NODE_OPTIONS`. Bare imports are read from the bundle's TypeScript syntax tree (static, dynamic, `require`/`__require`), not grepped.
+  - `install.test.ts` (ONB-C8): CLI `--version`, `init`, `create`; `loctt ui --no-open` serves `/` (200, text/html, `<div id="root">`), a referenced `/assets/*.js`, `/api/info`, and `/api/tasks` containing the created task; `loctt mcp` and the standalone `loctt-mcp` both initialize with name `loctt`, the package version and the instructions, and list identical tool sets; `loctt-mcp` reads the CLI-created task via `list_tasks` and refuses a schema-999 tracker; `loctt-ui` serves the same page and API.
+  - `manifest.test.ts` (ONB-C9): public + MIT + LICENSE in the tarball; one version and one `engines.node` across the three packages and the root; every `bin`/`main` target is in the tarball and each bin has a Node shebang; the launchers are `loctt`/`loctt-mcp`/`loctt-ui`; declared runtime deps are **exactly** the bare imports of the shipped `.js` (nothing undeclared, nothing unused); `prepublishOnly` builds; the CLI tarball has `dist/client/index.html`.
+  - Limitation (recorded, not hidden): the install is offline. It proves the resolution boundary, not that the ranges resolve on the public registry or that `sharp`'s prebuilt binary downloads.
+- **Why:** the claim is about what a stranger installs, so the test installs what a stranger would get.
+- **Alternatives:** real `npm install <tgz>` from the registry (network-dependent, slower, and the monorepo's packages are unpublished); the audit's proposed `tools/` placement (the suite needs a build and spawns processes, like `tests/integration`).
+- **To revert:** delete `tests/packaging/`, `tests/vitest.packaging.config.ts`, the two root scripts, and cases ONB-C8/ONB-C9.
+
+#### A352.6 · RR-B2: security posture as a case
+
+- **Context:** SECURITY.md linked `README.md#security--data-model` (dead). By the time this ran it read `#data--security`, fixed in the working tree by the parallel B35 pass. No case required any of the posture.
+- **Decision:** case ONB-C10 (surface tree, `UI`, blocker) and `apps/web/src/server/server.security-posture.test.ts` (6 tests, `@verifies ONB-C10`):
+  - listening address is `127.0.0.1`;
+  - neither launcher (`main.ts`, `commands/ui.ts`) reads a host/bind flag or `0.0.0.0`, and Vite's `/api` proxy targets `127.0.0.1`;
+  - a foreign `Host` gets 403 while `localhost`/`127.0.0.1` get 200;
+  - the page's CSP has `default-src 'self'`, `connect-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'` and no `'unsafe-inline'` script;
+  - no `Access-Control-Allow-*` headers even with a foreign `Origin`;
+  - every `README.md#anchor` in SECURITY.md resolves to a README heading (GitHub slug rules).
+  The existing in-depth `server.host-guard.test.ts` and `server.csp.test.ts` are unchanged and untagged.
+- **Case placement:** packaging and security cases went into `surface-test-cases/flow-onboarding.md` as a new § B (ONB-C8/9/10). Install and first run are onboarding, and the surface tree is where cross-surface (`CLI MCP UI`) cases live. README counts: onboarding 7 → 10, total 102 → 105. A11Y-62/63 went into `ui-test-cases/flow-accessibility.md`.
+- **To revert:** delete the test file and ONB-C10, then run `npm run cases:index`.
+
+#### A352.7 · Red-proofs (each restored afterwards)
+
+- Security (each fails exactly one test): bind `0.0.0.0`; host guard returns true; `frame-ancestors *`; ACAO `*` on JSON responses; `--host` added to `loctt ui`'s accepted flags; SECURITY.md anchor reverted to `#security--data-model`.
+- Packaging: `yaml` removed from `@loctt/web` deps fails the manifest test (`loads packages it does not declare: ['yaml']`) and `loctt-ui` (`ERR_MODULE_NOT_FOUND … 'yaml'`). `apps/cli/dist/client` removed fails `loctt ui` ("The web UI files are missing…") and the manifest's client check.
+- UI: `useFocusTrap` Tab handling disabled fails the K71 test (plus the discard-confirmation trap test); the lightbox's `useFocusTrap`/`useInertBackground` removed fails A11Y-62; the bar's Escape guard removed fails A11Y-63. Before the refocus-owed fix, A11Y-63 failed on "trigger focused after pick", which is how that defect was found.
+- The moved MCP instructions test: constructing `McpServer` without `instructions` fails it.
 
 ### A351 · Post-merge fixes: task due dates, MCP descriptions, disabled switches, per-candidate reasons (B28–B31)
 

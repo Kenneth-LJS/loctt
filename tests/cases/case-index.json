@@ -1,9 +1,9 @@
 {
   "generated_from": "tests/cases/ui-test-cases/, tests/cases/surface-test-cases/",
   "counts": {
-    "total": 1060,
-    "ui": 958,
-    "surface": 102,
+    "total": 1066,
+    "ui": 961,
+    "surface": 105,
     "resolved": 4
   },
   "cases": [
@@ -983,6 +983,54 @@
       "title": "The shortcuts dialog is reachable with `?` switched off.",
       "milestone": "M4",
       "severity": "major",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "A11Y-61",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-accessibility.md",
+      "line": 519,
+      "title": "A panel-level loading region is exposed as a live status, not shown silently.",
+      "milestone": "M4",
+      "severity": "minor",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "A11Y-62",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-accessibility.md",
+      "line": 526,
+      "title": "The image lightbox is a real modal.",
+      "milestone": "M4",
+      "severity": "blocker",
+      "principles": [
+        "P8"
+      ],
+      "surfaces": [
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "A11Y-63",
+      "tree": "ui",
+      "file": "tests/cases/ui-test-cases/flow-accessibility.md",
+      "line": 534,
+      "title": "The bulk bar's pickers follow the menu keyboard pattern.",
+      "milestone": "M4",
+      "severity": "blocker",
       "principles": [
         "P8"
       ],
@@ -8884,6 +8932,56 @@
       ],
       "surfaces": [
         "MCP"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C8",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 150,
+      "title": "Each published package installs on its own and runs.",
+      "severity": "blocker",
+      "principles": [
+        "P4",
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C9",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 179,
+      "title": "The published manifests tell the truth.",
+      "severity": "blocker",
+      "principles": [
+        "P10"
+      ],
+      "surfaces": [
+        "CLI",
+        "MCP",
+        "UI"
+      ],
+      "resolved": false
+    },
+    {
+      "id": "ONB-C10",
+      "tree": "surface",
+      "file": "tests/cases/surface-test-cases/flow-onboarding.md",
+      "line": 200,
+      "title": "The documented security posture holds.",
+      "severity": "blocker",
+      "principles": [
+        "P1"
+      ],
+      "surfaces": [
+        "UI"
       ],
       "resolved": false
     },

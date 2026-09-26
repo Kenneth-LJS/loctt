@@ -49,11 +49,16 @@
 
 import type { JSONContent } from "@tiptap/core";
 import type { JSX } from "react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { isSafeHref } from "../comments/renderMarkdown.tsx";
 import { Button } from "../ui/Button.tsx";
 import { cn } from "../ui/cn.ts";
+import { Icon } from "../ui/Icon.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
+import { useInertBackground } from "../ui/Modal.tsx";
+import { useFocusTrap } from "../ui/useFocusTrap.ts";
 import { fromMarkdown } from "./markdown.ts";
 import type { MentionCandidate } from "./MentionMenu.tsx";
 
@@ -83,7 +88,7 @@ export interface BodyRenderedViewProps {
 export function BodyRenderedView({
   body, placeholder, mentionCandidates, onEnterEdit,
 }: BodyRenderedViewProps): JSX.Element {
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<LightboxState | null>(null);
 
   const names = new Map(mentionCandidates.map(c => [c.id, c.name] as const));
   const isEmpty = body.trim() === "";
@@ -150,17 +155,27 @@ export function BodyRenderedView({
                 {placeholder}
               </button>
             )
-          : renderNodes(fromMarkdown(body).content ?? [], names, setLightboxSrc, "d")}
+          : renderNodes(fromMarkdown(body).content ?? [], names, (src, trigger) => { setLightbox({ src, trigger }); }, "d")}
       </div>
 
-      {lightboxSrc !== null && (
-        <ImageLightbox src={lightboxSrc} onClose={() => { setLightboxSrc(null); }} />
+      {lightbox !== null && (
+        <ImageLightbox
+          src={lightbox.src}
+          returnFocusTo={lightbox.trigger}
+          onClose={() => { setLightbox(null); }}
+        />
       )}
     </div>
   );
 }
 
-type OpenLightbox = (src: string) => void;
+interface LightboxState {
+  readonly src: string;
+  /** The image button that opened it; focus goes back here on close. */
+  readonly trigger: HTMLElement;
+}
+
+type OpenLightbox = (src: string, trigger: HTMLElement) => void;
 
 function renderNodes(
   nodes: readonly JSONContent[],
@@ -243,20 +258,34 @@ function renderNode(
       const src = String(node.attrs?.["src"] ?? "");
       const alt = String(node.attrs?.["alt"] ?? "");
       if (src !== "" && isSafeHref(src)) {
+        // DR-A1 (K71, A11Y-62): the image sits in a real `<button>`, so
+        // the lightbox opens from the keyboard (Tab, then Enter/Space)
+        // and not only from a mouse click on a bare `<img>`. The button
+        // is also what focus returns to when the lightbox closes, which
+        // is why it is handed to `openLightbox` rather than captured
+        // from `document.activeElement` (a mouse click does not focus a
+        // button in every browser).
         return (
-          <img
-            data-testid="body-image"
-            src={src}
-            alt={alt}
-            // Withhold the referrer from external hosts. (Does not prevent
-            // the load — see the note above.)
-            referrerPolicy="no-referrer"
-            // The click opens the lightbox (TSK-70). `stopPropagation` is
-            // harmless now the region is no longer a button (A247) but kept
-            // so the image never triggers an ancestor click handler.
-            onClick={e => { e.stopPropagation(); openLightbox(src); }}
-            className="my-1.5 max-h-64 cursor-zoom-in rounded border border-border-subtle"
-          />
+          <button
+            type="button"
+            data-testid="body-image-open"
+            aria-label={alt !== "" ? `View image: ${alt}` : "View image"}
+            // `stopPropagation` is harmless now the region is no longer a
+            // button (A247) but kept so the image never triggers an
+            // ancestor click handler.
+            onClick={e => { e.stopPropagation(); openLightbox(src, e.currentTarget); }}
+            className="my-1.5 inline-block cursor-zoom-in rounded align-top"
+          >
+            <img
+              data-testid="body-image"
+              src={src}
+              alt={alt}
+              // Withhold the referrer from external hosts. (Does not
+              // prevent the load — see the note above.)
+              referrerPolicy="no-referrer"
+              className="block max-h-64 rounded border border-border-subtle"
+            />
+          </button>
         );
       }
       return (
@@ -406,17 +435,40 @@ function renderText(node: JSONContent): React.ReactNode {
  * A minimal image lightbox (TSK-70).
  *
  * A full-viewport dimmed overlay showing the image larger. Dismisses on
- * a click anywhere and on Escape — the two gestures a reader expects
- * from a lightbox. Not the shared `Modal`: that forces a titled,
- * `max-w-md` panel, which is the wrong shape for "show this image
- * bigger". (Recorded in decisions.md §8.)
+ * a click anywhere, on Escape, and on its Close button. Not the shared
+ * `Modal`: that forces a titled, `max-w-md` panel, which is the wrong
+ * shape for "show this image bigger". (Recorded in decisions.md §8.)
+ *
+ * ## It is a modal, so it gets the modal apparatus (DR-A1, K71)
+ *
+ * It says `aria-modal="true"`, and until A352 that was a claim with
+ * nothing behind it: focus never moved in and Tab walked the page
+ * behind the overlay. It now uses the same two hooks as every other
+ * modal instead of a one-off:
+ *
+ * - `useFocusTrap` moves focus to the Close button, keeps Tab and
+ *   Shift+Tab inside, and returns focus to the image button on close
+ *   (A11Y-14, A11Y-15).
+ * - `useInertBackground` makes the app chrome `inert`. That hook
+ *   refuses to inert a chrome that CONTAINS the dialog (it would disable
+ *   the dialog too), and the task description renders inside the
+ *   chrome, so the lightbox is portalled to `document.body` to sit
+ *   beside the chrome rather than in it.
+ *
+ * The Close button is there because a trap needs somewhere to put
+ * focus, and a keyboard user needs a visible control, not just Escape.
  */
 function ImageLightbox({
-  src, onClose,
+  src, returnFocusTo, onClose,
 }: {
   readonly src: string;
+  readonly returnFocusTo: HTMLElement;
   readonly onClose: () => void;
 }): JSX.Element {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef, { returnFocusTo });
+  useInertBackground(panelRef);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") onClose();
@@ -425,20 +477,32 @@ function ImageLightbox({
     return () => { document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
+      ref={panelRef}
       data-testid="body-image-lightbox"
       role="dialog"
       aria-modal="true"
       aria-label="Image preview"
+      tabIndex={-1}
       onClick={onClose}
       className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"
     >
+      <IconButton
+        variant="secondary"
+        aria-label="Close image preview"
+        testId="body-image-lightbox-close"
+        onClick={onClose}
+        className="absolute right-4 top-4"
+      >
+        <Icon name="close" />
+      </IconButton>
       <img
         src={src}
         alt=""
         className="max-h-full max-w-full rounded shadow-overlay"
       />
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -25,6 +25,7 @@ import { listRegisteredTools, lookupTool, stripHandler } from "./registry.js";
 import { errorResult, isKnownDomainError } from "./runtime/errors.js";
 import type { McpTool, McpToolResult } from "./types.js";
 
+export { MCP_INSTRUCTIONS, packageVersion, startMcpServer } from "./server.js";
 export type { McpTool, McpToolResult } from "./types.js";
 
 /**

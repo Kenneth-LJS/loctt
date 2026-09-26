@@ -7,7 +7,7 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "tsc --build && npm run build --workspace apps/cli --workspace apps/mcp && npm run build --workspace apps/web",
+    "build": "tsc --build && npm run build --workspace apps/web && npm run build --workspace apps/cli --workspace apps/mcp",
     "dev": "npm run dev --workspace apps/web",
     "dev:host": "npm run dev:host --workspace apps/web",
     "test": "npm run test --workspaces --if-present && npm run test:tools",
@@ -20,6 +20,8 @@
     "pretest:e2e": "npm run build",
     "test:e2e": "vitest run --config tests/vitest.e2e.config.ts",
     "test:perf": "vitest run --config tests/vitest.perf.config.ts",
+    "pretest:packaging": "npm run build",
+    "test:packaging": "vitest run --config tests/vitest.packaging.config.ts",
     "pretest:ui": "npm run build",
     "test:ui": "playwright test --config tests/ui/playwright.config.ts",
     "llm:verify": "tsx tests/llm/lib/runner.ts",

@@ -21,6 +21,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "prepublishOnly": "cd ../.. && npm run build",
     "dev": "tsup --watch",
     "clean": "rm -rf dist",
     "test": "vitest run",

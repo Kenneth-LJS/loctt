@@ -20,6 +20,7 @@ Global options:
                                    directory.
                                    (env LOCTT_ROOT is used when no flag
                                    is given; an explicit flag wins.)
+  --version                        Print the installed version and exit.
 
 Commands:
   init [--repair] [--prefix <prefix>] [--project-label <label>] [--no-docs]

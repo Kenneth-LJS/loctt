@@ -6,10 +6,11 @@ import type {
   WorkflowConfig,
 } from "@loctt/contracts";
 import { MAX_BULK_REFS } from "@loctt/contracts";
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Icon } from "../ui/Icon.tsx";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
 
 /**
  * The bulk action bar, shown once at least one row is selected.
@@ -115,7 +116,13 @@ export function BulkBar({
       aria-label="Bulk actions"
       onKeyDown={e => {
         // Esc clears from inside the bar (BLK-13).
-        if (e.key === "Escape") onClear();
+        //
+        // Only for a key pressed in the bar's own DOM. The pickers'
+        // panels are portalled to `document.body` (ui/Menu), and React
+        // bubbles a portal's events through the component tree, so an
+        // Escape meant to close a picker would otherwise also land here
+        // and throw the whole selection away (A11Y-62).
+        if (e.key === "Escape" && e.currentTarget.contains(e.target as Node)) onClear();
       }}
     >
       {count > MAX_BULK_REFS && (
@@ -299,6 +306,19 @@ function active<T extends { readonly archived?: boolean | undefined }>(
  * A one-shot value picker. Deliberately not `FilterFacet`: that one
  * is multi-select, holds a selected set, and labels itself "Filter by
  * X" — all wrong for an action that applies one value and is done.
+ *
+ * ## On `ui/Menu`, not a hand-rolled `role="menu"` (DR-A2, K74)
+ *
+ * This used to render its own `role="menu"` panel: the role promised
+ * the menu keyboard pattern, but there were no arrow keys, no Escape,
+ * no initial focus and no focus return (design-review §A2, a WCAG AA
+ * failure K74 makes a publish blocker). `ui/Menu` owns all of that, so
+ * the picker is now just its trigger and its items (A11Y-62).
+ *
+ * Picking a value returns focus to the trigger. `Menu` deliberately
+ * does not restore focus on selection, because its items often
+ * navigate or open a dialog; here the item applies a value and the bar
+ * stays, so the trigger is the right place to land rather than `body`.
  */
 function BulkPicker({
   label,
@@ -336,41 +356,56 @@ function BulkPicker({
   readonly disabled: boolean;
   readonly onPick: (value: string | null) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // The pick starts a request, and `busy` disables every trigger until
+  // it settles. A focused button that becomes `disabled` loses focus to
+  // `body`, so focusing the trigger at pick time alone does not hold.
+  // Remember that focus is owed, and pay it once the trigger is enabled
+  // again, but only if nothing else has taken focus meanwhile.
+  const refocusOwed = useRef(false);
+  const pick = (close: () => void, value: string | null): void => {
+    close();
+    triggerRef.current?.focus();
+    refocusOwed.current = true;
+    onPick(value);
+  };
+  useEffect(() => {
+    if (disabled || !refocusOwed.current) return;
+    refocusOwed.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body) triggerRef.current?.focus();
+  }, [disabled]);
 
   return (
-    <div className="relative">
-      <Button
-        variant="secondary"
-        size="sm"
-        aria-label={label}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        disabled={disabled || (emptyReason !== undefined && options.length === 0)}
-        {...(options.length === 0 && emptyReason !== undefined ? { title: emptyReason } : {})}
-        onClick={() => { setOpen(o => !o); }}
-      >
-        {label} <Icon name="chevronDown" size={12} />
-      </Button>
-
-      {open && (
-        <div
-          role="menu"
+    <Menu
+      aria-label={label}
+      panelClassName="min-w-[160px]"
+      trigger={t => (
+        <Button
+          ref={triggerRef}
+          id={t.id}
+          variant="secondary"
+          size="sm"
           aria-label={label}
-          className="absolute bottom-full left-0 z-20 mb-1 min-w-[160px] rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg"
+          aria-expanded={t["aria-expanded"]}
+          aria-haspopup={t["aria-haspopup"]}
+          disabled={disabled || (emptyReason !== undefined && options.length === 0)}
+          {...(options.length === 0 && emptyReason !== undefined ? { title: emptyReason } : {})}
+          onClick={t.toggle}
         >
+          {label} <Icon name="chevronDown" size={12} />
+        </Button>
+      )}
+    >
+      {({ close }) => (
+        <>
           {clearLabel !== undefined && (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onPick(null);
-              }}
-              className="block w-full border-b border-border-subtle px-3 py-1.5 text-left text-[0.8571rem] italic text-text-secondary hover:bg-bg-muted"
+            <MenuItem
+              onSelect={() => { pick(close, null); }}
+              className="border-b border-border-subtle italic"
             >
               {clearLabel}
-            </button>
+            </MenuItem>
           )}
           {options.length === 0 && emptyReason !== undefined ? (
             <div className="px-3 py-2 text-[0.8571rem] italic text-text-tertiary">
@@ -384,25 +419,19 @@ function BulkPicker({
             )
           ) : (
             options.map(opt => (
-              <button
+              <MenuItem
                 key={opt.id}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false);
-                  onPick(opt.id);
-                }}
-                className="block w-full px-3 py-1.5 text-left text-[0.8571rem] text-text-primary hover:bg-bg-muted"
+                onSelect={() => { pick(close, opt.id); }}
               >
                 {opt.label}
                 {opt.hint !== undefined && (
-                  <span className="ml-1.5 text-text-tertiary">· {opt.hint}</span>
+                  <span className="text-text-tertiary">· {opt.hint}</span>
                 )}
-              </button>
+              </MenuItem>
             ))
           )}
-        </div>
+        </>
       )}
-    </div>
+    </Menu>
   );
 }

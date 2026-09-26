@@ -223,6 +223,13 @@ export async function main(): Promise<void> {
         usage();
         break;
 
+      // The installed package's version (A352). Read from the package
+      // manifest beside the bundle so it cannot drift from what npm
+      // installed; the install test (`npm run test:packaging`) runs it.
+      case "--version":
+        console.log(cliVersion());
+        break;
+
       default:
         if (command) {
           console.error(`Unknown command: ${command}`);
@@ -260,10 +267,24 @@ export async function main(): Promise<void> {
   }
 }
 
+/**
+ * The version in this package's `package.json`, which sits one level
+ * above both `dist/index.js` (installed) and `src/index.ts` (tests).
+ */
+function cliVersion(): string {
+  try {
+    const raw = readFileSync(new URL("../package.json", import.meta.url), "utf8");
+    const version = (JSON.parse(raw) as { version?: unknown }).version;
+    return typeof version === "string" ? version : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 // Only auto-run when executed directly. Resolve both sides through
 // realpath so the guard still fires when invoked via symlinks (npm link,
 // global installs that symlink the bin, nvm shims, etc.).
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 const argv1 = process.argv[1];
 const isDirectRun = argv1 !== undefined
   && realpathSync(argv1) === fileURLToPath(import.meta.url);

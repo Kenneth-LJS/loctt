@@ -80,3 +80,40 @@ three surfaces over one shared core: a CLI, an MCP server, and a web UI.
 - Single-user, local-first: the web server binds to `127.0.0.1` only,
   with no authentication and no multi-user model. See
   [SECURITY.md](SECURITY.md).
+
+### Polish and refinements (pre-publish waves 3–4)
+
+- **Keyboard shortcuts have off switches.** Settings → Personal →
+  Keyboard, and the `?` dialog's in-dialog settings view, let you turn
+  single-key shortcuts off entirely, or one at a time, with a "Reset to
+  default" option. No rebinding — the keys are fixed, but every one can
+  be switched off if it collides with something else on your machine.
+- **The description editor saves only on Save.** Editing a task's body no
+  longer autosaves on every keystroke; Save commits it, clicking away
+  keeps you in the editor, and Escape cancels the edit. An unsaved draft
+  is kept for the tab (not written to disk) so a reload doesn't lose your
+  work.
+- **Sprints and milestones dropped the countdown and overdue styling.**
+  Sprint cards and milestone rows no longer show "N days left" / "N days
+  overdue" countdowns or red overdue badges — LocTT tracks state changes
+  you make explicitly rather than nudging you about dates. Sprint state
+  (future/active/completed) can also now move freely in either direction
+  on every surface; task due dates in the list and board no longer turn
+  red when overdue, either.
+- **Clearer messages throughout.** An app-wide pass rewrote error,
+  confirmation, and status messages to state the outcome plainly without
+  editorializing — including delete confirmations, timed-out-save
+  warnings (which now say plainly whether it's safe to retry), and a
+  "several unreadable candidates" error that now gives each file its own
+  reason instead of repeating one path.
+- **Sidebar customization gained a "Filters" group.** The built-in
+  sidebar filters (Assigned to me, Overdue, etc.) are now grouped under
+  one collapsible "Filters" row in the Customize-sidebar panel, while
+  staying individually reorderable and hideable underneath it.
+- **Accessibility fixes:** dialogs consistently trap and restore focus,
+  `role="menu"` components support arrow-key navigation, loading regions
+  announce themselves to screen readers, and disabled switches now look
+  visibly disabled in dark mode as well as light.
+- **Editor Save/Cancel, sidebar Filters section, and a broader message
+  audit** landed alongside general lint and warning cleanup ahead of
+  publishing.

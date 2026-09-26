@@ -1,7 +1,7 @@
 # Init, schema, and diagnostics
 
-`loctt init` and its options, schema versioning and migration, doctor, and
-`info`.
+`loctt init` and its options, schema versioning and migration, doctor,
+`info`, installing each published package, and the security posture.
 
 Gaps only. See [README.md](README.md) for conventions.
 
@@ -142,3 +142,79 @@ without a prior successful `/api/info`.
 
 **Given** an agent running `doctor` to decide whether to proceed, **when** a
 check fails, **then** the failure is detectable from the result shape.
+
+---
+
+## B. Installing and running what is published
+
+### ONB-C8 · blocker · P4 P10 · CLI MCP UI
+**Each published package installs on its own and runs.** Found by the
+release-gate audit (RR-B4, K136): outside the monorepo, `loctt ui` from
+`@loctt/cli` answered `/` with a 404 (the CLI shipped no web client and
+`resolveClientDir` only found one inside the repo), `loctt-ui` from
+`@loctt/web` crashed with `Cannot find package 'yaml'`, and `@loctt/mcp`
+had no command at all although its README told users to run `loctt-mcp`.
+K89 makes all three independently installable.
+
+Each package is packed (`npm pack`) and installed into an empty directory
+outside the repository with only its declared dependencies:
+
+- `@loctt/cli`: `loctt --version` prints the package version. `loctt init`
+  then `loctt create` make a tracker with a task.
+- `@loctt/cli`: `loctt ui --no-open` serves `/` as HTML (200) with its
+  script assets, and `/api/info` and `/api/tasks` answer for that tracker.
+  An install without the web client refuses to start and says the install
+  is damaged, rather than serving an API with a 404 page.
+- `@loctt/cli`: `loctt mcp` answers `initialize` and lists its tools.
+- `@loctt/mcp`: `loctt-mcp` answers `initialize` with the same tools as
+  `loctt mcp` and the same instructions, and a read tool returns the task
+  the installed CLI created. Pointed at a tracker whose schema is newer
+  than it knows, a tool call is refused with "newer version of LocTT".
+- `@loctt/web`: `loctt-ui --no-open` serves `/` and the API the same way.
+  → `tests/packaging/install.test.ts` (`npm run test:packaging`)
+
+**Given** a user who installs one package from npm, **when** they run its
+command, **then** it works without any other LocTT package present.
+
+### ONB-C9 · blocker · P10 · CLI MCP UI
+**The published manifests tell the truth.** RR-B1 (K136): license and
+version metadata were right but nothing checked them, and nothing checked
+that each package declares what its bundle loads (the `yaml` crash in
+ONB-C8 was exactly that).
+
+- `@loctt/cli`, `@loctt/mcp` and `@loctt/web` are public, MIT, and ship
+  their LICENSE. All three and the root carry one version and one Node
+  floor.
+- Every `bin` and `main` target is in the tarball, and each bin starts
+  with a Node shebang. The launchers are `loctt`, `loctt-mcp` and
+  `loctt-ui`.
+- The runtime `dependencies` of each package are exactly the bare packages
+  its shipped bundles import: nothing undeclared, nothing unused.
+- `prepublishOnly` rebuilds each package, so a stale `dist` cannot ship.
+- The CLI tarball contains the web client `loctt ui` serves.
+  → `tests/packaging/manifest.test.ts` (`npm run test:packaging`)
+
+**Given** a release, **when** the packages are packed, **then** each
+manifest matches what the package contains and loads.
+
+### ONB-C10 · blocker · P1 · UI
+**The documented security posture holds.** RR-B2 (K136): SECURITY.md and
+the README's "Data & security" section make promises that no case
+required, and SECURITY.md linked to a README anchor that did not exist.
+
+- The web server listens on `127.0.0.1` only, and neither `loctt ui` nor
+  `loctt-ui` has a flag or variable that binds it elsewhere. `dev:host`
+  exposes the Vite client only; its API proxy targets loopback.
+- A request with a `Host` header that is not a loopback name is refused
+  (403, DNS rebinding); `localhost` and `127.0.0.1` are served.
+- The page is served with a Content-Security-Policy that restricts
+  sources to `'self'`, forbids plugins and framing, and allows no inline
+  script beyond hashed ones.
+- The API sends no CORS headers, even to a request with a foreign
+  `Origin`.
+- SECURITY.md's link into the README resolves to an existing heading.
+  → `apps/web/src/server/server.security-posture.test.ts`
+
+**Given** the security documentation, **when** its checkable claims are
+tested against the running server, **then** each holds.
+

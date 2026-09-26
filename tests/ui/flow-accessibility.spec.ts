@@ -67,6 +67,36 @@ async function setBoards(root: string, yaml: string): Promise<void> {
   await writeFile(file, `${text}\n${yaml}\n`, "utf8");
 }
 
+/**
+ * Asserts a modal's focus trap wraps in both directions (A11Y-14): focus
+ * the last tab stop and press Tab, expect the first; press Shift+Tab,
+ * expect the last again. The stops are the dialog's own enabled,
+ * visible, tabbable controls, computed in the page.
+ */
+async function expectTrapWraps(
+  page: import("@playwright/test").Page,
+  dialog: import("@playwright/test").Locator,
+): Promise<void> {
+  const mark = (which: "first" | "last") => dialog.evaluate((d, w) => {
+    const stops = Array.from(d.querySelectorAll<HTMLElement>(
+      'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]',
+    )).filter(el => el.getAttribute("tabindex") !== "-1" && el.offsetParent !== null);
+    for (const el of d.querySelectorAll("[data-trap-probe]")) el.removeAttribute("data-trap-probe");
+    const el = w === "first" ? stops[0] : stops[stops.length - 1];
+    el?.setAttribute("data-trap-probe", w);
+    return stops.length;
+  }, which);
+  expect(await mark("last")).toBeGreaterThan(0);
+  const last = dialog.locator('[data-trap-probe="last"]');
+  await last.focus();
+  await page.keyboard.press("Tab");
+  await mark("first");
+  await expect(dialog.locator('[data-trap-probe="first"]')).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await mark("last");
+  await expect(dialog.locator('[data-trap-probe="last"]')).toBeFocused();
+}
+
 test.describe("A11Y — global shortcuts", () => {
   // @verifies A11Y-1
   test("A11Y-1: `n` opens the create modal focused in the title, and `c` does not", async ({
@@ -428,6 +458,7 @@ test.describe("A11Y — focus management", () => {
    * confirmation. Before K71 this dialog leaked Tab to the page behind
    * and did not restore focus on close.
    *
+   * @verifies A11Y-14
    * @verifies A11Y-15
    */
   test("K71: a migrated confirm dialog traps focus and restores it on close", async ({
@@ -455,9 +486,131 @@ test.describe("A11Y — focus management", () => {
     const inside = await dialog.evaluate(d => d.contains(document.activeElement));
     expect(inside).toBe(true);
 
+    // The trap itself (A11Y-14): Tab past the last control wraps to the
+    // first, and Shift+Tab before the first wraps to the last. This test
+    // used to stop at "focus starts inside", which a dialog with no trap
+    // at all also passes (B34, DR-A1).
+    await expectTrapWraps(page, dialog);
+
     // Escape closes it and focus returns to the trigger (not to body).
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+
+  /**
+   * DR-A1 (K71, B34): the task description's image lightbox claimed
+   * `aria-modal` with nothing behind it. It could only be opened by a
+   * mouse click on a bare `<img>`, never took focus, and left the page
+   * behind it live. It now opens from the keyboard, traps, inerts the
+   * chrome, and gives focus back to the image.
+   *
+   * @verifies A11Y-62
+   */
+  test("A11Y-62: the image lightbox opens from the keyboard, traps focus and returns it", async ({
+    page,
+    tracker,
+  }) => {
+    const [key] = await tracker.seed([{ title: "Lightbox task" }]);
+    if (key === undefined) throw new Error("seed returned no key");
+    await tracker.run(["body", key, "--set", "See ![a diagram](https://example.com/diagram.png)\n"]);
+    await page.goto(`${tracker.baseURL}/tasks/${key}`);
+
+    // First bullet: the image is a named button, so Tab reaches it and
+    // Enter opens it. `focus()` then a key press is what a keyboard user
+    // does once there; `tabIndex` proves it is in the tab order at all.
+    const open = page.getByRole("button", { name: "View image: a diagram" });
+    await expect(open).toBeVisible();
+    expect(await open.evaluate(el => el.tabIndex)).toBeGreaterThanOrEqual(0);
+    await open.focus();
+    await page.keyboard.press("Enter");
+
+    const dialog = page.getByRole("dialog", { name: "Image preview" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("aria-modal", "true");
+    // Second bullet: focus moves in, and Tab cannot leave.
+    await expect(page.getByRole("button", { name: "Close image preview" })).toBeFocused();
+    await expectTrapWraps(page, dialog);
+    for (let i = 0; i < 10; i++) await page.keyboard.press("Tab");
+    expect(await dialog.evaluate(d => d.contains(document.activeElement))).toBe(true);
+    // Third bullet: the page behind is inert, not merely dimmed.
+    await expect(page.locator("[data-app-chrome]")).toHaveAttribute("inert", /.*/);
+
+    // Fourth bullet: closing returns focus to the image, and the page
+    // comes back to life.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(open).toBeFocused();
+    await expect(page.locator("[data-app-chrome]")).not.toHaveAttribute("inert", /.*/);
+
+    // Space opens it too, and the Close button closes it the same way.
+    await page.keyboard.press("Space");
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeHidden();
+    await expect(open).toBeFocused();
+  });
+
+  /**
+   * DR-A2 (K74, B34): the bulk bar's six pickers hand-rolled
+   * `role="menu"` with none of the keyboard pattern the role promises.
+   * They now sit on `ui/Menu`.
+   *
+   * @verifies A11Y-63
+   */
+  test("A11Y-63: a bulk-bar picker follows the menu keyboard pattern", async ({
+    page,
+    tracker,
+  }) => {
+    await tracker.seed([{ title: "Bulk menu one" }, { title: "Bulk menu two" }]);
+    await page.goto(`${tracker.baseURL}/list`);
+    const row = page.getByRole("row").filter({ hasText: "Bulk menu one" });
+    await row.getByRole("checkbox").check();
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    await expect(bar).toContainText("1 task selected");
+
+    const trigger = bar.getByRole("button", { name: "Set status" });
+    await trigger.focus();
+    await expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    await page.keyboard.press("Enter");
+    const menu = page.getByRole("menu", { name: "Set status" });
+    await expect(menu).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    // First bullet: focus starts on the first item; arrows move, wrap,
+    // and Home/End jump.
+    const items = menu.getByRole("menuitem");
+    const count = await items.count();
+    expect(count).toBeGreaterThan(2);
+    await expect(items.first()).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(items.nth(1)).toBeFocused();
+    await page.keyboard.press("End");
+    await expect(items.last()).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(items.first()).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(items.last()).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(items.first()).toBeFocused();
+
+    // Second bullet: Escape closes only the menu. Focus goes back to the
+    // trigger and the selection survives (the bar's own Escape clears
+    // the selection, BLK-13, and must not fire for the menu's).
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(bar).toContainText("1 task selected");
+
+    // Third bullet: choosing an item with the keyboard applies it and
+    // puts focus back on the trigger rather than on the page body.
+    await page.keyboard.press("Enter");
+    await expect(menu).toBeVisible();
+    await page.keyboard.press("End");
+    const chosen = ((await items.last().textContent()) ?? "").trim();
+    await page.keyboard.press("Enter");
+    await expect(menu).toBeHidden();
+    await expect(row).toContainText(chosen);
     await expect(trigger).toBeFocused();
   });
 });

@@ -11,6 +11,10 @@ data and rules as the CLI and web UI.
 npm install -g @loctt/mcp
 ```
 
+Or skip the install and let your MCP client run it with `npx -y @loctt/mcp`.
+If you already have the CLI (`@loctt/cli`), `loctt mcp` starts the same
+server.
+
 ## Usage
 
 Run the server over stdio and point your MCP client at it. Configure it in your
@@ -27,7 +31,9 @@ agent's MCP settings, for example:
 }
 ```
 
-The server operates on the `.loctt/` tracker in its working directory. See the
+The server operates on the `.loctt/` tracker in its working directory, or
+the one given by `--root <dir>` or `LOCTT_ROOT`. `loctt-mcp --version`
+prints the version. See the
 MCP tool reference and agent guidelines at the
 [project repository](https://github.com/Kenneth-LJS/loctt).
 

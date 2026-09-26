@@ -515,3 +515,26 @@ minority of these.
 
 - The user menu has a "Keyboard shortcuts" item that opens the `?` dialog, by mouse or keyboard.
 - Closing the dialog returns focus to the page rather than to `document.body`.
+
+### A11Y-61 · M4 · minor · P8
+**A panel-level loading region is exposed as a live status, not shown silently.** With a screen reader running, open any panel that loads data (a settings panel, a task detail, a sprint or milestone detail, comments, activity, or first app load).
+
+- While the region is loading, it carries an accessible `status` role and `aria-busy`, so the loading message is announced rather than the panel simply sitting silent until content appears.
+- The visible content is a spinner, not loading text — but the announced accessible name still is the loading message ("Loading projects…" etc.), kept in the DOM as visually hidden (`sr-only`) text rather than removed (`display:none`), which would announce nothing.
+- This holds for every `LoadingState` consumer in the app (docs/dev/design/design-review.md §A3): it is a shared component, not a per-feature spelling, so a regression here is a regression everywhere it is used.
+
+### A11Y-62 · M4 · blocker · P8
+**The image lightbox is a real modal.** Open a task whose description has an image, Tab to the image, press `Enter`. *(DR-A1, K71, K136)*
+
+- The image is a keyboard-reachable button named after the image ("View image: {alt}"). `Enter` or `Space` opens the lightbox, not only a mouse click.
+- Focus moves into the lightbox (onto its Close button), and `Tab`/`Shift+Tab` cannot leave it (A11Y-14).
+- The page behind is inert to assistive tech while it is open (A11Y-14), not merely dimmed.
+- Closing it (Escape, the Close button, or a click) returns focus to the image that opened it (A11Y-15).
+
+### A11Y-63 · M4 · blocker · P8
+**The bulk bar's pickers follow the menu keyboard pattern.** Select a task in the list, Tab to "Set status" and press `Enter`. *(DR-A2, K74, K136)*
+
+- The menu opens with focus on its first item. The arrow keys move between items and wrap, and `Home`/`End` jump to the ends (as A11Y-13 for the avatar menu).
+- `Esc` closes the menu only: focus returns to the picker's button and the selection is kept. (A second `Esc`, from the bar, clears the selection per BLK-13.)
+- Choosing an item with `Enter` applies it and returns focus to the picker's button, not to the page body.
+- This holds for all six pickers (status, priority, assignee, milestone, sprint, move to project). They share one component.

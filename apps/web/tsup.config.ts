@@ -14,6 +14,12 @@ import { defineConfig } from "tsup";
  * CJS-only, `busboy`/`proper-lockfile` use dynamic `require`, and `sharp`
  * ships a native binding — none can be bundled into ESM, so they stay
  * runtime deps installed alongside.
+ *
+ * Every one of them must be in `package.json` `dependencies` (A352).
+ * Until then only `busboy` was, so an installed `@loctt/web` crashed on
+ * start with `Cannot find package 'yaml'`; inside the monorepo hoisting
+ * hid it. The manifest check in `tools/packaging` now fails the build
+ * gate when a bundle imports a package the manifest does not declare.
  */
 const shared = {
   format: "esm" as const,

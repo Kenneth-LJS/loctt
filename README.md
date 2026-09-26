@@ -126,7 +126,9 @@ has focus, so they never interfere with typing. Modifier combinations
 (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + a key) are left to the browser.
 
 Settings → Personal → Keyboard also lists the context-specific keys —
-moving a board card, reordering rows, saving the body editor.
+moving a board card, reordering rows, saving the body editor — and lets
+you turn single-key shortcuts off entirely, or one at a time, if they
+collide with something else on your machine.
 
 ### Accessibility
 
@@ -242,7 +244,9 @@ there's nothing hosted to log into.
 
 The web UI is a local app; it serves on `localhost` and isn't built to be
 put on a public network. If you need multi-user, hosted task tracking,
-LocTT is the wrong tool.
+LocTT is the wrong tool. It also refuses requests carrying a foreign
+`Host` header (guarding against DNS rebinding) and sets a restrictive
+Content-Security-Policy, on top of binding to loopback only.
 
 If a `.loctt/` file gets corrupted — a bad hand-edit, another tool — LocTT
 degrades around the bad field rather than crashing, and

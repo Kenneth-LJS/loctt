@@ -48,10 +48,17 @@ export async function run(args: string[], root: string): Promise<void> {
   }
   const noOpen = hasFlag(args, "--no-open");
   const clientDir = await resolveClientDir();
+  // RR-B4 (A352): an install without the web client used to start
+  // anyway and answer `/` with a 404, which reads as "LocTT is broken"
+  // with no hint why. The client ships inside @loctt/cli, so its
+  // absence means a damaged install; say so and stop.
+  if (clientDir === undefined) {
+    throw new Error("The web UI files are missing from this install. Reinstall @loctt/cli.");
+  }
   const app = createWebApp({
     root,
     ...(port !== undefined ? { port } : {}),
-    ...(clientDir !== undefined ? { clientDir } : {}),
+    clientDir,
   });
   await app.start();
   const url = `http://localhost:${app.port}`;
